@@ -820,8 +820,11 @@ def compare_spatial_rates(
         environments and by ``Environment.bin_mapping_from``: identical
         centers, sizes and measured dimensions; the same cell shape where both
         environments record cells (grid boxes, triangles, hexagons or polygon
-        cells); and, for polygon cells, the same bin owning each boundary,
-        followed through subsets and through clips that kept a cell whole.
+        cells); for polygon cells, the same bin owning each boundary,
+        followed through subsets and through clips that kept a cell whole;
+        and, for tracks, the same track segments and spacing and the same
+        linear edges of each bin. Explicit point bins are compared by center
+        and measure only.
         A polygon cell's center and area are computed from its polygon, so
         for exactly the same polygon they may differ by rounding. Both environments must share their
         coordinate system, units and frame, which no mapping can bridge. By

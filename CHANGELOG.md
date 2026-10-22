@@ -2458,7 +2458,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `bin_mapping`: paired bins must also have the same cell shape and, for
   polygon cells, the same polygon and the same bin owning each boundary, so
   an identity mapping is refused exactly where no mapping is. A subset of
-  polygon cells still pairs with its parent.
+  polygon cells still pairs with its parent. Tracks are compared by their
+  segments and the linear edges of each bin: two tracks whose bins have the
+  same centers but run along different segments, or the same track with
+  different `edge_spacing`, now differ in "track geometry". Explicit point
+  bins are compared by center and measure.
 - `traveled_path_length` no longer counts the jump between joined
   recordings or turns the total into `NaN` at a lost frame. Two recordings,
   `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it

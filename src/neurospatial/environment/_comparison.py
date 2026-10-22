@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections import Counter
 from itertools import product
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import networkx as nx
 import numpy as np
@@ -36,7 +36,13 @@ if TYPE_CHECKING:
     from scipy import sparse
 
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry import Arena, Binning, Locator, RectilinearGrid
+    from neurospatial.geometry import (
+        Arena,
+        Binning,
+        Locator,
+        RectilinearGrid,
+        TrackLinearization,
+    )
 
 
 class _EnvironmentDifferences(NamedTuple):
@@ -48,7 +54,8 @@ class _EnvironmentDifferences(NamedTuple):
         First difference in what the bins mean: ``"coordinate systems"``,
         ``"units or coordinate frames"``, ``"bin coordinates or ordering"``,
         ``"bin measures"``, ``"polygon cell geometry"``,
-        ``"bin-boundary ownership"`` or ``"cell shapes"``.
+        ``"bin-boundary ownership"``, ``"cell shapes"`` or
+        ``"track geometry"``.
     topology : str or None
         First difference in how the space is connected:
         ``"weighted connectivity"``, ``"continuous arena or physical walls"``
@@ -85,11 +92,14 @@ def _environment_differences(
     Equal centers and measures do not make equal cells: a 10 x 10 square and
     a 20 x 5 rectangle share a center and an area. Cells are compared
     whenever both environments record them (polygon cells, triangles,
-    hexagons, or grid boxes, axis-aligned or in an affine frame). When
-    either environment records no cells, such as explicit point bins or
-    track bins, the bins are compared by center and measure only. Each pair
-    of bins is compared by ``_paired_cell_differences``, the one definition
-    of the same cell that bin mappings use too.
+    hexagons, or grid boxes, axis-aligned or in an affine frame). Two tracks
+    are compared by their segments (ordered endpoint positions and lengths,
+    and the spacing between segments) and by the linear edges of each bin:
+    bins with equal centers can run along different segments. When either
+    environment records neither cells nor a track, such as explicit point
+    bins, the bins are compared by center and measure only. Each pair of
+    bins is compared by ``_paired_cell_differences``, the one definition of
+    the same cell that bin mappings use too.
 
     Smoothing passes a field between neighbors through conductances (face
     area over distance), which the connectivity graph does not hold: two
@@ -151,10 +161,10 @@ def _mapped_bin_difference(
     str or None
         The first difference between paired bins, in the order of
         ``_CELL_DIFFERENCES``: ``"bin coordinates"``, ``"bin measures"``,
-        ``"polygon cell geometry"``, ``"bin-boundary ownership"`` or
-        ``"cell shapes"``; None when every pair is the same cell (see
-        ``_paired_cell_differences``). The identity pairing of two
-        environments with the same bins gives the answer of
+        ``"polygon cell geometry"``, ``"bin-boundary ownership"``,
+        ``"cell shapes"`` or ``"track geometry"``; None when every pair is
+        the same cell (see ``_paired_cell_differences``). The identity
+        pairing of two environments with the same bins gives the answer of
         ``_environment_differences``.
     """
     codes = _paired_cell_differences(first, second, bin_pairs[:, 0], bin_pairs[:, 1])
@@ -170,6 +180,7 @@ _CELL_DIFFERENCES = (
     "polygon cell geometry",
     "bin-boundary ownership",
     "cell shapes",
+    "track geometry",
 )
 # A polygon cell's center and area are computed from its polygon, so the same
 # polygon can give centers and areas that differ by this relative rounding.
@@ -208,8 +219,12 @@ def _paired_cell_differences(
       polygon, so they may differ from the other bin's by rounding: within
       ``_ROUNDING`` of the coordinates' magnitude plus the cell's width for
       centers, and of the area for measures.
-    - Bins without recorded cells, such as track or point bins: exactly
-      equal centers and measures.
+    - Track bins (both environments built on a track): exactly equal
+      centers and measures, the same linear ``[low, high)`` edges along the
+      track, and the same track segments and spacing (see
+      ``_track_layout``).
+    - Other bins without recorded cells, such as explicit point bins:
+      exactly equal centers and measures.
 
     Parameters
     ----------
@@ -273,6 +288,18 @@ def _paired_cell_differences(
         return codes
     mark(0, ~exact_centers)
     mark(1, ~(exact_sizes & same_dims))
+    first_track, second_track = (
+        first_binning.linearization,
+        second_binning.linearization,
+    )
+    if first_track is not None and second_track is not None:
+        # Exact equality: layouts and edges are stored numbers, not results
+        # of arithmetic on the bins.
+        same_layout = _track_layout(first_track) == _track_layout(second_track)
+        first_bounds = _track_bounds(first_track)[rows_first]
+        second_bounds = _track_bounds(second_track)[rows_second]
+        same_bounds = np.all(first_bounds == second_bounds, axis=1)
+        mark(5, ~(same_layout & same_bounds))
     if not (_records_cells(first_binning) and _records_cells(second_binning)):
         return codes
     first_corners = _cell_corners(first_binning)
@@ -287,6 +314,34 @@ def _paired_cell_differences(
         ~np.all(first_corners[rows_first] == second_corners[rows_second], axis=(1, 2)),
     )
     return codes
+
+
+def _track_layout(track: TrackLinearization) -> tuple[Any, ...]:
+    """Ordered segments (start, end positions, distance) and spacing.
+
+    Node labels are not compared: two tracks with the same segments in the
+    same order are the same track whatever their nodes are called. A single
+    spacing is the same gap between every pair of successive segments.
+    """
+    graph = track.graph
+    segments = tuple(
+        (graph.nodes[u]["pos"], graph.nodes[v]["pos"], graph.edges[u, v]["distance"])
+        for u, v in track.edge_order
+    )
+    spacing = track.edge_spacing
+    gaps = (
+        (spacing,) * max(len(segments) - 1, 0)
+        if isinstance(spacing, float)
+        else tuple(spacing)
+    )
+    return segments, gaps
+
+
+def _track_bounds(track: TrackLinearization) -> NDArray[np.float64]:
+    """Linear [low, high) of each bin, shape (n_bins, 2)."""
+    cells = np.flatnonzero(track.active_mask)
+    edges = track.grid_edges[0]
+    return np.column_stack([edges[cells], edges[cells + 1]])
 
 
 def _cell_array(binning: Binning) -> NDArray[np.object_]:

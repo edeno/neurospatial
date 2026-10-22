@@ -19,7 +19,7 @@ import pytest
 from environment_helpers import renumbered
 from shapely.geometry import LineString, Point, Polygon, box
 
-from neurospatial import Environment
+from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.arena import OpenArena
 from neurospatial.binning import (
     BinConnections,
@@ -32,6 +32,8 @@ from neurospatial.binning import (
     SpatialBins,
     TriangleShapes,
 )
+from neurospatial.decoding.posterior import decode_position
+from neurospatial.encoding.spatial import SpatialRatesResult
 from neurospatial.environment import (
     _environment_differences,
     _fields,
@@ -715,3 +717,109 @@ def test_a_wall_that_closes_no_pair_is_still_a_topology_difference() -> None:
         _mapped_topology_difference(_corridor(), walled, identity)
         == "continuous arena or physical walls"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tracks are compared by their geometry
+# ---------------------------------------------------------------------------
+
+
+def _track(
+    nodes: list[tuple[float, float]],
+    edges: list[tuple[int, int]],
+    spacing: float = 0.0,
+    bin_size: float = 10.0,
+) -> Environment:
+    graph = nx.Graph()
+    for node, pos in enumerate(nodes):
+        graph.add_node(node, pos=pos)
+    for u, v in edges:
+        graph.add_edge(u, v, distance=float(np.hypot(*np.subtract(nodes[u], nodes[v]))))
+    return Environment.from_graph(
+        graph=graph,
+        edge_order=edges,
+        edge_spacing=spacing,
+        bin_size=bin_size,
+        track_width=2.0,
+        units="cm",
+    )
+
+
+def _crossing_l_tracks() -> tuple[Environment, Environment]:
+    """Two L-shaped tracks whose two bins have the same centers and lengths."""
+    edges = [(0, 1), (1, 2)]
+    return (
+        _track([(-5.0, 0.0), (5.0, 0.0), (5.0, 10.0)], edges),
+        _track([(0.0, -5.0), (0.0, 5.0), (10.0, 5.0)], edges),
+    )
+
+
+def test_tracks_with_equal_bin_centers_along_different_segments_differ() -> None:
+    # (3, 0) lies on the first track's first segment and on neither segment
+    # of the second track, so the bins do not mean the same places.
+    first, second = _crossing_l_tracks()
+    np.testing.assert_array_equal(first.bin_centers, second.bin_centers)
+    np.testing.assert_array_equal(first.bin_sizes, second.bin_sizes)
+    np.testing.assert_array_equal(first.bin_at([[3.0, 0.0]]), [0])
+    np.testing.assert_array_equal(second.bin_at([[3.0, 0.0]]), [-1])
+    assert _environment_differences(first, second).bins == "track geometry"
+
+
+def test_a_track_with_different_edge_spacing_differs_in_track_geometry() -> None:
+    # The gap between segments shifts every later bin's linear coordinate.
+    nodes = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]
+    edges = [(0, 1), (1, 2)]
+    touching = _track(nodes, edges, spacing=0.0, bin_size=2.0)
+    spaced = _track(nodes, edges, spacing=5.0, bin_size=2.0)
+    np.testing.assert_array_equal(touching.bin_centers, spaced.bin_centers)
+    np.testing.assert_array_equal(touching.bin_sizes, spaced.bin_sizes)
+    assert _environment_differences(touching, spaced) == ("track geometry", None)
+
+
+def test_identically_built_tracks_agree() -> None:
+    first, second = _t_maze(), _t_maze()
+    assert first._geometry is not second._geometry
+    assert _environment_differences(first, second) == (None, None)
+
+
+def test_a_track_subset_maps_onto_its_parent() -> None:
+    track = _t_maze()
+    part = track.subset(mask=np.arange(track.n_bins) != 2)
+    kept = np.flatnonzero(np.arange(track.n_bins) != 2)
+    pairs = np.column_stack([kept, np.arange(len(kept))])
+    assert _mapped_bin_difference(track, part, pairs) is None
+    mapped = part.bin_mapping_from(track).pairs
+    np.testing.assert_array_equal(mapped[np.argsort(mapped[:, 1])], pairs)
+
+
+def test_explicit_point_bins_are_compared_by_center_and_measure() -> None:
+    # Explicit point bins record no track, so a copy of a track's centers,
+    # lengths and measured dimensions is the same bins.
+    track, _ = _crossing_l_tracks()
+    bins = track.binning.bins
+    points = Environment.from_bins(
+        Binning(
+            "explicit",
+            SpatialBins.from_arrays(bins.centers, bins.sizes, bins.measure_dims),
+            track.binning.connections,
+            NearestBinLocator(bins.centers, max_distance=5.0),
+            MissingFaces("explicit point bins without cells"),
+        ),
+        units="cm",
+        arena=track.arena,
+    )
+    assert points.binning.linearization is None
+    assert _environment_differences(track, points).bins is None
+
+
+def test_decoding_refuses_rates_from_a_different_track() -> None:
+    decoding_track, rates_track = _crossing_l_tracks()
+    rates = SpatialRatesResult(
+        firing_rates=np.array([[1.0, 2.0]]),
+        occupancy=np.ones(2),
+        env=rates_track,
+        method="binned",
+        bandwidth=5.0,
+    )
+    with pytest.raises(IncompatibleEnvironmentError, match="track geometry"):
+        decode_position(decoding_track, np.array([[0], [1]]), rates, dt=0.1)
