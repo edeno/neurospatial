@@ -54,7 +54,16 @@ _METHODS = ("pearson", "spearman")
 _UNIT_SELECTIONS = ("intersection", "exact")
 _TOPOLOGIES = ("same", "may_differ")
 # plot() default: no unit chosen (None is a valid unit label).
-_ALL_UNITS: Any = object()
+
+
+class _AllUnits:
+    """Default of ``plot(unit_id=)``: no unit chosen."""
+
+    def __repr__(self) -> str:
+        return "<all units>"
+
+
+_ALL_UNITS: Any = _AllUnits()
 
 
 @_copy_analysis_settings
@@ -706,9 +715,9 @@ shape (n_units, n_bins)
             against the number of common bins it was scored over; units
             without a score (see ``status``) are not drawn, never drawn as 0.
         **kwargs
-            Passed to ``Axes.scatter`` (the scatter of several
-            units) or to ``Environment.plot_field`` (one unit's map; overrides ``cmap``, ``vmin``,
-            ``vmax`` and ``colorbar_label``).
+            Passed to ``Axes.scatter`` (the scatter of several units) or to
+            ``Environment.plot_field`` (one unit's map; overrides ``cmap``,
+            ``vmin``, ``vmax`` and ``colorbar_label``).
 
         Returns
         -------
