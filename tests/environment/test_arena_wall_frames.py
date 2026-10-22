@@ -141,30 +141,102 @@ def test_wall_in_a_rounding_gap_is_refused_whatever_the_last_bits_of_rotation(
         _publish(child, invalid)
 
 
-@pytest.mark.parametrize("ulps", [-3, 0, 3])
-@pytest.mark.parametrize("placement", ["beside the face", "across the face"])
-def test_wall_clear_of_a_rounding_gap_leaves_the_face_open(placement, ulps):
-    """A wall ten error bounds from the face, or crossing it, blocks no path."""
+def _touching_clipped_grid(wall):
+    """The same 4 x 4 grid clipped after an exact turn, with ``wall``.
+
+    A quarter turn about a small offset maps every vertex exactly, so the
+    source cells of bins 4 and 8 share their face. The diagonal edge of bin 15
+    still makes the clip's error bound positive.
+    """
+    matrix = _matrix(0.0)
+    base = Environment.from_grid_mask(
+        np.ones((4, 4), bool),
+        grid_edges=(np.arange(5.0),) * 2,
+        arena=OpenArena(box(0, 0, 4, 4)),
+    ).clip(Polygon([(0, 0), (4, 0), (4, 3), (3, 4), (0, 4)]))
+    child = base.apply_transform(Affine2D(matrix)).clip(
+        _mapped(box(0.25, 0.25, 3.75, 3.75), matrix)
+    )
+    arena = OpenArena(box(0, 0, 4, 4), walls=(wall,)).transformed(matrix)
+    cells = wall_source_frame(
+        child._binning.locator, arena, child._binning.bins.centers
+    )[0]
+    assert cells[4].boundary.intersection(cells[8].boundary).length > 0
+    return child, arena
+
+
+def _face_grid(config, wall):
+    """``"touching"`` source cells, or the rounding gap at ``config`` ULPs."""
+    if config == "touching":
+        return _touching_clipped_grid(wall)
     angle = 0.3
-    for _ in range(abs(ulps)):
-        angle = np.nextafter(angle, np.copysign(np.inf, ulps))
+    for _ in range(abs(config)):
+        angle = np.nextafter(angle, np.copysign(np.inf, config))
+    return _rotated_scaled_clipped_grid(wall, angle)
+
+
+def _face_bound(config):
+    """How far the face between bins 4 and 8 can be from x = 2."""
     # The bins, and so the error bound, do not depend on the wall.
-    child, _ = _rotated_scaled_clipped_grid(LineString([(2, 0), (2, 4)]), angle)
+    child, arena = _face_grid(config, LineString([(0, 0), (0, 4)]))
     errors = wall_source_frame(
-        child._binning.locator, child.arena, child._binning.bins.centers
+        child._binning.locator, arena, child._binning.bins.centers
     )[5]
-    # Bins 4 and 8 face each other across x = 2 to within their two bounds.
     bound = errors[4] + errors[8]
     assert 0 < bound < 1e-8
-    if placement == "beside the face":
-        wall = LineString([(2 + 10 * bound, 0.49), (2 + 10 * bound, 0.51)])
-    else:
-        wall = LineString([(1.9, 0.5), (2.1, 0.5)])
-    child, arena = _rotated_scaled_clipped_grid(wall, angle)
+    return bound
+
+
+_FACE_CONFIGS = ["touching", *range(-3, 4)]
+
+
+@pytest.mark.parametrize("config", _FACE_CONFIGS)
+def test_wall_ten_error_bounds_from_a_face_leaves_it_open(config):
+    bound = _face_bound(config)
+    wall = LineString([(2 + 10 * bound, 0.49), (2 + 10 * bound, 0.51)])
+    child, arena = _face_grid(config, wall)
 
     published = _publish(child, arena)
 
     np.testing.assert_array_equal(published.edge_pairs, child.edge_pairs)
+
+
+@pytest.mark.parametrize("config", ["touching", -3, 0, 3])
+@pytest.mark.parametrize("degrees", [10, 30, 45, 90])
+def test_wall_crossing_a_face_at_any_angle_leaves_it_open(degrees, config):
+    """A wall that crosses the face meets it at one point and blocks nothing."""
+    angle = np.deg2rad(degrees)
+    reach = 0.1 * np.array([np.sin(angle), np.cos(angle)])
+    middle = np.array([2.0, 0.4])
+    child, arena = _face_grid(config, LineString([middle - reach, middle + reach]))
+
+    published = _publish(child, arena)
+
+    np.testing.assert_array_equal(published.edge_pairs, child.edge_pairs)
+
+
+@pytest.mark.parametrize("config", _FACE_CONFIGS)
+def test_wall_along_whole_faces_closes_them_whether_or_not_the_cells_touch(config):
+    child, arena = _face_grid(config, LineString([(2, 0), (2, 4)]))
+
+    published = _publish(child, arena)
+
+    # Bins 0-7 lie left of x = 2 and bins 8-15 right of it.
+    left = child.edge_pairs < 8
+    kept = child.edge_pairs[left[:, 0] == left[:, 1]]
+    np.testing.assert_array_equal(published.edge_pairs, kept)
+
+
+@pytest.mark.parametrize("config", _FACE_CONFIGS)
+@pytest.mark.parametrize("bounds_inside", [0.0, 0.25])
+def test_wall_along_part_of_a_face_is_refused_whether_or_not_the_cells_touch(
+    bounds_inside, config
+):
+    """A wall on, or within the error bound of, part of a face is unresolved."""
+    x = 2 + bounds_inside * _face_bound(config)
+    child, arena = _face_grid(config, LineString([(x, 0.49), (x, 0.51)]))
+    with pytest.raises(ValueError, match=r"wall.*(?:cuts|clearance|unresolved)"):
+        _publish(child, arena)
 
 
 def test_genuine_source_inset_does_not_snap_to_a_nearby_parent_boundary():

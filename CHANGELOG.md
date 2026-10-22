@@ -2429,11 +2429,22 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   floating-point rounding, so the same call could pass on one machine and
   fail on another. For example, with a short wall declared 1e-12 from a bin
   edge, `env.apply_transform(Affine2D(matrix)).clip(region)` far from the
-  origin now raises `ValueError` ("... may block the face between bins 4 and
-  8, but whether it does is unresolved") on every machine. A wall lying on
-  part of such a face, such as a short wall exactly on a bin edge, is refused
-  the same way; before, it was ignored and the bins stayed connected. Clip
-  before transforming, or recenter the coordinates, to keep such a wall.
+  origin now raises `ValueError` ("... runs along part of the face between
+  bins 4 and 8, so whether it blocks their face is unresolved") on every
+  machine. The
+  decision now comes from how far each face can be from where rounding put
+  it, not from whether the rounded bins happen to touch:
+  - A wall along the whole face between two bins closes it. Before, a wall
+    exactly on a bin edge of a rotated-then-clipped environment was refused
+    ("face alignment ... is unresolved") whenever rounding left the bins a
+    hair apart.
+  - A wall along part of such a face, such as a short wall exactly on a bin
+    edge, is refused. Before, it was ignored and the bins stayed connected,
+    or it narrowed the face, depending on rounding.
+  - A wall that crosses a face, at any angle, leaves it open.
+
+  Clip before transforming, or recenter the coordinates, to keep a wall that
+  covers only part of a face.
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or
   which bin owns a boundary) even when the connectivity or the arena also

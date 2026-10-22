@@ -438,48 +438,74 @@ def _face_band(
     return cell_u.buffer(error_u).intersection(cell_v.buffer(error_v))
 
 
-def _lies_along(wall: shapely.Geometry, band: shapely.Geometry, width: float) -> bool:
-    """Whether ``wall`` runs inside ``band`` along it for more than ``width``.
+def _face_cover(
+    wall_segments: Sequence[LineString], band: shapely.Geometry, width: float
+) -> tuple[Literal["none", "part", "whole"], int]:
+    """How much of a face known only to within ``band`` the walls run along.
 
-    ``band`` is a thin strip around a face whose position is uncertain by
-    ``width`` across it. A wall that stays in it for longer than that cannot be
-    told apart from one on the face. A wall that crosses the strip at 45
-    degrees or more, or touches its end, meets the face at a single point and
-    blocks none of it.
+    ``band`` is the thin strip where the face can lie and ``width`` how far
+    its position is uncertain across it. A wall piece that enters the strip
+    through one long side and leaves through the other crosses the face at a
+    single point, at any angle, and runs along none of it. Any other piece
+    that extends more than ``width`` along the strip could lie on the face.
+    Returns ``"whole"`` when such pieces cover the strip's length to within
+    ``width`` at each end, ``"part"`` when they cover less, and ``"none"``
+    when there are none, with the index of the first wall that runs along.
     """
-    near = wall.intersection(band)
-    if near.length == 0:
-        return False
-    # The strip's long axis is the face direction.
     outline = shapely.get_coordinates(band)
-    along = np.linalg.svd(outline - outline.mean(axis=0))[2][0]
-    return any(
-        np.ptp(shapely.get_coordinates(piece) @ along) > width
-        for piece in shapely.get_parts(near)
+    center = outline.mean(axis=0)
+    # The strip's long axis is the face direction; its normal points across.
+    axes = np.linalg.svd(outline - center)[2]
+    along_band = (outline - center) @ axes[0]
+    across_band = (outline - center) @ axes[1]
+    start, stop = along_band.min(), along_band.max()
+    middle = (across_band.min() + across_band.max()) / 2
+    spans = []
+    first = -1
+    candidates = np.flatnonzero(
+        shapely.intersects(np.asarray(wall_segments, dtype=object), band)
     )
+    for number in candidates:
+        wall = wall_segments[number]
+        wall_ends = shapely.get_coordinates(wall)[[0, -1]]
+        for piece in shapely.get_parts(wall.intersection(band)):
+            points = shapely.get_coordinates(piece)
+            if len(points) < 2:
+                continue
+            ends = points[[0, -1]]
+            along = (points - center) @ axes[0]
+            sides = (ends - center) @ axes[1] - middle
+            crosses = (
+                # Neither end is the wall's own end inside the strip, and the
+                # piece leaves through the long sides, not the strip's ends.
+                not np.any(np.all(ends[:, None, :] == wall_ends[None], axis=2))
+                and along[[0, -1]].min() > start + width
+                and along[[0, -1]].max() < stop - width
+                and sides[0] * sides[1] < 0
+            )
+            if not crosses and np.ptp(along) > width:
+                spans.append((along.min(), along.max()))
+                first = int(number) if first < 0 else first
+    if not spans:
+        return "none", first
+    covered, reach = 0.0, start
+    for low, high in sorted(spans):
+        covered += max(0.0, high - max(low, reach))
+        reach = max(reach, high)
+    return ("whole" if stop - start - covered <= 2 * width else "part"), first
 
 
 def _unresolved_face_message(
-    arena: Arena,
-    wall_segments: Sequence[LineString],
-    region: shapely.Geometry,
-    pair: tuple[int, int],
-    bound: float,
+    arena: Arena, wall: int, pair: tuple[int, int], bound: float, how: str
 ) -> str:
     """Say which wall may block the face of ``pair`` and why that is unknown."""
-    wall = next(
-        number
-        for number, segment in enumerate(wall_segments)
-        if segment.intersects(region)
-    )
     return _format_error(
-        f"Physical wall {arena.wall_names[wall]!r} may block the face between "
-        f"bins {pair[0]} and {pair[1]}, but whether it does is unresolved.",
+        f"Physical wall {arena.wall_names[wall]!r} {how} bins {pair[0]} and "
+        f"{pair[1]}, so whether it blocks their face is unresolved.",
         why="Why: the bins were clipped after being rotated, scaled or moved, "
         "so in the coordinates the walls were declared in, the face between "
-        f"them is only known to within {bound:.3g}. The wall runs within that "
-        "distance of the face or crosses the line between the bin centers, so "
-        "it could lie on the face or inside one of the bins.",
+        f"them is only known to within {bound:.3g}, too coarse to tell whether "
+        "this wall lies on the face or inside one of the bins.",
         fix="clip the environment before transforming it, recenter the "
         "coordinates near the origin (rounding grows with their size), or keep "
         f"the wall more than {bound:.3g} from the bin edge",
@@ -546,6 +572,39 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     current_cells = None
     for index, (u, v) in enumerate(pairs):
         contact = cells[u].boundary.intersection(cells[v].boundary)
+        if (
+            errors is not None
+            and errors[u] + errors[v] > 0
+            and near_wall[u]
+            and near_wall[v]
+        ):
+            # The source cells are known only to within their error bounds, so
+            # whether they touch is rounding. Decide from the strip where the
+            # face of the published cells can lie instead.
+            if current_cells is None:
+                current_cells = materialize_cells(binning)
+            if (
+                current_cells[u].boundary.intersection(current_cells[v].boundary).length
+                > 0
+            ):
+                bound = errors[u] + errors[v]
+                band = _face_band(cells[u], cells[v], errors[u], errors[v])
+                cover, wall = _face_cover(wall_segments, band, bound)
+                if cover == "part":
+                    raise ValueError(
+                        _unresolved_face_message(
+                            arena,
+                            wall,
+                            (int(u), int(v)),
+                            bound,
+                            "runs along part of the face between",
+                        )
+                    )
+                if cover == "whole":
+                    keep[index] = False
+                    continue
+                if contact.length > 0:
+                    continue
         blocked = contact.intersection(walls)
         if contact.length > 0 and blocked.length > 0:
             if blocked.length < contact.length:
@@ -555,30 +614,28 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         elif contact.length == 0:
             link = LineString(centers[[u, v]])
             crosses = link.crosses(walls)
-            if errors is not None and (crosses or (near_wall[u] and near_wall[v])):
-                # Rounding can open a gap between source cells whose published
-                # cells share a face. Whether a wall in or beside that gap
-                # blocks the face depends on the last bits of that rounding.
-                bound = errors[u] + errors[v]
-                band = _face_band(cells[u], cells[v], errors[u], errors[v])
-                if crosses or _lies_along(walls, band, bound):
-                    if current_cells is None:
-                        current_cells = materialize_cells(binning)
-                    if (
-                        current_cells[u]
-                        .boundary.intersection(current_cells[v].boundary)
-                        .length
-                        > 0
-                    ):
-                        raise ValueError(
-                            _unresolved_face_message(
-                                arena,
-                                wall_segments,
-                                band.union(link),
-                                (int(u), int(v)),
-                                bound,
-                            )
+            if errors is not None and crosses:
+                if current_cells is None:
+                    current_cells = materialize_cells(binning)
+                if (
+                    current_cells[u]
+                    .boundary.intersection(current_cells[v].boundary)
+                    .length
+                    > 0
+                ):
+                    raise ValueError(
+                        _unresolved_face_message(
+                            arena,
+                            next(
+                                number
+                                for number, segment in enumerate(wall_segments)
+                                if segment.intersects(link)
+                            ),
+                            (int(u), int(v)),
+                            errors[u] + errors[v],
+                            "crosses the line between the centers of",
                         )
+                    )
             keep[index] = contact.intersection(walls).is_empty and not crosses
     connections = links.closed(keep)
     connections = replace(
