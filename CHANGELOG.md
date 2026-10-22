@@ -143,8 +143,9 @@
   `heading_from_velocity` and `heading_from_body_orientation` move from
   `neurospatial.ops` next to `compute_speed`, and `distance_to_reward` and
   `distance_to_boundary` move from `neurospatial.events` next to
-  `distance_to_region`. Signatures and results are unchanged; there are no
-  aliases, so the old imports raise `ImportError`. `ops` keeps the egocentric
+  `distance_to_region`. There are no aliases, so the old imports raise
+  `ImportError`. Both heading functions also change in this release (see the
+  `heading_from_velocity` and `heading_from_body_orientation` entries). `ops` keeps the egocentric
   frame conversions, and `events` keeps the time-based regressors
   (`time_to_nearest_event`, `event_count_in_window`, `event_indicator`) and
   its event-table utilities.

@@ -203,11 +203,6 @@ def _hexagons() -> Environment:
     )
 
 
-# Comparing builds the mesh's faces, which warn when many triangles are skewed;
-# whether this square-grid Delaunay mesh is skewed depends on the platform.
-_MESH_WARNING = "ignore:Triangular mesh is non-K-orthogonal:UserWarning"
-
-
 def _polar() -> Environment:
     return Environment.from_polar_egocentric(
         distance_range=(0.0, 20.0),
@@ -225,7 +220,7 @@ def _grid_3d() -> Environment:
 @pytest.mark.parametrize(
     "build",
     [
-        pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+        pytest.param(_mesh, id="mesh"),
         pytest.param(_hexagons, id="hexagons"),
         pytest.param(_polar, id="polar grid"),
         pytest.param(_grid_3d, id="3-D grid"),
@@ -361,7 +356,7 @@ def _without_cells(env: Environment, *, size_scale: float = 1.0) -> Environment:
     [
         pytest.param(_clipped_grid, id="polygon cells"),
         pytest.param(_grid, id="grid"),
-        pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+        pytest.param(_mesh, id="mesh"),
     ],
 )
 def test_bins_without_cells_are_compared_by_center_and_measure(build) -> None:
@@ -555,7 +550,7 @@ _ROUND_TRIP_LAYOUTS = [
         id="polygon",
     ),
     pytest.param(_t_maze, id="track"),
-    pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+    pytest.param(_mesh, id="mesh"),
     pytest.param(_hexagons, id="hexagons"),
     pytest.param(_rotated_grid, id="rotated grid"),
 ]
