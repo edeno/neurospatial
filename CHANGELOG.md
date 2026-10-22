@@ -2466,7 +2466,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   segments and the linear edges of each bin: two tracks whose bins have the
   same centers but run along different segments, or the same track with
   different `edge_spacing`, now differ in "track geometry". Explicit point
-  bins are compared by center and measure.
+  bins, or a track paired with bins of another kind, are compared by center
+  and measure only.
 - `traveled_path_length` no longer counts the jump between joined
   recordings or turns the total into `NaN` at a lost frame. Two recordings,
   `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it

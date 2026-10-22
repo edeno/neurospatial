@@ -95,11 +95,11 @@ def _environment_differences(
     hexagons, or grid boxes, axis-aligned or in an affine frame). Two tracks
     are compared by their segments (ordered endpoint positions and lengths,
     and the spacing between segments) and by the linear edges of each bin:
-    bins with equal centers can run along different segments. When either
-    environment records neither cells nor a track, such as explicit point
-    bins, the bins are compared by center and measure only. Each pair of
-    bins is compared by ``_paired_cell_differences``, the one definition of
-    the same cell that bin mappings use too.
+    bins with equal centers can run along different segments. Explicit
+    point bins, which record neither cells nor a track, and a track paired
+    with bins of another kind fall back to center and measure only. Each
+    pair of bins is compared by ``_paired_cell_differences``, the one
+    definition of the same cell that bin mappings use too.
 
     Smoothing passes a field between neighbors through conductances (face
     area over distance), which the connectivity graph does not hold: two
@@ -223,8 +223,9 @@ def _paired_cell_differences(
       centers and measures, the same linear ``[low, high)`` edges along the
       track, and the same track segments and spacing (see
       ``_track_layout``).
-    - Other bins without recorded cells, such as explicit point bins:
-      exactly equal centers and measures.
+    - Anything else, namely explicit point bins (no cells and no track) or
+      a track paired with bins of another kind: exactly equal centers and
+      measures only.
 
     Parameters
     ----------

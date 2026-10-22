@@ -826,7 +826,8 @@ def compare_spatial_rates(
         must keep their relative order, because a point on the line between
         two pieces belongs to the earlier one; and, for tracks, the same
         track segments and spacing and the same linear edges of each bin.
-        Explicit point bins are compared by center and measure only.
+        Explicit point bins, or a track paired with bins of another kind, are
+        compared by center and measure only.
         A polygon cell's center and area are computed from its polygon, so
         for exactly the same polygon they may differ by rounding. Both environments must share their
         coordinate system, units and frame, which no mapping can bridge. By

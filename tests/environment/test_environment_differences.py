@@ -34,6 +34,7 @@ from neurospatial.binning import (
     TriangleShapes,
 )
 from neurospatial.decoding.posterior import decode_position
+from neurospatial.encoding import compare_spatial_rates
 from neurospatial.encoding.spatial import SpatialRatesResult
 from neurospatial.environment import (
     _environment_differences,
@@ -851,6 +852,17 @@ def _track(
     )
 
 
+def _track_rates(track: Environment) -> SpatialRatesResult:
+    return SpatialRatesResult(
+        firing_rates=np.arange(1.0, track.n_bins + 1)[np.newaxis],
+        occupancy=np.ones(track.n_bins),
+        env=track,
+        method="binned",
+        bandwidth=5.0,
+        unit_ids=[1],
+    )
+
+
 def _crossing_l_tracks() -> tuple[Environment, Environment]:
     """Two L-shaped tracks whose two bins have the same centers and lengths."""
     edges = [(0, 1), (1, 2)]
@@ -869,6 +881,13 @@ def test_tracks_with_equal_bin_centers_along_different_segments_differ() -> None
     np.testing.assert_array_equal(first.bin_at([[3.0, 0.0]]), [0])
     np.testing.assert_array_equal(second.bin_at([[3.0, 0.0]]), [-1])
     assert _environment_differences(first, second).bins == "track geometry"
+    # An identity mapping is refused exactly as no mapping is.
+    identity = np.column_stack([np.arange(first.n_bins)] * 2)
+    assert _mapped_bin_difference(first, second, identity) == "track geometry"
+    rates_a, rates_b = (_track_rates(track) for track in (first, second))
+    for mapping in (None, identity):
+        with pytest.raises(IncompatibleEnvironmentError, match="track geometry"):
+            compare_spatial_rates(rates_a, rates_b, bin_mapping=mapping)
 
 
 def test_a_track_with_different_edge_spacing_differs_in_track_geometry() -> None:
@@ -880,6 +899,28 @@ def test_a_track_with_different_edge_spacing_differs_in_track_geometry() -> None
     np.testing.assert_array_equal(touching.bin_centers, spaced.bin_centers)
     np.testing.assert_array_equal(touching.bin_sizes, spaced.bin_sizes)
     assert _environment_differences(touching, spaced) == ("track geometry", None)
+
+
+@pytest.mark.parametrize("mapped", [False, True])
+def test_a_track_geometry_refusal_names_the_linearized_track(mapped) -> None:
+    # Bins at the same 2-D places can sit at different linear positions, so
+    # the refusal speaks of the linearized track, not of places.
+    nodes = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]
+    edges = [(0, 1), (1, 2)]
+    touching = _track(nodes, edges, spacing=0.0, bin_size=2.0)
+    spaced = _track(nodes, edges, spacing=5.0, bin_size=2.0)
+    identity = np.column_stack([np.arange(touching.n_bins)] * 2)
+    with pytest.raises(IncompatibleEnvironmentError) as refused:
+        compare_spatial_rates(
+            _track_rates(touching),
+            _track_rates(spaced),
+            bin_mapping=identity if mapped else None,
+        )
+    message = str(refused.value)
+    assert "differ in track geometry" in message
+    assert "same stretch of the linearized track" in message
+    assert "same place" not in message
+    assert "cells differ" not in message
 
 
 def test_identically_built_tracks_agree() -> None:
