@@ -13,7 +13,6 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
     QFileDialog,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QShortcut,
@@ -24,6 +23,7 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.annotation._assist_widget import AnnotationAssistWidget
 from neurospatial.annotation._draft import add_polygons, annotation_roles
+from neurospatial.annotation._napari_widget import confirm_environment_replacement
 from neurospatial.annotation._polygon_outline import PolygonOutline
 from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
 from neurospatial.annotation._state import AnnotationModeState, make_unique_name
@@ -312,14 +312,7 @@ class AnnotationProjectSession:
         before = self._current
         existing = list(before.shapes)
         if role == "environment" and any(s.role == "environment" for s in existing):
-            answer = QMessageBox.question(
-                self.viewer.window._qt_window,
-                "Replace environment?",
-                "Replace the existing environment boundary with this outline?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            if not confirm_environment_replacement(self.viewer.window._qt_window):
                 raise ValueError(
                     "Environment replacement cancelled; the preview is retained."
                 )

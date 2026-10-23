@@ -72,6 +72,20 @@ class _AnnotationWidget(Container):
         self.next_annotation = next_annotation
 
 
+def confirm_environment_replacement(parent: Any) -> bool:
+    """Ask whether a new environment boundary should replace the existing one."""
+    from qtpy.QtWidgets import QMessageBox
+
+    answer = QMessageBox.question(
+        parent,
+        "Replace Environment Boundary?",
+        "An environment boundary already exists.\n\nReplace it with the new boundary?",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return bool(answer == QMessageBox.StandardButton.Yes)
+
+
 def create_annotation_widget(
     viewer: napari.Viewer,
     shapes_layer_name: str = "Annotations",
@@ -539,19 +553,7 @@ def create_annotation_widget(
                 if i < pre_existing_count and str(r) == "environment"
             )
             if state.region_type == "environment" and existing_env_count > 0:
-                # Show dialog asking if they want to replace the existing boundary
-                from qtpy.QtWidgets import QMessageBox
-
-                parent = viewer.window._qt_window
-                reply = QMessageBox.question(
-                    parent,
-                    "Environment Already Exists",
-                    "An environment boundary already exists.\n\n"
-                    "Replace it with this new boundary?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                if reply == QMessageBox.StandardButton.Yes:
+                if confirm_environment_replacement(viewer.window._qt_window):
                     # Delete the existing environment boundary
                     env_indices = [
                         i for i, r in enumerate(roles) if str(r) == "environment"
