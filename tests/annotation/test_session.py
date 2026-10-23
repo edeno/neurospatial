@@ -140,3 +140,22 @@ def test_cancelled_close_keeps_the_session_running(viewer, monkeypatch):
     assert _annotate(viewer, prepare_result) == 2
     assert after_cancel == [True]
     assert not window.isVisible()
+
+
+@pytest.mark.gui
+def test_view_is_fitted_once_the_window_has_its_final_size(viewer, monkeypatch):
+    import napari
+    from qtpy.QtWidgets import QApplication
+
+    fitted = []
+    monkeypatch.setattr(
+        type(viewer), "reset_view", lambda self, *args, **kwargs: fitted.append(True)
+    )
+
+    def run():
+        QApplication.processEvents()
+        assert fitted
+        assert viewer.window._qt_window.close()
+
+    monkeypatch.setattr(napari, "run", run)
+    assert _annotate(viewer, lambda: "result") == "result"

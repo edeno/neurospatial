@@ -88,6 +88,9 @@ def run_annotation_session(
 
     guard = DraftCloseGuard(window)
     window.installEventFilter(guard)
+    # The camera was fitted before the docks took their width, which hid part
+    # of the frame. Fit it again once the shown window has its final size.
+    QTimer.singleShot(0, viewer.reset_view)
     try:
         napari.run()
         if window.isVisible():
