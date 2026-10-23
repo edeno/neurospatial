@@ -928,9 +928,9 @@ def _simulate_trajectory_laps(
                     _format_error(
                         f"{call}: {path_name} steps from bin "
                         f"{a} to bin {b}, which are not neighboring bins.",
-                        why="Why: the animal runs in a straight line between "
-                        "consecutive bins, which can cross walls or leave the "
-                        "environment unless the bins are connected.",
+                        why="Why: the animal runs from each bin into the next "
+                        "through the space they share, which only neighboring "
+                        "bins have.",
                         fix=f"replace the step with "
                         f"nx.shortest_path(env.connectivity, {a}, {b})",
                     )
