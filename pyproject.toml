@@ -88,7 +88,7 @@ notebooks = [
 # Video support
 video = [
     "imageio>=2.35.0",           # Video reading (fallback backend)
-    "imageio-ffmpeg>=0.5.1",     # For ffprobe timestamp extraction
+    "imageio-ffmpeg>=0.5.1",     # Bundled ffmpeg: video export and timestamps
     "opencv-python>=4.11.0.86",  # Fast video reading (preferred backend)
 ]
 # Interactive visualization
@@ -96,11 +96,8 @@ animation = [
     "napari[all]>=0.5,<0.10",  # GPU-accelerated interactive viewer
     "ipywidgets>=8.0,<9.0",      # Jupyter notebook widget backend
     "pillow>=10.0.0",            # JPEG format support for smaller HTML files
-    # Note: ffmpeg is required for video backend but must be
-    # installed separately as a system dependency. Install with:
-    #   - macOS: brew install ffmpeg
-    #   - Ubuntu: apt-get install ffmpeg
-    #   - Windows: Download from https://ffmpeg.org/download.html
+    # Video files are encoded with the ffmpeg bundled by imageio-ffmpeg
+    # (the video extra); no system ffmpeg is needed.
 ]
 # GPU drawing for plot(), plot_field() and animate_fields() with
 # backend="fastplotlib": a desktop window, or frames streamed from the kernel's
