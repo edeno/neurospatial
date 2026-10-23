@@ -167,8 +167,10 @@ Done and the window close button both require valid output. Saving an invalid
 draft keeps the editor open; it does not export a partial analysis result.
 
 Start `annotate_video` with a new project path; if the file already exists, use
-`annotate_project` to resume it. When resuming a path, draft saves default to
-that same file; set `project_path=` to save to another destination.
+`annotate_project` to resume it, or pass `overwrite=True` to start over. When
+resuming a path, draft saves default to that same file; set `project_path=` to
+save to another destination. Like other neurospatial writers,
+`AnnotationProject.save` refuses an existing file unless `overwrite=True`.
 
 You can also inspect or prepare drafts without launching a viewer. The example
 below uses a synthetic frame; replace it with your reference RGB image and

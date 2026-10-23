@@ -266,9 +266,20 @@ def test_failed_save_keeps_existing_project_and_removes_temporary_file(
 
     monkeypatch.setattr(np, "savez_compressed", fail)
     with pytest.raises(OSError, match="disk full"):
-        project.save(path)
+        project.save(path, overwrite=True)
     assert path.read_bytes() == original
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_save_refuses_an_existing_file_unless_overwrite(tmp_path):
+    path = tmp_path / "draft.nsp"
+    path.write_bytes(b"another session's work")
+    project = AnnotationProject(np.zeros((2, 2, 3), dtype=np.uint8))
+    with pytest.raises(FileExistsError, match="overwrite=True"):
+        project.save(path)
+    assert path.read_bytes() == b"another session's work"
+    project.save(path, overwrite=True)
+    assert AnnotationProject.load(path).frame.shape == (2, 2, 3)
 
 
 @pytest.mark.parametrize(

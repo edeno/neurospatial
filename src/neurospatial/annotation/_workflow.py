@@ -394,7 +394,11 @@ class AnnotationProjectSession:
         self._write(target)
 
     def _write(self, target: Path) -> None:
-        """Save the last checkpoint, which the caller has just taken."""
+        """Save the last checkpoint, which the caller has just taken.
+
+        The session's own file is replaced: the entry point checked the
+        destination, and Save As confirms a replacement in its dialog.
+        """
         project = AnnotationProject(
             self.frame,
             shapes=self._current.shapes,
@@ -406,7 +410,7 @@ class AnnotationProjectSession:
             simplify_tolerance=self.simplify_tolerance,
             multiple_boundaries=self.multiple_boundaries,
         )
-        project.save(target)
+        project.save(target, overwrite=True)
         self.project_path = target
         self._last_saved = self._current
         self.status.setText(f"Saved: {target.name}")

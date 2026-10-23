@@ -255,7 +255,12 @@ def format_times_positions_error(
 
 
 def check_writable(
-    paths: Sequence[Path], *, overwrite: bool, what: str, argument: str
+    paths: Sequence[Path],
+    *,
+    overwrite: bool,
+    what: str,
+    argument: str,
+    alternative: str = "",
 ) -> None:
     """Refuse existing files/nonempty directories unless overwrite is explicit.
 
@@ -269,6 +274,8 @@ def check_writable(
         Description of the outputs for the diagnostic.
     argument : str
         Path argument name used in corrected-call guidance.
+    alternative : str, optional
+        Another fix to offer, as a clause such as ``"or resume it with ..."``.
 
     Raises
     ------
@@ -283,6 +290,8 @@ def check_writable(
             _format_error(
                 f"Refusing to overwrite existing {what}: {', '.join(map(str, existing))}.",
                 fix=f"pass overwrite=True to replace {'it' if len(existing) == 1 else 'them'}, "
-                f"or choose a different {argument}.",
+                f"or choose a different {argument}"
+                + (f", {alternative}" if alternative else "")
+                + ".",
             )
         )

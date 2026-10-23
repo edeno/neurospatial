@@ -47,6 +47,21 @@ def test_fresh_session_cannot_overwrite_existing_project(tmp_path, monkeypatch):
     assert path.read_bytes() == b"saved scientific draft"
 
 
+def test_overwrite_starts_a_new_project_over_an_existing_file(tmp_path, monkeypatch):
+    path = tmp_path / "existing.project"
+    path.write_bytes(b"old draft")
+
+    def loaded(*args):
+        raise RuntimeError("reached the video")
+
+    monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
+    monkeypatch.setattr(core, "_load_video_frame", loaded)
+    with pytest.raises(RuntimeError, match="reached the video"):
+        core.annotate_video(
+            "unused.mp4", bin_size=1.0, project_path=path, overwrite=True
+        )
+
+
 @pytest.mark.parametrize("from_file", [False, True])
 def test_resume_cannot_overwrite_a_different_existing_project(
     tmp_path, monkeypatch, from_file
@@ -61,7 +76,7 @@ def test_resume_cannot_overwrite_a_different_existing_project(
         "_setup_annotation_viewer",
         lambda *args, **kwargs: pytest.fail("Must reject before opening a viewer"),
     )
-    with pytest.raises(FileExistsError, match="choose a new"):
+    with pytest.raises(FileExistsError, match="overwrite=True"):
         core.annotate_project(source if from_file else draft, project_path=other)
     assert other.read_bytes() == b"another session's work"
 

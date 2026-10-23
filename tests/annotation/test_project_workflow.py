@@ -203,7 +203,9 @@ def test_resumed_project_is_not_rewritten_until_edited(
     path = tmp_path / "draft.nsp"
     path.write_bytes(b"resumed project")
     saves = []
-    monkeypatch.setattr(AnnotationProject, "save", lambda self, target: saves.append(1))
+    monkeypatch.setattr(
+        AnnotationProject, "save", lambda self, target, **kwargs: saves.append(1)
+    )
     session, _viewer, shapes, controls = session_factory(
         project_path=path, project_saved=True, autosave_interval=1.0
     )

@@ -21,6 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import read_only_copy
+from neurospatial._validation import check_writable
 from neurospatial.annotation._types import (
     AnnotationMode,
     MultipleBoundaryStrategy,
@@ -304,13 +305,26 @@ class AnnotationProject:
             self._calibration, (self.frame.shape[1], self.frame.shape[0])
         )
 
-    def save(self, path: str | Path) -> None:
+    def save(self, path: str | Path, *, overwrite: bool = False) -> None:
         """Atomically save to exactly ``path``, preserving any filename suffix.
 
-        An existing file is replaced only after the complete archive is written.
-        The destination directory must already exist.
+        Parameters
+        ----------
+        path : str or Path
+            Destination file. Its directory must already exist.
+        overwrite : bool, default=False
+            Replace an existing file. The replacement happens only after the
+            complete archive is written.
+
+        Raises
+        ------
+        FileExistsError
+            If ``path`` exists and ``overwrite`` is False.
         """
         path = Path(path)
+        check_writable(
+            [path], overwrite=overwrite, what="annotation project", argument="path"
+        )
         document = {
             "format": _FORMAT,
             "version": _VERSION,

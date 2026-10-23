@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
+from neurospatial._validation import check_writable
 from neurospatial.annotation._types import (
     AnnotationConfig,
     AnnotationMode,
@@ -81,6 +82,7 @@ def annotate_video(
     multiple_boundaries: MultipleBoundaryStrategy | None = None,
     show_positions: bool | None = None,
     project_path: str | Path | None = None,
+    overwrite: bool = False,
     autosave_interval: float | None = 30.0,
     segmentation_provider: SegmentationProvider | None = None,
 ) -> AnnotationResult:
@@ -154,8 +156,10 @@ def annotate_video(
 
     project_path : str or Path, optional
         Save the editable draft, including its reference image, to this file.
-        A fresh session requires a new path; use :func:`annotate_project` to
-        resume an existing project. Without a path, saving is available in the UI.
+        Use :func:`annotate_project` to resume an existing project. Without a
+        path, saving is available in the UI.
+    overwrite : bool, default=False
+        Start a new project over an existing ``project_path``.
     autosave_interval : float or None, default=30.0
         Seconds between draft saves when a project path is set. Must be finite
         and positive; None disables periodic saves.
@@ -179,7 +183,7 @@ def annotate_video(
         if ``autosave_interval`` is not positive and finite, or if an initial
         polygon region has metadata keys that are not strings.
     FileExistsError
-        If ``project_path`` already exists. Resume it with
+        If ``project_path`` exists and ``overwrite`` is False. Resume it with
         :func:`annotate_project` instead.
     RuntimeError
         If the drawn annotations cannot be saved, for example multiple
@@ -262,10 +266,13 @@ def annotate_video(
     # Validate parameters early (before expensive imports)
     _validate_annotate_params(mode, bin_size)
     _validate_autosave_interval(autosave_interval)
-    if project_path is not None and Path(project_path).exists():
-        raise FileExistsError(
-            f"Annotation project already exists: {project_path}. "
-            "Use annotate_project to resume it, or choose a new project_path."
+    if project_path is not None:
+        check_writable(
+            [Path(project_path)],
+            overwrite=overwrite,
+            what="annotation project",
+            argument="project_path",
+            alternative="or resume it with annotate_project(project_path)",
         )
     if initial_regions is not None:
         _validate_initial_metadata(initial_regions)
@@ -311,6 +318,7 @@ def annotate_project(
     project: AnnotationProject | str | Path,
     *,
     project_path: str | Path | None = None,
+    overwrite: bool = False,
     autosave_interval: float | None = 30.0,
     segmentation_provider: SegmentationProvider | None = None,
 ) -> AnnotationResult:
@@ -327,6 +335,8 @@ def annotate_project(
     project_path : str or Path, optional
         Destination for draft saves. When resuming a file, defaults to that file.
         For an in-memory project, choose a destination in the UI or pass one here.
+    overwrite : bool, default=False
+        Save over an existing ``project_path`` other than the resumed file.
     autosave_interval : float or None, default=30.0
         Seconds between saves to the current project path. Must be positive
         and finite; None disables periodic saves.
@@ -347,7 +357,7 @@ def annotate_project(
         must be edited before export.
     FileExistsError
         If ``project_path`` names an existing file other than the project
-        being resumed.
+        being resumed, and ``overwrite`` is False.
     ImportError
         If napari is not installed.
 
@@ -375,15 +385,20 @@ def annotate_project(
         draft = project
     else:
         raise TypeError("project must be an AnnotationProject or a project file path.")
-    project_saved = False
-    if project_path is not None and Path(project_path).exists():
-        project_saved = source is not None and Path(project_path).samefile(source)
-        if not project_saved:
-            raise FileExistsError(
-                f"Annotation project already exists: {project_path}. "
-                "Resume that file with annotate_project, or choose a new "
-                "project_path."
-            )
+    project_saved = (
+        source is not None
+        and project_path is not None
+        and Path(project_path).exists()
+        and Path(project_path).samefile(source)
+    )
+    if project_path is not None and not project_saved:
+        check_writable(
+            [Path(project_path)],
+            overwrite=overwrite,
+            what="annotation project",
+            argument="project_path",
+            alternative="or resume that file with annotate_project",
+        )
     _validate_annotate_params(draft.mode, draft.bin_size)
     _validate_shapes_for_display(draft.shapes)
     _require_napari()
