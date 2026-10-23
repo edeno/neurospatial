@@ -26,7 +26,7 @@ from neurospatial.annotation import annotate_video
 # Launch interactive annotation
 result = annotate_video(
     "experiment.mp4",
-    bin_size=2.0,  # pixels; centimeters once you calibrate (see below)
+    bin_size=2.0,  # pixels; calibrating in the editor converts it to cm (see below)
     project_path="arena.annotation.npz",
 )
 
@@ -525,12 +525,15 @@ button always shows the current bin size and, once an environment is drawn, abou
 how many bins the environment will have. Calibration is optional for drawing outlines; use it
 when you need output in centimeters. Click **Mark two scale endpoints** and mark the
 ends of an object of known length. Enter that length in centimeters, then click
-**Apply calibration**. **Output bin size** is converted to cm, so the grid keeps
-its size in the image: an 8 pixel bin at 0.3 cm per pixel becomes 2.4 cm. Enter
-a new value if you want a different grid. Shapes stay aligned with the
-reference frame because editable geometry remains in pixels. **Clear
-calibration** returns output units to pixels and converts the bin size back;
-these changes can be undone and are saved in the project.
+**Apply calibration**. Lengths convert only when the output units change. A
+pixel **Output bin size** is converted to cm, so the grid keeps its size in the
+image: an 8 pixel bin at 0.3 cm per pixel becomes 2.4 cm. Applying a new
+calibration to an already calibrated project keeps the cm value, because a bin
+size chosen in cm is a physical choice. Enter a new value if you want a
+different grid. Shapes stay aligned with the reference frame because editable
+geometry remains in pixels. **Clear calibration** returns output units to
+pixels and converts the bin size back. The export `simplify_tolerance` follows
+the same rule. These changes can be undone and are saved in the project.
 
 ### Using Scale Bar
 

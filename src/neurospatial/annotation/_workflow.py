@@ -54,6 +54,25 @@ class _EditingState:
     shapes: tuple[AnnotationShape, ...]
     calibration: VideoCalibration | None
     bin_size: float | None
+    simplify_tolerance: float | None
+
+
+def _convert_length(
+    value: float | None,
+    old: VideoCalibration | None,
+    new: VideoCalibration | None,
+) -> float | None:
+    """Express an output length after a calibration change.
+
+    Only a change of units converts: pixels to centimeters or back keeps the
+    length's size in the image. Replacing one calibration with another keeps
+    the centimeter value, the physical length the user chose.
+    """
+    if value is not None and old is None and new is not None:
+        return value * new.cm_per_px
+    if value is not None and old is not None and new is None:
+        return value / old.cm_per_px
+    return value
 
 
 def _same(left: _EditingState, right: _EditingState) -> bool:
@@ -61,6 +80,7 @@ def _same(left: _EditingState, right: _EditingState) -> bool:
     # identity checks.
     return (
         left.bin_size == right.bin_size
+        and left.simplify_tolerance == right.simplify_tolerance
         and (None if left.calibration is None else left.calibration.to_dict())
         == (None if right.calibration is None else right.calibration.to_dict())
         and left.shapes == right.shapes
@@ -91,6 +111,7 @@ class AnnotationProjectSession:
         self.frame = project.frame
         self.calibration = project.calibration
         self.bin_size = project.bin_size
+        self.simplify_tolerance = project.simplify_tolerance
         self.project_path = None if project_path is None else Path(project_path)
         self._disposed = False
         self._undo: list[_EditingState] = []
@@ -191,6 +212,7 @@ class AnnotationProjectSession:
             capture_shapes(self.layer, previous),
             calibration,
             self.bin_size,
+            self.simplify_tolerance,
         )
 
     def _changed(self, event: Any = None) -> None:
@@ -250,6 +272,7 @@ class AnnotationProjectSession:
         restore_shapes(state.shapes, self.layer)
         self.calibration = state.calibration
         self.bin_size = state.bin_size
+        self.simplify_tolerance = state.simplify_tolerance
         self.controls.sync_from_layer()
         self.assist.sync_calibration(self.calibration)
         if self.bin_size is not None:
@@ -282,21 +305,15 @@ class AnnotationProjectSession:
     def set_calibration(self, calibration: VideoCalibration | None) -> None:
         """Change export coordinates without moving pixel-space annotations.
 
-        The output bin size is converted to the new units, so the grid keeps
-        its size in the image.
+        Calibrating pixels converts the bin size and export simplification to
+        centimeters, keeping their size in the image; clearing converts back.
+        Replacing a calibration keeps their centimeter values.
         """
         self.checkpoint()
-        if self.bin_size is not None:
-            bin_size_px = (
-                self.bin_size
-                if self.calibration is None
-                else self.bin_size / self.calibration.cm_per_px
-            )
-            self.bin_size = (
-                bin_size_px
-                if calibration is None
-                else bin_size_px * calibration.cm_per_px
-            )
+        self.bin_size = _convert_length(self.bin_size, self.calibration, calibration)
+        self.simplify_tolerance = _convert_length(
+            self.simplify_tolerance, self.calibration, calibration
+        )
         self.calibration = calibration
         self.checkpoint()
         self.assist.sync_calibration(calibration)
@@ -392,6 +409,7 @@ class AnnotationProjectSession:
             shapes=self._current.shapes,
             calibration=self.calibration,
             bin_size=self.bin_size,
+            simplify_tolerance=self.simplify_tolerance,
         ).save(target, overwrite=True)
         self.project_path = target
         self._last_saved = self._current

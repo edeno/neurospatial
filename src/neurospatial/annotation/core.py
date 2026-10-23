@@ -511,7 +511,7 @@ def _run_annotation_editor(
             project.mode,
             session.bin_size,
             session.calibration,
-            project.simplify_tolerance,
+            session.simplify_tolerance,
             project.multiple_boundaries,
         )
         session.save_if_path()

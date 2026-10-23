@@ -471,9 +471,9 @@ class AnnotationAssistWidget(QWidget):
         self.units_status.setText(
             "Output grid size is in pixels."
             if calibration is None
-            else "Output grid size is in cm. Changing calibration converts the "
-            "bin size, so the grid keeps its size in the image. "
-            "Pixel annotations stay in place."
+            else "Output grid size is in cm. Calibrating converted a pixel bin "
+            "size, keeping its size in the image; a new calibration keeps the cm "
+            "value. Pixel annotations stay in place."
         )
         self._update_units_summary()
 

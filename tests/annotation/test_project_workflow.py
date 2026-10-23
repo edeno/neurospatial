@@ -314,18 +314,39 @@ def test_calibration_and_explicit_bin_size_share_history_without_moving_shapes(
     assert session.calibration.cm_per_px == pytest.approx(0.5)
     assert session.bin_size == pytest.approx(1.0)
     assert_array_equal(shapes.data[0], original)
-    # Recalibrating from cm to cm keeps the pixel grid: 1 cm at 0.5 cm/px is
-    # 2 px, which is 4 cm at 2 cm/px. Clearing returns the 2 px grid.
+    # Correcting the scale keeps the physical bin size the user chose.
     session.set_calibration(
         VideoCalibration(
             calibrate_from_scale_bar((0, 0), (10, 0), 20.0, (24, 16)), (24, 16)
         )
     )
-    assert session.bin_size == pytest.approx(4.0)
+    assert session.bin_size == pytest.approx(1.0)
+    # Clearing returns to pixels: 1 cm at 2 cm/px is half a pixel.
     session.set_calibration(None)
-    assert session.bin_size == pytest.approx(2.0)
+    assert session.bin_size == pytest.approx(0.5)
     assert session.assist.bin_size.suffix() == " px"
     assert_array_equal(shapes.data[0], original)
+
+
+def test_export_simplification_follows_the_bin_size_unit_rule(session_factory):
+    session, _viewer, _shapes, _controls = session_factory()
+    session.simplify_tolerance = 2.0  # pixels
+    session.checkpoint()
+    half_cm_per_px = VideoCalibration(
+        calibrate_from_scale_bar((0, 0), (10, 0), 5.0, (24, 16)), (24, 16)
+    )
+    session.set_calibration(half_cm_per_px)
+    assert session.simplify_tolerance == pytest.approx(1.0)  # cm, same in the image
+    session.set_calibration(
+        VideoCalibration(
+            calibrate_from_scale_bar((0, 0), (10, 0), 20.0, (24, 16)), (24, 16)
+        )
+    )
+    assert session.simplify_tolerance == pytest.approx(1.0)  # still 1 cm
+    session.undo()
+    assert session.simplify_tolerance == pytest.approx(1.0)
+    session.undo()
+    assert session.simplify_tolerance == pytest.approx(2.0)
 
 
 def test_simplified_preview_is_accepted_exactly_and_survives_history_and_save(

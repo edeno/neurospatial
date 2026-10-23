@@ -150,6 +150,7 @@ def test_resume_uses_embedded_frame_and_current_session_calibration(
             captured.update(project=project, settings=kwargs)
             self.calibration = live_calibration
             self.bin_size = 2.5
+            self.simplify_tolerance = 0.75
 
         def save_if_path(self):
             order.append("save")
@@ -163,6 +164,7 @@ def test_resume_uses_embedded_frame_and_current_session_calibration(
         assert mode == "regions"
         assert bin_size == 2.5
         assert calibration is live_calibration
+        assert tolerance == 0.75
         return "validated result"
 
     monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
@@ -200,6 +202,7 @@ def test_failed_export_does_not_trigger_final_save_and_disposes_session(monkeypa
     class Session:
         calibration = None
         bin_size = None
+        simplify_tolerance = None
 
         def __init__(self, *args, **kwargs):
             pass
