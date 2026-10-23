@@ -78,10 +78,9 @@ class AnimationView:
         self._closed = False
         self._close_callbacks: list[Callable[[], None]] = []
         self._time = float(animation.frame_times[0])
-        self._selection = (
-            float(animation.frame_times[0]),
-            float(animation.frame_times[-1]),
-        )
+        # None until select_time: then export covers the whole recording,
+        # through its last time, rather than a half-open selection.
+        self._selection: tuple[float, float] | None = None
         try:
             animation._register_view(self)
             backend._add_close_callback(self._native_closed)
@@ -100,7 +99,14 @@ class AnimationView:
 
     @property
     def time_range(self) -> tuple[float, float]:
-        """The half-open recording interval selected for export."""
+        """The half-open interval selected for export, in recording seconds.
+
+        Before :meth:`select_time`, the whole recording, which export covers
+        through its last time.
+        """
+        if self._selection is None:
+            start, stop = self.animation.frame_times[[0, -1]]
+            return float(start), float(stop)
         return self._selection
 
     def seek(self, time: float) -> None:
@@ -149,10 +155,7 @@ class AnimationView:
         self._require_open()
         if render not in {"view", "scene"}:
             raise ValueError("render must be 'view' or 'scene'.")
-        whole = tuple(float(t) for t in self.animation.frame_times[[0, -1]])
-        kwargs.setdefault(
-            "time_range", None if self._selection == whole else self._selection
-        )
+        kwargs.setdefault("time_range", self._selection)
         if render == "scene" or self._backend.capture_session is None:
             return self.animation.export(path, **kwargs)
 

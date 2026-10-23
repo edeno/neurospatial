@@ -296,3 +296,28 @@ def test_export_clock_preserves_exact_observations_and_half_open_stop(tmp_path):
     assert plan.times[0] == 100.2 - 1e-8
     assert np.isnan(field.sample(plan.times[0])).all()
     assert np.all(plan.times < 100.3)
+
+
+def test_selecting_the_whole_recording_exports_it_half_open(tmp_path):
+    # An explicit [first, last) selection excludes the last time; only an
+    # unselected view exports the whole recording through its last row.
+    iio = pytest.importorskip("imageio.v3")
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    scene = Animation(env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.1])
+    view = AnimationView._from_callbacks(
+        scene, object(), seek=lambda time: None, close=lambda: None
+    )
+    try:
+        whole = view.export(tmp_path / "whole.gif", render="scene", fps=10, dpi=20)
+        view.select_time(0.0, 0.1)
+        assert view.time_range == (0.0, 0.1)
+        selected = view.export(
+            tmp_path / "selected.gif", render="scene", fps=10, dpi=20
+        )
+        assert len(iio.imread(whole, index=None)) == 2
+        assert len(iio.imread(selected, index=None)) == 1
+    finally:
+        view.close()
+        scene.close()
