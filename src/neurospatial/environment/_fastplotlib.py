@@ -20,6 +20,7 @@ streams the frames to the browser, so a GPU server works from a laptop.
 from __future__ import annotations
 
 import sys
+import textwrap
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property
@@ -618,6 +619,7 @@ def draw_layers(
 
 
 COLORBAR_WIDTH = 90  # pixels of the right dock
+_LABEL_CHARACTERS = 13  # of a 12-point label across it
 
 
 def draw_colorbar(
@@ -660,7 +662,9 @@ def draw_colorbar(
     # Limits above and below the bar, where a long number has the bar's width.
     texts = [(f"{scale.vmax:.3g}", 1.1 if beyond[1] else 1.02, "bottom-center")]
     texts += [(f"{scale.vmin:.3g}", -0.1 if beyond[0] else -0.02, "top-center")]
-    texts += [(label, 1.24, "bottom-center")] if label else []
+    # A long label wraps to the bar's width, its last line where one fits.
+    lines = textwrap.wrap(label, _LABEL_CHARACTERS) if label else []
+    texts += [("\n".join(lines), 1.24, "bottom-center")] if lines else []
     if scale.nan_color is not None:
         swatch = _fans(_rectangles(*np.array([[0.0], [1.0], [-0.27], [-0.2]])), 4)
         dock.add_mesh(
@@ -672,7 +676,7 @@ def draw_colorbar(
             text, font_size=12, face_color="w", offset=(0.5, height, 0.0), anchor=anchor
         )
     dock.camera.maintain_aspect = False
-    top = 1.42 if label else 1.3
+    top = 1.3 + 0.12 * len(lines) if lines else 1.3
     dock.camera.show_rect(-0.4, 1.4, -0.48 if scale.nan_color else -0.2, top)
 
 
