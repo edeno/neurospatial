@@ -394,6 +394,10 @@ class AnnotationProjectSession:
             self._save_as()
             return
         self.checkpoint()
+        self._write(target)
+
+    def _write(self, target: Path) -> None:
+        """Save the last checkpoint, which the caller has just taken."""
         project = AnnotationProject(
             self.frame,
             shapes=self._current.shapes,
@@ -432,8 +436,10 @@ class AnnotationProjectSession:
 
     def _save_changed(self) -> None:
         self.checkpoint()
-        if self._last_saved is None or not _same(self._current, self._last_saved):
-            self.save_project()
+        if self.project_path is not None and (
+            self._last_saved is None or not _same(self._current, self._last_saved)
+        ):
+            self._write(self.project_path)
 
     def _run(self, callback: Callable[[], None]) -> None:
         if self._disposed:
