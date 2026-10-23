@@ -181,7 +181,7 @@ def test_running_labels_inherit_observed_runs(pause_track):
         max_duration=2000,
     )
     assert labels.shape == r.times.shape
-    assert np.all(labels == "other")
+    assert all(label is None for label in labels)
 
 
 @pytest.mark.parametrize("kind", ["trials", "velocity"])

@@ -15,10 +15,13 @@ from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
+    MissingCellGeometryError,
     SpatialBins,
     refuse_mixed_measure_conductance,
 )
+from neurospatial.geometry._components import TriangleShapes
 from neurospatial.geometry._diffusion import DiffusionGeometry
+from neurospatial.geometry._face_builders import triangle_skew_message
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import (
     LookupIndexes,
@@ -231,6 +234,73 @@ def combined_normals(locator: CombinedLocator) -> FaceNormals | None:
     )
 
 
+def triangle_skew_messages(binning: Binning) -> tuple[str, ...]:
+    """Skew warning texts for the triangle meshes a binning smooths on.
+
+    A triangle-mesh binning gives at most one text. A combined binning is
+    walked as :func:`combined_diffusion` walks it, through subsets and
+    transforms, and gives one text per skewed mesh component, naming the
+    component. A subset counts only the edges between retained triangles.
+    Skew is an angle, so the similarity transforms that combined smoothing
+    accepts do not change it.
+
+    Parameters
+    ----------
+    binning : Binning
+        The binning a field is smoothed on.
+
+    Returns
+    -------
+    tuple of str
+        One warning text per skewed mesh; empty when none is skewed.
+    """
+    messages: list[str] = []
+
+    def visit(
+        child: Binning, active: NDArray[np.bool_] | None, path: tuple[str, ...]
+    ) -> None:
+        shapes = child.shapes
+        if not isinstance(shapes, TriangleShapes):
+            walk(child.locator, active, path)
+            return
+        pairs = child.connections.pairs
+        if active is not None:
+            pairs = pairs[active[pairs].all(axis=1)]
+        message = triangle_skew_message(
+            shapes.points, shapes.triangles, child.bins.centers, pairs
+        )
+        if message is not None:
+            if path:
+                message += f" (combined component {'/'.join(path)!r})"
+            messages.append(message)
+
+    def walk(
+        locator: Locator, active: NDArray[np.bool_] | None, path: tuple[str, ...]
+    ) -> None:
+        if isinstance(locator, CombinedLocator):
+            for key, child, start, end in zip(
+                locator.keys,
+                locator.children,
+                locator.offsets[:-1],
+                locator.offsets[1:],
+                strict=True,
+            ):
+                retained = None if active is None else active[start:end]
+                if retained is None or np.any(retained):
+                    visit(child, retained, (*path, key))
+        elif isinstance(locator, SubsetLocator):
+            selected = np.flatnonzero(locator.parent_to_child >= 0)
+            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            retained = np.zeros(len(locator.parent_to_child), dtype=np.bool_)
+            retained[selected if active is None else selected[active]] = True
+            walk(locator.base, retained, path)
+        elif isinstance(locator, TransformedLocator):
+            walk(locator.base, active, path)
+
+    visit(binning, None, ())
+    return tuple(messages)
+
+
 def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
     """Build scalar diffusion from child blocks and explicit geometric couplings.
 
@@ -300,7 +370,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             if not np.allclose(
                 normalized @ normalized.T, np.eye(len(linear)), rtol=0, atol=1e-12
             ):
-                raise NotImplementedError(
+                raise MissingCellGeometryError(
                     "Combined scalar diffusion requires a similarity transform; use the original coordinates."
                 )
             # Conductance has units length ** (measure_dim - 2) of the bins it

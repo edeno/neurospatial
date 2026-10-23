@@ -61,6 +61,7 @@ from neurospatial.environment._fields import (
     diffusion_eigenbasis,
     diffusion_geometry,
     require_face_geometry,
+    smoothing_geometry,
 )
 from neurospatial.environment._lookup import center_tree, nearest_bin
 from neurospatial.environment._metrics import (
@@ -2761,6 +2762,18 @@ class Environment(Generic[_C]):
         -----
         ``apply_transform`` needs no mapping: transforms keep bin IDs, so bin
         ``i`` of the transformed environment is bin ``i`` of the original.
+
+        Two bins are the same cell when they have identical centers, sizes
+        and measured dimensions; the same cell shape where both environments
+        record cells (grid boxes, triangles, hexagons or polygon cells); for
+        polygon cells, the same bin owning each boundary point, whatever the
+        bins' numbers, so a renumbered copy of a clipped arena pairs with the
+        original, but the pieces of a cell cut in several must keep their
+        relative order, because a point on the line between two pieces
+        belongs to the earlier one; and, for tracks, the same track segments
+        and spacing and the same linear edges of each bin. Explicit point
+        bins, or a track paired with bins of another kind, are compared by
+        center and measure only.
 
         Same-cell pairs meet the check ``compare_spatial_rates(bin_mapping=...)``
         applies, so ``pairs`` of a subset, a clip or an identical rebuild can be
@@ -6556,8 +6569,33 @@ class Environment(Generic[_C]):
         ------
         NotImplementedError
             If the stored binning cannot supply numerical diffusion geometry.
+
+        Warns
+        -----
+        UserWarning
+            If the bins are a triangular mesh with more than 5% of interior
+            edges skewed by over 30 degrees, where a smoothing bandwidth is
+            only approximate. It is raised once per environment, by this
+            method or by the first smoothing operation (``smooth``,
+            ``diffuse``, ``compute_kernel``, ``get_mrf_basis``), and again
+            after ``clear_cache()``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> x, y = np.meshgrid(np.arange(0.5, 10.0), np.arange(0.5, 4.0))
+        >>> positions = np.column_stack([x.ravel(), y.ravel()])
+        >>> env = Environment.from_samples(positions, bin_size=2.0)
+        >>> geometry = env.get_diffusion_geometry()
+        >>> geometry.W.shape == (env.n_bins, env.n_bins)
+        True
+        >>> int(geometry.n_components)  # one connected open field
+        1
+        >>> geometry.volumes.shape == (env.n_bins,)
+        True
         """
-        return _diffusion_geometry_view(self._diffusion_geometry)
+        return _diffusion_geometry_view(smoothing_geometry(self._cache, self._binning))
 
     @keyword_hint("bandwidth")
     def diffusion_accuracy(self, *, bandwidth: float) -> float:

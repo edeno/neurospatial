@@ -347,15 +347,38 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     time_to_goal : float or None
         Time until goal region entered (seconds). None if goal not reached.
     min_distance_to_goal : float
-        Closest approach to goal during trajectory, in environment units.
+        Closest straight-line distance to the goal over observed samples
+        (finite coordinates), in environment units. NaN when no sample is
+        observed.
     goal_distance_at_start : float
-        Distance to goal at trajectory start, in environment units.
+        Distance to the goal at the first observed sample, in environment
+        units. NaN when no sample is observed.
     goal_distance_at_end : float
-        Distance to goal at trajectory end, in environment units.
+        Distance to the goal at the last observed sample, in environment
+        units. NaN when no sample is observed.
     goal_position : NDArray[np.float64]
         Goal position used for computation, shape (n_dims,).
     metric : str
         Distance metric used ("geodesic" or "euclidean").
+
+    Examples
+    --------
+    A run East toward a goal at x = 100 cm whose first frame was lost: the
+    start distance is measured at the first observed sample.
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import compute_goal_directed_metrics
+    >>> track = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
+    >>> env = Environment.from_samples(track, bin_size=5.0, units="cm")
+    >>> times = np.arange(21) / 10  # s
+    >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+    >>> positions[0] = np.nan  # a lost frame
+    >>> metrics = compute_goal_directed_metrics(
+    ...     env, times, positions, np.array([100.0, 0.0])
+    ... )
+    >>> metrics.goal_distance_at_start, metrics.goal_distance_at_end
+    (95.0, 0.0)
     """
 
     goal_bias: float
@@ -1987,28 +2010,34 @@ def goal_pair_direction_labels(
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from trial data.
 
-    Creates labels like 'home->goal_left', 'goal_left->home', or 'other' based on
-    which trial (if any) each timepoint belongs to.
+    Creates labels like ``'home→goal_left'`` or ``'goal_left→home'`` from the
+    trial (if any) each timepoint belongs to. Samples outside every completed
+    trial are ``None``, which :func:`compute_directional_place_fields` and
+    :func:`labels_to_epochs` leave out.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the entire session (seconds).
     trials : list[Trial]
-        Trial segmentation from ``segment_trials()``.
+        Trial segmentation from ``segment_trials()``. Each completed trial
+        labels ``[start_time, end_time)``; trials with ``end_region=None``
+        label nothing.
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
-        Direction label for each timepoint using arrow notation.
+        Direction label for each timepoint using arrow notation, dtype
+        ``object``; ``None`` outside every completed trial.
 
     Examples
     --------
-    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
-    >>> labels = goal_pair_direction_labels(times, trials)  # doctest: +SKIP
-    >>> result = compute_directional_place_fields(  # doctest: +SKIP
-    ...     env, spike_times, times, positions, labels
-    ... )
+    >>> import numpy as np
+    >>> from neurospatial.behavior import Trial, goal_pair_direction_labels
+    >>> times = np.arange(6.0)
+    >>> trials = [Trial(1.0, 3.0, "home", "goal_left", True)]
+    >>> goal_pair_direction_labels(times, trials).tolist()
+    [None, 'home→goal_left', 'home→goal_left', None, None, None]
 
     See Also
     --------
@@ -2045,26 +2074,31 @@ def heading_direction_labels(
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from heading angle.
 
-    Bins heading angles into sectors (e.g., "0-45 deg", "45-90 deg", ...) and labels
-    slow-moving periods as "stationary".
+    Bins the direction of movement into sectors (e.g., "0-45 deg",
+    "45-90 deg", ...), labels an observed animal that is not moving
+    "stationary", and leaves samples with no observed movement unlabeled
+    (``None``).
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps (seconds). Required if positions provided.
     positions : NDArray[np.float64], shape (n_samples, 2), optional
-        2D position coordinates over time. Required if speed/heading not provided.
+        2D position coordinates over time. Required if speed/heading not
+        provided. A row with a non-finite coordinate is a missing position.
     speed : NDArray[np.float64], shape (n_samples,), optional
-        Precomputed speed at each timepoint.
+        Precomputed speed at each timepoint; NaN marks a sample that was not
+        observed.
     heading : NDArray[np.float64], shape (n_samples,), optional
-        Precomputed heading angle in radians.
+        Precomputed heading angle in radians; NaN where the direction of
+        movement is unknown.
     n_directions : int, default=8
         Number of direction bins. Default 8 creates 45 deg bins.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit. Samples slower than this are labeled
-        "stationary".
+        cannot know the positions' unit. Observed samples slower than this,
+        or not moving at all, are labeled "stationary".
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -2081,40 +2115,98 @@ def heading_direction_labels(
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
-        Direction label for each timepoint.
+        One label per timepoint, of three kinds: a direction sector such as
+        ``"0–45°"`` where the animal moves (speed above zero and at least
+        ``min_speed``); ``"stationary"`` where it was observed but not moving;
+        ``None`` where it was not observed, or (precomputed input) moving in an
+        unknown direction.
+
+    Raises
+    ------
+    ValueError
+        In trajectory mode, if ``times`` and ``positions`` are empty, have
+        different lengths, ``times`` is not finite and strictly increasing,
+        ``positions`` has no x and y columns, or ``break_before`` is not a
+        Boolean array with one entry per sample. With precomputed input, if
+        ``speed`` and ``heading`` differ in length or ``break_before`` is
+        given.
 
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause.
+    no velocity or heading spans a pause. A missing position (a NaN row) ends
+    a run.
 
     In trajectory mode, speed and heading come from the Gaussian-smoothed
     velocity of :func:`compute_speed`, so tracking jitter at rest is
-    "stationary"; a sample in no observed run is "stationary" too.
-    Precomputed speed/heading inputs retain their existing behavior without a
-    time gate, and refuse ``break_before``.
+    "stationary". The direction of movement exists only where the animal
+    moves, the rule of :func:`heading_from_velocity`. A sample in no observed
+    run (a missing position, an isolated sample, an excluded interval) is
+    ``None``, "not observed", which :func:`labels_to_epochs` leaves out.
+    Precomputed speed/heading inputs have no time gate and refuse
+    ``break_before``; a NaN speed is not observed.
+
+    Passing these labels straight to
+    :func:`~neurospatial.encoding.compute_directional_place_fields` gives a
+    "stationary" map as well, because ``"stationary"`` is an ordinary label
+    there; ``missing_label="stationary"`` drops it. ``None`` samples are
+    always left out.
 
     Examples
     --------
     Label one second of running north-east (about 63 deg, 22 cm/s), then one
-    second resting in place:
+    second resting in place. One frame was lost:
 
     >>> import numpy as np
     >>> from neurospatial.behavior import heading_direction_labels
     >>> times = np.arange(20) / 10
     >>> step = np.r_[np.arange(10.0), np.full(10, 9.0)]
     >>> positions = np.column_stack([step, 2 * step])
+    >>> positions[5] = np.nan  # a lost frame
     >>> labels = heading_direction_labels(times, positions, min_speed=5.0)
-    >>> labels[0], labels[-1]
-    ('45–90°', 'stationary')
+    >>> labels[0], labels[5], labels[-1]
+    ('45–90°', None, 'stationary')
 
-    Precomputed speed and heading (radians, 0 = East) are binned directly:
+    Precomputed speed and heading (radians, 0 = East) are binned directly; a
+    NaN speed was not observed:
 
     >>> heading_direction_labels(
-    ...     speed=np.array([10.0, 1.0]), heading=np.array([0.3, 0.3]), min_speed=5.0
+    ...     speed=np.array([10.0, 1.0, np.nan]),
+    ...     heading=np.array([0.3, 0.3, 0.3]),
+    ...     min_speed=5.0,
     ... ).tolist()
-    ['0–45°', 'stationary']
+    ['0–45°', 'stationary', None]
+
+    ``"stationary"`` is an ordinary label for the place-field helper, which
+    drops it only when told to:
+
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import compute_directional_place_fields
+    >>> env = Environment.from_samples(positions, bin_size=4.0)
+    >>> fields = compute_directional_place_fields(
+    ...     env,
+    ...     np.array([0.5, 1.5]),
+    ...     times,
+    ...     positions,
+    ...     labels,
+    ...     method="binned",
+    ...     max_gap=None,
+    ... )
+    >>> sorted(fields.labels)
+    ['45–90°', 'stationary']
+    >>> fields = compute_directional_place_fields(
+    ...     env,
+    ...     np.array([0.5, 1.5]),
+    ...     times,
+    ...     positions,
+    ...     labels,
+    ...     method="binned",
+    ...     max_gap=None,
+    ...     missing_label="stationary",
+    ... )
+    >>> sorted(fields.labels)
+    ['45–90°']
 
     See Also
     --------
@@ -2151,7 +2243,7 @@ def heading_direction_labels(
                 )
             )
 
-        n_samples = len(speed_arr)
+        observed = np.isfinite(speed_arr)
 
     elif has_trajectory:
         if times is None or positions is None:
@@ -2160,32 +2252,31 @@ def heading_direction_labels(
                 "must be provided."
             )
 
-        from neurospatial._validation import validate_times_positions
-
-        times_arr, positions_arr = validate_times_positions(
-            times, positions, call="heading_direction_labels"
+        from neurospatial._observation import validated_observations
+        from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+        from neurospatial.behavior._kinematics import (
+            _movement_heading_and_speed,
+            _validate_velocity_positions,
         )
-        n_samples = len(times_arr)
 
-        from neurospatial._intervals import observed_interval_mask
-        from neurospatial._observation import validate_break_before
-        from neurospatial.behavior._kinematics import _velocity_heading_and_speed
-
-        breaks = validate_break_before(
-            break_before, n_samples, call="heading_direction_labels"
+        raw = positions
+        times_arr, positions_arr, support = validated_observations(
+            times,
+            raw,
+            call="heading_direction_labels",
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=break_before,
+            result="every label is None",
         )
-        interval_mask = observed_interval_mask(
-            times_arr, max_gap=max_gap, epochs=epochs, break_before=breaks
+        _validate_velocity_positions(raw, call="heading_direction_labels")
+        heading_arr, speed_arr = _movement_heading_and_speed(
+            times_arr,
+            positions_arr,
+            support.interval_mask,
+            smooth_window=DEFAULT_SPEED_SMOOTHING,
         )
-        if n_samples == 0:
-            return np.array([], dtype=object)
-        if n_samples == 1:
-            return np.array(["stationary"], dtype=object)
-
-        # Samples in no observed run have NaN heading and are "stationary".
-        heading_arr, speed_arr = _velocity_heading_and_speed(
-            times_arr, positions_arr, interval_mask=interval_mask
-        )
+        observed = support.run_ids >= 0
 
     else:
         raise ValueError(
@@ -2211,10 +2302,14 @@ def heading_direction_labels(
     bin_indices = np.digitize(heading_normalized, bin_edges_rad[1:], right=False)
     bin_indices = np.clip(bin_indices, 0, n_directions - 1)
 
-    # Assign labels: stationary where speed < min_speed OR heading is undefined
-    # (NaN, e.g. the padded first sample), else use the direction bin label.
-    stationary_mask = (speed_arr < min_speed) | np.isnan(heading_arr)
-    labels = np.where(stationary_mask, "stationary", bin_labels_arr[bin_indices])
+    # The direction of movement exists only where the animal moves. An observed
+    # animal that does not move is "stationary"; an unobserved sample, or a
+    # moving one whose direction is unknown, stays None.
+    moving = observed & (speed_arr > 0) & (speed_arr >= min_speed)
+    direction_known = moving & np.isfinite(heading_arr)
+    labels = np.full(len(speed_arr), None, dtype=object)
+    labels[observed & ~moving] = "stationary"
+    labels[direction_known] = bin_labels_arr[bin_indices[direction_known]]
 
     return labels
 
@@ -2888,16 +2983,34 @@ def goal_vector(
     array([[50.,  0.],
            [40.,  0.]])
     """
+    return _goal_vector(positions, goal, call="goal_vector")
+
+
+def _goal_vector(
+    positions: NDArray[np.float64], goal: NDArray[np.float64], *, call: str
+) -> NDArray[np.float64]:
+    """``goal - positions``, naming ``call`` when the dimensions differ."""
     goal = np.asarray(goal)
     positions = np.asarray(positions)
-
     if goal.shape[0] != positions.shape[1]:
+        n_dims = positions.shape[1]
         raise ValueError(
-            f"Goal has {goal.shape[0]} dimensions but positions have "
-            f"{positions.shape[1]} dimensions. Both must match."
+            _format_error(
+                f"{call}() needs a goal with one coordinate per position "
+                f"dimension; goal has {goal.shape[0]} coordinates but positions "
+                f"have {n_dims}.",
+                why=(
+                    "Why: the vector to the goal is measured in the positions' "
+                    "coordinate frame."
+                ),
+                fix=(
+                    f"pass goal with shape ({n_dims},), in the same coordinates "
+                    "and units as positions."
+                ),
+            )
         )
-
-    return goal[np.newaxis, :] - positions
+    vector: NDArray[np.float64] = goal[np.newaxis, :] - positions
+    return vector
 
 
 def goal_direction(
@@ -2926,7 +3039,7 @@ def goal_direction(
     >>> goal_direction(positions, goal)
     array([0.])
     """
-    vec = goal_vector(positions, goal)
+    vec = _goal_vector(positions, goal, call="goal_direction")
     return np.arctan2(vec[:, 1], vec[:, 0])
 
 
@@ -2971,18 +3084,28 @@ def instantaneous_goal_alignment(
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Cosine of angle between velocity and goal direction.
-        Range [-1, 1]. NaN where speed < ``min_speed`` or no run is observed.
+        Cosine of angle between velocity and goal direction, range [-1, 1].
+        NaN where the animal is not moving (speed zero or below
+        ``min_speed``) or not observed (a missing position or a sample in no
+        observed run).
+
+    Raises
+    ------
+    ValueError
+        If the inputs are empty, have different lengths, ``times`` is not
+        finite and strictly increasing, ``positions`` has no x and y columns,
+        ``break_before`` is not a Boolean array with one entry per sample, or
+        ``goal`` has a different number of dimensions than ``positions``.
 
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause.
+    no velocity or heading spans a pause. A missing position (a NaN row) ends
+    a run.
 
-    Samples in no observed run and samples below ``min_speed`` have NaN
-    alignment. Each run's last sample repeats its previous interval's
-    heading, as at the end of a complete recording.
+    The direction of movement exists only where the animal moves, the rule of
+    :func:`heading_from_velocity`.
 
     Examples
     --------
@@ -2992,39 +3115,84 @@ def instantaneous_goal_alignment(
     >>> alignment = instantaneous_goal_alignment(times, positions, goal, min_speed=0.0)
     >>> bool(np.nanmean(alignment) > 0.9)
     True
+
+    A lost frame (NaN row) has no alignment:
+
+    >>> positions[10] = np.nan
+    >>> alignment = instantaneous_goal_alignment(times, positions, goal, min_speed=1.0)
+    >>> bool(np.isnan(alignment[10])), bool(np.all(alignment[:10] > 0.99))
+    (True, True)
     """
-    from neurospatial._validation import validate_times_positions
+    from neurospatial._observation import validated_observations
+    from neurospatial.behavior._kinematics import _validate_velocity_positions
 
-    times, positions = validate_times_positions(
-        times, positions, call="instantaneous_goal_alignment"
+    raw = positions
+    times, positions, support = validated_observations(
+        times,
+        raw,
+        call="instantaneous_goal_alignment",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="every alignment is NaN",
     )
-    from neurospatial.behavior._kinematics import _velocity_heading_and_speed
-
-    goal = np.asarray(goal)
-
-    from neurospatial._intervals import observed_interval_mask
-    from neurospatial._observation import validate_break_before
-
-    breaks = validate_break_before(
-        break_before, len(times), call="instantaneous_goal_alignment"
-    )
-    interval_mask = observed_interval_mask(
-        times, max_gap=max_gap, epochs=epochs, break_before=breaks
-    )
-    if len(positions) < 2:
-        return np.full(len(positions), np.nan)
-
-    velocity_heading, speed = _velocity_heading_and_speed(
+    _validate_velocity_positions(raw, call="instantaneous_goal_alignment")
+    return _goal_alignment(
         times,
         positions,
-        interval_mask=interval_mask,
+        goal,
+        support,
+        min_speed=min_speed,
+        call="instantaneous_goal_alignment",
     )
-    velocity_heading[speed < min_speed] = np.nan
-    goal_heading = goal_direction(positions, goal)
 
-    angle_diff = velocity_heading - goal_heading
-    alignment = np.cos(angle_diff)
 
+def _goal_alignment(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    goal: NDArray[np.float64],
+    support: ObservationSupport,
+    *,
+    min_speed: float,
+    call: str,
+) -> NDArray[np.float64]:
+    """Cosine between movement and goal direction; NaN where not moving.
+
+    No validation or warning: ``support`` is already resolved.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Validated, strictly increasing timestamps in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Validated positions, ``n_dims >= 2``; NaN rows are missing.
+    goal : ndarray, shape (n_dims,)
+        Goal position.
+    support : ObservationSupport
+        Usable intervals of ``(times, positions)``.
+    min_speed : float
+        Position units per second.
+    call : str
+        Public function name, used in the goal-dimension error.
+
+    Returns
+    -------
+    ndarray, shape (n_samples,)
+        ``cos(heading - goal_direction)`` where the animal moves, else NaN.
+    """
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+    from neurospatial.behavior._kinematics import _movement_heading_and_speed
+
+    # Checks the goal's dimensions before the velocity is computed.
+    vec = _goal_vector(positions, goal, call=call)
+    goal_heading = np.arctan2(vec[:, 1], vec[:, 0])
+    heading, speed = _movement_heading_and_speed(
+        times, positions, support.interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+    )
+    moving = (speed > 0) & (speed >= min_speed)
+    alignment: NDArray[np.float64] = np.where(
+        moving, np.cos(heading - goal_heading), np.nan
+    )
     return alignment
 
 
@@ -3070,14 +3238,24 @@ def goal_bias(
     Returns
     -------
     float
-        Mean goal alignment, range [-1, 1].
-        Returns NaN if all samples are stationary.
+        Mean goal alignment over the samples where the animal moves, range
+        [-1, 1]. NaN if the animal is never moving (speed zero or below
+        ``min_speed``) at an observed sample.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are empty, have different lengths, ``times`` is not
+        finite and strictly increasing, ``positions`` has no x and y columns,
+        ``break_before`` is not a Boolean array with one entry per sample, or
+        ``goal`` has a different number of dimensions than ``positions``.
 
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause.
+    no velocity or heading spans a pause. A missing position (a NaN row) ends
+    a run.
 
     Interpretation:
     - > 0.5: Strong goal-directed navigation
@@ -3091,28 +3269,37 @@ def goal_bias(
     >>> goal = np.array([100.0, 0.0])
     >>> goal_bias(times, positions, goal, min_speed=0.0) > 0.8
     True
-    """
-    from neurospatial._observation import validate_break_before
-    from neurospatial._validation import validate_times_positions
 
-    times, positions = validate_times_positions(times, positions, call="goal_bias")
-    breaks = validate_break_before(break_before, len(times), call="goal_bias")
-    alignment = instantaneous_goal_alignment(
+    An animal that never moves has no direction of movement, so no bias:
+
+    >>> still = np.zeros((10, 2))
+    >>> goal_bias(np.arange(10) / 10, still, goal, min_speed=0.0)
+    nan
+    """
+    from neurospatial._observation import validated_observations
+    from neurospatial.behavior._kinematics import _validate_velocity_positions
+
+    raw = positions
+    times, positions, support = validated_observations(
         times,
-        positions,
-        goal,
-        min_speed=min_speed,
+        raw,
+        call="goal_bias",
         max_gap=max_gap,
         epochs=epochs,
-        break_before=breaks,
+        break_before=break_before,
+        result="the goal bias is NaN",
     )
+    _validate_velocity_positions(raw, call="goal_bias")
+    alignment = _goal_alignment(
+        times, positions, goal, support, min_speed=min_speed, call="goal_bias"
+    )
+    return _mean_alignment(alignment)
 
-    valid_alignment = alignment[~np.isnan(alignment)]
 
-    if len(valid_alignment) == 0:
-        return np.nan
-
-    return float(np.mean(valid_alignment))
+def _mean_alignment(alignment: NDArray[np.float64]) -> float:
+    """Mean of the finite alignments, or NaN when there is none."""
+    moving = alignment[np.isfinite(alignment)]
+    return float(np.mean(moving)) if moving.size else np.nan
 
 
 def approach_rate(
@@ -3214,6 +3401,54 @@ def approach_rate(
         break_before=break_before,
         result="every approach rate is NaN",
     )
+    return _approach_rate(
+        times,
+        positions,
+        goal,
+        support,
+        metric=metric,
+        env=env,
+        call="approach_rate",
+    )
+
+
+def _approach_rate(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    goal: NDArray[np.float64],
+    support: ObservationSupport,
+    *,
+    metric: Literal["geodesic", "euclidean"],
+    env: Environment | None,
+    call: str,
+) -> NDArray[np.float64]:
+    """Rate of distance change toward the goal over each usable interval.
+
+    No observation validation or warning: ``support`` is already resolved.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Validated, strictly increasing timestamps in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Validated positions; NaN rows are missing.
+    goal : ndarray, shape (n_dims,)
+        Goal position.
+    support : ObservationSupport
+        Usable intervals of ``(times, positions)``.
+    metric : {"euclidean", "geodesic"}
+        Distance metric; geodesic needs ``env``.
+    env : Environment or None
+        Required when ``metric="geodesic"``.
+    call : str
+        Public function name, used in the goal-dimension error.
+
+    Returns
+    -------
+    ndarray, shape (n_samples,)
+        Distance change per second over the interval ending at each sample;
+        NaN at the first sample and where that interval is not usable.
+    """
     goal = np.asarray(goal)
 
     if metric == "geodesic" and env is None:
@@ -3224,7 +3459,7 @@ def approach_rate(
         )
 
     if metric == "euclidean":
-        goal_vec = goal_vector(positions, goal)
+        goal_vec = _goal_vector(positions, goal, call=call)
         distances = np.linalg.norm(goal_vec, axis=1)
     else:
         assert env is not None
@@ -3305,75 +3540,96 @@ def compute_goal_directed_metrics(
     Returns
     -------
     GoalDirectedMetrics
-        Dataclass containing all goal-directed metrics.
+        Dataclass containing all goal-directed metrics. ``goal_bias`` is NaN
+        if the animal never moves at an observed sample.
+        ``min_distance_to_goal`` is the minimum straight-line distance over
+        observed samples (finite coordinates); ``goal_distance_at_start`` and
+        ``goal_distance_at_end`` are the distances at the first and last
+        observed samples. All three are NaN when no sample is observed.
 
     Raises
     ------
     ValueError
-        If positions and times have different lengths.
+        If the inputs are empty, have different lengths, ``times`` is not
+        finite and strictly increasing, ``positions`` has no x and y columns,
+        ``break_before`` is not a Boolean array with one entry per sample, or
+        ``goal`` has a different number of dimensions than ``positions``.
     ValueError
-        If ``break_before`` is not a Boolean array with one entry per sample.
+        If ``min_speed`` is None and ``env.units`` is not a metric length.
 
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause.
+    no velocity or heading spans a pause. A missing position (a NaN row) ends
+    a run.
 
-    Heading alignment and approach-rate averages use observed intervals.
-    Time-to-goal remains wall-clock time, which is known across a pause.
+    Heading alignment and approach-rate averages use observed intervals; the
+    direction of movement exists only where the animal moves, the rule of
+    :func:`heading_from_velocity`. Time-to-goal remains wall-clock time from
+    ``times[0]``, which is known across a pause.
 
     Examples
     --------
-    >>> result = compute_goal_directed_metrics(
-    ...     env, times, positions, goal
-    ... )  # doctest: +SKIP
-    >>> print(result)  # doctest: +SKIP
-    """
-    from neurospatial._observation import validate_break_before
-    from neurospatial._validation import validate_times_positions
+    A straight run East toward a goal at x = 100 cm, with one lost frame:
 
-    times, positions = validate_times_positions(
-        times, positions, call="compute_goal_directed_metrics"
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import compute_goal_directed_metrics
+    >>> track = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
+    >>> env = Environment.from_samples(track, bin_size=5.0, units="cm")
+    >>> times = np.arange(21) / 10  # s
+    >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+    >>> positions[10] = np.nan  # a lost frame
+    >>> result = compute_goal_directed_metrics(
+    ...     env, times, positions, np.array([100.0, 0.0])
+    ... )
+    >>> bool(result.goal_bias > 0.9)
+    True
+    >>> result.min_distance_to_goal
+    0.0
+    """
+    from neurospatial._observation import validated_observations
+    from neurospatial.behavior._kinematics import (
+        _validate_velocity_positions,
+        resolve_min_speed,
     )
-    breaks = validate_break_before(
-        break_before, len(times), call="compute_goal_directed_metrics"
+
+    raw = positions
+    times, positions, support = validated_observations(
+        times,
+        raw,
+        call="compute_goal_directed_metrics",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="the goal-directed metrics are NaN",
     )
     goal = np.asarray(goal)
-
-    from neurospatial.behavior._kinematics import resolve_min_speed
-
     min_speed = resolve_min_speed(
         env, min_speed, call="compute_goal_directed_metrics()"
     )
-    bias = goal_bias(
-        times,
-        positions,
-        goal,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=breaks,
+    _validate_velocity_positions(raw, call="compute_goal_directed_metrics")
+    call = "compute_goal_directed_metrics"
+    bias = _mean_alignment(
+        _goal_alignment(times, positions, goal, support, min_speed=min_speed, call=call)
     )
 
-    rates = approach_rate(
-        times,
-        positions,
-        goal,
-        metric=metric,
-        env=env,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=breaks,
+    rates = _approach_rate(
+        times, positions, goal, support, metric=metric, env=env, call=call
     )
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 
-    goal_vec = goal_vector(positions, goal)
+    goal_vec = _goal_vector(positions, goal, call=call)
     distances = np.linalg.norm(goal_vec, axis=1)
 
-    min_dist = float(np.min(distances))
-    start_dist = float(distances[0])
-    end_dist = float(distances[-1])
+    observed = distances[support.sample_valid]
+    if observed.size:
+        min_dist = float(np.min(observed))
+        start_dist = float(observed[0])
+        end_dist = float(observed[-1])
+    else:
+        min_dist = start_dist = end_dist = np.nan
 
     time_to_goal_val: float | None = None
     if goal_radius is not None:

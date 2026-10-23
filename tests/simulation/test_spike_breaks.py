@@ -78,3 +78,46 @@ def test_invalid_break_before_names_function(joined, flags):
         ValueError, match=r"generate_population_spikes\(\) needs break_before"
     ):
         _spikes(times, positions, break_before=flags)
+
+
+@pytest.fixture
+def still_then_north():
+    """East for 2 s; then a recording still for 1 s at (40, 0) and North for 1 s."""
+    n = 32
+    times = np.arange(BREAK + 2 * n) / 32
+    east = np.c_[np.arange(BREAK) * 0.5, np.zeros(BREAK)]
+    still = np.tile([40.0, 0.0], (n, 1))
+    north = np.c_[np.full(n, 40.0), np.arange(1, n + 1) * 0.5]
+    return times, np.r_[east, still, north], np.arange(times.size) == BREAK
+
+
+def test_held_heading_does_not_carry_over_a_break(still_then_north):
+    times, positions, break_before = still_then_north
+    held = _held_movement_heading(times, positions, break_before=break_before)
+    np.testing.assert_array_equal(held[:BREAK], 0.0)
+    # The still start of recording 2 takes its own first direction (North).
+    np.testing.assert_array_equal(held[BREAK : BREAK + 10], np.pi / 2)
+    assert np.isfinite(held).all()
+
+
+def test_held_heading_equals_separate_recordings(still_then_north):
+    times, positions, break_before = still_then_north
+    held = _held_movement_heading(times, positions, break_before=break_before)
+    first, second = slice(0, BREAK), slice(BREAK, None)
+    np.testing.assert_array_equal(
+        held,
+        np.r_[
+            _held_movement_heading(times[first], positions[first]),
+            _held_movement_heading(times[second], positions[second]),
+        ],
+    )
+
+
+def test_recording_without_movement_raises_naming_it(still_then_north):
+    times, positions, break_before = still_then_north
+    positions = positions.copy()
+    positions[BREAK:] = [40.0, 0.0]
+    with pytest.raises(ValueError, match=r"recording.*samples 64.*127"):
+        _held_movement_heading(times, positions, break_before=break_before)
+    with pytest.raises(ValueError, match="headings="):
+        _spikes(times, positions, break_before=break_before)

@@ -20,6 +20,8 @@ from neurospatial.annotation._types import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import napari
     from numpy.typing import NDArray
     from shapely.geometry import LineString, Polygon
@@ -152,9 +154,12 @@ def annotate_video(
     Raises
     ------
     ValueError
-        If bin_size is not provided when mode requires environment creation,
-        or if ``multiple_boundaries="error"`` and multiple environment
-        boundaries are drawn.
+        If bin_size is not provided when mode requires environment creation.
+    RuntimeError
+        If the drawn annotations cannot be saved, for example multiple
+        environment boundaries with ``multiple_boundaries="error"``, and the
+        user discards them. The editor shows the problem first and lets the
+        user keep editing.
     ImportError
         If napari is not installed.
 
@@ -231,7 +236,7 @@ def annotate_video(
     _validate_annotate_params(mode, bin_size)
 
     try:
-        import napari
+        import napari  # noqa: F401 - verify the optional GUI dependency
     except ImportError as e:
         raise ImportError(
             "napari is required for interactive annotation. "
@@ -256,7 +261,7 @@ def annotate_video(
         initial_regions = _filter_environment_regions(initial_regions)
 
     # Setup napari viewer with all layers and widgets
-    _viewer, shapes = _setup_annotation_viewer(
+    _viewer, shapes, flush_pending = _setup_annotation_viewer(
         video_path,
         frame,
         mode,
@@ -266,18 +271,20 @@ def annotate_video(
         calibration,
     )
 
-    # Run napari (blocking until viewer closes)
-    napari.run()
+    from neurospatial.annotation._session import run_annotation_session
 
-    # Convert annotations to result
-    return _process_annotation_results(
-        shapes,
-        mode,
-        bin_size,
-        calibration,
-        resolved.simplify_tolerance,
-        resolved.multiple_boundaries,
-    )
+    def prepare_result() -> AnnotationResult:
+        flush_pending()
+        return _process_annotation_results(
+            shapes,
+            mode,
+            bin_size,
+            calibration,
+            resolved.simplify_tolerance,
+            resolved.multiple_boundaries,
+        )
+
+    return run_annotation_session(_viewer, prepare_result)
 
 
 def _add_initial_regions(
@@ -308,46 +315,17 @@ def _add_initial_regions(
     (points) are silently skipped as they cannot be represented as shapes.
 
     """
-    from shapely import get_coordinates
+    from neurospatial.annotation._draft import add_polygons
 
-    from neurospatial.annotation._helpers import (
-        rebuild_features,
-        sync_colors_from_features,
+    add_polygons(
+        shapes_layer,
+        [
+            (region.data, name, region.metadata.get("role", "region"), region.metadata)
+            for name, region in regions.items()
+            if region.kind == "polygon"
+        ],
+        calibration,
     )
-
-    data = []
-    names = []
-    roles = []
-
-    for name, region in regions.items():
-        if region.kind != "polygon":
-            continue
-
-        # Get polygon vertices in world coordinates
-        coords = get_coordinates(region.data)
-
-        # Transform to pixels if calibration provided
-        if calibration is not None:
-            coords = calibration.transform_cm_to_px(coords)
-
-        # Convert to napari (row, col) order
-        coords_rc = coords[:, ::-1]
-        data.append(coords_rc)
-        names.append(name)
-        roles.append(region.metadata.get("role", "region"))
-
-    if data:
-        # Add shapes to layer
-        shapes_layer.add(data, shape_type="polygon")
-
-        # Update features DataFrame using centralized builder
-        shapes_layer.features = rebuild_features(roles, names)
-
-        # Sync colors from features
-        sync_colors_from_features(shapes_layer)
-
-        # Note: Don't reset feature_defaults here - let the widget control the mode.
-        # The widget's initial_mode determines what role/name new shapes will have.
 
 
 def _add_positions_layer(
@@ -617,7 +595,7 @@ def _setup_annotation_viewer(
     positions_for_display: NDArray[np.float64] | None,
     initial_regions: Regions | None,
     calibration: VideoCalibration | None,
-) -> tuple[napari.Viewer, napari.layers.Shapes]:
+) -> tuple[napari.Viewer, napari.layers.Shapes, Callable[[], None]]:
     """Create and configure napari viewer for annotation.
 
     Parameters
@@ -643,6 +621,8 @@ def _setup_annotation_viewer(
         Configured napari viewer.
     shapes : napari.layers.Shapes
         Shapes layer for annotations.
+    flush_pending : Callable[[], None]
+        Finish pending widget edits before constructing an annotation result.
 
     """
     import napari
@@ -702,7 +682,7 @@ def _setup_annotation_viewer(
     # Set initial status bar
     viewer.status = "Annotation mode: M=cycle modes, Escape=save and close"
 
-    return viewer, shapes
+    return viewer, shapes, widget.flush_pending
 
 
 def _process_annotation_results(
@@ -738,8 +718,8 @@ def _process_annotation_results(
     """
     from neurospatial.annotation._napari_widget import get_annotation_data
     from neurospatial.annotation.converters import (
+        _drafts_to_regions,
         env_from_boundary_region,
-        shapes_to_regions,
         shapes_to_walls_and_landmarks,
     )
     from neurospatial.landmarks import Landmarks
@@ -766,15 +746,19 @@ def _process_annotation_results(
             environment=None, regions=Regions([]), walls={}, landmarks=Landmarks()
         )
 
+    from neurospatial.annotation._draft import polygon_drafts
+
+    drafts = polygon_drafts(shapes, shapes_data, names, roles)
+
+    from neurospatial.annotation.converters import _validate_drawn_shapes
+
+    _validate_drawn_shapes(shapes_data, names, roles, shape_types, calibration)
     walls, landmarks = shapes_to_walls_and_landmarks(
         shapes_data, names, roles, shape_types, calibration=calibration
     )
-    areas = [i for i, role in enumerate(roles) if role not in ("wall", "landmark")]
     # Convert the area shapes to regions
-    regions, env_boundary, holes = shapes_to_regions(
-        [shapes_data[i] for i in areas],
-        [names[i] for i in areas],
-        [roles[i] for i in areas],
+    regions, env_boundary, holes = _drafts_to_regions(
+        [draft for draft in drafts if draft.role not in ("wall", "landmark")],
         calibration=calibration,
         simplify_tolerance=simplify_tolerance,
         multiple_boundaries=multiple_boundaries,

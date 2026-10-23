@@ -288,3 +288,23 @@ def test_boundary_following_paths_keep_source_ownership(dims, offset):
         )
         assert counts.sum() == 4  # every spike falls on the path
         np.testing.assert_allclose(dwell, expected, atol=2e-6)
+
+
+@pytest.mark.parametrize("angle", [0.152, 0.4, 0.559])
+@pytest.mark.parametrize("offset", [0.0, 100.0, 1e4])
+def test_rotated_track_keeps_every_bin_on_its_segment(angle, offset):
+    """Rounding in the rotated segment lengths does not lose the segment ids."""
+    track = Environment.linear_track(
+        node_positions=[(-5.0, 0.0), (5.0, 0.0), (5.0, 10.0), (-5.0, 20.0)],
+        bin_size=10.0,
+        track_width=2.0,
+        units="cm",
+    )
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    rotated = track.apply_transform(transform(rotation, offset))
+    original = track.get_bin_attributes()["source_edge_id"]
+    np.testing.assert_array_equal(
+        rotated.get_bin_attributes()["source_edge_id"], original
+    )

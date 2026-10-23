@@ -488,10 +488,15 @@ for k, pattern in enumerate(assemblies.patterns):
     reactivated.append((activation[in_event].mean(), activation[~in_event].mean(),
                         strength_pre, strength_post))
 in_events, otherwise, pre, post = np.array(reactivated).T
+print(f"Mean strength over patterns: pre {pre.mean():.2f}, post {post.mean():.2f}")
+assert post.mean() > pre.mean() + 0.02  # higher after the task, on average
+# Reproducibility pins for this seed:
 assert 3.39 <= in_events.min() <= in_events.max() <= 3.71
 assert np.allclose(otherwise, -0.2, atol=0.06)
-assert 1.044 <= pre.min() <= pre.max() <= 1.076
-assert 1.064 <= post.min() <= post.max() <= 1.136
+assert 1.044 <= pre.min() <= pre.max() <= 1.066
+assert 1.054 <= post.min() <= post.max() <= 1.136
+assert np.isclose(pre.mean(), 1.06, atol=0.006)
+assert np.isclose(post.mean(), 1.10, atol=0.006)
 
 # The columns of rest counts in another order give the same activation.
 order = np.random.default_rng(3).permutation(n_units)
@@ -513,12 +518,15 @@ a p < 0.05 test.
 
 `reactivation_strength` puts both periods on the running period's scale
 (each unit's running mean and standard deviation) and returns the ratio of
-mean absolute activation, rest period over running. Here it is slightly
-higher after the task (1.07-1.13) than before (1.05-1.07), because the members
-burst together, and nearly the same in both rest periods, because the cells fire at
-the same rates in both. The ratio measures how strongly the pattern is
-expressed, not whether its cells fire together, so a change in overall rate
-between rest and running also changes it. Each period's column labels go to
+mean absolute activation, rest period over running. Averaged over the three
+patterns, it is higher after the task (1.10) than before (1.06), because the
+members burst together; for some patterns the difference is only slight
+(pattern 0: 1.06 before and after). It stays close to 1 in both rest periods
+because the cells fire at the same rates in both. The ratio measures how
+strongly the pattern is expressed, not whether its cells fire together, so a
+change in overall rate between rest and running also changes it. Whether the
+cells fire together is what explained variance, below, measures. Each period's
+column labels go to
 their own argument, `template_unit_ids=` for running and `match_unit_ids=` for
 rest; here both periods were binned from one list of spike trains, so they get
 the same labels. Pass both or neither: labels for only one period raise.
@@ -552,8 +560,8 @@ reactivation = explained_variance_reactivation(
 )
 print(f"EV = {reactivation.explained_variance:.2f}, "
       f"REV = {reactivation.reversed_ev:.3f}, over {reactivation.n_pairs} pairs")
-assert np.isclose(reactivation.explained_variance, 0.75, atol=0.006)
-assert np.isclose(reactivation.reversed_ev, 0.015, atol=0.0006)
+assert np.isclose(reactivation.explained_variance, 0.74, atol=0.006)
+assert np.isclose(reactivation.reversed_ev, 0.011, atol=0.0006)
 
 # Post-task rest with its units in another order gives the same EV.
 reordered = explained_variance_reactivation(
@@ -567,7 +575,7 @@ reordered = explained_variance_reactivation(
 assert np.isclose(reordered.explained_variance, reactivation.explained_variance)
 ```
 
-EV (0.75) is far above REV (0.015): the correlation structure of running
+EV (0.74) is far above REV (0.011): the correlation structure of running
 reappears after the task and was absent before it, which is what we planted.
 EV and REV are effect sizes. To claim reactivation in a real recording, compare against a
 null built for your data (for example, EV computed after shuffling unit

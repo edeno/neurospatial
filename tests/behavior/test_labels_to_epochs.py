@@ -8,7 +8,12 @@ import numpy as np
 import pytest
 
 from neurospatial._observation import validated_observations
-from neurospatial.behavior import LabelEpochsResult, labels_to_epochs
+from neurospatial.behavior import (
+    LabelEpochsResult,
+    Lap,
+    labels_to_epochs,
+    laps_to_direction_labels,
+)
 
 _ABAB = list("AABBAAAABB")
 
@@ -74,6 +79,16 @@ def test_missing_labels_are_excluded():
     assert "other" not in r.unsupported_labels
 
 
+def test_direction_labels_need_no_missing_label():
+    """Lap labels feed labels_to_epochs directly: None outside laps is left out."""
+    times = np.arange(0, 10, 0.5)
+    laps = [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)]
+    conditions = labels_to_epochs(times, laps_to_direction_labels(laps, times))
+    assert list(conditions) == ["clockwise", "counter-clockwise"]
+    assert conditions["clockwise"].tolist() == [[0.0, 4.0]]
+    assert conditions["counter-clockwise"].tolist() == [[6.0, 9.5]]
+
+
 def test_final_sample_adds_no_time():
     r = labels_to_epochs([0.0, 1.0], ["A", "B"], max_gap=None)
     assert list(r) == ["A"]
@@ -131,7 +146,12 @@ def test_nan_in_a_list_of_strings_is_missing():
 def test_epochs_gate():
     r = labels_to_epochs(np.arange(10.0), ["A"] * 10, epochs=[(2.0, 6.0)], max_gap=None)
     np.testing.assert_array_equal(r["A"], [[2, 6]])
-    np.testing.assert_array_equal(r.epochs, [[2.0, 6.0]])
+    np.testing.assert_array_equal(r.input_epochs, [[2.0, 6.0]])
+    assert not hasattr(r, "epochs")
+    assert r.epochs_table().attrs["input_epochs"] == [[2.0, 6.0]]
+    restored = pickle.loads(pickle.dumps(r))
+    np.testing.assert_array_equal(restored.input_epochs, [[2.0, 6.0]])
+    assert not restored.input_epochs.flags.writeable
 
 
 def test_labels_ordered_by_first_retained_interval():
@@ -225,7 +245,7 @@ _ARRAY_FIELDS = (
     "epoch_intervals",
     "interval_labels",
     "interval_supported",
-    "epochs",
+    "input_epochs",
 )
 
 
@@ -253,7 +273,7 @@ def test_epochs_table_and_summary(invalid_sample_result):
     assert df["n_intervals"].tolist() == [2, 2, 1, 1, 1]
     assert df.attrs == {
         "max_gap": None,
-        "epochs": None,
+        "input_epochs": None,
         "missing_label": None,
         "n_declared_breaks": 0,
         "allocation": "interval_start",

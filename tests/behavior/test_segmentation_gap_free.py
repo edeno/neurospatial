@@ -9,7 +9,9 @@ goal-region boundary. The ``segment_trials`` entry was captured again when
 trials began at departure from the start region instead of entry, and the
 ``segment_by_velocity``, ``compute_pre_decision_metrics`` and
 ``compute_vte_trial`` entries when speed became the Gaussian-smoothed velocity
-of ``compute_speed``.
+of ``compute_speed``. ``running_direction_labels`` marks samples outside
+every run with ``None`` instead of ``"other"``; its golden is compared with
+that one substitution and is otherwise unchanged.
 """
 
 import json
@@ -37,6 +39,10 @@ def gap_free_goldens():
         "goal_labels"
     ]
     labels["array"] = str(np.dtype(np.int_))
+    running = goldens["running_direction_labels"]
+    running["values"] = [
+        None if label == "other" else label for label in running["values"]
+    ]
     return goldens
 
 

@@ -62,8 +62,6 @@ _LAYOUTS = {
 }
 # Layouts that subset() accepts: Cartesian bins with cell geometry.
 _SUBSET_LAYOUTS = ["grid", "hexagonal", "mesh", "polygon"]
-# Publishing a subset of this coarse mesh re-checks its triangle shapes.
-_MESH_WARNING = "ignore:Triangular mesh is non-K-orthogonal:UserWarning"
 
 
 def _with_regions(layout: str) -> Environment:
@@ -195,7 +193,6 @@ def test_polygon_edge_through_centers_follows_include_boundary():
     np.testing.assert_array_equal(interior, [[5.0, 5.0]])
 
 
-@pytest.mark.filterwarnings(_MESH_WARNING)
 def test_subset_by_region_keeps_exactly_the_region_bins(subset_env):
     env = subset_env
     for name in ("reward", "zone"):
@@ -205,7 +202,6 @@ def test_subset_by_region_keeps_exactly_the_region_bins(subset_env):
         )
 
 
-@pytest.mark.filterwarnings(_MESH_WARNING)
 def test_subset_by_polygon_matches_the_polygon_region(subset_env):
     env = subset_env
     polygon = env.regions["zone"].data

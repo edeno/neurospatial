@@ -62,9 +62,8 @@ def validate_polygon_geometry(
 
     Notes
     -----
-    Self-intersecting polygons are automatically fixed using ``buffer(0)``
-    in the conversion pipeline, but this warning alerts users that their
-    hand-drawn polygon was self-intersecting.
+    Self-intersecting polygons must be edited before saving. The conversion
+    pipeline rejects invalid polygons rather than changing their geometry.
 
     Examples
     --------
@@ -90,8 +89,7 @@ def validate_polygon_geometry(
         issues.append(f"Polygon '{name}' is self-intersecting: {reason}")
         warnings.warn(
             f"Polygon '{name}' is self-intersecting ({reason}). "
-            "It will be automatically fixed using buffer(0), but you may want "
-            "to redraw it for cleaner boundaries.",
+            "Edit its vertices before saving.",
             UserWarning,
             stacklevel=3,
         )

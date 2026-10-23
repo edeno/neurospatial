@@ -235,8 +235,10 @@ def simulate_session(
         - sampling_frequency : float - Lap samples per second (default: 500)
         - pause_duration : float - Pause between traversals (default: 0.5 s),
           rounded down to whole samples
-        - speed_mean, speed_std : float - For laps, speed draws (clipped below
-          at 0.01 environment units/s) determine relative traversal times.
+        - speed_mean, speed_std : float - For laps, speed draws (default mean
+          1.0 and standard deviation ``0.2 * speed_mean``, clipped below at
+          ``0.1 * speed_mean``) determine relative traversal times, so their
+          scale does not matter and no units are needed.
           Absolute speeds are determined by duration, path lengths and n_laps.
           Every traversal retains at least two samples; fixed pauses are
           reserved first, then remaining samples are allocated in proportion
@@ -483,6 +485,7 @@ def simulate_session(
             duration=duration,
             seed=trajectory_seed,
             return_metadata=False,
+            call='simulate_session(trajectory_method="laps")',
             **laps_kwargs,
         )
         # Type narrowing: return_metadata=False guarantees 2-tuple

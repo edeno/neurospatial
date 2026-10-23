@@ -23,6 +23,9 @@ from neurospatial.geometry._arrays import get_centers as get_centers
 from neurospatial.geometry._binning import BinConnections as BinConnections
 from neurospatial.geometry._binning import Binning as Binning
 from neurospatial.geometry._binning import KnownFaces as KnownFaces
+from neurospatial.geometry._binning import (
+    MissingCellGeometryError as MissingCellGeometryError,
+)
 from neurospatial.geometry._binning import MissingFaces as MissingFaces
 from neurospatial.geometry._binning import SpatialBins as SpatialBins
 from neurospatial.geometry._binning import TrackLinearization as TrackLinearization
@@ -66,6 +69,9 @@ from neurospatial.geometry._composition import (
     composition_component_keys as composition_component_keys,
 )
 from neurospatial.geometry._composition import composition_view as composition_view
+from neurospatial.geometry._composition import (
+    triangle_skew_messages as triangle_skew_messages,
+)
 from neurospatial.geometry._context import GridIndex as GridIndex
 from neurospatial.geometry._context import grid_index as grid_index
 from neurospatial.geometry._coordinates import CartesianSystem as CartesianSystem
@@ -83,6 +89,9 @@ from neurospatial.geometry._explicit import cell_extent as cell_extent
 from neurospatial.geometry._explicit import component_extent as component_extent
 from neurospatial.geometry._explicit import prepare_bins as prepare_bins
 from neurospatial.geometry._face_builders import track_junctions as track_junctions
+from neurospatial.geometry._face_builders import (
+    triangle_skew_message as triangle_skew_message,
+)
 from neurospatial.geometry._face_normals import FaceNormals as FaceNormals
 from neurospatial.geometry._face_normals import geometric_normals as geometric_normals
 from neurospatial.geometry._graph import graph_from_binning as graph_from_binning

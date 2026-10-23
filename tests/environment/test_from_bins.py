@@ -989,7 +989,6 @@ def _cell_face_source(kind, history):
     return env, replace(source, faces=KnownFaces(source.faces.build()))
 
 
-@pytest.mark.filterwarnings("ignore:Triangular mesh is non-K-orthogonal")
 @pytest.mark.parametrize("kind", ["hex", "mesh"])
 @pytest.mark.parametrize(
     "history", ["native", "subset", "similarity", "reflection", "large_offset"]
@@ -1105,7 +1104,6 @@ def test_hexagon_faces_refuse_affine_maps_that_shear_the_lattice():
         Environment.from_bins(sheared)
 
 
-@pytest.mark.filterwarnings("ignore:Triangular mesh is non-K-orthogonal")
 @pytest.mark.parametrize("kind", ["hex", "mesh"])
 def test_stored_cell_faces_cannot_bypass_publication_geometry_checks(kind):
     env, _ = _cell_face_source(kind, "native")

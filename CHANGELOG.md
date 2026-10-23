@@ -218,6 +218,54 @@
   worker thread with bounded caches. The legacy napari, video, HTML and widget
   backend modules, `neurospatial.animation.transforms` and the
   `neurospatial.animation._video_io` import path are removed.
+- `annotation.TrackGraphResult` has a trailing `units` field. Existing manual
+  constructors still work because it defaults to `None`, but positional tuple
+  unpacking must now include this ninth item. Prefer named attributes such as
+  `result.node_positions` and `result.units`.
+- `heading_direction_labels`, `instantaneous_goal_alignment`, `goal_bias` and
+  `compute_goal_directed_metrics` use the movement rule of
+  `heading_from_velocity`: a direction exists only where the smoothed speed
+  is above zero and at least `min_speed`. A missing position (NaN row) is a
+  gap that ends a run instead of an error. `heading_direction_labels` labels
+  an observed animal that is not moving `"stationary"` and a sample with no
+  observed movement (missing position, no usable interval) `None`, which
+  `labels_to_epochs` leaves out; with precomputed `speed` and `heading`, a
+  NaN `speed` now gives `None` (was a direction label or `"stationary"`) and
+  a moving sample with a NaN `heading` gives `None` (was `"stationary"`). A
+  still animal at `min_speed=0` was labeled `"0–45°"` (East). `goal_bias` of an animal that never moves is `nan`; it
+  was `1.0` when the goal lay East. `compute_goal_directed_metrics` warns
+  once when every interval is excluded (was twice) and reports distances
+  over observed samples. Empty input raises in trajectory mode.
+
+  ```python
+  import numpy as np
+  from neurospatial.behavior import goal_bias, heading_direction_labels
+
+  times, still = np.arange(10) / 10, np.zeros((10, 2))
+  goal = np.array([100.0, 0.0])
+  heading_direction_labels(times, still, min_speed=0.0)
+  # before: ['0–45°', ...]; after: ['stationary', ...]
+  goal_bias(times, still, goal, min_speed=0.0)  # before: 1.0; after: nan
+  positions = np.column_stack([2.0 * np.arange(10), np.zeros(10)])  # 20 cm/s East
+  positions[5] = np.nan
+  goal_bias(times, positions, goal, min_speed=5.0)  # before: ValueError; after: 1.0
+  ```
+
+- `heading_from_body_orientation(times, nose, tail, *, max_gap=0.5,
+  epochs=None, break_before=None)` takes timestamps and fills a missing
+  keypoint only inside one recording, when the gap lasts at most `max_gap`
+  seconds; the fill is linear in time along the shorter arc. Longer gaps,
+  samples before the first or after the last keypoint, and samples outside
+  `epochs` are NaN. Frames whose nose and tail coincide count as missing
+  frames: they are filled if the gap is short. Before, every missing frame was filled by sample index
+  across any gap, including a recording break, the ends took the nearest
+  heading, and coincident keypoints read as East.
+
+  ```python
+  heading_from_body_orientation(nose, tail)                      # before
+  heading_from_body_orientation(times, nose, tail)               # after
+  heading_from_body_orientation(times, nose, tail, break_before=new_recording)
+  ```
 
 - Options of public free functions are keyword-only, as `Environment`
   method options already were; data stays positional, and a test rejects any
@@ -262,7 +310,7 @@
   - `laps_to_direction_labels`, `runs_to_direction_labels`,
     `running_direction_labels` and `goal_pair_direction_labels` label
     `[start_time, end_time)`: a lap's last sample starts the interval that
-    leaves the lap, so it is now `"other"`, and `labels_to_epochs` gives
+    leaves the lap, so it is now `None`, and `labels_to_epochs` gives
     windows that match the laps exactly.
 
   ```python
@@ -271,6 +319,20 @@
   # after: it is in `second` only; for the old behavior pass closed="both"
   event_indicator(times, rewards)                       # before
   event_indicator(times, rewards, window=(-dt / 2, dt / 2))  # after
+  ```
+
+- Direction-label functions mark samples outside every lap, run or trial
+  with `None` instead of `"other"`, and `"other"` is an ordinary label
+  everywhere. `laps_to_direction_labels` no longer takes `unknown_label`:
+  laps whose direction is unknown are `None`. `compute_directional_place_fields`
+  leaves out `None`, `NaN` and a new `missing_label=` value, like
+  `labels_to_epochs`.
+
+  ```python
+  labels = laps_to_direction_labels(laps, times)       # None outside laps (was "other")
+  conditions = labels_to_epochs(times, labels)         # was: missing_label="other"
+  compute_directional_place_fields(env, spikes, times, positions, my_labels,
+                                   missing_label="other")  # if your labels use "other"
   ```
 
 - `ops.visibility_occupancy` counts viewing time only over usable sampling
@@ -301,9 +363,11 @@
   `heading_from_velocity` and `heading_from_body_orientation` move from
   `neurospatial.ops` next to `compute_speed`, and `distance_to_reward` and
   `distance_to_boundary` move from `neurospatial.events` next to
-  `distance_to_region`. Signatures and results are unchanged; there are no
-  aliases, so the old imports raise `ImportError`. `ops` keeps the egocentric
-  frame conversions, and `events` keeps the time-based regressors
+  `distance_to_region`. There are no aliases, so the old imports raise
+  `ImportError`. Both heading functions also change in this release (see the
+  `heading_from_velocity` and `heading_from_body_orientation` entries).
+  `ops` keeps the egocentric frame conversions, and `events` keeps the
+  time-based regressors
   (`time_to_nearest_event`, `event_count_in_window`, `event_indicator`) and
   its event-table utilities.
 
@@ -1410,6 +1474,25 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `rebin` therefore no longer reports fine bins in perimeter coarse cells as
   lost.
 
+- `simulate_trajectory_laps` and `simulate_session(trajectory_method="laps")`
+  refuse four inputs they used to accept (see Fixed): a custom
+  `outbound_path` or `inbound_path` whose consecutive bins are not neighbors
+  in `env.connectivity`; the default `speed_mean` on an environment whose
+  units are unset or not a metric length (`simulate_trajectory_laps` only;
+  pass `speed_mean=`); an environment whose bins at the smallest and
+  largest x are not connected, where there is no default path (pass
+  `outbound_path=`); and a path that steps between neighboring bins whose
+  cells do not touch inside the environment, such as across a bridge between
+  two rooms of an `Environment.combine()` environment with no bins between
+  them, where every route would leave the environment.
+
+  ```python
+  # before: jumped straight from bin 0 to bin 2
+  simulate_trajectory_laps(env, n_laps=2, outbound_path=[0, 2])
+  # after: ValueError; pass a chain of neighboring bins
+  simulate_trajectory_laps(env, n_laps=2, outbound_path=[0, 1, 2])
+  ```
+
 ### Changed
 
 - More results own their arrays as read-only copies that survive pickle and
@@ -1422,9 +1505,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `PopulationCoverageResult.place_fields` are now tuples, so fields cannot be
   appended to or replaced; copy with `list(...)` to edit.
 
-- `compute_directional_place_fields` leaves out frames labeled `None` or
-  `NaN`, as it does frames labeled `"other"`. Before, such labels raised
-  `TypeError`.
+- `compute_directional_place_fields` leaves out frames labeled `None`, `NaN`
+  or `missing_label`, and records `missing_label` on the result and in
+  `summary()`. Before, `None` and `NaN` labels raised `TypeError`.
 - `animate_fields` color limits default to robust ones in every backend: the
   1st percentile of the frames' minima and the 99th of their maxima, instead
   of the minimum and maximum over all frames. One extreme frame no longer
@@ -1985,7 +2068,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   interpolated across it. Recordings joined on one clock no longer need to be
   converted to `epochs` by hand (touching windows merge, so that never worked
   anyway). Rate results and fitted decoders record the break times in
-  `analysis_settings["break_times"]` (`None` when not given).
+  `analysis_settings["break_times"]` (`None` when not given). A
+  head-direction cell's held direction does not carry over a break: each
+  recording starts with its own first direction of movement.
 
   ```python
   new_recording = np.diff(recording_ids, prepend=recording_ids[0]) != 0
@@ -2047,7 +2132,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   window and not across a `break_before`; a dropout or gap ends an epoch, so
   the same label afterwards starts a new one. `None`, `NaN` and
   `missing_label` mark unlabeled frames. `durations` gives the time per label
-  and `epochs_table()` one row per epoch.
+  and `epochs_table()` one row per epoch; `input_epochs` records the
+  `epochs=` windows that were applied.
 - `neurospatial.encoding.compare_spatial_rates(rates_a, rates_b, *, method,
   unit_selection, bin_mapping, bins, topology, min_common_bins)` correlates
   each unit's rate map between two conditions and returns a
@@ -2066,7 +2152,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   settings between the maps raise a warning. The result gives `correlation`,
   `n_common_bins`, `status`, `rate_difference` (B - A, Hz, NaN outside common
   support), `summary_table()`, `to_dataframe()`, `to_xarray()`, `summary()`
-  and `plot()`; it gives no p-values or remapping verdicts. The new
+  and `plot()`; it gives no p-values or remapping verdicts.
+  `RateComparisonResult.plot()` draws the difference map of a single-unit
+  comparison and a correlation scatter of several units; `plot(unit_id=...)`
+  maps one unit, including a unit labeled `None`. The new
   [outbound and inbound runs](https://edeno.github.io/neurospatial/user-guide/workflows/#place-fields-on-outbound-and-inbound-runs)
   workflow goes from direction labels to per-direction maps, a cell-by-cell
   comparison and decoding on held-out laps.
@@ -2637,6 +2726,125 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- Annotation editing preserves surviving track edges, node labels and start
+  nodes when deleting points in napari. Native additions, deletions and moves
+  participate in undo/redo without state-to-view feedback corrupting the graph.
+- Edge edits and node deletions invalidate manual linearization overrides,
+  while adding a node keeps them, and result conversion rejects edge orders
+  that omit, repeat or invent graph edges.
+- Reopening polygon annotations preserves interior rings and their parent
+  polygons. Invalid initial polygons open for repair, and invalid boundary and
+  region polygons are rejected before the viewer closes, keeping the draft
+  available for correction instead of failing after editing.
+  Simplification no longer implicitly repairs self-intersections.
+  A pasted polygon gets its own identity with its own interior rings, so
+  deleting the original removes only the original's rings; an interior ring
+  pasted alone becomes a separate polygon. A paste is named at once (`zone`
+  becomes `zone_2`), so **Done** exports it without waiting for another
+  drawing. Annotation counts and auto-names
+  count an environment's interior rings as holes and a region's as part of it.
+- Annotation environments retain `"cm"` units when calibrated and `"pixels"`
+  otherwise; track results carry the same units through `to_environment()`.
+- Native track-edge deletion and node renaming now use the same undoable state
+  commands as other graph edits. Temporary edge previews do not modify the
+  saved graph, and unsupported direct edge reshaping restores the graph view.
+- Polygon and track annotation validate their complete results before closing
+  the editor. Invalid landmarks, walls and incomplete polygons remain editable
+  instead of being dropped during interactive saving; a dialog offers to keep
+  editing or to discard the draft, which raises `RuntimeError`. Result warnings
+  print to the console after the editor closes, and the editors also wait for
+  the user under IPython's `%gui qt`. A hole that splits the environment into
+  separate areas raises an error that names the problem. Standalone converters
+  retain their documented permissive behavior.
+- Deleting polygon annotations keeps drawing bookkeeping synchronized, so the
+  next shape receives its own name and role, including after deleting a polygon
+  with interior rings.
+- Track preview and export resolve edge order and gaps together. Automatic gaps
+  follow the selected order, all disconnected components are retained, and
+  preview coordinates and manual gaps use the same output units as the result.
+- LabelMe and CVAT annotation imports preserve their known `"cm"` or `"pixels"`
+  coordinate metadata through subsequent environment construction.
+
+- The warning that a triangular mesh is too skewed for an exact smoothing
+  bandwidth appears when you smooth on that mesh (rate maps, `smooth`,
+  `diffuse`, kernels, MRF bases, `get_diffusion_geometry`), once per
+  environment, at your call. On an environment from `Environment.combine()`,
+  it names the mesh component with the suffix
+  ` (combined component '<key>')`. Before, it appeared wherever the mesh's
+  cell faces were first built: decoding, `compare_spatial_rates` and
+  `read_place_field(env=...)` emitted it while comparing environments, and
+  a later smoothing call then did not warn; `subset`, gradients and
+  `Environment.combine()` (at construction) emitted it too.
+
+- `simulate_trajectory_laps` simulates a running animal: the default speed
+  is 20 cm/s expressed in the environment's units (`speed_mean=None`;
+  environments without metric units need `speed_mean=`), and positions move
+  continuously along the path instead of jumping between bin centers. Every
+  position stays inside the environment: on a track the lap runs along the
+  centerline and turns at the node where two segments meet, and between
+  planar cells (grids, hexagons, triangles, polygon arenas, clipped or
+  wall-split cells, mazes) it takes the shortest route inside the two cells
+  that keeps to the arena outline and off walls. Before,
+  the default `speed_mean=0.1` was read in environment units (0.1 cm/s), so
+  three laps of a 1 m track took 45 minutes and 1.3 million samples, 99.99 %
+  of them exactly zero steps. Sessions with `duration`, such as
+  `linear_track_session` and `tmaze_alternation_session`, snapped the same
+  way: 96 % of the running steps of `linear_track_session(duration=60,
+  n_laps=6)` were exactly zero. With `duration`, a `speed_mean` you pass now
+  gets `speed_std=0.2 * speed_mean` by default (before, a fixed 0.02). Custom
+  paths must be chains of neighboring bins (a repeated bin is allowed), and a
+  missing default path raises instead of jumping from end to end (see
+  Breaking).
+
+  ```python
+  simulate_trajectory_laps(env, n_laps=3, seed=1)  # before: 2679 s at 0.1 cm/s; after: 14.4 s, running at ~20 cm/s
+
+  # A 2 cm wide L-shaped track with 10 cm bins, one lap at 20 cm/s:
+  track = Environment.linear_track(
+      node_positions=[(-5, 0), (5, 0), (5, 10)], bin_size=10, track_width=2, units="cm"
+  )
+  positions, times = simulate_trajectory_laps(track, n_laps=1, speed_mean=20.0, seed=0)
+  track.bin_at(positions) >= 0  # all True: the lap turns at the corner instead of cutting across it
+  ```
+
+- A track rotated or shifted with `apply_transform` keeps the linear
+  position (`pos_1D`) and track segment (`source_edge_id`) of every bin in
+  `get_bin_attributes()` and `env.connectivity`. Before, rounding in the
+  moved segment lengths dropped both for about a third of rotation angles,
+  and `simulate_trajectory_laps` on such a track raised `KeyError: 0`.
+
+  ```python
+  rotated = track.apply_transform(Affine2D(matrix))  # e.g. a 0.4 rad rotation
+  rotated.get_bin_attributes()["source_edge_id"]  # before: KeyError (column missing); after: same as track
+  ```
+
+- Publishing walls onto a rotated or clipped environment refuses a wall that
+  lies in a rounding-sized gap between two neighboring bins. Before, whether
+  such a wall was refused or silently ignored depended on the last bits of
+  floating-point rounding, so the same call could pass on one machine and
+  fail on another. For example, with a short wall declared 1e-12 from a bin
+  edge, `env.apply_transform(Affine2D(matrix)).clip(region)` far from the
+  origin now raises `ValueError` on every machine, saying that where the wall
+  lies relative to the bins is unresolved (which check reports it, and so the
+  exact wording, can still vary). The decision now comes from how far each
+  face can be from where rounding put it, not from whether the rounded bins
+  happen to touch:
+  - A wall along the whole face between two bins closes it. Before, a wall
+    exactly on a bin edge of a rotated-then-clipped environment was refused
+    ("face alignment ... is unresolved") whenever rounding left the bins a
+    hair apart, and a wall ending at a face could close two bins on the same
+    side of it through the corner where rounding made them meet.
+  - A wall along part of such a face, such as a short wall exactly on a bin
+    edge, is refused. Before, it was ignored and the bins stayed connected,
+    or it narrowed the face, depending on rounding.
+  - A wall that crosses a face, at any angle, leaves it open, unless it also
+    crosses the line between the two bin centers where rounding left the
+    bins apart; that case is still refused.
+
+  To keep a wall that covers only part of a face, clip the environment before
+  transforming it. Recentering the coordinates near the origin helps only a
+  wall that lies off the bin edge, by shrinking the rounding below its
+  distance from the edge.
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or
   which bin owns a boundary) even when the connectivity or the arena also
@@ -2669,10 +2877,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   now differ in "smoothing conductances between neighboring bins".
   `read_place_field(env=...)` makes the same check (see Breaking), and
   `compare_spatial_rates` applies the same bin checks to each pair of a
-  `bin_mapping`: paired bins must also have the same cell shape and, for
-  polygon cells, the same polygon and the same bin owning each boundary, so
-  an identity mapping is refused exactly where no mapping is. A subset of
-  polygon cells still pairs with its parent.
+  `bin_mapping`, so an identity mapping is refused exactly where no mapping
+  is: paired bins must also have the same cell shape and, for polygon cells,
+  the same polygon and the same bin owning each boundary. Ownership is
+  compared without regard to bin numbering, so a renumbered copy of a
+  clipped or wall-split arena pairs with the original through `bin_mapping`;
+  pieces of one cut cell must keep their relative order, because a point on
+  the line between them belongs to the earlier piece. A subset of polygon
+  cells still pairs with its parent. Tracks are compared by their
+  segments and the linear edges of each bin: two tracks whose bins have the
+  same centers but run along different segments, or the same track with
+  different `edge_spacing`, now differ in "track geometry". Explicit point
+  bins, or a track paired with bins of another kind, are compared by center
+  and measure only.
 - `traveled_path_length` no longer counts the jump between joined
   recordings or turns the total into `NaN` at a lost frame. Two recordings,
   `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it
@@ -3633,9 +3850,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   formula now has the sign the code uses (positive is a left turn).
   `compute_trajectory_curvature` states that it returns turning angles in
   radians per frame, not geometric curvature; use `compute_planar_curvature`
-  for 1/length. `heading_from_body_orientation` states that it fills missing
-  keypoints across any gap, including a recording break, and how to call it
-  once per recording. Outputs are unchanged.
+  for 1/length. Outputs are unchanged.
 
 - Fix renamed phase-precession imports in executable examples and move the spatial adapter test normalizer import to its owning private module and distinguish independently standardized assembly activation from reactivation strength on a shared template-normalized projection scale.
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
+from uuid import uuid4
 
 import numpy as np
 from magicgui.widgets import (
@@ -17,13 +19,15 @@ from magicgui.widgets import (
 from numpy.typing import NDArray
 
 from neurospatial.annotation._controller import ShapesLayerController
+from neurospatial.annotation._draft import annotation_roles, guard_identity_defaults
 from neurospatial.annotation._helpers import (
     REGION_TYPE_CATEGORIES,
     REGION_TYPE_COLOR_CYCLE,
     REGION_TYPE_COLORS,
-    rebuild_features,
-    shapes_with_types,
-    sync_colors_from_features,
+    select_shapes,
+)
+from neurospatial.annotation._helpers import (
+    rebuild_features as rebuild_features,
 )
 from neurospatial.annotation._state import AnnotationModeState
 from neurospatial.annotation._types import RegionType
@@ -51,11 +55,19 @@ _MODE_STATUS: dict[str, str] = {
 }
 
 
+class _AnnotationWidget(Container):
+    """Annotation controls with an explicit pending-edit save boundary."""
+
+    def __init__(self, *, flush_pending: Callable[[], None], **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.flush_pending = flush_pending
+
+
 def create_annotation_widget(
     viewer: napari.Viewer,
     shapes_layer_name: str = "Annotations",
     initial_mode: RegionType = "environment",
-) -> Container:
+) -> _AnnotationWidget:
     """Create annotation control widget using magicgui.
 
     Parameters
@@ -211,7 +223,12 @@ def create_annotation_widget(
         shapes = get_shapes()
         if shapes is None:
             return None
-        return ShapesLayerController(shapes, state)
+        return ShapesLayerController(
+            shapes,
+            state,
+            before_mutation=flush_pending,
+            after_mutation=mutation_finished,
+        )
 
     # --- Helper Functions ---
     def update_mode_indicator(region_type: str) -> None:
@@ -239,10 +256,7 @@ def create_annotation_widget(
         if shapes is None or len(shapes.data) == 0:
             state.sync_counts_from_region_types([])
         else:
-            region_types = [
-                cast("RegionType", str(r)) for r in shapes.features.get("role", [])
-            ]
-            state.sync_counts_from_region_types(region_types)
+            state.sync_counts_from_region_types(annotation_roles(shapes.features))
         annotation_status.value = state.status_text()
 
     def update_shapes_list() -> None:
@@ -450,7 +464,7 @@ def create_annotation_widget(
             )
             if reply == QMessageBox.StandardButton.No:
                 return
-        viewer.close()
+        viewer.window._qt_window.close()
 
     # --- Keyboard Shortcuts ---
     @viewer.bind_key("m")
@@ -481,6 +495,7 @@ def create_annotation_widget(
     # of when shapes are actually added (learned from napari-segment-anything)
     _prev_shape_count = [0]  # Mutable container for closure
     _pending_update = [False]  # Flag to prevent duplicate scheduled updates
+    _deferred_changes: list[Callable[[], None]] = []
 
     def _process_data_change() -> None:
         """Handle shape additions: update list, auto-switch mode, update status.
@@ -541,56 +556,49 @@ def create_annotation_widget(
                     # shape(s); each keeps its type
                     n_before = len(shapes.data) - delta
                     kept = [i for i in range(n_before) if i not in env_indices]
-                    new_data = shapes_with_types(
-                        shapes, [*kept, *range(n_before, len(shapes.data))]
-                    )
+                    kept_indices = [*kept, *range(n_before, len(shapes.data))]
                     roles = [r for i, r in enumerate(roles) if i not in env_indices]
                     names = [n for i, n in enumerate(names) if i not in env_indices]
                     # Block data events during assignment to prevent re-triggering
                     with shapes.events.data.blocker():
-                        shapes.data = new_data
+                        select_shapes(shapes, kept_indices)
+                    _prev_shape_count[0] = len(kept)
                     current_count = len(shapes.data)
                     viewer.status = "Replaced existing environment boundary"
                 else:
-                    # Delete the just-drawn shape
-                    # Must defer to avoid reentrancy with napari's _finish_drawing()
-                    # Update count IMMEDIATELY to prevent dialog re-triggering
-                    # (napari may fire multiple data events for single shape)
-                    target_count = _prev_shape_count[0]  # What we want after deletion
-                    _prev_shape_count[0] = current_count  # Prevent re-entry
+                    # Keep the rejection pending until drawing has finished.
+                    # A save flush drains it synchronously before any snapshot.
+                    marker = f"_rejected_boundary_{uuid4().hex}"
+                    features = shapes.features.copy()
+                    features[marker] = [
+                        i >= _prev_shape_count[0] for i in range(current_count)
+                    ]
+                    _prev_shape_count[0] = current_count
+                    shapes.features = features
+                    shapes.feature_defaults[marker] = False
 
                     def delete_shape() -> None:
-                        nonlocal _prev_shape_count
-                        # Delete back to target count
-                        if len(shapes.data) > target_count:
-                            # Block data events during deletion to prevent re-triggering
-                            with shapes.events.data.blocker():
-                                shapes.data = shapes_with_types(
-                                    shapes, range(target_count)
-                                )
-                                # Also truncate features to match data length
-                                if len(shapes.features) > target_count:
-                                    truncated_roles = [
-                                        str(r)
-                                        for r in shapes.features["role"][:target_count]
-                                    ]
-                                    truncated_names = [
-                                        str(n)
-                                        for n in shapes.features["name"][:target_count]
-                                    ]
-                                    shapes.features = rebuild_features(
-                                        cast("list[RegionType]", truncated_roles),
-                                        truncated_names,
-                                    )
-                                    sync_colors_from_features(shapes)
-                            # Update UI to reflect the deletion
-                            update_shapes_list()
-                            update_annotation_status()
-                        _prev_shape_count[0] = len(shapes.data)
+                        features_before = shapes.features.copy()
+                        kept = [
+                            i
+                            for i, rejected in enumerate(shapes.features[marker])
+                            if not rejected
+                        ]
+                        with shapes.events.data.blocker():
+                            shapes.features = shapes.features.drop(columns=marker)
+                            select_shapes(shapes, kept)
+                        _prev_shape_count[0] -= sum(
+                            i < _prev_shape_count[0]
+                            for i, rejected in enumerate(features_before[marker])
+                            if rejected
+                        )
+                        update_shapes_list()
+                        update_annotation_status()
 
-                    qt_core.QTimer.singleShot(0, delete_shape)
+                    _deferred_changes.append(delete_shape)
+                    qt_core.QTimer.singleShot(0, flush_pending)
                     viewer.status = "Shape removed (environment already exists)"
-                    return  # Exit early - deferred deletion will handle cleanup
+                    return
 
             # Use controller to update features for new shapes
             controller = get_controller()
@@ -603,6 +611,10 @@ def create_annotation_widget(
                 _prev_shape_count[0],
                 name_override=name_override,
             )
+            # Record the processed rows before anything else mutates the layer:
+            # cleanup below flushes pending work, which must not see these
+            # rows as new again.
+            _prev_shape_count[0] = current_count
 
             # Widget handles UI updates
             update_shapes_list()
@@ -631,27 +643,91 @@ def create_annotation_widget(
             # Update name input to show the assigned name
             name_input.value = last_name
 
-        elif delta < 0:
-            # Shape was deleted externally (e.g., via Delete key)
+        # Delete interior rings whose exterior was removed with napari's tool,
+        # including a removal that coincides with a pasted addition.
+        if "_parent_id" in shapes.features:
+            remaining = set(shapes.features["_polygon_id"])
+            orphans = {
+                i
+                for i, parent in enumerate(shapes.features["_parent_id"])
+                if parent and parent not in remaining
+            }
+            controller = get_controller()
+            if orphans and controller is not None:
+                controller.delete_shapes_by_indices(orphans)
+                current_count = len(shapes.data)
+        if delta <= 0:
             update_shapes_list()
             update_annotation_status()
 
         _prev_shape_count[0] = current_count
 
-    def on_data_changed(event: Any) -> None:
-        """Throttle data change events using QTimer.singleShot.
+    def flush_pending() -> None:
+        """Finish queued bookkeeping and rejected drawings before a snapshot."""
+        while _pending_update[0] or _deferred_changes:
+            if _deferred_changes:
+                _deferred_changes.pop(0)()
+            else:
+                _process_data_change()
 
-        Napari's Shapes.events.data may fire several times for a single shape
-        addition. This wrapper schedules the actual processing to run once
-        after the event storm settles, reducing UI latency.
-        """
+    def mutation_finished() -> None:
+        shapes = get_shapes()
+        if shapes is not None:
+            _prev_shape_count[0] = len(shapes.data)
+            update_shapes_list()
+            update_annotation_status()
+
+    def on_data_changed(event: Any) -> None:
+        """Track native removal boundaries without losing queued additions."""
+        shapes = get_shapes()
+        if shapes is None:
+            return
+        action = str(getattr(event, "action", ""))
+        if action == "removing":
+            # Napari has already captured its removal indices. Do not mutate
+            # data here. Count the surviving old rows so a queued addition is
+            # still recognized even when the total count stays unchanged.
+            removed = set(getattr(event, "data_indices", ()))
+            _prev_shape_count[0] -= sum(i < _prev_shape_count[0] for i in removed)
+            return
+        if action in {"adding", "changing"}:
+            return
+        if action == "removed":
+            # Process only bookkeeping here; structural boundary decisions and
+            # rejected drawings remain deferred until napari finishes removal.
+            has_environment_conflict = (
+                state.region_type == "environment"
+                and len(shapes.data) > _prev_shape_count[0]
+                and "environment"
+                in list(shapes.features["role"].iloc[: _prev_shape_count[0]])
+            )
+            if not has_environment_conflict:
+                _process_data_change()
+                return
+        schedule_update()
+
+    def schedule_update() -> None:
         if not _pending_update[0]:
             _pending_update[0] = True
-            qt_core.QTimer.singleShot(0, _process_data_change)
+            qt_core.QTimer.singleShot(0, flush_pending)
+
+    def on_features_changed(event: Any) -> None:
+        """Process pasted shapes, which napari announces with features only.
+
+        Pasted rows arrive with identities; a drawing's row has none until it
+        is processed, and its data event schedules that.
+        """
+        shapes = get_shapes()
+        if shapes is None:
+            return
+        added = shapes.features["_polygon_id"].iloc[_prev_shape_count[0] :]
+        if len(added) and added.astype(bool).any():
+            schedule_update()
 
     shapes = get_shapes()
     if shapes is not None:
         shapes.events.data.connect(on_data_changed)
+        shapes.events.features.connect(on_features_changed)
         _prev_shape_count[0] = len(shapes.data)
 
         # Initialize shape defaults from widget state (ensures consistency)
@@ -659,6 +735,8 @@ def create_annotation_widget(
         shapes.feature_defaults["role"] = role_selector.value
         shapes.feature_defaults["name"] = state.default_name()
         shapes.current_face_color = REGION_TYPE_COLORS[role_selector.value]
+        # Count initial shapes, so auto-names continue their numbering.
+        update_annotation_status()
 
         # Note: shapes.events.selected_data doesn't exist in napari
         # (see napari issue #6886). Use highlight event as proxy for selection.
@@ -687,7 +765,8 @@ def create_annotation_widget(
         delete_btn,
         save_btn,
     ]
-    widget = Container(
+    widget = _AnnotationWidget(
+        flush_pending=flush_pending,
         widgets=container_widgets,
         labels=True,
     )
@@ -719,15 +798,9 @@ def setup_shapes_layer_for_annotation(
         Configured shapes layer ready for annotation.
 
     """
-    import pandas as pd
-
-    # Initialize with empty features DataFrame (categorical for color cycling)
-    features = pd.DataFrame(
-        {
-            "role": pd.Categorical([], categories=REGION_TYPE_CATEGORIES),
-            "name": pd.Series([], dtype=str),
-        },
-    )
+    # Categorical roles drive color cycling. Every shape also carries a ring
+    # identity and its exterior's identity (empty for an exterior).
+    features = rebuild_features([], [])
 
     shapes = viewer.add_shapes(
         name="Annotations",
@@ -756,6 +829,8 @@ def setup_shapes_layer_for_annotation(
     else:
         shapes.feature_defaults["name"] = "arena"
         shapes.current_face_color = REGION_TYPE_COLORS["environment"]
+
+    guard_identity_defaults(shapes)
 
     # Start in polygon drawing mode
     shapes.mode = "add_polygon"
@@ -845,44 +920,12 @@ def add_initial_boundary_to_shapes(
     Notes
     -----
     Mirrors the pattern in _add_initial_regions() for consistency.
-    Preserves existing shapes/features and prepends the boundary to front.
+    Preserves existing shapes/features and prepends the boundary's editable rings.
 
     """
-    from shapely import get_coordinates
+    from neurospatial.annotation._draft import add_polygons
 
-    # Preserve existing features before adding new shape
-    existing_roles = list(shapes_layer.features.get("role", []))
-    existing_names = list(shapes_layer.features.get("name", []))
-
-    # Get polygon exterior vertices
-    coords = get_coordinates(boundary.exterior)
-
-    # Transform to pixels if calibration provided
-    # NOTE: transform_cm_to_px handles Y-flip internally - don't double-flip!
-    if calibration is not None:
-        coords = calibration.transform_cm_to_px(coords)
-
-    # Convert to napari (row, col) order
-    coords_rc = coords[:, ::-1]
-
-    # Add to shapes layer (appends to existing shapes)
-    shapes_layer.add([coords_rc], shape_type="polygon")
-
-    # Extend features with the new boundary shape
-    # NOTE: Boundary should be first in the list for proper widget mode handling
-    new_region_types: list[RegionType] = [
-        "environment",
-        *[cast("RegionType", str(r)) for r in existing_roles],
-    ]
-    new_names = ["arena", *[str(n) for n in existing_names]]
-    shapes_layer.features = rebuild_features(new_region_types, new_names)
-
-    # Reorder data so boundary is first (environment boundary should be drawn first)
-    # This ensures the widget's mode logic works correctly
-    if len(existing_roles) > 0:
-        # Move the last shape (just added) to the front, types with shapes
-        last = len(shapes_layer.data) - 1
-        shapes_layer.data = shapes_with_types(shapes_layer, [last, *range(last)])
-
-    # Sync colors from features
-    sync_colors_from_features(shapes_layer)
+    previous_count = len(shapes_layer.data)
+    add_polygons(shapes_layer, [(boundary, "arena", "environment", None)], calibration)
+    order = [*range(previous_count, len(shapes_layer.data)), *range(previous_count)]
+    select_shapes(shapes_layer, order)
