@@ -2520,7 +2520,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - `simulate_trajectory_laps` simulates a running animal: the default speed
   is 20 cm/s expressed in the environment's units (`speed_mean=None`;
   environments without metric units need `speed_mean=`), and positions move
-  continuously along the path instead of jumping between bin centers. Before,
+  continuously along the path instead of jumping between bin centers. On a
+  track the lap runs along the centerline and turns at the node where two
+  segments meet, so every position stays on the track. Before,
   the default `speed_mean=0.1` was read in environment units (0.1 cm/s), so
   three laps of a 1 m track took 45 minutes and 1.3 million samples, 99.99 %
   of them exactly zero steps. Sessions with `duration`, such as
@@ -2534,6 +2536,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
   ```python
   simulate_trajectory_laps(env, n_laps=3, seed=1)  # before: 2679 s at 0.1 cm/s; after: 14.4 s, running at ~20 cm/s
+
+  # A 2 cm wide L-shaped track with 10 cm bins, one lap at 20 cm/s:
+  track = Environment.linear_track(
+      node_positions=[(-5, 0), (5, 0), (5, 10)], bin_size=10, track_width=2, units="cm"
+  )
+  positions, times = simulate_trajectory_laps(track, n_laps=1, speed_mean=20.0, seed=0)
+  track.bin_at(positions) >= 0  # all True: the lap turns at the corner instead of cutting across it
   ```
 
 - Publishing walls onto a rotated or clipped environment refuses a wall that

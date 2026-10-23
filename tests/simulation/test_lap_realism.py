@@ -3,6 +3,7 @@
 import re
 import warnings
 
+import networkx as nx
 import numpy as np
 import pytest
 from shapely.geometry import box
@@ -213,3 +214,86 @@ def test_path_errors_name_the_function_called(two_rooms_env, box_env):
             show_progress=False,
             seed=1,
         )
+
+
+# Laps follow the environment's geometry: a step between two neighboring bins
+# never cuts across space outside the environment.
+
+
+@pytest.fixture(scope="module")
+def l_track():
+    """A 2 cm wide L-shaped track: two 10 cm bins that meet at a right angle."""
+    return Environment.linear_track(
+        node_positions=[(-5, 0), (5, 0), (5, 10)],
+        bin_size=10,
+        track_width=2,
+        units="cm",
+    )
+
+
+def test_track_lap_turns_at_the_junction(l_track):
+    positions, _times = simulate_trajectory_laps(l_track, n_laps=1, seed=1)
+    assert np.all(l_track.bin_at(positions) >= 0)
+    # Every sample lies on the centerline: projecting onto it changes nothing.
+    np.testing.assert_allclose(
+        l_track.linear_to_nd(l_track.to_linear(positions)), positions, atol=1e-9
+    )
+    # The outbound lap runs steadily along the track, through the corner.
+    assert np.all(np.diff(l_track.to_linear(positions)) > 0)
+
+
+def test_track_lap_time_counts_toward_occupancy(l_track):
+    """Every second of the lap lands in a place-field bin."""
+    positions, times = simulate_trajectory_laps(l_track, n_laps=1, seed=1)
+    np.testing.assert_allclose(
+        l_track.occupancy(times, positions).sum(), times[-1] - times[0]
+    )
+
+
+def _t_maze_track():
+    """A T-maze whose right arm is not next to the stem in linear position."""
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    graph.add_node(1, pos=(0.0, 40.0))
+    graph.add_node(2, pos=(-30.0, 40.0))
+    graph.add_node(3, pos=(30.0, 40.0))
+    graph.add_edges_from([(0, 1), (1, 2), (1, 3)])
+    return Environment.from_graph(
+        graph,
+        edge_order=[(0, 1), (1, 2), (1, 3)],
+        edge_spacing=10.0,
+        bin_size=7.0,
+        track_width=4.0,
+        units="cm",
+    )
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Environment.linear_track(
+            node_positions=[(0, 0), (50, 0), (50, 50), (0, 60)],
+            bin_size=7.0,
+            track_width=3.0,
+            units="cm",
+        ),
+        _t_maze_track,
+    ],
+    ids=["zigzag", "t_maze"],
+)
+def test_track_laps_stay_on_the_centerline(build):
+    env = build()
+    walk = _walk_over_every_neighbor_pair(env)
+    positions, _times = simulate_trajectory_laps(
+        env, n_laps=2, outbound_path=walk, seed=1
+    )
+    assert np.all(env.bin_at(positions) >= 0)
+    np.testing.assert_allclose(
+        env.linear_to_nd(env.to_linear(positions)), positions, atol=1e-9
+    )
+
+
+def _walk_over_every_neighbor_pair(env):
+    """A chain of neighboring bins that steps across every open pair."""
+    circuit = list(nx.eulerian_circuit(nx.eulerize(env.connectivity)))
+    return [int(u) for u, _v in circuit] + [int(circuit[-1][1])]

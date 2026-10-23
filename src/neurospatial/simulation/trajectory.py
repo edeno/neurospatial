@@ -11,6 +11,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._units import units_per_centimeter
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
+from neurospatial.simulation._lap_routes import lap_route
 
 
 def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
@@ -648,8 +649,9 @@ def simulate_trajectory_laps(
     -------
     positions : NDArray[np.float64], shape (n_time, n_dims)
         Position coordinates, in ``env.units``. Positions move at constant
-        speed along the straight segments between consecutive bin centers of
-        the path, and hold still during pauses.
+        speed from bin center to bin center along the path, and hold still
+        during pauses. Every position lies inside the environment (see
+        Notes).
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds.
     metadata : dict, optional (if return_metadata=True)
@@ -670,6 +672,17 @@ def simulate_trajectory_laps(
         If custom paths are empty, contain invalid bin indices or are not
         chains of neighboring bins, or if no connected path joins the bins
         with the smallest and largest first coordinate.
+
+    Notes
+    -----
+    Between two neighboring bins the animal follows the environment, not the
+    straight line between the bin centers, which can leave it:
+
+    - On a track (``env.is_linearized_track``), it runs along the centerline
+      and turns at the node where two track segments meet, so its distance
+      along the track (``env.to_linear``) changes at the running speed.
+    - In other environments it runs straight between the centers of the
+      neighboring cells.
 
     Examples
     --------
@@ -713,6 +726,21 @@ def simulate_trajectory_laps(
     >>> speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
     >>> print(f"{np.median(speed[moving]):.0f} cm/s")
     21 cm/s
+
+    On an L-shaped track the lap turns at the corner instead of cutting
+    across it, so every position is on the track:
+
+    >>> l_track = Environment.linear_track(
+    ...     node_positions=[(-5, 0), (5, 0), (5, 10)],
+    ...     bin_size=10,
+    ...     track_width=2,
+    ...     units="cm",
+    ... )
+    >>> positions, times = simulate_trajectory_laps(l_track, n_laps=1, seed=0)
+    >>> bool(np.all(l_track.bin_at(positions) >= 0))
+    True
+    >>> print(f"{l_track.to_linear(positions[[0, -1]])} cm along the track")
+    [ 5. 15.] cm along the track
 
     See Also
     --------
@@ -890,6 +918,18 @@ def _simulate_trajectory_laps(
                     )
                 )
 
+    # Each step between neighboring bins follows the environment's geometry
+    # (along a track's centerline), not the straight line between their
+    # centers, which can leave the environment.
+    routes = [lap_route(env, path) for path in (outbound_path, inbound_path)]
+    # Distance run from the start of each route to each of its waypoints.
+    route_distances = [
+        np.concatenate(
+            [[0.0], np.cumsum(np.linalg.norm(np.diff(route, axis=0), axis=1))]
+        )
+        for route in routes
+    ]
+
     # Time step
     dt = 1.0 / sampling_frequency
 
@@ -917,10 +957,7 @@ def _simulate_trajectory_laps(
         # Speed draws shape relative traversal durations. Absolute speeds follow
         # from the available time; no speed-driven trajectory is generated and
         # then rescaled or truncated.
-        distances_by_direction = [
-            np.linalg.norm(np.diff(env.bin_centers[path], axis=0), axis=1).sum()
-            for path in (outbound_path, inbound_path)
-        ]
+        distances_by_direction = [distances[-1] for distances in route_distances]
         weights = np.array(
             [
                 distances_by_direction[lap_idx % 2]
@@ -948,19 +985,13 @@ def _simulate_trajectory_laps(
 
     for lap_idx in range(n_laps):
         # Alternate between outbound and inbound
-        if lap_idx % 2 == 0:
-            path = outbound_path
-            direction = "outbound"
-        else:
-            path = inbound_path
-            direction = "inbound"
+        direction = "outbound" if lap_idx % 2 == 0 else "inbound"
 
-        # Generate positions along path
-        path_positions = env.bin_centers[path]
-
-        # Compute distances between consecutive bins
-        distances = np.linalg.norm(np.diff(path_positions, axis=0), axis=1)
-        total_distance = np.sum(distances)
+        # Generate positions along the path's route
+        path_positions = routes[lap_idx % 2]
+        cumulative_distances = route_distances[lap_idx % 2]
+        # The last waypoint's own distance, so the lap ends exactly on it.
+        total_distance = cumulative_distances[-1]
 
         if lap_sample_counts is None:
             # Direct calls retain their speed-driven timing and RNG draws.
@@ -971,9 +1002,7 @@ def _simulate_trajectory_laps(
         else:
             n_samples = int(lap_sample_counts[lap_idx])
 
-        # Interpolate positions along path
-        # Create cumulative distances
-        cumulative_distances = np.concatenate([[0], np.cumsum(distances)])
+        # Interpolate positions along the route
         interpolation_points = np.linspace(0, total_distance, n_samples)
 
         # Interpolate each dimension separately
