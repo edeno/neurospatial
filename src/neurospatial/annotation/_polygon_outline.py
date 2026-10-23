@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial._results import read_only_copy
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.annotation.segmentation import (
     SegmentationProposal,
     _simplify_together,
@@ -17,17 +18,10 @@ from neurospatial.annotation.segmentation import (
 
 
 def _tolerance(value: float) -> float:
-    try:
-        tolerance = float(value)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(
-            "Simplification tolerance must be finite and nonnegative in pixels."
-        ) from exc
-    if not np.isfinite(tolerance) or tolerance < 0:
-        raise ValueError(
-            "Simplification tolerance must be finite and nonnegative in pixels."
-        )
-    return tolerance
+    validate_finite_scalar(
+        value, name="Simplification tolerance (pixels)", positive=False
+    )
+    return float(value)
 
 
 @dataclass(frozen=True)

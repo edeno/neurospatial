@@ -21,6 +21,7 @@ from scipy import ndimage
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial._results import ReadOnlyArraysMixin, read_only_copy
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.regions.core import _require_json_metadata
 
 __all__ = [
@@ -561,8 +562,9 @@ def mask_to_polygons(
     2.0
     """
     mask = _validate_mask(mask)
-    if not np.isfinite(simplify_tolerance) or simplify_tolerance < 0:
-        raise ValueError("simplify_tolerance must be finite and nonnegative in pixels.")
+    validate_finite_scalar(
+        simplify_tolerance, name="simplify_tolerance (pixels)", positive=False
+    )
     # One rectangle per horizontal run of foreground pixels, built at once.
     edges = np.diff(np.pad(mask, ((0, 0), (1, 1))).astype(np.int8), axis=1)
     rows, starts = np.nonzero(edges == 1)

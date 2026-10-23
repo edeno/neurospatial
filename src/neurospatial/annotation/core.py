@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
-from neurospatial._validation import check_writable
+from neurospatial._validation import check_writable, validate_finite_scalar
 from neurospatial.annotation._types import (
     AnnotationConfig,
     MultipleBoundaryStrategy,
@@ -446,13 +446,9 @@ def _validate_initial_metadata(regions: Regions) -> None:
 
 def _validate_autosave_interval(autosave_interval: float | None) -> None:
     """Reject invalid timer settings before importing or creating a viewer."""
-    if autosave_interval is not None and (
-        isinstance(autosave_interval, bool)
-        or not isinstance(autosave_interval, (int, float, np.integer, np.floating))
-        or not np.isfinite(autosave_interval)
-        or autosave_interval <= 0
-    ):
-        raise ValueError("autosave_interval must be positive and finite, or None.")
+    validate_finite_scalar(
+        autosave_interval, name="autosave_interval", positive=True, none_allowed=True
+    )
 
 
 def _run_annotation_editor(

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -252,6 +253,43 @@ def format_times_positions_error(
         + "\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, "
         "so mis-shaped or unsorted timestamps give wrong numbers.\n" + fix
     )
+
+
+def validate_finite_scalar(
+    value: Any, *, name: str, positive: bool, none_allowed: bool = False
+) -> None:
+    """Require one finite real number, nonnegative or strictly positive.
+
+    Booleans and non-numeric values are rejected rather than coerced.
+
+    Parameters
+    ----------
+    value : Any
+        The value to check.
+    name : str
+        Name used in the error message.
+    positive : bool
+        Require ``value > 0``; otherwise ``value >= 0``.
+    none_allowed : bool, default=False
+        Accept ``None`` as "not set".
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not an allowed finite real number.
+    """
+    if none_allowed and value is None:
+        return
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, (int, float, np.integer, np.floating))
+        or not np.isfinite(value)
+        or (value <= 0 if positive else value < 0)
+    ):
+        raise ValueError(
+            f"{name} must be finite and {'positive' if positive else 'nonnegative'}"
+            f"{', or None' if none_allowed else ''}; got {value!r}."
+        )
 
 
 def check_writable(

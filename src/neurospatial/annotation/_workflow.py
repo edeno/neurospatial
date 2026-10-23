@@ -23,6 +23,7 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
     QWidget,
 )
 
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.annotation._assist_widget import AnnotationAssistWidget
 from neurospatial.annotation._draft import add_polygons, annotation_roles
 from neurospatial.annotation._polygon_outline import PolygonOutline
@@ -297,8 +298,7 @@ class AnnotationProjectSession:
 
     def set_bin_size(self, value: float) -> None:
         """Record an explicit positive output grid size."""
-        if not np.isfinite(value) or value <= 0:
-            raise ValueError("Output bin size must be positive and finite.")
+        validate_finite_scalar(value, name="Output bin size", positive=True)
         self.checkpoint()
         self.bin_size = value
         self.checkpoint()

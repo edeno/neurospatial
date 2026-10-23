@@ -21,7 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import read_only_copy
-from neurospatial._validation import check_writable
+from neurospatial._validation import check_writable, validate_finite_scalar
 from neurospatial.annotation._types import (
     AnnotationMode,
     MultipleBoundaryStrategy,
@@ -237,19 +237,15 @@ class AnnotationProject:
             raise ValueError(
                 f"Unknown multiple_boundaries policy {multiple_boundaries!r}."
             )
-        for name, value, positive in (
-            ("bin_size", bin_size, True),
-            ("simplify_tolerance", simplify_tolerance, False),
-        ):
-            if value is not None and (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float, np.integer, np.floating))
-                or not np.isfinite(value)
-                or (value <= 0 if positive else value < 0)
-            ):
-                raise ValueError(
-                    f"{name} must be {'positive' if positive else 'nonnegative'} and finite, or None."
-                )
+        validate_finite_scalar(
+            bin_size, name="bin_size", positive=True, none_allowed=True
+        )
+        validate_finite_scalar(
+            simplify_tolerance,
+            name="simplify_tolerance",
+            positive=False,
+            none_allowed=True,
+        )
         shapes_tuple = tuple(shapes)
         if any(not isinstance(shape, AnnotationShape) for shape in shapes_tuple):
             raise ValueError("shapes must contain AnnotationShape objects.")
