@@ -546,7 +546,7 @@ class TestAnnotateTrackGraphCalibration:
             mock_setup_track_layers,
         )
 
-        def mock_create_widget(viewer, edges, nodes, state):
+        def mock_create_widget(viewer, edges, nodes, state, **kwargs):
             # Add some nodes to state before capturing
             state.add_node(100.0, 200.0)
             state.add_node(300.0, 400.0)
@@ -590,7 +590,7 @@ class TestAnnotateTrackGraphCalibration:
             mock_setup_track_layers,
         )
 
-        def mock_create_widget(viewer, edges, nodes, state):
+        def mock_create_widget(viewer, edges, nodes, state, **kwargs):
             state.add_node(100.0, 200.0)
             state.add_node(300.0, 400.0)
             state.add_edge(0, 1)
@@ -640,7 +640,7 @@ class TestAnnotateTrackGraphCalibration:
             mock_setup_track_layers,
         )
 
-        def mock_create_widget(viewer, edges, nodes, state):
+        def mock_create_widget(viewer, edges, nodes, state, **kwargs):
             # Add nodes at pixel positions (100, 200) and (300, 200)
             state.add_node(100.0, 200.0)
             state.add_node(300.0, 200.0)
@@ -705,7 +705,7 @@ class TestFullWorkflowIntegration:
             mock_setup_track_layers,
         )
 
-        def mock_create_widget(viewer, edges, nodes, state):
+        def mock_create_widget(viewer, edges, nodes, state, **kwargs):
             # Create a simple linear track
             state.add_node(0.0, 0.0, label="start")
             state.add_node(10.0, 0.0)
@@ -761,7 +761,7 @@ class TestFullWorkflowIntegration:
             mock_setup_track_layers,
         )
 
-        def mock_create_widget(viewer, edges, nodes, state):
+        def mock_create_widget(viewer, edges, nodes, state, **kwargs):
             # Create a track with known length: 0 -> 20 (20 units)
             state.add_node(0.0, 0.0)
             state.add_node(20.0, 0.0)
@@ -830,7 +830,7 @@ def _setup_mocks(monkeypatch, captured_state=None):
     )
 
     # Patch create_track_widget to return mock widget
-    def mock_create_widget(viewer, edges, nodes, state):
+    def mock_create_widget(viewer, edges, nodes, state, **kwargs):
         if captured_state is not None:
             captured_state.append(state)
         return _MockWidget()
@@ -1120,8 +1120,8 @@ def test_native_and_widget_edits_share_atomic_history(monkeypatch, edit):
     captured = {}
     create = module.create_track_widget
 
-    def capture(viewer, edges, nodes, state):
-        widget = create(viewer, edges, nodes, state)
+    def capture(viewer, edges, nodes, state, **kwargs):
+        widget = create(viewer, edges, nodes, state, **kwargs)
         captured.update(
             viewer=viewer, edges=edges, nodes=nodes, state=state, widget=widget
         )
@@ -1207,8 +1207,8 @@ def test_native_duplicate_identity_and_rejected_assignment(monkeypatch, edit):
     captured = {}
     create = module.create_track_widget
 
-    def capture(viewer, edges, nodes, state):
-        widget = create(viewer, edges, nodes, state)
+    def capture(viewer, edges, nodes, state, **kwargs):
+        widget = create(viewer, edges, nodes, state, **kwargs)
         captured.update(viewer=viewer, nodes=nodes, state=state, widget=widget)
         return widget
 
@@ -1266,8 +1266,8 @@ def test_native_edges_and_labels_follow_graph_history(monkeypatch, edit):
     captured = {}
     create = module.create_track_widget
 
-    def capture(viewer, edges, nodes, state):
-        widget = create(viewer, edges, nodes, state)
+    def capture(viewer, edges, nodes, state, **kwargs):
+        widget = create(viewer, edges, nodes, state, **kwargs)
         captured.update(viewer=viewer, edges=edges, state=state, widget=widget)
         return widget
 
@@ -1337,8 +1337,8 @@ def test_track_invalid_close_preserves_draft_for_retry(monkeypatch, close_method
     errors = []
     create = module.create_track_widget
 
-    def capture(viewer, edges, nodes, state):
-        widget = create(viewer, edges, nodes, state)
+    def capture(viewer, edges, nodes, state, **kwargs):
+        widget = create(viewer, edges, nodes, state, **kwargs)
         captured.update(viewer=viewer, nodes=nodes, state=state, widget=widget)
         return widget
 
@@ -1383,8 +1383,8 @@ def test_track_incomplete_window_close_retains_draft(monkeypatch, invalid_draft)
     errors = []
     create = module.create_track_widget
 
-    def capture(viewer, edges, nodes, state):
-        widget = create(viewer, edges, nodes, state)
+    def capture(viewer, edges, nodes, state, **kwargs):
+        widget = create(viewer, edges, nodes, state, **kwargs)
         captured.update(
             viewer=viewer, edges=edges, nodes=nodes, state=state, widget=widget
         )
@@ -1435,8 +1435,8 @@ def test_native_fractional_edge_coordinates_preserve_exact_layer_contract(
     captured = {}
     create = module.create_track_widget
 
-    def capture(viewer, edges, nodes, state):
-        widget = create(viewer, edges, nodes, state)
+    def capture(viewer, edges, nodes, state, **kwargs):
+        widget = create(viewer, edges, nodes, state, **kwargs)
         captured.update(viewer=viewer, edges=edges, state=state, widget=widget)
         return widget
 

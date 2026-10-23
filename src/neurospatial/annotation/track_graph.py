@@ -23,6 +23,7 @@ Examples
 from __future__ import annotations
 
 import warnings
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,7 +32,7 @@ import numpy as np
 # Re-export TrackGraphResult from helpers module for public API
 from neurospatial.annotation._track_helpers import (
     TrackGraphResult,
-    build_track_graph_result,
+    prepare_track_graph_result,
 )
 from neurospatial.annotation._track_state import TrackBuilderState
 from neurospatial.annotation._track_widget import (
@@ -252,8 +253,9 @@ def annotate_track_graph(
 
     # 7. Add control widget
     # TrackGraphWidget is a wrapper class; pass the internal QWidget to napari
-    widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
-    widget._calibration = calibration
+    widget = create_track_widget(
+        viewer, edges_layer, nodes_layer, state, calibration=calibration
+    )
     viewer.window.add_dock_widget(
         widget._widget,
         name="Track Graph Builder",
@@ -505,24 +507,9 @@ def annotate_track_graph(
     widget.sync_from_state()
     viewer.status = "Mode: Add - click to place nodes (press E to connect them)"
 
-    # Validate and cache the complete result before either save or window close.
+    # Validate the complete result before the window closes.
     from neurospatial.annotation._session import run_annotation_session
 
-    prepared_snapshot = None
-    prepared_result: TrackGraphResult | None = None
-
-    def prepare_result() -> TrackGraphResult:
-        nonlocal prepared_snapshot, prepared_result
-        if state.nodes or state.edges:
-            valid, errors, _ = state.is_valid_for_save()
-            if not valid:
-                raise ValueError("Cannot save track graph: " + "; ".join(errors))
-        snapshot = state._snapshot()
-        if prepared_result is None or snapshot != prepared_snapshot:
-            result = build_track_graph_result(state, calibration)
-            prepared_snapshot = snapshot
-            prepared_result = result
-        return prepared_result
-
-    widget._prepare_result = prepare_result
-    return run_annotation_session(viewer, prepare_result)
+    return run_annotation_session(
+        viewer, partial(prepare_track_graph_result, state, calibration)
+    )

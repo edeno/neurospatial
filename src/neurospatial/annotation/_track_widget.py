@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     import napari
     from napari.layers import Points, Shapes
@@ -610,6 +610,8 @@ def create_track_widget(
     edges_layer: Shapes,
     nodes_layer: Points,
     state: TrackBuilderState,
+    *,
+    calibration: VideoCalibration | None = None,
 ) -> TrackGraphWidget:
     """Create the track graph builder control widget.
 
@@ -635,6 +637,9 @@ def create_track_widget(
         The Points layer for track nodes.
     state : TrackBuilderState
         The shared state object (modified in place by handlers).
+    calibration : VideoCalibration, optional
+        Pixel-to-centimeter transform for the result, preview and gap units.
+        None keeps pixel coordinates.
 
     Returns
     -------
@@ -651,7 +656,9 @@ def create_track_widget(
     >>> viewer.window.add_dock_widget(widget)  # doctest: +SKIP
 
     """
-    return TrackGraphWidget(viewer, edges_layer, nodes_layer, state)
+    return TrackGraphWidget(
+        viewer, edges_layer, nodes_layer, state, calibration=calibration
+    )
 
 
 class TrackGraphWidget:
@@ -670,6 +677,9 @@ class TrackGraphWidget:
         The Points layer for track nodes.
     state : TrackBuilderState
         The shared state object.
+    calibration : VideoCalibration, optional
+        Pixel-to-centimeter transform for the result, preview and gap units.
+        None keeps pixel coordinates.
 
     """
 
@@ -679,6 +689,8 @@ class TrackGraphWidget:
         edges_layer: Shapes,
         nodes_layer: Points,
         state: TrackBuilderState,
+        *,
+        calibration: VideoCalibration | None = None,
     ) -> None:
         from qtpy.QtWidgets import (
             QComboBox,
@@ -698,12 +710,7 @@ class TrackGraphWidget:
         self._nodes_layer = nodes_layer
         self._state = state
         self._saved = False
-        self._calibration: VideoCalibration | None = None
-        from neurospatial.annotation._track_helpers import build_track_graph_result
-
-        self._prepare_result: Callable[[], Any] = lambda: build_track_graph_result(
-            state, self._calibration
-        )
+        self._calibration = calibration
 
         # Create main widget
         self._widget = QWidget()
@@ -1269,8 +1276,12 @@ class TrackGraphWidget:
             )
             return False
 
+        from neurospatial.annotation._track_helpers import (
+            prepare_track_graph_result,
+        )
+
         try:
-            self._prepare_result()
+            prepare_track_graph_result(self._state, self._calibration)
         except (ValueError, IndexError) as error:
             QMessageBox.warning(
                 self._widget, "Validation Failed", f"Cannot save: {error}"
