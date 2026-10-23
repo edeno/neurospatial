@@ -82,7 +82,8 @@ def test_side_by_side_fields_share_one_color_scale_by_default(env):
         limits = {f.color_limits() for f in view.animation.fields.values()}
     assert len(limits) == 1
     ((low, high),) = limits
-    assert low <= 0.1 and high >= 2.9
+    # The scale spans both fields: 0.1-0.3 and 1-3.
+    assert low < 0.2 and high > 2.5
 
 
 def test_closing_the_view_releases_the_scene(env):

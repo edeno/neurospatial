@@ -273,14 +273,37 @@ def _field_streams(
                 )
             )
     label = field_options.pop("colorbar_label", None)
-    return {
-        name: AnimationField(
-            values, frame_times, max_gap=max_gap, label=label, **field_options
+
+    def build() -> dict[str, AnimationField]:
+        return {
+            name: AnimationField(
+                values, frame_times, max_gap=max_gap, label=label, **field_options
+            )
+            if not isinstance(values, AnimationField)
+            else values
+            for name, values in streams.items()
+        }
+
+    built = build()
+    plain = [name for name, values in streams.items() if values is not built[name]]
+    if len(plain) > 1 and (
+        field_options.get("vmin") is None or field_options.get("vmax") is None
+    ):
+        # Fields shown side by side share one cmap and colorbar label, so they
+        # share one color scale: the same color is the same value in each.
+        from neurospatial.animation._field_stats import frame_extremes, robust_limits
+
+        extremes = [frame_extremes(built[name]._scale_rows()) for name in plain]
+        low, high = robust_limits(
+            np.concatenate([lows for lows, _ in extremes]),
+            np.concatenate([highs for _, highs in extremes]),
         )
-        if not isinstance(values, AnimationField)
-        else values
-        for name, values in streams.items()
-    }
+        if field_options.get("vmin") is None:
+            field_options["vmin"] = low
+        if field_options.get("vmax") is None:
+            field_options["vmax"] = high
+        built = build()
+    return built
 
 
 def _empty_fields_error() -> ValueError:
