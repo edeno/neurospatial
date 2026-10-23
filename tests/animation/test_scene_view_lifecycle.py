@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import gc
+import warnings
 import weakref
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
 from neurospatial.animation import Animation, AnimationView
-from neurospatial.animation.overlays import VideoData
+from neurospatial.animation.overlays import VideoOverlay
 
 
 def test_close_waits_for_an_active_public_source_read(env):
@@ -66,6 +67,9 @@ def env():
 
 
 class Reader:
+    n_frames = 3
+    original_size_px = frame_size_px = (2, 2)
+
     def __init__(self, events, *, fail=False):
         self.events = events
         self.fail = fail
@@ -78,32 +82,21 @@ class Reader:
             raise RuntimeError("reader close failed")
 
 
-class Video:
-    times = None
-    interp = "nearest"
-
-    def __init__(self, reader):
-        self.reader = reader
-
-    def convert_to_data(self, frame_times, n_frames, env):
-        return VideoData(
-            np.arange(n_frames),
-            self.reader,
-            None,
-            (0, 2, 0, 2),
-            1,
-            "above",
-            _owns_reader=True,
-        )
-
-
 def animation(env, reader=None):
-    return Animation(
-        env,
-        np.ones((3, env.n_bins)),
-        frame_times=[0, 0.1, 0.2],
-        overlays=[] if reader is None else [Video(reader)],
-    )
+    """A scene; with ``reader``, its video overlay opens and owns that reader."""
+    if reader is None:
+        return Animation(env, np.ones((3, env.n_bins)), frame_times=[0, 0.1, 0.2])
+    with (
+        patch("neurospatial._video_io._VideoReader", lambda *args, **kwargs: reader),
+        warnings.catch_warnings(),
+    ):
+        warnings.simplefilter("ignore", UserWarning)  # No calibration.
+        return Animation(
+            env,
+            np.ones((3, env.n_bins)),
+            frame_times=[0, 0.1, 0.2],
+            overlays=[VideoOverlay("video.mp4")],
+        )
 
 
 def test_scene_closes_all_views_before_reader_and_allows_pending_source_reads(env):

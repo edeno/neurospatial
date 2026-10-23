@@ -151,7 +151,13 @@ def test_video_is_stacked_against_the_field_with_its_opacity(open_view, z_order)
         def convert_to_data(self, frame_times, n_frames, env):
             frames = np.zeros((n_frames, 2, 2, 3), dtype=np.uint8)
             return VideoData(
-                np.arange(n_frames), frames, None, (0, 40, 0, 60), 0.4, z_order
+                np.arange(n_frames),
+                frames,
+                None,
+                (0, 40, 0, 60),
+                0.4,
+                z_order,
+                times=frame_times,
             )
 
     view = open_view([Video()])

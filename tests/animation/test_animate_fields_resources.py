@@ -1,9 +1,11 @@
 """animate_fields owns the scene it builds, and the readers the scene opens.
 
 Exports release them when the file is written or the export fails; views
-release them when the view closes. Readers an overlay borrowed stay open.
+release them when the view closes. Readers a custom adapter returns are
+borrowed and stay open.
 """
 
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -18,6 +20,7 @@ from neurospatial.animation.overlays import (
     PositionOverlay,
     TimeSeriesOverlay,
     VideoData,
+    VideoOverlay,
     _convert_overlays_to_data,
 )
 
@@ -31,6 +34,7 @@ def env():
 
 class Reader:
     n_frames = 4
+    original_size_px = frame_size_px = (2, 2)
 
     def __init__(self, *, fail=False, fail_read=False):
         self.close_count = 0
@@ -50,11 +54,10 @@ class Reader:
 
 
 class VideoAdapter:
-    times = None
-    interp = "nearest"
+    """A custom adapter: the reader it returns stays its own."""
 
-    def __init__(self, reader, *, owns=True):
-        self.reader, self.owns = reader, owns
+    def __init__(self, reader):
+        self.reader = reader
         self.calls = 0
 
     def convert_to_data(self, frame_times, n_frames, env):
@@ -66,18 +69,35 @@ class VideoAdapter:
             (0, 2, 0, 2),
             1.0,
             "above",
-            _owns_reader=self.owns,
+            times=frame_times,
         )
 
 
-def run(env, adapter, backend="widget", **kwargs):
+@pytest.fixture
+def file_video(monkeypatch):
+    """A VideoOverlay of a file, whose reader the scene opens and owns."""
+    opened = []
+
+    def make(**options):
+        def open_reader(*args, **kwargs):
+            opened.append(Reader(**options))
+            return opened[-1]
+
+        monkeypatch.setattr("neurospatial._video_io._VideoReader", open_reader)
+        return VideoOverlay("video.mp4"), opened
+
+    warnings.filterwarnings("ignore", "VideoOverlay has no calibration")
+    return make
+
+
+def run(env, overlay, backend="widget", **kwargs):
     if backend != "napari":
         kwargs.setdefault("dpi", 20)
     return animate_fields(
         env,
         np.ones((4, env.n_bins)),
         frame_times=np.arange(4.0) * 0.1,
-        overlays=[adapter],
+        overlays=[overlay],
         backend=backend,
         **kwargs,
     )
@@ -98,58 +118,61 @@ def test_dispatch_errors_do_not_acquire_overlay_readers(env, kwargs):
     assert adapter.reader.close_count == 0
 
 
-@pytest.mark.parametrize("owns", [False, True])
+@pytest.mark.parametrize("owned", [False, True])
 @pytest.mark.parametrize("backend", ["widget", "html", "video"])
-def test_failure_closes_only_owned_readers(env, owns, backend, tmp_path):
+def test_failure_closes_only_owned_readers(env, file_video, owned, backend, tmp_path):
     if backend == "widget":
         _widget()
-    reader = Reader(fail_read=True)
-    adapter = VideoAdapter(reader, owns=owns)
+    if owned:
+        overlay, opened = file_video(fail_read=True)
+    else:
+        overlay = VideoAdapter(Reader(fail_read=True))
+        opened = [overlay.reader]
     save_path = {"html": tmp_path / "out.html", "video": tmp_path / "out.gif"}
     with pytest.raises(ValueError, match="decode failed"):
-        run(env, adapter, backend=backend, save_path=save_path.get(backend))
-    assert adapter.calls == 1
-    assert reader.close_count == int(owns)
+        run(env, overlay, backend=backend, save_path=save_path.get(backend))
+    assert len(opened) == 1
+    assert opened[0].close_count == int(owned)
     assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize("backend", ["widget", "html"])
-def test_failure_survives_cleanup_failure(env, backend, tmp_path):
+def test_failure_survives_cleanup_failure(env, file_video, backend, tmp_path):
     """The rendering failure is raised; the failed cleanup is noted on it."""
     if backend == "widget":
         _widget()
-    reader = Reader(fail=True, fail_read=True)
+    overlay, opened = file_video(fail=True, fail_read=True)
     save_path = tmp_path / "out.html" if backend == "html" else None
     with pytest.raises(ValueError, match="decode failed") as caught:
-        run(env, VideoAdapter(reader), backend=backend, save_path=save_path)
-    assert reader.close_count == 1
+        run(env, overlay, backend=backend, save_path=save_path)
+    assert opened[0].close_count == 1
     assert "Animation cleanup also failed" in " ".join(caught.value.__notes__)
 
 
 @pytest.mark.parametrize("backend", ["html", "video"])
-def test_completed_export_releases_owned_readers(env, backend, tmp_path):
-    reader = Reader()
+def test_completed_export_releases_owned_readers(env, file_video, backend, tmp_path):
+    overlay, opened = file_video()
     path = tmp_path / ("out.html" if backend == "html" else "out.gif")
-    assert run(env, VideoAdapter(reader), backend=backend, save_path=path) == path
+    assert run(env, overlay, backend=backend, save_path=path) == path
     assert path.exists()
-    assert reader.close_count == 1
+    assert opened[0].close_count == 1
 
 
-def test_worker_pickle_failure_releases_owned_reader(env, tmp_path):
+def test_worker_pickle_failure_releases_owned_reader(env, file_video, tmp_path):
     """A scene that cannot go to workers is refused, and its readers released."""
-    reader = Reader()
-    adapter = VideoAdapter(reader)
-    adapter.unpicklable = lambda: None
+    overlay, opened = file_video()
+    overlay.unpicklable = lambda: None
     with pytest.raises(ValueError, match="cannot be pickled"):
-        run(env, adapter, backend="html", save_path=tmp_path / "out.html", n_workers=2)
-    assert reader.close_count == 1
+        run(env, overlay, backend="html", save_path=tmp_path / "out.html", n_workers=2)
+    assert opened[0].close_count == 1
     assert list(tmp_path.iterdir()) == []
 
 
-def test_widget_owns_reader_until_the_view_closes(env):
+def test_widget_owns_reader_until_the_view_closes(env, file_video):
     _widget()
-    reader = Reader()
-    view = run(env, VideoAdapter(reader))
+    overlay, opened = file_video()
+    view = run(env, overlay)
+    reader = opened[0]
     assert reader.close_count == 0
     view.seek(0.3)
     view.native.children[1].children[0].playing = True
@@ -161,12 +184,13 @@ def test_widget_owns_reader_until_the_view_closes(env):
 
 
 @pytest.mark.napari
-def test_closing_the_napari_window_releases_owned_readers(env):
+def test_closing_the_napari_window_releases_owned_readers(env, file_video):
     pytest.importorskip("napari")
     from qtpy.QtWidgets import QApplication
 
-    reader = Reader()
-    view = run(env, VideoAdapter(reader), backend="napari", show=False)
+    overlay, opened = file_video()
+    view = run(env, overlay, backend="napari", show=False)
+    reader = opened[0]
     try:
         assert reader.close_count == 0
         view.native.window._qt_window.close()
@@ -215,7 +239,7 @@ def test_constant_normalization_preserves_missing_observations_in_consumers(env)
     with Animation(
         env, np.ones((3, env.n_bins)), frame_times=times, overlays=[overlay]
     ) as scene:
-        signal = scene.overlay_data(own_samples=True).timeseries[0]
+        signal = scene.overlay_data().timeseries[0]
         clock, values = PreparedScene(scene).signal_window(signal, 0.1)
         assert_array_equal(clock, times)
         assert_allclose(values, [0, np.nan, 0], equal_nan=True)
@@ -225,30 +249,28 @@ def test_constant_normalization_preserves_missing_observations_in_consumers(env)
 
 
 @pytest.mark.parametrize("custom", [False, True])
-def test_own_sample_conversion_fills_inherited_clock_without_losing_support(
-    env, custom
-):
+def test_conversion_keeps_frame_clock_samples_and_their_support(env, custom):
     times = np.array([0.0, 0.1, 1.0, 1.1])
     positions = np.ones((4, 2))
 
     class Adapter:
-        times = None
-        interp = "linear"
-
         def convert_to_data(self, frame_times, n_frames, env):
             return PositionData(
                 positions,
                 "red",
                 5,
                 None,
+                times=frame_times,
                 sample_valid=np.array([True, False, True, True]),
                 interval_valid=np.array([False, False, True]),
             )
 
     overlay = Adapter() if custom else PositionOverlay(positions)
-    prepared = _convert_overlays_to_data([overlay], times, 4, env, own_samples=True)
+    prepared, _ = _convert_overlays_to_data([overlay], times, 4, env)
     item = prepared.positions[0]
     assert_array_equal(item.times, times)
+    # The 0.9 s interval is longer than max_gap; a rejected sample takes its
+    # intervals with it.
     assert_array_equal(
         item.interval_valid, [False, False, True] if custom else [True, False, True]
     )

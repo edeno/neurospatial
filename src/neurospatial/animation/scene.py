@@ -361,36 +361,7 @@ class Animation:
             copy.deepcopy(scale_bar),
             track,
         )
-        self.overlays = tuple(
-            self._snapshot_overlay(overlay)
-            for overlay in (() if overlays is None else overlays)
-        )
-        self._renderer: Any = None
-        # Validate overlays once on the scene clock. Keep converted video readers
-        # for repeated frame inspection rather than reopening the source.
-        from neurospatial.animation.overlays import (
-            _convert_overlays_to_data,
-            _freeze_overlay_arrays,
-        )
-
-        self._overlay_data = _convert_overlays_to_data(
-            list(self.overlays),
-            self.frame_times,
-            len(self.frame_times),
-            self.env,
-            own_samples=True,
-        )
-        _freeze_overlay_arrays(self._overlay_data)
-        from neurospatial.animation._resources import _OwnedReaders
-
-        self._owned_readers = _OwnedReaders.from_overlay_data(self._overlay_data)
         if env.n_dims == 3:
-            if any(item.data.ndim == 1 for item in self._overlay_data.head_directions):
-                self.close()
-                raise ValueError(
-                    "3D head directions require (n_samples, 3) unit vectors; "
-                    "angles alone do not specify a direction in 3D."
-                )
             from neurospatial.animation._region_names import shown_region_names
 
             planar_regions = any(
@@ -401,93 +372,40 @@ class Animation:
                 )
             )
             if planar_regions or scale_bar:
-                self.close()
                 raise ValueError(
                     "3D Animation cannot place planar regions or a 2D scale bar "
                     "unambiguously. Use 3D point regions and omit scale_bar; the 3D axes "
                     "show physical coordinates and units."
                 )
-
-    def _snapshot_overlay(self, overlay: Any) -> Any:
         from neurospatial.animation.overlays import (
-            BodypartOverlay,
-            EpochOverlay,
-            EventOverlay,
-            HeadDirectionOverlay,
-            ObjectVectorOverlay,
-            PositionOverlay,
-            SpikeRasterOverlay,
-            TimeSeriesOverlay,
-            VideoOverlay,
+            _convert_overlays_to_data,
+            _freeze_overlay_arrays,
+            _Overlay,
         )
 
-        if type(overlay) not in {
-            PositionOverlay,
-            BodypartOverlay,
-            HeadDirectionOverlay,
-            VideoOverlay,
-            ObjectVectorOverlay,
-            EventOverlay,
-            SpikeRasterOverlay,
-            EpochOverlay,
-            TimeSeriesOverlay,
-        }:
-            # An adapter may be frozen, expose read-only properties, or own
-            # native resources that cannot be copied. Only its converted data
-            # is snapshotted; renderers never consult the adapter afterward.
-            return overlay
-        result = copy.copy(overlay)
-        for name in (
-            "times",
-            "break_before",
-            "position_times",
-            "unit_ids",
-            "order",
-            "_order",
-            "_intervals",
-        ):
-            value = getattr(result, name, None)
-            if value is not None:
-                if name == "unit_ids":
-                    from neurospatial._results import as_label_array
+        # Built-in overlays are snapshotted. An adapter may be frozen, expose
+        # read-only properties, or own native resources that cannot be
+        # copied; only its converted data is owned, and renderers never
+        # consult the adapter afterward.
+        self.overlays: tuple[Any, ...] = tuple(
+            overlay._snapshot() if isinstance(overlay, _Overlay) else overlay
+            for overlay in (() if overlays is None else overlays)
+        )
+        self._renderer: Any = None
+        # Validate overlays once on the scene clock. Keep converted video readers
+        # for repeated frame inspection rather than reopening the source.
+        self._overlay_data, self._owned_readers = _convert_overlays_to_data(
+            list(self.overlays), self.frame_times, len(self.frame_times), self.env
+        )
+        _freeze_overlay_arrays(self._overlay_data)
 
-                    value = as_label_array(value)
-                setattr(result, name, _readonly(value))
-        for name in ("colors", "markers", "skeleton", "calibration", "epochs"):
-            if hasattr(result, name):
-                setattr(result, name, copy.deepcopy(getattr(result, name)))
-        for name in ("data", "event_positions"):
-            if isinstance(getattr(result, name, None), dict):
-                setattr(result, name, dict(getattr(result, name)))
-        if isinstance(getattr(result, "event_times", None), dict):
-            result.event_times = {
-                name: _readonly(times) for name, times in result.event_times.items()
-            }
-        if hasattr(result, "_rows"):
-            rows, ids = result._rows
-            result._rows = (list(rows), _readonly(ids))
-        if (
-            isinstance(
-                result,
-                (
-                    PositionOverlay,
-                    BodypartOverlay,
-                    HeadDirectionOverlay,
-                    ObjectVectorOverlay,
-                    VideoOverlay,
-                ),
-            )
-            and result.times is None
-        ):
-            result.times = self.frame_times
-        return result
+    def overlay_data(self, frame_times: Any = None) -> Any:
+        """The overlays sampled on a physical clock, by default the scene's.
 
-    def overlay_data(
-        self, frame_times: Any = None, *, own_samples: bool = False
-    ) -> Any:
-        """Convert overlays on a requested physical clock.
-
-        Arrays shared with the scene are read-only; copy one to modify it.
+        Sampled overlays (positions, pose, headings, object vectors and
+        video) get one row per requested time, with ``times`` set to it and
+        the support each overlay was prepared with. Arrays shared with the
+        scene are read-only; copy one to modify it.
         """
         from neurospatial.animation.overlays import _realign_prepared_overlays
 
@@ -505,11 +423,7 @@ class Animation:
                 f"[{self.frame_times[0]:g}, {self.frame_times[-1]:g}] seconds. "
                 "Create a scene with a wider frame_times range to include those times."
             )
-        return _realign_prepared_overlays(
-            self._overlay_data,
-            clock,
-            own_samples=own_samples,
-        )
+        return _realign_prepared_overlays(self._overlay_data, clock)
 
     @classmethod
     def from_decoding(cls, result: DecodingResult, **kwargs: Any) -> Animation:

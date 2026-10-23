@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.animation._sampling import sample_at_times
+from neurospatial.animation._sampling import resolve_support, sample_at_times
 from neurospatial.animation.overlays import (
     BodypartOverlay,
     HeadDirectionOverlay,
@@ -40,7 +40,7 @@ def test_missing_samples_gaps_breaks_and_exact_observations(env, interp):
     breaks = np.array([False, False, False, False, True, False, False])
     queries = np.unique(np.r_[times, 0.1, 0.3, 0.5, 0.7, 1.0, 2.1])
     overlay = PositionOverlay(positions, times, interp=interp, break_before=breaks)
-    data = overlay.convert_to_data(queries, len(queries), env)
+    data = overlay.convert_to_data(queries, len(queries), env).on_clock(queries)
     decoded, _ = _align_true_positions(
         queries,
         times,
@@ -62,9 +62,9 @@ def test_native_sampling_retains_support_and_method(env):
     times = np.array([0.0, 0.2, 2.0, 2.2])
     positions = np.column_stack([times, times])
     overlay = PositionOverlay(positions, times, interp="nearest")
-    data = _convert_overlays_to_data(
-        [overlay], np.array([0.0, 2.2]), 2, env, own_samples=True
-    ).positions[0]
+    data = _convert_overlays_to_data([overlay], np.array([0.0, 2.2]), 2, env)[
+        0
+    ].positions[0]
     assert data.interp == "nearest"
     np.testing.assert_array_equal(data.interval_valid, [True, False, True])
     np.testing.assert_array_equal(data.sample_valid, np.ones(4, dtype=bool))
@@ -88,17 +88,22 @@ def test_pose_and_heading_missingness_are_independent(env):
     nose = np.array([[1.0, 1.0], [np.nan, np.nan], [2.0, 2.0]])
     body = np.array([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]])
     query = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
-    data = BodypartOverlay({"nose": nose, "body": body}, times).convert_to_data(
-        query, 5, env
+    data = (
+        BodypartOverlay({"nose": nose, "body": body}, times)
+        .convert_to_data(query, 5, env)
+        .on_clock(query)
     )
     assert np.isnan(data.bodyparts["nose"][1:4]).all()
     assert np.isfinite(data.bodyparts["body"]).all()
-    headings = HeadDirectionOverlay(
-        np.array([3.0, np.nan, -3.0]), times
-    ).convert_to_data(query, 5, env)
+    headings = (
+        HeadDirectionOverlay(np.array([3.0, np.nan, -3.0]), times)
+        .convert_to_data(query, 5, env)
+        .on_clock(query)
+    )
     assert np.isnan(headings.data[1:4]).all()
     exact = HeadDirectionOverlay(np.array([3 * np.pi, -3.0]), np.array([0.0, 0.2]))
-    aligned = exact.convert_to_data(np.array([0.0, 0.1, 0.2]), 3, env).data
+    clock = np.array([0.0, 0.1, 0.2])
+    aligned = exact.convert_to_data(clock, 3, env).on_clock(clock).data
     assert aligned[0] == 3 * np.pi
     assert abs(aligned[1]) > 3.0
 
@@ -110,9 +115,8 @@ def test_object_vectors_follow_missing_position_and_declared_break(env):
         np.array([0.0, 0.2, 0.4]),
         break_before=np.array([False, True, False]),
     )
-    positions = overlay.convert_to_data(
-        np.array([0.0, 0.1, 0.2, 0.3, 0.4]), 5, env
-    ).animal_positions
+    clock = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
+    positions = overlay.convert_to_data(clock, 5, env).on_clock(clock).animal_positions
     np.testing.assert_array_equal(
         np.isfinite(positions).all(axis=1), [True, False, True, False, False]
     )
@@ -226,7 +230,7 @@ def test_file_video_processing_uses_actual_resized_dimensions(env, monkeypatch):
     np.testing.assert_allclose(
         data.transform_to_env(np.array([[0.0, 0.0]])), [[2.0 + 2 / 3, 1.0 + 2 / 3]]
     )
-    assert data._owns_reader
+    assert isinstance(data.reader, Reader)
 
 
 @pytest.mark.parametrize("frame", [None, "camera"])
@@ -246,8 +250,11 @@ def test_coarse_frame_trails_retain_source_breaks(env):
     times = np.array([0.0, 0.1, 0.2, 0.3])
     positions = np.column_stack([times, times])
     breaks = np.array([False, False, True, False])
-    data = PositionOverlay(positions, times, break_before=breaks).convert_to_data(
-        np.array([0.0, 0.3]), 2, env
+    clock = np.array([0.0, 0.3])
+    data = (
+        PositionOverlay(positions, times, break_before=breaks)
+        .convert_to_data(clock, 2, env)
+        .on_clock(clock)
     )
     assert np.isfinite(data.data).all()  # Both endpoints remain observations.
     np.testing.assert_array_equal(data.sample_valid, [True, True])
@@ -255,13 +262,18 @@ def test_coarse_frame_trails_retain_source_breaks(env):
 
 
 def test_supplied_masks_cannot_make_missing_values_observed():
+    values, sample_valid, interval_valid = resolve_support(
+        np.array([1.0, np.nan]), np.array([True, True]), np.array([True])
+    )
+    np.testing.assert_array_equal(sample_valid, [True, False])
+    np.testing.assert_array_equal(interval_valid, [False])
     result = sample_at_times(
         np.array([0.0, 0.2]),
-        np.array([1.0, np.nan]),
+        values,
         np.array([0.0, 0.05, 0.2]),
         interp="nearest",
-        sample_valid=np.array([True, True]),
-        interval_valid=np.array([True]),
+        sample_valid=sample_valid,
+        interval_valid=interval_valid,
     )
     np.testing.assert_allclose(result, [1.0, np.nan, np.nan], equal_nan=True)
 

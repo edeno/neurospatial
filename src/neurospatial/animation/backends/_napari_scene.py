@@ -676,16 +676,7 @@ class NapariScene:
                     empty,
                     ndim=dims,
                     name=f"Body {i + 1}: {name}",
-                    face_color=_rgba(
-                        (body.colors or {}).get(
-                            name,
-                            (
-                                (body.skeleton.node_colors or {}).get(name, "red")
-                                if body.skeleton
-                                else "red"
-                            ),
-                        )
-                    ),
+                    face_color=_rgba(body.colors[name]),
                     **screen_point_options(8),
                 )
                 for name in names
@@ -809,7 +800,7 @@ class NapariScene:
                     else np.empty((0, 2, dims))
                 )
                 if v.firing_rates is not None:
-                    rate = sample(v, v.firing_rates, time)
+                    rate = sample(v, v.firing_rates, time, name="firing_rates")
                     layer.opacity = _rate_opacity(float(rate), v._rate_peak or 1.0)
 
             self._updates.append(update_vectors)
@@ -859,9 +850,7 @@ class NapariScene:
             # below decides whether the current observation is visible.
             available = np.flatnonzero(video.frame_indices >= 0)
             image = (
-                self._helper.video_frame(
-                    video, float(self._helper.clock(video)[available[0]])
-                )
+                self._helper.video_frame(video, float(video.times[available[0]]))
                 if len(available)
                 else np.zeros((1, 1, 3), dtype=np.uint8)
             )

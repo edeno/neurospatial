@@ -409,14 +409,14 @@ def test_native_view_time_follows_the_users_slider_and_borrows_scene_readers(
 
     video = VideoData(
         frame_indices=np.array([0]),
-        reader=Mock(),
+        reader=Mock(n_frames=1),
         transform_to_env=None,
         env_bounds=(0, 1, 0, 1),
         alpha=1.0,
         z_order="below",
-        _owns_reader=True,
+        times=recording.frame_times[:1],
     )
-    data = OverlayData(videos=[video], frame_times=recording.frame_times)
+    data = OverlayData(videos=[video])
     monkeypatch.setattr(recording, "_overlay_data", data)
 
     class Native(SimpleNamespace):
@@ -443,8 +443,8 @@ def test_native_view_time_follows_the_users_slider_and_borrows_scene_readers(
         # The native clock is authoritative even before a requested frame is drawn.
         assert view.time == pytest.approx(10.35)
         arguments = render.call_args.kwargs
-        assert not arguments["overlay_data"].videos[0]._owns_reader
-        assert video._owns_reader  # The scene keeps ownership for later exports.
+        # The view borrows the scene's reader; the scene keeps it for exports.
+        assert arguments["overlay_data"].videos[0].reader is video.reader
         callback = arguments["_field_at_time"]
         np.testing.assert_allclose(
             callback(10.35)[0], next(iter(recording.sample_fields(10.35).values()))

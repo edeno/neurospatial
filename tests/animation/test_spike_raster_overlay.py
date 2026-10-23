@@ -26,7 +26,9 @@ def env():
 def test_rows_follow_the_order_and_keep_each_units_label(env):
     raster = SpikeRasterOverlay(SPIKES, order=[2, 0, 1], unit_ids=["a", "b", "c"])
     assert isinstance(raster, OverlayProtocol)
-    (data,) = _convert_overlays_to_data([raster], np.arange(3.0), 3, env).spike_rasters
+    (data,) = _convert_overlays_to_data([raster], np.arange(3.0), 3, env)[
+        0
+    ].spike_rasters
     assert isinstance(data, SpikeRasterData)
     assert data.unit_ids.tolist() == ["c", "a", "b"]  # bottom row first
     for train, unit in zip(data.spike_times, [2, 0, 1], strict=True):
@@ -92,7 +94,9 @@ def test_scene_frames_draw_each_spike_in_its_units_row(env):
 def test_rate_maps_follow_the_rows_and_must_cover_the_bins(env):
     rates = np.arange(3 * env.n_bins, dtype=float).reshape(3, -1)
     raster = SpikeRasterOverlay(SPIKES, order=[2, 0, 1], rates=rates)
-    (data,) = _convert_overlays_to_data([raster], np.arange(3.0), 3, env).spike_rasters
+    (data,) = _convert_overlays_to_data([raster], np.arange(3.0), 3, env)[
+        0
+    ].spike_rasters
     np.testing.assert_array_equal(data.rates, rates[[2, 0, 1]])
     wrong = SpikeRasterOverlay(SPIKES, rates=rates[:, :-1])
     with pytest.raises(ValueError, match="one rate map per unit"):
@@ -125,7 +129,9 @@ def test_rate_results_must_share_the_animated_bins(env, make_source, difference)
     same = SpatialRatesResult(
         np.ones((3, env.n_bins)), np.ones(env.n_bins), env, "binned", 2.0
     )
-    data = SpikeRasterOverlay(SPIKES, rates=same).convert_to_data(np.arange(3.0), 3, env)
+    data = SpikeRasterOverlay(SPIKES, rates=same).convert_to_data(
+        np.arange(3.0), 3, env
+    )
     assert data.rates.shape == (3, env.n_bins)
 
 

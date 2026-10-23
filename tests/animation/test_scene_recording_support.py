@@ -157,7 +157,9 @@ class ReadonlyPosition:
 @pytest.mark.parametrize("adapter_type", [FrozenPosition, ReadonlyPosition])
 def test_scene_accepts_readonly_adapters_and_owns_prepared_metadata(env, adapter_type):
     times = np.array([10.0, 10.1, 10.2])
-    data = PositionData(np.array([[0.2, 0.2], [0.5, 0.5], [0.8, 0.8]]), "red", 5, None)
+    data = PositionData(
+        np.array([[0.2, 0.2], [0.5, 0.5], [0.8, 0.8]]), "red", 5, None, times=times
+    )
     if adapter_type is FrozenPosition:
         adapter = FrozenPosition(times, data, [])
     else:
@@ -165,13 +167,14 @@ def test_scene_accepts_readonly_adapters_and_owns_prepared_metadata(env, adapter
     with Animation(
         env, np.ones((2, env.n_bins)), frame_times=[10, 10.2], overlays=[adapter]
     ) as scene:
+        # The adapter is called once, on the scene clock.
         assert len(adapter.calls) == 1
-        np.testing.assert_array_equal(adapter.calls[0], [10, 10.1, 10.2])
+        np.testing.assert_array_equal(adapter.calls[0], [10, 10.2])
         # Mutation of the adapter or the data it returned cannot alter the scene.
         times[:] = -1
         data.data[:] = 99
         data.color = "blue"
-        owned = scene.overlay_data(own_samples=True).positions[0]
+        owned = scene._overlay_data.positions[0]
         np.testing.assert_array_equal(owned.times, [10, 10.1, 10.2])
         np.testing.assert_allclose(owned.data, [[0.2, 0.2], [0.5, 0.5], [0.8, 0.8]])
         assert owned.color == "red"

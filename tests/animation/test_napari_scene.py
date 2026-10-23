@@ -848,7 +848,13 @@ def test_vertical_layout_keeps_video_below_each_panel_field():
         def convert_to_data(self, frame_times, n_frames, env):
             frames = np.zeros((n_frames, 2, 2, 3), dtype=np.uint8)
             return VideoData(
-                np.arange(n_frames), frames, None, (0, 40, 0, 60), 1, "below"
+                np.arange(n_frames),
+                frames,
+                None,
+                (0, 40, 0, 60),
+                1,
+                "below",
+                times=frame_times,
             )
 
     env = Environment.from_grid_mask(

@@ -14,7 +14,7 @@ from neurospatial.animation._prepared import (
     iter_observation_clocks,
 )
 from neurospatial.animation._scene_rendering import SceneRenderer
-from neurospatial.animation.overlays import PositionData
+from neurospatial.animation.overlays import OverlayData, PositionData
 
 
 @pytest.mark.parametrize("render", ["scene", "view"])
@@ -94,16 +94,15 @@ def test_export_retains_isolated_overlay_observations_and_excludes_stop(
         assert all(time < observed[-1] for time, _ in captures)
 
 
-def test_export_clock_enumerates_prepared_and_inherited_overlay_clocks():
+def test_export_clock_enumerates_prepared_overlay_clocks():
     # Adapter-prepared clocks are authoritative, rather than adapter input
-    # attributes. The inherited scene clock is used for explicitly aligned rows.
+    # attributes.
     scene_clock = np.array([100.0, 100.5])
     native = np.array([100.1, 100.2, 100.3])
     field_clock = np.array([100.0, 100.25, 100.5])
-    inherited = SimpleNamespace(times=None)
     sampled = [SimpleNamespace(times=native.copy()) for _ in range(6)]
-    data = SimpleNamespace(
-        positions=[inherited, sampled[0]],
+    data = OverlayData(
+        positions=[sampled[0]],
         bodypart_sets=[sampled[1]],
         head_directions=[sampled[2]],
         object_vectors=[sampled[3]],
@@ -122,14 +121,13 @@ def test_export_clock_enumerates_prepared_and_inherited_overlay_clocks():
     )
     clocks = list(iter_observation_clocks(scene))
     assert clocks[0] is field_clock
-    assert clocks[1] is scene_clock
     assert all(
-        clock is item.times for clock, item in zip(clocks[2:8], sampled, strict=True)
+        clock is item.times for clock, item in zip(clocks[1:7], sampled, strict=True)
     )
+    np.testing.assert_array_equal(clocks[7], native)
     np.testing.assert_array_equal(clocks[8], native)
-    np.testing.assert_array_equal(clocks[9], native)
-    np.testing.assert_array_equal(clocks[10], [100.1, 100.2])
-    np.testing.assert_array_equal(clocks[11], [100.2, 100.3])
+    np.testing.assert_array_equal(clocks[9], [100.1, 100.2])
+    np.testing.assert_array_equal(clocks[10], [100.2, 100.3])
 
 
 def test_point_clock_enumeration_uses_bounded_chunks_and_keeps_sorted_views():

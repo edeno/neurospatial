@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 
+from neurospatial.animation._sampling import sample_at_times
 from neurospatial.animation.overlays import (
     EventOverlay,
     PositionOverlay,
@@ -157,62 +158,52 @@ def test_video_conversion_closes_acquired_reader_on_validation_failure(
     assert readers[0].close_count == 1
 
 
-@pytest.mark.parametrize("own_samples", [False, True])
-def test_pipeline_closes_all_owned_readers_on_later_failure(env, readers, own_samples):
+def test_pipeline_closes_all_owned_readers_on_later_failure(env, readers):
     overlays = [
         VideoOverlay("first.mp4", times=np.arange(3.0)),
         VideoOverlay("second.mp4", times=np.arange(3.0)),
         object(),
     ]
     with pytest.raises(TypeError), pytest.warns(UserWarning):
-        _convert_overlays_to_data(
-            overlays, np.arange(3.0), 3, env, own_samples=own_samples
-        )
+        _convert_overlays_to_data(overlays, np.arange(3.0), 3, env)
     assert len(readers) == 2
     assert [r.close_count for r in readers] == [1, 1]
 
 
-def test_own_samples_opens_one_reader_and_realign_borrows_it(env, readers):
+def test_conversion_opens_one_reader_and_realign_borrows_it(env, readers):
     with pytest.warns(UserWarning):
-        prepared = _convert_overlays_to_data(
+        prepared, owned = _convert_overlays_to_data(
             [VideoOverlay("test.mp4", times=np.arange(3.0))],
             np.array([0.0, 2.0]),
             2,
             env,
-            own_samples=True,
         )
-    for own_samples in (False, True):
-        result = _realign_prepared_overlays(
-            prepared, np.array([0.0, 1.0, 2.0]), own_samples=own_samples
-        )
+    for clock in (np.array([0.0, 1.0, 2.0]), np.array([0.5, 1.5])):
+        result = _realign_prepared_overlays(prepared, clock)
         assert result.videos[0].reader is prepared.videos[0].reader
-        assert not result.videos[0]._owns_reader
         result.videos[0].frame_indices[0] = -1
         assert prepared.videos[0].frame_indices[0] == 0
     assert len(readers) == 1
     assert readers[0].close_count == 0
-    readers[0].close()
+    owned.close()
+    assert readers[0].close_count == 1
 
 
 def test_single_conversion_failure_closes_previously_opened_reader(env, readers):
-    class FailsOnOwnClock:
-        times = np.arange(3.0)
-        interp = "linear"
+    class Fails:
         calls = 0
 
         def convert_to_data(self, frame_times, n_frames, env):
             self.calls += 1
-            assert_array_equal(frame_times, self.times)
-            raise ValueError("own clock conversion failed")
+            raise ValueError("adapter conversion failed")
 
-    failing = FailsOnOwnClock()
-    with pytest.raises(ValueError, match="own clock"), pytest.warns(UserWarning):
+    failing = Fails()
+    with pytest.raises(ValueError, match="adapter"), pytest.warns(UserWarning):
         _convert_overlays_to_data(
             [VideoOverlay("test.mp4", times=np.arange(3.0)), failing],
             np.arange(3.0),
             3,
             env,
-            own_samples=True,
         )
     assert failing.calls == 1
     assert len(readers) == 1
@@ -228,12 +219,15 @@ def test_borrowed_reader_is_not_closed_on_pipeline_failure(env):
     reader.close = close
 
     class BorrowedVideo:
-        times = None
-        interp = "nearest"
-
         def convert_to_data(self, frame_times, n_frames, env):
             return VideoData(
-                np.arange(n_frames), reader, None, (0, 1, 0, 1), 1.0, "above"
+                np.arange(n_frames),
+                reader,
+                None,
+                (0, 1, 0, 1),
+                1.0,
+                "above",
+                times=frame_times,
             )
 
     with pytest.raises(TypeError):
@@ -246,9 +240,7 @@ def test_prepared_realign_preserves_break_when_clock_skips_gap(env):
         np.ones((4, 2)),
         np.array([0.0, 0.2, 1.0, 1.2]),
     )
-    prepared = _convert_overlays_to_data(
-        [overlay], np.array([0.0, 1.2]), 2, env, own_samples=True
-    )
+    prepared, _ = _convert_overlays_to_data([overlay], np.array([0.0, 1.2]), 2, env)
     result = _realign_prepared_overlays(prepared, np.array([0.0, 1.2]))
     assert_array_equal(result.positions[0].sample_valid, [True, True])
     assert_array_equal(result.positions[0].interval_valid, [False])
@@ -263,9 +255,18 @@ def test_prepared_heading_realign_matches_original_sampling(env, vector):
         headings = np.column_stack((np.cos(headings), np.sin(headings)))
     overlay = HeadDirectionOverlay(headings, times=np.array([0.0, 0.2]))
     frames = np.array([0.0, 0.1, 0.2])
-    prepared = _convert_overlays_to_data(
-        [overlay], frames, len(frames), env, own_samples=True
-    )
+    prepared, _ = _convert_overlays_to_data([overlay], frames, len(frames), env)
     result = _realign_prepared_overlays(prepared, frames)
-    expected = overlay.convert_to_data(frames, len(frames), env)
-    assert_allclose(result.head_directions[0].data, expected.data)
+    expected = sample_at_times(
+        overlay.times,
+        headings,
+        frames,
+        interp="linear",
+        sample_valid=np.ones(2, dtype=bool),
+        interval_valid=np.ones(1, dtype=bool),
+        circular=not vector,
+    )
+    assert_allclose(result.head_directions[0].data, expected)
+    if not vector:
+        # The short way across +/-pi.
+        assert abs(result.head_directions[0].data[1]) > 3.0

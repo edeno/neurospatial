@@ -214,7 +214,11 @@ class TestObjectVectorOverlayConversion:
         result = overlay.convert_to_data(frame_times, n_frames, mock_env)
 
         assert isinstance(result, ObjectVectorData)
-        assert result.animal_positions.shape == (n_frames, 2)
+        # The animal positions keep their own samples and times.
+        assert_array_equal(result.animal_positions, animal_positions)
+        assert_array_equal(result.times, times)
+        on_frames = result.on_clock(frame_times)
+        assert on_frames.animal_positions.shape == (n_frames, 2)
         assert_array_equal(result.object_positions, object_positions)
         assert result.color == "white"
         assert result.linewidth == 2.0
@@ -242,7 +246,9 @@ class TestObjectVectorOverlayConversion:
             firing_rates=firing_rates,
         )
 
-        result = overlay.convert_to_data(frame_times, n_frames, mock_env)
+        result = overlay.convert_to_data(frame_times, n_frames, mock_env).on_clock(
+            frame_times
+        )
 
         assert isinstance(result, ObjectVectorData)
         assert result.firing_rates is not None
@@ -314,6 +320,7 @@ class TestObjectVectorDataContainer:
             show_objects=True,
             object_marker="o",
             object_size=15.0,
+            times=np.arange(len(animal_positions), dtype=float),
         )
 
         assert_array_equal(data.object_positions, object_positions)
@@ -342,6 +349,7 @@ class TestObjectVectorDataContainer:
             show_objects=True,
             object_marker="o",
             object_size=15.0,
+            times=np.arange(len(animal_positions), dtype=float),
         )
 
         assert_array_equal(data.firing_rates, firing_rates)

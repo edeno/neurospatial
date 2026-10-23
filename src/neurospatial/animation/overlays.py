@@ -27,11 +27,12 @@ Performance Considerations
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import warnings
 from collections.abc import Iterator
 from contextlib import ExitStack
-from dataclasses import KW_ONLY, dataclass, field, replace
+from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -39,6 +40,7 @@ from typing import (
     ClassVar,
     Literal,
     Protocol,
+    TypeVar,
     cast,
     runtime_checkable,
 )
@@ -52,7 +54,12 @@ from neurospatial._exceptions import _format_error
 from neurospatial._units import same_coordinate_declaration
 from neurospatial._validation import validate_finite
 from neurospatial.animation._resources import _OwnedReaders
-from neurospatial.animation._sampling import observation_support, sample_at_times
+from neurospatial.animation._sampling import (
+    observation_support,
+    resample,
+    resolve_support,
+    sample_at_times,
+)
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -75,17 +82,12 @@ class OverlayProtocol(Protocol):
     containers listed by ``convert_to_data``. It does not register a new
     renderer or introduce a new renderable type.
 
-    Users can create custom overlays by implementing this protocol.
-    The ``convert_to_data()`` method is called during animation to transform
-    user-facing overlay configuration into internal data representation.
-
-    Attributes
-    ----------
-    times : NDArray[np.float64] | None
-        Timestamps for overlay data samples, in seconds. If None, samples are
-        aligned to animation frames by sample index.
-    interp : {"linear", "nearest"}
-        Interpolation method for aligning overlay to animation frames.
+    ``convert_to_data()`` is called once, when an ``Animation`` is built,
+    with the scene's clock. Sampled data (positions, pose, headings, object
+    vectors, video) keeps its own samples and states their times in
+    ``times``; views sample it at the times they show. Omitted
+    ``sample_valid`` and ``interval_valid`` masks accept every finite row
+    and every interval between finite rows.
 
     See Also
     --------
@@ -105,10 +107,8 @@ class OverlayProtocol(Protocol):
 
         @dataclass
         class MyCustomOverlay:
-            data: NDArray[np.float64]
-            times: NDArray[np.float64] | None = None
-            interp: Literal["linear", "nearest"] = "linear"
-            custom_attr: str = "default"
+            positions: NDArray[np.float64]
+            times: NDArray[np.float64]
 
             def convert_to_data(
                 self,
@@ -116,28 +116,11 @@ class OverlayProtocol(Protocol):
                 n_frames: int,
                 env: Any,
             ) -> PositionData:
-                # If times provided, interpolate to frame times
-                if self.times is not None:
-                    # Use numpy.interp for each dimension
-                    aligned = np.column_stack(
-                        [
-                            np.interp(frame_times, self.times, self.data[:, d])
-                            for d in range(self.data.shape[1])
-                        ]
-                    )
-                else:
-                    aligned = self.data
-
+                # The samples keep their own times; the scene samples them.
                 return PositionData(
-                    data=aligned,
-                    color="green",
-                    size=10.0,
-                    trail_length=None,
+                    self.positions, "green", 10.0, None, times=self.times
                 )
     """
-
-    times: NDArray[np.float64] | None
-    interp: Literal["linear", "nearest"]
 
     def convert_to_data(
         self,
@@ -160,7 +143,8 @@ class OverlayProtocol(Protocol):
         Parameters
         ----------
         frame_times : NDArray[np.float64]
-            Animation frame timestamps with shape (n_frames,).
+            The scene's clock, in seconds, with shape (n_frames,). Overlays
+            without times of their own are sampled on it.
         n_frames : int
             Number of animation frames.
         env : Any
@@ -169,13 +153,13 @@ class OverlayProtocol(Protocol):
         Returns
         -------
         PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData | SpikeRasterData | EpochData | ObjectVectorData
-            Internal data container aligned to frame times.
+            Internal data container.
 
         Notes
         -----
         Implementations should:
         1. Validate overlay data (NaN marks missing data; reject Inf and wrong shapes)
-        2. Align data to frame_times via interpolation if times provided
+        2. Keep sampled data on its own clock, stated in ``times``
         3. Return appropriate internal data type
         """
         ...
@@ -186,8 +170,42 @@ class OverlayProtocol(Protocol):
 # =============================================================================
 
 
+_OverlayT = TypeVar("_OverlayT", bound="_Overlay")
+_SampledT = TypeVar("_SampledT", bound="_SampledData")
+_ItemT = TypeVar("_ItemT")
+
+
+class _Overlay:
+    """A built-in overlay, which an ``Animation`` keeps a snapshot of.
+
+    The snapshot owns read-only copies of the metadata arrays named in
+    ``_owned_arrays``, deep copies of ``_owned_objects`` and shallow copies of
+    the ``_owned_mappings``; large observed arrays stay caller-owned.
+    """
+
+    _owned_arrays: ClassVar[tuple[str, ...]] = ("times", "break_before")
+    _owned_objects: ClassVar[tuple[str, ...]] = ()
+    _owned_mappings: ClassVar[tuple[str, ...]] = ()
+
+    def _snapshot(self: _OverlayT) -> _OverlayT:
+        from neurospatial.animation.scene import _readonly
+
+        result = copy.copy(self)
+        for name in self._owned_arrays:
+            value = getattr(result, name)
+            if value is not None:
+                setattr(result, name, _readonly(value))
+        for name in self._owned_objects:
+            setattr(result, name, copy.deepcopy(getattr(result, name)))
+        for name in self._owned_mappings:
+            value = getattr(result, name)
+            if isinstance(value, dict):
+                setattr(result, name, dict(value))
+        return result
+
+
 @dataclass
-class PositionOverlay:
+class PositionOverlay(_Overlay):
     """Single trajectory with optional trail visualization.
 
     **IMPORTANT - Coordinate System**:
@@ -334,49 +352,44 @@ class PositionOverlay:
         Returns
         -------
         PositionData
-            Internal data container aligned to frame times.
+            The positions on their own clock: ``times``, or ``frame_times``
+            when the overlay has none.
         """
         _validate_position_metadata(self, env)
-        # Validate position data
         validate_finite(
             self.positions, name="PositionOverlay.positions", allow_nan=True
         )
         _validate_shape(self.positions, env.n_dims, name="PositionOverlay.positions")
-
-        # Align to frame times (validates times if provided)
-        aligned_data = _align_to_frame_times(
-            self.positions,
+        times = _sample_clock(
             self.times,
             frame_times,
             n_frames,
-            self.interp,
+            len(self.positions),
             name="PositionOverlay",
-            max_gap=self.max_gap,
-            break_before=self.break_before,
         )
-
-        # Validate bounds (warning only)
         _validate_bounds(
-            aligned_data,
+            self.positions,
             env.dimension_ranges,
             name="PositionOverlay.positions",
             threshold=0.1,
         )
-
+        support = observation_support(
+            times, self.positions, max_gap=self.max_gap, break_before=self.break_before
+        )
         return PositionData(
+            self.positions,
+            self.color,
+            self.size,
+            self.trail_length,
+            times=times,
             interp=self.interp,
-            data=aligned_data,
-            color=self.color,
-            size=self.size,
-            trail_length=self.trail_length,
-            **_support_metadata(
-                self.positions, self.times, frame_times, self.max_gap, self.break_before
-            ),
+            sample_valid=support.sample_valid,
+            interval_valid=support.interval_mask,
         )
 
 
 @dataclass
-class BodypartOverlay:
+class BodypartOverlay(_Overlay):
     """Multi-keypoint pose tracking with optional skeleton visualization.
 
     Represents pose data with multiple body parts (keypoints) and optional
@@ -515,6 +528,9 @@ class BodypartOverlay:
     units: str | None = None
     frame: str | None = None
 
+    _owned_objects: ClassVar[tuple[str, ...]] = ("colors", "skeleton")
+    _owned_mappings: ClassVar[tuple[str, ...]] = ("data",)
+
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -535,7 +551,9 @@ class BodypartOverlay:
         Returns
         -------
         BodypartData
-            Internal data container aligned to frame times.
+            The bodyparts on their own clock: ``times``, or ``frame_times``
+            when the overlay has none. Each part has its final color: from
+            ``colors``, else the skeleton's ``node_colors``, else red.
         """
         _require_allocentric(
             env,
@@ -543,66 +561,51 @@ class BodypartOverlay:
             why="It draws tracked body parts at their arena coordinates.",
         )
         _validate_position_metadata(self, env)
-        # Validate skeleton consistency first
         bodypart_names = list(self.data.keys())
         _validate_skeleton_consistency(
             self.skeleton, bodypart_names, name="BodypartOverlay.skeleton"
         )
-
-        # Align each bodypart separately
-        aligned_bodyparts: dict[str, NDArray[np.float64]] = {}
-
+        times: NDArray[np.float64] | None = None
+        sample_valid: dict[str, NDArray[np.bool_]] = {}
+        interval_valid: dict[str, NDArray[np.bool_]] = {}
         for part_name, part_data in self.data.items():
-            # Validate each bodypart
-            validate_finite(
-                part_data, name=f"BodypartOverlay.data['{part_name}']", allow_nan=True
+            name = f"BodypartOverlay.data['{part_name}']"
+            validate_finite(part_data, name=name, allow_nan=True)
+            _validate_shape(part_data, env.n_dims, name=name)
+            if times is None:
+                times = _sample_clock(
+                    self.times, frame_times, n_frames, len(part_data), name=name
+                )
+            elif len(part_data) != len(times):
+                raise ValueError(
+                    f"{name} has {len(part_data)} samples; the other bodyparts "
+                    f"have {len(times)}. Fix: give every bodypart one row per "
+                    "sample time."
+                )
+            _validate_bounds(part_data, env.dimension_ranges, name=name, threshold=0.1)
+            # Each keypoint has its own missing observations and support.
+            support = observation_support(
+                times, part_data, max_gap=self.max_gap, break_before=self.break_before
             )
-            _validate_shape(
-                part_data, env.n_dims, name=f"BodypartOverlay.data['{part_name}']"
+            sample_valid[part_name] = support.sample_valid
+            interval_valid[part_name] = support.interval_mask
+        if times is None:
+            times = _sample_clock(
+                self.times, frame_times, n_frames, n_frames, name="BodypartOverlay"
             )
-
-            # Align to frame times (validates times if provided)
-            aligned_part = _align_to_frame_times(
-                part_data,
-                self.times,
-                frame_times,
-                n_frames,
-                self.interp,
-                name=f"BodypartOverlay.data['{part_name}']",
-                max_gap=self.max_gap,
-                break_before=self.break_before,
-            )
-
-            # Validate bounds (warning only)
-            _validate_bounds(
-                aligned_part,
-                env.dimension_ranges,
-                name=f"BodypartOverlay.data['{part_name}']",
-                threshold=0.1,
-            )
-
-            aligned_bodyparts[part_name] = aligned_part
-
-        support = {
-            key: _support_metadata(
-                value, self.times, frame_times, self.max_gap, self.break_before
-            )
-            for key, value in self.data.items()
-        }
         return BodypartData(
+            dict(self.data),
+            self.skeleton,
+            self.colors or {},
+            times=times,
             interp=self.interp,
-            bodyparts=aligned_bodyparts,
-            skeleton=self.skeleton,
-            colors=self.colors,
-            sample_valid={key: part["sample_valid"] for key, part in support.items()},
-            interval_valid={
-                key: part["interval_valid"] for key, part in support.items()
-            },
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
         )
 
 
 @dataclass
-class HeadDirectionOverlay:
+class HeadDirectionOverlay(_Overlay):
     """Heading direction visualization rendered as a line from head to indicator.
 
     Represents directional heading data as either angles (in radians) or unit
@@ -762,50 +765,60 @@ class HeadDirectionOverlay:
         Returns
         -------
         HeadDirectionData
-            Internal data container aligned to frame times.
+            The headings on their own clock: ``times``, or ``frame_times``
+            when the overlay has none.
+
+        Raises
+        ------
+        ValueError
+            If headings are angles in a 3-D environment, where an angle alone
+            does not give a direction.
         """
         _require_allocentric(
             env,
             "HeadDirectionOverlay",
             why="It draws allocentric heading arrows in arena coordinates.",
         )
-        # Validate head direction data
         validate_finite(
             self.headings, name="HeadDirectionOverlay.headings", allow_nan=True
         )
-
-        # For head direction, validate shape only if 2D (vectors)
         if self.headings.ndim == 2:
             _validate_shape(
                 self.headings, env.n_dims, name="HeadDirectionOverlay.headings"
             )
-
-        aligned_data = _align_to_frame_times(
-            self.headings,
+        elif env.n_dims == 3:
+            raise ValueError(
+                _format_error(
+                    "3D head directions require (n_samples, 3) unit vectors.",
+                    why="Why: angles alone do not specify a direction in 3D.",
+                    fix="pass each heading as a unit vector in the environment's "
+                    "(x, y, z) coordinates.",
+                )
+            )
+        times = _sample_clock(
             self.times,
             frame_times,
             n_frames,
-            self.interp,
+            len(self.headings),
             name="HeadDirectionOverlay",
-            max_gap=self.max_gap,
-            break_before=self.break_before,
-            circular=self.headings.ndim == 1,
         )
-
+        support = observation_support(
+            times, self.headings, max_gap=self.max_gap, break_before=self.break_before
+        )
         return HeadDirectionData(
+            self.headings,
+            self.color,
+            self.length,
+            self.width,
+            times=times,
             interp=self.interp,
-            data=aligned_data,
-            color=self.color,
-            length=self.length,
-            width=self.width,
-            **_support_metadata(
-                self.headings, self.times, frame_times, self.max_gap, self.break_before
-            ),
+            sample_valid=support.sample_valid,
+            interval_valid=support.interval_mask,
         )
 
 
 @dataclass
-class EventOverlay:
+class EventOverlay(_Overlay):
     """Overlay for discrete timestamped events at specified spatial positions.
 
     Displays events (spikes, licks, rewards, zone entries, etc.) as markers at
@@ -1039,12 +1052,23 @@ class EventOverlay:
     border_color: str = "white"
     border_width: float = 0.05  # Fraction of point size (napari convention)
 
-    # Protocol attributes (set to None - not used by EventOverlay directly)
-    times: NDArray[np.float64] | None = field(default=None, repr=False)
-
     _: KW_ONLY
     max_gap: float | None = 0.5
     break_before: NDArray[np.bool_] | None = None
+
+    _owned_arrays: ClassVar[tuple[str, ...]] = ("position_times", "break_before")
+    _owned_objects: ClassVar[tuple[str, ...]] = ("colors", "markers")
+    _owned_mappings: ClassVar[tuple[str, ...]] = ("event_positions",)
+
+    def _snapshot(self) -> EventOverlay:
+        from neurospatial.animation.scene import _readonly
+
+        result = super()._snapshot()
+        assert isinstance(result.event_times, dict)  # normalized in __post_init__
+        result.event_times = {
+            name: _readonly(times) for name, times in result.event_times.items()
+        }
+        return result
 
     def __post_init__(self) -> None:
         """Validate inputs and normalize event_times to dict format."""
@@ -1591,7 +1615,7 @@ See EventOverlay for full documentation.
 
 
 @dataclass
-class TimeSeriesOverlay:
+class TimeSeriesOverlay(_Overlay):
     """Time series visualization in right column during animation.
 
     Displays continuous variables (speed, acceleration, LFP, etc.) as scrolling
@@ -1760,9 +1784,7 @@ class TimeSeriesOverlay:
     vmin: float | None = None
     vmax: float | None = None
 
-    # Signals are drawn sample by sample at their own times; overlays that are
-    # sampled at animation times choose an interpolation.
-    interp: ClassVar[Literal["nearest"]] = "nearest"
+    _owned_arrays: ClassVar[tuple[str, ...]] = ("times",)
 
     def __post_init__(self) -> None:
         """Validate inputs after initialization."""
@@ -1921,7 +1943,7 @@ class TimeSeriesOverlay:
 
 
 @dataclass
-class SpikeRasterOverlay:
+class SpikeRasterOverlay(_Overlay):
     """Spikes of many units as a raster beside the field, on the same clock.
 
     Each unit is a row of ticks at its spike times, and the panel shows the
@@ -1983,16 +2005,24 @@ class SpikeRasterOverlay:
     rates: SpatialRatesResult | NDArray[np.float64] | None = None
     color: str = "white"
     linewidth: float = 1.5
-    # Protocol attributes: spikes are drawn at their own times.
-    times: NDArray[np.float64] | None = field(default=None, init=False, repr=False)
-    interp: Literal["linear", "nearest"] = field(
-        default="nearest", init=False, repr=False
-    )
     # The units in row order, bottom row first: the order of spike_times.
     _order: NDArray[np.intp] = field(init=False, repr=False, compare=False)
     _rows: tuple[list[NDArray[np.float64]], NDArray[Any]] = field(
         init=False, repr=False, compare=False
     )
+
+    _owned_arrays: ClassVar[tuple[str, ...]] = ("order", "_order")
+
+    def _snapshot(self) -> SpikeRasterOverlay:
+        from neurospatial._results import as_label_array
+        from neurospatial.animation.scene import _readonly
+
+        result = super()._snapshot()
+        if result.unit_ids is not None:
+            result.unit_ids = _readonly(as_label_array(result.unit_ids))
+        rows, ids = result._rows
+        result._rows = (list(rows), _readonly(ids))
+        return result
 
     def __post_init__(self) -> None:
         """Check the spikes, the order and the labels."""
@@ -2120,7 +2150,7 @@ class SpikeRasterOverlay:
 
 
 @dataclass
-class EpochOverlay:
+class EpochOverlay(_Overlay):
     """Intervals of time, such as ripples or run bouts, on every time panel.
 
     Napari, the notebook widget and exported files draw each overlay as a
@@ -2164,12 +2194,10 @@ class EpochOverlay:
     label: str = "epoch"
     color: str = "gold"
     alpha: float = 0.45
-    # Protocol attributes: epochs keep their own times.
-    times: NDArray[np.float64] | None = field(default=None, init=False, repr=False)
-    interp: Literal["linear", "nearest"] = field(
-        default="nearest", init=False, repr=False
-    )
     _intervals: NDArray[np.float64] = field(init=False, repr=False, compare=False)
+
+    _owned_arrays: ClassVar[tuple[str, ...]] = ("_intervals",)
+    _owned_objects: ClassVar[tuple[str, ...]] = ("epochs",)
 
     def __post_init__(self) -> None:
         """Check the epochs and the opacity."""
@@ -2211,7 +2239,7 @@ class EpochOverlay:
 
 
 @dataclass
-class ObjectVectorOverlay:
+class ObjectVectorOverlay(_Overlay):
     """Vector overlay showing lines from animal to objects for object-vector cell analysis.
 
     Visualizes the spatial relationship between an animal and one or more objects
@@ -2369,7 +2397,8 @@ class ObjectVectorOverlay:
         Returns
         -------
         ObjectVectorData
-            Internal data container aligned to frame times.
+            The animal positions and firing rates on their own clock:
+            ``times``, or ``frame_times`` when the overlay has none.
 
         Raises
         ------
@@ -2423,60 +2452,38 @@ class ObjectVectorOverlay:
                     "animal_positions shape (n_samples, n_dims)."
                 )
 
-        # Align animal positions to frame times
-        aligned_positions = _align_to_frame_times(
-            self.animal_positions,
+        times = _sample_clock(
             self.times,
             frame_times,
             n_frames,
-            self.interp,
+            len(self.animal_positions),
             name="ObjectVectorOverlay.animal_positions",
-            max_gap=self.max_gap,
-            break_before=self.break_before,
         )
-
-        # Validate bounds (warning only)
         _validate_bounds(
-            aligned_positions,
+            self.animal_positions,
             env.dimension_ranges,
             name="ObjectVectorOverlay.animal_positions",
             threshold=0.1,
         )
-
-        # Align firing rates if provided
-        aligned_firing_rates: NDArray[np.float64] | None = None
-        if self.firing_rates is not None:
-            # Reshape to 2D for alignment function, then squeeze back
-            rates_2d = self.firing_rates.reshape(-1, 1)
-            aligned_rates_2d = _align_to_frame_times(
-                rates_2d,
-                self.times,
-                frame_times,
-                n_frames,
-                self.interp,
-                name="ObjectVectorOverlay.firing_rates",
-                max_gap=self.max_gap,
-                break_before=self.break_before,
-            )
-            aligned_firing_rates = aligned_rates_2d.reshape(-1)
-
+        support = observation_support(
+            times,
+            self.animal_positions,
+            max_gap=self.max_gap,
+            break_before=self.break_before,
+        )
         return ObjectVectorData(
+            self.object_positions,
+            self.animal_positions,
+            self.firing_rates,
+            self.color,
+            self.linewidth,
+            self.show_objects,
+            self.object_marker,
+            self.object_size,
+            times=times,
             interp=self.interp,
-            object_positions=self.object_positions,
-            animal_positions=aligned_positions,
-            firing_rates=aligned_firing_rates,
-            color=self.color,
-            linewidth=self.linewidth,
-            show_objects=self.show_objects,
-            object_marker=self.object_marker,
-            object_size=self.object_size,
-            **_support_metadata(
-                self.animal_positions,
-                self.times,
-                frame_times,
-                self.max_gap,
-                self.break_before,
-            ),
+            sample_valid=support.sample_valid,
+            interval_valid=support.interval_mask,
         )
 
 
@@ -2508,7 +2515,7 @@ class _DownsampledFrames:
 
 
 @dataclass
-class VideoOverlay:
+class VideoOverlay(_Overlay):
     """Video background overlay for displaying recorded footage behind or above fields.
 
     Renders video frames aligned to animation frame times, optionally transformed
@@ -2674,6 +2681,9 @@ class VideoOverlay:
     cache_size: int = 100
     prefetch_ahead: int = 0
 
+    _owned_arrays: ClassVar[tuple[str, ...]] = ("times",)
+    _owned_objects: ClassVar[tuple[str, ...]] = ("calibration",)
+
     def __post_init__(self) -> None:
         """Validate VideoOverlay parameters.
 
@@ -2795,7 +2805,10 @@ class VideoOverlay:
         Returns
         -------
         VideoData
-            Internal data container aligned to frame times.
+            The video frames on their own clock: ``times``, or
+            ``frame_times`` when the overlay has none. A file source is read
+            by a reader the caller closes (``data.reader.close()``); an
+            ``Animation`` closes the readers its overlays open.
         """
         frame_times = _validate_frame_times(frame_times, n_frames)
         _require_allocentric(
@@ -2851,28 +2864,24 @@ class VideoOverlay:
                 _validate_video_processing(original_size, self.crop, self.downsample)
                 processed_size = reader.frame_size_px
 
-            # Compute frame index mapping
+            # Each video frame is a sample at its own time.
             if self.times is not None:
-                # Video has explicit times - map animation frames to video frames
-                _validate_monotonic_time(self.times, name="VideoOverlay.times")
-
-                if len(self.times) != n_video_frames:
+                times = np.asarray(self.times, dtype=np.float64)
+                _validate_monotonic_time(times, name="VideoOverlay.times")
+                if len(times) != n_video_frames:
                     raise ValueError(
-                        f"VideoOverlay.times length ({len(self.times)}) does not "
+                        f"VideoOverlay.times length ({len(times)}) does not "
                         f"match number of video frames ({n_video_frames})."
                     )
-
-                # Find nearest video frame for each animation frame
-                frame_indices = _find_nearest_indices(self.times, frame_times)
+                _validate_temporal_alignment(times, frame_times, name="VideoOverlay")
             else:
-                # No times provided - assume 1:1 mapping
                 if n_video_frames != n_frames:
                     raise ValueError(
                         f"VideoOverlay source has {n_video_frames} frames but "
                         f"animation has {n_frames} frames. When times=None, "
                         f"video frames must match animation frames."
                     )
-                frame_indices = np.arange(n_frames, dtype=np.int_)
+                times = frame_times
 
             # Compute environment bounds for transform
             env_dim_ranges = env.dimension_ranges
@@ -2914,57 +2923,115 @@ class VideoOverlay:
                 )
 
             result = VideoData(
-                _owns_reader=not isinstance(self.source, np.ndarray),
-                frame_indices=frame_indices,
-                reader=reader,
-                transform_to_env=transform_to_env,
-                env_bounds=env_bounds,
-                alpha=self.alpha,
-                z_order=self.z_order,
+                np.arange(n_video_frames, dtype=np.int_),
+                reader,
+                transform_to_env,
+                env_bounds,
+                self.alpha,
+                self.z_order,
+                times=times,
             )
             cleanup.pop_all()
             return result
 
 
 # =============================================================================
-# Internal data model: Backend-facing containers (to be implemented)
+# Internal data model: Backend-facing containers
 # =============================================================================
 
 
+def _check_rows(
+    data: Any,
+    rows: dict[str, Any],
+    masks: dict[str, tuple[Any, Any]],
+) -> None:
+    """Check that observed rows and their masks match the sample clock."""
+    kind = type(data).__name__
+    n_times = len(data.times)
+    for name, values in rows.items():
+        if np.ndim(values) not in (1, 2) or len(values) != n_times:
+            raise ValueError(
+                f"{kind}.{name} must have one row per sample time ({n_times})."
+            )
+    for name, pair in masks.items():
+        for label, mask, expected in zip(
+            ("sample_valid", "interval_valid"),
+            pair,
+            (n_times, max(n_times - 1, 0)),
+            strict=True,
+        ):
+            if mask is not None and (
+                np.shape(mask) != (expected,) or np.asarray(mask).dtype != np.bool_
+            ):
+                raise ValueError(
+                    f"{kind}.{label} ({name}) must be a boolean array with "
+                    f"shape ({expected},)."
+                )
+
+
+def _moved(item: _ItemT, **changes: Any) -> _ItemT:
+    """A shallow copy of ``item`` with ``changes``: rows already resolved."""
+    moved = copy.copy(item)
+    for name, value in changes.items():
+        setattr(moved, name, value)
+    return moved
+
+
+class _SampledData:
+    """Observed rows of an overlay at their own ``times``.
+
+    Position, pose, heading and object-vector data keep each overlay's
+    samples. Their support masks are resolved when the data is made: a
+    sample is valid when its row is finite and the given ``sample_valid``
+    allows it, an interval when both samples are valid and the given
+    ``interval_valid`` allows it. Rejected rows are NaN. Omitted masks accept
+    every finite row and every interval between finite rows.
+    """
+
+    times: NDArray[np.float64]
+    interp: Literal["linear", "nearest"]
+
+    def support(
+        self, name: str | None = None
+    ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+        """``(sample_valid, interval_valid)`` of one stream of rows.
+
+        Parameters
+        ----------
+        name : str, optional
+            The stream: a bodypart, or ``"firing_rates"``. None is the
+            overlay's positions or headings.
+        """
+        raise NotImplementedError
+
+    def on_clock(self: _SampledT, clock: NDArray[np.float64]) -> _SampledT:
+        """The rows and their support sampled at ``clock``."""
+        raise NotImplementedError
+
+
 @dataclass
-class PositionData:
-    """Internal container for position overlay data aligned to animation frames.
+class PositionData(_SampledData):
+    """Internal container for position overlay data on its own clock.
 
     This is used internally by backends and should not be instantiated by users.
     Created by the conversion pipeline from PositionOverlay instances.
 
     Parameters
     ----------
-    data : ndarray of shape (n_frames, n_dims), dtype float64
-        Position coordinates aligned to animation frames. NaN values indicate
-        frames where position is unavailable (extrapolation outside overlay
-        time range).
+    data : ndarray of shape (n_samples, n_dims), dtype float64
+        Position coordinates at ``times``. NaN marks a missing sample.
     color : str
         Marker and trail color (matplotlib color string).
     size : float
         Marker diameter in logical screen pixels.
     trail_length : int or None
         Trail length in frames, or None for no trail.
-    times : ndarray of shape (n_samples,), dtype float64, or None
-        Times of the rows, in seconds, when the overlay keeps its own
-        samples (the fastplotlib backend shows each until the next); None
-        when the rows are aligned to the animation's frames.
-
-    Attributes
-    ----------
-    data : NDArray[np.float64]
-        Position coordinates aligned to frames.
-    color : str
-        Marker and trail color.
-    size : float
-        Marker size.
-    trail_length : int | None
-        Trail length in frames.
+    times : ndarray of shape (n_samples,), dtype float64
+        Times of the rows, in seconds.
+    interp : {"linear", "nearest"}
+        How views sample the rows between observations.
+    sample_valid, interval_valid : ndarray of bool, optional
+        Samples and intervals that may be used; see ``_SampledData``.
 
     See Also
     --------
@@ -2975,42 +3042,72 @@ class PositionData:
     color: str
     size: float
     trail_length: int | None
-    times: NDArray[np.float64] | None = None
+    _: KW_ONLY
+    times: NDArray[np.float64]
     interp: Literal["linear", "nearest"] = "linear"
-    sample_valid: NDArray[np.bool_] | None = None
-    interval_valid: NDArray[np.bool_] | None = None
+    # None accepts every finite row; __post_init__ always stores an array.
+    sample_valid: NDArray[np.bool_] = None  # type: ignore[assignment]
+    interval_valid: NDArray[np.bool_] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        """Resolve the rows' support."""
+        _check_rows(
+            self,
+            {"data": self.data},
+            {"data": (self.sample_valid, self.interval_valid)},
+        )
+        self.data, self.sample_valid, self.interval_valid = resolve_support(
+            self.data, self.sample_valid, self.interval_valid
+        )
+
+    def support(
+        self, name: str | None = None
+    ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+        """``(sample_valid, interval_valid)`` of the positions."""
+        return self.sample_valid, self.interval_valid
+
+    def on_clock(self, clock: NDArray[np.float64]) -> PositionData:
+        """The positions and their support sampled at ``clock``."""
+        data, sample_valid, interval_valid = resample(
+            self.times,
+            self.data,
+            self.sample_valid,
+            self.interval_valid,
+            clock,
+            interp=self.interp,
+        )
+        return _moved(
+            self,
+            times=clock,
+            data=data,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
+        )
 
 
 @dataclass
-class BodypartData:
-    """Internal container for bodypart overlay data aligned to animation frames.
+class BodypartData(_SampledData):
+    """Internal container for bodypart overlay data on its own clock.
 
     This is used internally by backends and should not be instantiated by users.
     Created by the conversion pipeline from BodypartOverlay instances.
 
     Parameters
     ----------
-    bodyparts : dict of str to ndarray of shape (n_frames, n_dims), dtype float64
-        Body part positions aligned to animation frames. NaN values indicate
-        frames where the body part is unavailable.
+    bodyparts : dict of str to ndarray of shape (n_samples, n_dims), dtype float64
+        Body part positions at ``times``. NaN marks a missing sample.
     skeleton : Skeleton | None
         Skeleton object with edge definitions, colors, and styling.
-    colors : dict of str to str or None
-        Per-part colors as matplotlib color strings. Takes precedence over
-        skeleton.node_colors if both are provided.
-    times : ndarray of shape (n_samples,), dtype float64, or None
-        Times of the rows, in seconds, when the overlay keeps its own
-        samples (the fastplotlib backend shows each until the next); None
-        when the rows are aligned to the animation's frames.
-
-    Attributes
-    ----------
-    bodyparts : dict[str, NDArray[np.float64]]
-        Body part positions aligned to frames.
-    skeleton : Skeleton | None
-        Skeleton definition with nodes, edges, and styling.
-    colors : dict[str, str] | None
-        Per-part colors.
+    colors : dict of str to str
+        Each body part's color, as a matplotlib color string. Parts it omits
+        (all, for None) take the skeleton's node_colors, else red.
+    times : ndarray of shape (n_samples,), dtype float64
+        Times of the rows, in seconds.
+    interp : {"linear", "nearest"}
+        How views sample the rows between observations.
+    sample_valid, interval_valid : dict of str to ndarray of bool, optional
+        Each body part's support; see ``_SampledData``. A missing entry
+        accepts every finite row of that part.
 
     See Also
     --------
@@ -3020,47 +3117,116 @@ class BodypartData:
 
     bodyparts: dict[str, NDArray[np.float64]]
     skeleton: Skeleton | None
-    colors: dict[str, str] | None
-    times: NDArray[np.float64] | None = None
+    colors: dict[str, str]
+    _: KW_ONLY
+    times: NDArray[np.float64]
     interp: Literal["linear", "nearest"] = "linear"
-    sample_valid: dict[str, NDArray[np.bool_]] | None = None
-    interval_valid: dict[str, NDArray[np.bool_]] | None = None
+    # None accepts every finite row; __post_init__ always stores every part.
+    sample_valid: dict[str, NDArray[np.bool_]] = None  # type: ignore[assignment]
+    interval_valid: dict[str, NDArray[np.bool_]] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        """Resolve each body part's support and color."""
+        given = {
+            label: {} if masks is None else masks
+            for label, masks in (
+                ("sample_valid", self.sample_valid),
+                ("interval_valid", self.interval_valid),
+            )
+        }
+        for label, masks in given.items():
+            if not isinstance(masks, dict):
+                raise ValueError(
+                    f"BodypartData.{label} must map bodypart names to boolean masks."
+                )
+            unknown = masks.keys() - self.bodyparts.keys()
+            if unknown:
+                raise ValueError(
+                    f"BodypartData.{label} references unknown bodyparts: "
+                    f"{sorted(unknown, key=str)}."
+                )
+        # Every view draws a part in the same color: given, else the
+        # skeleton's node color, else red.
+        node_colors = {} if self.skeleton is None else self.skeleton.node_colors or {}
+        self.colors = {
+            name: (self.colors or {}).get(name, node_colors.get(name, "red"))
+            for name in self.bodyparts
+        }
+        _check_rows(
+            self,
+            self.bodyparts,
+            {
+                name: (
+                    given["sample_valid"].get(name),
+                    given["interval_valid"].get(name),
+                )
+                for name in self.bodyparts
+            },
+        )
+        bodyparts, sample_valid, interval_valid = {}, {}, {}
+        for name, values in self.bodyparts.items():
+            bodyparts[name], sample_valid[name], interval_valid[name] = resolve_support(
+                values,
+                given["sample_valid"].get(name),
+                given["interval_valid"].get(name),
+            )
+        self.bodyparts = bodyparts
+        self.sample_valid, self.interval_valid = sample_valid, interval_valid
+
+    def support(
+        self, name: str | None = None
+    ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+        """``(sample_valid, interval_valid)`` of the body part ``name``."""
+        if name is None:
+            raise ValueError("Name the body part whose support to return.")
+        return self.sample_valid[name], self.interval_valid[name]
+
+    def on_clock(self, clock: NDArray[np.float64]) -> BodypartData:
+        """Each body part and its support sampled at ``clock``."""
+        bodyparts, sample_valid, interval_valid = {}, {}, {}
+        for name, values in self.bodyparts.items():
+            bodyparts[name], sample_valid[name], interval_valid[name] = resample(
+                self.times,
+                values,
+                self.sample_valid[name],
+                self.interval_valid[name],
+                clock,
+                interp=self.interp,
+            )
+        return _moved(
+            self,
+            times=clock,
+            bodyparts=bodyparts,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
+        )
 
 
 @dataclass
-class HeadDirectionData:
-    """Internal container for head direction overlay data aligned to animation frames.
+class HeadDirectionData(_SampledData):
+    """Internal container for head direction overlay data on its own clock.
 
     This is used internally by backends and should not be instantiated by users.
     Created by the conversion pipeline from HeadDirectionOverlay instances.
 
     Parameters
     ----------
-    data : ndarray of shape (n_frames,) or (n_frames, n_dims), dtype float64
-        Heading data aligned to animation frames. Shape (n_frames,) for angles
-        in radians, or (n_frames, n_dims) for unit vectors. NaN values indicate
-        frames where heading is unavailable.
+    data : ndarray of shape (n_samples,) or (n_samples, n_dims), dtype float64
+        Headings at ``times``: angles in radians, shape (n_samples,), or
+        unit vectors, shape (n_samples, n_dims). NaN marks a missing sample.
     color : str
         Colormap name for the direction line.
     length : float
         Length of direction line in environment coordinate units.
     width : float
         Line width in pixels.
-    times : ndarray of shape (n_samples,), dtype float64, or None
-        Times of the rows, in seconds, when the overlay keeps its own
-        samples (the fastplotlib backend shows each until the next); None
-        when the rows are aligned to the animation's frames.
-
-    Attributes
-    ----------
-    data : NDArray[np.float64]
-        Heading data aligned to frames.
-    color : str
-        Colormap name for direction line.
-    length : float
-        Line length in environment units.
-    width : float
-        Line width in pixels.
+    times : ndarray of shape (n_samples,), dtype float64
+        Times of the rows, in seconds.
+    interp : {"linear", "nearest"}
+        How views sample the rows between observations; angles interpolate
+        on the circle.
+    sample_valid, interval_valid : ndarray of bool, optional
+        Samples and intervals that may be used; see ``_SampledData``.
 
     See Also
     --------
@@ -3071,10 +3237,48 @@ class HeadDirectionData:
     color: str
     length: float
     width: float = 3.0
-    times: NDArray[np.float64] | None = None
+    _: KW_ONLY
+    times: NDArray[np.float64]
     interp: Literal["linear", "nearest"] = "linear"
-    sample_valid: NDArray[np.bool_] | None = None
-    interval_valid: NDArray[np.bool_] | None = None
+    # None accepts every finite row; __post_init__ always stores an array.
+    sample_valid: NDArray[np.bool_] = None  # type: ignore[assignment]
+    interval_valid: NDArray[np.bool_] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        """Resolve the rows' support."""
+        _check_rows(
+            self,
+            {"data": self.data},
+            {"data": (self.sample_valid, self.interval_valid)},
+        )
+        self.data, self.sample_valid, self.interval_valid = resolve_support(
+            self.data, self.sample_valid, self.interval_valid
+        )
+
+    def support(
+        self, name: str | None = None
+    ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+        """``(sample_valid, interval_valid)`` of the headings."""
+        return self.sample_valid, self.interval_valid
+
+    def on_clock(self, clock: NDArray[np.float64]) -> HeadDirectionData:
+        """The headings and their support sampled at ``clock``."""
+        data, sample_valid, interval_valid = resample(
+            self.times,
+            self.data,
+            self.sample_valid,
+            self.interval_valid,
+            clock,
+            interp=self.interp,
+            circular=self.data.ndim == 1,
+        )
+        return _moved(
+            self,
+            times=clock,
+            data=data,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
+        )
 
 
 @dataclass
@@ -3155,22 +3359,22 @@ class EventData:
 
 @dataclass
 class VideoData:
-    """Internal container for video overlay data aligned to animation frames.
+    """Internal container for video overlay data on its own clock.
 
     This is used internally by backends and should not be instantiated by users.
     Created by the conversion pipeline from VideoOverlay instances.
 
     Parameters
     ----------
-    frame_indices : ndarray of shape (n_animation_frames,), dtype int
-        Mapping from animation frame indices to video frame indices.
-        Value of -1 indicates no video frame available (out of range).
+    frame_indices : ndarray of shape (n_samples,), dtype int
+        The reader frame shown from each of ``times``; -1 for none.
     reader : NDArray[np.uint8] or VideoReaderProtocol
         Video source. Either a pre-loaded array of shape (n_video_frames, height,
         width, 3) with dtype uint8, or a VideoReaderProtocol-compliant reader.
+        Copies of the data share the reader; it is closed by its owner.
     transform_to_env : Affine2D or None
         Transform from video pixel coordinates to environment coordinates.
-        If None, video is displayed in pixel coordinates.
+        If None, the frame is stretched over ``env_bounds``.
     env_bounds : tuple of float
         Environment bounding box as (xmin, xmax, ymin, ymax) for positioning
         the video in the visualization.
@@ -3178,26 +3382,8 @@ class VideoData:
         Opacity of the video layer (0.0-1.0).
     z_order : {"below", "above"}
         Rendering order relative to the spatial field layer.
-    times : ndarray of shape (n_samples,), dtype float64, or None
-        Times of the rows, in seconds, when the overlay keeps its own
-        samples (the fastplotlib backend shows each until the next); None
-        when the rows are aligned to the animation's frames.
-
-    Attributes
-    ----------
-    frame_indices : NDArray[np.int_]
-        Animation-to-video frame mapping.
-    reader : NDArray[np.uint8] | VideoReaderProtocol
-        Video source. Either a pre-loaded array of shape (n_video_frames, height,
-        width, 3) with dtype uint8, or a VideoReaderProtocol-compliant reader.
-    transform_to_env : Affine2D | None
-        Coordinate transform.
-    env_bounds : tuple[float, float, float, float]
-        Environment bounds (xmin, xmax, ymin, ymax).
-    alpha : float
-        Video opacity.
-    z_order : {"below", "above"}
-        Rendering order.
+    times : ndarray of shape (n_samples,), dtype float64
+        Times of the samples, in seconds.
 
     See Also
     --------
@@ -3218,45 +3404,70 @@ class VideoData:
     env_bounds: tuple[float, float, float, float]
     alpha: float
     z_order: Literal["below", "above"]
-    times: NDArray[np.float64] | None = None
-    _owns_reader: bool = False
+    _: KW_ONLY
+    times: NDArray[np.float64]
 
-    def get_frame(self, anim_frame_idx: int) -> NDArray[np.uint8] | None:
-        """Get the video frame for a given animation frame index.
+    def __post_init__(self) -> None:
+        """Check the mapping from samples to reader frames."""
+        indices = np.asarray(self.frame_indices)
+        if indices.shape != (len(self.times),) or not np.issubdtype(
+            indices.dtype, np.integer
+        ):
+            raise ValueError(
+                "VideoData.frame_indices must be a 1-D integer array with one "
+                "index per sample time."
+            )
+        # Adapter readers need not report their length.
+        count = (
+            len(self.reader)
+            if isinstance(self.reader, np.ndarray)
+            else getattr(self.reader, "n_frames", None)
+        )
+        if (indices < -1).any() or (count is not None and (indices >= count).any()):
+            raise ValueError(
+                "VideoData.frame_indices must contain valid reader frame indices "
+                "or -1 for missing frames."
+            )
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> VideoData:
+        # Readers may own decoder handles; copies share the reader.
+        result = copy.copy(self)
+        memo[id(self)] = result
+        for item in dataclasses.fields(self):
+            if item.name != "reader":
+                setattr(
+                    result, item.name, copy.deepcopy(getattr(self, item.name), memo)
+                )
+        return result
+
+    def on_clock(self, clock: NDArray[np.float64]) -> VideoData:
+        """The nearest video frame at each of ``clock``; -1 outside the video."""
+        nearest = _find_nearest_indices(self.times, clock)
+        indices = np.full(len(clock), -1, dtype=np.int_)
+        indices[nearest >= 0] = self.frame_indices[nearest[nearest >= 0]]
+        return _moved(self, times=clock, frame_indices=indices)
+
+    def get_frame(self, sample: int) -> NDArray[np.uint8] | None:
+        """Get the video frame of one sample.
 
         Parameters
         ----------
-        anim_frame_idx : int
-            Animation frame index (0-based).
+        sample : int
+            Index into ``times`` (0-based).
 
         Returns
         -------
         NDArray[np.uint8] | None
             RGB video frame of shape (height, width, 3) with dtype uint8,
-            or None if no video frame is available for this animation frame.
-            Returns None for:
-            - Animation index out of bounds (>= len(frame_indices))
-            - Video frame index is -1 (out of range in frame_indices)
+            or None for a sample index out of bounds or mapped to -1.
         """
-        # Check if animation index is out of bounds
-        if anim_frame_idx < 0 or anim_frame_idx >= len(self.frame_indices):
+        if sample < 0 or sample >= len(self.frame_indices):
             return None
-
-        # Get the video frame index
-        video_frame_idx = self.frame_indices[anim_frame_idx]
-
-        # Check if video frame index is out of range (indicated by -1)
+        video_frame_idx = self.frame_indices[sample]
         if video_frame_idx < 0:
             return None
-
-        # Return the video frame from the reader
-        if isinstance(self.reader, np.ndarray):
-            frame: NDArray[np.uint8] = self.reader[video_frame_idx]
-            return frame
-        else:
-            # _VideoReader case - uses subscript access
-            result: NDArray[np.uint8] = self.reader[video_frame_idx]
-            return result
+        frame: NDArray[np.uint8] = self.reader[video_frame_idx]
+        return frame
 
 
 @dataclass
@@ -3397,8 +3608,8 @@ class EpochData:
 
 
 @dataclass
-class ObjectVectorData:
-    """Internal container for object-vector overlay data aligned to animation frames.
+class ObjectVectorData(_SampledData):
+    """Internal container for object-vector overlay data on its own clock.
 
     This is used internally by backends and should not be instantiated by users.
     Created by the conversion pipeline from ObjectVectorOverlay instances.
@@ -3408,12 +3619,12 @@ class ObjectVectorData:
     object_positions : ndarray of shape (n_objects, n_dims), dtype float64
         Static positions of objects in environment coordinates. These positions
         remain fixed throughout the animation.
-    animal_positions : ndarray of shape (n_frames, n_dims), dtype float64
-        Animal positions aligned to animation frames. NaN values indicate
-        frames where position is unavailable.
-    firing_rates : ndarray of shape (n_frames,), dtype float64, optional
-        Firing rates aligned to animation frames for modulating line appearance.
-        None if no modulation was specified.
+    animal_positions : ndarray of shape (n_samples, n_dims), dtype float64
+        Animal positions at ``times``. NaN marks a missing sample.
+    firing_rates : ndarray of shape (n_samples,), dtype float64, optional
+        Firing rates at ``times`` for modulating line appearance. None if no
+        modulation was specified. A rate is used only where the animal's
+        position is valid.
     color : str
         Line color (matplotlib color string).
     linewidth : float
@@ -3424,29 +3635,12 @@ class ObjectVectorData:
         Marker style for objects.
     object_size : float
         Object marker diameter in logical screen pixels.
-    times : ndarray of shape (n_samples,), dtype float64, or None
-        Times of the rows, in seconds, when the overlay keeps its own
-        samples (the fastplotlib backend shows each until the next); None
-        when the rows are aligned to the animation's frames.
-
-    Attributes
-    ----------
-    object_positions : NDArray[np.float64]
-        Static object positions.
-    animal_positions : NDArray[np.float64]
-        Animal positions aligned to frames.
-    firing_rates : NDArray[np.float64] | None
-        Firing rates aligned to frames.
-    color : str
-        Line color.
-    linewidth : float
-        Line width.
-    show_objects : bool
-        Object marker visibility.
-    object_marker : str
-        Object marker style.
-    object_size : float
-        Object marker size.
+    times : ndarray of shape (n_samples,), dtype float64
+        Times of the rows, in seconds.
+    interp : {"linear", "nearest"}
+        How views sample the rows between observations.
+    sample_valid, interval_valid : ndarray of bool, optional
+        Support of the animal positions; see ``_SampledData``.
 
     See Also
     --------
@@ -3461,19 +3655,83 @@ class ObjectVectorData:
     show_objects: bool
     object_marker: str
     object_size: float
-    times: NDArray[np.float64] | None = None
+    _: KW_ONLY
+    times: NDArray[np.float64]
     interp: Literal["linear", "nearest"] = "linear"
-    sample_valid: NDArray[np.bool_] | None = None
-    interval_valid: NDArray[np.bool_] | None = None
+    # None accepts every finite row; __post_init__ always stores an array.
+    sample_valid: NDArray[np.bool_] = None  # type: ignore[assignment]
+    interval_valid: NDArray[np.bool_] = None  # type: ignore[assignment]
 
     _rate_peak: float | None = field(default=None, repr=False, compare=False)
+    # Support of firing_rates: valid positions with a finite rate.
+    _rate_support: tuple[NDArray[np.bool_], NDArray[np.bool_]] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
-        """Keep one finite full-recording rate summary through resampling."""
+        """Resolve the rows' support and the full-recording rate summary."""
+        rows = {"animal_positions": self.animal_positions}
+        if self.firing_rates is not None:
+            rows["firing_rates"] = self.firing_rates
+        _check_rows(
+            self,
+            rows,
+            {"animal_positions": (self.sample_valid, self.interval_valid)},
+        )
+        self.animal_positions, self.sample_valid, self.interval_valid = resolve_support(
+            self.animal_positions, self.sample_valid, self.interval_valid
+        )
+        if self.firing_rates is not None:
+            _, *rate_support = resolve_support(
+                self.firing_rates, self.sample_valid, self.interval_valid
+            )
+            self._rate_support = (rate_support[0], rate_support[1])
         if self._rate_peak is None:
             from neurospatial.animation._style import _finite_rate_peak
 
+            # One finite full-recording peak keeps the opacity scale stable
+            # when a view selects a window.
             self._rate_peak = _finite_rate_peak(self.firing_rates)
+
+    def support(
+        self, name: str | None = None
+    ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+        """``(sample_valid, interval_valid)`` of the positions or ``"firing_rates"``."""
+        if name == "firing_rates":
+            assert self._rate_support is not None
+            return self._rate_support
+        return self.sample_valid, self.interval_valid
+
+    def on_clock(self, clock: NDArray[np.float64]) -> ObjectVectorData:
+        """The animal positions, rates and their support sampled at ``clock``."""
+        positions, sample_valid, interval_valid = resample(
+            self.times,
+            self.animal_positions,
+            self.sample_valid,
+            self.interval_valid,
+            clock,
+            interp=self.interp,
+        )
+        rates, rate_support = None, None
+        if self.firing_rates is not None:
+            assert self._rate_support is not None
+            rates, *moved = resample(
+                self.times,
+                self.firing_rates,
+                *self._rate_support,
+                clock,
+                interp=self.interp,
+            )
+            rate_support = (moved[0], moved[1])
+        return _moved(
+            self,
+            times=clock,
+            animal_positions=positions,
+            firing_rates=rates,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
+            _rate_support=rate_support,
+        )
 
 
 @dataclass
@@ -3505,32 +3763,6 @@ class OverlayData:
         List of epoch overlays. Default is empty list.
     object_vectors : list[ObjectVectorData], optional
         List of object-vector overlays. Default is empty list.
-    frame_times : NDArray[np.float64] | None, optional
-        The animation clock, in seconds, the overlays were converted against.
-        Rows of sampled overlays without ``times`` follow it. Default is None.
-
-    Attributes
-    ----------
-    positions : list[PositionData]
-        List of position overlays.
-    bodypart_sets : list[BodypartData]
-        List of bodypart overlays.
-    head_directions : list[HeadDirectionData]
-        List of head direction overlays.
-    videos : list[VideoData]
-        List of video overlays.
-    events : list[EventData]
-        List of event overlays.
-    timeseries : list[TimeSeriesData]
-        List of time series overlays.
-    spike_rasters : list[SpikeRasterData]
-        List of spike rasters.
-    epochs : list[EpochData]
-        List of epoch overlays.
-    object_vectors : list[ObjectVectorData]
-        List of object-vector overlays.
-    frame_times : NDArray[np.float64] | None
-        The animation clock the overlays were converted against.
 
     Notes
     -----
@@ -3539,9 +3771,10 @@ class OverlayData:
     OverlayData directly.
 
     Observed values are checked for shape and for infinite values; NaN marks
-    a missing observation and is kept. Sampled overlays carry the sample and
-    interval support that backends use, so a backend never interpolates
-    across missing tracking or a recording break.
+    a missing observation and is kept. Sampled overlays keep their own
+    ``times`` and carry the sample and interval support that backends use,
+    so a backend never interpolates across missing tracking or a recording
+    break.
     """
 
     positions: list[PositionData] = field(default_factory=list)
@@ -3553,7 +3786,51 @@ class OverlayData:
     spike_rasters: list[SpikeRasterData] = field(default_factory=list)
     epochs: list[EpochData] = field(default_factory=list)
     object_vectors: list[ObjectVectorData] = field(default_factory=list)
-    frame_times: NDArray[np.float64] | None = None
+
+    # The list each internal data type goes in.
+    _LISTS: ClassVar[dict[type, str]] = {}
+    # Lists whose items keep samples at their own times, which a view
+    # samples at the times it shows.
+    _SAMPLED: ClassVar[tuple[str, ...]] = (
+        "positions",
+        "bodypart_sets",
+        "head_directions",
+        "object_vectors",
+        "videos",
+    )
+
+    def add(self, item: Any) -> None:
+        """Append ``item`` to the list of its type."""
+        for kind, name in self._LISTS.items():
+            if isinstance(item, kind):
+                getattr(self, name).append(item)
+                return
+        raise TypeError(
+            "convert_to_data() must return PositionData, BodypartData, "
+            "HeadDirectionData, VideoData, EventData, TimeSeriesData, "
+            "SpikeRasterData, EpochData or ObjectVectorData, got "
+            f"{type(item).__name__}."
+        )
+
+    def sampled(self) -> Iterator[_SampledData | VideoData]:
+        """Every item that keeps samples at its own ``times``."""
+        for name in self._SAMPLED:
+            yield from getattr(self, name)
+
+
+OverlayData._LISTS.update(
+    {
+        PositionData: "positions",
+        BodypartData: "bodypart_sets",
+        HeadDirectionData: "head_directions",
+        VideoData: "videos",
+        EventData: "events",
+        TimeSeriesData: "timeseries",
+        SpikeRasterData: "spike_rasters",
+        EpochData: "epochs",
+        ObjectVectorData: "object_vectors",
+    }
+)
 
 
 # =============================================================================
@@ -3589,59 +3866,6 @@ def _validate_video_processing(
                 fix="use a smaller downsample factor or a larger crop.",
             )
         )
-
-
-def _support_metadata(
-    data: NDArray[np.float64],
-    times: NDArray[np.float64] | None,
-    frame_times: NDArray[np.float64],
-    max_gap: float | None,
-    break_before: NDArray[np.bool_] | None,
-) -> dict[str, Any]:
-    """Retain observed support on the returned data's sample clock."""
-    frame_times = np.asarray(frame_times, dtype=np.float64)
-    source_times = frame_times if times is None else np.asarray(times, dtype=np.float64)
-    with warnings.catch_warnings():
-        # Alignment already reported exclusions on this same source clock.
-        warnings.simplefilter("ignore", UserWarning)
-        support = observation_support(
-            source_times,
-            np.asarray(data),
-            max_gap=max_gap,
-            break_before=break_before,
-        )
-    if np.array_equal(source_times, frame_times):
-        return {
-            "sample_valid": support.sample_valid,
-            "interval_valid": support.interval_mask,
-        }
-    aligned = sample_at_times(
-        source_times,
-        data,
-        frame_times,
-        sample_valid=support.sample_valid,
-        interval_valid=support.interval_mask,
-    )
-    sample_valid = np.asarray(
-        np.isfinite(aligned.reshape(len(frame_times), -1)).all(axis=1)
-    )
-    # A displayed segment is valid only if every source interval it spans was
-    # observed. This also splits trails when coarse frames skip over a gap.
-    left = np.clip(
-        np.searchsorted(source_times, frame_times[:-1], side="right") - 1,
-        0,
-        len(source_times) - 1,
-    )
-    right = np.clip(
-        np.searchsorted(source_times, frame_times[1:], side="left"),
-        0,
-        len(source_times) - 1,
-    )
-    excluded = np.r_[0, np.cumsum(~support.interval_mask)]
-    interval_valid = (
-        sample_valid[:-1] & sample_valid[1:] & (excluded[right] == excluded[left])
-    )
-    return {"sample_valid": sample_valid, "interval_valid": interval_valid}
 
 
 def _validate_position_metadata(
@@ -4139,80 +4363,53 @@ def _validate_frame_times(
     return frame_times
 
 
-def _align_to_frame_times(
-    data: NDArray[np.float64],
+def _sample_clock(
     times: NDArray[np.float64] | None,
     frame_times: NDArray[np.float64],
     n_frames: int,
-    interp: Literal["linear", "nearest"],
-    name: str,
+    n_samples: int,
     *,
-    max_gap: float | None = None,
-    break_before: NDArray[np.bool_] | None = None,
-    circular: bool = False,
+    name: str,
 ) -> NDArray[np.float64]:
-    """Validate timestamps and align data to animation frame times.
-
-    This helper encapsulates the common pattern of validating overlay timestamps
-    and performing temporal interpolation to align overlay data with animation
-    frames.
+    """The clock of an overlay's own samples: ``times``, or the frame clock.
 
     Parameters
     ----------
-    data : NDArray[np.float64]
-        Source data with shape (n_samples,) or (n_samples, n_dims).
-    times : NDArray[np.float64] | None
-        Source timestamps with shape (n_samples,). If None, data is assumed
-        to already match frame_times (requires len(data) == n_frames).
-    frame_times : NDArray[np.float64]
-        Animation frame timestamps with shape (n_frames,).
+    times : ndarray of shape (n_samples,) or None
+        The overlay's timestamps, in seconds. None means one sample per
+        animation frame.
+    frame_times : ndarray of shape (n_frames,)
+        The animation clock.
     n_frames : int
         Number of animation frames.
-    interp : {"linear", "nearest"}
-        Interpolation method to use when aligning.
+    n_samples : int
+        Number of the overlay's samples.
     name : str
         Overlay name for error messages (e.g., "PositionOverlay").
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Data aligned to frame_times. Shape is (n_frames,) or (n_frames, n_dims).
 
     Raises
     ------
     ValueError
-        If times are not monotonically increasing, or if len(data) != n_frames
-        when times is None.
+        If ``times`` is not strictly increasing, does not have one timestamp
+        per sample or does not overlap ``frame_times``; or, without
+        ``times``, if there is not one sample per frame.
     """
     frame_times = _validate_frame_times(frame_times, n_frames)
-    data = np.asarray(data, dtype=np.float64)
     if times is None:
-        if len(data) != n_frames:
+        if n_samples != n_frames:
             raise ValueError(
-                f"{name} data length ({len(data)}) does not match n_frames "
+                f"{name} data length ({n_samples}) does not match n_frames "
                 f"({n_frames}). When times=None, data must have exactly n_frames samples."
             )
-        source_times = frame_times
-    else:
-        source_times = np.asarray(times, dtype=np.float64)
-        _validate_monotonic_time(source_times, name=f"{name}.times")
-        if len(source_times) != len(data) or not len(source_times):
-            raise ValueError(
-                f"{name}.times must have one timestamp per nonempty data sample."
-            )
-        _validate_temporal_alignment(source_times, frame_times, name=name)
-    support = observation_support(
-        source_times, data, max_gap=max_gap, break_before=break_before
-    )
-    return sample_at_times(
-        source_times,
-        data,
-        frame_times,
-        interp=interp,
-        sample_valid=support.sample_valid,
-        interval_valid=support.interval_mask,
-        circular=circular,
-    )
+        return frame_times
+    times = np.asarray(times, dtype=np.float64)
+    _validate_monotonic_time(times, name=f"{name}.times")
+    if len(times) != n_samples or not len(times):
+        raise ValueError(
+            f"{name}.times must have one timestamp per nonempty data sample."
+        )
+    _validate_temporal_alignment(times, frame_times, name=name)
+    return times
 
 
 def _find_nearest_indices(
@@ -4310,14 +4507,6 @@ _OWN_SAMPLE_TYPES = (
 )
 
 
-def _snapshot_internal_overlay(data: Any) -> Any:
-    """Own adapter-produced metadata without duplicating decoder resources."""
-    import copy
-
-    memo = {id(data.reader): data.reader} if isinstance(data, VideoData) else {}
-    return copy.deepcopy(data, memo)
-
-
 def _reindex_events(events: EventData, clock: NDArray[np.float64]) -> None:
     """Clip owned event records and remap their indices onto a validated clock."""
     for name, times in events.event_times.items():
@@ -4329,145 +4518,19 @@ def _reindex_events(events: EventData, clock: NDArray[np.float64]) -> None:
         ).astype(np.int_)
 
 
-def _validate_prepared_samples(
-    data: Any, conversion_times: NDArray[np.float64]
+def _check_adapter_clock(
+    item: Any, frame_times: NDArray[np.float64], *, name: str
 ) -> None:
-    """Check the sample clock and mapping promised by a converted adapter."""
-    times = (
-        conversion_times
-        if data.times is None
-        else np.asarray(data.times, dtype=np.float64)
-    )
-    _validate_monotonic_time(times, name=f"{type(data).__name__}.times")
-    _validate_frame_times(times, len(times))
-    if isinstance(data, VideoData):
-        indices = np.asarray(data.frame_indices)
-        if indices.shape != (len(times),) or not np.issubdtype(
-            indices.dtype, np.integer
-        ):
-            raise ValueError(
-                "VideoData.frame_indices must be a 1-D integer array with one index per sample time."
-            )
-        count = (
-            len(data.reader)
-            if isinstance(data.reader, np.ndarray)
-            else getattr(data.reader, "n_frames", None)
-        )
-        if (indices < -1).any() or (count is not None and (indices >= count).any()):
-            raise ValueError(
-                "VideoData.frame_indices must contain valid reader frame indices or -1 for missing frames."
-            )
-        return
-    if isinstance(data, BodypartData):
-        arrays = data.bodyparts
-    elif isinstance(data, ObjectVectorData):
-        arrays = {"animal_positions": data.animal_positions}
-        if data.firing_rates is not None:
-            arrays["firing_rates"] = data.firing_rates
-    else:
-        arrays = {"data": data.data}
-    for name, values in arrays.items():
-        if np.ndim(values) not in (1, 2) or len(values) != len(times):
-            raise ValueError(
-                f"{type(data).__name__}.{name} must have one row per sample time."
-            )
-    for label, expected in (
-        ("sample_valid", len(times)),
-        ("interval_valid", len(times) - 1),
-    ):
-        masks = getattr(data, label)
-        if masks is None:
-            continue
-        if isinstance(data, BodypartData):
-            if not isinstance(masks, dict):
-                raise ValueError(
-                    f"BodypartData.{label} must map bodypart names to boolean masks."
-                )
-            unknown = masks.keys() - data.bodyparts.keys()
-            if unknown:
-                raise ValueError(
-                    f"BodypartData.{label} references unknown bodyparts: "
-                    f"{sorted(unknown, key=str)}."
-                )
-            entries = list(masks.items())
-        else:
-            entries = [(label, masks)]
-        for name, mask in entries:
-            if mask is not None and (
-                np.shape(mask) != (expected,) or np.asarray(mask).dtype != np.bool_
-            ):
-                raise ValueError(
-                    f"{type(data).__name__}.{label} ({name}) must be a boolean "
-                    f"array with shape ({expected},)."
-                )
+    """Check the sample clock a custom adapter's sampled data states.
 
-
-def _normalize_prepared_support(data: Any) -> Any:
-    """Own spatial rows and make their effective observation support explicit.
-
-    Sampling and renderers that consume raw rows must agree about rejected
-    observations. A break only rejects the interval; its finite endpoints stay
-    available as exact observations.
+    Built-in overlays check their own ``times`` when they convert.
     """
-
-    def normalized(
-        values: NDArray[np.float64],
-        samples: NDArray[np.bool_] | None,
-        intervals: NDArray[np.bool_] | None,
-    ) -> tuple[NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_]]:
-        owned = np.array(values, dtype=np.float64, copy=True)
-        valid = np.asarray(
-            np.isfinite(owned.reshape(len(owned), -1)).all(axis=1), dtype=np.bool_
-        )
-        if samples is not None:
-            valid &= samples
-        supported = valid[:-1] & valid[1:]
-        if intervals is not None:
-            supported &= intervals
-        owned[~valid] = np.nan
-        return owned, valid, supported
-
-    if isinstance(data, BodypartData):
-        bodyparts: dict[str, NDArray[np.float64]] = {}
-        bodypart_samples: dict[str, NDArray[np.bool_]] = {}
-        bodypart_intervals: dict[str, NDArray[np.bool_]] = {}
-        for name, values in data.bodyparts.items():
-            bodyparts[name], bodypart_samples[name], bodypart_intervals[name] = (
-                normalized(
-                    values,
-                    None if data.sample_valid is None else data.sample_valid.get(name),
-                    None
-                    if data.interval_valid is None
-                    else data.interval_valid.get(name),
-                )
-            )
-        return replace(
-            data,
-            bodyparts=bodyparts,
-            sample_valid=bodypart_samples,
-            interval_valid=bodypart_intervals,
-        )
-    if isinstance(data, ObjectVectorData):
-        values, sample_valid, interval_valid = normalized(
-            data.animal_positions, data.sample_valid, data.interval_valid
-        )
-        return replace(
-            data,
-            animal_positions=values,
-            sample_valid=sample_valid,
-            interval_valid=interval_valid,
-        )
-    if isinstance(data, (PositionData, HeadDirectionData)):
-        values, sample_valid, interval_valid = normalized(
-            data.data, data.sample_valid, data.interval_valid
-        )
-        return replace(
-            data,
-            data=values,
-            sample_valid=sample_valid,
-            interval_valid=interval_valid,
-        )
-    return data
+    if isinstance(item, (_SampledData, VideoData)):
+        times = np.asarray(item.times, dtype=np.float64)
+        if not len(times):
+            raise ValueError(f"{type(item).__name__}.times must be nonempty.")
+        _validate_frame_times(times, len(times))
+        _validate_temporal_alignment(times, frame_times, name=name)
 
 
 def _convert_overlays_to_data(
@@ -4475,15 +4538,13 @@ def _convert_overlays_to_data(
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
-    *,
-    own_samples: bool = False,
-) -> OverlayData:
-    """Convert overlay configurations to aligned internal data representation.
+) -> tuple[OverlayData, _OwnedReaders]:
+    """Convert overlay configurations to internal data on their own clocks.
 
     This is the main conversion pipeline that:
-    1. Calls each overlay's ``convert_to_data()`` method
-    2. Dispatches results to appropriate internal data lists
-    3. Aggregates all overlays into a single OverlayData container
+    1. Calls each overlay's ``convert_to_data()`` method with the scene clock
+    2. Checks a custom adapter's sample clock against the scene clock
+    3. Collects the results, which it owns, into one OverlayData container
 
     Parameters
     ----------
@@ -4492,26 +4553,23 @@ def _convert_overlays_to_data(
         multiple instances of any overlay type implementing ``OverlayProtocol``.
         Custom overlays must implement the ``convert_to_data()`` method.
     frame_times : NDArray[np.float64]
-        Animation frame timestamps with shape (n_frames,). Used as interpolation
-        targets for aligning overlay data.
+        The scene clock, in seconds, with shape (n_frames,). Overlays
+        without ``times`` have one sample per entry.
     n_frames : int
         Number of animation frames. Used for validation.
     env : Any
         Environment object with ``n_dims`` and ``dimension_ranges`` attributes.
         Used for validating overlay coordinate dimensions and bounds.
-    own_samples : bool, default=False
-        Keep the samples of each position, pose, heading, object-vector and
-        video overlay that has ``times``, with those times in the data's
-        ``times``, instead of aligning them to ``frame_times``; for a backend
-        that shows each overlay at its own sampling rate. Every overlay is
-        still checked against ``frame_times``. Sampled outputs with no explicit
-        source clock inherit the actual ``frame_times`` clock, including its
-        nonuniform intervals; every sampled output has explicit ``times``.
 
     Returns
     -------
     OverlayData
-        Aggregated container with one list per internal data type.
+        One list per internal data type. Sampled data keeps each overlay's
+        own samples, with their times in ``times``; events are indexed on
+        ``frame_times``.
+    _OwnedReaders
+        The video readers the built-in overlays opened, which the caller
+        closes. Readers a custom adapter returns stay the adapter's.
 
     Raises
     ------
@@ -4529,23 +4587,10 @@ def _convert_overlays_to_data(
 
     Notes
     -----
-    Temporal alignment behavior:
-
-    - If overlay.times is None, assumes overlay data is already aligned to
-      frame_times (same length, including nonuniform frame intervals)
-    - If overlay.times is provided, uses interpolation to align (controlled by
-      overlay.interp parameter)
-    - Extrapolation outside overlay time range produces NaN values
-    - Warns if temporal overlap is less than 50%
-
-    Interpolation modes:
-
-    - "linear": Smooth interpolation for continuous trajectories (default)
-    - "nearest": Nearest-neighbor for discrete/categorical data or to preserve
-      exact samples
-
-    For BodypartOverlay, each keypoint is interpolated separately, preserving
-    independent temporal dynamics of body parts.
+    An overlay without ``times`` has one sample per entry of
+    ``frame_times``, including nonuniform frame intervals. Samples outside
+    the overlay's own time range are missing (NaN) wherever they are shown,
+    and a temporal overlap below 50% warns.
 
     Custom overlays can be created by implementing ``OverlayProtocol``; its
     ``convert_to_data()`` must return one of the internal data types.
@@ -4571,143 +4616,52 @@ def _convert_overlays_to_data(
     >>> overlay = PositionOverlay(positions=trajectory, times=times)
     >>>
     >>> # Convert
-    >>> frame_times = np.array([0.0, 1.0, 2.0])
-    >>> overlay_data = _convert_overlays_to_data(
-    ...     overlays=[overlay], frame_times=frame_times, n_frames=3, env=env
+    >>> frame_times = np.array([0.0, 2.0])
+    >>> overlay_data, readers = _convert_overlays_to_data(
+    ...     overlays=[overlay], frame_times=frame_times, n_frames=2, env=env
     ... )
-    >>> len(overlay_data.positions)
-    1
     >>> overlay_data.positions[0].data.shape
     (3, 2)
+    >>> readers.close()
     """
     frame_times = _validate_frame_times(frame_times, n_frames)
-    # Initialize lists for each overlay type
-    position_data_list: list[PositionData] = []
-    bodypart_data_list: list[BodypartData] = []
-    head_direction_data_list: list[HeadDirectionData] = []
-    video_data_list: list[VideoData] = []
-    event_data_list: list[EventData] = []
-    timeseries_data_list: list[TimeSeriesData] = []
-    spike_raster_data_list: list[SpikeRasterData] = []
-    epoch_data_list: list[EpochData] = []
-    object_vector_data_list: list[ObjectVectorData] = []
-
+    overlay_data = OverlayData()
     with ExitStack() as cleanup:
-        owned_readers = _OwnedReaders()
-        cleanup.callback(owned_readers.close)
-
-        def register_reader(data: VideoData) -> None:
-            if data._owns_reader:
-                owned_readers.add(data.reader)
-
-        # Process each overlay using protocol dispatch
+        readers = _OwnedReaders()
+        cleanup.callback(readers.close)
         for overlay in overlays:
-            # Validate overlay implements protocol
             if not isinstance(overlay, OverlayProtocol):
                 raise TypeError(
                     f"Overlay must implement OverlayProtocol, got {type(overlay).__name__}. "
-                    f"Ensure your overlay has 'times', 'interp' attributes and a "
-                    f"'convert_to_data()' method."
+                    "Ensure your overlay has a 'convert_to_data()' method."
                 )
+            item = overlay.convert_to_data(frame_times, n_frames, env)
+            # A video overlay with a file source opened its reader for us.
+            if isinstance(overlay, VideoOverlay) and not isinstance(
+                overlay.source, np.ndarray
+            ):
+                readers.add(cast("VideoData", item).reader)
+            if not isinstance(overlay, _Overlay):
+                _check_adapter_clock(item, frame_times, name=type(overlay).__name__)
+            # Own the converted metadata; copies share video readers.
+            item = copy.deepcopy(item)
+            if isinstance(item, EventData):
+                # Events keep their own times but are indexed on the scene clock.
+                _reindex_events(item, frame_times)
+            overlay_data.add(item)
 
-            # Choose the source clock before acquisition. Custom adapters run
-            # once and own their output mapping, including reordered video rows.
-            own_times = overlay.times
-            conversion_times = frame_times
-            native_clock = (
-                own_samples
-                and own_times is not None
-                and not isinstance(
-                    overlay,
-                    (EventOverlay, TimeSeriesOverlay, SpikeRasterOverlay, EpochOverlay),
-                )
-            )
-            if native_clock and own_times is not None:
-                own_times = np.array(own_times, dtype=np.float64, copy=True)
-                _validate_monotonic_time(
-                    own_times, name=f"{type(overlay).__name__}.times"
-                )
-                own_times = _validate_frame_times(own_times, len(own_times))
-                conversion_times = own_times
-            internal_data = overlay.convert_to_data(
-                conversion_times, len(conversion_times), env
-            )
-            if isinstance(internal_data, VideoData):
-                register_reader(internal_data)
-            if isinstance(internal_data, _OWN_SAMPLE_TYPES):
-                if own_samples and internal_data.times is None:
-                    internal_data = replace(
-                        internal_data, times=conversion_times.copy()
-                    )
-                _validate_prepared_samples(internal_data, conversion_times)
-                internal_data = _normalize_prepared_support(internal_data)
-                if own_samples and internal_data.times is not None:
-                    _validate_temporal_alignment(
-                        np.asarray(internal_data.times, dtype=np.float64),
-                        frame_times,
-                        name=type(overlay).__name__,
-                    )
-            if own_samples:
-                internal_data = _snapshot_internal_overlay(internal_data)
-                # Events keep their own times but index their visibility on
-                # the complete scene clock.
-                if isinstance(internal_data, EventData):
-                    _reindex_events(internal_data, frame_times)
-
-            # Dispatch to appropriate list based on return type
-            if isinstance(internal_data, PositionData):
-                position_data_list.append(internal_data)
-            elif isinstance(internal_data, BodypartData):
-                bodypart_data_list.append(internal_data)
-            elif isinstance(internal_data, HeadDirectionData):
-                head_direction_data_list.append(internal_data)
-            elif isinstance(internal_data, VideoData):
-                video_data_list.append(internal_data)
-            elif isinstance(internal_data, EventData):
-                event_data_list.append(internal_data)
-            elif isinstance(internal_data, TimeSeriesData):
-                timeseries_data_list.append(internal_data)
-            elif isinstance(internal_data, SpikeRasterData):
-                spike_raster_data_list.append(internal_data)
-            elif isinstance(internal_data, EpochData):
-                epoch_data_list.append(internal_data)
-            elif isinstance(internal_data, ObjectVectorData):
-                object_vector_data_list.append(internal_data)
-            else:
-                raise TypeError(
-                    f"convert_to_data() must return PositionData, BodypartData, "
-                    f"HeadDirectionData, VideoData, EventData, TimeSeriesData, "
-                    f"SpikeRasterData, EpochData or ObjectVectorData, got "
-                    f"{type(internal_data).__name__}."
-                )
-
-        if head_direction_data_list and len(position_data_list) > 1:
+        if overlay_data.head_directions and len(overlay_data.positions) > 1:
             raise ValueError(
                 "HeadDirectionOverlay cannot tell which of the "
-                f"{len(position_data_list)} PositionOverlays it starts from. "
+                f"{len(overlay_data.positions)} PositionOverlays it starts from. "
                 "Heading arrows are drawn from the animal's position, and "
                 "several position overlays give no single position. Pass exactly "
                 "one PositionOverlay with heading overlays (the tracked point "
                 "whose heading you measured), or omit PositionOverlays to draw "
                 "the heading as a compass arrow at the arena center."
             )
-
-        # Aggregate all overlay data
-        overlay_data = OverlayData(
-            positions=position_data_list,
-            bodypart_sets=bodypart_data_list,
-            head_directions=head_direction_data_list,
-            videos=video_data_list,
-            events=event_data_list,
-            timeseries=timeseries_data_list,
-            spike_rasters=spike_raster_data_list,
-            epochs=epoch_data_list,
-            object_vectors=object_vector_data_list,
-            frame_times=frame_times,
-        )
-
         cleanup.pop_all()
-        return overlay_data
+    return overlay_data, readers
 
 
 def _overlay_arrays(data: Any) -> Iterator[np.ndarray]:
@@ -4735,162 +4689,24 @@ def _freeze_overlay_arrays(data: OverlayData) -> None:
 def _realign_prepared_overlays(
     prepared: OverlayData,
     frame_times: NDArray[np.float64],
-    *,
-    own_samples: bool = False,
 ) -> OverlayData:
-    """Build independent display metadata while borrowing prepared video readers.
+    """Sample prepared overlays at ``frame_times``, borrowing video readers.
 
-    Adapters run only when the scene is prepared. Reusing their validated data
-    preserves the original observation support and keeps resource ownership in
-    the prepared bundle. Requested clocks must stay within the prepared scene.
+    Adapters run only when the scene is prepared. Sampling their resolved
+    data keeps the original observation support, and copies share the
+    prepared readers, which stay owned by the scene. Sampled data gets
+    ``times = frame_times``; read-only prepared arrays are shared and every
+    container is independent.
     """
-    import copy
-
     clock = _validate_frame_times(frame_times, len(frame_times))
-    # Readers may own decoder handles and cannot be deep-copied. Read-only
-    # arrays are shared; containers and writable arrays are independent.
-    memo: dict[int, Any] = {id(video.reader): video.reader for video in prepared.videos}
-    memo.update(
-        (id(array), array)
+    memo: dict[int, Any] = {
+        id(array): array
         for array in _overlay_arrays(prepared)
         if not array.flags.writeable
-    )
+    }
     result = copy.deepcopy(prepared, memo)
-    result.frame_times = clock.copy()
-
-    def source_clock(data: Any) -> NDArray[np.float64]:
-        times = data.times if data.times is not None else prepared.frame_times
-        if times is None:
-            raise ValueError("Prepared overlay data needs a source clock.")
-        times = np.asarray(times, dtype=np.float64)
-        _validate_monotonic_time(times, name="Prepared overlay times")
-        if not len(times):
-            raise ValueError("Prepared overlay times must be nonempty.")
-        return times
-
-    def aligned(
-        data: Any, values: NDArray[np.float64], *, circular: bool = False
-    ) -> tuple[NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_]]:
-        times = source_clock(data)
-        values = np.asarray(values, dtype=np.float64)
-        if values.ndim not in (1, 2) or len(values) != len(times):
-            raise ValueError("Prepared overlay values must match their source clock.")
-        for name, expected in (
-            ("sample_valid", len(times)),
-            ("interval_valid", len(times) - 1),
-        ):
-            mask = getattr(data, name)
-            if mask is not None and np.shape(mask) != (expected,):
-                raise ValueError(
-                    f"Prepared overlay {name} must have shape ({expected},)."
-                )
-        finite = np.asarray(np.isfinite(values.reshape(len(times), -1)).all(axis=1))
-        valid = np.asarray(
-            finite if data.sample_valid is None else finite & data.sample_valid
-        )
-        intervals = (
-            valid[:-1] & valid[1:]
-            if data.interval_valid is None
-            else data.interval_valid & valid[:-1] & valid[1:]
-        )
-        samples = sample_at_times(
-            times,
-            values,
-            clock,
-            interp=data.interp,
-            sample_valid=valid,
-            interval_valid=intervals,
-            circular=circular,
-        )
-        sample_valid = np.asarray(
-            np.isfinite(samples.reshape(len(clock), -1)).all(axis=1)
-        )
-        left = np.clip(
-            np.searchsorted(times, clock[:-1], side="right") - 1, 0, len(times) - 1
-        )
-        right = np.clip(
-            np.searchsorted(times, clock[1:], side="left"), 0, len(times) - 1
-        )
-        excluded = np.r_[0, np.cumsum(~intervals)]
-        interval_valid = (
-            sample_valid[:-1] & sample_valid[1:] & (excluded[left] == excluded[right])
-        )
-        return samples, sample_valid, interval_valid
-
-    if not own_samples:
-        for source, target in zip(prepared.positions, result.positions, strict=True):
-            target.data, target.sample_valid, target.interval_valid = aligned(
-                source, source.data
-            )
-            target.times = None
-        for source_heading, target_heading in zip(
-            prepared.head_directions, result.head_directions, strict=True
-        ):
-            (
-                target_heading.data,
-                target_heading.sample_valid,
-                target_heading.interval_valid,
-            ) = aligned(
-                source_heading,
-                source_heading.data,
-                circular=source_heading.data.ndim == 1,
-            )
-            target_heading.times = None
-        for source_pose, target_pose in zip(
-            prepared.bodypart_sets, result.bodypart_sets, strict=True
-        ):
-            target_pose.sample_valid, target_pose.interval_valid = {}, {}
-            for name, values in source_pose.bodyparts.items():
-                # Each keypoint has its own missing observations and support.
-                sample_view = PositionData(
-                    data=values,
-                    color="",
-                    size=0,
-                    trail_length=None,
-                    times=source_pose.times,
-                    interp=source_pose.interp,
-                    sample_valid=None
-                    if source_pose.sample_valid is None
-                    else source_pose.sample_valid.get(name),
-                    interval_valid=None
-                    if source_pose.interval_valid is None
-                    else source_pose.interval_valid.get(name),
-                )
-                (
-                    target_pose.bodyparts[name],
-                    target_pose.sample_valid[name],
-                    target_pose.interval_valid[name],
-                ) = aligned(sample_view, values)
-            target_pose.times = None
-        for source_vector, target_vector in zip(
-            prepared.object_vectors, result.object_vectors, strict=True
-        ):
-            (
-                target_vector.animal_positions,
-                target_vector.sample_valid,
-                target_vector.interval_valid,
-            ) = aligned(source_vector, source_vector.animal_positions)
-            if source_vector.firing_rates is not None:
-                target_vector.firing_rates = aligned(
-                    source_vector, source_vector.firing_rates
-                )[0]
-            target_vector.times = None
-
-    for source_video, target_video in zip(prepared.videos, result.videos, strict=True):
-        target_video._owns_reader = False
-        if not own_samples:
-            video_times = source_clock(source_video)
-            if np.shape(source_video.frame_indices) != (len(video_times),):
-                raise ValueError(
-                    "Prepared video indices must match their source clock."
-                )
-            indices = _find_nearest_indices(video_times, clock)
-            valid_indices = indices >= 0
-            target_video.frame_indices = np.full(len(clock), -1, dtype=np.int_)
-            target_video.frame_indices[valid_indices] = source_video.frame_indices[
-                indices[valid_indices]
-            ]
-            target_video.times = None
+    for name in OverlayData._SAMPLED:
+        setattr(result, name, [item.on_clock(clock) for item in getattr(result, name)])
     for events in result.events:
         _reindex_events(events, clock)
     return result

@@ -136,12 +136,17 @@ class ReorderedVideo:
     times: np.ndarray
     reader: np.ndarray
     calls: list
-    interp: str = "nearest"
 
     def convert_to_data(self, frame_times, n_frames, env):
         self.calls.append(frame_times.copy())
         return VideoData(
-            np.array([2, 0]), self.reader, None, (0, 2, 0, 2), 1.0, "above"
+            np.array([2, 0]),
+            self.reader,
+            None,
+            (0, 2, 0, 2),
+            1.0,
+            "above",
+            times=self.times,
         )
 
 
@@ -151,15 +156,11 @@ def test_native_conversion_preserves_custom_mapping_and_invokes_adapter_once(env
         [np.full((2, 2, 3), color, dtype=np.uint8) for color in [10, 20, 30]]
     )
     adapter = ReorderedVideo(times, reader, [])
-    prepared = _convert_overlays_to_data(
-        [adapter],
-        np.array([0.0, 0.1, 0.2]),
-        3,
-        env,
-        own_samples=True,
-    )
+    frame_times = np.array([0.0, 0.1, 0.2])
+    prepared, _ = _convert_overlays_to_data([adapter], frame_times, 3, env)
+    # The adapter is called once, with the scene clock.
     assert len(adapter.calls) == 1
-    assert_array_equal(adapter.calls[0], times)
+    assert_array_equal(adapter.calls[0], frame_times)
     assert_array_equal(prepared.videos[0].frame_indices, [2, 0])
     assert prepared.videos[0].reader is reader
     assert prepared.videos[0].get_frame(0)[0, 0, 0] == 30
@@ -175,9 +176,6 @@ def test_native_conversion_preserves_custom_mapping_and_invokes_adapter_once(env
 )
 def test_conversion_validates_custom_video_mapping(env, indices):
     class Adapter:
-        times = np.array([0.0, 0.1])
-        interp = "nearest"
-
         def convert_to_data(self, frame_times, n_frames, env):
             return VideoData(
                 indices,
@@ -186,12 +184,11 @@ def test_conversion_validates_custom_video_mapping(env, indices):
                 (0, 2, 0, 2),
                 1.0,
                 "above",
+                times=np.array([0.0, 0.1]),
             )
 
     with pytest.raises(ValueError, match="frame_indices"):
-        _convert_overlays_to_data(
-            [Adapter()], np.array([0.0, 0.1]), 2, env, own_samples=True
-        )
+        _convert_overlays_to_data([Adapter()], np.array([0.0, 0.1]), 2, env)
 
 
 def test_adapter_output_clock_and_missing_video_rows_are_authoritative(env):
@@ -202,8 +199,6 @@ def test_adapter_output_clock_and_missing_video_rows_are_authoritative(env):
     )
 
     class Adapter:
-        times = np.array([0.0, 0.1])
-        interp = "nearest"
         calls = 0
 
         def convert_to_data(self, frame_times, n_frames, env):
@@ -213,9 +208,7 @@ def test_adapter_output_clock_and_missing_video_rows_are_authoritative(env):
             )
 
     adapter = Adapter()
-    prepared = _convert_overlays_to_data(
-        [adapter], output_times, 3, env, own_samples=True
-    )
+    prepared, _ = _convert_overlays_to_data([adapter], output_times, 3, env)
     item = prepared.videos[0]
     assert adapter.calls == 1
     assert_array_equal(item.times, output_times)
@@ -247,9 +240,6 @@ def test_returned_video_clock_without_adapter_times_validates_scene_overlap(env)
     reader = Reader()
 
     class Adapter:
-        times = None
-        interp = "nearest"
-
         def convert_to_data(self, frame_times, n_frames, env):
             return VideoData(
                 np.array([2, 0]),
@@ -259,30 +249,25 @@ def test_returned_video_clock_without_adapter_times_validates_scene_overlap(env)
                 1.0,
                 "above",
                 times=np.array([10.0, 10.1]),
-                _owns_reader=True,
             )
 
     with pytest.raises(ValueError, match="No temporal overlap"):
-        _convert_overlays_to_data(
-            [Adapter()], np.array([0.0, 0.1]), 2, env, own_samples=True
-        )
-    assert reader.close_count == 1
+        _convert_overlays_to_data([Adapter()], np.array([0.0, 0.1]), 2, env)
+    # The adapter's reader is borrowed: the failed conversion leaves it open.
+    assert reader.close_count == 0
 
 
 def test_returned_position_clock_warns_on_partial_scene_overlap(env):
     from neurospatial.animation.overlays import PositionData
 
     class Adapter:
-        times = None
-        interp = "linear"
-
         def convert_to_data(self, frame_times, n_frames, env):
             return PositionData(
                 np.ones((2, 2)), "red", 5, None, times=np.array([0.0, 0.1])
             )
 
     with pytest.warns(UserWarning, match="Partial temporal overlap"):
-        data = _convert_overlays_to_data(
-            [Adapter()], np.array([0.0, 0.2, 1.0]), 3, env, own_samples=True
+        data, _ = _convert_overlays_to_data(
+            [Adapter()], np.array([0.0, 0.2, 1.0]), 3, env
         )
     assert_array_equal(data.positions[0].times, [0.0, 0.1])

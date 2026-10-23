@@ -144,9 +144,6 @@ def test_overlay_realign_borrows_single_reader_and_cannot_mutate_authority(env):
     acquisitions = []
 
     class Video:
-        times = np.array([100, 100.1, 100.2])
-        interp = "nearest"
-
         def convert_to_data(self, frame_times, n_frames, env):
             acquisitions.append(True)
             return VideoData(
@@ -156,7 +153,7 @@ def test_overlay_realign_borrows_single_reader_and_cannot_mutate_authority(env):
                 (0, 2, 0, 2),
                 0.5,
                 "above",
-                _owns_reader=True,
+                times=frame_times,
             )
 
     scene = Animation(
@@ -166,26 +163,21 @@ def test_overlay_realign_borrows_single_reader_and_cannot_mutate_authority(env):
         overlays=[Video()],
     )
     assert len(acquisitions) == 1
-    for own_samples in (False, True):
-        data = scene.overlay_data([100.05, 100.15], own_samples=own_samples)
-        assert data is not scene._overlay_data
-        assert data.videos[0].reader is reader
-        assert not data.videos[0]._owns_reader
-        # Realigned indices are new arrays; shared prepared arrays are read-only.
-        indices = data.videos[0].frame_indices
-        if own_samples:
-            with pytest.raises(ValueError, match="read-only"):
-                indices[0] = -100
-        else:
-            indices[0] = -100
-        assert scene._overlay_data.videos[0].frame_indices[0] == 0
+    data = scene.overlay_data([100.05, 100.15])
+    assert data is not scene._overlay_data
+    assert data.videos[0].reader is reader
+    # Realigned indices are new arrays; shared prepared arrays are read-only.
+    data.videos[0].frame_indices[0] = -100
+    assert scene._overlay_data.videos[0].frame_indices[0] == 0
+    with pytest.raises(ValueError, match="read-only"):
+        scene._overlay_data.videos[0].frame_indices[0] = -100
     assert len(acquisitions) == 1
-    reader.close.assert_not_called()
     with pytest.raises(ValueError, match="within the scene recording"):
         scene.overlay_data([99, 100])
     scene.close()
     scene.close()
-    reader.close.assert_called_once_with()
+    # A custom adapter's reader is borrowed: the scene never closes it.
+    reader.close.assert_not_called()
 
 
 @pytest.mark.parametrize("category", ["pose", "headings", "vectors", "videos"])
@@ -205,9 +197,6 @@ def test_fast_1d_rejects_omitted_overlay_before_backend_allocation(
     if category == "videos":
         # Custom protocol overlays may supply data unsupported by a renderer.
         class Video:
-            times = None
-            interp = "nearest"
-
             def convert_to_data(self, frame_times, n_frames, env):
                 return VideoData(
                     np.arange(n_frames),
@@ -216,6 +205,7 @@ def test_fast_1d_rejects_omitted_overlay_before_backend_allocation(
                     (0, 2, 0, 2),
                     0.5,
                     "above",
+                    times=frame_times,
                 )
 
         overlay = Video()

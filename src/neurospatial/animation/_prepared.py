@@ -45,24 +45,16 @@ def _ordered_clock_chunks(clock: np.ndarray) -> Iterator[np.ndarray]:
 def iter_observation_clocks(scene: Animation) -> Iterator[np.ndarray]:
     """Yield prepared source clocks for export's ULP-only time correction.
 
-    Read converted streams so custom adapters' clocks and inherited scene
-    clocks agree with rendering. No renderer, source values, decoder reads or
-    combined recording-sized clock are needed. Point and interval records may
-    be unordered; search bounded ordered chunks without reordering the records.
+    Read converted streams so custom adapters' clocks agree with rendering. No
+    renderer, source values, decoder reads or combined recording-sized clock
+    are needed. Point and interval records may be unordered; search bounded
+    ordered chunks without reordering the records.
     """
     for field in scene.fields.values():
         yield field.times
     data = scene._overlay_data
-    sampled: Iterator[Any] = chain(
-        data.positions,
-        data.bodypart_sets,
-        data.head_directions,
-        data.object_vectors,
-        data.videos,
-        data.timeseries,
-    )
-    for item in sampled:
-        yield scene.frame_times if item.times is None else item.times
+    for item in chain(data.sampled(), data.timeseries):
+        yield item.times
     for events in data.events:
         for clock in events.event_times.values():
             yield from _ordered_clock_chunks(clock)
@@ -234,12 +226,6 @@ class PreparedScene:
             self._held[id(field)] = previous
         return previous[1]
 
-    def clock(self, item: Any) -> np.ndarray:
-        """The source clock, with the scene clock for explicitly aligned rows."""
-        return cast(
-            "np.ndarray", self.scene.frame_times if item.times is None else item.times
-        )
-
     def trail_seconds(self, position: Any) -> float:
         """How far back a position's trail reaches: ``trail_length`` scene frames.
 
@@ -253,7 +239,7 @@ class PreparedScene:
 
     def trail_rows(self, position: Any, time: float) -> range:
         """The position's own samples in its trail at ``time``."""
-        times = self.clock(position)
+        times = position.times
         stop = int(np.searchsorted(times, time, side="right"))
         start = int(
             np.searchsorted(times, time - self.trail_seconds(position), side="left")
@@ -272,23 +258,22 @@ class PreparedScene:
         point = self.sample(position, position.data, time)
         if not np.isfinite(point).all():
             return [], np.empty(0)
-        valid = position.interval_valid
+        # A valid interval joins two valid, finite samples.
         rows = [
             j
             for j in self.trail_rows(position, time)[:-1]
-            if (valid is None or valid[j])
-            and np.isfinite(position.data[j : j + 2]).all()
+            if position.interval_valid[j]
         ]
         segments = [position.data[j : j + 2] for j in rows]
         seconds = self.trail_seconds(position)
         if seconds <= 0:
             return segments, np.full(len(rows), _TRAIL_MAX_ALPHA)
-        age = time - self.clock(position)[np.asarray(rows, dtype=int) + 1]
+        age = time - position.times[np.asarray(rows, dtype=int) + 1]
         return segments, _TRAIL_MAX_ALPHA * np.clip(1 - age / seconds, 0, 1)
 
     def trail_capacity(self, position: Any) -> int:
         """The most samples any trail of ``position`` holds."""
-        times = self.clock(position)
+        times = position.times
         starts = np.searchsorted(times, times - self.trail_seconds(position), "left")
         return int(np.max(np.arange(1, len(times) + 1) - starts, initial=0))
 
@@ -302,13 +287,11 @@ class PreparedScene:
         name: str | None = None,
     ) -> np.ndarray:
         """Sample a prepared stream using its existing clock and support masks."""
-        return sample_observation(
-            item, self.clock(item), values, time, circular=circular, name=name
-        )
+        return sample_observation(item, values, time, circular=circular, name=name)
 
     def video_frame(self, video: Any, time: float) -> np.ndarray | None:
         """Read the nearest supported source row through its authoritative map."""
-        times = self.clock(video)
+        times = video.times
         if not len(times) or time < times[0] or time > times[-1]:
             return None
         right = int(np.searchsorted(times, time, side="left"))
@@ -335,7 +318,7 @@ class PreparedScene:
     def signal_window(self, signal: Any, time: float) -> tuple[np.ndarray, np.ndarray]:
         """Observed signal samples in the current window, with requested scaling."""
         left, right = self.bounds(time)
-        clock = self.clock(signal)
+        clock = signal.times
         keep = slice(
             np.searchsorted(clock, left, side="left"),
             np.searchsorted(clock, right, side="right"),
@@ -385,12 +368,12 @@ class PreparedScene:
             colors.append(values[finite])
         paths = []
         for position in self.scene._overlay_data.positions:
-            times = self.clock(position)
+            times = position.times
             start = int(np.searchsorted(times, left, side="left"))
             stop = int(np.searchsorted(times, right, side="right"))
             distances = track_position(self.track_env, position.data[start:stop])
             for index in range(start, stop - 1):
-                if position.interval_valid is None or position.interval_valid[index]:
+                if position.interval_valid[index]:
                     segment = np.column_stack(
                         [
                             times[index : index + 2],

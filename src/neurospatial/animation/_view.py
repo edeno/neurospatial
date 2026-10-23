@@ -435,7 +435,7 @@ def show_animation(
     # may wait for workers or process events that also need this lock.
     with animation._source_lock:
         animation._ensure_open()
-        data = animation.overlay_data(own_samples=True)
+        data = animation._overlay_data
         field_styles = []
         for name, field in animation.fields.items():
             low, high = field.color_limits()

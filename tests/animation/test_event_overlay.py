@@ -940,7 +940,7 @@ class TestConvertOverlaysToDataWithEvents:
         frame_times = np.linspace(0.0, 10.0, 11)
         n_frames = 11
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data, _ = _convert_overlays_to_data(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -972,7 +972,7 @@ class TestConvertOverlaysToDataWithEvents:
         frame_times = np.linspace(0.0, 10.0, 11)
         n_frames = 11
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data, _ = _convert_overlays_to_data(
             overlays=[overlay1, overlay2],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1002,7 +1002,7 @@ class TestConvertOverlaysToDataWithEvents:
         frame_times = np.linspace(0.0, 10.0, 11)
         n_frames = 11
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data, _ = _convert_overlays_to_data(
             overlays=[position_overlay, event_overlay],
             frame_times=frame_times,
             n_frames=n_frames,

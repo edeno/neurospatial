@@ -24,8 +24,6 @@ POINTS = np.array([[0.2, 0.2], [1.0, 1.0], [1.8, 0.2], [1.8, 1.8]])
 @dataclass
 class Adapter:
     data: object
-    times: object = None
-    interp: str = "linear"
 
     def convert_to_data(self, frame_times, n_frames, env):
         return self.data
@@ -50,61 +48,67 @@ def position_masks(case):
     )
 
 
-@pytest.mark.parametrize("own_samples", [False, True])
 @pytest.mark.parametrize("case", ["sample", "interval", "both"])
-def test_position_preparation_owns_effective_support(env, own_samples, case):
+def test_position_preparation_owns_effective_support(env, case):
     sample_mask, interval_mask, expected_intervals = position_masks(case)
+    points = POINTS.copy()
     source = PositionData(
-        POINTS.copy(),
+        points,
         "red",
         5,
         4,
+        times=CLOCK,
         sample_valid=sample_mask,
         interval_valid=interval_mask,
     )
-    prepared = _convert_overlays_to_data(
-        [Adapter(source)], CLOCK, len(CLOCK), env, own_samples=own_samples
-    ).positions[0]
+    prepared = _convert_overlays_to_data([Adapter(source)], CLOCK, len(CLOCK), env)[
+        0
+    ].positions[0]
     expected_valid = np.ones(4, dtype=bool) if sample_mask is None else sample_mask
     np.testing.assert_array_equal(prepared.sample_valid, expected_valid)
     np.testing.assert_array_equal(prepared.interval_valid, expected_intervals)
     np.testing.assert_array_equal(prepared.data[expected_valid], POINTS[expected_valid])
     assert np.isnan(prepared.data[~expected_valid]).all()
+    # The caller's arrays are neither shared nor changed.
+    assert not np.shares_memory(prepared.data, points)
     assert not np.shares_memory(prepared.data, source.data)
-    np.testing.assert_array_equal(source.data, POINTS)
+    np.testing.assert_array_equal(points, POINTS)
     if sample_mask is not None:
         assert not np.shares_memory(prepared.sample_valid, sample_mask)
     if interval_mask is not None:
         assert not np.shares_memory(prepared.interval_valid, interval_mask)
     for index, time in enumerate(CLOCK):
-        sampled = sample_observation(prepared, CLOCK, prepared.data, time)
+        sampled = sample_observation(prepared, prepared.data, time)
         if expected_valid[index]:
             np.testing.assert_array_equal(sampled, POINTS[index])
         else:
             assert np.isnan(sampled).all()
     for index, time in enumerate((CLOCK[:-1] + CLOCK[1:]) / 2):
-        sampled = sample_observation(prepared, CLOCK, prepared.data, time)
+        sampled = sample_observation(prepared, prepared.data, time)
         assert np.isfinite(sampled).all() == expected_intervals[index]
 
 
-@pytest.mark.parametrize("own_samples", [False, True])
 @pytest.mark.parametrize("kind", ["bodypart", "heading", "object_vector"])
-def test_spatial_adapter_rows_respect_rejected_samples(env, own_samples, kind):
+def test_spatial_adapter_rows_respect_rejected_samples(env, kind):
     valid = np.array([True, False, True, True])
+    points = POINTS.copy()
     if kind == "bodypart":
         source = BodypartData(
-            {"nose": POINTS.copy()},
+            {"nose": points},
             None,
             None,
+            times=CLOCK,
             sample_valid={"nose": valid},
             interval_valid={"nose": np.ones(3, dtype=bool)},
         )
         attribute = "bodypart_sets"
     elif kind == "heading":
+        points = np.arange(4.0)
         source = HeadDirectionData(
-            np.arange(4.0),
+            points,
             "red",
             1,
+            times=CLOCK,
             sample_valid=valid,
             interval_valid=np.ones(3, dtype=bool),
         )
@@ -112,32 +116,31 @@ def test_spatial_adapter_rows_respect_rejected_samples(env, own_samples, kind):
     else:
         source = ObjectVectorData(
             np.array([[1.0, 1.0]]),
-            POINTS.copy(),
+            points,
             None,
             "red",
             1,
             True,
             "o",
             5,
+            times=CLOCK,
             sample_valid=valid,
             interval_valid=np.ones(3, dtype=bool),
         )
         attribute = "object_vectors"
-    data = _convert_overlays_to_data(
-        [Adapter(source)], CLOCK, len(CLOCK), env, own_samples=own_samples
-    )
+    data, _ = _convert_overlays_to_data([Adapter(source)], CLOCK, len(CLOCK), env)
     prepared = getattr(data, attribute)[0]
     if kind == "bodypart":
-        values, original = prepared.bodyparts["nose"], source.bodyparts["nose"]
+        values = prepared.bodyparts["nose"]
         intervals = prepared.interval_valid["nose"]
     else:
         key = "data" if kind == "heading" else "animal_positions"
-        values, original = getattr(prepared, key), getattr(source, key)
+        values = getattr(prepared, key)
         intervals = prepared.interval_valid
     assert np.isnan(values[1]).all()
-    assert np.isfinite(original).all()
+    assert np.isfinite(points).all()
     np.testing.assert_array_equal(intervals, [False, False, True])
-    assert not np.shares_memory(values, original)
+    assert not np.shares_memory(values, points)
 
 
 @pytest.mark.parametrize("case", ["sample", "interval", "both"])
@@ -148,6 +151,7 @@ def test_scene_trails_and_markers_follow_effective_support(env, case):
         "red",
         5,
         4,
+        times=CLOCK,
         sample_valid=samples,
         interval_valid=intervals,
     )
@@ -192,6 +196,7 @@ def test_track_paths_do_not_draw_rejected_samples(case):
         "red",
         5,
         4,
+        times=CLOCK,
         sample_valid=samples,
         interval_valid=intervals,
     )
@@ -211,11 +216,8 @@ def test_track_paths_do_not_draw_rejected_samples(case):
             np.testing.assert_array_equal(segment[:, 0], expected)
 
 
-@pytest.mark.parametrize("own_samples", [False, True])
 @pytest.mark.parametrize("mask_kind", ["sample_valid", "interval_valid", "both"])
-def test_partial_bodypart_masks_infer_missing_entries_and_realign(
-    env, own_samples, mask_kind
-):
+def test_partial_bodypart_masks_infer_missing_entries_and_realign(env, mask_kind):
     masks = {}
     if mask_kind in ("sample_valid", "both"):
         masks["sample_valid"] = {"nose": np.array([True, False, True, True])}
@@ -223,11 +225,13 @@ def test_partial_bodypart_masks_infer_missing_entries_and_realign(
         masks["interval_valid"] = {"nose": np.array([False, False, True])}
     tail = POINTS.copy()
     tail[2] = np.nan
-    source = BodypartData({"nose": POINTS.copy(), "tail": tail}, None, None, **masks)
+    source = BodypartData(
+        {"nose": POINTS.copy(), "tail": tail}, None, None, times=CLOCK, **masks
+    )
     with Animation(
         env, np.ones((4, env.n_bins)), frame_times=CLOCK, overlays=[Adapter(source)]
     ) as scene:
-        prepared = scene.overlay_data(own_samples=own_samples).bodypart_sets[0]
+        prepared = scene._overlay_data.bodypart_sets[0]
         assert set(prepared.sample_valid) == {"nose", "tail"}
         assert set(prepared.interval_valid) == {"nose", "tail"}
         np.testing.assert_array_equal(
@@ -267,6 +271,7 @@ def test_bodypart_mask_errors_are_actionable(env, mask_kind, malformed):
     else:
         mask = np.ones(count, dtype=bool)
         message = "map bodypart names"
-    source = BodypartData({"nose": POINTS.copy()}, None, None, **{mask_kind: mask})
     with pytest.raises(ValueError, match=message):
-        _convert_overlays_to_data([Adapter(source)], CLOCK, len(CLOCK), env)
+        BodypartData(
+            {"nose": POINTS.copy()}, None, None, times=CLOCK, **{mask_kind: mask}
+        )

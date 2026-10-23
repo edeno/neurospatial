@@ -252,8 +252,7 @@ class SceneRenderer:
 
     def _below_video(self, time: float) -> bool:
         return any(
-            video.z_order == "below"
-            and self.prepared.clock(video)[0] <= time <= self.prepared.clock(video)[-1]
+            video.z_order == "below" and video.times[0] <= time <= video.times[-1]
             for video in self.scene._overlay_data.videos
         )
 
@@ -642,7 +641,7 @@ class SceneRenderer:
         markers = {
             name: _scatter(
                 ax,
-                color=(body.colors or {}).get(name, "red"),
+                color=body.colors[name],
                 s=_marker_area(8.0, dpi=self.figure.dpi),
                 zorder=101,
             )
@@ -746,7 +745,9 @@ class SceneRenderer:
             objects = np.atleast_2d(objects)
             opacity = 1.0
             if vectors.firing_rates is not None:
-                rate = self._sample(vectors, vectors.firing_rates, time)
+                rate = self._sample(
+                    vectors, vectors.firing_rates, time, name="firing_rates"
+                )
                 opacity = _rate_opacity(float(rate), vectors._rate_peak or 1.0)
             finite = np.isfinite(objects).all(axis=1)
             for marker, point in zip(markers, objects, strict=True):

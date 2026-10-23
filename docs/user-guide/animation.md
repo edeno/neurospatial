@@ -760,10 +760,15 @@ Normalizing a constant `TimeSeriesOverlay` maps finite samples to zero while
 preserving NaNs. Object-vector rate opacity uses the finite peak over the
 prepared recording, keeping its scale stable when a view selects a window.
 
-Custom `OverlayProtocol` adapters may supply sample and interval validity masks.
-Preparation combines them with finite coordinate support, so rejected samples
-remain missing in markers, trails and track panels. Omitted masks are inferred
-from the observations; omitted bodypart mask entries use that same rule.
+Custom `OverlayProtocol` adapters are called once, with the scene's clock, and
+return sampled data (`PositionData`, `BodypartData`, `HeadDirectionData`,
+`ObjectVectorData`, `VideoData`) with its own sample `times`, which views sample
+at the times they show. Adapters may supply sample and interval validity masks.
+The data combines them with finite coordinate support when it is made, so
+rejected samples remain missing in markers, trails and track panels. Omitted
+masks are inferred from the observations; omitted bodypart mask entries use that
+same rule. Bodyparts without a color take the skeleton's node color, else red,
+in every view.
 
 For `track=...`, the environment and track must use the same units and
 Cartesian coordinate frame. Unit spelling aliases are accepted; convert or
@@ -771,11 +776,12 @@ transform coordinates explicitly before projection.
 Both may omit metadata when the caller has established their correspondence;
 a declaration on only one side is insufficient.
 
-The scene owns video readers it opens. `scene.overlay_data()` returns borrowed
-views of those readers, including when requesting another clock within the
-scene's bounds. Keep the scene open while using them; `scene.close()` releases
-the readers after closing its views. Failed scene preparation also releases
-readers already acquired.
+The scene owns the video readers its `VideoOverlay`s open. `scene.overlay_data()`
+samples every overlay on the scene's clock, or on another clock within the
+scene's bounds, and returns borrowed views of those readers. Keep the scene open
+while using them; `scene.close()` releases the readers after closing its views.
+Failed scene preparation also releases readers already acquired. A reader a
+custom adapter returns stays the adapter's to close.
 Custom overlay adapters are converted once. Their prepared data retains its
 native clock and source-frame mapping; adapters may be frozen objects.
 

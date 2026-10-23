@@ -62,7 +62,6 @@ def test_scene_video_uses_prepared_native_mapping_for_every_read(env):
     prepared = PreparedScene(scene)
     video = scene._overlay_data.videos[0]
     np.testing.assert_array_equal(video.frame_indices, [2, -1, 0])
-    assert prepared.clock(video) is video.times
     assert prepared.video_frame(video, -0.001) is None
     assert prepared.video_frame(video, 0.201) is None
     try:
@@ -208,10 +207,9 @@ def test_prepared_panels_keep_native_support_and_half_open_field_endpoints():
         scene.close()
 
 
-def test_sampling_checks_changed_values_only_at_requested_rows(monkeypatch):
+def test_sampling_trusts_prepared_support_and_reads_requested_rows(monkeypatch):
     times = np.arange(100_000, dtype=float)
     values = np.ones((len(times), 2))
-    values[11, 0] = np.nan  # A caller can change values after support preparation.
     isfinite = np.isfinite
     sizes = []
 
@@ -220,11 +218,18 @@ def test_sampling_checks_changed_values_only_at_requested_rows(monkeypatch):
         return isfinite(array, *args, **kwargs)
 
     monkeypatch.setattr(np, "isfinite", bounded_isfinite)
+    sample_valid = np.ones(len(times), dtype=bool)
+    sample_valid[11] = False
     result = sample_at_times(
-        times, values, [10.5], sample_valid=np.ones(len(times), dtype=bool)
+        times,
+        values,
+        [10.5, 12.5],
+        interp="linear",
+        sample_valid=sample_valid,
+        interval_valid=sample_valid[:-1] & sample_valid[1:],
     )
-    assert np.isnan(result).all()
-    assert max(sizes) <= 4
+    np.testing.assert_array_equal(result, [[np.nan, np.nan], [1.0, 1.0]])
+    assert max(sizes, default=0) <= 4
 
 
 def test_fresh_napari_preparation_imports_no_canvas_or_renderer():

@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Callable, Iterable, Sequence
-from typing import TYPE_CHECKING, Any, cast
-
-if TYPE_CHECKING:
-    from neurospatial.animation.overlays import OverlayData
+from typing import Any, cast
 
 
 class _CleanupError(RuntimeError):
@@ -54,18 +51,6 @@ class _OwnedReaders:
         self._closed = False
         for reader in readers:
             self.add(reader)
-
-    @classmethod
-    def from_overlay_data(cls, data: OverlayData | None) -> _OwnedReaders:
-        owner = cls()
-        owner.add_data(data)
-        return owner
-
-    def add_data(self, data: OverlayData | None) -> None:
-        if data is not None:
-            for video in data.videos:
-                if video._owns_reader:
-                    self.add(video.reader)
 
     def add(self, reader: Any) -> None:
         if self._closed:

@@ -323,7 +323,7 @@ class TestTimeSeriesDataInOverlayData:
         frame_times = np.array([0.0, 0.5, 1.0])
         n_frames = 3
 
-        result = _convert_overlays_to_data(
+        result, _ = _convert_overlays_to_data(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -486,7 +486,7 @@ class TestTimeSeriesIntegration:
 
         frame_times = np.linspace(0, 10, 20)
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data, _ = _convert_overlays_to_data(
             overlays=[sample_timeseries_overlay, position_overlay],
             frame_times=frame_times,
             n_frames=20,
@@ -539,7 +539,7 @@ class TestTimeSeriesIntegration:
 
         frame_times = np.linspace(0, 10, 20)
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data, _ = _convert_overlays_to_data(
             overlays=[timeseries_overlay, event_overlay],
             frame_times=frame_times,
             n_frames=20,

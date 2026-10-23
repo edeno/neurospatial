@@ -39,12 +39,11 @@ def samples(item, times):
     )
 
 
-@pytest.mark.parametrize("own_samples", [False, True])
 @pytest.mark.parametrize(
     "interp, expected", [("linear", [0.25, 0.25]), ("nearest", [0, 0])]
 )
 def test_inherited_native_clock_honors_interpolation_and_recording_gap(
-    env, own_samples, interp, expected
+    env, interp, expected
 ):
     times = np.array([0.0, 0.1, 1.0, 1.1])
     positions = np.array([[0, 0], [1, 1], [0, 1], [1, 0]], dtype=float)
@@ -53,8 +52,7 @@ def test_inherited_native_clock_honors_interpolation_and_recording_gap(
         times,
         len(times),
         env,
-        own_samples=own_samples,
-    ).positions[0]
+    )[0].positions[0]
     drawn = gpu._Position(Plot(), data, samples(data, times))
     drawn.update(0.025)
     np.testing.assert_allclose(drawn.marker.data[0, :2], expected)
@@ -68,15 +66,13 @@ def test_custom_inherited_mask_matches_scene_and_native_renderers(env):
     times = np.array([0.0, 0.1, 0.2, 0.3])
 
     class Masked:
-        times = None
-        interp = "linear"
-
         def convert_to_data(self, frame_times, n_frames, env):
             return PositionData(
                 np.array([[0, 0], [1, 1], [0, 1], [1, 0]], dtype=float),
                 "red",
                 5,
                 None,
+                times=frame_times,
                 sample_valid=np.array([True, False, True, True]),
                 interval_valid=np.array([False, False, True]),
             )
@@ -84,7 +80,7 @@ def test_custom_inherited_mask_matches_scene_and_native_renderers(env):
     with Animation(
         env, np.ones((4, env.n_bins)), frame_times=times, overlays=[Masked()]
     ) as scene:
-        item = scene.overlay_data(own_samples=True).positions[0]
+        item = scene._overlay_data.positions[0]
         prepared = PreparedScene(scene)
         drawn = gpu._Position(Plot(), item, samples(item, times))
         for time in (0.1, 0.15, 0.25):
@@ -140,7 +136,7 @@ def test_object_vector_consumers_share_full_recording_finite_peak(env, monkeypat
     with Animation(
         env, np.ones((4, env.n_bins)), frame_times=times, overlays=[vector]
     ) as scene:
-        data = scene.overlay_data(own_samples=True).object_vectors[0]
+        data = scene._overlay_data.object_vectors[0]
         assert data._rate_peak == 10
         from neurospatial.animation.backends._napari_scene import NapariScene
 

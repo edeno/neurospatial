@@ -20,7 +20,6 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -46,7 +45,6 @@ from neurospatial.animation._tracks import (
     track_position,
     track_segments,
 )
-from neurospatial.animation.overlays import _OWN_SAMPLE_TYPES
 from neurospatial.environment._fastplotlib import (
     COLORBAR_WIDTH,
     ColorScale,
@@ -239,15 +237,11 @@ def _sample_observation(
     name: str | None = None,
     circular: bool = False,
 ) -> NDArray[np.float64]:
-    """Sample the overlay on its own clock, preserving observed support."""
-    if clock.times is None:
-        raise ValueError(
-            "Observation sampling requires timestamps. Pass the inherited "
-            "frame_times when constructing the overlay clock."
-        )
-    return sample_observation(
-        data, clock.times, values, time, name=name, circular=circular
-    )
+    """Sample the overlay on its own clock, preserving observed support.
+
+    ``clock`` is built from ``data.times``, the clock sampling uses.
+    """
+    return sample_observation(data, values, time, name=name, circular=circular)
 
 
 class _Position:
@@ -327,7 +321,7 @@ class _Bodyparts:
     def __init__(self, subplot: Any, data: BodypartData, clock: _Samples) -> None:
         self.data, self.clock = data, clock
         self.names = list(data.bodyparts)
-        colors = [(data.colors or {}).get(name, "cyan") for name in self.names]
+        colors = [data.colors[name] for name in self.names]
         self.points = subplot.add_scatter(
             xyz(np.full((len(self.names), 2), np.nan)),
             colors=np.array([_rgba(color) for color in colors]),
@@ -521,7 +515,7 @@ class _ObjectVectors:
         self.lines.data = pair_segments(np.broadcast_to(animal, objects.shape), objects)
         if self.data.firing_rates is not None:
             rate = _sample_observation(
-                self.data, self.clock, self.data.firing_rates, time
+                self.data, self.clock, self.data.firing_rates, time, name="firing_rates"
             )
             color = self.color.copy()
             color[3] *= _rate_opacity(float(rate), self.top_rate)
@@ -1227,17 +1221,10 @@ def _playback(
 def _finest_interval(overlay_data: OverlayData) -> float:
     """The typical sampling interval of the fastest overlay with its own
     samples, in seconds; infinite without one."""
-    lists = (
-        getattr(overlay_data, field.name) for field in dataclass_fields(overlay_data)
+    return min(
+        (_typical_interval(item.times, np.inf) for item in overlay_data.sampled()),
+        default=np.inf,
     )
-    own = [
-        item.times
-        for items in lists
-        if isinstance(items, list)
-        for item in items
-        if isinstance(item, _OWN_SAMPLE_TYPES) and item.times is not None
-    ]
-    return min((_typical_interval(times, np.inf) for times in own), default=np.inf)
 
 
 def _on_clock(overlay_data: OverlayData, start: float) -> OverlayData:

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from neurospatial import Environment
 
 from neurospatial.animation.overlays import (
+    BodypartData,
     BodypartOverlay,
     HeadDirectionOverlay,
     PositionOverlay,
@@ -30,6 +31,18 @@ from neurospatial.animation.overlays import (
 from neurospatial.animation.skeleton import Skeleton
 from neurospatial.environment import CartesianSystem
 from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
+
+
+def _convert_on_frames(overlays, frame_times, n_frames, env):
+    """Convert overlays and sample them at the frames, as
+    ``Animation.overlay_data`` does."""
+    from neurospatial.animation.overlays import (
+        _convert_overlays_to_data,
+        _realign_prepared_overlays,
+    )
+
+    data, _ = _convert_overlays_to_data(overlays, frame_times, n_frames, env)
+    return _realign_prepared_overlays(data, np.asarray(frame_times, dtype=float))
 
 
 class TestPositionOverlay:
@@ -125,6 +138,34 @@ class TestBodypartOverlay:
         assert overlay.colors["head"] == "red"
         assert overlay.colors["body"] == "blue"
 
+    def test_each_part_gets_one_color_for_every_view(self):
+        """Given colors win, then the skeleton's node colors, then red."""
+        from neurospatial import Environment
+
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), (np.arange(0, 6.0, 2), np.arange(0, 6.0, 2))
+        )
+        part = np.array([[1.0, 2.0], [3.0, 4.0]])
+        skeleton = Skeleton(
+            name="s",
+            nodes=("nose", "ear", "tail"),
+            edges=(("nose", "ear"), ("ear", "tail")),
+            node_colors={"nose": "blue", "ear": "green"},
+        )
+        overlay = BodypartOverlay(
+            {"nose": part, "ear": part, "tail": part},
+            skeleton=skeleton,
+            colors={"nose": "magenta"},
+        )
+        data = overlay.convert_to_data(np.array([0.0, 1.0]), 2, env)
+        assert data.colors == {"nose": "magenta", "ear": "green", "tail": "red"}
+        assert overlay.colors == {"nose": "magenta"}
+        # Data a custom adapter makes resolves its colors the same way.
+        adapter_data = BodypartData(
+            {"ear": part, "tail": part}, skeleton, None, times=np.array([0.0, 1.0])
+        )
+        assert adapter_data.colors == {"ear": "green", "tail": "red"}
+
     def test_custom_skeleton_styling(self):
         """Test BodypartOverlay with custom skeleton appearance via Skeleton."""
         data = {"head": np.array([[0.0, 1.0]]), "body": np.array([[1.0, 2.0]])}
@@ -218,7 +259,7 @@ class TestHeadDirectionInterpolation:
         )
         # Frame_times must span the source range; assert on the midpoint frame.
         frame_times = np.array([0.0, 0.5, 1.0])
-        result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
+        result = _convert_on_frames([overlay], frame_times, 3, env).head_directions[0]
 
         angle = result.data[1]
         # Short way between +3.0 and -3.0 passes through +/-pi, not 0.
@@ -233,7 +274,7 @@ class TestHeadDirectionInterpolation:
             max_gap=None,
         )
         frame_times = np.array([0.0, 0.5, 1.0])
-        result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
+        result = _convert_on_frames([overlay], frame_times, 3, env).head_directions[0]
 
         assert result.data[1] == pytest.approx(0.15, abs=1e-6)
 
@@ -247,7 +288,7 @@ class TestHeadDirectionInterpolation:
         # The last frame (2.0) extrapolates beyond [0, 1]; it must yield NaN
         # while the in-range frames stay finite.
         frame_times = np.array([0.0, 0.5, 2.0])
-        result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
+        result = _convert_on_frames([overlay], frame_times, 3, env).head_directions[0]
 
         assert np.isfinite(result.data[1])
         assert np.isnan(result.data[2])
@@ -261,7 +302,7 @@ class TestHeadDirectionInterpolation:
             max_gap=None,
         )
         frame_times = np.array([0.0, 0.5, 1.0])
-        result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
+        result = _convert_on_frames([overlay], frame_times, 3, env).head_directions[0]
 
         assert result.data.shape == (3, 2)
         assert result.data[1, 0] == pytest.approx(0.5, abs=1e-6)
@@ -570,6 +611,7 @@ class TestVideoData:
             env_bounds=sample_env_bounds,
             alpha=0.7,
             z_order="below",
+            times=np.arange(len(sample_frame_indices), dtype=float),
         )
 
         assert_array_equal(video_data.frame_indices, sample_frame_indices)
@@ -596,6 +638,7 @@ class TestVideoData:
             env_bounds=sample_env_bounds,
             alpha=0.5,
             z_order="above",
+            times=np.arange(len(sample_frame_indices), dtype=float),
         )
 
         assert video_data.transform_to_env is transform
@@ -617,6 +660,7 @@ class TestVideoData:
             env_bounds=sample_env_bounds,
             alpha=0.7,
             z_order="below",
+            times=np.arange(len(sample_frame_indices), dtype=float),
         )
 
         # Animation frame 0 maps to video frame 0
@@ -649,6 +693,7 @@ class TestVideoData:
             env_bounds=sample_env_bounds,
             alpha=0.7,
             z_order="below",
+            times=np.arange(len(sample_frame_indices), dtype=float),
         )
 
         # Animation frame 9 maps to -1 (out of range)
@@ -671,6 +716,7 @@ class TestVideoData:
             env_bounds=sample_env_bounds,
             alpha=0.7,
             z_order="below",
+            times=np.arange(len(sample_frame_indices), dtype=float),
         )
 
         # Animation index beyond frame_indices length
@@ -695,6 +741,7 @@ class TestVideoData:
             env_bounds=sample_env_bounds,
             alpha=0.7,
             z_order="below",
+            times=np.arange(len(sample_frame_indices), dtype=float),
         )
 
         # Should be pickle-able
@@ -1234,7 +1281,7 @@ def test_parallel_export_names_an_overlay_it_cannot_pickle(tmp_path):
 
 
 class TestConvertOverlaysToData:
-    """Test _convert_overlays_to_data() conversion funnel."""
+    """Test _convert_on_frames() conversion funnel."""
 
     @pytest.fixture
     def mock_env(self):
@@ -1252,8 +1299,6 @@ class TestConvertOverlaysToData:
 
     def test_convert_position_overlay_with_times(self, mock_env):
         """Test converting PositionOverlay with timestamps to OverlayData."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Create position overlay with timestamps
         positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
         times = np.array([0.0, 1.0, 2.0])
@@ -1266,7 +1311,7 @@ class TestConvertOverlaysToData:
         n_frames = 3
 
         # Convert
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1288,8 +1333,6 @@ class TestConvertOverlaysToData:
 
     def test_convert_position_overlay_without_times(self, mock_env):
         """Test converting PositionOverlay without timestamps (uniform spacing)."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Create position overlay without timestamps
         positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
         overlay = PositionOverlay(positions=positions)
@@ -1299,7 +1342,7 @@ class TestConvertOverlaysToData:
         n_frames = 3
 
         # Convert
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1313,8 +1356,6 @@ class TestConvertOverlaysToData:
 
     def test_convert_position_overlay_with_interpolation(self, mock_env):
         """Test PositionOverlay conversion with temporal interpolation."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Overlay at 2 Hz (0.0, 0.5, 1.0)
         positions = np.array([[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]])
         times = np.array([0.0, 0.5, 1.0])
@@ -1325,7 +1366,7 @@ class TestConvertOverlaysToData:
         n_frames = 5
 
         # Convert
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1343,8 +1384,6 @@ class TestConvertOverlaysToData:
 
     def test_convert_bodypart_overlay_with_times(self, mock_env):
         """Test converting BodypartOverlay with timestamps to OverlayData."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Create bodypart overlay
         data = {
             "head": np.array([[10.0, 20.0], [30.0, 40.0]]),
@@ -1365,7 +1404,7 @@ class TestConvertOverlaysToData:
         n_frames = 2
 
         # Convert
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1383,13 +1422,11 @@ class TestConvertOverlaysToData:
         assert "body" in bodypart_data.bodyparts
         assert bodypart_data.bodyparts["head"].shape == (2, 2)
         assert bodypart_data.bodyparts["body"].shape == (2, 2)
-        assert bodypart_data.skeleton is skeleton
+        assert bodypart_data.skeleton == skeleton
         assert bodypart_data.colors == colors
 
     def test_convert_bodypart_overlay_with_interpolation(self, mock_env):
         """Test BodypartOverlay conversion with per-keypoint interpolation."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Bodypart overlay at 2 Hz
         data = {
             "head": np.array([[0.0, 0.0], [10.0, 10.0]]),
@@ -1403,7 +1440,7 @@ class TestConvertOverlaysToData:
         n_frames = 3
 
         # Convert
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1420,8 +1457,6 @@ class TestConvertOverlaysToData:
 
     def test_convert_head_direction_overlay_angles(self, mock_env):
         """Test converting HeadDirectionOverlay with angles."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Head direction as angles
         angles = np.array([0.0, np.pi / 2, np.pi])
         times = np.array([0.0, 1.0, 2.0])
@@ -1433,7 +1468,7 @@ class TestConvertOverlaysToData:
         n_frames = 3
 
         # Convert
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1450,8 +1485,6 @@ class TestConvertOverlaysToData:
 
     def test_convert_head_direction_overlay_vectors(self, mock_env):
         """Test converting HeadDirectionOverlay with unit vectors."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Head direction as unit vectors
         vectors = np.array([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]])
         times = np.array([0.0, 1.0, 2.0])
@@ -1461,7 +1494,7 @@ class TestConvertOverlaysToData:
         n_frames = 3
 
         # Convert
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1474,8 +1507,6 @@ class TestConvertOverlaysToData:
 
     def test_convert_multiple_overlays(self, mock_env):
         """Test converting multiple overlays (multi-animal scenario)."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Multiple position overlays (2 animals)
         animal1_pos = np.array([[10.0, 20.0], [30.0, 40.0]])
         animal2_pos = np.array([[50.0, 60.0], [70.0, 80.0]])
@@ -1488,7 +1519,7 @@ class TestConvertOverlaysToData:
         n_frames = 2
 
         # Convert
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay1, overlay2],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1504,8 +1535,6 @@ class TestConvertOverlaysToData:
 
     def test_convert_mixed_overlay_types(self, mock_env):
         """Test converting mixed overlay types in single call."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Create one of each type
         pos_data = np.array([[10.0, 20.0], [30.0, 40.0]])
         bodypart_data = {"head": np.array([[15.0, 25.0], [35.0, 45.0]])}
@@ -1520,7 +1549,7 @@ class TestConvertOverlaysToData:
         n_frames = 2
 
         # Convert all at once
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[pos_overlay, bodypart_overlay, hd_overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1534,8 +1563,6 @@ class TestConvertOverlaysToData:
 
     def test_validation_called_during_conversion(self, mock_env):
         """Test that validation functions are called during conversion."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Create overlay with non-monotonic times (should trigger validation error)
         positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
         times = np.array([0.0, 2.0, 1.0])  # Non-monotonic!
@@ -1546,7 +1573,7 @@ class TestConvertOverlaysToData:
 
         # Should raise ValueError from _validate_monotonic_time
         with pytest.raises(ValueError) as exc_info:
-            _convert_overlays_to_data(
+            _convert_on_frames(
                 overlays=[overlay],
                 frame_times=frame_times,
                 n_frames=n_frames,
@@ -1558,8 +1585,6 @@ class TestConvertOverlaysToData:
 
     def test_validation_finite_values_during_conversion(self, mock_env):
         """Missing observations survive conversion without becoming positions."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Create overlay with NaN values
         positions = np.array([[10.0, 20.0], [np.nan, 40.0], [50.0, 60.0]])
         times = np.array([0.0, 1.0, 2.0])
@@ -1568,7 +1593,7 @@ class TestConvertOverlaysToData:
         frame_times = np.array([0.0, 1.0, 2.0])
         n_frames = 3
 
-        converted = _convert_overlays_to_data(
+        converted = _convert_on_frames(
             overlays=[overlay], frame_times=frame_times, n_frames=n_frames, env=mock_env
         )
         assert np.isnan(converted.positions[0].data[1]).all()
@@ -1578,8 +1603,6 @@ class TestConvertOverlaysToData:
 
     def test_validation_shape_mismatch(self, mock_env):
         """Test that shape validation catches dimension mismatches."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Create 3D positions but env is 2D
         positions = np.array([[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]])  # 3D
         times = np.array([0.0, 1.0])
@@ -1590,7 +1613,7 @@ class TestConvertOverlaysToData:
 
         # Should raise ValueError from _validate_shape
         with pytest.raises(ValueError) as exc_info:
-            _convert_overlays_to_data(
+            _convert_on_frames(
                 overlays=[overlay],
                 frame_times=frame_times,
                 n_frames=n_frames,
@@ -1602,8 +1625,6 @@ class TestConvertOverlaysToData:
 
     def test_validation_skeleton_consistency(self, mock_env):
         """Test that skeleton validation is called."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Create bodypart with skeleton referencing missing part
         data = {"head": np.array([[10.0, 20.0]])}
         skeleton = Skeleton(
@@ -1619,7 +1640,7 @@ class TestConvertOverlaysToData:
 
         # Should raise ValueError from _validate_skeleton_consistency
         with pytest.raises(ValueError) as exc_info:
-            _convert_overlays_to_data(
+            _convert_on_frames(
                 overlays=[overlay],
                 frame_times=frame_times,
                 n_frames=n_frames,
@@ -1632,13 +1653,11 @@ class TestConvertOverlaysToData:
 
     def test_empty_overlays_list(self, mock_env):
         """Test conversion with empty overlays list."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         frame_times = np.array([0.0, 1.0, 2.0])
         n_frames = 3
 
         # Convert with no overlays
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1652,8 +1671,6 @@ class TestConvertOverlaysToData:
 
     def test_result_is_pickle_safe(self, mock_env):
         """Test that returned OverlayData is pickle-safe."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         positions = np.array([[10.0, 20.0], [30.0, 40.0]])
         times = np.array([0.0, 1.0])
         overlay = PositionOverlay(positions=positions, times=times)
@@ -1661,7 +1678,7 @@ class TestConvertOverlaysToData:
         frame_times = np.array([0.0, 1.0])
         n_frames = 2
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1680,8 +1697,6 @@ class TestConvertOverlaysToData:
 
     def test_extrapolation_produces_nan(self, mock_env):
         """Test that extrapolation outside overlay time range produces NaN."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Overlay covers [1.0, 2.0]
         positions = np.array([[10.0, 20.0], [30.0, 40.0]])
         times = np.array([1.0, 2.0])
@@ -1691,7 +1706,7 @@ class TestConvertOverlaysToData:
         frame_times = np.array([0.0, 1.0, 2.0, 3.0])
         n_frames = 4
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1713,7 +1728,6 @@ class TestConvertOverlaysToData:
         from neurospatial.animation.overlays import (
             OverlayProtocol,
             PositionData,
-            _convert_overlays_to_data,
         )
 
         @dataclass
@@ -1737,6 +1751,7 @@ class TestConvertOverlaysToData:
                     color=self.custom_color,
                     size=5.0,
                     trail_length=None,
+                    times=frame_times,
                 )
 
         # Create custom overlay
@@ -1749,7 +1764,7 @@ class TestConvertOverlaysToData:
         assert isinstance(custom, OverlayProtocol)
 
         # Convert through pipeline
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[custom],
             frame_times=np.array([0.0, 1.0]),
             n_frames=2,
@@ -1765,7 +1780,6 @@ class TestConvertOverlaysToData:
 
     def test_overlay_without_protocol_raises_typeerror(self, mock_env):
         """Test that objects not implementing OverlayProtocol raise TypeError."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
 
         class NotAnOverlay:
             """Class that does not implement OverlayProtocol."""
@@ -1775,7 +1789,7 @@ class TestConvertOverlaysToData:
         not_overlay = NotAnOverlay()
 
         with pytest.raises(TypeError, match="must implement OverlayProtocol"):
-            _convert_overlays_to_data(
+            _convert_on_frames(
                 overlays=[not_overlay],  # type: ignore
                 frame_times=np.array([0.0, 1.0]),
                 n_frames=2,
@@ -1953,13 +1967,11 @@ class TestConvertVideoOverlay:
         self, mock_env_2d, sample_video_array
     ):
         """Test that VideoOverlay converts to VideoData in OverlayData."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         overlay = VideoOverlay(source=sample_video_array)
         frame_times = np.linspace(0.0, 1.0, 5)
         n_frames = 5
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -1974,8 +1986,6 @@ class TestConvertVideoOverlay:
         self, mock_env_2d, sample_video_array
     ):
         """Test that video overlay with times computes frame index mapping."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         # Video has 5 frames at 0.0, 0.25, 0.5, 0.75, 1.0
         video_times = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
         overlay = VideoOverlay(source=sample_video_array, times=video_times)
@@ -1984,7 +1994,7 @@ class TestConvertVideoOverlay:
         frame_times = np.linspace(0.0, 0.9, 10)
         n_frames = 10
 
-        overlay_data = _convert_overlays_to_data(
+        overlay_data = _convert_on_frames(
             overlays=[overlay],
             frame_times=frame_times,
             n_frames=n_frames,
@@ -2000,14 +2010,12 @@ class TestConvertVideoOverlay:
         self, mock_env_2d, sample_video_array
     ):
         """Test that VideoOverlay without calibration emits warning."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
         overlay = VideoOverlay(source=sample_video_array, calibration=None)
         frame_times = np.linspace(0.0, 1.0, 5)
         n_frames = 5
 
         with pytest.warns(UserWarning, match="calibration"):
-            _convert_overlays_to_data(
+            _convert_on_frames(
                 overlays=[overlay],
                 frame_times=frame_times,
                 n_frames=n_frames,
@@ -2015,8 +2023,8 @@ class TestConvertVideoOverlay:
             )
 
 
-def test_own_samples_keep_an_overlays_times_and_check_it_against_frames():
-    """For a backend that shows overlays at their own rate."""
+def test_conversion_keeps_an_overlays_samples_and_checks_them_against_frames():
+    """Each overlay keeps its own samples; a view samples them at its times."""
     import warnings
 
     from neurospatial import Environment
@@ -2037,20 +2045,20 @@ def test_own_samples_keep_an_overlays_times_and_check_it_against_frames():
     frame_times = np.arange(40) * 0.1
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        data = _convert_overlays_to_data(
-            overlays[:1], frame_times, 40, env, own_samples=True
-        )
+        data, _ = _convert_overlays_to_data(overlays[:1], frame_times, 40, env)
     assert len([w for w in caught if "overlap" in str(w.message).lower()]) == 1
     (own,) = data.positions
     assert_array_equal(own.times, times)
     assert_array_equal(own.data, path)
-    # Without times, or without own_samples, rows follow the frames.
-    (aligned,) = _convert_overlays_to_data(
-        overlays[1:], frame_times, 40, env, own_samples=True
-    ).positions
+    # Without times, rows follow the frames.
+    (framed,) = _convert_overlays_to_data(overlays[1:], frame_times, 40, env)[
+        0
+    ].positions
+    assert_array_equal(framed.times, frame_times)
+    # Sampled at the frames, rows follow them too.
+    (aligned,) = _convert_on_frames(overlays[:1], frame_times, 40, env).positions
     assert_array_equal(aligned.times, frame_times)
-    (aligned,) = _convert_overlays_to_data(overlays[:1], frame_times, 40, env).positions
-    assert aligned.times is None and len(aligned.data) == 40
+    assert len(aligned.data) == 40
 
 
 if __name__ == "__main__":

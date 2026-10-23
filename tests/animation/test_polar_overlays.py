@@ -61,7 +61,7 @@ def test_arena_overlays_refuse_a_polar_environment(polar, name):
 
 def test_position_overlay_draws_polar_rows(polar):
     """Positions in the environment's own (distance, angle) rows still draw."""
-    data = _convert_overlays_to_data(
+    data, _ = _convert_overlays_to_data(
         [PositionOverlay(positions=POLAR_ROWS, times=FRAME_TIMES)],
         FRAME_TIMES,
         len(FRAME_TIMES),
