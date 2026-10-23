@@ -72,12 +72,9 @@ class OutlinePreviewControl(QWidget):
         """Return the valid displayed geometry, or None while edits are pending."""
         return self._outline
 
-    def show(self, proposal: SegmentationProposal | None = None) -> None:
+    def display(self, proposal: SegmentationProposal) -> None:
         """Display a new proposal without changing the selected annotation tool."""
         if self._disposed:
-            return
-        if proposal is None:
-            super().show()
             return
         self._timer.stop()
         self._proposal = proposal
@@ -206,8 +203,11 @@ class OutlinePreviewControl(QWidget):
             outline = simplify_polygon_outline(
                 self._exact, self.detail_slider.value() / 10.0
             )
-            self.polygon_layer.data = [ring[:, ::-1] for ring in outline.rings]
-            self.polygon_layer.shape_type = "path"
+            # Set paths with the data: a later shape_type assignment rebuilds
+            # every shape again.
+            self.polygon_layer.data = [
+                (ring[:, ::-1], "path") for ring in outline.rings
+            ]
             self.polygon_layer.opacity = 1.0
             self._outline = outline
             self.detail_slider.setEnabled(True)
@@ -262,34 +262,32 @@ class OutlinePreviewControl(QWidget):
             self._remove_layers()
         self._on_change()
 
+    def _detach_mask(self) -> None:
+        if self.mask_layer is not None:
+            for signal in (self.mask_layer.events.data, self.mask_layer.events.paint):
+                with suppress(ValueError, RuntimeError):
+                    signal.disconnect(self._mask_changed)
+
+    def _detach_polygons(self) -> None:
+        if self.polygon_layer is not None:
+            with suppress(ValueError, RuntimeError):
+                self.polygon_layer.events.editable.disconnect(
+                    self._lock_polygon_editing
+                )
+
     def _layer_removed(self, event: Any) -> None:
+        removed = getattr(event, "value", None)
         if (
             not self._disposed
             and not self._updating
-            and getattr(event, "value", None)
-            in (
-                self.mask_layer,
-                self.polygon_layer,
-            )
+            and removed in (self.mask_layer, self.polygon_layer)
         ):
             self._timer.stop()
-            if (
-                self.mask_layer is not None
-                and getattr(event, "value", None) is self.mask_layer
-            ):
-                for signal in (
-                    self.mask_layer.events.data,
-                    self.mask_layer.events.paint,
-                ):
-                    with suppress(ValueError, RuntimeError):
-                        signal.disconnect(self._mask_changed)
+            if self.mask_layer is not None and removed is self.mask_layer:
+                self._detach_mask()
                 self.mask_layer = None
             else:
-                if self.polygon_layer is not None:
-                    with suppress(ValueError, RuntimeError):
-                        self.polygon_layer.events.editable.disconnect(
-                            self._lock_polygon_editing
-                        )
+                self._detach_polygons()
                 self.polygon_layer = None
             self._outline = None
             self._exact = None
@@ -302,18 +300,8 @@ class OutlinePreviewControl(QWidget):
     def _remove_layers(self) -> None:
         self._updating = True
         try:
-            if self.mask_layer is not None:
-                for signal in (
-                    self.mask_layer.events.data,
-                    self.mask_layer.events.paint,
-                ):
-                    with suppress(ValueError, RuntimeError):
-                        signal.disconnect(self._mask_changed)
-            if self.polygon_layer is not None:
-                with suppress(ValueError, RuntimeError):
-                    self.polygon_layer.events.editable.disconnect(
-                        self._lock_polygon_editing
-                    )
+            self._detach_mask()
+            self._detach_polygons()
             for layer in (self.mask_layer, self.polygon_layer):
                 if layer is not None and layer in self._viewer.layers:
                     self._viewer.layers.remove(layer)

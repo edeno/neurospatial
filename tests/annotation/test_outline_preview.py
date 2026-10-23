@@ -56,7 +56,7 @@ def test_paths_include_holes_and_preserve_active_prompt_tool(preview):
     control, viewer, annotations, points, changes = preview
     original = annotations.data[0].copy()
     proposal = _proposal()
-    control.show(proposal)
+    control.display(proposal)
     _assert_paths_match(control)
     assert control.outline.simplify_tolerance_px == pytest.approx(1.4)
     assert len(control.polygon_layer.data) == 3
@@ -89,7 +89,7 @@ def test_detail_changes_reuse_exact_vectorization_and_layers(preview, monkeypatc
 
     monkeypatch.setattr(_outline_preview, "polygon_outline", count)
     proposal = _proposal()
-    control.show(proposal)
+    control.display(proposal)
     control.detail_slider.setValue(0)
     exact = control.outline
     mask_layer, polygon_layer = control.mask_layer, control.polygon_layer
@@ -103,7 +103,7 @@ def test_detail_changes_reuse_exact_vectorization_and_layers(preview, monkeypatc
     assert len(conversions) == 1
     assert viewer.layers.selection.active is points
     assert points.mode == "add"
-    control.show(proposal)
+    control.display(proposal)
     assert len(conversions) == 2
     assert control.mask_layer is mask_layer
     assert control.polygon_layer is polygon_layer
@@ -111,7 +111,7 @@ def test_detail_changes_reuse_exact_vectorization_and_layers(preview, monkeypatc
 
 def test_polygon_paths_stay_uneditable_after_data_and_dimension_changes(preview):
     control, viewer, _annotations, _points, _changes = preview
-    control.show(_proposal())
+    control.display(_proposal())
     paths = control.polygon_layer
     paths.data = list(paths.data)
     assert not paths.editable
@@ -126,7 +126,7 @@ def test_polygon_paths_stay_uneditable_after_data_and_dimension_changes(preview)
 def test_paint_updates_mask_authoritatively_and_snapshot_catches_silent_edits(preview):
     control, viewer, _annotations, _points, _changes = preview
     source = _proposal()
-    control.show(source)
+    control.display(source)
     control.detail_slider.setValue(10)
     control.edit()
     assert viewer.layers.selection.active is control.mask_layer
@@ -160,7 +160,7 @@ def test_simplification_failure_keeps_slider_available_for_exact_recovery(
     from neurospatial.annotation import _outline_preview
 
     control, _viewer, _annotations, _points, _changes = preview
-    control.show(_proposal())
+    control.display(_proposal())
     control.detail_slider.setValue(0)
     exact = control.outline
     original = _outline_preview.simplify_polygon_outline
@@ -188,7 +188,7 @@ def test_paint_events_debounce_into_displayed_geometry(preview):
     from qtpy.QtTest import QTest
 
     control, _viewer, _annotations, _points, _changes = preview
-    control.show(_proposal())
+    control.display(_proposal())
     control.mask_layer.data[15, 0] = 1
     control.mask_layer.events.paint()
     assert control.outline is None
@@ -199,7 +199,7 @@ def test_paint_events_debounce_into_displayed_geometry(preview):
 
 def test_empty_mask_rejects_acceptance_and_remains_paintable(preview):
     control, _viewer, _annotations, _points, _changes = preview
-    control.show(_proposal())
+    control.display(_proposal())
     control.mask_layer.data[:] = 0
     with pytest.raises(ValueError, match="empty"):
         control.snapshot()
@@ -218,13 +218,13 @@ def test_empty_mask_rejects_acceptance_and_remains_paintable(preview):
 @pytest.mark.parametrize("layer_name", ["mask_layer", "polygon_layer"])
 def test_removing_preview_layer_invalidates_and_show_can_recover(preview, layer_name):
     control, viewer, _annotations, _points, _changes = preview
-    control.show(_proposal())
+    control.display(_proposal())
     viewer.layers.remove(getattr(control, layer_name))
     assert control.outline is None
     assert not control.detail_slider.isEnabled()
     with pytest.raises(ValueError, match="removed"):
         control.snapshot()
-    control.show(_proposal())
+    control.display(_proposal())
     assert control.outline is not None
     _assert_paths_match(control)
 
@@ -233,7 +233,7 @@ def test_invalidate_cancels_debounce_and_dispose_detaches_callbacks(preview):
     from qtpy.QtTest import QTest
 
     control, viewer, annotations, points, changes = preview
-    control.show(_proposal())
+    control.display(_proposal())
     mask_layer = control.mask_layer
     mask_layer.events.paint()
     control.invalidate(keep_preview=True)
@@ -244,7 +244,7 @@ def test_invalidate_cancels_debounce_and_dispose_detaches_callbacks(preview):
     assert not control.detail_slider.isEnabled()
     with pytest.raises(ValueError, match="removed"):
         control.snapshot()
-    control.show(_proposal())
+    control.display(_proposal())
     control.mask_layer.events.paint()
     control.dispose()
     before = len(changes)
@@ -260,7 +260,7 @@ def test_invalidate_cancels_debounce_and_dispose_detaches_callbacks(preview):
 def test_dispose_after_docked_widgets_are_deleted(preview):
     control, viewer, _annotations, _points, changes = preview
     viewer.window.add_dock_widget(control, name="Polygon detail")
-    control.show(_proposal())
+    control.display(_proposal())
     viewer.close()
     before = len(changes)
     control.dispose()

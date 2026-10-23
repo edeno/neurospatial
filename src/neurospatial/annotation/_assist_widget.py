@@ -546,7 +546,7 @@ class AnnotationAssistWidget(QWidget):
             prompt_active = self.prompt_tools.active
             active_layer = self._viewer.layers.selection.active
             try:
-                self.outline_preview.show(proposal)
+                self.outline_preview.display(proposal)
             finally:
                 if prompt_active:
                     self.prompt_tools.activate(active_layer)
