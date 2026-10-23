@@ -590,57 +590,6 @@ class VideoFrameRenderer:
             self._artist.set_visible(True)
 
 
-def _render_regions_matplotlib(
-    ax: Any, env: Any, show_regions: bool | list[str], region_alpha: float
-) -> None:
-    """Render environment regions as patches on matplotlib axes.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Matplotlib axes to render on
-    env : Environment
-        Environment with regions
-    show_regions : bool | list[str]
-        If True, show all regions. If list, show only specified regions.
-    region_alpha : float
-        Alpha transparency for regions (0-1)
-
-    Notes
-    -----
-    Uses PathPatch for polygon regions and circles for point regions.
-    """
-    # Render each region
-    for region_name in shown_region_names(env, show_regions):
-        region = env.regions[region_name]
-
-        if region.kind == "point":
-            # Point region: render as circle
-            coords = region.data
-            circle = Circle(
-                coords,
-                radius=5.0,  # Visual marker size
-                facecolor="white",
-                edgecolor="white",
-                alpha=region_alpha,
-                zorder=99,
-            )
-            ax.add_patch(circle)
-        elif region.kind == "polygon":
-            # Polygon region: use PathPatch
-            # Extract coordinates from Shapely polygon
-            exterior_coords = np.array(region.data.exterior.coords)
-            path = MplPath(exterior_coords)
-            patch = PathPatch(
-                path,
-                facecolor="white",
-                edgecolor="white",
-                alpha=region_alpha,
-                zorder=99,
-            )
-            ax.add_patch(patch)
-
-
 def _clear_overlay_artists(ax: Any) -> None:
     """Clear overlay artists from axes while preserving the primary image.
 
@@ -1219,6 +1168,8 @@ def _render_all_overlays(
     5. Event overlays (zorder=104)
     6. Video foregrounds (z_order="above", zorder=1)
     """
+    from neurospatial.animation._scene_rendering import _render_regions_matplotlib
+
     # Early return if no overlay data
     if overlay_data is None:
         # Still render regions even without overlay data

@@ -169,7 +169,7 @@ def test_suggested_name_resolves(env, call, tmp_path):
     lookup(ast.literal_eval(suggestion))
 
 
-@pytest.mark.parametrize("render", ["html", "napari", "parallel"])
+@pytest.mark.parametrize("render", ["html", "napari", "matplotlib"])
 def test_each_renderer_refuses_a_misspelled_shown_region(env, render):
     """Renderers called directly refuse the name too; none skips it silently."""
     if render == "html":
@@ -189,7 +189,7 @@ def test_each_renderer_refuses_a_misspelled_shown_region(env, render):
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        from neurospatial.animation._parallel import _render_regions_matplotlib
+        from neurospatial.animation._scene_rendering import _render_regions_matplotlib
 
         _, ax = plt.subplots()
         call = lambda: _render_regions_matplotlib(ax, env, ["rewrd"], 0.3)  # noqa: E731

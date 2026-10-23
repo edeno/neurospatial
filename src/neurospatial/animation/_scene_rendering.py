@@ -275,7 +275,6 @@ class SceneRenderer:
         draw_track_panel(ax, self.prepared, name, field, time, colorbar=colorbar)
 
     def _spatial(self, ax: Any, time: float) -> None:
-        from neurospatial.animation._parallel import _render_regions_matplotlib
         from neurospatial.animation._style import _event_visibility
 
         scene = self.scene
@@ -466,6 +465,56 @@ class SceneRenderer:
                     edgecolors=edge,
                     zorder=104,
                 )
+
+
+def _render_regions_matplotlib(
+    ax: Any, env: Any, show_regions: bool | list[str], region_alpha: float
+) -> None:
+    """Render environment regions as patches on matplotlib axes.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Matplotlib axes to render on
+    env : Environment
+        Environment with regions
+    show_regions : bool | list[str]
+        If True, show all regions. If list, show only specified regions.
+    region_alpha : float
+        Alpha transparency for regions (0-1)
+
+    Notes
+    -----
+    Uses PathPatch for polygon regions and circles for point regions.
+    """
+    from matplotlib.patches import Circle, PathPatch
+    from matplotlib.path import Path as MplPath
+
+    from neurospatial.animation._region_names import shown_region_names
+
+    for region_name in shown_region_names(env, show_regions):
+        region = env.regions[region_name]
+        if region.kind == "point":
+            ax.add_patch(
+                Circle(
+                    region.data,
+                    radius=5.0,  # Visual marker size
+                    facecolor="white",
+                    edgecolor="white",
+                    alpha=region_alpha,
+                    zorder=99,
+                )
+            )
+        elif region.kind == "polygon":
+            ax.add_patch(
+                PathPatch(
+                    MplPath(np.array(region.data.exterior.coords)),
+                    facecolor="white",
+                    edgecolor="white",
+                    alpha=region_alpha,
+                    zorder=99,
+                )
+            )
 
 
 def draw_track_panel(
