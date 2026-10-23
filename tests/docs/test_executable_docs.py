@@ -43,25 +43,6 @@ OPT_IN = (
     "docs/migration/environment-architecture.md",
 )
 SETUPS = {
-    "docs_animation_quick_start": """import os
-import numpy as np
-os.environ["MPLBACKEND"] = "Agg"
-
-from neurospatial import Environment
-
-positions = np.column_stack([
-    np.linspace(0.0, 20.0, 60),
-    5.0 + np.sin(np.linspace(0.0, 2.0 * np.pi, 60)),
-])
-times = np.linspace(0.0, 10.0, len(positions))
-spikes = [np.array([1.0, 3.0, 6.0]) for _ in range(30)]
-
-def _check_animate_fields(self, fields, *, frame_times, **kwargs):
-    assert len(frame_times) == len(fields)
-    return kwargs.get("save_path")
-
-Environment.animate_fields = _check_animate_fields
-""",
     "docs_video_annotation_use_results": """import numpy as np
 from types import SimpleNamespace
 
@@ -197,6 +178,10 @@ _BEHAVIOR_GUIDE = "docs/user-guide/behavior-around-events.md"
 SETUPS["docs_behavior_around_reward"] = collect_blocks(
     (ROOT / _BEHAVIOR_GUIDE).read_text(encoding="utf-8"), _BEHAVIOR_GUIDE
 )[0].code
+_ANIMATION_GUIDE = "docs/user-guide/animation.md"
+SETUPS["docs_animation_quick_start"] = collect_blocks(
+    (ROOT / _ANIMATION_GUIDE).read_text(encoding="utf-8"), _ANIMATION_GUIDE
+)[0].code
 _WORKFLOWS_GUIDE = "docs/user-guide/workflows.md"
 SETUPS["workflows_outbound_inbound"] = collect_blocks(
     (ROOT / _WORKFLOWS_GUIDE).read_text(encoding="utf-8"), _WORKFLOWS_GUIDE
@@ -266,14 +251,12 @@ def _run_document(path: str, *, opt_in: bool, seeded: bool) -> int:
 
 @pytest.mark.parametrize("path", sorted(RUN_ALL))
 def test_documented_examples_run(path, monkeypatch, tmp_path):
-    monkeypatch.setattr(Environment, "animate_fields", Environment.animate_fields)
     monkeypatch.chdir(tmp_path)
     assert _run_document(path, opt_in=False, seeded=RUN_ALL[path]) > 0
 
 
 @pytest.mark.parametrize("path", OPT_IN)
 def test_opted_in_examples_run(path, monkeypatch, tmp_path):
-    monkeypatch.setattr(Environment, "animate_fields", Environment.animate_fields)
     monkeypatch.chdir(tmp_path)
     assert _run_document(path, opt_in=True, seeded=True) > 0
 
@@ -349,13 +332,3 @@ def test_marker_setups_are_known_and_used():
             if match := re.search(r"setup=(\w+)", block.arg):
                 used.add(match[1])
     assert used == set(SETUPS), f"Unknown or unused setups: {used ^ set(SETUPS)}"
-
-
-def test_stubs_do_not_leak(tmp_path):
-    original = Environment.animate_fields
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(Environment, "animate_fields", Environment.animate_fields)
-        monkeypatch.chdir(tmp_path)
-        _run_document("docs/user-guide/animation.md", opt_in=True, seeded=True)
-        assert Environment.animate_fields is not original
-    assert Environment.animate_fields is original
