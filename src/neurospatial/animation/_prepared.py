@@ -28,6 +28,33 @@ if TYPE_CHECKING:
     from neurospatial.animation.scene import Animation, AnimationField
 
 
+class _EventRecords(NamedTuple):
+    """One event type's located events in time order, with their frames."""
+
+    times: NDArray[np.float64]
+    frames: NDArray[np.int_]
+    positions: NDArray[np.float64]
+
+
+class VisibleEvents(NamedTuple):
+    """The events of one type shown at a time.
+
+    Attributes
+    ----------
+    positions : ndarray of float64, shape (n_shown, n_dims)
+        Their locations, in time order.
+    opacity : ndarray of float64, shape (n_shown,)
+        Each one's opacity: the overlay's, faded with its age.
+    key : tuple of int
+        Changes exactly when ``positions`` or ``opacity`` change, so a view
+        updates its markers only then.
+    """
+
+    positions: NDArray[np.float64]
+    opacity: NDArray[np.float64]
+    key: tuple[int, ...]
+
+
 class TrackWindow(NamedTuple):
     """Finite supported cells and observed position segments in one time window."""
 
@@ -206,16 +233,24 @@ class PreparedScene:
             for raster in scene._overlay_data.spike_rasters
             for row, spikes in enumerate(raster.spike_times)
         }
-        self.event_clocks = {}
+        # Events with a location, in time order: those shown at any time are
+        # one slice of them.
+        self._event_records: dict[tuple[int, str], _EventRecords] = {}
         for events in scene._overlay_data.events:
-            for name in events.event_positions:
+            for name, positions in events.event_positions.items():
                 times = events.event_times.get(name)
                 if times is None:
                     times = scene.frame_times[events.event_frame_indices[name]]
-                indices = np.maximum(
-                    np.searchsorted(scene.frame_times, times, side="right") - 1, 0
+                located = np.flatnonzero(np.isfinite(positions).all(axis=1))
+                order = located[np.argsort(times[located], kind="stable")]
+                self._event_records[id(events), name] = _EventRecords(
+                    times[order],
+                    np.maximum(
+                        np.searchsorted(scene.frame_times, times[order], "right") - 1,
+                        0,
+                    ),
+                    positions[order],
                 )
-                self.event_clocks[id(events), name] = (times, indices)
         data = scene._overlay_data
         # Without exactly one position, heading arrows start at the arena's center.
         self._arena_center = np.mean(scene.env.bin_centers, axis=0)
@@ -372,6 +407,41 @@ class PreparedScene:
     ) -> np.ndarray:
         """Sample a prepared stream using its existing clock and support masks."""
         return sample_observation(item, values, time, circular=circular, name=name)
+
+    def events(self, events: Any, time: float) -> dict[str, VisibleEvents]:
+        """Each event type's events shown at ``time``, with their opacity.
+
+        An event shows from its own time on the frame that holds it; with
+        ``decay_frames`` it fades over that many scene frames. Persistence
+        counts frames of the complete scene clock, so a selected export does
+        not reset an earlier event's age. Events without a location are
+        never shown.
+        """
+        from neurospatial.animation._style import _event_visibility
+
+        frame = int(np.searchsorted(self.scene.frame_times, time, side="right")) - 1
+        decay = events.decay_frames
+        shown = {}
+        for name in events.event_positions:
+            records = self._event_records[id(events), name]
+            stop = int(np.searchsorted(records.times, time, side="right"))
+            start = (
+                0
+                if decay is None
+                else min(
+                    int(np.searchsorted(records.frames, frame - decay, side="left")),
+                    stop,
+                )
+            )
+            key: tuple[int, ...] = (start, stop)
+            if decay:
+                # Fading events change opacity with every frame.
+                _, alphas = _event_visibility(records.frames[start:stop], frame, decay)
+                opacity, key = alphas * events.opacity, (start, stop, frame)
+            else:
+                opacity = np.full(stop - start, float(events.opacity))
+            shown[name] = VisibleEvents(records.positions[start:stop], opacity, key)
+        return shown
 
     def heading_arrow(
         self, heading: Any, time: float

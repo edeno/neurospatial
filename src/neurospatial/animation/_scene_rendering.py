@@ -733,9 +733,6 @@ class SceneRenderer:
         return update
 
     def _events(self, ax: Any, events: Any) -> Update:
-        from neurospatial.animation._style import _event_visibility
-
-        scene = self.scene
         markers = {
             name: _scatter(
                 ax,
@@ -748,28 +745,21 @@ class SceneRenderer:
             for name in events.event_positions
         }
 
+        drawn: dict[str, tuple[int, ...]] = {}
+
         def update(time: float) -> None:
-            # Event persistence uses the complete scene clock, so a selected
-            # export does not reset the age of an earlier event.
-            frame = int(np.searchsorted(scene.frame_times, time, side="right")) - 1
-            for name, positions in events.event_positions.items():
-                event_times, event_indices = self.prepared.event_clocks[
-                    id(events), name
-                ]
-                visible, alphas = _event_visibility(
-                    event_indices, frame, events.decay_frames
-                )
-                visible &= event_times <= time
-                visible &= np.isfinite(positions).all(axis=1)
+            for name, shown in self.prepared.events(events, time).items():
+                if drawn.get(name) == shown.key:
+                    continue
+                drawn[name] = shown.key
                 # One collection per event type; each marker keeps its own
                 # fade, applied to its face and border alike.
-                opacity = alphas[visible] * events.opacity
-                face = np.tile(to_rgba(events.colors[name]), (len(opacity), 1))
-                edge = np.tile(to_rgba(events.border_color), (len(opacity), 1))
-                face[:, 3] = edge[:, 3] = opacity
+                face = np.tile(to_rgba(events.colors[name]), (len(shown.opacity), 1))
+                edge = np.tile(to_rgba(events.border_color), (len(shown.opacity), 1))
+                face[:, 3] = edge[:, 3] = shown.opacity
                 markers[name].set_facecolor(face)
                 markers[name].set_edgecolor(edge)
-                _set_points(markers[name], positions[visible])
+                _set_points(markers[name], shown.positions)
 
         return update
 

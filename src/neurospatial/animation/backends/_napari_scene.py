@@ -574,7 +574,6 @@ class NapariScene:
         from matplotlib import colormaps
 
         from neurospatial.animation._region_names import shown_region_names
-        from neurospatial.animation._style import _event_visibility
 
         scene, sample = self.scene, self._helper.sample
         data, dims = scene._overlay_data, scene.env.n_dims
@@ -774,8 +773,8 @@ class NapariScene:
 
             self._updates.append(update_vectors)
         for i, events in enumerate(data.events):
-            for name, positions in events.event_positions.items():
-                layer = self._add_overlay(
+            layers = {
+                name: self._add_overlay(
                     "points",
                     empty,
                     ndim=dims,
@@ -786,33 +785,28 @@ class NapariScene:
                     border_width=events.border_width,
                     border_color=_rgba(events.border_color),
                 )
+                for name in events.event_positions
+            }
+            drawn: dict[str, tuple[int, ...]] = {}
 
-                event_times, event_indices = self._helper.event_clocks[id(events), name]
+            def update_events(
+                time: float,
+                samples: Any,
+                *,
+                e: Any = events,
+                layers: Any = layers,
+                drawn: Any = drawn,
+            ) -> None:
+                for name, shown in self._helper.events(e, time).items():
+                    if drawn.get(name) == shown.key:
+                        continue
+                    drawn[name] = shown.key
+                    layers[name].data = shown.positions[:, ::-1]
+                    colors = np.tile(_rgba(e.colors[name]), (len(shown.opacity), 1))
+                    colors[:, 3] *= shown.opacity
+                    layers[name].face_color = colors
 
-                def update_events(
-                    time: float,
-                    samples: Any,
-                    *,
-                    e: Any = events,
-                    name: str = name,
-                    positions: Any = positions,
-                    layer: Any = layer,
-                    times: Any = event_times,
-                    indices: Any = event_indices,
-                ) -> None:
-                    frame = (
-                        int(np.searchsorted(scene.frame_times, time, side="right")) - 1
-                    )
-                    visible, alphas = _event_visibility(indices, frame, e.decay_frames)
-                    visible &= (times <= time) & np.isfinite(positions).all(axis=1)
-                    layer.data = positions[visible, ::-1]
-                    colors = np.tile(
-                        _rgba(e.colors[name]), (int(np.count_nonzero(visible)), 1)
-                    )
-                    colors[:, 3] *= alphas[visible] * e.opacity
-                    layer.face_color = colors
-
-                self._updates.append(update_events)
+            self._updates.append(update_events)
         for i, video in enumerate(data.videos):
             # A custom map may intentionally begin with a missing frame. Use
             # the first mapped image only to establish layer geometry; seeking

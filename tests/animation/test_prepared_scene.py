@@ -464,3 +464,40 @@ def test_heading_arrows_start_at_the_one_position_else_the_arena_center(env):
     prepared = PreparedScene(tracked)
     heading = tracked._overlay_data.head_directions[0]
     np.testing.assert_allclose(prepared.heading_arrow(heading, 0.0)[0], [0.5, 0.5])
+
+
+@pytest.mark.parametrize("decay", [None, 0, 1, 3])
+def test_shown_events_follow_the_frame_rule_for_unordered_records(env, decay):
+    """The shown slice equals the per-event rule, for records in any order."""
+    from neurospatial.animation import EventOverlay
+    from neurospatial.animation._style import _event_visibility
+
+    rng = np.random.default_rng(4)
+    frame_times = np.sort(rng.uniform(0, 2, 30))
+    event_times = rng.uniform(frame_times[0], frame_times[-1], 60)
+    positions = rng.uniform(0, 2, (60, 2))
+    positions[::5] = np.nan  # events without a tracked location
+    overlay = EventOverlay.from_fixed_positions(event_times, positions)
+    overlay.decay_frames = decay
+    scene = Animation(
+        env, np.ones((30, env.n_bins)), frame_times=frame_times, overlays=[overlay]
+    )
+    prepared = PreparedScene(scene)
+    events = scene._overlay_data.events[0]
+    (name,) = events.event_positions
+    times, located = events.event_times[name], events.event_positions[name]
+    frames = np.maximum(np.searchsorted(frame_times, times, "right") - 1, 0)
+    keys = set()
+    for time in np.linspace(frame_times[0], frame_times[-1], 97):
+        frame = int(np.searchsorted(frame_times, time, "right")) - 1
+        visible, alphas = _event_visibility(frames, frame, decay)
+        visible &= (times <= time) & np.isfinite(located).all(axis=1)
+        order = np.argsort(times[visible], kind="stable")
+        shown = prepared.events(events, time)[name]
+        np.testing.assert_array_equal(shown.positions, located[visible][order])
+        np.testing.assert_array_equal(
+            shown.opacity, (alphas[visible] * events.opacity)[order]
+        )
+        keys.add(shown.key)
+    assert len(keys) > 1
+    scene.close()
