@@ -153,6 +153,7 @@ def test_resume_uses_embedded_frame_and_current_session_calibration(
     assert captured["draft"].frame_index == 13
     assert captured["settings"]["video_path"] == Path("deleted.mp4")
     assert captured["settings"]["project_path"] == (path if from_file else None)
+    assert captured["settings"]["project_saved"] is from_file
     assert captured["settings"]["autosave_interval"] is None
     assert order == ["flush", "export", "save", "dispose"]
 

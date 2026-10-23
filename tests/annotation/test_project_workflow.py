@@ -28,6 +28,7 @@ def session_factory():
         *,
         initial_mode="region",
         project_path=None,
+        project_saved=False,
         autosave_interval=None,
         populate=None,
     ):
@@ -50,6 +51,7 @@ def session_factory():
             simplify_tolerance=None,
             multiple_boundaries="last",
             project_path=project_path,
+            project_saved=project_saved,
             autosave_interval=autosave_interval,
             segmentation_provider=None,
         )
@@ -165,6 +167,23 @@ def test_pasted_polygon_with_hole_gets_its_own_identities_and_saves(
     result = _process_annotation_results(shapes, "regions", None, None, None, "last")
     assert len(result.regions) == 2
     assert all(len(region.data.interiors) == 1 for region in result.regions.values())
+
+
+def test_resumed_project_is_not_rewritten_until_edited(
+    session_factory, tmp_path, monkeypatch
+):
+    path = tmp_path / "draft.nsp"
+    path.write_bytes(b"resumed project")
+    saves = []
+    monkeypatch.setattr(AnnotationProject, "save", lambda self, target: saves.append(1))
+    session, _viewer, shapes, controls = session_factory(
+        project_path=path, project_saved=True, autosave_interval=1.0
+    )
+    session._autosave_timer.timeout.emit()
+    assert not saves
+    _draw_region(shapes, controls, [[1, 1], [1, 10], [10, 10], [10, 1]])
+    session._autosave_timer.timeout.emit()
+    assert saves == [1]
 
 
 def test_accepted_components_and_hole_are_one_undoable_annotation_edit(session_factory):

@@ -102,6 +102,7 @@ class AnnotationProjectSession:
         simplify_tolerance: float | None,
         multiple_boundaries: MultipleBoundaryStrategy,
         project_path: str | Path | None,
+        project_saved: bool,
         autosave_interval: float | None,
         segmentation_provider: SegmentationProvider | None,
     ) -> None:
@@ -124,7 +125,11 @@ class AnnotationProjectSession:
         self._undo: list[_EditingState] = []
         self._redo: list[_EditingState] = []
         self._current = self._capture()
-        self._last_saved: _EditingState | None = None
+        # A project resumed from its own file is already saved; autosave
+        # rewrites it only after an edit.
+        self._last_saved: _EditingState | None = (
+            self._current if project_saved else None
+        )
         # Timers are owned here rather than by the dock, which napari deletes
         # before the enclosing session's finally block runs.
         self._checkpoint_timer = QTimer()
