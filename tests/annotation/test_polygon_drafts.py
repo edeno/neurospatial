@@ -566,6 +566,35 @@ def test_deleting_original_after_paste_removes_only_its_own_rings():
 
 
 @pytest.mark.gui
+def test_pasted_polygon_exports_under_its_own_name_without_a_later_drawing():
+    napari = pytest.importorskip("napari")
+
+    from neurospatial.annotation._napari_widget import (
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
+
+    viewer = napari.Viewer(show=False)
+    try:
+        shapes = setup_shapes_layer_for_annotation(viewer, "region")
+        _add_initial_regions(shapes, _donut_regions(), None)
+        widget = create_annotation_widget(viewer, initial_mode="region")
+        shapes.mode = "select"
+        shapes.selected_data = {0, 1}
+        shapes._copy_data()
+        shapes._paste_data()
+        # Done flushes pending bookkeeping; napari announces a paste only with
+        # a features event, which must already have queued it.
+        widget.flush_pending()
+        assert list(shapes.features["name"])[2] == "donut_2"
+        result = _process_annotation_results(shapes, "regions", 1.0, None, None, "last")
+        assert set(result.regions) == {"donut", "donut_2"}
+        assert result.regions["donut_2"].data.equals(result.regions["donut"].data)
+    finally:
+        viewer.close()
+
+
+@pytest.mark.gui
 def test_interior_rings_count_as_holes_or_as_part_of_their_region():
     napari = pytest.importorskip("napari")
 

@@ -573,9 +573,9 @@ def create_annotation_widget(
                     features[marker] = [
                         i >= _prev_shape_count[0] for i in range(current_count)
                     ]
+                    _prev_shape_count[0] = current_count
                     shapes.features = features
                     shapes.feature_defaults[marker] = False
-                    _prev_shape_count[0] = current_count
 
                     def delete_shape() -> None:
                         features_before = shapes.features.copy()
@@ -611,6 +611,10 @@ def create_annotation_widget(
                 _prev_shape_count[0],
                 name_override=name_override,
             )
+            # Record the processed rows before anything else mutates the layer:
+            # cleanup below flushes pending work, which must not see these
+            # rows as new again.
+            _prev_shape_count[0] = current_count
 
             # Widget handles UI updates
             update_shapes_list()
@@ -700,13 +704,30 @@ def create_annotation_widget(
             if not has_environment_conflict:
                 _process_data_change()
                 return
+        schedule_update()
+
+    def schedule_update() -> None:
         if not _pending_update[0]:
             _pending_update[0] = True
             qt_core.QTimer.singleShot(0, flush_pending)
 
+    def on_features_changed(event: Any) -> None:
+        """Process pasted shapes, which napari announces with features only.
+
+        Pasted rows arrive with identities; a drawing's row has none until it
+        is processed, and its data event schedules that.
+        """
+        shapes = get_shapes()
+        if shapes is None:
+            return
+        added = shapes.features["_polygon_id"].iloc[_prev_shape_count[0] :]
+        if len(added) and added.astype(bool).any():
+            schedule_update()
+
     shapes = get_shapes()
     if shapes is not None:
         shapes.events.data.connect(on_data_changed)
+        shapes.events.features.connect(on_features_changed)
         _prev_shape_count[0] = len(shapes.data)
 
         # Initialize shape defaults from widget state (ensures consistency)

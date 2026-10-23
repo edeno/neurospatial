@@ -2441,7 +2441,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   Simplification no longer implicitly repairs self-intersections.
   A pasted polygon gets its own identity with its own interior rings, so
   deleting the original removes only the original's rings; an interior ring
-  pasted alone becomes a separate polygon. Annotation counts and auto-names
+  pasted alone becomes a separate polygon. A paste is named at once (`zone`
+  becomes `zone_2`), so **Done** exports it without waiting for another
+  drawing. Annotation counts and auto-names
   count an environment's interior rings as holes and a region's as part of it.
 - Annotation environments retain `"cm"` units when calibrated and `"pixels"`
   otherwise; track results carry the same units through `to_environment()`.
