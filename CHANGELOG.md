@@ -11,8 +11,10 @@
   gap that ends a run instead of an error. `heading_direction_labels` labels
   an observed animal that is not moving `"stationary"` and a sample with no
   observed movement (missing position, no usable interval) `None`, which
-  `labels_to_epochs` leaves out; a still animal at `min_speed=0` was labeled
-  `"0–45°"` (East). `goal_bias` of an animal that never moves is `nan`; it
+  `labels_to_epochs` leaves out; with precomputed `speed` and `heading`, a
+  NaN `speed` now gives `None` (was a direction label or `"stationary"`) and
+  a moving sample with a NaN `heading` gives `None` (was `"stationary"`). A
+  still animal at `min_speed=0` was labeled `"0–45°"` (East). `goal_bias` of an animal that never moves is `nan`; it
   was `1.0` when the goal lay East. `compute_goal_directed_metrics` warns
   once when every interval is excluded (was twice) and reports distances
   over observed samples. Empty input raises in trajectory mode.
@@ -35,9 +37,9 @@
   epochs=None, break_before=None)` takes timestamps and fills a missing
   keypoint only inside one recording, when the gap lasts at most `max_gap`
   seconds; the fill is linear in time along the shorter arc. Longer gaps,
-  samples before the first or after the last keypoint, samples outside
-  `epochs`, and frames whose nose and tail coincide are NaN or filled like
-  any missing frame. Before, every missing frame was filled by sample index
+  samples before the first or after the last keypoint, and samples outside
+  `epochs` are NaN. Frames whose nose and tail coincide count as missing
+  frames: they are filled if the gap is short. Before, every missing frame was filled by sample index
   across any gap, including a recording break, the ends took the nearest
   heading, and coincident keypoints read as East.
 
@@ -2531,7 +2533,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   Breaking).
 
   ```python
-  simulate_trajectory_laps(env, n_laps=3)  # before: 2679 s at 0.1 cm/s; after: ~15-19 s, running at ~20 cm/s
+  simulate_trajectory_laps(env, n_laps=3, seed=1)  # before: 2679 s at 0.1 cm/s; after: 14.4 s, running at ~20 cm/s
   ```
 
 - Publishing walls onto a rotated or clipped environment refuses a wall that
