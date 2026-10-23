@@ -53,11 +53,15 @@ class VisibleEvents(NamedTuple):
     key : tuple of int
         Changes exactly when ``positions`` or ``opacity`` change, so a view
         updates its markers only then.
+    rows : slice
+        Their rows of ``PreparedScene.event_positions``, for a view that
+        draws every event once and sets each one's opacity.
     """
 
     positions: NDArray[np.float64]
     opacity: NDArray[np.float64]
     key: tuple[int, ...]
+    rows: slice
 
 
 class Pose(NamedTuple):
@@ -94,6 +98,9 @@ class TrackWindow(NamedTuple):
     ----------
     time_edges : ndarray of float64, shape (n_columns + 1,)
         Column edges, in seconds, clipped to the window.
+    observed : ndarray of bool, shape (n_columns,)
+        Whether a column holds a sample; False for the empty column between
+        two shown intervals.
     track_edges : ndarray of float64, shape (n_rows + 1,)
         Row edges, in position along the track.
     values : ndarray of float64, shape (n_rows, n_columns)
@@ -108,6 +115,7 @@ class TrackWindow(NamedTuple):
     """
 
     time_edges: NDArray[np.float64]
+    observed: NDArray[np.bool_]
     track_edges: NDArray[np.float64]
     values: NDArray[np.float64]
     paths: NDArray[np.float64]
@@ -354,9 +362,13 @@ class PreparedScene:
         # Without exactly one position, heading arrows start at the arena's center.
         self._arena_center = np.mean(scene.env.bin_centers, axis=0)
         self.signal_groups = signal_groups(data.timeseries)
+        # Seconds every time panel shows; a view may change it, as
+        # fastplotlib's [ and ] keys do.
+        self.window_seconds = scene.window_seconds
         self.track_env = scene.env if scene.track is None else scene.track
         self.track_extents = track_extents(self.track_env)
-        self._track_rows = (
+        # The track's mesh rows: their edges, and each bin's row.
+        self.track_rows = (
             None if self.track_extents is None else _track_rows(*self.track_extents)
         )
         # Where each segment of a linearized track starts along it.
@@ -565,8 +577,20 @@ class PreparedScene:
                 opacity, key = alphas * events.opacity, (start, stop, frame)
             else:
                 opacity = np.full(stop - start, float(events.opacity))
-            shown[name] = VisibleEvents(records.positions[start:stop], opacity, key)
+            shown[name] = VisibleEvents(
+                records.positions[start:stop], opacity, key, slice(start, stop)
+            )
         return shown
+
+    def event_positions(self, events: Any) -> dict[str, NDArray[np.float64]]:
+        """Each event type's located events, in time order.
+
+        Events without a location are never shown and are left out.
+        """
+        return {
+            name: self._event_records[id(events), name].positions
+            for name in events.event_positions
+        }
 
     def pose(self, body: Any, time: float) -> Pose:
         """The body parts and complete skeleton edges at ``time``.
@@ -633,7 +657,8 @@ class PreparedScene:
         return previous[1]
 
     def bounds(self, time: float) -> tuple[float, float]:
-        half = self.scene.window_seconds / 2
+        """The window of the time panels at ``time``: ``window_seconds`` around it."""
+        half = self.window_seconds / 2
         return time - half, time + half
 
     def signal_window(self, signal: Any, time: float) -> tuple[np.ndarray, np.ndarray]:
@@ -705,8 +730,8 @@ class PreparedScene:
         Only the field's supported intervals hold its samples; a projected
         2-D field shows its rows summed into track bins.
         """
-        assert self._track_rows is not None
-        track_edges, bin_rows = self._track_rows
+        assert self.track_rows is not None
+        track_edges, bin_rows = self.track_rows
         left, right = self.bounds(time)
         first = max(int(np.searchsorted(field.times, left, side="right")) - 1, 0)
         stop = min(
@@ -724,6 +749,8 @@ class PreparedScene:
         time_edges = np.empty(len(selected) + int(skipped.sum()) + 1)
         time_edges[columns] = np.maximum(left, field.times[selected])
         time_edges[columns + 1] = np.minimum(right, field.times[selected + 1])
+        observed = np.zeros(len(time_edges) - 1, dtype=bool)
+        observed[columns] = True
         values = np.full((len(track_edges) - 1, len(time_edges) - 1), np.nan)
         if len(selected):
             projected = self.projection is not None
@@ -755,5 +782,5 @@ class PreparedScene:
             paths.append(segments)
             colors += [position.color] * len(joined)
         return TrackWindow(
-            time_edges, track_edges, values, np.concatenate(paths), colors
+            time_edges, observed, track_edges, values, np.concatenate(paths), colors
         )

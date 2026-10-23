@@ -496,6 +496,10 @@ def test_shown_events_follow_the_frame_rule_for_unordered_records(env, decay):
         order = np.argsort(times[visible], kind="stable")
         shown = prepared.events(events, time)[name]
         np.testing.assert_array_equal(shown.positions, located[visible][order])
+        # A view drawing every located event once selects the same ones.
+        np.testing.assert_array_equal(
+            prepared.event_positions(events)[name][shown.rows], shown.positions
+        )
         np.testing.assert_array_equal(
             shown.opacity, (alphas[visible] * events.opacity)[order]
         )
@@ -620,6 +624,30 @@ def test_track_mesh_rows_follow_the_track_and_leave_segment_spacing_empty():
     np.testing.assert_array_equal(window.values[[0, 1, 3, 4]], values[:2].T)
     np.testing.assert_allclose(starts, window.track_edges[[0, 1, 3, 4]])
     np.testing.assert_allclose(stops, window.track_edges[[1, 2, 4, 5]])
+    edges, bin_rows = PreparedScene(scene).track_rows
+    np.testing.assert_array_equal(bin_rows, [0, 1, 3, 4])
+    np.testing.assert_allclose(edges, window.track_edges)
+    scene.close()
+
+
+def test_track_columns_say_which_hold_a_sample_and_follow_the_window():
+    track = Environment.linear_track(endpoints=[[0.0, 0.5], [2.0, 0.5]], bin_size=1.0)
+    times = [0.0, 0.1, 0.2, 0.3]
+    field = AnimationField(
+        np.ones((4, track.n_bins)), times, break_before=[False, False, True, False]
+    )
+    scene = Animation(track, field, window_seconds=1.0)
+    prepared = PreparedScene(scene)
+    window = prepared.track_window(scene.fields["field"], 0.15)
+    # The break before 0.2 leaves an empty column between two held samples.
+    np.testing.assert_allclose(window.time_edges, [0.0, 0.1, 0.2, 0.3])
+    np.testing.assert_array_equal(window.observed, [True, False, True])
+    assert np.isnan(window.values[:, ~window.observed]).all()
+    # A view may narrow the window every time panel shows.
+    prepared.window_seconds = 0.1
+    assert prepared.bounds(0.05) == pytest.approx((0.0, 0.1))
+    narrow = prepared.track_window(scene.fields["field"], 0.05)
+    np.testing.assert_allclose(narrow.time_edges, [0.0, 0.1])
     scene.close()
 
 
