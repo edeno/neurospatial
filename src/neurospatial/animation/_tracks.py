@@ -155,6 +155,15 @@ def _projection(env: Environment, track: Environment) -> Any:
     )
 
 
+def projection_key(projection: Any) -> bytes:
+    """A stable digest of a projection, the same in every process."""
+    import hashlib
+
+    digest = hashlib.sha1(np.asarray(projection.shape).tobytes(), usedforsecurity=False)
+    digest.update(np.ascontiguousarray(projection.indices).tobytes())
+    return digest.digest()
+
+
 def _project(rows: NDArray[np.float64], projection: Any) -> NDArray[np.float64]:
     """Each row summed into the track bins; NaN where no finite value maps."""
     finite = np.isfinite(rows)

@@ -81,8 +81,9 @@ class AnimationField:
     epochs: np.ndarray | None
     sample_valid: np.ndarray = dataclass_field(init=False)
     interval_valid: np.ndarray = dataclass_field(init=False)
-    _extremes: tuple[np.ndarray, np.ndarray] | None = dataclass_field(
-        default=None, init=False, repr=False, compare=False
+    # Scale statistics read once: native rows (key None) and projections.
+    _extremes: dict[bytes | None, tuple[np.ndarray, np.ndarray]] = dataclass_field(
+        default_factory=dict, init=False, repr=False, compare=False
     )
 
     def __init__(
@@ -162,7 +163,7 @@ class AnimationField:
         # A held [start, stop) row needs no observation at its excluded stop.
         # Keep canonical interval gates separate from exact-sample membership.
         object.__setattr__(self, "interval_valid", _readonly(support.interval_gates))
-        object.__setattr__(self, "_extremes", None)
+        object.__setattr__(self, "_extremes", {})
 
     def __copy__(self) -> AnimationField:
         result = object.__new__(type(self))
@@ -243,29 +244,25 @@ class AnimationField:
             indices = indices[np.linspace(0, len(indices) - 1, 100, dtype=int)]
         return [self[int(index)] for index in indices]
 
-    def _scale_extremes(self) -> tuple[np.ndarray, np.ndarray]:
-        """Each sampled row's smallest and largest finite value, read once."""
-        if self._extremes is None:
-            from neurospatial.animation._field_stats import frame_extremes
+    def _scale_extremes(self, projection: Any = None) -> tuple[np.ndarray, np.ndarray]:
+        """Each sampled row's smallest and largest finite value, read once.
 
-            object.__setattr__(self, "_extremes", frame_extremes(self._scale_rows()))
-        assert self._extremes is not None
-        return self._extremes
-
-    def _beyond(self, vmin: float, vmax: float) -> tuple[bool, bool]:
-        """Whether sampled values lie below ``vmin`` and above ``vmax``.
-
-        Colors clip values outside the scale, so a colorbar marks each end
-        that sampled values pass, whether the limits were given or computed.
+        With ``projection`` (``_tracks._projection``), the values of each row
+        summed into track bins. Copies of a field share these statistics.
         """
-        lows, highs = self._scale_extremes()
-        return bool(np.any(lows < vmin)), bool(np.any(highs > vmax))
+        from neurospatial.animation._tracks import projection_key
 
-    def _typical_peak(self) -> float:
-        from neurospatial.animation._field_stats import typical_peak
+        key = None if projection is None else projection_key(projection)
+        if key not in self._extremes:
+            from neurospatial.animation._field_stats import frame_extremes
+            from neurospatial.animation._tracks import _project
 
-        peak = typical_peak(self._scale_extremes()[1])
-        return peak if peak > 0 else 1.0
+            # One read of the rows serves the native and projected values.
+            rows = np.asarray(self._scale_rows(), float).reshape(-1, self.n_bins)
+            self._extremes.setdefault(None, frame_extremes(rows))
+            if projection is not None:
+                self._extremes[key] = frame_extremes(_project(rows, projection))
+        return self._extremes[key]
 
 
 class Animation:

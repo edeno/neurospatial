@@ -396,7 +396,8 @@ def test_projected_track_uses_its_own_stable_scale(scene_env):
     mesh = projected_ax.collections[0]
     assert np.max(mesh.get_array()) > 1
     assert mesh.norm.vmax >= np.max(mesh.get_array())
-    assert scene._renderer.limits["posterior"] == (0, 1)
+    scale = scene._renderer.prepared.field_scales["posterior"]
+    assert (scale.vmin, scale.vmax) == (0, 1)
     assert any(
         "sum per track bin" in ax.get_ylabel() for ax in scene._renderer.figure.axes
     )

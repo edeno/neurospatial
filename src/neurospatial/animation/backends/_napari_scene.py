@@ -184,15 +184,9 @@ class _ScientificPanels:
                 self.axes.append(ax)
                 self.tracks.append((ax, name, field))
                 if helper.projection is not None:
-                    from matplotlib.cm import ScalarMappable
-                    from matplotlib.colors import Normalize
+                    from neurospatial.animation._scene_rendering import _colorbar
 
-                    low, high = helper.track_limits[name]
-                    self.figure.colorbar(
-                        ScalarMappable(Normalize(low, high), cmap=field.cmap),
-                        ax=ax,
-                        label=f"Projected {field.label or name} (sum per track bin)",
-                    )
+                    _colorbar(ax, helper.track_scales[name])
         cursor_styles += [(True, "red")] * (len(self.axes) - len(cursor_styles))
         for ax, (visible, color) in zip(self.axes, cursor_styles, strict=True):
             ax.set_facecolor("#20252b")
@@ -206,11 +200,12 @@ class _ScientificPanels:
         from matplotlib.colors import Normalize
 
         self._track_artists = []
-        for ax, name, field in self.tracks:
+        for ax, name, _field in self.tracks:
+            scale = helper.track_scales[name]
             cells = PolyCollection(
                 [],
-                cmap=field.cmap,
-                norm=Normalize(*helper.track_limits[name]),
+                cmap=scale.cmap,
+                norm=Normalize(scale.vmin, scale.vmax),
                 edgecolors="none",
             )
             positions = LineCollection([], linewidths=1, zorder=3)
@@ -504,37 +499,20 @@ class NapariScene:
         self.viewer.reset_view()
 
     def _build_fields(self, *, split: bool = False) -> None:
-        from matplotlib import colormaps
         from napari.utils.colormaps import Colormap
 
         native = _native_grid(self.scene.env)
-        below_video = any(
-            video.z_order == "below" for video in self.scene._overlay_data.videos
-        )
-        # Statistics can read lazy sources even when explicit display limits
-        # were supplied. Keep those reads and owned initial samples serialized
-        # with other views, then release the lock before creating GUI layers.
+        # Keep owned initial samples serialized with other views, then release
+        # the lock before creating GUI layers. The prepared scene read the
+        # scale statistics under the same lock.
         with self._helper.source_lock:
             self.scene._ensure_open()
-            limits = {
-                name: field.color_limits() for name, field in self.scene.fields.items()
-            }
-            peaks = (
-                {
-                    name: field._typical_peak()
-                    for name, field in self.scene.fields.items()
-                }
-                if below_video
-                else {}
-            )
             samples = self._helper.field_samples(self._time)
         for name, field in self.scene.fields.items():
             display_name = f"{name} ({field.label})" if field.label else name
-            colors = colormaps[field.cmap](np.linspace(0, 1, 256))
-            if below_video:
-                low, high = limits[name]
-                colors[:, 3] *= np.clip(np.linspace(low, high, 256) / peaks[name], 0, 1)
-            cmap = Colormap(colors, name=field.cmap)
+            scale = self._helper.field_scales[name]
+            limits = (scale.vmin, scale.vmax)
+            cmap = Colormap(scale.colors(), name=scale.cmap)
             values = samples[name]
             if native is not None:
                 grid, affine = native
@@ -543,7 +521,7 @@ class NapariScene:
                     _image(values, grid),
                     name=display_name,
                     colormap=cmap,
-                    contrast_limits=limits[name],
+                    contrast_limits=limits,
                     affine=affine,
                     blending="translucent",
                     rendering="attenuated_mip",
@@ -572,7 +550,7 @@ class NapariScene:
                     features={"value": values},
                     face_color="value",
                     face_colormap=cmap,
-                    face_contrast_limits=limits[name],
+                    face_contrast_limits=limits,
                     border_width=0,
                     size=5,
                 )

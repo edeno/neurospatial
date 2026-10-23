@@ -157,8 +157,6 @@ class SceneRenderer:
         self.track_extents = self.prepared.track_extents
         self.projection = self.prepared.projection
         self.panel_count = self.prepared.panel_count
-        self.limits = self.prepared.limits
-        self.track_limits = self.prepared.track_limits
         width = max(6, 5 * len(scene.fields))
         self.figure = Figure(
             figsize=figsize or (width, 5 + 1.5 * self.panel_count), dpi=dpi
@@ -215,15 +213,7 @@ class SceneRenderer:
             )
             updates.append(self._field(ax, name, field, start))
             if scene.env.n_dims in (2, 3):
-                from matplotlib.cm import ScalarMappable
-                from matplotlib.colors import Normalize
-
-                low, high = self.limits[name]
-                self.figure.colorbar(
-                    ScalarMappable(Normalize(low, high), cmap=field.cmap),
-                    ax=ax,
-                    label=field.label or name,
-                )
+                _colorbar(ax, self.prepared.field_scales[name])
             ax.set_title(name)
             updates.extend(self._spatial(ax))
         row = 1
@@ -259,25 +249,22 @@ class SceneRenderer:
     def _field(self, ax: Any, name: str, field: Any, time: float) -> Update:
         """Draw a field once; later frames update its values in place."""
         env = self.scene.env
-        low, high = self.limits[name]
-        cmaps = {False: field.cmap}
-        if any(video.z_order == "below" for video in self.scene._overlay_data.videos):
-            from matplotlib import colormaps
+        scale = self.prepared.field_scales[name]
+        low, high = scale.vmin, scale.vmax
+        cmaps: dict[bool, Any] = {False: scale.cmap}
+        if scale.opaque_from is not None:
             from matplotlib.colors import ListedColormap
 
             # Low values fade out so a video below shows through them.
-            colors = colormaps.get_cmap(field.cmap)(np.linspace(0, 1, 256))
-            values = np.linspace(low, high, 256)
-            colors[:, 3] *= np.clip(values / field._typical_peak(), 0, 1)
-            cmaps[True] = ListedColormap(colors)
+            cmaps[True] = ListedColormap(scale.colors())
         if env.n_dims == 3:
             cells, faces = self._field3d(
-                ax, self.prepared.field_sample(field, time), field.cmap, low, high
+                ax, self.prepared.field_sample(field, time), scale.cmap, low, high
             )
 
             def update3d(time: float) -> None:
                 colors = _cell_colors(
-                    self.prepared.field_sample(field, time), field.cmap, low, high
+                    self.prepared.field_sample(field, time), scale.cmap, low, high
                 )
                 cells.set_facecolor(np.repeat(colors, faces, axis=0))
 
@@ -803,6 +790,19 @@ class SceneRenderer:
         return update
 
 
+def _colorbar(ax: Any, scale: Any) -> None:
+    """A colorbar of ``scale`` beside ``ax``, marking each clipped end."""
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+
+    ax.figure.colorbar(
+        ScalarMappable(Normalize(scale.vmin, scale.vmax), cmap=scale.cmap),
+        ax=ax,
+        label=scale.label,
+        extend=scale.extend_name,
+    )
+
+
 def _cell_colors(values: np.ndarray, cmap: Any, low: float, high: float) -> np.ndarray:
     """RGBA per bin; missing bins are translucent gray, unlike observed zeros."""
     from matplotlib import colormaps
@@ -881,17 +881,13 @@ def track_panel(
     from matplotlib.collections import LineCollection, PolyCollection
     from matplotlib.colors import Normalize
 
-    low, high = prepared.track_limits[name]
-    cells = PolyCollection([], cmap=field.cmap, norm=Normalize(low, high))
+    scale = prepared.track_scales[name]
+    cells = PolyCollection([], cmap=scale.cmap, norm=Normalize(scale.vmin, scale.vmax))
     cells.set_edgecolor("none")
     cells.set_array(np.empty(0))
     ax.add_collection(cells)
     if prepared.projection is not None and colorbar:
-        ax.figure.colorbar(
-            cells,
-            ax=ax,
-            label=f"Projected {field.label or name} (sum per track bin)",
-        )
+        _colorbar(ax, scale)
     assert prepared.track_extents is not None
     starts, stops = prepared.track_extents
     ax.set_ylim(float(np.min(starts)), float(np.max(stops)))

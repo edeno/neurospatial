@@ -751,8 +751,10 @@ def test_lazy_reader_that_is_not_an_array_is_read_by_row(env):
     )
     view.seek(50.0)
     view.close()
-    # The first shown row and the row at 50 s, each read only a few times.
-    assert set(data.reads) == {0, 500}
+    # The first shown row, the row at 50 s and at most 100 rows for the
+    # colorbar, which marks sampled values beyond the given limits.
+    assert {0, 500} <= set(data.reads)
+    assert len(set(data.reads) - {0, 500}) <= 100
 
 
 def test_iterator_fields_are_refused_with_a_fix(env):

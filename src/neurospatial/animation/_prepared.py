@@ -7,11 +7,13 @@ sources and derives only the requested time window; it owns no canvas or reader.
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
+from dataclasses import dataclass, replace
 from itertools import chain
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import numpy as np
+from numpy.typing import NDArray
 
 from neurospatial.animation._sampling import sample_observation
 from neurospatial.animation._tracks import (
@@ -66,35 +68,105 @@ def iter_observation_clocks(scene: Animation) -> Iterator[np.ndarray]:
             yield from _ordered_clock_chunks(epochs.intervals[:, column])
 
 
-def projected_field_limits(
-    fields: Sequence[AnimationField], projection: Any
-) -> tuple[float, float]:
-    """Bounded projected limits from each stream's own supported source rows."""
-    return projected_field_scale(fields, projection)[0]
+@dataclass(frozen=True)
+class FieldScale:
+    """How one field's values become colors, the same in every view.
+
+    Attributes
+    ----------
+    cmap : str
+        Matplotlib colormap name.
+    vmin, vmax : float
+        Values at the colormap's ends; colors clip values outside them.
+    label : str
+        Colorbar label.
+    extend : tuple of bool
+        Whether sampled values fall below ``vmin`` and above ``vmax``.
+        Colorbars mark each clipped end.
+    opaque_from : float or None
+        With a video below the field, low values are see-through: opacity
+        rises from zero at ``vmin`` to one at this value, the typical
+        frame's peak (``vmax`` at the latest). None draws every value
+        opaque.
+    """
+
+    cmap: str
+    vmin: float
+    vmax: float
+    label: str
+    extend: tuple[bool, bool] = (False, False)
+    opaque_from: float | None = None
+
+    @property
+    def extend_name(self) -> str:
+        """``extend`` as Matplotlib's colorbar option."""
+        below, above = self.extend
+        return {
+            (False, False): "neither",
+            (True, False): "min",
+            (False, True): "max",
+            (True, True): "both",
+        }[below, above]
+
+    def colors(self, n_colors: int = 256) -> NDArray[np.float64]:
+        """RGBA colors from ``vmin`` to ``vmax``, shape (n_colors, 4).
+
+        The opacity is linear in the displayed (sRGB) color, as Matplotlib
+        and napari blend layers.
+        """
+        from neurospatial.animation._style import field_colors
+
+        return field_colors(
+            self.cmap, self.vmin, self.vmax, self.opaque_from, n_colors=n_colors
+        )
 
 
-def projected_field_scale(
-    fields: Sequence[AnimationField], projection: Any
-) -> tuple[tuple[float, float], tuple[bool, bool]]:
-    """Projected limits, and whether sampled values fall below or above them."""
-    from neurospatial.animation._field_stats import animation_colormap_range
+def field_scale(
+    field: AnimationField,
+    label: str,
+    *,
+    see_through: bool = False,
+    projection: Any = None,
+    limits: tuple[float, float] | None = None,
+) -> FieldScale:
+    """The color scale of ``field``, or of its projection onto a track.
 
-    projected = np.concatenate(
-        [
-            _project(
-                np.asarray(field._scale_rows(), dtype=float).reshape(-1, field.n_bins),
-                projection,
-            )
-            for field in fields
-        ]
+    Statistics come from at most 100 of the field's supported rows, read once
+    and cached with the field (see ``AnimationField.color_limits``).
+
+    Parameters
+    ----------
+    field : AnimationField
+        The field.
+    label : str
+        Colorbar label.
+    see_through : bool, default=False
+        Whether low values fade, for a video drawn below the field.
+    projection : sparse matrix, optional
+        Bins summed into track bins (``_tracks._projection``). The field's
+        own ``vmin`` and ``vmax`` are in other units and do not apply.
+    limits : tuple of float, optional
+        Explicit ``(vmin, vmax)``; None uses the field's limits.
+    """
+    from neurospatial.animation._field_stats import robust_limits, typical_peak
+
+    lows, highs = field._scale_extremes(projection)
+    if limits is None:
+        limits = (
+            robust_limits(lows, highs)
+            if projection is not None
+            else field.color_limits()
+        )
+    vmin, vmax = limits
+    peak = typical_peak(highs)
+    return FieldScale(
+        field.cmap,
+        float(vmin),
+        float(vmax),
+        label,
+        (bool(np.any(lows < vmin)), bool(np.any(highs > vmax))),
+        (peak if peak > 0 else 1.0) if see_through else None,
     )
-    low, high = animation_colormap_range(projected, None, None)
-    finite = projected[np.isfinite(projected)]
-    beyond = (
-        bool(finite.size and finite.min() < low),
-        bool(finite.size and finite.max() > high),
-    )
-    return (low, high), beyond
 
 
 def signal_groups(signals: list[Any]) -> dict[tuple[str, str | int], list[Any]]:
@@ -156,16 +228,25 @@ class PreparedScene:
             + bool(data.epochs)
             + (self.track_extents is not None)
         )
+        below = any(video.z_order == "below" for video in data.videos)
         with self.source_lock:
-            self.limits = {
-                name: field.color_limits() for name, field in scene.fields.items()
+            # One scale per field and per projected track, for every view.
+            self.field_scales = {
+                name: field_scale(field, field.label or name, see_through=below)
+                for name, field in scene.fields.items()
             }
-            self.track_limits = dict(self.limits)
-            if self.projection is not None:
-                for name, field in scene.fields.items():
-                    self.track_limits[name] = projected_field_limits(
-                        (field,), self.projection
+            self.track_scales = {
+                name: (
+                    replace(scale, opaque_from=None)
+                    if self.projection is None
+                    else field_scale(
+                        scene.fields[name],
+                        f"Projected {scale.label} (sum per track bin)",
+                        projection=self.projection,
                     )
+                )
+                for name, scale in self.field_scales.items()
+            }
 
     def clear_cache(self) -> None:
         """Release view-local row and decoder buffers after pending reads drain."""

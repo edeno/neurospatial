@@ -231,7 +231,7 @@ def test_scene_bridge_passes_independent_color_scales(scene, monkeypatch):
         native.show.assert_called_once_with()
         styles = render.call_args.kwargs["_field_styles"]
         assert [
-            (item["cmap"], item["vmin"], item["vmax"], item["label"], item["extend"])
+            (item.cmap, item.vmin, item.vmax, item.label, item.extend)
             for item in styles
         ] == [
             ("magma", 0, 100, "Rate (Hz)", (False, False)),
@@ -244,7 +244,7 @@ def test_scene_bridge_passes_independent_color_scales(scene, monkeypatch):
     assert posterior.min() >= 0.05 and posterior.max() <= 5
     with scene.show(backend="fastplotlib", vmin=0.05, vmax=5):
         styles = render.call_args.kwargs["_field_styles"]
-        assert [item["extend"] for item in styles] == [(True, True), (False, False)]
+        assert [item.extend for item in styles] == [(True, True), (False, False)]
 
 
 def test_native_capture_rejects_window_resize_and_restores_state(

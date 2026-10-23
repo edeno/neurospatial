@@ -120,13 +120,13 @@ def test_fastplotlib_view_statistics_share_lock_with_existing_reader(
 
     def render(*args, **kwargs):
         assert kwargs["_source_lock"] is scene._source_lock
-        assert kwargs["_field_styles"][0]["opaque_from"] > 0
+        assert kwargs["_field_styles"][0].opaque_from > 0
         _read_during_native_work(scene)
         return native
 
     monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
     try:
-        assert field._extremes is None
+        assert not field._extremes
         with _existing_read(scene, rows):
             view = scene.show(backend="fastplotlib")
         assert not rows.overlaps
@@ -161,7 +161,6 @@ def test_napari_below_video_statistics_share_lock_with_existing_reader(env):
     handle = NapariScene.__new__(NapariScene)
     handle.scene = scene
     handle._time = 0.0
-    handle._helper = PreparedScene(scene)
     handle._updates, handle.field_layers = [], {}
     initial = []
 
@@ -176,8 +175,10 @@ def test_napari_below_video_statistics_share_lock_with_existing_reader(env):
 
     handle._add = add
     try:
-        assert field._extremes is None  # Nothing is sampled before the build.
+        assert not field._extremes  # Nothing is sampled before the build.
         with _existing_read(scene, rows):
+            # The prepared scene reads the scale statistics.
+            handle._helper = PreparedScene(scene)
             handle._build_fields()
         assert not rows.overlaps
         assert len(rows.reads) == 103  # 100 scale rows and three consumers.

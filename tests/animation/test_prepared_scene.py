@@ -319,3 +319,116 @@ def test_cached_field_rows_own_snapshots_of_reused_source_buffers(env):
     assert helper.field_samples(0.0)["field"] is zero
     np.testing.assert_array_equal(zero, np.zeros(4))
     scene.close()
+
+
+def _below_video(times):
+    return VideoData(
+        np.zeros(len(times), dtype=int),
+        np.zeros((1, 2, 2, 3), dtype=np.uint8),
+        None,
+        (0.0, 2.0, 0.0, 2.0),
+        1.0,
+        "below",
+        times=np.asarray(times, dtype=float),
+    )
+
+
+class _Video:
+    """A custom overlay returning prepared video data."""
+
+    times = None
+    interp = "nearest"
+
+    def __init__(self, data):
+        self.data = data
+
+    def convert_to_data(self, frame_times, n_frames, env):
+        return self.data
+
+
+def test_one_see_through_rule_fades_from_the_color_floor_in_every_view(env):
+    """Opacity rises from vmin to the typical peak, the same in every view."""
+    from neurospatial.environment._fastplotlib import ColorScale, perceived_alpha
+
+    times = [0.0, 0.1, 0.2]
+    # Negative values: fading from zero instead of vmin would hide them.
+    values = np.array([[-2.0, 0.0, 1.0, 2.0], [-2.0, 1.0, 2.0, 2.0], [0.0] * 4])
+    scene = Animation(
+        env,
+        AnimationField(values, times, vmin=-2, vmax=2),
+        overlays=[_Video(_below_video(times))],
+    )
+    scale = PreparedScene(scene).field_scales["field"]
+    assert scale.opaque_from == 2.0  # median of the frames' maxima
+    alpha = scale.colors()[:, 3]
+    np.testing.assert_allclose(alpha, np.linspace(0, 1, 256))
+    # fastplotlib blends in linear light: the same rule, gamma-corrected.
+    lut = ColorScale(
+        scale.cmap, scale.vmin, scale.vmax, "lightgray", opaque_from=scale.opaque_from
+    ).lut[1:, 3]
+    np.testing.assert_allclose(
+        lut, perceived_alpha(np.linspace(0, 1, len(lut))), atol=1e-6
+    )
+    scene.close()
+
+
+def test_colorbars_mark_the_ends_that_sampled_values_pass(env):
+    track = Environment.linear_track(endpoints=[[0.0, 1.0], [2.0, 1.0]], bin_size=1.0)
+    values = np.array([[-1.0, 0.5, 0.5, 3.0], [0.2, 0.4, 0.6, 0.8]])
+    scene = Animation(
+        env,
+        {
+            "clipped": AnimationField(values, [0.0, 0.1], vmin=0, vmax=1),
+            "inside": AnimationField(values.clip(0, 1), [0.0, 0.1], vmin=0, vmax=1),
+        },
+        track=track,
+    )
+    prepared = PreparedScene(scene)
+    assert prepared.field_scales["clipped"].extend == (True, True)
+    assert prepared.field_scales["inside"].extend == (False, False)
+    # The projection's limits are its own; its sums pass neither end here.
+    projected = prepared.track_scales["clipped"]
+    assert projected.label == "Projected clipped (sum per track bin)"
+    scene.render_frame(0.0, dpi=30)
+    colorbars = {
+        ax.get_ylabel(): ax._colorbar.extend
+        for ax in scene._renderer.figure.axes
+        if hasattr(ax, "_colorbar")
+    }
+    assert colorbars["clipped"] == "both"
+    assert colorbars["inside"] == "neither"
+    assert colorbars[projected.label] == projected.extend_name
+    scene.close()
+
+
+class _CountedRows:
+    """A lazy source that counts its row reads."""
+
+    def __init__(self, n_bins):
+        self.n_bins, self.reads = n_bins, 0
+
+    def __len__(self):
+        return 3
+
+    def __getitem__(self, index):
+        self.reads += 1
+        return np.full(self.n_bins, float(index))
+
+
+def test_projected_scale_statistics_are_read_once_and_travel_with_the_field(env):
+    import pickle
+
+    track = Environment.linear_track(endpoints=[[0.0, 1.0], [2.0, 1.0]], bin_size=1.0)
+    rows = _CountedRows(env.n_bins)
+    scene = Animation(env, AnimationField(rows, [0.0, 0.1, 0.2]), track=track)
+    first = PreparedScene(scene).track_scales["field"]
+    reads = rows.reads
+    assert PreparedScene(scene).track_scales["field"] == first
+    assert rows.reads == reads
+    # A worker process rebuilds the scene from pickled fields.
+    field = pickle.loads(pickle.dumps(scene.fields["field"]))
+    rebuilt = Animation(env, {"field": field}, track=track)
+    assert PreparedScene(rebuilt).track_scales["field"] == first
+    assert field.values.reads == reads
+    scene.close()
+    rebuilt.close()

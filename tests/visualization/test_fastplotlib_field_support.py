@@ -150,7 +150,8 @@ def test_native_epoch_masks_and_projected_scales_use_supported_source_rows(env):
     try:
         native = view.native
         prepared = PreparedScene(scene)
-        expected = prepared.track_limits["posterior"]
+        scale = prepared.track_scales["posterior"]
+        expected = (scale.vmin, scale.vmax)
         assert expected[0] > 1  # Neither coarse scene frame observes a valid row.
         assert (native._track_scales[0].vmin, native._track_scales[0].vmax) == expected
         data = native._read(0.1)

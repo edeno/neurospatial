@@ -80,6 +80,7 @@ from neurospatial.environment._fastplotlib_volume import resolve_field_rendering
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
 
+    from neurospatial.animation._prepared import FieldScale
     from neurospatial.animation.overlays import (
         BodypartData,
         EpochData,
@@ -1424,7 +1425,7 @@ class FastplotlibAnimation:
         *,
         frame_times: NDArray[np.float64],
         overlay_data: OverlayData,
-        _field_styles: Sequence[Mapping[str, Any]],
+        _field_styles: Sequence[FieldScale],
         _field_at_time: Callable[[float], list[NDArray[np.float64]]],
         _source_lock: Any,
         speed: float = 1.0,
@@ -1441,10 +1442,7 @@ class FastplotlibAnimation:
         volume_threshold: float | None = None,
         slice_plane: tuple[float, float, float, float] | None = None,
     ) -> None:
-        from neurospatial.animation._prepared import (
-            projected_field_scale,
-            signal_groups,
-        )
+        from neurospatial.animation._prepared import field_scale, signal_groups
 
         rendering = resolve_field_rendering(
             env,
@@ -1560,30 +1558,30 @@ class FastplotlibAnimation:
             styles = list(_field_styles)
             scales = [
                 ColorScale(
-                    style["cmap"],
-                    style["vmin"],
-                    style["vmax"],
+                    style.cmap,
+                    style.vmin,
+                    style.vmax,
                     None if env.n_dims == 3 else "lightgray",
-                    opaque_from=style["opaque_from"] if below else None,
+                    opaque_from=style.opaque_from if below else None,
                 )
                 for style in styles
             ]
-            labels = [style["label"] for style in styles]
-            extensions = [style["extend"] for style in styles]
+            labels = [style.label for style in styles]
+            extensions = [style.extend for style in styles]
             track_scales = scales
             if self._projection is not None:
                 # Projection sums bins, so its units keep the field's label
                 # but need limits derived from that field's projected values.
                 with self._source_lock:
                     projected = [
-                        projected_field_scale((field,), self._projection)
-                        for field in streams
+                        field_scale(field, style.label, projection=self._projection)
+                        for field, style in zip(streams, styles, strict=True)
                     ]
                 track_scales = [
-                    ColorScale(style["cmap"], *limits, "lightgray")
-                    for (limits, _), style in zip(projected, styles, strict=True)
+                    ColorScale(style.cmap, scale.vmin, scale.vmax, "lightgray")
+                    for scale, style in zip(projected, styles, strict=True)
                 ]
-                track_extensions = [beyond for _, beyond in projected]
+                track_extensions = [scale.extend for scale in projected]
             self._field_scales = scales
             self._track_scales = track_scales
 
@@ -1724,7 +1722,7 @@ class FastplotlibAnimation:
                 for name in time_panels:
                     self.figure[name].docks["right"].size = COLORBAR_WIDTH
             unit = (
-                _UnitRates(self.figure["unit"], env, styles[0]["cmap"])
+                _UnitRates(self.figure["unit"], env, styles[0].cmap)
                 if with_rates
                 else None
             )

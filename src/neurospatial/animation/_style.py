@@ -121,6 +121,60 @@ def _head_direction_color(
     return to_rgba(color)
 
 
+def see_through_alpha(
+    values: NDArray[np.float64], vmin: float, vmax: float, opaque_from: float
+) -> NDArray[np.float64]:
+    """Opacity of field values drawn over a video: low values see-through.
+
+    Opacity rises linearly from zero at ``vmin`` to one at ``opaque_from``
+    (``vmax`` at the latest), so what is drawn below, such as the camera's
+    view of the animal, shows where values are low. A threshold at or
+    below ``vmin`` leaves every value opaque.
+
+    Parameters
+    ----------
+    values : ndarray of float64
+        Field values.
+    vmin, vmax : float
+        The color limits.
+    opaque_from : float
+        The value from which colors are opaque.
+
+    Returns
+    -------
+    ndarray of float64, same shape as ``values``
+        Opacity in [0, 1], as blended in displayed (sRGB) color.
+    """
+    opaque = min(opaque_from, vmax)
+    if opaque <= vmin:
+        return np.ones(np.shape(values))
+    return np.clip(
+        (np.asarray(values, dtype=np.float64) - vmin) / (opaque - vmin), 0, 1
+    )
+
+
+def field_colors(
+    cmap: str,
+    vmin: float,
+    vmax: float,
+    opaque_from: float | None,
+    *,
+    n_colors: int = 256,
+) -> NDArray[np.float64]:
+    """A field's colors from ``vmin`` to ``vmax``, shape (n_colors, 4).
+
+    With ``opaque_from``, low values fade (see :func:`see_through_alpha`).
+    """
+    from matplotlib import colormaps
+
+    colors: NDArray[np.float64] = colormaps[cmap](np.linspace(0.0, 1.0, n_colors))
+    if opaque_from is not None:
+        colors[:, 3] *= see_through_alpha(
+            np.linspace(vmin, vmax, n_colors), vmin, vmax, opaque_from
+        )
+    return colors
+
+
 def _finite_rate_peak(rates: NDArray[np.float64] | None) -> float:
     """A finite positive peak computed once for a prepared source recording."""
     if rates is None:

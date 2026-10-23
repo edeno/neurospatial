@@ -142,14 +142,17 @@ class ColorScale:
         missing = (0.0, 0.0, 0.0, 0.0) if self.nan_color is None else self.nan_color
         colors = colormap(np.linspace(0.0, 1.0, _N_COLORS))
         if self.opaque_from is not None:
-            # Opaque from the threshold, but by the top color at the latest;
-            # a threshold at or below the floor leaves every color opaque.
-            opaque = min(self.opaque_from, self.vmax)
-            if opaque > self.vmin:
-                values = np.linspace(self.vmin, self.vmax, _N_COLORS)
-                colors[:, 3] = perceived_alpha(
-                    (values - self.vmin) / (opaque - self.vmin)
+            from neurospatial.animation._style import see_through_alpha
+
+            # The animation views' see-through rule, blended in linear light.
+            colors[:, 3] *= perceived_alpha(
+                see_through_alpha(
+                    np.linspace(self.vmin, self.vmax, _N_COLORS),
+                    self.vmin,
+                    self.vmax,
+                    self.opaque_from,
                 )
+            )
         return np.vstack([to_rgba(missing), colors]).astype(np.float32)
 
     @cached_property

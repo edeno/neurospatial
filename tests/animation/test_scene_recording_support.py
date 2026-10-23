@@ -120,7 +120,9 @@ def test_field_scales_ignore_samples_outside_known_support():
     )
     assert field.color_limits()[0] >= 1
     assert field.color_limits()[1] <= 3
-    assert field._typical_peak() == 2
+    from neurospatial.animation._prepared import field_scale
+
+    assert field_scale(field, "rate", see_through=True).opaque_from == 2
 
 
 @dataclass(frozen=True)
