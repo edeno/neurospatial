@@ -213,8 +213,8 @@ class PositionOverlay:
         Length of the trail in animation frames: the path through this
         overlay's own samples over the last ``trail_length`` typical frame
         intervals of the animation, so it spans the same time whatever the
-        tracking rate and in every viewer. If None, no trail is rendered.
-        Default is None.
+        tracking rate and in every viewer. Older segments fade. If None, no
+        trail is rendered. Default is None.
     interp : {"linear", "nearest"}, optional
         Interpolation method for aligning overlay to animation frames.
         "linear" (default) for smooth trajectories.

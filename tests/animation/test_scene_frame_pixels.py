@@ -105,12 +105,8 @@ def test_position_marker_follows_the_recording_and_hides_when_missing(env, recor
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="SceneRenderer draws every trail segment at one alpha; the PositionOverlay docstring promises opacity decaying over the trail.",
-)
 def test_trail_fades_with_age(env):
-    # PositionOverlay: "Trail opacity decays over the length."
+    # Older segments fade, as in fastplotlib, so the direction of travel shows.
     x = np.array([10.0, 30.0, 50.0, 70.0, 90.0])
     positions = np.column_stack([x, np.full(5, 50.0)])
     times = np.arange(5) * 0.1

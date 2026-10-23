@@ -245,6 +245,32 @@ class PreparedScene:
         )
         return range(min(start, stop), stop)
 
+    def trail(self, position: Any, time: float) -> tuple[list[np.ndarray], np.ndarray]:
+        """The position's trail at ``time``: segments and their opacities.
+
+        Segments join consecutive supported samples, and none is drawn while
+        the current position is missing. Each fades with the age of its newer
+        sample, from ``_TRAIL_MAX_ALPHA`` now to zero ``trail_seconds`` ago.
+        """
+        from neurospatial.animation._style import _TRAIL_MAX_ALPHA
+
+        point = self.sample(position, position.data, time)
+        if not np.isfinite(point).all():
+            return [], np.empty(0)
+        valid = position.interval_valid
+        rows = [
+            j
+            for j in self.trail_rows(position, time)[:-1]
+            if (valid is None or valid[j])
+            and np.isfinite(position.data[j : j + 2]).all()
+        ]
+        segments = [position.data[j : j + 2] for j in rows]
+        seconds = self.trail_seconds(position)
+        if seconds <= 0:
+            return segments, np.full(len(rows), _TRAIL_MAX_ALPHA)
+        age = time - self.clock(position)[np.asarray(rows, dtype=int) + 1]
+        return segments, _TRAIL_MAX_ALPHA * np.clip(1 - age / seconds, 0, 1)
+
     def trail_capacity(self, position: Any) -> int:
         """The most samples any trail of ``position`` holds."""
         times = self.clock(position)

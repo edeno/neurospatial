@@ -602,12 +602,26 @@ class NapariScene:
             values = np.asarray(coordinates, dtype=float).reshape(-1, dims)
             layer.data = values[np.isfinite(values).all(axis=1), ::-1]
 
-        def paths(layer: Any, segments: list[Any]) -> None:
+        def paths(
+            layer: Any,
+            segments: list[Any],
+            alphas: np.ndarray | None = None,
+            color: Any = None,
+        ) -> None:
+            keep = [
+                np.isfinite(segment).all() and bool(np.any(np.diff(segment, axis=0)))
+                for segment in segments
+            ]
             layer.data = [
                 np.asarray(segment)[:, ::-1]
-                for segment in segments
-                if np.isfinite(segment).all() and np.any(np.diff(segment, axis=0))
+                for segment, kept in zip(segments, keep, strict=True)
+                if kept
             ]
+            if alphas is not None and any(keep):
+                # Each segment fades with its age, as in the other views.
+                colors = np.tile(np.asarray(color, dtype=float), (sum(keep), 1))
+                colors[:, 3] = np.asarray(alphas)[keep]
+                layer.edge_color = colors
 
         for i, position in enumerate(data.positions):
             layer = self._add_overlay(
@@ -641,21 +655,9 @@ class NapariScene:
                 layer: Any = layer,
                 trail: Any = trail,
             ) -> None:
-                point = sample(p, p.data, time)
-                points(layer, point)
+                points(layer, sample(p, p.data, time))
                 if trail is not None:
-                    # A missing position draws neither a marker nor a trail.
-                    rows = (
-                        self._helper.trail_rows(p, time)
-                        if np.isfinite(point).all()
-                        else range(0)
-                    )
-                    segments = [
-                        p.data[j : j + 2]
-                        for j in rows[:-1]
-                        if p.interval_valid is None or p.interval_valid[j]
-                    ]
-                    paths(trail, segments)
+                    paths(trail, *self._helper.trail(p, time), _rgba(p.color))
 
             self._updates.append(update_position)
         for i, body in enumerate(data.bodypart_sets):

@@ -99,19 +99,25 @@ class _Segments:
         )
         ax.add_collection(self.collection, autolim=False)
 
-    def set(self, segments: list[np.ndarray], *, alpha: float | None = None) -> None:
-        """Draw ``segments``, each ``(2, n_dims)`` in environment coordinates."""
+    def set(
+        self, segments: list[np.ndarray], *, alpha: float | np.ndarray | None = None
+    ) -> None:
+        """Draw ``segments``, each ``(2, n_dims)`` in environment coordinates.
+
+        ``alpha`` is one opacity, or one per segment.
+        """
         if self.collection is not None:
             self.collection.set_segments([_planar(s) for s in segments])
-            if alpha is not None:
+            if alpha is not None and len(segments):
                 self.collection.set_alpha(alpha)
             return
+        alphas = np.broadcast_to(np.nan if alpha is None else alpha, len(segments))
         for index, line in enumerate(self.lines):
             line.set_visible(index < len(segments))
             if index < len(segments):
                 line.set_data_3d(*segments[index].T)
                 if alpha is not None:
-                    line.set_alpha(alpha)
+                    line.set_alpha(float(alphas[index]))
 
 
 def _fit_view(ax: Any, points: np.ndarray) -> None:
@@ -266,10 +272,14 @@ class SceneRenderer:
             colors[:, 3] *= np.clip(values / field._typical_peak(), 0, 1)
             cmaps[True] = ListedColormap(colors)
         if env.n_dims == 3:
-            cells, faces = self._field3d(ax, self.prepared.field_sample(field, time), field.cmap, low, high)
+            cells, faces = self._field3d(
+                ax, self.prepared.field_sample(field, time), field.cmap, low, high
+            )
 
             def update3d(time: float) -> None:
-                colors = _cell_colors(self.prepared.field_sample(field, time), field.cmap, low, high)
+                colors = _cell_colors(
+                    self.prepared.field_sample(field, time), field.cmap, low, high
+                )
                 cells.set_facecolor(np.repeat(colors, faces, axis=0))
 
             return update3d
@@ -600,7 +610,6 @@ class SceneRenderer:
             ax,
             max(self.prepared.trail_capacity(position) - 1, 0),
             color=position.color,
-            alpha=0.6,
             zorder=100,
         )
         marker = _scatter(
@@ -610,21 +619,12 @@ class SceneRenderer:
             edgecolor="white",
             zorder=101,
         )
-        valid = position.interval_valid
 
         def update(time: float) -> None:
             point = self._sample(position, position.data, time)
-            # A missing position draws neither a marker nor a trail.
-            visible = np.isfinite(point).all()
-            segments = []
-            if visible and position.trail_length:
-                rows = self.prepared.trail_rows(position, time)
-                segments = [
-                    position.data[index : index + 2]
-                    for index in rows[:-1]
-                    if valid is None or valid[index]
-                ]
-            trail.set(segments)
+            if position.trail_length:
+                segments, alphas = self.prepared.trail(position, time)
+                trail.set(segments, alpha=alphas)
             _set_points(marker, point[None])
 
         return update
