@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import warnings
 import weakref
+from contextlib import suppress
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -403,6 +404,7 @@ def test_live_napari_scene_close_stops_timer_before_readers_and_preserves_suppli
         native = view.native
         timer_deleted = []
         controller.timer.destroyed.connect(lambda *_: timer_deleted.append(True))
+        timer = controller.timer
         controller.timer.start(5)
         assert controller.timer.isActive()
         scene.close()
@@ -424,6 +426,10 @@ def test_live_napari_scene_close_stops_timer_before_readers_and_preserves_suppli
         scene.close()
         view.close()
     finally:
+        # A deferred deletion may destroy the timer after this test returns;
+        # a Python slot still connected then runs on freed state and crashes.
+        with suppress(NameError, RuntimeError, TypeError):
+            timer.destroyed.disconnect()
         scene.close()
         if viewer is not None:
             viewer.close()
