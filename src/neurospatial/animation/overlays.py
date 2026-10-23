@@ -49,7 +49,6 @@ from matplotlib.colors import to_hex
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._units import normalize_position_units as _normalize_position_units
-from neurospatial.animation._region_names import shown_region_names
 from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import observation_support, sample_at_times
 from neurospatial.geometry import require_cartesian
@@ -3487,14 +3486,9 @@ class OverlayData:
         List of epoch overlays. Default is empty list.
     object_vectors : list[ObjectVectorData], optional
         List of object-vector overlays. Default is empty list.
-    regions : dict[int, list[str]] | None, optional
-        Region names in normalized format. Key is frame index (0 = all frames),
-        value is list of region names. Populated by _convert_overlays_to_data()
-        from show_regions parameter. Default is None.
     frame_times : NDArray[np.float64] | None, optional
-        Animation frame timestamps. Used for synchronizing time series overlays
-        with the animation. Populated by _convert_overlays_to_data() when time
-        series overlays are present. Default is None.
+        The animation clock, in seconds, the overlays were converted against.
+        Rows of sampled overlays without ``times`` follow it. Default is None.
 
     Attributes
     ----------
@@ -3516,24 +3510,19 @@ class OverlayData:
         List of epoch overlays.
     object_vectors : list[ObjectVectorData]
         List of object-vector overlays.
-    regions : dict[int, list[str]] | None
-        Region names in normalized format (key 0 = all frames).
     frame_times : NDArray[np.float64] | None
-        Animation frame timestamps for time series synchronization.
+        The animation clock the overlays were converted against.
 
     Notes
     -----
-    This container is created automatically by the conversion pipeline when
-    `Environment.animate_fields()` is called with overlays. Users should not
-    instantiate OverlayData directly.
+    This container is created by the conversion pipeline when an
+    ``Animation`` is built with overlays. Users should not instantiate
+    OverlayData directly.
 
-    All data is aligned to animation frame times and validated for:
-
-    - Shape consistency with environment dimensions
-    - Finite values (no NaN/Inf)
-
-    Backends access this object to render overlays without needing to handle
-    temporal alignment or validation.
+    Observed values are checked for shape and for infinite values; NaN marks
+    a missing observation and is kept. Sampled overlays carry the sample and
+    interval support that backends use, so a backend never interpolates
+    across missing tracking or a recording break.
     """
 
     positions: list[PositionData] = field(default_factory=list)
@@ -3545,7 +3534,6 @@ class OverlayData:
     spike_rasters: list[SpikeRasterData] = field(default_factory=list)
     epochs: list[EpochData] = field(default_factory=list)
     object_vectors: list[ObjectVectorData] = field(default_factory=list)
-    regions: dict[int, list[str]] | None = None
     frame_times: NDArray[np.float64] | None = None
 
 
@@ -4473,7 +4461,6 @@ def _convert_overlays_to_data(
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
-    show_regions: bool | list[str] = False,
     *,
     own_samples: bool = False,
 ) -> OverlayData:
@@ -4498,11 +4485,6 @@ def _convert_overlays_to_data(
     env : Any
         Environment object with ``n_dims`` and ``dimension_ranges`` attributes.
         Used for validating overlay coordinate dimensions and bounds.
-    show_regions : bool or list of str, default=False
-        Region names to include in overlay data. If True, all region names
-        from env.regions are included. If a list, only those region names
-        are included. If False, no regions are included. Normalized to
-        dict[int, list[str]] format where key 0 means "all frames".
     own_samples : bool, default=False
         Keep the samples of each position, pose, heading, object-vector and
         video overlay that has ``times``, with those times in the data's
@@ -4515,9 +4497,7 @@ def _convert_overlays_to_data(
     Returns
     -------
     OverlayData
-        Aggregated container with all overlay data aligned to frame times.
-        Contains lists of PositionData, BodypartData, HeadDirectionData,
-        and VideoData instances.
+        Aggregated container with one list per internal data type.
 
     Raises
     ------
@@ -4530,8 +4510,8 @@ def _convert_overlays_to_data(
         - No temporal overlap between overlay and frame times
     TypeError
         If overlay does not implement ``OverlayProtocol``, or if
-        ``convert_to_data()`` returns an unexpected type (must return
-        PositionData, BodypartData, HeadDirectionData, or VideoData).
+        ``convert_to_data()`` returns a type other than the nine internal
+        data types listed by ``OverlayProtocol.convert_to_data``.
 
     Notes
     -----
@@ -4553,9 +4533,8 @@ def _convert_overlays_to_data(
     For BodypartOverlay, each keypoint is interpolated separately, preserving
     independent temporal dynamics of body parts.
 
-    Custom overlays can be created by implementing ``OverlayProtocol``. The
-    ``convert_to_data()`` method must return one of the internal data types:
-    ``PositionData``, ``BodypartData``, ``HeadDirectionData``, or ``VideoData``.
+    Custom overlays can be created by implementing ``OverlayProtocol``; its
+    ``convert_to_data()`` must return one of the internal data types.
 
     Examples
     --------
@@ -4699,12 +4678,6 @@ def _convert_overlays_to_data(
                 "the heading as a compass arrow at the arena center."
             )
 
-        # Normalize regions to dict[int, list[str]] format
-        # Key 0 means "apply to all frames"
-        normalized_regions: dict[int, list[str]] | None = None
-        if show_regions:
-            normalized_regions = {0: shown_region_names(env, show_regions)}
-
         # Aggregate all overlay data
         overlay_data = OverlayData(
             positions=position_data_list,
@@ -4716,7 +4689,6 @@ def _convert_overlays_to_data(
             spike_rasters=spike_raster_data_list,
             epochs=epoch_data_list,
             object_vectors=object_vector_data_list,
-            regions=normalized_regions,
             frame_times=frame_times,
         )
 

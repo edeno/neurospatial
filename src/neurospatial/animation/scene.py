@@ -377,7 +377,6 @@ class Animation:
             self.frame_times,
             len(self.frame_times),
             self.env,
-            self.show_regions,
             own_samples=True,
         )
         _freeze_overlay_arrays(self._overlay_data)
