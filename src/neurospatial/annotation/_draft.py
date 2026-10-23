@@ -67,22 +67,27 @@ def add_polygon(
     layer.metadata.setdefault("_polygon_metadata", {})[identifier] = _thaw_metadata(
         metadata or {}
     )
-    # New drawings must never inherit the selected polygon's identity.
-    layer.feature_defaults["_polygon_id"] = ""
-    layer.feature_defaults["_parent_id"] = ""
-    if not layer.metadata.get("_polygon_defaults_guard"):
-
-        def clear_identity_defaults(event: Any) -> None:
-            # Mutate defaults only: current_properties' setter can overwrite the
-            # selected shapes themselves in select mode.
-            for column in ("_polygon_id", "_parent_id"):
-                if column in layer.feature_defaults:
-                    layer.feature_defaults[column] = ""
-
-        layer.events.current_properties.connect(clear_identity_defaults)
-        layer.events.highlight.connect(clear_identity_defaults)
-        layer.metadata["_polygon_defaults_guard"] = True
+    guard_identity_defaults(layer)
     sync_colors_from_features(layer)
+
+
+def guard_identity_defaults(layer: Any) -> None:
+    """Keep new drawings from inheriting the selected polygon's identity."""
+    for column in ("_polygon_id", "_parent_id"):
+        layer.feature_defaults[column] = ""
+    if layer.metadata.get("_polygon_defaults_guard"):
+        return
+
+    def clear_identity_defaults(event: Any) -> None:
+        # Mutate defaults only: current_properties' setter can overwrite the
+        # selected shapes themselves in select mode.
+        for column in ("_polygon_id", "_parent_id"):
+            if column in layer.feature_defaults:
+                layer.feature_defaults[column] = ""
+
+    layer.events.current_properties.connect(clear_identity_defaults)
+    layer.events.highlight.connect(clear_identity_defaults)
+    layer.metadata["_polygon_defaults_guard"] = True
 
 
 def polygon_drafts(

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import numpy as np
 
+from neurospatial.annotation._draft import guard_identity_defaults
 from neurospatial.annotation._helpers import rebuild_features, sync_colors_from_features
 from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
 from neurospatial.annotation.project import AnnotationProject, AnnotationShape
@@ -19,23 +20,6 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from neurospatial.ops.transforms import VideoCalibration
-
-
-def _guard_identity_defaults(layer: Any) -> None:
-    """Match imported polygon behavior without retaining any saved callbacks."""
-    for column in ("_polygon_id", "_parent_id"):
-        layer.feature_defaults[column] = ""
-    if layer.metadata.get("_polygon_defaults_guard"):
-        return
-
-    def clear_identity_defaults(event: Any) -> None:
-        for column in ("_polygon_id", "_parent_id"):
-            if column in layer.feature_defaults:
-                layer.feature_defaults[column] = ""
-
-    layer.events.current_properties.connect(clear_identity_defaults)
-    layer.events.highlight.connect(clear_identity_defaults)
-    layer.metadata["_polygon_defaults_guard"] = True
 
 
 def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
@@ -70,7 +54,7 @@ def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
     with shapes_layer.events.blocker_all():
         if changed:
             shapes_layer.features = features
-        _guard_identity_defaults(shapes_layer)
+        guard_identity_defaults(shapes_layer)
     metadata = shapes_layer.metadata.get("_polygon_metadata", {})
     return tuple(
         AnnotationShape(
@@ -164,7 +148,7 @@ def restore_shapes(shapes: Sequence[AnnotationShape], shapes_layer: Any) -> None
         shapes_layer.metadata["_polygon_metadata"] = {
             shape.identifier: _thaw_metadata(shape.metadata) for shape in shapes
         }
-        _guard_identity_defaults(shapes_layer)
+        guard_identity_defaults(shapes_layer)
         sync_colors_from_features(shapes_layer)
 
 
