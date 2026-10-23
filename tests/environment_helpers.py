@@ -252,6 +252,52 @@ def rates_result(
     )
 
 
+def _renumbered(env, order, kind, locator, missing_faces, distances=None, **extra):
+    """Publish ``env``'s bins in a new order with the given lookup.
+
+    New bin ``i`` is ``env``'s bin ``order[i]``, with the same center,
+    measure and faces; ``missing_faces`` stands in when ``env`` has none.
+    ``extra`` holds further ``Binning`` fields, such as ``shapes``.
+    """
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        FaceGeometry,
+        KnownFaces,
+        SpatialBins,
+    )
+
+    binning = env.binning
+    connections = binning.connections
+    pairs = np.argsort(order)[connections.pairs]
+    if binning.faces.available:
+        faces = binning.faces.build()
+        new_faces = KnownFaces(
+            FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
+        )
+    else:
+        new_faces = missing_faces
+    bins = binning.bins
+    return Environment.from_bins(
+        Binning(
+            kind,
+            SpatialBins.from_arrays(
+                bins.centers[order], bins.sizes[order], bins.measure_dims[order]
+            ),
+            BinConnections.from_arrays(
+                pairs,
+                connections.pair_distances if distances is None else distances,
+            ),
+            locator,
+            new_faces,
+            **extra,
+        ),
+        units=env.units,
+        frame=env.frame,
+        arena=env.arena,
+    )
+
+
 def renumbered(env, order, distances=None, *, max_distance=5.0):
     """Publish ``env``'s bins and open connections in a new bin order.
 
@@ -262,43 +308,15 @@ def renumbered(env, order, distances=None, *, max_distance=5.0):
     distances, in ``env.edge_pairs`` order, to make a copy that differs only
     in them.
     """
-    from neurospatial.binning import (
-        BinConnections,
-        Binning,
-        FaceGeometry,
-        KnownFaces,
-        MissingFaces,
-        NearestBinLocator,
-        SpatialBins,
-    )
+    from neurospatial.binning import MissingFaces, NearestBinLocator
 
-    binning = env.binning
-    centers = binning.bins.centers[order]
-    connections = binning.connections
-    pairs = np.argsort(order)[connections.pairs]
-    if binning.faces.available:
-        faces = binning.faces.build()
-        new_faces = KnownFaces(
-            FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
-        )
-    else:
-        new_faces = MissingFaces("renumbered copy of bins without faces")
-    return Environment.from_bins(
-        Binning(
-            "explicit",
-            SpatialBins.from_arrays(
-                centers, binning.bins.sizes[order], binning.bins.measure_dims[order]
-            ),
-            BinConnections.from_arrays(
-                pairs,
-                connections.pair_distances if distances is None else distances,
-            ),
-            NearestBinLocator(centers, max_distance=max_distance),
-            new_faces,
-        ),
-        units=env.units,
-        frame=env.frame,
-        arena=env.arena,
+    return _renumbered(
+        env,
+        order,
+        "explicit",
+        NearestBinLocator(env.binning.bins.centers[order], max_distance=max_distance),
+        MissingFaces("renumbered copy of bins without faces"),
+        distances,
     )
 
 
@@ -311,16 +329,7 @@ def renumbered_cells(env, order):
     parent bin to the lower-numbered piece, so reordering such pieces moves
     that line from one piece to the other.
     """
-    from neurospatial.binning import (
-        BinConnections,
-        Binning,
-        ClipMapping,
-        ClippedLocator,
-        FaceGeometry,
-        KnownFaces,
-        PolygonCells,
-        SpatialBins,
-    )
+    from neurospatial.binning import ClipMapping, ClippedLocator, PolygonCells
 
     binning = env.binning
     locator = binning.locator
@@ -328,30 +337,13 @@ def renumbered_cells(env, order):
     mapping = ClipMapping(
         locator.mapping.parent_bin_indices[order], locator.mapping.n_parent_bins
     )
-    connections = binning.connections
-    pairs = np.argsort(order)[connections.pairs]
-    if binning.faces.available:
-        faces = binning.faces.build()
-        new_faces = KnownFaces(
-            FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
-        )
-    else:
-        new_faces = binning.faces
-    bins = binning.bins
-    return Environment.from_bins(
-        Binning(
-            binning.kind,
-            SpatialBins.from_arrays(
-                bins.centers[order], bins.sizes[order], bins.measure_dims[order]
-            ),
-            BinConnections.from_arrays(pairs, connections.pair_distances),
-            ClippedLocator(locator.base, cells, mapping),
-            new_faces,
-            shapes=cells,
-        ),
-        units=env.units,
-        frame=env.frame,
-        arena=env.arena,
+    return _renumbered(
+        env,
+        order,
+        binning.kind,
+        ClippedLocator(locator.base, cells, mapping),
+        binning.faces,
+        shapes=cells,
     )
 
 
