@@ -356,14 +356,12 @@ class AnnotationAssistWidget(QWidget):
             )
             calibration = VideoCalibration(transform, frame_size_px=(width, height))
             self._on_calibration(calibration)
-            self.sync_calibration(calibration)
         except Exception as exc:
             self._error("Could not calibrate", exc)
 
     def _clear_calibration(self) -> None:
         try:
             self._on_calibration(None)
-            self.sync_calibration(None)
         except Exception as exc:
             self._error("Could not clear calibration", exc)
 

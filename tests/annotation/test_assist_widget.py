@@ -115,13 +115,19 @@ def assist(monkeypatch):
 
     calibration = []
     bins = []
+
+    def set_calibration(value):
+        # The session records the calibration and updates the widget's units.
+        calibration.append(value)
+        widget.sync_calibration(value)
+
     widget = _assist_widget.AnnotationAssistWidget(
         viewer,
         np.zeros((8, 12, 3), dtype=np.uint8),
         provider=provider,
         calibration=None,
         bin_size=2.0,
-        on_calibration=calibration.append,
+        on_calibration=set_calibration,
         on_bin_size=bins.append,
         on_accept=accept,
     )
