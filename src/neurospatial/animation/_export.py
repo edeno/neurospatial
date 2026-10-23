@@ -20,6 +20,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import check_writable
 
 _VIDEO_CODECS = {
     ".mp4": "libx264",
@@ -446,20 +447,13 @@ def prepare_export(
                     f"frames_dir {resolved_frames} is a file. Choose a directory "
                     "path for the frames."
                 )
-            if (
-                resolved_frames.is_dir()
-                and any(resolved_frames.iterdir())
-                and not overwrite
-            ):
-                raise FileExistsError(
-                    f"Frames directory {resolved_frames} is not empty; pass "
-                    "overwrite=True to replace its frames, or choose another "
-                    "frames_dir."
-                )
-    if path.exists() and not overwrite:
-        raise FileExistsError(
-            f"{path} already exists; pass overwrite=True to replace it."
-        )
+            check_writable(
+                [resolved_frames],
+                overwrite=overwrite,
+                what="animation frames directory",
+                argument="frames_dir",
+            )
+    check_writable([path], overwrite=overwrite, what="animation file", argument="path")
     bounds = np.asarray(
         (source_times[0], source_times[-1]) if time_range is None else time_range,
         dtype=float,
