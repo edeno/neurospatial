@@ -259,18 +259,25 @@ class RegionGrowProvider:
         colors = image.astype(np.float64) / (255 * np.sqrt(3))
         seeds = colors[pixels[:, 1], pixels[:, 0]]
 
-        def nearest_distance(seed_colors: NDArray[np.float64]) -> NDArray[np.float64]:
-            distance = np.full((height, width), np.inf)
+        def nearest_squared(
+            values: NDArray[np.float64], seed_colors: NDArray[np.float64]
+        ) -> NDArray[np.float64]:
+            # Squared distances order pixels as distances do, without a root.
             # One seed at a time avoids an image-size by number-of-seeds array.
+            nearest = np.full(values.shape[:-1], np.inf)
             for seed in seed_colors:
-                distance = np.minimum(distance, np.linalg.norm(colors - seed, axis=2))
-            return distance
+                difference = values - seed
+                nearest = np.minimum(
+                    nearest, np.einsum("...k,...k->...", difference, difference)
+                )
+            return nearest
 
-        foreground_distance = nearest_distance(seeds[prompt.labels == 1])
-        eligible = foreground_distance <= self.tolerance
+        foreground = nearest_squared(colors, seeds[prompt.labels == 1])
+        eligible = foreground <= self.tolerance**2
         if (prompt.labels == 0).any():
-            eligible &= foreground_distance < nearest_distance(
-                seeds[prompt.labels == 0]
+            # Only pixels close enough to the foreground can be excluded.
+            eligible[eligible] = foreground[eligible] < nearest_squared(
+                colors[eligible], seeds[prompt.labels == 0]
             )
         if prompt.box is not None:
             x0, y0, x1, y1 = prompt.box
