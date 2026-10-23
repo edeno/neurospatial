@@ -12,7 +12,6 @@ import numpy as np
 from neurospatial._validation import check_writable
 from neurospatial.annotation._types import (
     AnnotationConfig,
-    AnnotationMode,
     MultipleBoundaryStrategy,
     RegionType,
 )
@@ -22,8 +21,6 @@ from neurospatial.annotation._types import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     import napari
     from numpy.typing import NDArray
     from shapely.geometry import LineString, Polygon
@@ -283,6 +280,19 @@ def annotate_video(
     logger.debug("Loading video frame %d from %s", resolved.frame_index, video_path)
     frame = _load_video_frame(video_path, resolved.frame_index)
     logger.debug("Loaded frame with shape %s", frame.shape)
+    from neurospatial.annotation.project import AnnotationProject
+
+    # Validates the calibration and settings against the frame before editing.
+    project = AnnotationProject(
+        frame,
+        video_path=video_path,
+        frame_index=resolved.frame_index,
+        calibration=calibration,
+        mode=mode,
+        bin_size=bin_size,
+        simplify_tolerance=resolved.simplify_tolerance,
+        multiple_boundaries=resolved.multiple_boundaries,
+    )
 
     # Process initial boundary (from polygon or positions)
     boundary_polygon, positions_for_display = _process_initial_boundary(
@@ -296,14 +306,8 @@ def annotate_video(
         initial_regions = _filter_environment_regions(initial_regions)
 
     return _run_annotation_editor(
-        frame,
-        video_path=video_path,
-        frame_index=resolved.frame_index,
-        calibration=calibration,
-        mode=mode,
-        bin_size=bin_size,
-        simplify_tolerance=resolved.simplify_tolerance,
-        multiple_boundaries=resolved.multiple_boundaries,
+        project,
+        restore_shapes=False,
         project_path=project_path,
         project_saved=False,
         autosave_interval=autosave_interval,
@@ -403,19 +407,12 @@ def annotate_project(
     _validate_shapes_for_display(draft.shapes)
     _require_napari()
     return _run_annotation_editor(
-        draft.frame,
-        video_path=None if draft.video_path is None else Path(draft.video_path),
-        frame_index=draft.frame_index,
-        calibration=draft.calibration,
-        mode=draft.mode,
-        bin_size=draft.bin_size,
-        simplify_tolerance=draft.simplify_tolerance,
-        multiple_boundaries=draft.multiple_boundaries,
+        draft,
+        restore_shapes=True,
         project_path=project_path,
         project_saved=project_saved,
         autosave_interval=autosave_interval,
         segmentation_provider=segmentation_provider,
-        draft=draft,
     )
 
 
@@ -459,15 +456,9 @@ def _validate_autosave_interval(autosave_interval: float | None) -> None:
 
 
 def _run_annotation_editor(
-    frame: NDArray[np.uint8],
+    project: AnnotationProject,
     *,
-    video_path: Path | None,
-    frame_index: int,
-    calibration: VideoCalibration | None,
-    mode: AnnotationMode,
-    bin_size: float | None,
-    simplify_tolerance: float | None,
-    multiple_boundaries: MultipleBoundaryStrategy,
+    restore_shapes: bool,
     project_path: str | Path | None,
     project_saved: bool,
     autosave_interval: float | None,
@@ -475,35 +466,31 @@ def _run_annotation_editor(
     boundary_polygon: Polygon | None = None,
     positions_for_display: NDArray[np.float64] | None = None,
     initial_regions: Regions | None = None,
-    draft: AnnotationProject | None = None,
 ) -> AnnotationResult:
-    """Run the common editor and export from its current scientific settings."""
+    """Run the common editor and export from its current scientific settings.
+
+    ``restore_shapes`` restores the project's shapes into the editor, as when
+    resuming; a new project starts from the initial regions and boundary.
+    """
     from neurospatial.annotation._session import run_annotation_session
     from neurospatial.annotation._workflow import AnnotationProjectSession
 
-    viewer, shapes, flush_pending, controls = _setup_annotation_viewer(
-        video_path or Path("Annotation project"),
-        frame,
-        mode,
+    viewer, shapes, controls = _setup_annotation_viewer(
+        Path(project.video_path or "Annotation project"),
+        project.frame,
+        project.mode,
         boundary_polygon,
         positions_for_display,
         initial_regions,
-        calibration,
-        draft=draft,
+        project.calibration,
+        draft=project if restore_shapes else None,
     )
     try:
         session = AnnotationProjectSession(
             viewer,
             shapes,
             controls,
-            frame=frame,
-            video_path=video_path,
-            frame_index=frame_index,
-            calibration=calibration,
-            mode=mode,
-            bin_size=bin_size,
-            simplify_tolerance=simplify_tolerance,
-            multiple_boundaries=multiple_boundaries,
+            project,
             project_path=project_path,
             project_saved=project_saved,
             autosave_interval=autosave_interval,
@@ -514,15 +501,15 @@ def _run_annotation_editor(
         raise
 
     def prepare_result() -> AnnotationResult:
-        flush_pending()
-        _validate_annotate_params(mode, session.bin_size)
+        controls.flush_pending()
+        _validate_annotate_params(project.mode, session.bin_size)
         result = _process_annotation_results(
             shapes,
-            mode,
+            project.mode,
             session.bin_size,
             session.calibration,
-            simplify_tolerance,
-            multiple_boundaries,
+            project.simplify_tolerance,
+            project.multiple_boundaries,
         )
         session.save_if_path()
         return result
@@ -843,7 +830,7 @@ def _setup_annotation_viewer(
     calibration: VideoCalibration | None,
     *,
     draft: AnnotationProject | None = None,
-) -> tuple[napari.Viewer, napari.layers.Shapes, Callable[[], None], _AnnotationWidget]:
+) -> tuple[napari.Viewer, napari.layers.Shapes, _AnnotationWidget]:
     """Create and configure napari viewer for annotation.
 
     Parameters
@@ -869,10 +856,9 @@ def _setup_annotation_viewer(
         Configured napari viewer.
     shapes : napari.layers.Shapes
         Shapes layer for annotations.
-    flush_pending : Callable[[], None]
-        Finish pending widget edits before constructing an annotation result.
     controls : _AnnotationWidget
-        Annotation controls used by the shared project workflow.
+        Annotation controls. ``controls.flush_pending()`` finishes pending
+        widget edits before an annotation result is built.
 
     """
     import napari
@@ -941,7 +927,7 @@ def _setup_annotation_viewer(
     # Set initial status bar
     viewer.status = "Annotation mode: M=cycle roles; Save Project keeps your draft; Done returns results"
 
-    return viewer, shapes, widget.flush_pending, widget
+    return viewer, shapes, widget
 
 
 def _process_annotation_results(

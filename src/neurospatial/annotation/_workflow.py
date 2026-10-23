@@ -23,14 +23,16 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
     QWidget,
 )
 
-from neurospatial._results import read_only_copy
 from neurospatial.annotation._assist_widget import AnnotationAssistWidget
 from neurospatial.annotation._draft import add_polygons, annotation_roles
 from neurospatial.annotation._polygon_outline import PolygonOutline
 from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
 from neurospatial.annotation._state import AnnotationModeState, make_unique_name
-from neurospatial.annotation._types import AnnotationMode, MultipleBoundaryStrategy
-from neurospatial.annotation.project import AnnotationProject, AnnotationShape
+from neurospatial.annotation.project import (
+    AnnotationProject,
+    AnnotationShape,
+    _copy_calibration,
+)
 from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
     SegmentationProvider,
@@ -42,7 +44,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import napari
-    from numpy.typing import NDArray
 
     from neurospatial.annotation._napari_widget import _AnnotationWidget
 
@@ -92,15 +93,8 @@ class AnnotationProjectSession:
         viewer: napari.Viewer,
         shapes_layer: Any,
         controls: _AnnotationWidget,
+        project: AnnotationProject,
         *,
-        frame: NDArray[np.uint8],
-        video_path: str | Path | None,
-        frame_index: int,
-        calibration: VideoCalibration | None,
-        mode: AnnotationMode,
-        bin_size: float | None,
-        simplify_tolerance: float | None,
-        multiple_boundaries: MultipleBoundaryStrategy,
         project_path: str | Path | None,
         project_saved: bool,
         autosave_interval: float | None,
@@ -109,14 +103,12 @@ class AnnotationProjectSession:
         self.viewer = viewer
         self.layer = shapes_layer
         self.controls = controls
-        self.frame = read_only_copy(frame)
-        self.video_path = video_path
-        self.frame_index = frame_index
-        self.calibration = calibration
-        self.mode = mode
-        self.bin_size = bin_size
-        self.simplify_tolerance = simplify_tolerance
-        self.multiple_boundaries = multiple_boundaries
+        # The project supplies the frame and the settings this session does
+        # not edit; saves replace its shapes, calibration and bin size.
+        self._project = project
+        self.frame = project.frame
+        self.calibration = project.calibration
+        self.bin_size = project.bin_size
         self.project_path = None if project_path is None else Path(project_path)
         self._disposed = False
         self._restoring = False
@@ -172,8 +164,8 @@ class AnnotationProjectSession:
                 if segmentation_provider is None
                 else segmentation_provider
             ),
-            calibration=calibration,
-            bin_size=bin_size,
+            calibration=self.calibration,
+            bin_size=self.bin_size,
             on_calibration=self.set_calibration,
             on_bin_size=self.set_bin_size,
             on_accept=self.accept_outline,
@@ -207,10 +199,11 @@ class AnnotationProjectSession:
 
     def _capture(self) -> _EditingState:
         self.controls.flush_pending()
+        height, width = self.frame.shape[:2]
         calibration = (
             None
             if self.calibration is None
-            else VideoCalibration.from_dict(self.calibration.to_dict())
+            else _copy_calibration(self.calibration, (width, height))
         )
         return _EditingState(capture_shapes(self.layer), calibration, self.bin_size)
 
@@ -399,18 +392,11 @@ class AnnotationProjectSession:
         The session's own file is replaced: the entry point checked the
         destination, and Save As confirms a replacement in its dialog.
         """
-        project = AnnotationProject(
-            self.frame,
+        self._project._replace(
             shapes=self._current.shapes,
-            video_path=self.video_path,
-            frame_index=self.frame_index,
             calibration=self.calibration,
-            mode=self.mode,
             bin_size=self.bin_size,
-            simplify_tolerance=self.simplify_tolerance,
-            multiple_boundaries=self.multiple_boundaries,
-        )
-        project.save(target, overwrite=True)
+        ).save(target, overwrite=True)
         self.project_path = target
         self._last_saved = self._current
         self.status.setText(f"Saved: {target.name}")

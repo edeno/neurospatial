@@ -305,6 +305,20 @@ class AnnotationProject:
             self._calibration, (self.frame.shape[1], self.frame.shape[0])
         )
 
+    def _replace(self, **changes: Any) -> AnnotationProject:
+        """Return a validated project with some settings or shapes changed."""
+        settings = {
+            "shapes": self.shapes,
+            "video_path": self.video_path,
+            "frame_index": self.frame_index,
+            "calibration": self._calibration,
+            "mode": self.mode,
+            "bin_size": self.bin_size,
+            "simplify_tolerance": self.simplify_tolerance,
+            "multiple_boundaries": self.multiple_boundaries,
+        }
+        return AnnotationProject(self.frame, **(settings | changes))
+
     def save(self, path: str | Path, *, overwrite: bool = False) -> None:
         """Atomically save to exactly ``path``, preserving any filename suffix.
 

@@ -103,9 +103,9 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
     process = core._process_annotation_results
 
     def capture_setup(*args, **kwargs):
-        viewer, layer, flush_pending, controls = setup(*args, **kwargs)
+        viewer, layer, controls = setup(*args, **kwargs)
         viewers.append((viewer, layer))
-        return viewer, layer, flush_pending, controls
+        return viewer, layer, controls
 
     def capture_process(*args, **kwargs):
         builds.append(1)
@@ -380,9 +380,9 @@ def test_close_flush_finishes_rejected_boundary_before_export(monkeypatch):
     setup = core._setup_annotation_viewer
 
     def capture(*args, **kwargs):
-        viewer, shapes, flush, controls = setup(*args, **kwargs)
+        viewer, shapes, controls = setup(*args, **kwargs)
         captured.update(viewer=viewer, shapes=shapes)
-        return viewer, shapes, flush, controls
+        return viewer, shapes, controls
 
     def run():
         shapes = captured["shapes"]

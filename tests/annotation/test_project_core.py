@@ -62,6 +62,21 @@ def test_overwrite_starts_a_new_project_over_an_existing_file(tmp_path, monkeypa
         )
 
 
+def test_calibration_for_another_frame_size_fails_before_the_editor(monkeypatch):
+    monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
+    monkeypatch.setattr(
+        core, "_load_video_frame", lambda *args: np.zeros((30, 40, 3), dtype=np.uint8)
+    )
+    monkeypatch.setattr(
+        core,
+        "_setup_annotation_viewer",
+        lambda *args, **kwargs: pytest.fail("Must reject before opening a viewer"),
+    )
+    calibration = VideoCalibration(Affine2D(np.eye(3)), (640, 480))
+    with pytest.raises(ValueError, match="frame_size_px must match"):
+        core.annotate_video("unused.mp4", bin_size=1.0, calibration=calibration)
+
+
 @pytest.mark.parametrize("from_file", [False, True])
 def test_resume_cannot_overwrite_a_different_existing_project(
     tmp_path, monkeypatch, from_file
@@ -116,20 +131,23 @@ def test_resume_uses_embedded_frame_and_current_session_calibration(
     order = []
     captured = {}
     viewer = SimpleNamespace(close=lambda: order.append("close"))
-    shapes, controls = object(), object()
+    shapes = object()
+    controls = SimpleNamespace(flush_pending=lambda: order.append("flush"))
 
     def setup(title, image, *args, draft=None):
         captured.update(title=title, frame=image, draft=draft)
-        return viewer, shapes, lambda: order.append("flush"), controls
+        return viewer, shapes, controls
 
     class Session:
-        def __init__(self, actual_viewer, actual_shapes, actual_controls, **kwargs):
+        def __init__(
+            self, actual_viewer, actual_shapes, actual_controls, project, **kwargs
+        ):
             assert (actual_viewer, actual_shapes, actual_controls) == (
                 viewer,
                 shapes,
                 controls,
             )
-            captured.update(settings=kwargs)
+            captured.update(project=project, settings=kwargs)
             self.calibration = live_calibration
             self.bin_size = 2.5
 
@@ -166,7 +184,7 @@ def test_resume_uses_embedded_frame_and_current_session_calibration(
     assert core.annotate_project(source, autosave_interval=None) == "validated result"
     np.testing.assert_array_equal(captured["frame"], frame)
     assert captured["draft"].frame_index == 13
-    assert captured["settings"]["video_path"] == Path("deleted.mp4")
+    assert captured["project"].video_path == "deleted.mp4"
     assert captured["settings"]["project_path"] == (path if from_file else None)
     assert captured["settings"]["project_saved"] is from_file
     assert captured["settings"]["autosave_interval"] is None
@@ -204,7 +222,11 @@ def test_failed_export_does_not_trigger_final_save_and_disposes_session(monkeypa
     monkeypatch.setattr(
         core,
         "_setup_annotation_viewer",
-        lambda *args, **kwargs: (object(), object(), lambda: None, object()),
+        lambda *args, **kwargs: (
+            object(),
+            object(),
+            SimpleNamespace(flush_pending=lambda: None),
+        ),
     )
     monkeypatch.setattr(core, "_process_annotation_results", fail)
     monkeypatch.setattr(
@@ -254,14 +276,13 @@ def test_draft_geometry_is_restored_before_annotation_widget_creation(monkeypatc
         return create(viewer, layer_name, **kwargs)
 
     monkeypatch.setattr(_napari_widget, "create_annotation_widget", capture)
-    viewer, shapes, flush, controls = core._setup_annotation_viewer(
+    viewer, shapes, controls = core._setup_annotation_viewer(
         Path("draft"), draft.frame, "regions", None, None, None, None, draft=draft
     )
     try:
         assert initialized == [(["saved label"], ["stable"])]
-        flush()
+        controls.flush_pending()
         assert list(shapes.features["name"]) == ["saved label"]
-        assert controls.flush_pending == flush
         choices = next(widget for widget in controls if isinstance(widget, Select))
         assert choices.choices == (0,)
         viewer.add_points(np.array([[5.0, 5.0]]), name="Inside prompts")
@@ -362,7 +383,11 @@ def test_failed_session_start_closes_created_viewer(monkeypatch):
     monkeypatch.setattr(
         core,
         "_setup_annotation_viewer",
-        lambda *args, **kwargs: (viewer, object(), lambda: None, object()),
+        lambda *args, **kwargs: (
+            viewer,
+            object(),
+            SimpleNamespace(flush_pending=lambda: None),
+        ),
     )
     with pytest.raises(RuntimeError, match="Cannot initialize assistance"):
         core.annotate_project(draft)
