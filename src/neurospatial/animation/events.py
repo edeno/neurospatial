@@ -23,8 +23,9 @@ def _copy_event_table(table: pd.DataFrame) -> pd.DataFrame:
     result = table.copy(deep=True).reset_index(drop=True)
     for column, dtype in enumerate(result.dtypes):
         if pd.api.types.is_object_dtype(dtype):
-            for row in range(len(result)):
-                result.iat[row, column] = copy.deepcopy(result.iat[row, column])
+            # One deep copy per column; an object Series keeps each cell as is.
+            cells = copy.deepcopy(list(result.iloc[:, column]))
+            result.isetitem(column, pd.Series(cells, index=result.index, dtype=object))
     result.attrs = copy.deepcopy(table.attrs)
     return result
 
