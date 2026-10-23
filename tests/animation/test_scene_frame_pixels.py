@@ -141,6 +141,27 @@ def test_pose_draws_observed_parts_and_only_complete_skeleton_edges(env, recordi
         assert not shows(at(*(nose[1] + [0.0, -4.0]), radius=2), "white", atol=60)
 
 
+def test_skeleton_is_drawn_in_its_own_style(env, recording):
+    # The skeleton's edge color and width, as napari and fastplotlib draw it.
+    nose = recording + np.array([-15.0, 0.0])
+    tail = recording + np.array([15.0, 0.0])
+    skeleton = Skeleton(
+        name="test",
+        nodes=("nose", "tail"),
+        edges=(("nose", "tail"),),
+        edge_color="lime",
+        edge_width=6.0,
+    )
+    overlay = BodypartOverlay({"nose": nose, "tail": tail}, TIMES, skeleton=skeleton)
+    with Animation(env, dark(env), overlays=[overlay]) as scene:
+        _, at = render(scene, 0.0)
+        assert shows(at(*(nose[0] + tail[0]) / 2), "lime", atol=3)
+        # Six points are five pixels at 60 dpi, across the horizontal edge.
+        column = at(*(nose[0] + tail[0]) / 2, radius=6)[6::13]
+        lime = np.all(np.abs(column - rgb("lime")) <= 30, axis=1)
+        assert lime.sum() >= 4
+
+
 @pytest.mark.parametrize("color", ["hsv", "twilight", "yellow"])
 @pytest.mark.parametrize("angle", [0.0, np.pi / 2, np.pi])
 def test_heading_arrow_points_along_the_heading_in_its_color(env, color, angle):

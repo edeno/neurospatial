@@ -511,8 +511,15 @@ class SceneRenderer:
             )
             for name in body.bodyparts
         ]
-        edges = () if body.skeleton is None else body.skeleton.edges
-        skeleton = _Segments(ax, len(edges), color="white", zorder=100)
+        # The skeleton draws in its own style, as in every view.
+        style = body.skeleton
+        skeleton = _Segments(
+            ax,
+            0 if style is None else len(style.edges),
+            color="white" if style is None else style.edge_color,
+            linewidth=None if style is None else style.edge_width,
+            zorder=100,
+        )
 
         def update(time: float) -> None:
             pose = self.prepared.pose(body, time)
