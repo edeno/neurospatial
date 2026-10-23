@@ -556,6 +556,8 @@ class TestTimeSeriesIntegration:
         """Test end-to-end workflow with video backend and time series."""
         import warnings
 
+        pytest.importorskip("imageio_ffmpeg")
+
         from neurospatial.animation.overlays import PositionOverlay
 
         rng = np.random.default_rng(42)

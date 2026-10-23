@@ -63,7 +63,8 @@ def test_time_series_with_one_label_keep_independent_traces_and_union_limits(
         assert panels[1].get_ylim()[1] < 1
 
 
-@pytest.mark.parametrize("directory", ["nested/frame images", "../outside #files'<>/"])
+# Characters a URL must escape, all valid in Windows paths too.
+@pytest.mark.parametrize("directory", ["nested/frame images", "../outside #files'&/"])
 def test_external_html_urls_resolve_relative_to_the_page(
     physical_grid, tmp_path, directory
 ):
@@ -83,7 +84,7 @@ def test_external_html_urls_resolve_relative_to_the_page(
             1
         )
     )
-    assert " " not in url and "#" not in url and "<" not in url and "'" not in url
+    assert " " not in url and "#" not in url and "&" not in url and "'" not in url
     assert (output.parent / Path(unquote(url))).resolve() == frames.resolve()
     assert sorted(item.name for item in frames.iterdir()) == [
         "frame_00000.png",

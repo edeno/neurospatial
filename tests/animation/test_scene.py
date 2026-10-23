@@ -138,7 +138,7 @@ def test_selected_export_matches_same_complete_scene_frame(
 
     monkeypatch.setattr(imageio.v2, "get_writer", lambda *args, **kwargs: Writer())
     scene.export(
-        tmp_path / "selected.mp4", time_range=(0.2, 0.4), fps=10, speed=1, dpi=30
+        tmp_path / "selected.gif", time_range=(0.2, 0.4), fps=10, speed=1, dpi=30
     )
     assert len(captured) == 2
     np.testing.assert_array_equal(captured[0], expected)
@@ -300,7 +300,7 @@ def test_export_does_not_replace_file_created_during_rendering(
     scene = Animation(
         scene_env, np.ones((3, scene_env.n_bins)), frame_times=[0.0, 0.1, 0.2]
     )
-    path = tmp_path / "raced.mp4"
+    path = tmp_path / "raced.gif"
 
     class Writer:
         def __enter__(self):
@@ -333,7 +333,7 @@ def test_export_without_hard_links_still_refuses_to_replace(
     scene = Animation(
         scene_env, np.ones((3, scene_env.n_bins)), frame_times=[0.0, 0.1, 0.2]
     )
-    path = tmp_path / "drive.mp4"
+    path = tmp_path / "drive.gif"
 
     class Writer:
         def __init__(self, temporary):
@@ -365,7 +365,7 @@ def test_export_without_hard_links_still_refuses_to_replace(
     else:
         assert scene.export(path, fps=10, dpi=30) == path
         assert path.read_bytes() == b"encoded"
-    assert [item.name for item in tmp_path.iterdir()] == ["drive.mp4"]
+    assert [item.name for item in tmp_path.iterdir()] == ["drive.gif"]
     scene.close()
 
 

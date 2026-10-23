@@ -36,41 +36,17 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
-        # ipywidgets is needed by tests/animation/test_widget_overlays.py;
-        # qtpy is needed by tests/animation/test_callback_audit.py.
-        # We install them directly rather than via --extra animation
-        # because napari[all] doesn't install cleanly on Windows runners.
-        # napari itself is exercised by the dedicated "napari" job below.
+        # ipywidgets is needed by the notebook widget view and qtpy by Qt
+        # imports in the animation tests; imageio-ffmpeg bundles the ffmpeg
+        # that video export encodes with. They are installed directly rather
+        # than via --extra animation because napari[all] doesn't install
+        # cleanly on Windows runners; napari itself is exercised by the
+        # dedicated "napari" job below.
         run: |
           uv sync --extra dev --extra xarray
-          uv pip install "ipywidgets>=8.0,<9.0" qtpy
+          uv pip install "ipywidgets>=8.0,<9.0" qtpy "imageio-ffmpeg>=0.5.1"
         env:
           UV_PYTHON: python${{ matrix.python-version }}
-
-      - name: Install ffmpeg
-        if: runner.os != 'Windows'
-        run: |
-          if [ "$RUNNER_OS" == "Linux" ]; then
-            sudo apt-get update
-            sudo apt-get install -y ffmpeg
-          elif [ "$RUNNER_OS" == "macOS" ]; then
-            brew install ffmpeg
-          fi
-        shell: bash
-
-      - name: Install ffmpeg (Windows)
-        if: runner.os == 'Windows'
-        # Download upstream binaries instead of relying on Chocolatey's feed,
-        # which can report a successful exit without installing the package.
-        uses: FedericoCarboni/setup-ffmpeg@37062fbf7149fc5578d6c57e08aed62458b375d6 # v3.1
-        with:
-          ffmpeg-version: release
-
-      - name: Verify ffmpeg installation
-        run: |
-          ffmpeg -version
-          ffprobe -version
-        shell: bash
 
       - name: Run ruff check
         run: |
@@ -137,15 +113,12 @@ jobs:
         with:
           version: "latest"
 
-      # The parallel video-export tests are slow-marked and skip without ffmpeg.
-      - name: Install ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
+      # The parallel video-export tests are slow-marked and skip without
+      # imageio-ffmpeg, which bundles the ffmpeg that export encodes with.
       - name: Install dependencies
         run: |
           uv sync --extra dev
+          uv pip install "imageio-ffmpeg>=0.5.1"
 
       # Wall-clock bounds depend on the runner's hardware, so wallclock-marked
       # tests run only locally.

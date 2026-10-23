@@ -105,7 +105,7 @@ def test_opposite_vectors_midpoint_has_no_arrow_in_scene_or_export(
         for update in handle._updates:
             update.apply(update.prepare(0.1))
         assert layer.data.shape == (0, 2, env.n_dims)
-        scene.export(tmp_path / "heading.mp4", time_range=(0.1, 0.2), fps=10, dpi=25)
+        scene.export(tmp_path / "heading.gif", time_range=(0.1, 0.2), fps=10, dpi=25)
         assert arrows == [0]
         np.testing.assert_array_equal(frames[0], expected)
         scene.render_frame(0.0, dpi=25)

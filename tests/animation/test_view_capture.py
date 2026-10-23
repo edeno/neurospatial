@@ -188,7 +188,7 @@ def test_encoding_failure_restores_time_and_removes_partial_file(
     monkeypatch.setattr(imageio, "get_writer", lambda *args, **kw: BrokenWriter())
     with _view(scene) as view:
         with pytest.raises(RuntimeError, match="encoder unavailable"):
-            view.export(tmp_path / "failed.mp4")
+            view.export(tmp_path / "failed.gif")
         assert view.time == 100.25
         assert view.native.playing
         assert not list(tmp_path.iterdir())
