@@ -497,13 +497,11 @@ class SceneRenderer:
         from matplotlib.collections import LineCollection
 
         units = range(len(raster.spike_times))
-        rows = [
-            ax.add_collection(
-                LineCollection([], colors=raster.color, linewidths=raster.linewidth),
-                autolim=False,
-            )
-            for _ in units
-        ]
+        # One collection for every unit: the ticks share their style.
+        ticks = ax.add_collection(
+            LineCollection([], colors=raster.color, linewidths=raster.linewidth),
+            autolim=False,
+        )
         # Fixed rows: the limits Matplotlib fits when every unit has a spike
         # in view, so rows stay put while units fall silent.
         ax.update_datalim([(0.0, -0.4), (0.0, len(units) - 0.6)])
@@ -514,12 +512,7 @@ class SceneRenderer:
         time_axis = self._time_axis(ax)
 
         def update(time: float) -> None:
-            for unit, row in zip(units, rows, strict=True):
-                spikes = self.prepared.raster_window(raster, unit, time)
-                segments = np.empty((len(spikes), 2, 2))
-                segments[:, :, 0] = spikes[:, None]
-                segments[:, :, 1] = [unit - 0.4, unit + 0.4]
-                row.set_segments(segments)
+            ticks.set_segments(self.prepared.raster_ticks(raster, time))
             time_axis(time)
 
         return update

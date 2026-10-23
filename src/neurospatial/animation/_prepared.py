@@ -617,6 +617,29 @@ class PreparedScene:
             ],
         )
 
+    def raster_ticks(self, raster: Any, time: float) -> NDArray[np.float64]:
+        """Every unit's spikes in the current window as tick segments.
+
+        Returns
+        -------
+        ndarray of float64, shape (n_spikes, 2, 2)
+            Each tick from ``(spike time, row - 0.4)`` to
+            ``(spike time, row + 0.4)``; row ``i`` is the raster's ``i``-th
+            unit, bottom first.
+        """
+        windows = [
+            self.raster_window(raster, row, time)
+            for row in range(len(raster.spike_times))
+        ]
+        spikes = np.concatenate([np.empty(0), *windows])
+        rows = np.repeat(
+            np.arange(len(windows), dtype=float), [len(w) for w in windows]
+        )
+        ticks = np.empty((len(spikes), 2, 2))
+        ticks[:, :, 0] = spikes[:, None]
+        ticks[:, 0, 1], ticks[:, 1, 1] = rows - 0.4, rows + 0.4
+        return ticks
+
     def track_window(self, field: AnimationField, time: float) -> TrackWindow:
         """Derive cells only for authoritative supported native field intervals."""
         assert self.track_extents is not None
