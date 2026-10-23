@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import shutil
 import tempfile
 import warnings
@@ -193,15 +194,22 @@ _FRAME_NAME = re.compile(r"frame_\d+\.(png|jpeg)")
 
 @contextmanager
 def _temporary_sibling(path: Path) -> Iterator[Path]:
-    """A temporary file beside ``path``, removed unless moved into place."""
-    descriptor, name = tempfile.mkstemp(
-        suffix=path.suffix, prefix=".animation-", dir=path.parent
-    )
-    os.close(descriptor)
+    """A temporary file beside ``path``, removed unless moved into place.
+
+    Unlike ``tempfile.mkstemp`` (owner-only), the file gets the permissions
+    the user's umask gives any new file, which the published file keeps.
+    """
+    while True:
+        name = path.parent / f".animation-{secrets.token_hex(8)}{path.suffix}"
+        try:
+            os.close(os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666))
+            break
+        except FileExistsError:
+            continue
     try:
-        yield Path(name)
+        yield name
     finally:
-        Path(name).unlink(missing_ok=True)
+        name.unlink(missing_ok=True)
 
 
 def _checked_frames(

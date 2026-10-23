@@ -5,6 +5,7 @@ import io
 import json
 import pickle
 import re
+import sys
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import unquote
@@ -318,3 +319,16 @@ def test_unpicklable_field_names_itself_before_rendering(scene, tmp_path):
         lazy.export(tmp_path / "a.gif", n_workers=2)
     assert not list(tmp_path.iterdir())
 
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+@pytest.mark.parametrize("name", ["movie.gif", "player.html"])
+def test_published_files_get_the_usual_permissions(scene, tmp_path, name):
+    import os
+
+    umask = os.umask(0o022)
+    try:
+        path = scene.export(tmp_path / name, fps=10, dpi=20)
+    finally:
+        os.umask(umask)
+    # Readable by others, e.g. a web server, like any file the user writes.
+    assert path.stat().st_mode & 0o777 == 0o644
