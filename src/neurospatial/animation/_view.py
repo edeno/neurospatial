@@ -417,9 +417,9 @@ def show_animation(
     if backend == "widget":
         return _notebook_view(animation, **kwargs)
     if backend == "napari":
-        from neurospatial.animation.backends._napari_scene import build_napari_scene
+        from neurospatial.animation.backends._napari_scene import NapariScene
 
-        handle = build_napari_scene(animation, **kwargs)
+        handle = NapariScene(animation, **kwargs)
         return AnimationView._from_backend(
             animation, _NativeBackendView(handle.viewer, handle)
         )

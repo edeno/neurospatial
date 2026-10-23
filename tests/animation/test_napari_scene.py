@@ -160,8 +160,6 @@ def test_native_3d_overlays_keep_z_and_persistent_layers():
 
 @pytest.mark.napari
 def test_native_qt_capture_restores_time_camera_and_custom_graphics():
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
-
     env = Environment.from_grid_mask(
         np.ones((2, 2, 2), dtype=bool),
         tuple(np.array([0.0, 5.0, 10.0]) for _ in range(3)),
@@ -169,7 +167,7 @@ def test_native_qt_capture_restores_time_camera_and_custom_graphics():
     scene = Animation(
         env, np.arange(3 * env.n_bins).reshape(3, -1), frame_times=[10.0, 10.2, 10.4]
     )
-    handle = build_napari_scene(scene, show=True)
+    handle = NapariScene(scene, show=True)
     handle.viewer.add_points(
         [[8.0, 5.0, 2.0]], name="User annotation", face_color="red", size=4
     )
@@ -253,7 +251,6 @@ def test_irregular_cells_use_physical_bin_centers_and_keep_missing_values():
 
 @pytest.mark.napari
 def test_scientific_dock_capture_preserves_annotations_and_panel_artists():
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
     from neurospatial.animation.overlays import (
         EpochOverlay,
         SpikeRasterOverlay,
@@ -276,7 +273,7 @@ def test_scientific_dock_capture_preserves_annotations_and_panel_artists():
             EpochOverlay([(10.0, 10.25)], label="Run"),
         ],
     )
-    handle = build_napari_scene(scene, show=True)
+    handle = NapariScene(scene, show=True)
     try:
         panels = handle._panels
         panels.axes[0].text(10.2, 1.0, "Scientist note", color="white")
@@ -334,13 +331,11 @@ def test_scientific_dock_draws_the_scene_renderers_panels():
 def test_native_window_close_stops_playback_and_releases_helper():
     from qtpy.QtWidgets import QApplication
 
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
-
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     )
     scene = Animation(env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.2])
-    handle = build_napari_scene(scene, show=True)
+    handle = NapariScene(scene, show=True)
     timer_deleted = []
     handle.timer.destroyed.connect(lambda: timer_deleted.append(True))
     assert not hasattr(handle._helper, "figure")
@@ -564,8 +559,6 @@ def test_native_async_reads_keep_qt_responsive_and_capture_discards_pending(
     from qtpy.QtCore import QTimer
     from qtpy.QtWidgets import QApplication
 
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
-
     class Rows:
         shape = (6, 4)
 
@@ -589,7 +582,7 @@ def test_native_async_reads_keep_qt_responsive_and_capture_discards_pending(
     )
     rows = Rows()
     scene = Animation(env, AnimationField(rows, np.arange(6) * 0.2, vmin=0, vmax=5))
-    handle = build_napari_scene(scene, show=True)
+    handle = NapariScene(scene, show=True)
     try:
         rows.block = True
         main_thread = get_ident()
@@ -668,7 +661,6 @@ def test_native_field_names_cannot_collide_with_prepared_metadata():
 @pytest.mark.parametrize("dimensions", [2, 3])
 def test_native_marker_capture_keeps_diameter_when_camera_zooms(dimensions):
     from neurospatial.animation.backends._napari_compat import scene_camera
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
 
     env = Environment.from_grid_mask(
         np.ones((2,) * dimensions, dtype=bool),
@@ -687,7 +679,7 @@ def test_native_marker_capture_keeps_diameter_when_camera_zooms(dimensions):
             ),
         ],
     )
-    handle = build_napari_scene(scene, show=True)
+    handle = NapariScene(scene, show=True)
     try:
         handle.field_layers["field"].visible = False
         camera = scene_camera(handle.viewer)
@@ -709,8 +701,6 @@ def test_native_marker_capture_keeps_diameter_when_camera_zooms(dimensions):
 
 @pytest.mark.napari
 def test_native_track_panel_keeps_collections_across_seeks_and_clears_cache():
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
-
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     )
@@ -718,7 +708,7 @@ def test_native_track_panel_keeps_collections_across_seeks_and_clears_cache():
     scene = Animation(
         env, np.arange(12).reshape(3, 4), frame_times=[0.0, 0.1, 0.2], track=track
     )
-    handle = build_napari_scene(scene, show=True)
+    handle = NapariScene(scene, show=True)
     try:
         panels = handle._panels
         artists = list(panels.axes[0].collections)
@@ -800,7 +790,6 @@ def _layout_scene():
 @pytest.mark.napari
 def test_layout_draws_overlays_and_regions_in_every_field_panel():
     from neurospatial.animation.backends._napari_compat import canvas_grid
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
 
     scene = _layout_scene()
     # The single-panel view defines the environment-to-napari transform.
@@ -810,7 +799,7 @@ def test_layout_draws_overlays_and_regions_in_every_field_panel():
         for layer in reference.viewer.layers
         if layer not in reference.field_layers.values()
     ]
-    handle = build_napari_scene(scene, layout="horizontal", show=True)
+    handle = NapariScene(scene, layout="horizontal", show=True)
     try:
         layers = list(handle.viewer.layers)
         grid = canvas_grid(handle.viewer)
@@ -877,7 +866,6 @@ def test_layout_draws_overlays_and_regions_in_every_field_panel():
 @pytest.mark.napari
 def test_3d_layout_draws_overlays_in_every_volume_panel():
     from neurospatial.animation.backends._napari_compat import canvas_grid
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
 
     env = Environment.from_grid_mask(
         np.ones((2, 2, 2), dtype=bool),
@@ -890,7 +878,7 @@ def test_3d_layout_draws_overlays_in_every_volume_panel():
         frame_times=times,
         overlays=[PositionOverlay(np.array([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]]), times)],
     )
-    handle = build_napari_scene(scene, layout="horizontal", show=True)
+    handle = NapariScene(scene, layout="horizontal", show=True)
     try:
         assert handle.viewer.dims.ndisplay == 3
         assert canvas_grid(handle.viewer).stride == 2
@@ -909,7 +897,6 @@ def test_3d_layout_draws_overlays_in_every_volume_panel():
 @pytest.mark.napari
 def test_vertical_layout_keeps_video_below_each_panel_field():
     from neurospatial.animation.backends._napari_compat import canvas_grid
-    from neurospatial.animation.backends._napari_scene import build_napari_scene
     from neurospatial.animation.overlays import VideoData
 
     class Video:
@@ -939,7 +926,7 @@ def test_vertical_layout_keeps_video_below_each_panel_field():
         frame_times=times,
         overlays=[Video(), PositionOverlay(np.full((2, 2), 20.0), times)],
     )
-    handle = build_napari_scene(scene, layout="vertical", show=True)
+    handle = NapariScene(scene, layout="vertical", show=True)
     try:
         grid = canvas_grid(handle.viewer)
         assert grid.shape == (2, 1) and grid.stride == 3

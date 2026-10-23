@@ -179,7 +179,11 @@ class _ScientificPanels:
 
 
 class NapariScene:
-    """One persistent native viewer and absolute recording-time controls."""
+    """One persistent native viewer and absolute recording-time controls.
+
+    ``Animation.show(backend="napari")`` checks the request (options,
+    dimensions and regions) before creating the viewer.
+    """
 
     def __init__(self, scene: Any, **options: Any) -> None:
         try:
@@ -206,16 +210,6 @@ class NapariScene:
         )
 
         scene._ensure_open()
-        allowed = {"viewer", "show", "ndisplay", "title", "fps", "speed", "layout"}
-        unknown = set(options) - allowed
-        if unknown:
-            raise TypeError(
-                f"Unknown napari scene options: {', '.join(sorted(unknown))}."
-            )
-        if scene.env.n_dims == 1:
-            raise ValueError(
-                "Napari scene viewing requires 2D or 3D coordinates; use backend='widget' for a 1D track."
-            )
         self.scene, self._closed = scene, False
         self._close_notification = _CloseNotification()
         self._time = float(scene.frame_times[0])
@@ -255,8 +249,6 @@ class NapariScene:
             # Each stream retains a separate layer, scale and colormap. A layout
             # gives every field its own panel holding copies of the overlays.
             layout = options.get("layout")
-            if layout not in (None, "horizontal", "vertical", "grid"):
-                raise ValueError("layout must be 'horizontal', 'vertical' or 'grid'.")
             self._build_fields(split=layout is not None)
             self._build_overlays()
             if layout is not None:
@@ -787,11 +779,8 @@ class NapariScene:
                     face_color="white",
                     opacity=scene.region_alpha,
                 )
-            elif region.kind == "polygon":
-                if region.data.interiors:
-                    raise ValueError(
-                        "Napari region polygons with holes require a raster mask; omit show_regions or use backend='widget'."
-                    )
+            else:
+                # The view request admitted only point and hole-free polygons.
                 self._add_overlay(
                     "shapes",
                     [np.asarray(region.data.exterior.coords)[:, ::-1]],
@@ -799,10 +788,6 @@ class NapariScene:
                     name=f"Region: {name}",
                     face_color="white",
                     opacity=scene.region_alpha,
-                )
-            else:
-                raise ValueError(
-                    f"Napari cannot draw region kind {region.kind!r}; omit show_regions."
                 )
 
     def _validate_time(self, time: float) -> float:
@@ -1078,8 +1063,3 @@ class NapariScene:
         finally:
             if self._owns_viewer:
                 self.viewer.close()
-
-
-def build_napari_scene(animation: Any, **options: Any) -> NapariScene:
-    """Create native scalar layers with independent streams on physical time."""
-    return NapariScene(animation, **options)

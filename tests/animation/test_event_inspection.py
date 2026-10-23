@@ -468,7 +468,7 @@ def test_napari_scene_view_uses_physical_clock_adapter(recording, monkeypatch):
         _add_close_callback=Mock(),
     )
     build = Mock(return_value=handle)
-    monkeypatch.setattr(_napari_scene, "build_napari_scene", build)
+    monkeypatch.setattr(_napari_scene, "NapariScene", build)
     view = recording.show(backend="napari", show=False)
     try:
         build.assert_called_once_with(recording, show=False)

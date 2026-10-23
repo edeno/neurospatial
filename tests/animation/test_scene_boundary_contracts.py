@@ -231,7 +231,7 @@ def test_napari_layout_accepts_overlays_and_regions(env, option, monkeypatch):
     regions.add("reward", point=(1, 1))
     env = env.with_regions(regions)
     build = Mock()
-    monkeypatch.setattr(_napari_scene, "build_napari_scene", build)
+    monkeypatch.setattr(_napari_scene, "NapariScene", build)
     times = np.array([0, 0.1])
     with Animation(
         env,
@@ -257,7 +257,7 @@ def test_napari_holes_rejected_before_viewer_allocation(env, monkeypatch):
     )
     env = env.with_regions(regions)
     build = Mock()
-    monkeypatch.setattr(_napari_scene, "build_napari_scene", build)
+    monkeypatch.setattr(_napari_scene, "NapariScene", build)
     with (
         Animation(
             env, np.ones((2, env.n_bins)), frame_times=[0, 0.1], show_regions=True
@@ -326,7 +326,7 @@ def test_napari_1d_rejected_before_native_allocation(monkeypatch):
 
     env = Environment.from_samples(np.arange(5.0)[:, None], bin_size=1)
     build = Mock()
-    monkeypatch.setattr(_napari_scene, "build_napari_scene", build)
+    monkeypatch.setattr(_napari_scene, "NapariScene", build)
     with (
         Animation(env, np.ones((2, env.n_bins)), frame_times=[0, 0.1]) as scene,
         pytest.raises(ValueError, match="cannot draw 1D"),
@@ -377,7 +377,7 @@ def test_napari_invalid_ndisplay_rejected_before_native_allocation(env, monkeypa
     from neurospatial.animation.backends import _napari_scene
 
     build = Mock()
-    monkeypatch.setattr(_napari_scene, "build_napari_scene", build)
+    monkeypatch.setattr(_napari_scene, "NapariScene", build)
     with (
         Animation(env, np.ones((2, env.n_bins)), frame_times=[0, 0.1]) as scene,
         pytest.raises(ValueError, match="ndisplay must be 2 or 3"),
