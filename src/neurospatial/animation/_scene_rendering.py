@@ -598,7 +598,7 @@ class SceneRenderer:
                 rate = self.prepared.sample(
                     vectors, vectors.firing_rates, time, name="firing_rates"
                 )
-                opacity = _rate_opacity(float(rate), vectors._rate_peak or 1.0)
+                opacity = _rate_opacity(float(rate), vectors._rate_peak)
             finite = np.isfinite(objects).all(axis=1)
             for marker, point in zip(markers, objects, strict=True):
                 _set_points(marker, point[None])

@@ -649,7 +649,7 @@ class NapariScene:
                 opacity = None
                 if v.firing_rates is not None:
                     rate = helper.sample(v, v.firing_rates, time, name="firing_rates")
-                    opacity = _rate_opacity(float(rate), v._rate_peak or 1.0)
+                    opacity = _rate_opacity(float(rate), v._rate_peak)
                 return points(targets), vectors, opacity
 
             def apply_vectors(

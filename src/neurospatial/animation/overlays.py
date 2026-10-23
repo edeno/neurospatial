@@ -3674,7 +3674,8 @@ class ObjectVectorData(_SampledData):
     sample_valid: NDArray[np.bool_] = None  # type: ignore[assignment]
     interval_valid: NDArray[np.bool_] = None  # type: ignore[assignment]
 
-    _rate_peak: float | None = field(default=None, repr=False, compare=False)
+    # The full recording's finite peak rate; 0 until computed, then positive.
+    _rate_peak: float = field(default=0.0, repr=False, compare=False)
     # Support of firing_rates: valid positions with a finite rate.
     _rate_support: tuple[NDArray[np.bool_], NDArray[np.bool_]] | None = field(
         default=None, init=False, repr=False, compare=False
@@ -3698,7 +3699,7 @@ class ObjectVectorData(_SampledData):
                 self.firing_rates, self.sample_valid, self.interval_valid
             )
             self._rate_support = (rate_support[0], rate_support[1])
-        if self._rate_peak is None:
+        if not self._rate_peak:
             from neurospatial.animation._style import _finite_rate_peak
 
             # One finite full-recording peak keeps the opacity scale stable
