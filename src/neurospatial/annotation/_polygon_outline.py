@@ -9,7 +9,11 @@ from numpy.typing import NDArray
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial._results import read_only_copy
-from neurospatial.annotation.segmentation import SegmentationProposal, mask_to_polygons
+from neurospatial.annotation.segmentation import (
+    SegmentationProposal,
+    _simplify_together,
+    mask_to_polygons,
+)
 
 
 def _tolerance(value: float) -> float:
@@ -83,23 +87,16 @@ def simplify_polygon_outline(
 ) -> PolygonOutline:
     """Derive a preview from cached exact geometry without changing its mask.
 
-    Simplifying the complete MultiPolygon together preserves relationships
-    between components as well as holes. No dilation or hole filling occurs.
+    Components are simplified together, as ``mask_to_polygons`` does, keeping
+    every component and hole.
     """
     tolerance = _tolerance(tolerance_px)
     if exact_outline.simplify_tolerance_px != 0.0:
         raise ValueError("Simplify the cached exact outline, not an earlier preview.")
     if tolerance == 0.0:
         return exact_outline
-    geometry = MultiPolygon(exact_outline.polygons).simplify(
-        tolerance, preserve_topology=True
+    return PolygonOutline(
+        exact_outline.proposal,
+        _simplify_together(exact_outline.polygons, tolerance),
+        tolerance,
     )
-    if not isinstance(geometry, Polygon | MultiPolygon) or not geometry.is_valid:
-        raise ValueError("Simplification did not preserve valid outline geometry.")
-    # GEOS may unwrap a one-component MultiPolygon into a Polygon.
-    polygons = (geometry,) if isinstance(geometry, Polygon) else tuple(geometry.geoms)
-    if len(polygons) != len(exact_outline.polygons) or sorted(
-        len(polygon.interiors) for polygon in polygons
-    ) != sorted(len(polygon.interiors) for polygon in exact_outline.polygons):
-        raise ValueError("Simplification did not preserve every component and hole.")
-    return PolygonOutline(exact_outline.proposal, polygons, tolerance)

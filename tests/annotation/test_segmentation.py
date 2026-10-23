@@ -68,6 +68,35 @@ def test_simplification_preserves_every_component_and_hole():
     assert all(p.is_valid and not p.is_empty for p in simplified)
 
 
+def test_simplified_components_never_overlap_and_match_the_outline_preview():
+    from neurospatial.annotation._polygon_outline import (
+        polygon_outline,
+        simplify_polygon_outline,
+    )
+
+    # Simplifying these components one at a time makes neighbors overlap.
+    mask = np.array(
+        [
+            [0, 1, 1, 0, 0, 1],
+            [0, 0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 1, 0],
+            [0, 1, 0, 1, 0, 0],
+            [1, 0, 1, 1, 0, 1],
+            [1, 1, 1, 1, 1, 0],
+        ],
+        dtype=bool,
+    )
+    simplified = mask_to_polygons(mask, simplify_tolerance=1.0)
+    assert len(simplified) == len(mask_to_polygons(mask))
+    assert all(
+        a.intersection(b).area == 0
+        for i, a in enumerate(simplified)
+        for b in simplified[i + 1 :]
+    )
+    preview = simplify_polygon_outline(polygon_outline(SegmentationProposal(mask)), 1.0)
+    assert sorted(p.wkt for p in simplified) == sorted(p.wkt for p in preview.polygons)
+
+
 @pytest.mark.parametrize("tolerance", [-1, np.nan, np.inf])
 def test_mask_polygon_tolerance_validation(tolerance):
     with pytest.raises(ValueError, match="finite and nonnegative"):

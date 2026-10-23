@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import KW_ONLY, dataclass
 from pathlib import Path
@@ -18,7 +18,7 @@ import numpy as np
 import shapely
 from numpy.typing import NDArray
 from scipy import ndimage
-from shapely.geometry import Polygon
+from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial._results import ReadOnlyArraysMixin, read_only_copy
 from neurospatial.regions.core import _require_json_metadata
@@ -507,6 +507,26 @@ class SegmentAnythingProvider:
         )
 
 
+def _simplify_together(
+    polygons: Sequence[Polygon], tolerance: float
+) -> tuple[Polygon, ...]:
+    """Simplify components as one MultiPolygon, keeping every component and hole.
+
+    Simplifying together keeps components from overlapping one another. No
+    dilation or hole filling occurs.
+    """
+    geometry = MultiPolygon(polygons).simplify(tolerance, preserve_topology=True)
+    if not isinstance(geometry, Polygon | MultiPolygon) or not geometry.is_valid:
+        raise ValueError("Simplification did not preserve valid outline geometry.")
+    # GEOS may unwrap a one-component MultiPolygon into a Polygon.
+    simplified = (geometry,) if isinstance(geometry, Polygon) else tuple(geometry.geoms)
+    if len(simplified) != len(polygons) or sorted(
+        len(polygon.interiors) for polygon in simplified
+    ) != sorted(len(polygon.interiors) for polygon in polygons):
+        raise ValueError("Simplification did not preserve every component and hole.")
+    return simplified
+
+
 def mask_to_polygons(
     mask: NDArray[np.bool_], *, simplify_tolerance: float = 0.0
 ) -> list[Polygon]:
@@ -518,8 +538,9 @@ def mask_to_polygons(
         Foreground support; an empty foreground returns an empty list.
     simplify_tolerance : float, default=0.0
         Finite nonnegative simplification distance in pixels. Zero preserves
-        exact support and area. Positive values use topology preservation,
-        keeping components and holes while approximating their boundaries.
+        exact support and area. Positive values simplify all components
+        together with topology preservation, so components cannot overlap and
+        every component and hole is kept.
 
     Returns
     -------
@@ -527,6 +548,12 @@ def mask_to_polygons(
         Deterministically sorted by bounds and area. Pixel ``(x, y)`` denotes
         its center, so one pixel covers ``[x-.5, x+.5] × [y-.5, y+.5]``.
         All connected components and interior holes are preserved.
+
+    Raises
+    ------
+    ValueError
+        If simplification cannot keep every component and hole valid; use a
+        smaller ``simplify_tolerance``.
 
     Examples
     --------
@@ -547,10 +574,7 @@ def mask_to_polygons(
     )
     polygons = [merged] if isinstance(merged, Polygon) else list(merged.geoms)
     if simplify_tolerance:
-        polygons = [
-            polygon.simplify(simplify_tolerance, preserve_topology=True)
-            for polygon in polygons
-        ]
+        polygons = list(_simplify_together(polygons, simplify_tolerance))
     return sorted(
         polygons, key=lambda polygon: (*polygon.bounds, polygon.area, polygon.wkb)
     )
