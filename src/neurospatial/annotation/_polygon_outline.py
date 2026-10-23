@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 from shapely.geometry import MultiPolygon, Polygon
 
+from neurospatial._results import read_only_copy
 from neurospatial.annotation.segmentation import SegmentationProposal, mask_to_polygons
 
 
@@ -67,8 +68,7 @@ class PolygonOutline:
         arrays = []
         for polygon in self.polygons:
             for ring in (polygon.exterior, *polygon.interiors):
-                coords = np.array(ring.coords, dtype=np.float64, copy=True)
-                coords.setflags(write=False)
+                coords = read_only_copy(ring.coords, np.float64)
                 arrays.append(coords)
         return tuple(arrays)
 

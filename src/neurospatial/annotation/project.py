@@ -20,6 +20,7 @@ from zipfile import BadZipFile
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._results import read_only_copy
 from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
 from neurospatial.ops.transforms import Affine2D, VideoCalibration
 from neurospatial.regions.core import (
@@ -71,7 +72,7 @@ class AnnotationShape:
 
     def __post_init__(self) -> None:
         """Own coordinates and metadata without requiring valid geometry."""
-        vertices = np.array(self.vertices, dtype=np.float64, copy=True)
+        vertices = read_only_copy(self.vertices, np.float64)
         if vertices.ndim != 2 or vertices.shape[1] != 2:
             raise ValueError("Shape vertices must have shape (n_vertices, 2).")
         if not np.all(np.isfinite(vertices)):
@@ -90,7 +91,6 @@ class AnnotationShape:
         metadata = _thaw_metadata(self.metadata)
         # Non-finite floats are kept, as Region metadata allows them.
         _require_json_metadata(metadata, allow_nan=True)
-        vertices.setflags(write=False)
         object.__setattr__(self, "vertices", vertices)
         object.__setattr__(self, "metadata", _freeze_metadata(metadata))
 
@@ -209,7 +209,7 @@ class AnnotationProject:
         multiple_boundaries: MultipleBoundaryStrategy = "last",
     ) -> None:
         """Validate a structurally complete snapshot of an editable draft."""
-        frame = np.array(frame, copy=True)
+        frame = read_only_copy(frame)
         if (
             frame.dtype != np.uint8
             or frame.ndim != 3
@@ -276,7 +276,6 @@ class AnnotationProject:
             if calibration is None
             else _copy_calibration(calibration, (frame.shape[1], frame.shape[0]))
         )
-        frame.setflags(write=False)
         for name, stored_value in (
             ("frame", frame),
             ("shapes", shapes_tuple),

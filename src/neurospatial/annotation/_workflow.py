@@ -23,6 +23,7 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
     QWidget,
 )
 
+from neurospatial._results import read_only_copy
 from neurospatial.annotation._assist_widget import AnnotationAssistWidget
 from neurospatial.annotation._draft import add_polygons, annotation_roles
 from neurospatial.annotation._polygon_outline import PolygonOutline
@@ -108,8 +109,7 @@ class AnnotationProjectSession:
         self.viewer = viewer
         self.layer = shapes_layer
         self.controls = controls
-        self.frame = np.array(frame, copy=True)
-        self.frame.setflags(write=False)
+        self.frame = read_only_copy(frame)
         self.video_path = video_path
         self.frame_index = frame_index
         self.calibration = calibration
