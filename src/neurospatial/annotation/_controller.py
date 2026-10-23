@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple, cast
 from uuid import uuid4
 
+from neurospatial.annotation._draft import annotation_roles, reset_identity_defaults
 from neurospatial.annotation._helpers import (
     REGION_TYPE_COLORS,
     rebuild_features,
@@ -30,13 +31,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import napari
-
-
-def _reset_identity_defaults(shapes: napari.layers.Shapes) -> None:
-    """Fresh drawings must not inherit a selected ring's identity."""
-    for column in ("_polygon_id", "_parent_id"):
-        if column in shapes.feature_defaults:
-            shapes.feature_defaults[column] = ""
 
 
 class UpdateFeaturesResult(NamedTuple):
@@ -126,7 +120,7 @@ class ShapesLayerController:
             self.shapes.mode = "add_path"
         elif region_type != "landmark":
             self.shapes.mode = "add_polygon"
-        _reset_identity_defaults(self.shapes)
+        reset_identity_defaults(self.shapes)
 
     def get_existing_names(self) -> list[str]:
         """Get list of existing shape names.
@@ -145,12 +139,13 @@ class ShapesLayerController:
         return [str(n) for n in features.get("name", [])]
 
     def get_existing_region_types(self) -> list[RegionType]:
-        """Get list of existing shape region types.
+        """Get list of existing annotation region types.
 
         Returns
         -------
         list of RegionType
-            Region types of all shapes in the layer.
+            One region type per annotation. An environment's interior ring
+            counts as a hole; a region's interior ring is part of that region.
 
         """
         if self.shapes is None or len(self.shapes.data) == 0:
@@ -158,8 +153,7 @@ class ShapesLayerController:
         features = self.shapes.features
         if features is None or len(features) == 0:
             return []
-        # Cast to RegionType (validated by napari widget constraints)
-        return [cast("RegionType", str(r)) for r in features.get("role", [])]
+        return annotation_roles(features)
 
     def shape_count(self) -> int:
         """Get current number of shapes in the layer."""
@@ -213,6 +207,11 @@ class ShapesLayerController:
         if delta <= 0:
             return UpdateFeaturesResult("", False, "")
 
+        # Number auto-names after the annotations that still exist.
+        self.state.sync_counts_from_region_types(
+            annotation_roles(self.shapes.features.iloc[:prev_count])
+        )
+
         # Get current features (napari may have auto-populated with defaults)
         features_len = (
             len(self.shapes.features) if self.shapes.features is not None else 0
@@ -235,17 +234,21 @@ class ShapesLayerController:
 
         # Add entries for new shapes (from prev_count to current_count)
         for index in range(prev_count, current_count):
-            # Clipboard rows already carry an identity and parent association.
-            # Preserve them so conversion can reject duplicate IDs explicitly.
+            # Clipboard rows already carry an identity and parent association;
+            # keep their role, and their name unless it is already taken.
             if (
                 "_polygon_id" in self.shapes.features
                 and self.shapes.features["_polygon_id"].iloc[index]
             ):
-                role = cast("RegionType", str(self.shapes.features["role"].iloc[index]))
+                row = self.shapes.features.iloc[[index]]
+                role = cast("RegionType", str(row["role"].iloc[0]))
                 region_types.append(role)
-                assigned_name = str(self.shapes.features["name"].iloc[index])
+                assigned_name = str(row["name"].iloc[0])
+                if not row["_parent_id"].iloc[0]:
+                    assigned_name = make_unique_name(assigned_name, names)
                 names.append(assigned_name)
-                self.state.record_shape_added(role)
+                for counted in annotation_roles(row):
+                    self.state.record_shape_added(counted)
                 continue
             region_types.append(self.state.region_type)
 
@@ -278,7 +281,7 @@ class ShapesLayerController:
 
         # Update layer defaults to match assigned name
         self.shapes.feature_defaults["name"] = assigned_name
-        _reset_identity_defaults(self.shapes)
+        reset_identity_defaults(self.shapes)
 
         # Get the region_type of the last shape added
         last_role = str(self.state.region_type)
@@ -321,6 +324,7 @@ class ShapesLayerController:
             self.shapes.features = self.shapes.features.drop(
                 columns=marker, errors="ignore"
             )
+            reset_identity_defaults(self.shapes)
         if not indices_to_delete:
             return 0
 
@@ -359,7 +363,7 @@ class ShapesLayerController:
         self.shapes.selected_data = set()
         self.shapes.mode = old_mode
         self.shapes.refresh()
-        _reset_identity_defaults(self.shapes)
+        reset_identity_defaults(self.shapes)
 
         # Notify the widget synchronously: queued napari events may arrive after
         # another drawing and must not mistake the deletion for an addition.

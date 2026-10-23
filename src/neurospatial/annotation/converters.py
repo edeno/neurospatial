@@ -384,6 +384,13 @@ def subtract_holes_from_boundary(
         raise ValueError(
             "Subtracting environment holes produced invalid geometry; edit the boundary or holes before saving."
         )
+    if result_poly.geom_type != "Polygon":
+        raise ValueError(
+            f"Subtracting environment holes split the boundary into "
+            f"{len(getattr(result_poly, 'geoms', ()))} separate areas. The "
+            "environment must be one connected area: shrink or delete the hole "
+            "that crosses it."
+        )
 
     # Create new region with updated polygon
     metadata = dict(boundary.metadata)

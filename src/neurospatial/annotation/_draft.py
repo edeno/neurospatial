@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import numpy as np
@@ -12,6 +12,8 @@ from shapely.geometry import Polygon
 
 from neurospatial.annotation._types import RegionType
 from neurospatial.ops.transforms import VideoCalibration
+
+_IDENTITY_COLUMNS = ("_polygon_id", "_parent_id")
 
 
 @dataclass
@@ -42,8 +44,12 @@ def add_polygon(
     )
     from neurospatial.regions.core import _thaw_metadata
 
-    if polygon.geom_type != "Polygon" or not polygon.is_valid:
-        raise ValueError(f"Initial polygon '{name}' must be a valid Polygon.")
+    # Invalid geometry still loads, so it can be repaired; saving validates it.
+    if polygon.geom_type != "Polygon":
+        raise TypeError(
+            f"Initial polygon '{name}' must be a shapely Polygon, "
+            f"not {polygon.geom_type}."
+        )
     existing = layer.features.copy()
     identifier = uuid4().hex
     rings = [polygon.exterior, *polygon.interiors]
@@ -61,28 +67,85 @@ def add_polygon(
     rows["_polygon_id"] = [identifier, *[uuid4().hex for _ in rings[1:]]]
     rows["_parent_id"] = ["", *[identifier for _ in rings[1:]]]
     combined = pd.concat([existing, rows], ignore_index=True)
-    for column in ("_polygon_id", "_parent_id"):
+    for column in _IDENTITY_COLUMNS:
         combined[column] = combined[column].fillna("")
     layer.features = combined
     layer.metadata.setdefault("_polygon_metadata", {})[identifier] = _thaw_metadata(
         metadata or {}
     )
-    # New drawings must never inherit the selected polygon's identity.
-    layer.feature_defaults["_polygon_id"] = ""
-    layer.feature_defaults["_parent_id"] = ""
+    reset_identity_defaults(layer)
     if not layer.metadata.get("_polygon_defaults_guard"):
-
-        def clear_identity_defaults(event: Any) -> None:
-            # Mutate defaults only: current_properties' setter can overwrite the
-            # selected shapes themselves in select mode.
-            for column in ("_polygon_id", "_parent_id"):
-                if column in layer.feature_defaults:
-                    layer.feature_defaults[column] = ""
-
-        layer.events.current_properties.connect(clear_identity_defaults)
-        layer.events.highlight.connect(clear_identity_defaults)
+        # Mutate defaults only: current_properties' setter can overwrite the
+        # selected shapes themselves in select mode.
+        layer.events.current_properties.connect(
+            lambda event: reset_identity_defaults(layer)
+        )
+        layer.events.highlight.connect(lambda event: reset_identity_defaults(layer))
+        # Napari's paste emits only a features event, before any other edit.
+        layer.events.features.connect(lambda event: _identify_copies(layer))
         layer.metadata["_polygon_defaults_guard"] = True
     sync_colors_from_features(layer)
+
+
+def reset_identity_defaults(layer: Any) -> None:
+    """Keep new drawings from inheriting a selected ring's identity.
+
+    Napari rebuilds ``feature_defaults`` from the last row whenever
+    ``features`` is assigned, so call this after every such assignment.
+    """
+    for column in _IDENTITY_COLUMNS:
+        if column in layer.feature_defaults:
+            layer.feature_defaults[column] = ""
+
+
+def _identify_copies(layer: Any) -> None:
+    """Give pasted copies their own identities, keeping their ring links.
+
+    A row repeating an earlier identity is a copy. A copied interior ring
+    follows the most recent copy of its exterior; one copied without its
+    exterior becomes a standalone polygon.
+    """
+    features = layer.features
+    if "_polygon_id" not in features:
+        return
+    ids = [str(identifier) for identifier in features["_polygon_id"]]
+    parents = [str(parent) for parent in features["_parent_id"]]
+    seen: set[str] = set()
+    copies: dict[str, str] = {}
+    copied = False
+    polygon_metadata = layer.metadata.setdefault("_polygon_metadata", {})
+    for index, identifier in enumerate(ids):
+        if not identifier or identifier not in seen:
+            seen.add(identifier)
+            continue
+        copied = True
+        ids[index] = copies[identifier] = uuid4().hex
+        seen.add(ids[index])
+        parents[index] = copies.get(parents[index], "")
+        if identifier in polygon_metadata:
+            polygon_metadata[ids[index]] = deepcopy(polygon_metadata[identifier])
+    if copied:
+        features = features.copy()
+        features["_polygon_id"] = ids
+        features["_parent_id"] = parents
+        layer.features = features
+        reset_identity_defaults(layer)
+
+
+def annotation_roles(features: Any) -> list[RegionType]:
+    """Return the role each row adds to the annotation counts.
+
+    An environment's interior ring is one of its holes. A region's interior
+    ring is part of that region and adds nothing.
+    """
+    roles = [cast("RegionType", str(role)) for role in features.get("role", [])]
+    if "_parent_id" not in features:
+        return roles
+    return [
+        role if not parent else "hole"
+        for role, parent in zip(roles, features["_parent_id"], strict=True)
+        if not parent or role == "environment"
+    ]
 
 
 def polygon_drafts(
@@ -95,11 +158,6 @@ def polygon_drafts(
     features = layer.features
     ids = list(features.get("_polygon_id", [""] * len(data)))
     parents = list(features.get("_parent_id", [""] * len(data)))
-    identities = [identifier for identifier in ids if identifier]
-    if len(identities) != len(set(identities)):
-        raise ValueError(
-            "Copied polygon rings have duplicate identities. Delete the copied shapes and draw new polygons before saving."
-        )
     output = []
     for index, (vertices, name, role) in enumerate(
         zip(data, names, roles, strict=True)

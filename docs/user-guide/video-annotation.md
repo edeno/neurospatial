@@ -263,9 +263,11 @@ Interior holes are retained when reopening either regions or an initial
 environment boundary. Each hole remains associated with its original polygon;
 a hole in a region does not remove that area from the environment.
 
-Edit these rings directly, or draw new shapes for additional regions.
-Copy/paste of reopened polygon rings is rejected because their parent
-associations would otherwise be ambiguous.
+Edit these rings directly, or draw new shapes for additional regions. A pasted
+copy of a polygon keeps its own holes and is independent of the original. A hole
+pasted without its polygon becomes a separate polygon. Polygons that are not
+valid, such as a self-intersecting outline from a LabelMe file, open for repair;
+saving reports the problem until it is fixed.
 
 ```python
 from neurospatial.regions import Regions, Region

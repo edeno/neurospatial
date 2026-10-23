@@ -2434,11 +2434,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Track topology edits invalidate manual linearization overrides, and result
   conversion rejects edge orders that omit, repeat or invent graph edges.
 - Reopening polygon annotations preserves interior rings and their parent
-  polygons. Invalid boundary and region polygons are rejected before the viewer
-  closes, keeping the draft available for correction instead of failing after editing.
+  polygons. Invalid initial polygons open for repair, and invalid boundary and
+  region polygons are rejected before the viewer closes, keeping the draft
+  available for correction instead of failing after editing.
   Simplification no longer implicitly repairs self-intersections.
-  Copy/paste of reopened polygon rings is rejected rather than guessing their
-  parent associations; edit their vertices or draw new shapes instead.
+  A pasted polygon gets its own identity with its own interior rings, so
+  deleting the original removes only the original's rings; an interior ring
+  pasted alone becomes a separate polygon. Annotation counts and auto-names
+  count an environment's interior rings as holes and a region's as part of it.
 - Annotation environments retain `"cm"` units when calibrated and `"pixels"`
   otherwise; track results carry the same units through `to_environment()`.
 - Native track-edge deletion and node renaming now use the same undoable state
@@ -2449,8 +2452,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   instead of being dropped during interactive saving; a dialog offers to keep
   editing or to discard the draft, which raises `RuntimeError`. Result warnings
   print to the console after the editor closes, and the editors also wait for
-  the user under IPython's `%gui qt`. Standalone converters retain their
-  documented permissive behavior.
+  the user under IPython's `%gui qt`. A hole that splits the environment into
+  separate areas raises an error that names the problem. Standalone converters
+  retain their documented permissive behavior.
 - Deleting polygon annotations keeps drawing bookkeeping synchronized, so the
   next shape receives its own name and role, including after deleting a polygon
   with interior rings.

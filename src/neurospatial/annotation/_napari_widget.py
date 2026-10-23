@@ -18,10 +18,8 @@ from magicgui.widgets import (
 )
 from numpy.typing import NDArray
 
-from neurospatial.annotation._controller import (
-    ShapesLayerController,
-    _reset_identity_defaults,
-)
+from neurospatial.annotation._controller import ShapesLayerController
+from neurospatial.annotation._draft import annotation_roles, reset_identity_defaults
 from neurospatial.annotation._helpers import (
     REGION_TYPE_CATEGORIES,
     REGION_TYPE_COLOR_CYCLE,
@@ -259,10 +257,7 @@ def create_annotation_widget(
         if shapes is None or len(shapes.data) == 0:
             state.sync_counts_from_region_types([])
         else:
-            region_types = [
-                cast("RegionType", str(r)) for r in shapes.features.get("role", [])
-            ]
-            state.sync_counts_from_region_types(region_types)
+            state.sync_counts_from_region_types(annotation_roles(shapes.features))
         annotation_status.value = state.status_text()
 
     def update_shapes_list() -> None:
@@ -611,7 +606,7 @@ def create_annotation_widget(
                         )
                         update_shapes_list()
                         update_annotation_status()
-                        _reset_identity_defaults(shapes)
+                        reset_identity_defaults(shapes)
 
                     _deferred_changes.append(delete_shape)
                     qt_core.QTimer.singleShot(0, flush_pending)
@@ -657,19 +652,20 @@ def create_annotation_widget(
             # Update name input to show the assigned name
             name_input.value = last_name
 
+        # Delete interior rings whose exterior was removed with napari's tool,
+        # including a removal that coincides with a pasted addition.
+        if "_parent_id" in shapes.features:
+            remaining = set(shapes.features["_polygon_id"])
+            orphans = {
+                i
+                for i, parent in enumerate(shapes.features["_parent_id"])
+                if parent and parent not in remaining
+            }
+            controller = get_controller()
+            if orphans and controller is not None:
+                controller.delete_shapes_by_indices(orphans)
+                current_count = len(shapes.data)
         if delta <= 0:
-            # Delete interior handles whose parent was removed with napari's tool.
-            if "_parent_id" in shapes.features:
-                remaining = set(shapes.features["_polygon_id"])
-                orphans = {
-                    i
-                    for i, parent in enumerate(shapes.features["_parent_id"])
-                    if parent and parent not in remaining
-                }
-                controller = get_controller()
-                if orphans and controller is not None:
-                    controller.delete_shapes_by_indices(orphans)
-                    current_count = len(shapes.data)
             update_shapes_list()
             update_annotation_status()
 
@@ -731,7 +727,9 @@ def create_annotation_widget(
         shapes.feature_defaults["role"] = role_selector.value
         shapes.feature_defaults["name"] = state.default_name()
         shapes.current_face_color = REGION_TYPE_COLORS[role_selector.value]
-        _reset_identity_defaults(shapes)
+        reset_identity_defaults(shapes)
+        # Count initial shapes, so auto-names continue their numbering.
+        update_annotation_status()
 
         # Note: shapes.events.selected_data doesn't exist in napari
         # (see napari issue #6886). Use highlight event as proxy for selection.
