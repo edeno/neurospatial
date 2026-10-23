@@ -102,7 +102,7 @@ class _NativeBackendView:
 
 
 class _CallbackBackendView:
-    """Compatibility adapter for the original AnimationView constructor."""
+    """A viewer controlled through plain callables, such as the notebook widget."""
 
     def __init__(
         self,
@@ -131,7 +131,7 @@ class _CallbackBackendView:
         self._close()
 
     def _add_close_callback(self, callback: Callable[[], None]) -> None:
-        # The compatibility constructor has no native lifecycle source.
+        # Callables carry no native close event; close() is the only path.
         pass
 
 

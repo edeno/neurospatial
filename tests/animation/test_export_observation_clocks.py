@@ -80,7 +80,7 @@ def test_export_retains_isolated_overlay_observations_and_excludes_stop(
             def capture_session():
                 yield capture
 
-            with AnimationView(
+            with AnimationView._from_callbacks(
                 scene,
                 SimpleNamespace(),
                 seek=lambda time: None,

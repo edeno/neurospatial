@@ -85,7 +85,7 @@ def _view(scene, *, fail=False):
         finally:
             native.time, native.playing = state
 
-    return AnimationView(
+    return AnimationView._from_callbacks(
         scene,
         native,
         seek=seek,

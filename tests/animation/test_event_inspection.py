@@ -285,7 +285,7 @@ def test_empty_filter_never_exports_stale_selection(recording, records, tmp_path
 def test_common_view_uses_recording_seconds_and_closes_once(recording, monkeypatch):
     moved, closed, exports = [], [], []
     native = object()
-    view = AnimationView(
+    view = AnimationView._from_callbacks(
         recording, native, seek=moved.append, close=lambda: closed.append(1)
     )
     assert view.native is native
@@ -314,7 +314,9 @@ def test_single_frame_view_exports_without_an_empty_explicit_range(recording, tm
         np.ones((1, recording.env.n_bins)),
         frame_times=[10.0],
     )
-    view = AnimationView(scene, object(), seek=lambda time: None, close=lambda: None)
+    view = AnimationView._from_callbacks(
+        scene, object(), seek=lambda time: None, close=lambda: None
+    )
     try:
         assert view.export(tmp_path / "still.gif", dpi=25).exists()
     finally:

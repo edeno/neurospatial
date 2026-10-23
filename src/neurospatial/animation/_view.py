@@ -38,8 +38,12 @@ class AnimationView:
     Closing a view leaves its scene available for other views and exports.
     """
 
-    def __init__(
-        self,
+    def __init__(self) -> None:
+        raise TypeError("Create a view with Animation.show().")
+
+    @classmethod
+    def _from_callbacks(
+        cls,
         animation: Animation,
         native: Any,
         *,
@@ -47,8 +51,9 @@ class AnimationView:
         close: Callable[[], None],
         read_time: Callable[[], float] | None = None,
         capture_session: _CaptureSession | None = None,
-    ) -> None:
-        self._initialize(
+    ) -> AnimationView:
+        """A view whose viewer is controlled through plain callables."""
+        return cls._from_backend(
             animation,
             _CallbackBackendView(
                 native,

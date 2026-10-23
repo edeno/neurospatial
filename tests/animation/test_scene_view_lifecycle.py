@@ -119,8 +119,12 @@ def test_scene_closes_all_views_before_reader_and_allows_pending_source_reads(en
             scene.show()
         events.append(name)
 
-    first = AnimationView(scene, object(), seek=Mock(), close=lambda: stop("first"))
-    second = AnimationView(scene, object(), seek=Mock(), close=lambda: stop("second"))
+    first = AnimationView._from_callbacks(
+        scene, object(), seek=Mock(), close=lambda: stop("first")
+    )
+    second = AnimationView._from_callbacks(
+        scene, object(), seek=Mock(), close=lambda: stop("second")
+    )
     scene.close()
     assert set(events[:-1]) == {"first", "second"}
     assert events[-1] == "reader"
@@ -138,8 +142,10 @@ def test_scene_closes_all_views_before_reader_and_allows_pending_source_reads(en
 def test_explicit_view_close_unregisters_and_preserves_other_consumers(env):
     scene = animation(env)
     closes = [Mock(), Mock()]
-    first = AnimationView(scene, object(), seek=Mock(), close=closes[0])
-    second = AnimationView(scene, object(), seek=Mock(), close=closes[1])
+    first = AnimationView._from_callbacks(scene, object(), seek=Mock(), close=closes[0])
+    second = AnimationView._from_callbacks(
+        scene, object(), seek=Mock(), close=closes[1]
+    )
     first.close()
     assert first not in scene._views and second in scene._views
     second.seek(0.1)
@@ -155,7 +161,7 @@ def test_scene_keeps_wrapper_alive_when_caller_retains_only_native(env):
     def stop():
         native.stopped = True
 
-    view = AnimationView(scene, native, seek=Mock(), close=stop)
+    view = AnimationView._from_callbacks(scene, native, seek=Mock(), close=stop)
     reference = weakref.ref(view)
     del view
     gc.collect()
@@ -169,7 +175,9 @@ def test_time_control_already_disposed_does_not_prevent_cleanup(env):
     scene = animation(env)
     close = Mock()
     read_time = Mock(side_effect=RuntimeError("native controls already disposed"))
-    view = AnimationView(scene, object(), seek=Mock(), close=close, read_time=read_time)
+    view = AnimationView._from_callbacks(
+        scene, object(), seek=Mock(), close=close, read_time=read_time
+    )
     scene.close()
     close.assert_called_once_with()
     assert view._closed
@@ -184,8 +192,10 @@ def test_failed_close_attempts_other_views_renderer_and_every_reader(env):
         events.append("failed view")
         raise ValueError("view close failed")
 
-    first = AnimationView(scene, object(), seek=Mock(), close=failed_view_close)
-    second = AnimationView(
+    first = AnimationView._from_callbacks(
+        scene, object(), seek=Mock(), close=failed_view_close
+    )
+    second = AnimationView._from_callbacks(
         scene, object(), seek=Mock(), close=lambda: events.append("other view")
     )
 
@@ -214,7 +224,7 @@ def test_constructor_rejects_closed_parent_and_releases_new_backend(env):
     scene.close()
     close = Mock()
     with pytest.raises(RuntimeError, match="closed"):
-        AnimationView(scene, object(), seek=Mock(), close=close)
+        AnimationView._from_callbacks(scene, object(), seek=Mock(), close=close)
     close.assert_called_once_with()
     assert not scene._views
 
@@ -247,7 +257,7 @@ def test_context_preserves_body_failure_and_reports_cleanup_failure(
         # Exercise Python 3.10's grouped cleanup errors on every interpreter.
         monkeypatch.setattr(_resources, "builtins", SimpleNamespace())
     scene = animation(env)
-    AnimationView(
+    AnimationView._from_callbacks(
         scene,
         object(),
         seek=Mock(),
@@ -290,7 +300,7 @@ def test_widget_failed_initial_render_closes_and_unregisters_view(env, monkeypat
 def test_view_close_callbacks_all_run_even_when_native_cleanup_fails(env):
     scene = animation(env)
     calls = []
-    view = AnimationView(
+    view = AnimationView._from_callbacks(
         scene,
         object(),
         seek=Mock(),
@@ -360,7 +370,7 @@ def test_failed_registration_preserves_primary_error_if_backend_cleanup_also_fai
     scene = animation(env)
     scene.close()
     with pytest.raises(RuntimeError, match="Animation is closed") as captured:
-        AnimationView(
+        AnimationView._from_callbacks(
             scene,
             object(),
             seek=Mock(),
