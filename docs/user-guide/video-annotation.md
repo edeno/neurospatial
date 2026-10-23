@@ -126,7 +126,7 @@ bin_indices = env.bin_sequence(times, positions)
 | `Delete` | Remove selected shape |
 | `Escape` | Finish/cancel the current napari drawing operation |
 | `Ctrl`/`Cmd` + `S` | Save Project |
-| `Ctrl`/`Cmd` + `Z` | Undo |
+| `Ctrl`/`Cmd` + `Z` | Undo (a brush stroke while painting an outline) |
 | Platform redo shortcut | Redo (typically `Ctrl` + `Y` or `Cmd` + `Shift` + `Z`) |
 
 The dock also has Undo and Redo buttons. Accepted assisted outlines and

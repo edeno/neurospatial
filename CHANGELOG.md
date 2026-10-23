@@ -1870,7 +1870,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   drawn around the area (with SAM 2 a box alone is enough; region growing
   stays within the pixels the box overlaps). The default
   `RegionGrowProvider` uses CPU color segmentation, and its preview can be
-  painted or erased before acceptance. `SegmentationPrompt`,
+  painted or erased before acceptance; while painting, Ctrl/Cmd+Z undoes
+  brush strokes. `SegmentationPrompt`,
   `SegmentationProposal`, `SegmentationProvider` and `mask_to_polygons` also work
   without a viewer, preserving disconnected areas and holes. Optional
   `SegmentAnythingProvider.from_sam2(checkpoint_path)` loads separately

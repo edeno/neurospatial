@@ -649,3 +649,32 @@ def test_checkpoints_and_autosave_wait_for_a_shape_being_drawn(
         QTest.qWait(100)
     assert len(session._current.shapes) == 1
     assert not warnings_shown
+
+
+def test_undo_keys_follow_the_brush_while_painting_an_outline(session_factory):
+    session, viewer, shapes, controls = session_factory()
+    _draw_region(shapes, controls, [[10, 10], [10, 15], [15, 15], [15, 10]])
+    session.checkpoint()
+    preview = session.assist.outline_preview
+    mask = np.zeros((16, 24), dtype=bool)
+    mask[2:6, 18:22] = True
+    preview.display(SegmentationProposal(mask))
+    preview.edit()
+    preview.mask_layer.brush_size = 1
+    preview.mask_layer.paint((10, 3), 1)
+    painted = np.asarray(preview.mask_layer.data).copy()
+    assert painted[10, 3]
+    undo_key, redo_key = session._shortcuts[1:]
+    undo_key.activated.emit()
+    # The stroke is undone and the committed region is kept.
+    assert not np.asarray(preview.mask_layer.data)[10, 3]
+    assert len(shapes.data) == 1
+    assert len(session._current.shapes) == 1
+    assert len(preview.snapshot().polygons) == 1
+    redo_key.activated.emit()
+    np.testing.assert_array_equal(preview.mask_layer.data, painted)
+    assert len(preview.snapshot().polygons) == 2
+    # With the annotation layer active, the keys undo committed edits again.
+    viewer.layers.selection.active = shapes
+    undo_key.activated.emit()
+    assert len(shapes.data) == 0

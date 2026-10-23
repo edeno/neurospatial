@@ -248,6 +248,17 @@ class OutlinePreviewControl(QWidget):
         self._viewer.layers.selection.active = self.mask_layer
         self.mask_layer.mode = "paint"
 
+    def undo_paint(self, *, redo: bool = False) -> None:
+        """Undo or redo the last brush stroke on the suggested outline."""
+        if self._disposed or self.mask_layer is None:
+            return
+        if redo:
+            self.mask_layer.redo()
+        else:
+            self.mask_layer.undo()
+        # napari replays its history in place, without a data or paint event.
+        self._mask_changed()
+
     def invalidate(self, *, keep_preview: bool = False) -> None:
         """Cancel pending edits and dim or remove geometry that became stale."""
         if self._disposed:

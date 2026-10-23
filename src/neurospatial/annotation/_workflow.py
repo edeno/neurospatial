@@ -189,8 +189,8 @@ class AnnotationProjectSession:
         self._shortcuts = []
         for key, callback in (
             (QKeySequence.StandardKey.Save, self.save_project),
-            (QKeySequence.StandardKey.Undo, self.undo),
-            (QKeySequence.StandardKey.Redo, self.redo),
+            (QKeySequence.StandardKey.Undo, self._undo_key),
+            (QKeySequence.StandardKey.Redo, self._redo_key),
         ):
             shortcut = QShortcut(QKeySequence(key), viewer.window._qt_window)
             shortcut.activated.connect(lambda cb=callback: self._run(cb))
@@ -296,6 +296,23 @@ class AnnotationProjectSession:
         self.status.setText("Unsaved changes")
         self._update_history_buttons()
         self._update_grid_estimate()
+
+    def _painting(self) -> bool:
+        # Brush strokes have napari's own history, apart from committed edits.
+        mask = self.assist.outline_preview.mask_layer
+        return mask is not None and self.viewer.layers.selection.active is mask
+
+    def _undo_key(self) -> None:
+        if self._painting():
+            self.assist.outline_preview.undo_paint()
+        else:
+            self.undo()
+
+    def _redo_key(self) -> None:
+        if self._painting():
+            self.assist.outline_preview.undo_paint(redo=True)
+        else:
+            self.redo()
 
     def undo(self) -> None:
         """Undo committed drawing edits, calibration, or an accepted proposal."""
