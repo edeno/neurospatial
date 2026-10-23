@@ -97,7 +97,8 @@ class TrackWindow(NamedTuple):
     Attributes
     ----------
     time_edges : ndarray of float64, shape (n_columns + 1,)
-        Column edges, in seconds, clipped to the window.
+        Column edges, in seconds, clipped to the window. Without a column,
+        the one edge is the window's start.
     observed : ndarray of bool, shape (n_columns,)
         Whether a column holds a sample; False for the empty column between
         two shown intervals.
@@ -743,7 +744,8 @@ class PreparedScene:
         columns = (
             np.arange(len(selected)) + np.r_[0, np.cumsum(skipped)][: len(selected)]
         )
-        time_edges = np.empty(len(selected) + int(skipped.sum()) + 1)
+        # Every edge is set below; with no column, the one edge is the window's start.
+        time_edges = np.full(len(selected) + int(skipped.sum()) + 1, left)
         time_edges[columns] = np.maximum(left, field.times[selected])
         time_edges[columns + 1] = np.minimum(right, field.times[selected + 1])
         observed = np.zeros(len(time_edges) - 1, dtype=bool)

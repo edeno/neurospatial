@@ -588,6 +588,22 @@ def test_parts_sampled_together_equal_each_part_sampled_alone(interp):
         np.testing.assert_array_equal(together, alone)
 
 
+def test_track_window_without_a_shown_interval_is_empty_and_defined():
+    track = Environment.linear_track(
+        node_positions=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0
+    )
+    values = np.ones((3, track.n_bins))
+    # The 4.9 s interval is longer than max_gap, so it holds no sample.
+    field = AnimationField(values, [0.0, 0.1, 5.0], max_gap=0.5)
+    scene = Animation(track, field, window_seconds=1.0)
+    window = PreparedScene(scene).track_window(scene.fields["field"], 2.5)
+    np.testing.assert_array_equal(window.time_edges, [2.0])  # the window's start
+    assert window.observed.shape == (0,)
+    assert window.values.shape == (len(window.track_edges) - 1, 0)
+    scene.render_frame(2.5, dpi=20)
+    scene.close()
+
+
 def test_track_mesh_rows_follow_the_track_and_leave_segment_spacing_empty():
     track = Environment.linear_track(
         node_positions=[[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]],
