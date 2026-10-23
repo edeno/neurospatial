@@ -2762,6 +2762,18 @@ class Environment(Generic[_C]):
         ``apply_transform`` needs no mapping: transforms keep bin IDs, so bin
         ``i`` of the transformed environment is bin ``i`` of the original.
 
+        Two bins are the same cell when they have identical centers, sizes
+        and measured dimensions; the same cell shape where both environments
+        record cells (grid boxes, triangles, hexagons or polygon cells); for
+        polygon cells, the same bin owning each boundary point, whatever the
+        bins' numbers, so a renumbered copy of a clipped arena pairs with the
+        original, but the pieces of a cell cut in several must keep their
+        relative order, because a point on the line between two pieces
+        belongs to the earlier one; and, for tracks, the same track segments
+        and spacing and the same linear edges of each bin. Explicit point
+        bins, or a track paired with bins of another kind, are compared by
+        center and measure only.
+
         Same-cell pairs meet the check ``compare_spatial_rates(bin_mapping=...)``
         applies, so ``pairs`` of a subset, a clip or an identical rebuild can be
         passed to it. Polygon cells kept whole by a clip have the parent's

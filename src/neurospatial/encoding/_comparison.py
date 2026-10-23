@@ -55,9 +55,8 @@ _UNIT_SELECTIONS = ("intersection", "exact")
 _TOPOLOGIES = ("same", "may_differ")
 
 
-# plot() default: no unit chosen (None is a valid unit label).
 class _AllUnits:
-    """Default of ``plot(unit_id=)``: no unit chosen."""
+    """Default of ``plot(unit_id=)``: no unit chosen (None is a unit label)."""
 
     def __repr__(self) -> str:
         return "<all units>"
@@ -777,12 +776,10 @@ shape (n_units, n_bins)
         >>> print(ax.figure.axes[-1].get_ylabel())
         Rate difference, B \u2212 A (Hz)
         """
-        if unit_id is _ALL_UNITS and len(self) == 1:
-            unit = self[0]
-        elif unit_id is not _ALL_UNITS:
-            unit = self.sel(unit_id=unit_id)
+        if unit_id is _ALL_UNITS:
+            unit = self[0] if len(self) == 1 else None
         else:
-            unit = None
+            unit = self.sel(unit_id=unit_id)
         if unit is not None:
             difference = unit.rate_difference[0]
             values = np.full(self.env.n_bins, np.nan)
@@ -854,20 +851,9 @@ def compare_spatial_rates(
         ``rates_b.env.bin_mapping_from(rates_a.env).pairs`` gives these rows.
         Each bin appears at most once on each side.
         Paired bins must be the same cells, checked as for unmapped
-        environments and by ``Environment.bin_mapping_from``: identical
-        centers, sizes and measured dimensions; the same cell shape where both
-        environments record cells (grid boxes, triangles, hexagons or polygon
-        cells); for polygon cells, the same bin owning each boundary point,
-        whatever the bins' numbers, so a renumbered copy of a clipped arena
-        pairs with the original, but the pieces of a cell cut in several
-        must keep their relative order, because a point on the line between
-        two pieces belongs to the earlier one; and, for tracks, the same
-        track segments and spacing and the same linear edges of each bin.
-        Explicit point bins, or a track paired with bins of another kind, are
-        compared by center and measure only.
-        A polygon cell's center and area are computed from its polygon, so
-        for exactly the same polygon they may differ by rounding. Both environments must share their
-        coordinate system, units and frame, which no mapping can bridge. By
+        environments and as ``Environment.bin_mapping_from`` checks them (its
+        Notes give the rules for each kind of bin). Both environments must
+        share their coordinate system, units and frame, which no mapping can bridge. By
         default the environments must have the same bins. With a mapping,
         topology is compared through it: every mapped bin must have the same
         neighbors, at the same distances, in both environments, and the
