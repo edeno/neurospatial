@@ -904,9 +904,9 @@ def _setup_annotation_viewer(
     # Restore ring identities, primitive types and labels before widget state is
     # initialized, so reopening cannot rename or reclassify saved shapes.
     if draft is not None:
-        from neurospatial.annotation._project_layer import restore_project_shapes
+        from neurospatial.annotation._project_layer import restore_shapes
 
-        restore_project_shapes(draft, shapes)
+        restore_shapes(draft.shapes, shapes)
         if draft.shapes:
             shapes.mode = "direct"
 

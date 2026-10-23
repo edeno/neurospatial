@@ -5,12 +5,7 @@ import pytest
 from numpy.testing import assert_array_equal
 from shapely.geometry import Polygon
 
-from neurospatial.annotation._project_layer import (
-    capture_project,
-    capture_shapes,
-    restore_project_shapes,
-    restore_shapes,
-)
+from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
 from neurospatial.annotation.project import AnnotationProject, AnnotationShape
 
 
@@ -66,9 +61,9 @@ def test_resumed_donut_wall_and_landmark_export_preserves_scientific_geometry(tm
         expected = _process_annotation_results(
             layer, "both", 1.0, calibration, None, "last"
         )
-        project = capture_project(
+        project = AnnotationProject(
             np.zeros((50, 60, 3), dtype=np.uint8),
-            layer,
+            shapes=capture_shapes(layer),
             video_path="removed.mp4",
             frame_index=3,
             calibration=calibration,
@@ -81,7 +76,7 @@ def test_resumed_donut_wall_and_landmark_export_preserves_scientific_geometry(tm
         project.save(path)
         loaded = AnnotationProject.load(path)
         restored = setup_shapes_layer_for_annotation(resumed)
-        restore_project_shapes(loaded, restored)
+        restore_shapes(loaded.shapes, restored)
         actual = _process_annotation_results(
             restored, "both", 1.0, loaded.calibration, None, "last"
         )
@@ -163,7 +158,7 @@ def test_invalid_polygon_survives_save_resume_until_repaired(tmp_path):
         path = tmp_path / "draft"
         draft.save(path)
         restored = AnnotationProject.load(path)
-        restore_project_shapes(restored, layer)
+        restore_shapes(restored.shapes, layer)
         assert_array_equal(layer.data[0], bowtie[:, ::-1])
         with pytest.raises(ValueError, match="invalid"):
             _process_annotation_results(layer, "regions", None, None, None, "last")

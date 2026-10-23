@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 import numpy as np
 
-from neurospatial.annotation._draft import guard_identity_defaults
+from neurospatial.annotation._draft import _IDENTITY_COLUMNS, guard_identity_defaults
 from neurospatial.annotation._helpers import rebuild_features, sync_colors_from_features
-from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
-from neurospatial.annotation.project import AnnotationProject, AnnotationShape
+from neurospatial.annotation._types import RegionType
+from neurospatial.annotation.project import AnnotationShape
 from neurospatial.regions.core import _thaw_metadata
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
-
-    from numpy.typing import NDArray
-
-    from neurospatial.ops.transforms import VideoCalibration
 
 
 def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
@@ -30,27 +25,19 @@ def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
     callbacks remain local to the layer.
     """
     features = shapes_layer.features.copy()
-    count = len(shapes_layer.data)
-    if len(features) != count:
+    if len(features) != len(shapes_layer.data):
         raise ValueError("Cannot capture project: shape features are not synchronized.")
-    changed = False
-    for column in ("_polygon_id", "_parent_id"):
-        if column not in features:
-            features[column] = ""
-            changed = True
-    for index in range(count):
-        identifier = features.iloc[index]["_polygon_id"]
-        if (
-            identifier == ""
-            or identifier is None
-            or (isinstance(identifier, float) and np.isnan(identifier))
-        ):
-            features.iloc[index, features.columns.get_loc("_polygon_id")] = uuid4().hex
-            changed = True
-        parent = features.iloc[index]["_parent_id"]
-        if parent is None or (isinstance(parent, float) and np.isnan(parent)):
-            features.iloc[index, features.columns.get_loc("_parent_id")] = ""
-            changed = True
+    added = [column for column in _IDENTITY_COLUMNS if column not in features]
+    for column in added:
+        features[column] = ""
+    blank_ids = features["_polygon_id"].isna() | (features["_polygon_id"] == "")
+    blank_parents = features["_parent_id"].isna()
+    changed = bool(added) or bool(blank_ids.any()) or bool(blank_parents.any())
+    if changed:
+        features.loc[blank_ids, "_polygon_id"] = [
+            uuid4().hex for _ in range(int(blank_ids.sum()))
+        ]
+        features["_parent_id"] = features["_parent_id"].fillna("")
     with shapes_layer.events.blocker_all():
         if changed:
             shapes_layer.features = features
@@ -60,41 +47,21 @@ def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
         AnnotationShape(
             np.asarray(vertices, dtype=float)[:, ::-1],
             shape_type=str(shape_type),
-            name=features.iloc[i]["name"],
-            role=cast("RegionType", str(features.iloc[i]["role"])),
-            identifier=features.iloc[i]["_polygon_id"],
-            parent_id=features.iloc[i]["_parent_id"],
-            metadata=metadata.get(features.iloc[i]["_polygon_id"], {}),
+            name=name,
+            role=cast("RegionType", str(role)),
+            identifier=identifier,
+            parent_id=parent,
+            metadata=metadata.get(identifier, {}),
         )
-        for i, (vertices, shape_type) in enumerate(
-            zip(shapes_layer.data, shapes_layer.shape_type, strict=True)
+        for vertices, shape_type, name, role, identifier, parent in zip(
+            shapes_layer.data,
+            shapes_layer.shape_type,
+            features["name"].tolist(),
+            features["role"].tolist(),
+            features["_polygon_id"].tolist(),
+            features["_parent_id"].tolist(),
+            strict=True,
         )
-    )
-
-
-def capture_project(
-    frame: NDArray[np.uint8],
-    shapes_layer: Any,
-    *,
-    video_path: str | Path | None,
-    frame_index: int,
-    calibration: VideoCalibration | None,
-    mode: Literal["environment", "regions", "both"],
-    bin_size: float | None,
-    simplify_tolerance: float | None,
-    multiple_boundaries: MultipleBoundaryStrategy,
-) -> AnnotationProject:
-    """Capture a flushed layer with its reference image and workflow settings."""
-    return AnnotationProject(
-        frame,
-        shapes=capture_shapes(shapes_layer),
-        video_path=video_path,
-        frame_index=frame_index,
-        calibration=calibration,
-        mode=mode,
-        bin_size=bin_size,
-        simplify_tolerance=simplify_tolerance,
-        multiple_boundaries=multiple_boundaries,
     )
 
 
@@ -150,8 +117,3 @@ def restore_shapes(shapes: Sequence[AnnotationShape], shapes_layer: Any) -> None
         }
         guard_identity_defaults(shapes_layer)
         sync_colors_from_features(shapes_layer)
-
-
-def restore_project_shapes(project: AnnotationProject, shapes_layer: Any) -> None:
-    """Restore a saved layer before creating its annotation widget."""
-    restore_shapes(project.shapes, shapes_layer)
