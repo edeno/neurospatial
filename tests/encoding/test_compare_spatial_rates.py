@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 from environment_helpers import (
     order_preserving_permutation,
+    rates_result,
     renumbered,
     renumbered_cells,
     wall_split_arena,
@@ -58,13 +59,12 @@ def make(env):
         on=None,
         bandwidth=5.0,
     ) -> SpatialRatesResult:
-        return SpatialRatesResult(
-            firing_rates=np.atleast_2d(np.asarray(rates, dtype=float)),
-            occupancy=np.asarray(occupancy, dtype=float),
-            env=env if on is None else on,
-            method="binned",
+        return rates_result(
+            env if on is None else on,
+            rates,
+            occupancy,
+            unit_ids=ids,
             bandwidth=bandwidth,
-            unit_ids=None if ids is None else list(ids),
             analysis_settings=settings,
         )
 

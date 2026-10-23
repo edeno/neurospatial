@@ -225,6 +225,33 @@ def rotation_matrix(angle, offset=(0, 0)):
     )
 
 
+def rates_result(
+    env,
+    rates,
+    occupancy,
+    *,
+    unit_ids=(1,),
+    bandwidth=5.0,
+    analysis_settings=None,
+):
+    """A binned ``SpatialRatesResult`` on ``env`` holding the given maps.
+
+    ``rates`` is one map ``(n_bins,)`` or one per unit ``(n_units, n_bins)``;
+    ``unit_ids=None`` lets the result number the units.
+    """
+    from neurospatial.encoding import SpatialRatesResult
+
+    return SpatialRatesResult(
+        firing_rates=np.atleast_2d(np.asarray(rates, dtype=float)),
+        occupancy=np.asarray(occupancy, dtype=float),
+        env=env,
+        method="binned",
+        bandwidth=bandwidth,
+        unit_ids=None if unit_ids is None else list(unit_ids),
+        analysis_settings=analysis_settings,
+    )
+
+
 def renumbered(env, order, distances=None, *, max_distance=5.0):
     """Publish ``env``'s bins and open connections in a new bin order.
 

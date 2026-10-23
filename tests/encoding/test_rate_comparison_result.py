@@ -9,11 +9,11 @@ from dataclasses import fields
 import matplotlib
 import numpy as np
 import pytest
+from environment_helpers import rates_result
 
 from neurospatial import Environment
 from neurospatial.encoding import (
     RateComparisonResult,
-    SpatialRatesResult,
     compare_spatial_rates,
 )
 
@@ -32,22 +32,13 @@ def env() -> Environment:
     )
 
 
-def _rates(env, maps, occupancy, ids=IDS) -> SpatialRatesResult:
-    return SpatialRatesResult(
-        firing_rates=np.array(maps, dtype=float),
-        occupancy=np.array(occupancy, dtype=float),
-        env=env,
-        method="binned",
-        bandwidth=5.0,
-        unit_ids=ids,
-    )
-
-
 @pytest.fixture(scope="module")
 def result(env) -> RateComparisonResult:
     """Three units (ids 4, 9, 2); the last bin was not occupied in B."""
-    rates_a = _rates(env, [F, G, H], [1, 1, 1, 1, 1])
-    rates_b = _rates(env, [G, F, [1.0, 2.0, 4.0, 3.0, 7.0]], [1, 1, 1, 1, 0])
+    rates_a = rates_result(env, [F, G, H], [1, 1, 1, 1, 1], unit_ids=IDS)
+    rates_b = rates_result(
+        env, [G, F, [1.0, 2.0, 4.0, 3.0, 7.0]], [1, 1, 1, 1, 0], unit_ids=IDS
+    )
     return compare_spatial_rates(rates_a, rates_b)
 
 
@@ -59,8 +50,8 @@ def result_2d() -> RateComparisonResult:
     maps = rng.uniform(1, 5, (3, env2.n_bins))
     occupancy = np.ones(env2.n_bins)
     return compare_spatial_rates(
-        _rates(env2, maps, occupancy),
-        _rates(env2, maps[::-1][[2, 1, 0]] + 1.0, occupancy),
+        rates_result(env2, maps, occupancy, unit_ids=IDS),
+        rates_result(env2, maps[::-1][[2, 1, 0]] + 1.0, occupancy, unit_ids=IDS),
     )
 
 
@@ -110,8 +101,8 @@ def test_summary_table_means_are_over_each_units_common_bins(result) -> None:
 
 
 def test_summary_table_means_are_nan_not_zero_without_common_bins(env) -> None:
-    rates_a = _rates(env, [F, G, H], [1, 1, 1, 1, 1])
-    rates_b = _rates(env, [F, G, H], [0, 0, 0, 0, 0])
+    rates_a = rates_result(env, [F, G, H], [1, 1, 1, 1, 1], unit_ids=IDS)
+    rates_b = rates_result(env, [F, G, H], [0, 0, 0, 0, 0], unit_ids=IDS)
     table = compare_spatial_rates(rates_a, rates_b).summary_table()
 
     assert table["mean_rate_a"].isna().all()
@@ -167,8 +158,8 @@ def test_summary_is_flat_scalars(result) -> None:
 
 
 def test_summary_median_is_nan_when_nothing_is_scored(env) -> None:
-    rates_a = _rates(env, [F, G, H], [1, 1, 1, 1, 1])
-    rates_b = _rates(env, [F, G, H], [0, 0, 0, 0, 0])
+    rates_a = rates_result(env, [F, G, H], [1, 1, 1, 1, 1], unit_ids=IDS)
+    rates_b = rates_result(env, [F, G, H], [0, 0, 0, 0, 0], unit_ids=IDS)
     summary = compare_spatial_rates(rates_a, rates_b).summary()
 
     assert summary["n_units_scored"] == 0
@@ -369,8 +360,8 @@ def test_analysis_settings_are_independent_copies(result) -> None:
 def test_scatter_plot_shows_scored_units_only(env) -> None:
     from matplotlib.axes import Axes
 
-    rates_a = _rates(env, [F, G, [3.0] * 5], [1, 1, 1, 1, 1])
-    rates_b = _rates(env, [G, F, H], [1, 1, 1, 1, 1])
+    rates_a = rates_result(env, [F, G, [3.0] * 5], [1, 1, 1, 1, 1], unit_ids=IDS)
+    rates_b = rates_result(env, [G, F, H], [1, 1, 1, 1, 1], unit_ids=IDS)
     mixed = compare_spatial_rates(rates_a, rates_b)
     assert mixed.status.tolist() == ["scored", "scored", "constant_rates_a"]
 
@@ -433,8 +424,8 @@ def test_population_plot_draws_the_scatter(env) -> None:
     import matplotlib.pyplot as plt
 
     two = compare_spatial_rates(
-        _rates(env, [F, G], [1] * 5, ids=[7, 9]),
-        _rates(env, [G, F], [1] * 5, ids=[7, 9]),
+        rates_result(env, [F, G], [1] * 5, unit_ids=[7, 9]),
+        rates_result(env, [G, F], [1] * 5, unit_ids=[7, 9]),
     )
     assert two.plot().get_title() == "2 of 2 units scored"
     plt.close("all")
@@ -457,8 +448,8 @@ def test_a_one_unit_population_plots_its_unit(env) -> None:
     import matplotlib.pyplot as plt
 
     one = compare_spatial_rates(
-        _rates(env, [F, G], [1] * 5, ids=[7, 9]),
-        _rates(env, [G, H], [1] * 5, ids=[9, 3]),
+        rates_result(env, [F, G], [1] * 5, unit_ids=[7, 9]),
+        rates_result(env, [G, H], [1] * 5, unit_ids=[9, 3]),
         unit_selection="intersection",
     )
     assert one.unit_ids.tolist() == [9]
@@ -521,7 +512,8 @@ def test_difference_map_with_no_common_bins_has_a_finite_color_range(
 
     monkeypatch.setattr(Env, "plot_field", spy)
     empty = compare_spatial_rates(
-        _rates(env, [F, G, H], [1] * 5), _rates(env, [F, G, H], [0] * 5)
+        rates_result(env, [F, G, H], [1] * 5, unit_ids=IDS),
+        rates_result(env, [F, G, H], [0] * 5, unit_ids=IDS),
     )
     empty.plot(unit_id=4)
 

@@ -20,6 +20,7 @@ import shapely
 from environment_helpers import (
     WALL_SPLIT_PIECES,
     order_preserving_permutation,
+    rates_result,
     renumbered,
     renumbered_cells,
     wall_split_arena,
@@ -832,17 +833,6 @@ def _track(
     )
 
 
-def _track_rates(track: Environment) -> SpatialRatesResult:
-    return SpatialRatesResult(
-        firing_rates=np.arange(1.0, track.n_bins + 1)[np.newaxis],
-        occupancy=np.ones(track.n_bins),
-        env=track,
-        method="binned",
-        bandwidth=5.0,
-        unit_ids=[1],
-    )
-
-
 def _crossing_l_tracks() -> tuple[Environment, Environment]:
     """Two L-shaped tracks whose two bins have the same centers and lengths."""
     edges = [(0, 1), (1, 2)]
@@ -864,7 +854,10 @@ def test_tracks_with_equal_bin_centers_along_different_segments_differ() -> None
     # An identity mapping is refused exactly as no mapping is.
     identity = np.column_stack([np.arange(first.n_bins)] * 2)
     assert _mapped_bin_difference(first, second, identity) == "track geometry"
-    rates_a, rates_b = (_track_rates(track) for track in (first, second))
+    rates_a, rates_b = (
+        rates_result(track, np.arange(1.0, track.n_bins + 1), np.ones(track.n_bins))
+        for track in (first, second)
+    )
     for mapping in (None, identity):
         with pytest.raises(IncompatibleEnvironmentError, match="track geometry"):
             compare_spatial_rates(rates_a, rates_b, bin_mapping=mapping)
@@ -892,8 +885,12 @@ def test_a_track_geometry_refusal_names_the_linearized_track(mapped) -> None:
     identity = np.column_stack([np.arange(touching.n_bins)] * 2)
     with pytest.raises(IncompatibleEnvironmentError) as refused:
         compare_spatial_rates(
-            _track_rates(touching),
-            _track_rates(spaced),
+            rates_result(
+                touching, np.arange(1.0, touching.n_bins + 1), np.ones(touching.n_bins)
+            ),
+            rates_result(
+                spaced, np.arange(1.0, spaced.n_bins + 1), np.ones(spaced.n_bins)
+            ),
             bin_mapping=identity if mapped else None,
         )
     message = str(refused.value)

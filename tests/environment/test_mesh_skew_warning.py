@@ -12,11 +12,12 @@ import warnings
 
 import numpy as np
 import pytest
+from environment_helpers import rates_result
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
 from neurospatial.decoding import decode_position
-from neurospatial.encoding import SpatialRatesResult, compare_spatial_rates
+from neurospatial.encoding import compare_spatial_rates
 from neurospatial.environment._comparison import (
     _environment_differences,
     _mapped_bin_difference,
@@ -53,22 +54,25 @@ def _skew_warnings(record: list[warnings.WarningMessage]) -> list:
     return [w for w in record if _SKEW in str(w.message)]
 
 
-def _rates(env: Environment) -> SpatialRatesResult:
-    return SpatialRatesResult(
-        firing_rates=np.ones((1, env.n_bins)),
-        occupancy=np.ones(env.n_bins),
-        env=env,
-        method="binned",
-        bandwidth=0.0,
-        unit_ids=[1],
-    )
-
-
 @pytest.fixture
 def meshes() -> tuple[Environment, Environment]:
     first, second = _sheared_mesh(), _sheared_mesh()
     assert first._geometry is not second._geometry
     return first, second
+
+
+def _compare_rates_and_decode(
+    first: Environment, second: Environment, counts: np.ndarray
+) -> None:
+    """Compare flat rate maps on the two meshes, then decode with the second's."""
+    ones = np.ones(first.n_bins)
+    compare_spatial_rates(
+        rates_result(first, ones, ones, bandwidth=0.0),
+        rates_result(second, ones, ones, bandwidth=0.0),
+    )
+    decode_position(
+        first, counts, rates_result(second, ones, ones, bandwidth=0.0), dt=0.1
+    )
 
 
 def _compare(first: Environment, second: Environment) -> None:
@@ -88,8 +92,7 @@ def test_comparing_rates_and_decoding_are_silent(meshes) -> None:
     counts = np.zeros((3, 1), dtype=np.int64)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        compare_spatial_rates(_rates(first), _rates(second))
-        decode_position(first, counts, _rates(second), dt=0.1)
+        _compare_rates_and_decode(first, second, counts)
 
 
 def test_smoothing_after_comparison_still_warns(meshes) -> None:
@@ -221,8 +224,7 @@ def test_a_combined_environment_warns_when_smoothed_on_a_skewed_component() -> N
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert _environment_differences(first, second) == (None, None)
-        compare_spatial_rates(_rates(first), _rates(second))
-        decode_position(first, counts, _rates(second), dt=0.1)
+        _compare_rates_and_decode(first, second, counts)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
         first.smooth(np.ones(first.n_bins), bandwidth=3.0, mode="average")
