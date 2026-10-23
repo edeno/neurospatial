@@ -723,3 +723,56 @@ def test_show_regions_string_is_one_region_name():
     assert shown_region_names(env, "goal") == ["goal"]
     assert shown_region_names(env, True) == ["goal"]
     assert shown_region_names(env, False) == []
+
+
+def test_lazy_reader_that_is_not_an_array_is_read_by_row(env):
+    # An h5py dataset is indexable but not an ndarray. Building the scene must
+    # not read the whole recording into memory.
+    class Dataset:
+        def __init__(self, n_rows):
+            self.shape = (n_rows, env.n_bins)
+            self.reads = []
+
+        def __len__(self):
+            return self.shape[0]
+
+        def __getitem__(self, index):
+            self.reads.append(index)
+            return np.full(env.n_bins, float(index))
+
+        def __iter__(self):
+            raise AssertionError("the whole dataset was read")
+
+    data = Dataset(1_000)
+    times = np.arange(1_000) / 10
+    pytest.importorskip("ipywidgets")
+    view = animate_fields(
+        env, data, frame_times=times, backend="widget", vmin=0, vmax=1_000, dpi=20
+    )
+    view.seek(50.0)
+    view.close()
+    # The first shown row and the row at 50 s, each read only a few times.
+    assert set(data.reads) == {0, 500}
+
+
+def test_iterator_fields_are_refused_with_a_fix(env):
+    rows = (np.ones(env.n_bins) for _ in range(3))
+    with pytest.raises(TypeError, match="indexable sequence of rows"):
+        animate_fields(env, rows, frame_times=np.arange(3) / 10, backend="widget")
+
+
+def test_napari_view_without_napari_says_how_to_install(env, monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def without_napari(name, *args, **kwargs):
+        if name == "napari" or name.startswith("napari."):
+            raise ModuleNotFoundError("No module named 'napari'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_napari)
+    with pytest.raises(ImportError, match=r"neurospatial\[animation\]"):
+        animate_fields(
+            env, _fields(env, 3), frame_times=np.arange(3) / 10, backend="napari"
+        )

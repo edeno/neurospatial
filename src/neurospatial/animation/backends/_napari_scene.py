@@ -274,7 +274,14 @@ class NapariScene:
     """One persistent native viewer and absolute recording-time controls."""
 
     def __init__(self, scene: Any, **options: Any) -> None:
-        import napari
+        try:
+            import napari
+        except ImportError as error:
+            raise ImportError(
+                "The napari view needs napari. Install it with "
+                "pip install 'neurospatial[animation]', or use "
+                "backend='widget' in a notebook or backend='fastplotlib'."
+            ) from error
         from qtpy.QtCore import (  # type: ignore[attr-defined]
             QEvent,
             QObject,

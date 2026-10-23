@@ -235,12 +235,13 @@ def _field_streams(
     """
     from neurospatial.animation.scene import AnimationField
 
-    if isinstance(fields, np.ndarray):
-        streams: dict[str, Any] = {"field": fields}
-    elif isinstance(fields, Mapping):
-        streams = dict(fields)
+    if isinstance(fields, Mapping):
+        streams: dict[str, Any] = dict(fields)
+    elif not isinstance(fields, (list, tuple)):
+        # Arrays and lazy readers (memmap, h5py) are one field, read by row.
+        streams = {"field": fields}
     else:
-        rows = list(fields)
+        rows = fields
         several = bool(rows) and (
             isinstance(rows[0], (list, tuple))
             or (isinstance(rows[0], np.ndarray) and rows[0].ndim == 2)
@@ -324,6 +325,15 @@ def _n_frames(fields: Any) -> int:
     ValueError
         If an array of fields is not 2-D, or there are no frames.
     """
+    if not isinstance(fields, Mapping) and not (
+        hasattr(fields, "__getitem__") and hasattr(fields, "__len__")
+    ):
+        raise TypeError(
+            "fields must be an array or an indexable sequence of rows "
+            "(n_frames, n_bins), a list of such fields, or a mapping from name "
+            f"to field; got {type(fields).__name__}. Fix: pass np.asarray(rows) "
+            "or a memory-mapped array instead of an iterator."
+        )
     if isinstance(fields, Mapping):
         fields = next(iter(fields.values()), [])
     elif isinstance(fields, np.ndarray):
@@ -335,13 +345,14 @@ def _n_frames(fields: Any) -> int:
                     why="Why: each animation frame needs one value per environment bin.",
                 )
             )
-    else:
-        fields = list(fields)
-        if fields and (
+    elif isinstance(fields, (list, tuple)) and (
+        fields
+        and (
             isinstance(fields[0], (list, tuple))
             or (isinstance(fields[0], np.ndarray) and fields[0].ndim == 2)
-        ):
-            fields = fields[0]
+        )
+    ):
+        fields = fields[0]
     if len(fields) == 0:
         raise _empty_fields_error()
     return len(fields)
