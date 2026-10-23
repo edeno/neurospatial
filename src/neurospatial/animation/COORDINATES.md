@@ -76,8 +76,8 @@ The implementation is `_scene_rendering.SceneRenderer`.
 
 ### Fastplotlib
 
-`backends.fastplotlib_backend.video_to_env` returns `T` directly for calibrated
-video. The renderer embeds this 2-D affine in its native 4-D transform; depth
+`overlays.VideoData.pixel_to_env` returns `T` directly for calibrated video;
+napari uses the same matrix. The renderer embeds this 2-D affine in its native 4-D transform; depth
 controls whether video lies above or below fields. Pixel centers and spatial
 overlays retain environment coordinates.
 

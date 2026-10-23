@@ -3433,6 +3433,32 @@ class VideoData:
         indices[nearest >= 0] = self.frame_indices[nearest[nearest >= 0]]
         return _moved(self, times=clock, frame_indices=indices)
 
+    def pixel_to_env(self, width: int, height: int) -> NDArray[np.float64]:
+        """The matrix taking a video pixel ``(column, row, 1)`` to ``(x, y, 1)``.
+
+        The first pixel's center is ``(0, 0)``. With a calibration this is its
+        complete pixel-to-environment transform, rotation and reflection
+        included; without one the frame is stretched upright over
+        ``env_bounds``.
+
+        Parameters
+        ----------
+        width, height : int
+            Frame size, in pixels.
+
+        Returns
+        -------
+        ndarray of float64, shape (3, 3)
+        """
+        if self.transform_to_env is not None:
+            return np.asarray(self.transform_to_env.A, dtype=np.float64)
+        xmin, xmax, ymin, ymax = self.env_bounds
+        sx, sy = (xmax - xmin) / width, (ymax - ymin) / height
+        # The first row at the top, and the frame's edges on the extent.
+        return np.array(
+            [[sx, 0.0, xmin + sx / 2], [0.0, -sy, ymax - sy / 2], [0.0, 0.0, 1.0]]
+        )
+
     def get_frame(self, sample: int) -> NDArray[np.uint8] | None:
         """Get the video frame of one sample.
 

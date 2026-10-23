@@ -544,7 +544,7 @@ class _Video:
         self.image.alpha_mode = "blend"
         self.image.alpha = float(perceived_alpha(data.alpha))
         matrix = np.eye(4)
-        matrix[np.ix_([0, 1], [0, 1, 3])] = video_to_env(data, width, height)[:2]
+        matrix[np.ix_([0, 1], [0, 1, 3])] = data.pixel_to_env(width, height)[:2]
         matrix[2, 3] = depth
         self.image.world_object.local.matrix = matrix
 
@@ -553,35 +553,6 @@ class _Video:
         self.image.visible = image is not None
         if image is not None:
             self.image.data = image
-
-
-def video_to_env(data: VideoData, width: int, height: int) -> NDArray[np.float64]:
-    """The matrix taking a video pixel ``(column, row, 1)`` to ``(x, y, 1)``.
-
-    The first pixel's center is ``(0, 0)``. With a calibration this is its
-    complete pixel-to-environment transform, rotation and reflection
-    included; without one the frame is stretched upright over the
-    environment's extent.
-
-    Parameters
-    ----------
-    data : VideoData
-        The video overlay.
-    width, height : int
-        Frame size, in pixels.
-
-    Returns
-    -------
-    ndarray of float64, shape (3, 3)
-    """
-    if data.transform_to_env is not None:
-        return np.asarray(data.transform_to_env.A, dtype=np.float64)
-    xmin, xmax, ymin, ymax = data.env_bounds
-    sx, sy = (xmax - xmin) / width, (ymax - ymin) / height
-    # The first row at the top, and the frame's edges on the extent.
-    return np.array(
-        [[sx, 0.0, xmin + sx / 2], [0.0, -sy, ymax - sy / 2], [0.0, 0.0, 1.0]]
-    )
 
 
 class _TimeWindow:

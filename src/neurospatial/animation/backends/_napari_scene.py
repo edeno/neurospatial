@@ -715,25 +715,7 @@ class NapariScene:
             if image is None:
                 raise ValueError("VideoOverlay's first mapped frame could not be read.")
             # Video-to-environment transforms are x,y; napari uses y,x.
-            if video.transform_to_env is not None:
-                matrix = video.transform_to_env.A
-            else:
-                xmin, xmax, ymin, ymax = video.env_bounds
-                matrix = np.array(
-                    [
-                        [
-                            (xmax - xmin) / image.shape[1],
-                            0,
-                            xmin + (xmax - xmin) / image.shape[1] / 2,
-                        ],
-                        [
-                            0,
-                            -(ymax - ymin) / image.shape[0],
-                            ymax - (ymax - ymin) / image.shape[0] / 2,
-                        ],
-                        [0, 0, 1],
-                    ]
-                )
+            matrix = video.pixel_to_env(image.shape[1], image.shape[0])
             order = [1, 0, 2]
             layer = self._add_overlay(
                 "image",
