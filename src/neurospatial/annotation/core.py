@@ -54,6 +54,11 @@ class AnnotationResult(NamedTuple):
         ``OpenArena(polygon, walls=walls)`` to build another environment.
     landmarks : Landmarks
         The drawn landmarks; attach them with ``env.with_landmarks``.
+    calibration : VideoCalibration or None
+        The pixel-to-cm calibration the outputs use, including one applied
+        or cleared in the editor; None when outputs are in pixels. Map pixel
+        tracking into the environment with
+        ``calibration.transform_px_to_cm(positions_px)``.
 
     """
 
@@ -61,6 +66,7 @@ class AnnotationResult(NamedTuple):
     regions: Regions
     walls: dict[str, LineString]
     landmarks: Landmarks
+    calibration: VideoCalibration | None
 
 
 def annotate_video(
@@ -1019,7 +1025,11 @@ def _process_annotation_results(
             stacklevel=3,  # Points to annotate_video() caller
         )
         return AnnotationResult(
-            environment=None, regions=Regions([]), walls={}, landmarks=Landmarks()
+            environment=None,
+            regions=Regions([]),
+            walls={},
+            landmarks=Landmarks(),
+            calibration=calibration,
         )
 
     from neurospatial.annotation._draft import polygon_drafts
@@ -1091,5 +1101,9 @@ def _process_annotation_results(
         len(landmarks),
     )
     return AnnotationResult(
-        environment=environment, regions=regions, walls=walls, landmarks=landmarks
+        environment=environment,
+        regions=regions,
+        walls=walls,
+        landmarks=landmarks,
+        calibration=calibration,
     )

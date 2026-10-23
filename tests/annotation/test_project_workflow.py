@@ -678,3 +678,53 @@ def test_undo_keys_follow_the_brush_while_painting_an_outline(session_factory):
     viewer.layers.selection.active = shapes
     undo_key.activated.emit()
     assert len(shapes.data) == 0
+
+
+def test_done_returns_the_calibration_applied_in_the_editor(monkeypatch):
+    import functools
+
+    import napari
+
+    from neurospatial.annotation import _session, _workflow, core
+    from neurospatial.annotation.project import AnnotationShape
+
+    monkeypatch.setattr(napari, "Viewer", functools.partial(napari.Viewer, show=False))
+    sessions = []
+    original_init = _workflow.AnnotationProjectSession.__init__
+
+    def init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        sessions.append(self)
+
+    monkeypatch.setattr(_workflow.AnnotationProjectSession, "__init__", init)
+    calibration = VideoCalibration(
+        calibrate_from_scale_bar((0, 0), (10, 0), 5.0, (24, 16)), (24, 16)
+    )
+
+    def run(viewer, prepare):
+        # Calibrate in the dock, with no project file, then click Done.
+        sessions[0].set_calibration(calibration)
+        try:
+            return prepare()
+        finally:
+            viewer.close()
+
+    monkeypatch.setattr(_session, "run_annotation_session", run)
+    draft = AnnotationProject(
+        np.zeros((16, 24, 3), dtype=np.uint8),
+        mode="both",
+        bin_size=2.0,
+        shapes=[
+            AnnotationShape(
+                np.array([[1.0, 1.0], [1.0, 20.0], [14.0, 20.0], [14.0, 1.0]]),
+                name="arena",
+                role="environment",
+            )
+        ],
+    )
+    result = core.annotate_project(draft, autosave_interval=None)
+    assert result.calibration.to_dict() == calibration.to_dict()
+    assert result.environment.units == "cm"
+    # Pixel tracking maps into the environment with the returned calibration.
+    center_cm = result.calibration.transform_px_to_cm(np.array([[10.5, 7.5]]))
+    assert result.environment.contains(center_cm).all()

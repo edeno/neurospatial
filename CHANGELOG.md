@@ -1854,7 +1854,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   and the RGB reference frame in one portable file. Shapes compare by value,
   and undo history shares unchanged shapes between steps. `annotate_video` accepts
   `project_path=` and `autosave_interval=` (30 seconds by default, `None` to
-  disable); `annotate_project` resumes without the original video. Both entry
+  disable); `annotate_project` resumes without the original video.
+  `AnnotationResult.calibration` returns the calibration the outputs use,
+  including one applied in the editor, to map pixel tracking into the
+  environment. Both entry
   points and `AnnotationProject.save` refuse to replace an existing file other
   than the one being resumed unless `overwrite=True`, and refuse a
   `project_path` whose folder does not exist. `annotate_video` checks

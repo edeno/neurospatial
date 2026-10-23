@@ -35,6 +35,7 @@ env = result.environment  # Discretized Environment, holding all of the below
 regions = result.regions   # Named Regions
 walls = result.walls       # Named walls, {name: LineString}
 landmarks = result.landmarks  # Named Landmarks
+calibration = result.calibration  # Pixel-to-cm calibration used, or None
 env.plot()                 # Check the result against the video frame
 ```
 
@@ -541,6 +542,15 @@ different grid. Shapes stay aligned with the reference frame because editable
 geometry remains in pixels. **Clear calibration** returns output units to
 pixels and converts the bin size back. The export `simplify_tolerance` follows
 the same rule. These changes can be undone and are saved in the project.
+
+`result.calibration` holds the calibration the outputs use, including one made
+in the editor, so pixel tracking can be put into the environment's
+coordinates without a saved project:
+
+<!-- docs-test: skip interactive viewer and user video -->
+```python
+positions_cm = result.calibration.transform_px_to_cm(positions_px)
+```
 
 ### Using Scale Bar
 
