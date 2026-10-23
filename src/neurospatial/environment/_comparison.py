@@ -455,6 +455,8 @@ def _ownership_keys(
     keys: NDArray[np.intp] = np.array(rows, dtype=np.intp)
     ceded = np.empty(len(keys), dtype=object)
     ceded[:] = shapely.GeometryCollection()
+    # Rows that cede anything; geometry operations run on these rows only.
+    cut = np.zeros(len(keys), dtype=bool)
     while True:
         if isinstance(locator, SubsetLocator):
             parent_to_child = locator.parent_to_child
@@ -463,10 +465,13 @@ def _ownership_keys(
             child_to_parent[parent_to_child[kept]] = kept
             keys = child_to_parent[keys]
         elif isinstance(locator, ClippedLocator):
-            ceded = shapely.union(ceded, _ceded_to_earlier_pieces(locator)[keys])
+            step = _ceded_to_earlier_pieces(locator)[keys]
+            cut |= ~shapely.is_empty(step)
+            ceded[cut] = shapely.union(ceded[cut], step[cut])
             keys = locator.mapping.parent_bin_indices[keys]
         else:
-            return locator, keys, shapely.intersection(ceded, cells)
+            ceded[cut] = shapely.intersection(ceded[cut], cells[cut])
+            return locator, keys, ceded
         locator = locator.base
 
 
@@ -508,10 +513,17 @@ def _same_ownership(
 ) -> NDArray[np.bool_]:
     """Whether each pair's bins, with polygons ``cells``, own the same points."""
     first_root, first_keys, first_ceded = _ownership_keys(first, rows_first, cells)
-    second_root, second_keys, second_ceded = _ownership_keys(second, rows_second, cells)
-    same: NDArray[np.bool_] = (first_keys == second_keys) & np.asarray(
-        shapely.equals(first_ceded, second_ceded), dtype=bool
-    )
+    if first is second and np.array_equal(rows_first, rows_second):
+        second_root, second_keys, second_ceded = first_root, first_keys, first_ceded
+    else:
+        second_root, second_keys, second_ceded = _ownership_keys(
+            second, rows_second, cells
+        )
+    # Any two empty geometries are equal; compare only rows that cede.
+    same_ceded = np.ones(len(cells), dtype=bool)
+    cede = ~(shapely.is_empty(first_ceded) & shapely.is_empty(second_ceded))
+    same_ceded[cede] = shapely.equals(first_ceded[cede], second_ceded[cede])
+    same: NDArray[np.bool_] = (first_keys == second_keys) & same_ceded
     if np.any(same) and not _same_locator(first_root, second_root):
         same[:] = False
     return same
