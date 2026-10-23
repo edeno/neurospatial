@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
-from uuid import uuid4
 
 import numpy as np
 
-from neurospatial.annotation._draft import _IDENTITY_COLUMNS, guard_identity_defaults
+from neurospatial.annotation._draft import guard_identity_defaults
 from neurospatial.annotation._helpers import rebuild_features, sync_colors_from_features
 from neurospatial.annotation._types import RegionType
 from neurospatial.annotation.project import AnnotationShape
@@ -18,30 +17,21 @@ if TYPE_CHECKING:
 
 
 def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
-    """Capture pixel ``(x, y)`` shapes, assigning missing stable identities.
+    """Capture pixel ``(x, y)`` shapes without changing the layer.
 
-    The caller must first flush pending widget edits. Only domain features and
-    JSON polygon metadata enter snapshots; runtime deletion markers and widget
-    callbacks remain local to the layer.
+    The caller must first flush pending widget edits; every processed shape
+    already has its ring identity. Only domain features and JSON polygon
+    metadata enter snapshots; runtime deletion markers and widget callbacks
+    remain local to the layer.
     """
-    features = shapes_layer.features.copy()
+    features = shapes_layer.features
     if len(features) != len(shapes_layer.data):
         raise ValueError("Cannot capture project: shape features are not synchronized.")
-    added = [column for column in _IDENTITY_COLUMNS if column not in features]
-    for column in added:
-        features[column] = ""
-    blank_ids = features["_polygon_id"].isna() | (features["_polygon_id"] == "")
-    blank_parents = features["_parent_id"].isna()
-    changed = bool(added) or bool(blank_ids.any()) or bool(blank_parents.any())
-    if changed:
-        features.loc[blank_ids, "_polygon_id"] = [
-            uuid4().hex for _ in range(int(blank_ids.sum()))
-        ]
-        features["_parent_id"] = features["_parent_id"].fillna("")
-    with shapes_layer.events.blocker_all():
-        if changed:
-            shapes_layer.features = features
-        guard_identity_defaults(shapes_layer)
+    if not features["_polygon_id"].astype(bool).all():
+        raise ValueError(
+            "Cannot capture project: a shape has not been processed yet. "
+            "Flush pending annotation edits before saving."
+        )
     metadata = shapes_layer.metadata.get("_polygon_metadata", {})
     return tuple(
         AnnotationShape(

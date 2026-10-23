@@ -104,23 +104,32 @@ def test_resumed_donut_wall_and_landmark_export_preserves_scientific_geometry(tm
 
 
 @pytest.mark.gui
-def test_snapshot_assigns_stable_ids_without_events_and_restores_runtime_guards():
+def test_snapshot_reads_processed_identities_and_restore_keeps_runtime_guards():
     import napari
 
-    from neurospatial.annotation._napari_widget import setup_shapes_layer_for_annotation
+    from neurospatial.annotation._napari_widget import (
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
 
     viewer = napari.Viewer(show=False)
     try:
         layer = setup_shapes_layer_for_annotation(viewer)
+        controls = create_annotation_widget(viewer, initial_mode="region")
         layer.add(np.array([[1, 2], [1, 10], [10, 10]]), shape_type="polygon")
-        layer.features.loc[0, "name"] = "drawn"
+        # A drawing gets its identity when the controls process it, not when
+        # a snapshot happens to read the layer.
+        with pytest.raises(ValueError, match="not been processed"):
+            capture_shapes(layer)
+        controls.flush_pending()
         layer.features["_deleted_temporary"] = [True]
         events = []
         layer.events.data.connect(lambda event: events.append("data"))
         layer.events.features.connect(lambda event: events.append("features"))
         first = capture_shapes(layer)
-        assert not events
         second = capture_shapes(layer)
+        assert not events
+        assert first[0].identifier
         assert first[0].identifier == second[0].identifier
         assert_array_equal(first[0].vertices, [[2, 1], [10, 1], [10, 10]])
         restore_shapes(first, layer)
@@ -130,11 +139,12 @@ def test_snapshot_assigns_stable_ids_without_events_and_restores_runtime_guards(
         layer.selected_data = {0}
         assert layer.feature_defaults["_polygon_id"].iloc[0] == ""
         assert layer.feature_defaults["_parent_id"].iloc[0] == ""
-        # Original callbacks remain connected after history replacement.
+        # Original callbacks remain connected after history replacement, and a
+        # new drawing never inherits the selected shape's identity.
         layer.add(np.array([[20, 20], [20, 25], [25, 25]]), shape_type="polygon")
         assert events
-        assert layer.features["_polygon_id"].iloc[-1] == ""
-        assert capture_shapes(layer)[-1].identifier != first[0].identifier
+        controls.flush_pending()
+        assert capture_shapes(layer)[-1].identifier not in ("", first[0].identifier)
     finally:
         viewer.close()
 
