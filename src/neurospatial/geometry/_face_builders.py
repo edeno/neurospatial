@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import warnings
-
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
-
-from neurospatial._stacklevel import _external_stacklevel
 
 _MESH_SKEW_ANGLE_DEG = 30.0
 _MESH_SKEW_FRACTION = 0.05
@@ -48,18 +44,13 @@ def hex_geometry(
 
 def mesh_geometry(
     graph: nx.Graph,
-    centers: NDArray[np.float64],
     volumes: NDArray[np.float64],
     points: NDArray[np.float64],
     simplices: NDArray[np.intp],
     active_to_original: NDArray[np.intp],
 ) -> tuple[nx.Graph, NDArray[np.float64]]:
-    """Compute shared triangle edges and report the original centroid skew guard."""
+    """Compute shared triangle edges as face areas."""
     g = graph.copy()
-    skew_angle_rad = np.deg2rad(_MESH_SKEW_ANGLE_DEG)
-    n_interior = 0
-    n_skewed = 0
-
     for u, v, data in g.edges(data=True):
         verts_u = set(simplices[active_to_original[u]].tolist())
         verts_v = set(simplices[active_to_original[v]].tolist())
@@ -68,36 +59,70 @@ def mesh_geometry(
             # Adjacent triangles must share an edge; if not, no diffusion face.
             data["A"] = 0.0
             continue
-        p1 = points[shared[0]]
-        p2 = points[shared[1]]
-        edge_vec = np.asarray(p2 - p1, dtype=float)
-        data["A"] = float(np.linalg.norm(edge_vec))
-
-        # Skew: angle between the centroid-connection line and the shared-edge
-        # normal (0 = K-orthogonal).
-        n_interior += 1
-        centroid_line = np.asarray(centers[v] - centers[u], dtype=float)
-        edge_len = np.linalg.norm(edge_vec)
-        line_len = np.linalg.norm(centroid_line)
-        if edge_len > 0.0 and line_len > 0.0:
-            normal = np.array([-edge_vec[1], edge_vec[0]]) / edge_len
-            cos_angle = abs(float(np.dot(centroid_line / line_len, normal)))
-            angle = float(np.arccos(np.clip(cos_angle, 0.0, 1.0)))
-            if angle > skew_angle_rad:
-                n_skewed += 1
-
-    if n_interior > 0 and (n_skewed / n_interior) > _MESH_SKEW_FRACTION:
-        warnings.warn(
-            f"Triangular mesh is non-K-orthogonal: {n_skewed}/{n_interior} "
-            f"({100.0 * n_skewed / n_interior:.1f}%) of interior edges exceed "
-            f"{_MESH_SKEW_ANGLE_DEG:.0f} degrees of non-orthogonality "
-            f"(threshold {100.0 * _MESH_SKEW_FRACTION:.0f}%). The diffusion "
-            f"bandwidth (sigma) is only approximate on this mesh; refine toward "
-            f"well-shaped (near-equilateral) triangles for an exact physical sigma.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
+        data["A"] = float(np.linalg.norm(points[shared[1]] - points[shared[0]]))
     return g, volumes
+
+
+def triangle_skew_message(
+    points: NDArray[np.float64],
+    triangles: NDArray[np.intp],
+    centers: NDArray[np.float64],
+    pairs: NDArray[np.intp],
+) -> str | None:
+    """The skew warning text for a triangle mesh, or None when well shaped.
+
+    An interior edge is skewed when the line between the two triangles'
+    centroids is more than ``_MESH_SKEW_ANGLE_DEG`` from the shared edge's
+    normal (0 = K-orthogonal). Finite-volume smoothing then gives only an
+    approximate bandwidth.
+
+    Parameters
+    ----------
+    points : ndarray of float64, shape (n_points, 2)
+        Mesh vertices.
+    triangles : ndarray of intp, shape (n_bins, 3)
+        Vertex indices of each bin's triangle.
+    centers : ndarray of float64, shape (n_bins, 2)
+        Bin centers (triangle centroids).
+    pairs : ndarray of intp, shape (n_pairs, 2)
+        Neighbor bin pairs; pairs that share two vertices are interior edges.
+
+    Returns
+    -------
+    str or None
+        The warning text when more than ``_MESH_SKEW_FRACTION`` of interior
+        edges are skewed, otherwise None.
+    """
+    first = triangles[pairs[:, 0]]
+    second = triangles[pairs[:, 1]]
+    shared = (first[:, :, None] == second[:, None, :]).any(axis=2)
+    interior = shared.sum(axis=1) == 2
+    n_interior = int(interior.sum())
+    if n_interior == 0:
+        return None
+    # Row-major order keeps each edge's two shared vertices in one row.
+    vertices = first[interior][shared[interior]].reshape(-1, 2)
+    edges = points[vertices[:, 1]] - points[vertices[:, 0]]
+    lines = centers[pairs[interior, 1]] - centers[pairs[interior, 0]]
+    edge_lengths = np.linalg.norm(edges, axis=1)
+    line_lengths = np.linalg.norm(lines, axis=1)
+    measured = (edge_lengths > 0.0) & (line_lengths > 0.0)
+    normals = np.column_stack([-edges[:, 1], edges[:, 0]])[measured]
+    normals /= edge_lengths[measured, None]
+    units = lines[measured] / line_lengths[measured, None]
+    cos_angles = np.abs(np.sum(units * normals, axis=1))
+    angles = np.arccos(np.clip(cos_angles, 0.0, 1.0))
+    n_skewed = int(np.count_nonzero(angles > np.deg2rad(_MESH_SKEW_ANGLE_DEG)))
+    if n_skewed / n_interior <= _MESH_SKEW_FRACTION:
+        return None
+    return (
+        f"Triangular mesh is non-K-orthogonal: {n_skewed}/{n_interior} "
+        f"({100.0 * n_skewed / n_interior:.1f}%) of interior edges exceed "
+        f"{_MESH_SKEW_ANGLE_DEG:.0f} degrees of non-orthogonality "
+        f"(threshold {100.0 * _MESH_SKEW_FRACTION:.0f}%). The diffusion "
+        f"bandwidth (sigma) is only approximate on this mesh; refine toward "
+        f"well-shaped (near-equilateral) triangles for an exact physical sigma."
+    )
 
 
 def track_geometry(

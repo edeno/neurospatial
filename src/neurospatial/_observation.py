@@ -10,6 +10,7 @@ depends on an ``Environment``.
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import Any
 
@@ -210,6 +211,56 @@ def resolve_sample_support(
     return _support_from_gates(times, sample_valid, gates)
 
 
+def label_codes(
+    labels: NDArray[Any], missing_label: Hashable | None
+) -> tuple[NDArray[np.intp], list[Hashable]]:
+    """Integer code of each label in first-seen order; -1 for a missing label.
+
+    None, NaN and ``missing_label`` (when not None) are missing. Values are
+    plain Python scalars.
+
+    Parameters
+    ----------
+    labels : ndarray, shape (n_labels,)
+        Hashable labels, usually an object array.
+    missing_label : hashable or None
+        An extra label value that means "no label"; None declares no extra
+        value.
+
+    Returns
+    -------
+    codes : ndarray of intp, shape (n_labels,)
+        Index of each label into ``values``; -1 marks a missing label.
+    values : list of hashable
+        Distinct non-missing labels in first-seen order.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> label_codes(np.array(["a", None, "b", "a"], dtype=object), None)
+    (array([ 0, -1,  1,  0]), ['a', 'b'])
+    >>> label_codes(np.array(["rest", "a", "rest"], dtype=object), "rest")
+    (array([-1,  0, -1]), ['a'])
+    """
+    import pandas as pd
+
+    factorized, uniques = pd.factorize(labels, use_na_sentinel=True)
+    codes = factorized.astype(np.intp)
+    # tolist() already yields Python scalars; object arrays can still hold NumPy ones.
+    values: list[Hashable] = [
+        v.item() if isinstance(v, np.generic) else v
+        for v in np.asarray(uniques).tolist()
+    ]
+    if missing_label is not None:
+        keep = np.array([not bool(v == missing_label) for v in values], dtype=bool)
+        # One extra slot so that code -1 (already missing) stays -1.
+        renumber = np.full(len(values) + 1, -1, dtype=np.intp)
+        renumber[:-1][keep] = np.arange(np.count_nonzero(keep), dtype=np.intp)
+        codes = renumber[codes]
+        values = [v for v, k in zip(values, keep, strict=True) if k]
+    return codes, values
+
+
 def label_runs(
     codes: NDArray[np.intp], interval_mask: NDArray[np.bool_]
 ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.intp]]:
@@ -275,16 +326,7 @@ def validated_observations(
     """
     t, p = validate_times_positions(times, positions, call=call)
     if t.size == 0:
-        raise ValueError(
-            _format_error(
-                f"{call}() got no samples: times and positions are empty.",
-                why="there is no observation to measure.",
-                fix=(
-                    "pass at least one sample; if the arrays came from an epoch or "
-                    "trial selection, check that the selection kept any samples."
-                ),
-            )
-        )
+        raise empty_samples_error(call, ("times", "positions"))
     validate_strictly_increasing(t, call=call)
     if p.ndim == 1:
         p = p[:, None]
@@ -296,11 +338,22 @@ def validated_observations(
     return t, p, support
 
 
-def _empty_times_error(call: str) -> ValueError:
+def empty_samples_error(call: str, names: tuple[str, ...]) -> ValueError:
+    """The error for zero samples, naming the empty arguments of ``call``.
+
+    Examples
+    --------
+    >>> print(empty_samples_error("f", ("times", "nose", "tail")))
+    f() got no samples: times, nose and tail are empty.
+    Why: there is no observation to measure.
+    Fix: pass at least one sample; if the arrays came from an epoch or trial selection, check that the selection kept any samples.
+    """
+    listed = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+    verb = "is" if len(names) == 1 else "are"
     return ValueError(
         _format_error(
-            f"{call}() got no samples: times is empty.",
-            why="there is no observation to measure.",
+            f"{call}() got no samples: {listed} {verb} empty.",
+            why="Why: there is no observation to measure.",
             fix=(
                 "pass at least one sample; if the arrays came from an epoch or "
                 "trial selection, check that the selection kept any samples."
@@ -330,7 +383,7 @@ def _validated_signal_times(times: ArrayLike, *, call: str) -> NDArray[np.float6
         )
     assert t is not None
     if t.size == 0:
-        raise _empty_times_error(call)
+        raise empty_samples_error(call, ("times",))
     validate_strictly_increasing(t, call=call)
     return t
 

@@ -192,7 +192,7 @@ CASES = [
             "unsupported_labels": (),
             "n_samples": 4,
             "max_gap": 0.5,
-            "epochs": np.array([[0.0, 10.0]]),
+            "input_epochs": np.array([[0.0, 10.0]]),
             "missing_label": None,
             "n_declared_breaks": 0,
         },

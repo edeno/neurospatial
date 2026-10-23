@@ -630,7 +630,7 @@ def pre_decision_heading_stats(
         break_before=break_before,
         result="the heading statistics are NaN",
     )
-    _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions, call="pre_decision_heading_stats")
     return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -641,15 +641,14 @@ def _heading_stats(
     *,
     min_speed: float,
 ) -> tuple[float, float, float]:
-    """Circular heading statistics over moving samples in usable intervals."""
-    from neurospatial.behavior._kinematics import (
-        _movement_heading_and_speed,
-        _validate_velocity_positions,
-    )
+    """Circular heading statistics over moving samples in usable intervals.
+
+    ``positions`` are already validated by the public caller.
+    """
+    from neurospatial.behavior._kinematics import _movement_heading_and_speed
 
     if len(positions) < 2:
         return np.nan, np.nan, np.nan
-    _validate_velocity_positions(positions)
     headings, speed = _movement_heading_and_speed(
         times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
     )
@@ -872,7 +871,7 @@ def compute_pre_decision_metrics(
         break_before=break_before,
         result="the pre-decision metrics are NaN",
     )
-    _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions, call="compute_pre_decision_metrics")
     return _pre_decision_metrics(
         times,
         positions,
@@ -1374,7 +1373,7 @@ def compute_decision_analysis(
         break_before=break_before,
         result="the pre-decision metrics are NaN and no boundary crossing was observed",
     )
-    _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions, call="compute_decision_analysis")
 
     # Validate regions exist
     _require_region_mask(

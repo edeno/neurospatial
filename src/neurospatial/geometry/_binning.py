@@ -440,7 +440,12 @@ class FacesSource(Protocol):
         ...
 
     def missing_error(self, operation: str) -> Exception:
-        """Return an actionable error when the named operation needs faces."""
+        """Return an actionable error when the named operation needs faces.
+
+        A source that is not ``available`` returns a
+        ``MissingCellGeometryError``, the error that marks bins which cannot
+        smooth.
+        """
         ...
 
 
@@ -497,6 +502,10 @@ class KnownFaces(ReadOnlyState):
         return NotImplementedError(f"{operation}: stored faces are available.")
 
 
+class MissingCellGeometryError(NotImplementedError):
+    """An operation needs finite-volume cell faces the bins do not have."""
+
+
 @dataclass(frozen=True, eq=False)
 class MissingFaces:
     """The reason finite-volume operations cannot use a binning."""
@@ -512,9 +521,9 @@ class MissingFaces:
         """Refuse construction because valid face geometry is unavailable."""
         raise self.missing_error("This operation")
 
-    def missing_error(self, operation: str) -> NotImplementedError:
+    def missing_error(self, operation: str) -> MissingCellGeometryError:
         """Name the operation, missing geometry and supported recovery."""
-        return NotImplementedError(
+        return MissingCellGeometryError(
             _format_error(
                 f"{operation} needs finite-volume cell geometry. {self.reason}",
                 why="Why: finite-volume operations require valid cell faces, measures and normal distances.",

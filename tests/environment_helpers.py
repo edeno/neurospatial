@@ -8,9 +8,11 @@ from unittest import mock
 
 import networkx as nx
 import numpy as np
+from shapely.geometry import LineString, box
 
 import neurospatial.environment
 from neurospatial import Environment
+from neurospatial.arena import OpenArena
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Metadata, _Provenance
 from neurospatial.layout._construction import _built_layout_data
@@ -212,6 +214,90 @@ def call_unbound(env, name, *, bound=False):
     return function(*args, **kwargs)
 
 
+def rotation_matrix(angle, offset=(0, 0)):
+    """The 3 x 3 matrix of a rotation by ``angle`` radians, then a shift by ``offset``."""
+    return np.array(
+        [
+            [np.cos(angle), -np.sin(angle), offset[0]],
+            [np.sin(angle), np.cos(angle), offset[1]],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+
+
+def rates_result(
+    env,
+    rates,
+    occupancy,
+    *,
+    unit_ids=(1,),
+    bandwidth=5.0,
+    analysis_settings=None,
+):
+    """A binned ``SpatialRatesResult`` on ``env`` holding the given maps.
+
+    ``rates`` is one map ``(n_bins,)`` or one per unit ``(n_units, n_bins)``;
+    ``unit_ids=None`` lets the result number the units.
+    """
+    from neurospatial.encoding import SpatialRatesResult
+
+    return SpatialRatesResult(
+        firing_rates=np.atleast_2d(np.asarray(rates, dtype=float)),
+        occupancy=np.asarray(occupancy, dtype=float),
+        env=env,
+        method="binned",
+        bandwidth=bandwidth,
+        unit_ids=None if unit_ids is None else list(unit_ids),
+        analysis_settings=analysis_settings,
+    )
+
+
+def _renumbered(env, order, kind, locator, missing_faces, distances=None, **extra):
+    """Publish ``env``'s bins in a new order with the given lookup.
+
+    New bin ``i`` is ``env``'s bin ``order[i]``, with the same center,
+    measure and faces; ``missing_faces`` stands in when ``env`` has none.
+    ``extra`` holds further ``Binning`` fields, such as ``shapes``.
+    """
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        FaceGeometry,
+        KnownFaces,
+        SpatialBins,
+    )
+
+    binning = env.binning
+    connections = binning.connections
+    pairs = np.argsort(order)[connections.pairs]
+    if binning.faces.available:
+        faces = binning.faces.build()
+        new_faces = KnownFaces(
+            FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
+        )
+    else:
+        new_faces = missing_faces
+    bins = binning.bins
+    return Environment.from_bins(
+        Binning(
+            kind,
+            SpatialBins.from_arrays(
+                bins.centers[order], bins.sizes[order], bins.measure_dims[order]
+            ),
+            BinConnections.from_arrays(
+                pairs,
+                connections.pair_distances if distances is None else distances,
+            ),
+            locator,
+            new_faces,
+            **extra,
+        ),
+        units=env.units,
+        frame=env.frame,
+        arena=env.arena,
+    )
+
+
 def renumbered(env, order, distances=None, *, max_distance=5.0):
     """Publish ``env``'s bins and open connections in a new bin order.
 
@@ -222,41 +308,64 @@ def renumbered(env, order, distances=None, *, max_distance=5.0):
     distances, in ``env.edge_pairs`` order, to make a copy that differs only
     in them.
     """
-    from neurospatial.binning import (
-        BinConnections,
-        Binning,
-        FaceGeometry,
-        KnownFaces,
-        MissingFaces,
-        NearestBinLocator,
-        SpatialBins,
+    from neurospatial.binning import MissingFaces, NearestBinLocator
+
+    return _renumbered(
+        env,
+        order,
+        "explicit",
+        NearestBinLocator(env.binning.bins.centers[order], max_distance=max_distance),
+        MissingFaces("renumbered copy of bins without faces"),
+        distances,
     )
 
+
+def renumbered_cells(env, order):
+    """Publish a clipped ``env``'s polygon cells in a new bin order.
+
+    New bin ``i`` is ``env``'s bin ``order[i]``, with the same polygon, parent
+    bin, center, measure and faces; lookup is the same clip of the same
+    parent bins. The clip gives a point on the line between two pieces of one
+    parent bin to the lower-numbered piece, so reordering such pieces moves
+    that line from one piece to the other.
+    """
+    from neurospatial.binning import ClipMapping, ClippedLocator, PolygonCells
+
     binning = env.binning
-    centers = binning.bins.centers[order]
-    connections = binning.connections
-    pairs = np.argsort(order)[connections.pairs]
-    if binning.faces.available:
-        faces = binning.faces.build()
-        new_faces = KnownFaces(
-            FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
-        )
-    else:
-        new_faces = MissingFaces("renumbered copy of bins without faces")
-    return Environment.from_bins(
-        Binning(
-            "explicit",
-            SpatialBins.from_arrays(
-                centers, binning.bins.sizes[order], binning.bins.measure_dims[order]
-            ),
-            BinConnections.from_arrays(
-                pairs,
-                connections.pair_distances if distances is None else distances,
-            ),
-            NearestBinLocator(centers, max_distance=max_distance),
-            new_faces,
-        ),
-        units=env.units,
-        frame=env.frame,
-        arena=env.arena,
+    locator = binning.locator
+    cells = PolygonCells(tuple(binning.shapes.polygons[row] for row in order))
+    mapping = ClipMapping(
+        locator.mapping.parent_bin_indices[order], locator.mapping.n_parent_bins
     )
+    return _renumbered(
+        env,
+        order,
+        binning.kind,
+        ClippedLocator(locator.base, cells, mapping),
+        binning.faces,
+        shapes=cells,
+    )
+
+
+def wall_split_arena():
+    """A box whose wall cuts parent cells 12 to 15 in two (bins 12 to 19)."""
+    return Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 30, (4000, 2)),
+        bin_size=5.0,
+        units="cm",
+        arena=OpenArena(box(0, 0, 30, 30), walls=[LineString([(12.5, 0), (12.5, 20)])]),
+        wall_fit="split",
+    )
+
+
+# Bins of the pieces of each parent cell that the wall cuts in two.
+WALL_SPLIT_PIECES = ([12, 13], [14, 15], [16, 17], [18, 19])
+
+
+def order_preserving_permutation(n_bins):
+    """A seeded bin order that keeps each wall-split cell's pieces in order."""
+    order = np.random.default_rng(1).permutation(n_bins)
+    for pieces in WALL_SPLIT_PIECES:
+        positions = np.flatnonzero(np.isin(order, pieces))
+        order[positions] = np.sort(order[positions])
+    return order

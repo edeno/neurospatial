@@ -44,7 +44,9 @@ class TestGoalVector:
         positions = np.array([[0.0, 0.0], [10.0, 0.0]])  # 2D
         goal = np.array([50.0, 0.0, 0.0])  # 3D
 
-        with pytest.raises(ValueError, match="dimensions"):
+        with pytest.raises(
+            ValueError, match=r"goal has 3 coordinates but positions have 2"
+        ):
             goal_vector(positions, goal)
 
 

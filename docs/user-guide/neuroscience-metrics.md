@@ -348,11 +348,11 @@ pv = population_vector_correlation(first_half, second_half)  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"median {np.median(pv[defined]):.2f}, "
       f"{(~defined).sum()} of {pv.size} locations undefined")
-assert np.isclose(np.median(pv[defined]), 0.99, atol=0.006)
+assert np.isclose(np.median(pv[defined]), 1.00, atol=0.006)
 ```
 
 The simulated place fields do not move, so the two halves have a median
-correlation near 1 (0.99). A location is NaN, not 0, where either condition
+correlation near 1 (1.00). A location is NaN, not 0, where either condition
 lacks occupancy or has a NaN rate there, or where every cell has the same rate. Units recorded in only one
 condition are left out (`unit_selection="exact"` refuses them instead), and
 maps estimated on different environments need an explicit `bin_mapping=`, such
@@ -558,8 +558,8 @@ and gaps remain missing observations, and each domain has its own support.
 
 On a track aligned with the x axis, label rightward and leftward travel using
 a predeclared movement criterion. For a task with known trial directions, use
-those sample-aligned labels instead. The reserved label `"other"` excludes
-pauses from both occupancy and spikes.
+those sample-aligned labels instead. Samples labeled `None` (pauses) are
+left out of both occupancy and spikes.
 
 <!-- docs-test: run -->
 ```python
@@ -567,7 +567,7 @@ import numpy as np
 from neurospatial.encoding import compute_directional_place_fields
 
 velocity_x = np.gradient(positions[:, 0], times)
-direction_labels = np.full(len(times), "other", dtype=object)
+direction_labels = np.full(len(times), None, dtype=object)
 direction_labels[velocity_x > 2.0] = "rightward"   # cm/s
 direction_labels[velocity_x < -2.0] = "leftward"
 directional = compute_directional_place_fields(
@@ -584,6 +584,10 @@ These are spatial maps conditioned on travel direction, rather than angular
 head-direction tuning curves. Compare rates only where both conditions have
 adequate occupancy. Different paths, speeds or trial outcomes can explain a
 map difference; the helper does not perform a condition-comparison test.
+Labels from `heading_direction_labels` also include `"stationary"` for an
+animal that was observed but not moving; passing them straight to
+`compute_directional_place_fields` gives a "stationary" map as well, and
+`missing_label="stationary"` drops it (a `None` label is always dropped).
 For gapped tracking, derive velocity within each observed run rather than
 across a dropout.
 
