@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
+from neurospatial._validation import check_writable, validate_finite_scalar
 from neurospatial.annotation._types import (
     AnnotationConfig,
     MultipleBoundaryStrategy,
@@ -20,17 +21,21 @@ from neurospatial.annotation._types import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     import napari
     from numpy.typing import NDArray
     from shapely.geometry import LineString, Polygon
 
     from neurospatial.annotation._boundary_inference import BoundaryConfig
+    from neurospatial.annotation._napari_widget import _AnnotationWidget
+    from neurospatial.annotation.project import AnnotationProject
+    from neurospatial.annotation.segmentation import SegmentationProvider
     from neurospatial.environment import Environment
     from neurospatial.landmarks import Landmarks
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Regions
+
+
+__all__ = ["AnnotationResult", "annotate_project", "annotate_video"]
 
 
 class AnnotationResult(NamedTuple):
@@ -49,6 +54,11 @@ class AnnotationResult(NamedTuple):
         ``OpenArena(polygon, walls=walls)`` to build another environment.
     landmarks : Landmarks
         The drawn landmarks; attach them with ``env.with_landmarks``.
+    calibration : VideoCalibration or None
+        The pixel-to-cm calibration the outputs use, including one applied
+        or cleared in the editor; None when outputs are in pixels. Map pixel
+        tracking into the environment with
+        ``calibration.transform_px_to_cm(positions_px)``.
 
     """
 
@@ -56,6 +66,7 @@ class AnnotationResult(NamedTuple):
     regions: Regions
     walls: dict[str, LineString]
     landmarks: Landmarks
+    calibration: VideoCalibration | None
 
 
 def annotate_video(
@@ -73,6 +84,10 @@ def annotate_video(
     simplify_tolerance: float | None = None,
     multiple_boundaries: MultipleBoundaryStrategy | None = None,
     show_positions: bool | None = None,
+    project_path: str | Path | None = None,
+    overwrite: bool = False,
+    autosave_interval: float | None = 30.0,
+    segmentation_provider: SegmentationProvider | None = None,
 ) -> AnnotationResult:
     """Launch interactive napari annotation on a video frame.
 
@@ -142,6 +157,24 @@ def annotate_video(
         Points layer for reference while editing.
         Overrides config.show_positions. Default is False.
 
+    project_path : str or Path, optional
+        Save the editable draft, including its reference image, to this file.
+        Use :func:`annotate_project` to resume an existing project. Without a
+        path, saving is available in the UI.
+    overwrite : bool, default=False
+        Start a new project over an existing ``project_path``.
+    autosave_interval : float or None, default=30.0
+        Seconds between draft saves when a project path is set. Must be finite
+        and positive; None disables periodic saves.
+    segmentation_provider : SegmentationProvider, optional
+        Provider for interactive outline proposals. The default CPU region
+        grower needs no model download and suits a floor whose color differs
+        clearly from its surroundings. For dark or low-contrast video, use
+        Meta's SAM 2.1 Large with
+        ``SegmentAnythingProvider.from_sam2("sam2.1_hiera_large.pt")``; see the
+        video annotation guide for installing it. Proposals require explicit
+        acceptance.
+
     Returns
     -------
     AnnotationResult
@@ -154,7 +187,14 @@ def annotate_video(
     Raises
     ------
     ValueError
-        If bin_size is not provided when mode requires environment creation.
+        If bin_size is not provided when mode requires environment creation,
+        if ``autosave_interval`` is not positive and finite, or if an initial
+        polygon region has metadata keys that are not strings.
+    FileExistsError
+        If ``project_path`` exists and ``overwrite`` is False. Resume it with
+        :func:`annotate_project` instead.
+    FileNotFoundError
+        If the folder for ``project_path`` does not exist.
     RuntimeError
         If the drawn annotations cannot be saved, for example multiple
         environment boundaries with ``multiple_boundaries="error"``, and the
@@ -190,7 +230,8 @@ def annotate_video(
     -----
     This function blocks until the napari viewer is closed. The viewer runs
     in the same Python process, and the function returns only after the user
-    closes it (via the "Save and Close" button, Escape key, or window close).
+    closes it via the "Done" button or window close. Escape keeps napari's
+    normal behavior for canceling the current drawing or selection.
 
     If multiple environment boundaries are drawn, only the last one is used
     and a warning is emitted.
@@ -234,20 +275,38 @@ def annotate_video(
 
     # Validate parameters early (before expensive imports)
     _validate_annotate_params(mode, bin_size)
-
-    try:
-        import napari  # noqa: F401 - verify the optional GUI dependency
-    except ImportError as e:
-        raise ImportError(
-            "napari is required for interactive annotation. "
-            "Install with: pip install napari[all]",
-        ) from e
+    _validate_autosave_interval(autosave_interval)
+    if project_path is not None:
+        _check_project_folder(project_path)
+        check_writable(
+            [Path(project_path)],
+            overwrite=overwrite,
+            what="annotation project",
+            argument="project_path",
+            alternative="or resume it with annotate_project(project_path)",
+        )
+    if initial_regions is not None:
+        _validate_initial_metadata(initial_regions)
+    _require_napari()
 
     # Convert to Path and load video frame
     video_path = Path(video_path)
     logger.debug("Loading video frame %d from %s", resolved.frame_index, video_path)
     frame = _load_video_frame(video_path, resolved.frame_index)
     logger.debug("Loaded frame with shape %s", frame.shape)
+    from neurospatial.annotation.project import AnnotationProject
+
+    # Validates the calibration and settings against the frame before editing.
+    project = AnnotationProject(
+        frame,
+        video_path=video_path,
+        frame_index=resolved.frame_index,
+        calibration=calibration,
+        mode=mode,
+        bin_size=bin_size,
+        simplify_tolerance=resolved.simplify_tolerance,
+        multiple_boundaries=resolved.multiple_boundaries,
+    )
 
     # Process initial boundary (from polygon or positions)
     boundary_polygon, positions_for_display = _process_initial_boundary(
@@ -260,31 +319,242 @@ def annotate_video(
     if boundary_polygon is not None and initial_regions is not None:
         initial_regions = _filter_environment_regions(initial_regions)
 
-    # Setup napari viewer with all layers and widgets
-    _viewer, shapes, flush_pending = _setup_annotation_viewer(
-        video_path,
-        frame,
-        mode,
+    return _run_annotation_editor(
+        project,
+        restore_shapes=False,
+        project_path=project_path,
+        project_saved=False,
+        autosave_interval=autosave_interval,
+        segmentation_provider=segmentation_provider,
+        boundary_polygon=boundary_polygon,
+        positions_for_display=positions_for_display,
+        initial_regions=initial_regions,
+    )
+
+
+def annotate_project(
+    project: AnnotationProject | str | Path,
+    *,
+    project_path: str | Path | None = None,
+    overwrite: bool = False,
+    autosave_interval: float | None = 30.0,
+    segmentation_provider: SegmentationProvider | None = None,
+) -> AnnotationResult:
+    """Resume an editable annotation project without the original video.
+
+    The embedded RGB frame, pixel geometry, calibration, labels and export
+    settings are restored before the annotation controls are created. Invalid
+    draft polygons remain editable; export succeeds after they are repaired.
+
+    Parameters
+    ----------
+    project : AnnotationProject or str or Path
+        In-memory draft or saved project file. The source video is never opened.
+    project_path : str or Path, optional
+        Destination for draft saves. When resuming a file, defaults to that file.
+        For an in-memory project, choose a destination in the UI or pass one here.
+    overwrite : bool, default=False
+        Save over an existing ``project_path`` other than the resumed file.
+    autosave_interval : float or None, default=30.0
+        Seconds between saves to the current project path. Must be positive
+        and finite; None disables periodic saves.
+    segmentation_provider : SegmentationProvider, optional
+        Outline proposal provider; defaults to the CPU region grower. For dark
+        or low-contrast video, pass
+        ``SegmentAnythingProvider.from_sam2("sam2.1_hiera_large.pt")``.
+
+    Returns
+    -------
+    AnnotationResult
+        Validated regions, walls, landmarks and optional discretized environment
+        using the session's current calibration and bin size.
+
+    Raises
+    ------
+    ValueError
+        If the project is corrupt, has an unsupported version, requires a
+        missing bin size, or autosave settings are invalid. Invalid geometry
+        must be edited before export.
+    FileExistsError
+        If ``project_path`` names an existing file other than the project
+        being resumed, and ``overwrite`` is False.
+    FileNotFoundError
+        If the folder for ``project_path`` does not exist.
+    ImportError
+        If napari is not installed.
+
+    Examples
+    --------
+    >>> from neurospatial.annotation import annotate_project
+    >>> result = annotate_project("arena.project")  # doctest: +SKIP
+
+    See Also
+    --------
+    annotate_video : Start a new annotation from a video frame.
+    AnnotationProject : Portable editable draft with its reference frame.
+    """
+    from neurospatial.annotation._project_layer import _validate_shapes_for_display
+    from neurospatial.annotation.project import AnnotationProject
+
+    _validate_autosave_interval(autosave_interval)
+    source: Path | None = None
+    if isinstance(project, (str, Path)):
+        source = Path(project)
+        draft = AnnotationProject.load(source)
+        if project_path is None:
+            project_path = source
+    elif isinstance(project, AnnotationProject):
+        draft = project
+    else:
+        raise TypeError("project must be an AnnotationProject or a project file path.")
+    project_saved = (
+        source is not None
+        and project_path is not None
+        and Path(project_path).exists()
+        and Path(project_path).samefile(source)
+    )
+    if project_path is not None:
+        _check_project_folder(project_path)
+    if project_path is not None and not project_saved:
+        check_writable(
+            [Path(project_path)],
+            overwrite=overwrite,
+            what="annotation project",
+            argument="project_path",
+            alternative="or resume that file with annotate_project",
+        )
+    _validate_annotate_params(draft.mode, draft.bin_size)
+    _validate_shapes_for_display(draft.shapes)
+    _require_napari()
+    return _run_annotation_editor(
+        draft,
+        restore_shapes=True,
+        project_path=project_path,
+        project_saved=project_saved,
+        autosave_interval=autosave_interval,
+        segmentation_provider=segmentation_provider,
+    )
+
+
+def _check_project_folder(project_path: str | Path) -> None:
+    """Fail before editing when draft saves could not reach the destination."""
+    folder = Path(project_path).parent
+    if not folder.is_dir():
+        raise FileNotFoundError(
+            f"The folder for project_path does not exist: {folder}. Create it, "
+            "or choose another project_path."
+        )
+
+
+def _require_napari() -> None:
+    """Fail before loading frames or creating a viewer without the GUI extra."""
+    try:
+        import napari  # noqa: F401 - verify the optional GUI dependency
+    except ImportError as exc:
+        raise ImportError(
+            "napari is required for interactive annotation. "
+            "Install with: pip install napari[all]"
+        ) from exc
+
+
+def _validate_initial_metadata(regions: Regions) -> None:
+    """Reject polygon metadata that an editable project cannot store."""
+    from neurospatial.regions.core import _require_json_metadata, _thaw_metadata
+
+    for name, region in regions.items():
+        if region.kind != "polygon":
+            continue
+        try:
+            _require_json_metadata(_thaw_metadata(region.metadata), allow_nan=True)
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot edit region {name!r}: {exc} Editable annotations store "
+                "metadata as JSON objects, whose keys are strings. Convert the "
+                "region's metadata keys to strings before annotating."
+            ) from exc
+
+
+def _validate_autosave_interval(autosave_interval: float | None) -> None:
+    """Reject invalid timer settings before importing or creating a viewer."""
+    validate_finite_scalar(
+        autosave_interval, name="autosave_interval", positive=True, none_allowed=True
+    )
+
+
+def _run_annotation_editor(
+    project: AnnotationProject,
+    *,
+    restore_shapes: bool,
+    project_path: str | Path | None,
+    project_saved: bool,
+    autosave_interval: float | None,
+    segmentation_provider: SegmentationProvider | None,
+    boundary_polygon: Polygon | None = None,
+    positions_for_display: NDArray[np.float64] | None = None,
+    initial_regions: Regions | None = None,
+) -> AnnotationResult:
+    """Run the common editor and export from its current scientific settings.
+
+    ``restore_shapes`` restores the project's shapes into the editor, as when
+    resuming; a new project starts from the initial regions and boundary.
+    """
+    from neurospatial.annotation._session import run_annotation_session
+    from neurospatial.annotation._workflow import AnnotationProjectSession
+
+    viewer, shapes, controls = _setup_annotation_viewer(
+        Path(project.video_path or "Annotation project"),
+        project.frame,
+        project.mode,
         boundary_polygon,
         positions_for_display,
         initial_regions,
-        calibration,
+        project.calibration,
+        draft=project if restore_shapes else None,
     )
-
-    from neurospatial.annotation._session import run_annotation_session
+    try:
+        session = AnnotationProjectSession(
+            viewer,
+            shapes,
+            controls,
+            project,
+            project_path=project_path,
+            project_saved=project_saved,
+            autosave_interval=autosave_interval,
+            segmentation_provider=segmentation_provider,
+        )
+    except Exception:
+        viewer.close()
+        raise
 
     def prepare_result() -> AnnotationResult:
-        flush_pending()
-        return _process_annotation_results(
+        controls.flush_pending()
+        _validate_annotate_params(project.mode, session.bin_size)
+        result = _process_annotation_results(
             shapes,
-            mode,
-            bin_size,
-            calibration,
-            resolved.simplify_tolerance,
-            resolved.multiple_boundaries,
+            project.mode,
+            session.bin_size,
+            session.calibration,
+            session.simplify_tolerance,
+            project.multiple_boundaries,
         )
+        try:
+            session.save_if_path()
+        except Exception as exc:
+            # A valid result outweighs its draft file. The warning appears
+            # before the editor closes, so the user can still Save As.
+            warnings.warn(
+                f"The annotations are valid, but the draft could not be saved "
+                f"to {session.project_path}: {exc}. Choose Keep Editing and use "
+                "Save As to keep a draft, or return the results without one.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return result
 
-    return run_annotation_session(_viewer, prepare_result)
+    try:
+        return run_annotation_session(viewer, prepare_result)
+    finally:
+        session.dispose()
 
 
 def _add_initial_regions(
@@ -595,7 +865,9 @@ def _setup_annotation_viewer(
     positions_for_display: NDArray[np.float64] | None,
     initial_regions: Regions | None,
     calibration: VideoCalibration | None,
-) -> tuple[napari.Viewer, napari.layers.Shapes, Callable[[], None]]:
+    *,
+    draft: AnnotationProject | None = None,
+) -> tuple[napari.Viewer, napari.layers.Shapes, _AnnotationWidget]:
     """Create and configure napari viewer for annotation.
 
     Parameters
@@ -621,8 +893,9 @@ def _setup_annotation_viewer(
         Configured napari viewer.
     shapes : napari.layers.Shapes
         Shapes layer for annotations.
-    flush_pending : Callable[[], None]
-        Finish pending widget edits before constructing an annotation result.
+    controls : _AnnotationWidget
+        Annotation controls. ``controls.flush_pending()`` finishes pending
+        widget edits before an annotation result is built.
 
     """
     import napari
@@ -667,6 +940,15 @@ def _setup_annotation_viewer(
         # Start in vertex editing mode for immediate adjustment
         shapes.mode = "direct"
 
+    # Restore ring identities, primitive types and labels before widget state is
+    # initialized, so reopening cannot rename or reclassify saved shapes.
+    if draft is not None:
+        from neurospatial.annotation._project_layer import restore_shapes
+
+        restore_shapes(draft.shapes, shapes)
+        if draft.shapes:
+            shapes.mode = "direct"
+
     # Add annotation control widget
     widget = create_annotation_widget(
         viewer,
@@ -680,9 +962,9 @@ def _setup_annotation_viewer(
     )
 
     # Set initial status bar
-    viewer.status = "Annotation mode: M=cycle modes, Escape=save and close"
+    viewer.status = "Annotation mode: M=cycle roles; Save Project keeps your draft; Done returns results"
 
-    return viewer, shapes, widget.flush_pending
+    return viewer, shapes, widget
 
 
 def _process_annotation_results(
@@ -743,7 +1025,11 @@ def _process_annotation_results(
             stacklevel=3,  # Points to annotate_video() caller
         )
         return AnnotationResult(
-            environment=None, regions=Regions([]), walls={}, landmarks=Landmarks()
+            environment=None,
+            regions=Regions([]),
+            walls={},
+            landmarks=Landmarks(),
+            calibration=calibration,
         )
 
     from neurospatial.annotation._draft import polygon_drafts
@@ -815,5 +1101,9 @@ def _process_annotation_results(
         len(landmarks),
     )
     return AnnotationResult(
-        environment=environment, regions=regions, walls=walls, landmarks=landmarks
+        environment=environment,
+        regions=regions,
+        walls=walls,
+        landmarks=landmarks,
+        calibration=calibration,
     )
