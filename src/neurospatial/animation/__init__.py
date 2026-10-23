@@ -33,8 +33,8 @@ Skeleton : class
     Immutable pose skeleton, with mouse, rat and simple presets.
 calibrate_video : function
     Calibrate video coordinates using the canonical ops.VideoCalibration type.
-subsample_frames, estimate_colormap_range_from_subset, large_session_napari_config : function
-    Frame selection, colormap estimation and settings for large sessions.
+subsample_frames, estimate_colormap_range_from_subset : function
+    Frame selection and colormap estimation for large sessions.
 """
 
 from neurospatial.animation._video_io import _VideoReader as _VideoReader
@@ -44,7 +44,6 @@ from neurospatial.animation.calibration import calibrate_video
 from neurospatial.animation.config import ScaleBarConfig
 from neurospatial.animation.core import (
     estimate_colormap_range_from_subset,
-    large_session_napari_config,
     subsample_frames,
 )
 from neurospatial.animation.events import EventInspector
@@ -91,6 +90,5 @@ __all__: list[str] = [
     "VideoOverlay",
     "calibrate_video",
     "estimate_colormap_range_from_subset",
-    "large_session_napari_config",
     "subsample_frames",
 ]

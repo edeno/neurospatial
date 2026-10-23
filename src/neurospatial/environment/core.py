@@ -162,6 +162,7 @@ if TYPE_CHECKING:
     from matplotlib.colors import Colormap
     from scipy.spatial import cKDTree
 
+    from neurospatial.animation._view import AnimationView
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.geometry import Arena, ClipMapping, DiffusionGeometry
     from neurospatial.layout import ScaleBarConfig
@@ -5986,413 +5987,193 @@ class Environment(Generic[_C]):
 
     def animate_fields(
         self,
-        fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+        fields: Sequence[NDArray[np.float64]] | NDArray[np.float64] | Mapping[str, Any],
         *,
         frame_times: NDArray[np.float64],
         backend: Literal[
             "auto", "napari", "video", "html", "widget", "fastplotlib"
         ] = "auto",
-        save_path: str | None = None,
-        overwrite: bool | None = None,
+        save_path: str | Path | None = None,
+        overwrite: bool = False,
+        overlays: list[OverlayProtocol] | None = None,
         speed: float = 1.0,
+        max_playback_fps: int = 60,
+        max_gap: float | None = 0.5,
         cmap: str = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
-        frame_labels: Sequence[str] | None = None,
         title: str | None = None,
-        dpi: int | None = None,
-        codec: str | None = None,
-        bitrate: int | None = None,
-        n_workers: int | None = None,
-        dry_run: bool = False,
-        image_format: Literal["png", "jpeg"] | None = None,
-        max_html_frames: int | None = None,
-        overlays: list[OverlayProtocol] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
         scale_bar: bool | ScaleBarConfig | None = None,
         **kwargs: Any,
-    ) -> Any:
-        """Animate spatial fields over time with multiple backend options.
+    ) -> AnimationView | Path:
+        """Animate spatial fields on their recording clock.
 
-        Creates animations of spatial field data across different time points,
-        with support for four different backends optimized for different use cases:
-        Napari (GPU-accelerated interactive viewing), Video (MP4/WebM export),
-        HTML (standalone shareable player), and Jupyter Widget (notebook integration).
+        Shows how a field such as a decoded position posterior changes over
+        time, with the animal's position, pose, events and signals drawn on
+        it. Each row of ``fields`` is shown from its time in ``frame_times``
+        until the next row; across a gap longer than ``max_gap`` the field
+        shows as missing. The call builds an
+        :class:`~neurospatial.animation.Animation` and opens a view of it or
+        writes a file. Build an ``Animation`` yourself to inspect identified
+        events, open several views, or export selected time windows.
 
         Parameters
         ----------
-        fields : Sequence[NDArray[np.float64]] or NDArray[np.float64]
-            Spatial field data to animate. Can be:
-            - List of arrays: Each array shape (n_bins,) represents one frame
-            - Single ndarray: Shape (n_frames, n_bins) with first dimension as time
-            Each field must match the number of bins in this environment.
-        backend : {"auto", "napari", "video", "html", "widget", "fastplotlib"}, default="auto"
-            Animation backend to use:
-            - "auto": Automatically selects based on context and data size
-            - "napari": GPU-accelerated interactive viewer (best for large datasets)
-            - "video": Export MP4/WebM with parallel rendering (best for publications)
-            - "html": Standalone HTML player with instant scrubbing (best for sharing)
-            - "widget": Jupyter widget with slider control (best for notebooks)
-            - "fastplotlib": GPU drawing in Jupyter, including from a remote
-              GPU server, or a desktop window; 2-D and 3-D environments.
-              ``"auto"`` never chooses it. ``pip install
-              "neurospatial[fastplotlib]"`` (Python 3.11 or newer).
-        save_path : str, optional
-            Output file path. If provided, file extension determines format:
-            - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
-            - .html: standalone HTML player (no dependencies)
-            - None: display interactively (napari or widget depending on context)
-        overwrite : bool, optional
-            Video and HTML backends: allow replacing existing files and
-            nonempty HTML frames directories. By default (False), an existing
-            target raises before rendering.
+        fields : ndarray, shape (n_frames, n_bins), or sequence or mapping
+            Field values, one row per entry of ``frame_times``. A list of
+            ``(n_bins,)`` arrays is one field. Several fields shown side by
+            side are a mapping from name to field, or a list of fields named
+            by ``layer_names``. Rows are read lazily, so a memory-mapped array
+            stays on disk.
+        frame_times : ndarray, shape (n_frames,)
+            Strictly increasing time of each row, in seconds.
+        backend : {"auto", "napari", "video", "html", "widget", "fastplotlib"}
+            ``"video"`` and ``"html"`` write ``save_path``. ``"napari"``
+            opens a desktop viewer, ``"widget"`` a notebook player and
+            ``"fastplotlib"`` a GPU view in Jupyter or a window
+            (``pip install "neurospatial[fastplotlib]"``). ``"auto"`` exports
+            when ``save_path`` is a video or ``.html`` file, uses the notebook
+            widget in Jupyter for up to 10,000 frames, and napari otherwise.
+        save_path : str or Path, optional
+            Output file: ``.mp4``, ``.webm``, ``.mov``, ``.avi``, ``.gif`` or
+            ``.html``.
+        overwrite : bool, default=False
+            Allow replacing an existing output file.
+        overlays : list of overlays, optional
+            Positions, pose, head direction, video, events, signals, spike
+            rasters, epochs and object vectors, each on its own clock.
         speed : float, default=1.0
-            Playback speed relative to real-time:
-
-            - 1.0: Real-time playback (1 second of data = 1 second viewing)
-            - 0.1: 10% speed (slow motion, good for replay analysis)
-            - 2.0: 2x speed (fast forward)
-
-            The actual playback fps is computed as:
-            ``playback_fps = min(sample_rate_hz * speed, MAX_PLAYBACK_FPS)``
-
-            where sample_rate_hz is inferred from frame_times.
-            Playback is capped at MAX_PLAYBACK_FPS (60) for display compatibility.
+            Playback speed relative to real time: 0.1 plays replay at a tenth
+            of its recorded speed.
+        max_playback_fps : int, default=60
+            Highest frame rate shown or written. The frame rate is the
+            sampling rate of ``frame_times`` times ``speed``; a file capped
+            here keeps ``speed`` and skips rows between output frames, with a
+            warning.
+        max_gap : float or None, default=0.5
+            Longest interval in seconds over which a row is held until the
+            next one. Pass None to hold every row until the next, for example
+            for one field per trial.
         cmap : str, default="viridis"
-            Matplotlib colormap name (e.g., "hot", "Blues", "viridis", "RdBu_r")
-        vmin : float, optional
-            Minimum value for colormap normalization. If None, the 1st
-            percentile of the frames' minima.
-        vmax : float, optional
-            Maximum value for colormap normalization. If None, the 99th
-            percentile of the frames' maxima: about 1% of frames reach past
-            it and show its color, so one extreme frame does not wash out the
-            rest (a sharp posterior keeps its shape). Pass a value to compare
-            animations on one scale.
-        frame_labels : Sequence[str], optional
-            Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]). If None,
-            auto-generated as "Frame 1", "Frame 2", etc.
+            Matplotlib colormap name.
+        vmin, vmax : float, optional
+            Fixed color limits. By default, robust limits from up to 100 rows
+            of each field.
         title : str, optional
-            Napari and HTML backends: title of the window or the page (default
-            "Spatial Field Animation"). Video frames and the widget have no
-            title; use ``frame_labels`` there.
-        dpi : int, optional
-            Video, HTML and widget backends: resolution for rendering frames
-            (default 100). Higher values produce sharper images but larger
-            files.
-        codec : str, optional
-            Video backend: codec, "h264" (default), "h265", "vp9" or "mpeg4".
-        bitrate : int, optional
-            Video backend: constant bitrate in kbps. By default the encoder
-            uses constant quality (``crf=18``, visually near-lossless), which
-            adapts the bitrate to the content; passing ``bitrate`` replaces it.
-        n_workers : int, optional
-            Number of parallel workers for video rendering, and for HTML
-            rendering with ``embed=False``. If None, uses CPU count / 2. Set
-            to 1 for serial rendering. Workers receive a pickled copy of the
-            environment, which never includes cached analyses.
-        dry_run : bool, default=False
-            If True, check the inputs and report what would be rendered (frame
-            count, and for video and HTML the estimated time or file size),
-            then return None without writing a file, opening a viewer or
-            displaying a widget. Works with every backend.
-        image_format : {"png", "jpeg"}, optional
-            HTML and widget backends: image format of the frames, "png"
-            (default) or "jpeg". JPEG produces smaller files but with lossy
-            compression.
-        max_html_frames : int, optional
-            HTML backend: maximum number of frames (default 500). Prevents
-            creating huge files that crash browsers.
-        overlays : list of overlay objects, optional
-            List of overlay objects to render on top of the spatial field animation.
-            Supported types: PositionOverlay, BodypartOverlay, HeadDirectionOverlay, VideoOverlay.
-            Multiple overlays of the same type can be provided for multi-animal tracking.
-            See neurospatial.animation.overlays for details. Default: None (no overlays).
-        frame_times : NDArray[np.float64], shape (n_frames,)
-            Timestamps for each frame in seconds. **Required** - provides the
-            temporal structure of your data. Use timestamps from your data source
-            (e.g., position timestamps, decoding time bins).
-
-            Overlays with their own timestamps will be aligned via interpolation
-            to these frame times.
+            Title shown above the fields.
         show_regions : bool or list of str, default=False
-            Whether to render region overlays. If True, all regions defined in
-            env.regions are rendered. If a list of region names, only those regions
-            are rendered. Regions are rendered as semi-transparent polygons.
-            Default: False (no region overlays).
+            Draw all environment regions, or the named ones.
         region_alpha : float, default=0.3
-            Alpha transparency for region overlays. Range: [0.0, 1.0] where
-            0.0 is fully transparent and 1.0 is fully opaque. Only used when
-            show_regions is True or a list. Default: 0.3.
+            Region opacity, between 0 and 1.
         scale_bar : bool or ScaleBarConfig, optional
-            Whether to add a scale bar to rendered frames. If True, uses default
-            ScaleBarConfig with auto-calculated length. If ScaleBarConfig instance,
-            uses provided configuration.
-
-            - **napari backend**: Configures napari's native scale bar
-            - **video and html backends**: Adds scale bar to each rendered frame
-            - **widget backend**: not supported; it is ignored with a warning
-
-            Default: False (no scale bar).
-        **kwargs : dict
-            Backend-specific parameters, listed below. A name that no backend
-            accepts raises ``TypeError`` with the closest option. An option
-            that another backend uses (``crf`` with ``backend="html"``, say)
-            is ignored with one ``UserWarning`` that names the backend using
-            it; with ``backend="auto"`` the warning also says which backend
-            was chosen and why. Options left out use each backend's default.
-
-            **Napari backend:**
-            - ``layout`` : {"horizontal", "vertical", "grid"}, optional
-              Layout for multi-field viewing (required when fields is a list of lists)
-            - ``layer_names`` : list of str, optional
-              Custom names for each layer in multi-field mode
-            - ``cache_size`` : int, default=1000
-              Maximum frames to cache (per-frame caching)
-            - ``chunk_size`` : int, default=10
-              Frames per chunk (chunked caching for >10K frames)
-            - ``max_chunks`` : int, default=100
-              Maximum chunks to cache
-
-            **Video backend:**
-            - ``crf`` : int, default=18
-              Constant rate factor for quality (0=lossless, 51=worst)
-            - ``preset`` : str, default="medium"
-              Encoding speed preset (ultrafast, fast, medium, slow, veryslow)
-
-            **HTML backend:**
-            - ``embed`` : bool, default=True
-              Embed frames in the HTML file; False writes them to a folder
-            - ``frames_dir`` : str or Path, optional
-              Folder for the frames when ``embed=False``
-
-            **Widget backend:**
-            - ``initial_cache_size`` : int, optional
-              Number of frames to pre-render
-            - ``cache_limit`` : int, default=1000
-              Maximum cache size
-
-            **Fastplotlib backend:**
-            - ``window_seconds`` : float, default=2.0
-              On a track, seconds of fields shown in the position-by-time
-              panel, centered on the current time
-            - ``layout`` and ``layer_names`` : as for napari, for several
-              fields side by side
-            - ``colorbar_label`` : str, optional
-              What the colors measure, such as "probability"
-            - ``track`` : Environment, optional
-              A linearized track of the same maze, to draw a 2-D posterior
-              against position along it and time
+            Draw a scale bar in the environment's units.
+        **kwargs
+            Further options. For every backend: ``colorbar_label``,
+            ``layer_names``, ``window_seconds`` (seconds of signal shown
+            around the current time) and ``track`` (a linearized track of the
+            same maze, to draw a 2-D field along it). For files: ``dpi``,
+            ``figsize``, ``n_workers`` (worker processes rendering frames;
+            None uses every CPU) and, for video, ``codec``, ``crf``,
+            ``preset``, ``bitrate``; for HTML, ``image_format``,
+            ``max_html_frames``, ``embed``, ``frames_dir``. For views:
+            ``dpi`` and ``figsize`` (widget); ``viewer``, ``show``,
+            ``ndisplay`` and ``layout`` (napari); ``layout``,
+            ``frame_labels``, ``field_rendering``, ``volume_threshold`` and
+            ``slice_plane`` (fastplotlib). An option no backend uses raises
+            ``TypeError``; one that only another backend uses warns.
 
         Returns
         -------
-        viewer or path or widget
-            Return value depends on backend:
-            - napari: napari.Viewer instance (blocking - shows window)
-            - video: Path to saved video file
-            - html: Path to saved HTML file
-            - widget: ipywidgets.interact instance (displays automatically in notebook)
-            - fastplotlib: FastplotlibAnimation (displays itself in Jupyter;
-              elsewhere call ``.show()``)
+        AnimationView or Path
+            The open view, whose ``native`` attribute is the napari viewer,
+            notebook widget or fastplotlib animation, or the written file.
+            Closing the view releases the video readers it opened.
 
         Raises
         ------
         FileExistsError
-            If an output already exists and overwrite is False.
+            If the output exists and ``overwrite`` is False.
+        TypeError
+            If an option is not an option of any backend.
         ValueError
-            If field shapes don't match environment n_bins
-        ImportError
-            If required backend dependencies are not installed
-        RuntimeError
-            If ffmpeg is not available for video backend
+            If the fields do not match the environment's bins or
+            ``frame_times``, or the backend cannot draw an overlay.
 
         See Also
         --------
-        plot_field : Plot static spatial field
-        plot : Plot environment structure
-        neurospatial.animation.subsample_frames : Subsample frames for large datasets
-
-        Notes
-        -----
-        **Backend Selection (auto mode):**
-        When backend="auto", the selection logic is:
-        - If save_path has video extension (.mp4, .webm, etc.) → video backend
-        - If save_path is .html → HTML backend
-        - If >10,000 frames → napari backend (GPU acceleration needed)
-        - If in Jupyter notebook → widget backend
-        - Otherwise → napari backend (if available) or error
-
-        **Layout Support:**
-        All layout types are supported:
-        - Grid layouts (RegularGrid, MaskedGrid, etc.): Direct rendering
-        - Hexagonal/Triangular: Layout-aware rendering with proper shapes
-        - Graph layouts (1D): Rendered as 1D line plots
-        The animation automatically uses the appropriate renderer based on layout type.
-
-        **Performance Tips:**
-        - For large datasets (>10K frames), use memory-mapped arrays to avoid loading
-          all data into RAM
-        - Use napari backend for interactive exploration of large datasets
-        - For video export, increase n_workers for faster parallel rendering
-        - For HTML, use image_format="jpeg" to reduce file size (with quality loss)
-        - Use subsample_frames() utility to downsample high-frequency recordings
-
-        **Memory Considerations:**
-        - Napari backend: Frames loaded on-demand (LRU cache), handles 900K+ frames
-        - Video backend: Renders in chunks, temporary files cleaned up automatically
-        - HTML backend: All frames embedded in single file (limit: 500 frames default)
-        - Widget backend: Pre-renders first 500 frames, on-demand for rest
+        neurospatial.animation.Animation : Reusable scenes for views, event
+            inspection and export.
+        plot_field : Plot one field.
+        neurospatial.animation.subsample_frames : Thin long recordings.
 
         Examples
         --------
-        Create a short evolving field on a complete grid:
+        A field that spreads from the arena center, sampled at 30 Hz:
 
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> x, y = np.meshgrid(np.arange(0.0, 24.0, 4.0), np.arange(0.0, 24.0, 4.0))
         >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
         >>> distances = env.distance_to(bins=env.n_bins // 2)
-        >>> fields = [np.exp(-distances / (4.0 + frame)) for frame in range(8)]
+        >>> fields = np.array(
+        ...     [np.exp(-distances / (4.0 + frame)) for frame in range(8)]
+        ... )
         >>> frame_times = np.arange(len(fields)) / 30.0
 
-        Interactive exploration in napari and video export. These two examples
-        are skipped in the documentation tests because napari needs a display
-        and video export needs the ffmpeg program:
+        Explore it in napari, or write a video at half speed. Napari needs a
+        display, so these are not run here:
 
-        >>> viewer = env.animate_fields(
+        >>> view = env.animate_fields(
         ...     fields, frame_times=frame_times, backend="napari"
         ... )  # doctest: +SKIP
-        >>> env.animate_fields(  # doctest: +SKIP
-        ...     fields,
-        ...     frame_times=frame_times,
-        ...     backend="video",
-        ...     save_path="learning.mp4",
-        ...     speed=0.5,
-        ...     n_workers=4,
-        ...     frame_labels=[f"Trial {i + 1}" for i in range(len(fields))],
-        ... )
+        >>> env.animate_fields(
+        ...     fields, frame_times=frame_times, save_path="learning.mp4", speed=0.5
+        ... )  # doctest: +SKIP
 
-        Share an HTML player, or use an interactive notebook widget:
+        Share an HTML player, with the animal's position and heading:
 
+        >>> from neurospatial.animation import HeadDirectionOverlay, PositionOverlay
+        >>> trajectory = np.c_[np.linspace(2.0, 18.0, 8), np.full(8, 10.0)]
+        >>> position = PositionOverlay(trajectory, times=frame_times, trail_length=3)
+        >>> heading = HeadDirectionOverlay(np.zeros(8), times=frame_times)
         >>> path = env.animate_fields(
         ...     fields,
         ...     frame_times=frame_times,
-        ...     backend="html",
-        ...     save_path="exploration.html",
-        ... )
-        >>> widget_viewer = env.animate_fields(
-        ...     fields, frame_times=frame_times, backend="widget"
-        ... )
-        VBox(...)
-
-        Position, pose and heading overlays use coordinates in the environment frame:
-
-        >>> from neurospatial.animation import (
-        ...     PositionOverlay,
-        ...     BodypartOverlay,
-        ...     Skeleton,
-        ...     HeadDirectionOverlay,
-        ... )
-        >>> trajectory = np.c_[
-        ...     np.linspace(2.0, 18.0, len(fields)), np.full(len(fields), 10.0)
-        ... ]
-        >>> position_overlay = PositionOverlay(
-        ...     positions=trajectory, color="red", trail_length=3
-        ... )
-        >>> skeleton = Skeleton.from_edge_list([("nose", "tail")], name="rodent")
-        >>> bodypart_overlay = BodypartOverlay(
-        ...     data={"nose": trajectory + [0.5, 0.0], "tail": trajectory - [0.5, 0.0]},
-        ...     skeleton=skeleton,
-        ...     colors={"nose": "red", "tail": "blue"},
-        ... )
-        >>> heading_overlay = HeadDirectionOverlay(
-        ...     headings=np.linspace(0.0, np.pi, len(fields)), color="yellow"
-        ... )
-        >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
-        >>> _ = regions.add("goal", point=(18.0, 10.0))
-        >>> env = env.with_regions(regions)
-        >>> path = env.animate_fields(
-        ...     fields,
-        ...     frame_times=frame_times,
-        ...     backend="html",
+        ...     overlays=[position, heading],
         ...     save_path="overlays.html",
-        ...     overlays=[position_overlay, bodypart_overlay, heading_overlay],
-        ...     show_regions=True,
         ... )
+        >>> path.name
+        'overlays.html'
 
-        Multiple animals can have separate position overlays:
+        Compare two fields side by side in a notebook:
 
-        >>> second_animal = PositionOverlay(
-        ...     positions=trajectory + [1.0, 1.0], color="blue"
-        ... )
-        >>> path = env.animate_fields(
-        ...     fields,
+        >>> view = env.animate_fields(
+        ...     {"early": fields, "late": fields[::-1]},
         ...     frame_times=frame_times,
-        ...     backend="html",
-        ...     save_path="animals.html",
-        ...     overlays=[position_overlay, second_animal],
+        ...     backend="widget",
         ... )
-
-        Subsample a memory-mapped field array before rendering:
-
-        >>> from neurospatial.animation import subsample_frames
-        >>> fields_mmap = np.lib.format.open_memmap(
-        ...     "fields.npy",
-        ...     mode="w+",
-        ...     dtype="float64",
-        ...     shape=(len(fields), env.n_bins),
-        ... )
-        >>> fields_mmap[:] = np.asarray(fields)
-        >>> fields_sub = subsample_frames(fields_mmap, target_fps=15, source_fps=30)
-        >>> frame_times_sub = np.arange(len(fields_sub)) / 15.0
-        >>> path = env.animate_fields(
-        ...     fields_sub,
-        ...     frame_times=frame_times_sub,
-        ...     backend="html",
-        ...     save_path="subsampled.html",
-        ... )
-
-        Timestamps align overlays recorded at a different sampling rate:
-
-        >>> overlay_times = np.arange(60) / 250.0
-        >>> trajectory_250hz = np.c_[np.linspace(2.0, 18.0, 60), np.full(60, 10.0)]
-        >>> aligned_overlay = PositionOverlay(
-        ...     positions=trajectory_250hz, times=overlay_times
-        ... )
-        >>> path = env.animate_fields(
-        ...     fields,
-        ...     frame_times=frame_times,
-        ...     overlays=[aligned_overlay],
-        ...     backend="html",
-        ...     save_path="aligned.html",
-        ... )
-
+        >>> view.seek(0.1)
+        >>> view.close()
         """
         from neurospatial.animation.core import animate_fields
 
         return animate_fields(
-            env=self,
-            fields=fields,
+            self,
+            fields,
             frame_times=frame_times,
             backend=backend,
             save_path=save_path,
             overwrite=overwrite,
+            overlays=overlays,
             speed=speed,
+            max_playback_fps=max_playback_fps,
+            max_gap=max_gap,
             cmap=cmap,
             vmin=vmin,
             vmax=vmax,
-            frame_labels=frame_labels,
             title=title,
-            dpi=dpi,
-            codec=codec,
-            bitrate=bitrate,
-            n_workers=n_workers,
-            dry_run=dry_run,
-            image_format=image_format,
-            max_html_frames=max_html_frames,
-            overlays=overlays,
             show_regions=show_regions,
             region_alpha=region_alpha,
             scale_bar=scale_bar,
