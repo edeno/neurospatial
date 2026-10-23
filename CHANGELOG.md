@@ -1867,7 +1867,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   converting a pixel output bin size and export simplification so the grid
   keeps its size in the image (replacing a calibration keeps centimeter
   values), and propose outlines from foreground/background clicks or a box
-  drawn around the area (with SAM 2 a box alone is enough). The default
+  drawn around the area (with SAM 2 a box alone is enough; region growing
+  stays within the pixels the box overlaps). The default
   `RegionGrowProvider` uses CPU color segmentation, and its preview can be
   painted or erased before acceptance. `SegmentationPrompt`,
   `SegmentationProposal`, `SegmentationProvider` and `mask_to_polygons` also work

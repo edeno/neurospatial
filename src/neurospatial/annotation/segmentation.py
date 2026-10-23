@@ -251,8 +251,8 @@ class RegionGrowProvider:
 
     Notes
     -----
-    Uses four-neighbor connectivity and clips to the optional box. Clicks
-    select the nearest pixel center. Similar colors in disconnected areas
+    Uses four-neighbor connectivity and keeps growth to the pixels the
+    optional box overlaps. Clicks select the nearest pixel center. Similar colors in disconnected areas
     are excluded unless those areas also have a foreground click. This simple
     color assumption works best with an arena distinct from its surroundings.
     """
@@ -302,7 +302,13 @@ class RegionGrowProvider:
         if prompt.box is not None:
             x0, y0, x1, y1 = prompt.box
             rows, columns = np.ogrid[:height, :width]
-            eligible &= (columns >= x0) & (columns <= x1) & (rows >= y0) & (rows <= y1)
+            # Pixel i covers [i - 0.5, i + 0.5); keep each pixel the box overlaps.
+            eligible &= (
+                (columns > x0 - 0.5)
+                & (columns < x1 + 0.5)
+                & (rows > y0 - 0.5)
+                & (rows < y1 + 0.5)
+            )
         components, _, clicked = _clicked_components(
             eligible, prompt.points[prompt.labels == 1]
         )

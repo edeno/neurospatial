@@ -247,9 +247,17 @@ def test_region_grow_tolerance_is_normalized_rgb_distance():
     np.testing.assert_array_equal(proposal.mask, [[True, True, False]])
 
 
-def test_region_grow_box_clips_pixel_centers():
+@pytest.mark.parametrize(
+    "box",
+    [
+        [5, 1, 8, 3],
+        # Edge pixels the box only partly covers are kept.
+        [5.3, 1.3, 7.7, 2.7],
+    ],
+)
+def test_region_grow_box_keeps_the_pixels_it_overlaps(box):
     image = np.zeros((6, 11, 3), dtype=np.uint8)
-    proposal = RegionGrowProvider().predict(image, _prompt(((7, 2),), box=[5, 1, 8, 3]))
+    proposal = RegionGrowProvider().predict(image, _prompt(((7, 2),), box=box))
     expected = np.zeros((6, 11), dtype=bool)
     expected[1:4, 5:9] = True
     np.testing.assert_array_equal(proposal.mask, expected)
