@@ -17,17 +17,6 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-def _typical_bin_spacing(env: Environment) -> float:
-    """Typical neighboring-center distance for a useful projection warning."""
-    centers = env.bin_centers
-    if len(centers) < 2:
-        return 1.0
-    sample = centers[:: max(1, len(centers) // 1000)]
-    distances, _ = env.bin_center_tree().query(sample, k=2)
-    spacing = float(np.median(distances[:, 1]))
-    return spacing if spacing > 0 else 1.0
-
-
 def track_extents(
     env: Environment,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
@@ -138,13 +127,21 @@ def _projection(env: Environment, track: Environment) -> Any:
     _, nearest = track.bin_center_tree().query(env.bin_centers)
     empty = 1.0 - len(np.unique(nearest)) / track.n_bins
     if empty > 0.1:
+        from neurospatial.ops import _typical_bin_spacing
+
+        spacing = _typical_bin_spacing(
+            env.bin_centers,
+            env.bin_sizes,
+            is_linearized_track=env.is_linearized_track,
+            tree=env.bin_center_tree(),
+        )
         warnings.warn(
             _format_error(
                 f"{empty:.0%} of the track's bins are nearest to no 2-D bin, so "
                 "they are drawn as missing along the track.",
                 why="Why: each 2-D bin's probability goes to one track bin.",
                 fix="build the track with a bin_size of at least the 2-D bins' "
-                f"({_typical_bin_spacing(env):.3g}).",
+                f"({spacing:.3g}).",
             ),
             UserWarning,
             stacklevel=_external_stacklevel(),
