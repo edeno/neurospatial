@@ -773,3 +773,19 @@ def test_nan_anchor_not_propagated():
     filled = _interpolate_heading_circular(np.arange(4.0), headings, fill)
     assert np.isfinite(filled[1])
     assert np.isnan(filled[2])
+
+
+@pytest.mark.parametrize("short", ["nose", "tail"])
+def test_body_orientation_length_mismatch_names_the_keypoint(short):
+    from neurospatial.behavior import heading_from_body_orientation
+
+    nose, tail = _facing(np.zeros(6))
+    keypoints = {"nose": nose, "tail": tail}
+    keypoints[short] = keypoints[short][:4]
+    with pytest.raises(ValueError) as excinfo:
+        heading_from_body_orientation(np.arange(6) * 0.1, **keypoints)
+    message = str(excinfo.value)
+    assert f"{short} has 4" in message
+    assert "times has 6" in message
+    assert "positions" not in message
+    assert "Why:" in message and "Fix:" in message

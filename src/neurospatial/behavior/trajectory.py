@@ -608,6 +608,24 @@ def heading_from_body_orientation(
     [0.0, 0.0, 0.0, 0.0, 0.0, 1.571, nan, 0.0]
     """
     call = "heading_from_body_orientation"
+    n_times = np.shape(times)[0] if np.ndim(times) else None
+    for name, keypoint in (("nose", nose), ("tail", tail)):
+        if np.ndim(keypoint) and n_times is not None and len(keypoint) != n_times:
+            raise ValueError(
+                _format_error(
+                    f"{call}() needs one {name} row per timestamp; times has "
+                    f"{n_times} samples but {name} has {len(keypoint)}.",
+                    why=(
+                        "Why: the heading at each frame is the direction of that "
+                        "frame's tail-to-nose vector, so both keypoints need a "
+                        "row for every timestamp."
+                    ),
+                    fix=(
+                        f"pass {name} with shape (n_samples, 2), the same "
+                        "n_samples as times, or trim all three to the same frames."
+                    ),
+                )
+            )
     t, nose_arr = validate_times_positions(times, nose, call=call)
     _, tail_arr = validate_times_positions(t, tail, call=call)
     if t.size == 0:
