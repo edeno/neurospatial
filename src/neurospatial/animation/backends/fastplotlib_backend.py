@@ -1000,13 +1000,9 @@ def _arrange(
         rows, columns = 1, n
     elif layout == "vertical":
         rows, columns = n, 1
-    elif layout == "grid":
+    else:  # "grid"; require_scene_view checked the layout
         columns = int(np.ceil(np.sqrt(n)))
         rows = int(np.ceil(n / columns))
-    else:
-        raise ValueError(
-            f"layout must be 'horizontal', 'vertical' or 'grid', got {layout!r}."
-        )
     width, height = right / columns, bottom / rows
     return [
         (

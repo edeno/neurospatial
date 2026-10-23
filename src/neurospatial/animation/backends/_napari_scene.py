@@ -224,10 +224,9 @@ class NapariScene:
         self.scene, self._closed = scene, False
         self._close_notification = _CloseNotification()
         self._time = float(scene.frame_times[0])
+        # require_scene_view checked speed and fps.
         self._speed = float(options.get("speed", 1))
         fps = float(options.get("fps", 30))
-        if not np.isfinite([self._speed, fps]).all() or self._speed <= 0 or fps <= 0:
-            raise ValueError("fps and speed must be positive finite numbers.")
         self._step = self._speed / fps
         # Playback advances from this recording time at this wall-clock time.
         self._play_origin, self._play_started = self._time, monotonic()

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
     from neurospatial.animation.scene import Animation
@@ -125,6 +127,47 @@ def _require_view_draws(backend: str, scene: Animation) -> None:
         )
 
 
+def checked_speed(speed: Any) -> float:
+    """``speed``, a positive finite playback multiplier, as a float."""
+    try:
+        value = float(speed)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "speed must be a positive finite playback multiplier."
+        ) from exc
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError("speed must be a positive finite playback multiplier.")
+    return value
+
+
+def checked_max_playback_fps(max_playback_fps: Any) -> int:
+    """``max_playback_fps``, a positive integer, as an int."""
+    if (
+        isinstance(max_playback_fps, bool)
+        or not isinstance(max_playback_fps, (int, np.integer))
+        or max_playback_fps <= 0
+    ):
+        raise ValueError("max_playback_fps must be a positive integer.")
+    return int(max_playback_fps)
+
+
+def _checked_fps(fps: Any) -> float:
+    try:
+        value = float(fps)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "fps must be a positive finite number of steps a second."
+        ) from exc
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError("fps must be a positive finite number of steps a second.")
+    return value
+
+
+_PLAYBACK_CHECKS = {
+    "speed": checked_speed,
+    "max_playback_fps": checked_max_playback_fps,
+    "fps": _checked_fps,
+}
 _SCENE_OPTIONS = {
     "widget": frozenset({"dpi", "figsize", "speed", "max_playback_fps"}),
     "napari": frozenset(
@@ -155,6 +198,9 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
             f"Unknown {backend} view options: {', '.join(sorted(unknown))}."
         )
     _require_view_draws(backend, scene)
+    for name, check in _PLAYBACK_CHECKS.items():
+        if name in options:
+            check(options[name])
     layout = options.get("layout")
     if layout is not None and layout not in {"horizontal", "vertical", "grid"}:
         raise ValueError("layout must be 'horizontal', 'vertical' or 'grid'.")

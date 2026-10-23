@@ -289,6 +289,35 @@ def test_scene_unknown_options_rejected_before_native_allocation(env, backend):
         scene.show(backend=backend, window_secs=2)
 
 
+@pytest.mark.parametrize(
+    ("backend", "option", "message"),
+    [
+        ("widget", {"speed": 0}, "speed must be"),
+        ("widget", {"max_playback_fps": 2.5}, "max_playback_fps must be"),
+        ("napari", {"speed": np.inf}, "speed must be"),
+        ("napari", {"fps": -1}, "fps must be"),
+        ("fastplotlib", {"speed": -1}, "speed must be"),
+        ("fastplotlib", {"max_playback_fps": 0}, "max_playback_fps must be"),
+    ],
+)
+def test_scene_playback_options_rejected_before_native_allocation(
+    env, monkeypatch, backend, option, message
+):
+    from neurospatial.animation import _view
+    from neurospatial.animation.backends import _napari_scene, fastplotlib_backend
+
+    native = Mock(side_effect=AssertionError("No view may open"))
+    monkeypatch.setattr(_view, "_notebook_view", native)
+    monkeypatch.setattr(_napari_scene, "NapariScene", native)
+    monkeypatch.setattr(fastplotlib_backend, "FastplotlibAnimation", native)
+    with (
+        Animation(env, np.ones((2, env.n_bins)), frame_times=[0, 0.1]) as scene,
+        pytest.raises(ValueError, match=message),
+    ):
+        scene.show(backend=backend, **option)
+    native.assert_not_called()
+
+
 def test_fast_scale_bar_rejected_before_native_allocation(env, monkeypatch):
     from neurospatial.animation.backends import fastplotlib_backend
 

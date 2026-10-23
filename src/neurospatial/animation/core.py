@@ -474,9 +474,13 @@ def animate_fields(
 
     # A misspelled region name fails here, before any frame is rendered.
     shown_region_names(env, show_regions)
-    from neurospatial.animation._view import _checked_playback
+    from neurospatial.animation._capabilities import (
+        checked_max_playback_fps,
+        checked_speed,
+    )
 
-    _checked_playback(speed, max_playback_fps)
+    checked_speed(speed)
+    checked_max_playback_fps(max_playback_fps)
     from neurospatial.animation.overlays import _validate_frame_times
 
     frame_times = _validate_frame_times(frame_times, _n_frames(fields))

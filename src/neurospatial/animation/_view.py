@@ -238,32 +238,6 @@ def _png(frame: NDArray[np.uint8]) -> bytes:
     return buffer.getvalue()
 
 
-def _checked_playback(speed: Any, max_playback_fps: Any) -> tuple[float, int]:
-    """``speed`` as a float and ``max_playback_fps`` as an int, once checked.
-
-    Raises
-    ------
-    ValueError
-        If ``speed`` is not a positive finite number, or ``max_playback_fps``
-        not a positive integer.
-    """
-    try:
-        speed = float(speed)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "speed must be a positive finite playback multiplier."
-        ) from exc
-    if not np.isfinite(speed) or speed <= 0:
-        raise ValueError("speed must be a positive finite playback multiplier.")
-    if (
-        isinstance(max_playback_fps, bool)
-        or not isinstance(max_playback_fps, (int, np.integer))
-        or max_playback_fps <= 0
-    ):
-        raise ValueError("max_playback_fps must be a positive integer.")
-    return speed, int(max_playback_fps)
-
-
 def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
     try:
         import ipywidgets as widgets
@@ -273,18 +247,16 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
             "backend='fastplotlib'."
         ) from exc
 
-    dpi = kwargs.pop("dpi", 100)
-    figsize = kwargs.pop("figsize", None)
-    speed, max_playback_fps = _checked_playback(
-        kwargs.pop("speed", 1.0), kwargs.pop("max_playback_fps", 30)
-    )
-    if kwargs:
-        raise TypeError(f"Unknown notebook view options: {', '.join(sorted(kwargs))}.")
+    # require_scene_view checked these options.
+    dpi = kwargs.get("dpi", 100)
+    figsize = kwargs.get("figsize")
+    speed = float(kwargs.get("speed", 1.0))
+    max_playback_fps = int(kwargs.get("max_playback_fps", 30))
     times = animation.frame_times
     start, stop = float(times[0]), float(times[-1])
     # Notebook ticks advance physical seconds even when source samples are irregular.
     interval_ms = max(1, round(1000 / max_playback_fps))
-    step = float(speed) * interval_ms / 1000
+    step = speed * interval_ms / 1000
     n_ticks = int(np.ceil((stop - start) / step))
     image = widgets.Image(format="png")
     slider = widgets.FloatSlider(
