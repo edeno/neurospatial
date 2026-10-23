@@ -477,10 +477,10 @@ class SegmentAnythingProvider:
             or masks.dtype.kind not in "bifu"
             or scores.dtype.kind not in "ifu"
             or logits.dtype.kind not in "bifu"
-            or not np.isfinite(masks).all()
             or not np.isfinite(scores).all()
             or not np.isfinite(logits).all()
-            or not np.isin(masks, [0, 1]).all()
+            # Binary values are finite; boolean masks need no scan.
+            or (masks.dtype != np.bool_ and not ((masks == 0) | (masks == 1)).all())
         ):
             raise ValueError(
                 "SAM predictor returned invalid masks/scores/logits; expected finite binary masks (N, height, width), scores (N,), and finite logits."
