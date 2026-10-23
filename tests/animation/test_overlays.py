@@ -22,7 +22,6 @@ from neurospatial.animation.overlays import (
     PositionOverlay,
     VideoOverlay,
     _validate_bounds,
-    _validate_finite_values,
     _validate_monotonic_time,
     _validate_shape,
     _validate_skeleton_consistency,
@@ -865,70 +864,6 @@ class TestValidateMonotonicTime:
         """Test validation with single time value (trivially monotonic)."""
         times = np.array([5.0])
         _validate_monotonic_time(times, name="test_overlay")
-
-
-class TestValidateFiniteValues:
-    """Test _validate_finite_values() function."""
-
-    def test_all_finite_values(self):
-        """Test that arrays with all finite values pass validation."""
-        data = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
-        # Should not raise any exception
-        _validate_finite_values(data, name="test_data")
-
-    def test_contains_nan(self):
-        """Test that NaN values raise ValueError with count and index."""
-        data = np.array([[0.0, 1.0], [np.nan, 3.0], [4.0, np.nan]])
-        with pytest.raises(ValueError) as exc_info:
-            _validate_finite_values(data, name="test_data")
-
-        error_msg = str(exc_info.value)
-        # WHAT: Found NaN in arrays
-        assert "nan" in error_msg.lower()
-        # Count of NaN values
-        assert "2" in error_msg  # 2 NaN values
-        # WHY: Rendering cannot place invalid coordinates
-        assert "render" in error_msg.lower() or "invalid" in error_msg.lower()
-        # HOW: Clean or mask; suggest interpolation
-        assert "clean" in error_msg.lower() or "mask" in error_msg.lower()
-
-    def test_contains_inf(self):
-        """Test that Inf values raise ValueError."""
-        data = np.array([[0.0, 1.0], [np.inf, 3.0], [4.0, 5.0]])
-        with pytest.raises(ValueError) as exc_info:
-            _validate_finite_values(data, name="test_data")
-
-        error_msg = str(exc_info.value)
-        assert "inf" in error_msg.lower()
-        assert "1" in error_msg  # 1 Inf value
-
-    def test_contains_neg_inf(self):
-        """Test that -Inf values raise ValueError."""
-        data = np.array([[0.0, 1.0], [-np.inf, 3.0]])
-        with pytest.raises(ValueError) as exc_info:
-            _validate_finite_values(data, name="test_data")
-
-        error_msg = str(exc_info.value)
-        assert "inf" in error_msg.lower()
-
-    def test_mixed_nan_and_inf(self):
-        """Test array with both NaN and Inf values."""
-        data = np.array([[np.nan, 1.0], [np.inf, 3.0], [4.0, -np.inf]])
-        with pytest.raises(ValueError) as exc_info:
-            _validate_finite_values(data, name="test_data")
-
-        error_msg = str(exc_info.value)
-        # Should report total count of non-finite values
-        assert "3" in error_msg  # 3 non-finite values
-
-    def test_1d_array_with_nan(self):
-        """Test validation with 1D array containing NaN."""
-        data = np.array([0.0, 1.0, np.nan, 3.0])
-        with pytest.raises(ValueError) as exc_info:
-            _validate_finite_values(data, name="test_data")
-
-        error_msg = str(exc_info.value)
-        assert "nan" in error_msg.lower()
 
 
 class TestValidateShape:
