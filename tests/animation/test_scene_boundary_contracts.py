@@ -363,6 +363,16 @@ def test_1d_regions_rejected_before_any_field_reads_or_readers():
     assert not conversions
 
 
+def test_1d_scene_without_regions_to_show_renders():
+    # The scene refuses 1-D regions once, when it is built; with no regions
+    # there is nothing to refuse, in the scene or its views.
+    env = Environment.from_samples(np.arange(5.0)[:, None], bin_size=1)
+    with Animation(
+        env, np.ones((2, env.n_bins)), frame_times=[0, 0.1], show_regions=True
+    ) as scene:
+        assert scene.render_frame(0.0, dpi=20).ndim == 3
+
+
 def test_napari_invalid_ndisplay_rejected_before_native_allocation(env, monkeypatch):
     from neurospatial.animation.backends import _napari_scene
 

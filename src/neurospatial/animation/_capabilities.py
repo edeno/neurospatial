@@ -90,13 +90,11 @@ def require_overlays(
 
 
 def require_scene_rendering(scene: Animation) -> None:
-    """Validate content shared by complete-scene rendering and its widgets."""
+    """Validate content shared by complete-scene rendering and its widgets.
+
+    ``Animation`` already refused regions it cannot draw in 1-D.
+    """
     require_overlays("scene", scene._overlay_data, n_dims=scene.env.n_dims)
-    if scene.env.n_dims == 1 and scene.show_regions:
-        raise ValueError(
-            "1D scene region display is unavailable. Use a 2D environment "
-            "to display regions, or omit show_regions."
-        )
 
 
 _SCENE_OPTIONS = {
