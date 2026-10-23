@@ -1779,7 +1779,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `AnnotationShape` save editable pixel geometry, calibration, output settings
   and the RGB reference frame in one portable file. `annotate_video` accepts
   `project_path=` and `autosave_interval=` (30 seconds by default, `None` to
-  disable); `annotate_project` resumes without the original video. Draft saves
+  disable); `annotate_project` resumes without the original video and refuses
+  to overwrite an existing file other than the one it resumes. Draft saves
   retain unfinished geometry; **Done** validates the exported result.
 - The annotation dock can calibrate a known distance from two marked endpoints
   and propose outlines from foreground/background clicks. The default

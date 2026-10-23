@@ -47,6 +47,25 @@ def test_fresh_session_cannot_overwrite_existing_project(tmp_path, monkeypatch):
     assert path.read_bytes() == b"saved scientific draft"
 
 
+@pytest.mark.parametrize("from_file", [False, True])
+def test_resume_cannot_overwrite_a_different_existing_project(
+    tmp_path, monkeypatch, from_file
+):
+    draft = AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), mode="regions")
+    source = tmp_path / "draft.project"
+    draft.save(source)
+    other = tmp_path / "other.project"
+    other.write_bytes(b"another session's work")
+    monkeypatch.setattr(
+        core,
+        "_setup_annotation_viewer",
+        lambda *args, **kwargs: pytest.fail("Must reject before opening a viewer"),
+    )
+    with pytest.raises(FileExistsError, match="choose a new"):
+        core.annotate_project(source if from_file else draft, project_path=other)
+    assert other.read_bytes() == b"another session's work"
+
+
 def test_initial_region_metadata_with_non_string_keys_fails_before_loading(
     monkeypatch,
 ):

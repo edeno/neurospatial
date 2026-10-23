@@ -335,6 +335,9 @@ def annotate_project(
         If the project is corrupt, has an unsupported version, requires a
         missing bin size, or autosave settings are invalid. Invalid geometry
         must be edited before export.
+    FileExistsError
+        If ``project_path`` names an existing file other than the project
+        being resumed.
     ImportError
         If napari is not installed.
 
@@ -352,6 +355,7 @@ def annotate_project(
     from neurospatial.annotation.project import AnnotationProject
 
     _validate_autosave_interval(autosave_interval)
+    source: Path | None = None
     if isinstance(project, (str, Path)):
         source = Path(project)
         draft = AnnotationProject.load(source)
@@ -361,6 +365,15 @@ def annotate_project(
         draft = project
     else:
         raise TypeError("project must be an AnnotationProject or a project file path.")
+    project_saved = False
+    if project_path is not None and Path(project_path).exists():
+        project_saved = source is not None and Path(project_path).samefile(source)
+        if not project_saved:
+            raise FileExistsError(
+                f"Annotation project already exists: {project_path}. "
+                "Resume that file with annotate_project, or choose a new "
+                "project_path."
+            )
     _validate_annotate_params(draft.mode, draft.bin_size)
     _validate_shapes_for_display(draft.shapes)
     _require_napari()
