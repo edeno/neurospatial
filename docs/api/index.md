@@ -264,17 +264,23 @@ Circular statistics, surrogates, and shuffle controls.
 
 ### [neurospatial.animation](neurospatial/animation/index.md)
 
-Field animation backends (napari / video / HTML / widget).
+Spatial fields over time on the recording clock: napari, notebook widget
+and fastplotlib viewers, and video, GIF and HTML exports.
 
 **Key Function:**
 
-- `animate_fields()`: Single entry point; dispatches across backends
+- `Environment.animate_fields()`: One call that opens a view
+  (`AnimationView`) or writes a file (`Path`)
 
 **Key Classes:**
 
-- `PositionOverlay`, `EventOverlay`,
-  `HeadDirectionOverlay`, `BodypartOverlay`, `VideoOverlay`:
-  Composable overlays for animations
+- `Animation`, `AnimationField`: Reusable scenes of named fields, each on its
+  own clock, shared by every view and export
+- `AnimationView`, `EventInspector`: Recording-time controls, and review of
+  identified events
+- `PositionOverlay`, `BodypartOverlay`, `HeadDirectionOverlay`,
+  `EventOverlay`, `VideoOverlay`, `TimeSeriesOverlay`, `SpikeRasterOverlay`,
+  `EpochOverlay`, `ObjectVectorOverlay`: Composable overlays for animations
 
 ### [neurospatial.io.nwb](neurospatial/io/nwb/index.md)
 

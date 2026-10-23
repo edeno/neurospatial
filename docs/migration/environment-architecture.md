@@ -1609,41 +1609,59 @@ glitched[10] = [np.inf, 50.0]  # a tracking glitch
 arena = Environment.from_samples(glitched, bin_size=4.0, units="cm")
 ```
 
-## Misspelled animation options raise
+## `animate_fields` returns a view or a file
 
-`env.animate_fields` used to pass every extra keyword to the backend, which
-ignored the ones it did not know, so a misspelled option such as
-`frame_label=` silently changed nothing. A name that no backend accepts now
-raises `TypeError` with the closest option. An option that another backend
-uses, such as `crf=` with `backend="html"`, still does nothing, but now says
-so with one `UserWarning` that names the backend that uses it.
+`env.animate_fields` builds an `Animation` scene and either opens a view of it
+or writes a file. Interactive backends (`"napari"`, `"widget"`,
+`"fastplotlib"`) return an `AnimationView`, whose `native` attribute is the
+napari viewer, notebook widget or fastplotlib animation; closing the view
+releases the video files it opened. Video and HTML exports return the `Path`
+they wrote. All backends now play the same scene on the recording clock:
 
-- `fps=` raises; the playback rate comes from `frame_times` and `speed=`.
-- `contrast_limits`, `show_colorbar` and `colorbar_label` are removed; no
-  backend used them. For a labeled color scale, plot one frame with
-  `env.plot_field(field, colorbar_label=...)`.
-- `title=` with the video backend warns: video frames have no title (use
-  `frame_labels=`). `scale_bar=` with the widget backend warns; the HTML
-  backend now draws it.
-- Video export uses constant quality (`crf=18`) unless you pass `bitrate=`.
-  `Environment.animate_fields` used to send `bitrate=5000` on every call,
-  which replaced the encoder's constant-quality setting and any `crf=` you
-  passed.
-- `dry_run=True` now works with every backend and writes nothing. The HTML
-  backend used to ignore it and write `animation.html`.
+- A field row is held until the next one only up to `max_gap=0.5` seconds;
+  across longer gaps the field is missing instead of frozen. Pass
+  `max_gap=None` for one field per lap or trial.
+- A file's frame rate is the sampling rate of `frame_times` times `speed`,
+  capped at `max_playback_fps`; a capped export keeps `speed`, skips rows and
+  warns.
+- Several fields shown side by side are a mapping from name to field, or a
+  list of fields named by `layer_names`, in every backend.
+- Every backend draws every overlay type. A combination an environment
+  cannot show (for example video in a 3-D environment) raises before drawing
+  instead of being skipped with a warning.
+
+Removed options: napari `cache_size`, `chunk_size` and `max_chunks`; widget
+`initial_cache_size`, `cache_limit`, `image_format` and `return_container`;
+`dry_run`; `frame_labels` outside `backend="fastplotlib"` (every frame is
+labeled with its recording time); and `large_session_napari_config`. Napari
+and the notebook widget read rows lazily without cache settings.
 
 <!-- docs-test: run -->
 ```python
-labels = [f"{t:.2f} s" for t in frame_times]
-# Before: env.animate_fields(fields, frame_times=frame_times, backend="html",
-#                            frame_label=labels)  # labels silently ignored
+# Before: viewer = env.animate_fields(fields, frame_times=frame_times, backend="napari")
+#         viewer.layers  (the napari viewer itself)
+# Now:    view = env.animate_fields(...); view.native.layers; view.close()
+# Before: env.animate_fields(..., backend="html", frame_labels=labels, dry_run=True)
+path = env.animate_fields(
+    fields, frame_times=frame_times, save_path="animation.html", dpi=40
+)
+assert path.name == "animation.html"
+```
+
+## Misspelled animation options raise
+
+A name that no backend accepts raises `TypeError` with the closest option, so
+a typo cannot silently change nothing. An option that another backend uses,
+such as `crf=` with `backend="html"`, does nothing, and says so with one
+`UserWarning` that names the backend that uses it. `fps=` raises; the frame
+rate comes from `frame_times` and `speed=`.
+
+<!-- docs-test: run -->
+```python
 try:
     env.animate_fields(
-        fields, frame_times=frame_times, backend="html", frame_label=labels
+        fields, frame_times=frame_times, save_path="typo.html", colorbar_lable="Hz"
     )
 except TypeError as error:
-    print(str(error).splitlines()[-1])  # Fix: pass frame_labels= instead of frame_label=
-env.animate_fields(
-    fields, frame_times=frame_times, backend="html", frame_labels=labels, dry_run=True
-)
+    print(str(error).splitlines()[-1])  # Fix: pass colorbar_label= instead of colorbar_lable=
 ```
