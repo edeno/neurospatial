@@ -575,3 +575,50 @@ class TestComputeDirectionalPlaceFields:
         assert len(df) == 0
         for col in ("direction", "bin", "coord_0", "firing_rate", "occupancy"):
             assert col in df.columns
+
+
+def test_direction_labels_feed_epochs_and_place_fields_consistently():
+    """None rows are dropped by both consumers; "stationary" is a real label."""
+    import warnings
+
+    from neurospatial.behavior import heading_direction_labels, labels_to_epochs
+
+    times = np.arange(60) / 10
+    x = np.r_[np.arange(30.0) * 2, np.full(30, 58.0)]  # 20 cm/s East, then rest
+    positions = np.column_stack([x, np.zeros(60)])
+    positions[10] = np.nan  # lost frame: no observed movement
+    env = Environment.from_samples(
+        np.column_stack([np.linspace(0, 60, 61), np.zeros(61)]), bin_size=4.0
+    )
+    spikes = np.array([0.55, 1.5, 2.2, 4.0, 4.5])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        labels = heading_direction_labels(times, positions, min_speed=5.0)
+        epochs = labels_to_epochs(times, labels, max_gap=None)
+        result = compute_directional_place_fields(
+            env, spikes, times, positions, labels, method="binned", max_gap=None
+        )
+        dropped = compute_directional_place_fields(
+            env,
+            spikes,
+            times,
+            positions,
+            labels,
+            method="binned",
+            max_gap=None,
+            missing_label="stationary",
+        )
+
+    assert labels[10] is None
+    assert "stationary" in set(labels) and labels[-1] == "stationary"
+    # None rows are excluded by both consumers; "stationary" is an ordinary label.
+    assert None not in set(epochs.labels)
+    assert None not in result.labels
+    assert "stationary" in epochs.labels
+    assert "stationary" in result.labels
+    assert result.missing_label is None
+    # missing_label="stationary" drops that map and is recorded.
+    assert "stationary" not in dropped.labels
+    assert set(dropped.labels) == set(result.labels) - {"stationary"}
+    assert dropped.summary()["missing_label"] == "stationary"
