@@ -102,3 +102,41 @@ def test_unsavable_draft_dialog_offers_keep_or_discard(viewer, button, keep):
     QTimer.singleShot(0, choose)
     assert _keep_editing(viewer.window._qt_window, ValueError("bad ring")) is keep
     assert shown == ["Cannot save annotations: bad ring"]
+
+
+@pytest.mark.gui
+def test_cancelled_close_keeps_the_session_running(viewer, monkeypatch):
+    import napari
+    from qtpy.QtCore import QTimer
+
+    window = viewer.window._qt_window
+    close_event = type(window).closeEvent
+    attempts = []
+    after_cancel = []
+
+    def confirm_close(self, event):
+        # Stand in for napari's confirm-close dialog: cancel the first close.
+        attempts.append(1)
+        if len(attempts) == 1:
+            event.ignore()
+            return
+        close_event(self, event)
+
+    def check_then_close():
+        after_cancel.append(window.isVisible())
+        window.close()
+
+    monkeypatch.setattr(type(window), "closeEvent", confirm_close)
+    monkeypatch.setattr(napari, "run", lambda: None)
+    QTimer.singleShot(0, window.close)
+    QTimer.singleShot(50, check_then_close)
+    prepared = []
+
+    def prepare_result():
+        prepared.append(1)
+        return len(prepared)
+
+    # The second close's result is returned, not the cancelled first one's.
+    assert _annotate(viewer, prepare_result) == 2
+    assert after_cancel == [True]
+    assert not window.isVisible()

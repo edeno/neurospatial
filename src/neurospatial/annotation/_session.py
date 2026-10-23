@@ -40,17 +40,37 @@ def run_annotation_session(
     since napari shows warnings raised inside its event loop only in the window.
     """
     import napari
-    from qtpy.QtCore import QEvent, QEventLoop, QObject  # type: ignore[attr-defined]
+    from qtpy.QtCore import (  # type: ignore[attr-defined]
+        QEvent,
+        QEventLoop,
+        QObject,
+        QTimer,
+    )
 
     results: list[_Result] = []
     caught: list[warnings.WarningMessage] = []
     discarded: list[Exception] = []
     window = viewer.window._qt_window
     loop = QEventLoop()
+    # napari's own close handler runs after this filter and can still cancel
+    # the close, for example from its confirm-close dialog. An accepted close
+    # hides the window while that close is being delivered.
+    closing = [False]
+
+    def close_delivered() -> None:
+        closing[0] = False
 
     class DraftCloseGuard(QObject):
         def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802
-            if event is not None and event.type() == QEvent.Type.Close:
+            if event is None:
+                return False
+            if event.type() == QEvent.Type.Hide and closing[0]:
+                loop.quit()
+            if event.type() == QEvent.Type.Close:
+                # Only the attempt that actually closes the window counts.
+                results.clear()
+                caught.clear()
+                discarded.clear()
                 try:
                     with warnings.catch_warnings(record=True) as recorded:
                         result = prepare_result()
@@ -62,7 +82,8 @@ def run_annotation_session(
                 else:
                     results[:] = [result]
                     caught[:] = recorded
-                loop.quit()
+                closing[0] = True
+                QTimer.singleShot(0, close_delivered)
             return False
 
     guard = DraftCloseGuard(window)
