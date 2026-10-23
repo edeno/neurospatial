@@ -283,8 +283,14 @@ def _t_maze_track():
             units="cm",
         ),
         _t_maze_track,
+        lambda: Environment.linear_track(
+            node_positions=[(-5, 0), (5, 0), (5, 10)],
+            bin_size=10,
+            track_width=2,
+            units="cm",
+        ).apply_transform(_rotation(0.4, offset=(100.0, 50.0))),
     ],
-    ids=["zigzag", "t_maze"],
+    ids=["zigzag", "t_maze", "rotated"],
 )
 def test_track_laps_stay_on_the_centerline(build):
     env = build()
@@ -302,6 +308,19 @@ def _walk_over_every_neighbor_pair(env):
     """A chain of neighboring bins that steps across every open pair."""
     circuit = list(nx.eulerian_circuit(nx.eulerize(env.connectivity)))
     return [int(u) for u, _v in circuit] + [int(circuit[-1][1])]
+
+
+def _rotation(angle, offset=(0.0, 0.0)):
+    """A rotation by ``angle`` radians followed by a shift by ``offset``."""
+    return Affine2D(
+        np.array(
+            [
+                [np.cos(angle), -np.sin(angle), offset[0]],
+                [np.sin(angle), np.cos(angle), offset[1]],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+    )
 
 
 L_SHAPE = Polygon([(0, 0), (40, 0), (40, 10), (10, 10), (10, 40), (0, 40)])

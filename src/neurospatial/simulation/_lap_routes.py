@@ -88,6 +88,18 @@ def _track_route(env: Environment, steps: NDArray[np.intp]) -> NDArray[np.float6
     linearization = env.binning.linearization
     assert linearization is not None
     segment_of = nx.get_node_attributes(env.connectivity, "source_edge_id")
+    if len(segment_of) != env.n_bins:
+        raise ValueError(
+            _format_error(
+                "Lap trajectories cannot follow this track: its bins do not "
+                "record which track segment each one lies on.",
+                why="Why: a lap turns at the node where two segments meet, and "
+                "the stored linear cells of this track do not match its "
+                "segments, so the junctions between bins are unknown.",
+                fix="rebuild the track with Environment.linear_track, "
+                "Environment.maze or Environment.from_graph",
+            )
+        )
     segments = np.array([segment_of[i] for i in range(env.n_bins)])
     # NaN where both bins lie on one straight segment: no turn between them.
     junctions = track_junctions(steps, segments, linearization.graph, env.n_dims)
