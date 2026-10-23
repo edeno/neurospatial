@@ -599,6 +599,10 @@ class HeadDirectionOverlay:
     - Head position marker (from PositionOverlay)
     - Direction line extending from head in heading direction
 
+    Without a PositionOverlay, the line is a compass arrow drawn from the
+    arena center. With several PositionOverlays the start is ambiguous, and
+    conversion raises ``ValueError``.
+
     Parameters
     ----------
     headings : ndarray of shape (n_samples,) or (n_samples, n_dims), dtype float64
@@ -5201,6 +5205,17 @@ def _convert_overlays_to_data(
                     f"SpikeRasterData, EpochData or ObjectVectorData, got "
                     f"{type(internal_data).__name__}."
                 )
+
+        if head_direction_data_list and len(position_data_list) > 1:
+            raise ValueError(
+                "HeadDirectionOverlay cannot tell which of the "
+                f"{len(position_data_list)} PositionOverlays it starts from. "
+                "Heading arrows are drawn from the animal's position, and "
+                "several position overlays give no single position. Pass exactly "
+                "one PositionOverlay with heading overlays (the tracked point "
+                "whose heading you measured), or omit PositionOverlays to draw "
+                "the heading as a compass arrow at the arena center."
+            )
 
         # Normalize regions to dict[int, list[str]] format
         # Key 0 means "apply to all frames"

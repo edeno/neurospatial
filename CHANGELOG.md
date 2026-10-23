@@ -48,6 +48,10 @@
   dictionaries now follow the same rules during sampling and realignment.
 - Share heading geometry across renderers: zero vectors, including interpolated
   opposite directions, no longer produce an arbitrary eastward arrow.
+- A `HeadDirectionOverlay` with more than one `PositionOverlay` now raises
+  `ValueError` in every backend. Its arrow was previously drawn at the arena
+  center, because no single position identifies where it starts. Pass the one
+  tracked point whose heading you measured.
 - Apply observation masks and gap rules to overlays that inherit `frame_times`,
   including fastplotlib sampling between frames. Preserve NaNs when normalizing
   constant signals and share finite, bounded object-vector rate opacity across

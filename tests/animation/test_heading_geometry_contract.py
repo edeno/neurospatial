@@ -229,3 +229,26 @@ def test_angle_zero_is_east_and_circular_interpolation_still_wraps():
     drawn = gpu._HeadDirection(plot, data, clock, None, np.zeros(2))
     drawn.update(0.1)
     np.testing.assert_allclose(drawn.line.data[1, :2], [-0.5, 0], atol=1e-7)
+
+
+def test_heading_with_several_positions_is_refused():
+    # Two tracked points give no single start for the arrow. Drawing it at the
+    # arena center would look plausible and be wrong.
+    from neurospatial.animation.overlays import PositionOverlay
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    times = np.array([0.0, 0.1])
+    track = np.array([[0.5, 0.5], [1.5, 1.5]])
+    with pytest.raises(ValueError, match="2 PositionOverlays"):
+        Animation(
+            env,
+            np.ones((2, env.n_bins)),
+            frame_times=times,
+            overlays=[
+                PositionOverlay(track, times=times),
+                PositionOverlay(track + 0.5, times=times),
+                HeadDirectionOverlay(np.zeros(2), times=times),
+            ],
+        )
