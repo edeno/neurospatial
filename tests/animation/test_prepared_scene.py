@@ -526,3 +526,33 @@ def test_signal_panels_share_one_limit_rule(env):
     panels = [ax for ax in scene._renderer.figure.axes if ax.get_xlabel() == "Time (s)"]
     assert [ax.get_ylim() for ax in panels] == limits
     scene.close()
+
+
+def test_each_overlay_stream_is_sampled_once_per_frame_for_every_panel(
+    env, monkeypatch
+):
+    from neurospatial.animation import _prepared
+
+    times = np.linspace(0, 1, 11)
+    positions = np.column_stack([times * 2, times * 2])
+    scene = Animation(
+        env,
+        {name: AnimationField(np.ones((11, env.n_bins)), times) for name in "abc"},
+        overlays=[
+            PositionOverlay(positions, times, trail_length=3),
+            HeadDirectionOverlay(times * 3, times),
+        ],
+    )
+    scene.render_frame(0.0, dpi=30)
+    calls = []
+    sample = _prepared.sample_observation
+
+    def counted(item, values, time, **kwargs):
+        calls.append(type(item).__name__)
+        return sample(item, values, time, **kwargs)
+
+    monkeypatch.setattr(_prepared, "sample_observation", counted)
+    scene.render_frame(0.45, dpi=30)
+    # Three panels draw the marker, trail and arrow from one sample each.
+    assert sorted(calls) == ["HeadDirectionData", "PositionData"]
+    scene.close()

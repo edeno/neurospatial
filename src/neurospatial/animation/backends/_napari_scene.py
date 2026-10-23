@@ -582,7 +582,7 @@ class NapariScene:
 
         def paths(
             layer: Any,
-            segments: list[Any],
+            segments: Any,
             alphas: np.ndarray | None = None,
             color: Any = None,
         ) -> None:

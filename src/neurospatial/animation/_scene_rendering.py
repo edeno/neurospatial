@@ -99,7 +99,10 @@ class _Segments:
         ax.add_collection(self.collection, autolim=False)
 
     def set(
-        self, segments: list[np.ndarray], *, alpha: float | np.ndarray | None = None
+        self,
+        segments: list[np.ndarray] | np.ndarray,
+        *,
+        alpha: float | np.ndarray | None = None,
     ) -> None:
         """Draw ``segments``, each ``(2, n_dims)`` in environment coordinates.
 

@@ -226,6 +226,12 @@ class PreparedScene:
         self._held: dict[int, tuple[int, np.ndarray]] = {}
         self._missing: dict[int, np.ndarray] = {}
         self._video_held: dict[int, tuple[int, np.ndarray | None]] = {}
+        self._sampled: dict[tuple[int, str | None, bool], tuple[float, np.ndarray]] = {}
+        frames = scene.frame_times
+        # The scene's typical frame interval, which measures trail lengths.
+        self._frame_interval = (
+            float(np.median(np.diff(frames))) if len(frames) > 1 else 0.0
+        )
         self._raster_clocks = {
             (id(raster), row): (
                 spikes if np.all(spikes[1:] >= spikes[:-1]) else np.sort(spikes)
@@ -293,6 +299,7 @@ class PreparedScene:
         self._held.clear()
         self._missing.clear()
         self._video_held.clear()
+        self._sampled.clear()
 
     def _field_row(
         self, field: AnimationField, index: int, *, projected: bool = False
@@ -352,9 +359,7 @@ class PreparedScene:
         so every view draws the same stretch of recent path whatever the
         tracking rate.
         """
-        frames = self.scene.frame_times
-        interval = float(np.median(np.diff(frames))) if len(frames) > 1 else 0.0
-        return float(position.trail_length or 0) * interval
+        return float(position.trail_length or 0) * self._frame_interval
 
     def trail_rows(self, position: Any, time: float) -> range:
         """The position's own samples in its trail at ``time``."""
@@ -365,29 +370,34 @@ class PreparedScene:
         )
         return range(min(start, stop), stop)
 
-    def trail(self, position: Any, time: float) -> tuple[list[np.ndarray], np.ndarray]:
+    def trail(
+        self, position: Any, time: float
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """The position's trail at ``time``: segments and their opacities.
 
         Segments join consecutive supported samples, and none is drawn while
         the current position is missing. Each fades with the age of its newer
         sample, from ``_TRAIL_MAX_ALPHA`` now to zero ``trail_seconds`` ago.
+
+        Returns
+        -------
+        segments : ndarray of float64, shape (n_segments, 2, n_dims)
+        alphas : ndarray of float64, shape (n_segments,)
         """
         from neurospatial.animation._style import _TRAIL_MAX_ALPHA
 
-        point = self.sample(position, position.data, time)
-        if not np.isfinite(point).all():
-            return [], np.empty(0)
+        data = position.data
+        if not np.isfinite(self.sample(position, data, time)).all():
+            return np.empty((0, 2, data.shape[1])), np.empty(0)
+        rows = self.trail_rows(position, time)
         # A valid interval joins two valid, finite samples.
-        rows = [
-            j
-            for j in self.trail_rows(position, time)[:-1]
-            if position.interval_valid[j]
-        ]
-        segments = [position.data[j : j + 2] for j in rows]
+        starts = np.arange(rows.start, max(rows.start, rows.stop - 1))
+        starts = starts[position.interval_valid[starts]]
+        segments = np.stack([data[starts], data[starts + 1]], axis=1)
         seconds = self.trail_seconds(position)
         if seconds <= 0:
-            return segments, np.full(len(rows), _TRAIL_MAX_ALPHA)
-        age = time - position.times[np.asarray(rows, dtype=int) + 1]
+            return segments, np.full(len(starts), _TRAIL_MAX_ALPHA)
+        age = time - position.times[starts + 1]
         return segments, _TRAIL_MAX_ALPHA * np.clip(1 - age / seconds, 0, 1)
 
     def trail_capacity(self, position: Any) -> int:
@@ -405,8 +415,23 @@ class PreparedScene:
         circular: bool = False,
         name: str | None = None,
     ) -> np.ndarray:
-        """Sample a prepared stream using its existing clock and support masks."""
-        return sample_observation(item, values, time, circular=circular, name=name)
+        """Sample one of ``item``'s prepared streams at ``time``.
+
+        ``values`` is one of ``item``'s arrays and ``name`` selects its
+        support (:func:`~neurospatial.animation._sampling.sample_observation`).
+        Each stream's latest sample is held, so the field panels, trails and
+        heading arrows of one time share a single sample. The returned array
+        is shared between calls; do not modify it.
+        """
+        key = (id(values), name, circular)
+        held = self._sampled.get(key)
+        if held is None or held[0] != time:
+            held = (
+                time,
+                sample_observation(item, values, time, circular=circular, name=name),
+            )
+            self._sampled[key] = held
+        return held[1]
 
     def events(self, events: Any, time: float) -> dict[str, VisibleEvents]:
         """Each event type's events shown at ``time``, with their opacity.
