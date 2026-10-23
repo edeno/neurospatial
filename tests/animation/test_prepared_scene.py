@@ -669,3 +669,25 @@ def test_track_paths_break_where_the_position_changes_segment():
     ) as scene:
         paths = PreparedScene(scene).track_window(scene.fields["field"], 0.15).paths
     np.testing.assert_allclose(paths[:, :, 1], [[0.5, 1.5], [4.0, 5.0]], atol=1e-9)
+
+
+def test_single_sample_pose_prepares_and_renders():
+    # One tracked frame has no intervals: its (bodyparts, 0) interval masks
+    # cannot have their bodypart count inferred.
+    from neurospatial import Environment
+    from neurospatial.animation import Animation, BodypartOverlay
+
+    env = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool), (np.arange(4.0), np.arange(4.0))
+    )
+    pose = BodypartOverlay(
+        {"nose": np.array([[1.0, 1.0]]), "tail": np.array([[2.0, 2.0]])},
+        times=np.array([0.0]),
+    )
+    with Animation(
+        env, np.ones((1, env.n_bins)), frame_times=[0.0], overlays=[pose]
+    ) as scene:
+        prepared = PreparedScene(scene)
+        points = prepared.pose(scene._overlay_data.bodypart_sets[0], 0.0).points
+        np.testing.assert_array_equal(points, [[1.0, 1.0], [2.0, 2.0]])
+        assert scene.render_frame(0.0, dpi=20).ndim == 3

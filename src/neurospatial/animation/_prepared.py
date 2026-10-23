@@ -348,10 +348,11 @@ class PreparedScene:
             self._poses[id(body)] = _PoseStreams(
                 list(body.bodyparts.values()),
                 np.array([body.sample_valid[name] for name in names], bool)
-                .reshape(-1, n_samples)
+                .reshape(len(names), n_samples)
                 .T,
+                # One sample has no intervals: name the part count explicitly.
                 np.array([body.interval_valid[name] for name in names], bool)
-                .reshape(-1, max(n_samples - 1, 0))
+                .reshape(len(names), max(n_samples - 1, 0))
                 .T,
                 np.array(
                     [[names.index(a), names.index(b)] for a, b in edges], dtype=np.intp
