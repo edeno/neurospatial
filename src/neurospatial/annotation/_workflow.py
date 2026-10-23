@@ -217,9 +217,20 @@ class AnnotationProjectSession:
 
     def _changed(self, event: Any = None) -> None:
         # A change made by the session itself only leads to a checkpoint that
-        # finds nothing new.
-        if not self._disposed:
-            self._checkpoint_timer.start()
+        # finds nothing new. Edits still in progress announce their end later.
+        if self._disposed or getattr(event, "action", None) in ("adding", "changing"):
+            return
+        self._checkpoint_timer.start()
+
+    def _edit_in_progress(self) -> bool:
+        """Whether a shape is being drawn or awaits the controls' processing.
+
+        Such a shape has no identity yet, for example while napari draws a
+        polygon or while a dialog asks about a new boundary.
+        """
+        return bool(getattr(self.layer, "_is_creating", False)) or not bool(
+            self.layer.features["_polygon_id"].astype(bool).all()
+        )
 
     def checkpoint(self) -> None:
         """Flush pending shape edits and record one coherent history step."""
@@ -235,6 +246,9 @@ class AnnotationProjectSession:
         self._update_grid_estimate()
 
     def _checkpoint_safely(self) -> None:
+        if self._edit_in_progress():
+            self._checkpoint_timer.start()
+            return
         self._run(self.checkpoint)
 
     def _update_grid_estimate(self) -> None:
@@ -433,7 +447,8 @@ class AnnotationProjectSession:
             self.save_project()
 
     def _autosave(self) -> None:
-        if self._disposed or self.project_path is None:
+        # The next tick saves an edit that is still being drawn.
+        if self._disposed or self.project_path is None or self._edit_in_progress():
             return
         self._run(self._save_changed)
 

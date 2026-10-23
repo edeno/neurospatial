@@ -606,3 +606,46 @@ def test_undo_redo_and_accept_redraw_the_canvas(session_factory):
     mask[2:6, 18:22] = True
     _accept(session, SegmentationProposal(mask))
     assert _drawn_vertices(viewer, shapes) > two
+
+
+def test_checkpoints_and_autosave_wait_for_a_shape_being_drawn(
+    session_factory, tmp_path, monkeypatch
+):
+    from qtpy.QtTest import QTest
+
+    warnings_shown = []
+    monkeypatch.setattr(
+        "napari.utils.notifications.show_warning", warnings_shown.append
+    )
+    path = tmp_path / "draft.annotation.npz"
+    session, _viewer, shapes, _controls = session_factory(
+        project_path=path, autosave_interval=1.0
+    )
+    # napari's first click of a drawing adds a row that the controls process
+    # only when the drawing finishes; the last vertex follows the mouse.
+    shapes.mode = "add_polygon"
+    shapes._is_creating = True
+    shapes.add(
+        np.array([[1.0, 1.0], [1.0, 10.0], [10.0, 10.0], [10.0, 1.0]]),
+        shape_type="polygon",
+        gui=True,
+    )
+    # The selection state napari's mouse handler keeps while drawing.
+    shapes.selected_data = {0}
+    shapes._value = (0, 4)
+    shapes._moving_value = (0, 4)
+    session._changed()
+    QTest.qWait(300)
+    session._autosave_timer.timeout.emit()
+    assert not warnings_shown
+    assert "not been processed" not in session.status.text()
+    assert not path.exists()
+    assert session._checkpoint_timer.isActive()
+    shapes._finish_drawing()
+    # The deferred checkpoint records the finished shape.
+    for _ in range(30):
+        if session._current.shapes:
+            break
+        QTest.qWait(100)
+    assert len(session._current.shapes) == 1
+    assert not warnings_shown
