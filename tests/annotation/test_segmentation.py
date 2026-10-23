@@ -355,6 +355,57 @@ def test_sam_requests_candidate_masks_only_for_a_single_click(
     assert predictor.prompts[-1]["multimask_output"] is multimask
 
 
+def test_sam_warm_up_and_prompt_never_run_the_predictor_at_once():
+    import threading
+
+    class Predictor(_Predictor):
+        def __init__(self):
+            super().__init__()
+            self.active = self.most_active = 0
+            self.warming = threading.Event()
+            self.release = threading.Event()
+
+        def _enter(self):
+            self.active += 1
+            self.most_active = max(self.most_active, self.active)
+
+        def set_image(self, image):
+            self._enter()
+            if not self.images:
+                self.warming.set()
+                self.release.wait(5)
+            super().set_image(image)
+            self.active -= 1
+
+        def predict(self, **kwargs):
+            self._enter()
+            try:
+                return super().predict(**kwargs)
+            finally:
+                self.active -= 1
+
+    predictor = Predictor()
+    provider = SegmentAnythingProvider(predictor)
+    first = np.zeros((5, 12, 3), dtype=np.uint8)
+    second = first.copy()
+    second[1:3, 7:10] = 255
+    warm_up = threading.Thread(target=provider._prepare, args=(first,))
+    warm_up.start()
+    assert predictor.warming.wait(5)
+    proposals = []
+    prompt = threading.Thread(
+        target=lambda: proposals.append(provider.predict(second, _prompt(((8, 2),))))
+    )
+    prompt.start()
+    prompt.join(0.2)
+    assert prompt.is_alive()
+    predictor.release.set()
+    warm_up.join(5)
+    prompt.join(5)
+    assert predictor.most_active == 1
+    np.testing.assert_array_equal(proposals[0].mask, second[:, :, 0] > 0)
+
+
 def test_sam_embedding_cache_content_and_shape_invalidation():
     predictor = _Predictor()
     provider = SegmentAnythingProvider(predictor)

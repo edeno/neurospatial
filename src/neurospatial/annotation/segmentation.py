@@ -10,6 +10,7 @@ import importlib
 import json
 import platform
 import sys
+import threading
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import KW_ONLY, dataclass
@@ -367,7 +368,8 @@ class SegmentAnythingProvider:
     Following Meta's guidance, a single click requests SAM's three candidate
     masks for the ambiguous prompt; several clicks or a box request one mask.
     An owned image snapshot detects changes in content, including in-place
-    edits, without relying on object identity. Instances are not thread-safe.
+    edits, without relying on object identity. A lock serializes predictor
+    calls, so a background warm-up and a prompt can safely overlap.
     Direct ``predict`` calls are independent of earlier prompts. The annotation
     editor separately manages previous-logit refinement for consecutive clicks.
     The API follows Meta's ``sam2.sam2_image_predictor.SAM2ImagePredictor``:
@@ -384,6 +386,7 @@ class SegmentAnythingProvider:
         self._predictor = predictor
         self._cached_image: NDArray[np.uint8] | None = None
         self._refinement_owner = object()
+        self._lock = threading.Lock()
 
     @classmethod
     def from_sam2(
@@ -498,13 +501,14 @@ class SegmentAnythingProvider:
     def _prepare(self, image: NDArray[np.uint8]) -> None:
         """Compute image features ahead of the first prompt."""
         image = _validate_image(image)
-        try:
-            self._set_image(image)
-        except Exception as exc:
-            self._cached_image = None
-            raise RuntimeError(
-                f"SAM image preparation failed; check the installed predictor: {exc}"
-            ) from exc
+        with self._lock:
+            try:
+                self._set_image(image)
+            except Exception as exc:
+                self._cached_image = None
+                raise RuntimeError(
+                    f"SAM image preparation failed; check the installed predictor: {exc}"
+                ) from exc
 
     def _set_image(self, image: NDArray[np.uint8]) -> None:
         """Compute features unless this exact image is already cached."""
@@ -538,32 +542,34 @@ class SegmentAnythingProvider:
                 # Repeated Update requests must not drift by feeding a mask
                 # back into itself without any new information.
                 return previous
-        try:
-            self._set_image(image)
-            refinement_args = (
-                {} if previous is None else {"mask_input": previous.logits.copy()}
-            )
-            output = self._predictor.predict(
-                point_coords=np.array(prompt.points, copy=True)
-                if len(prompt.points)
-                else None,
-                point_labels=np.array(prompt.labels, copy=True)
-                if len(prompt.points)
-                else None,
-                box=None if prompt.box is None else np.array(prompt.box, copy=True),
-                # One click is ambiguous: ask for SAM's candidate masks. More
-                # clicks, a box or a refinement give one better mask.
-                multimask_output=previous is None
-                and prompt.box is None
-                and len(prompt.points) == 1,
-                **refinement_args,
-            )
-        except Exception as exc:
-            # A failed predictor may have changed its image state.
-            self._cached_image = None
-            raise RuntimeError(
-                f"SAM segmentation failed; check the installed predictor and prompt: {exc}"
-            ) from exc
+        refinement_args = (
+            {} if previous is None else {"mask_input": previous.logits.copy()}
+        )
+        with self._lock:
+            try:
+                self._set_image(image)
+                cached_image = self._cached_image
+                output = self._predictor.predict(
+                    point_coords=np.array(prompt.points, copy=True)
+                    if len(prompt.points)
+                    else None,
+                    point_labels=np.array(prompt.labels, copy=True)
+                    if len(prompt.points)
+                    else None,
+                    box=None if prompt.box is None else np.array(prompt.box, copy=True),
+                    # One click is ambiguous: ask for SAM's candidate masks. More
+                    # clicks, a box or a refinement give one better mask.
+                    multimask_output=previous is None
+                    and prompt.box is None
+                    and len(prompt.points) == 1,
+                    **refinement_args,
+                )
+            except Exception as exc:
+                # A failed predictor may have changed its image state.
+                self._cached_image = None
+                raise RuntimeError(
+                    f"SAM segmentation failed; check the installed predictor and prompt: {exc}"
+                ) from exc
         if not isinstance(output, tuple | list) or len(output) != 3:
             raise ValueError("SAM predictor must return (masks, scores, logits).")
         masks, scores, logits = (np.asarray(value) for value in output)
@@ -597,10 +603,10 @@ class SegmentAnythingProvider:
                 "refinement_steps": steps,
             },
         )
-        assert self._cached_image is not None
+        assert cached_image is not None
         return _SAMRefinement(
             owner=self._refinement_owner,
-            image=self._cached_image,
+            image=cached_image,
             prompt=prompt,
             proposal=proposal,
             logits=read_only_copy(logits[selected : selected + 1]),
