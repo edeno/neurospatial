@@ -135,9 +135,12 @@ class _CellRouter:
         return self.supports[index]
 
     def region(self, bins: Sequence[int], clearance: float) -> shapely.Geometry:
-        """The bins' cells inside the outline, shrunk off it and off walls."""
+        """The bins' cells inside the outline, shrunk off it and off walls.
+
+        A negative ``clearance`` grows the cells instead.
+        """
         union = shapely.union_all([self.support(i) for i in bins])
-        region = union.buffer(-clearance, join_style="mitre") if clearance else union
+        region = union.buffer(-clearance, join_style="mitre")
         if self.walls is not None and self.walls.intersects(union):
             region = region.difference(
                 self.walls.buffer(max(clearance, self.clearance), quad_segs=1)
@@ -154,16 +157,19 @@ class _CellRouter:
             graph = self.env.connectivity
             shared = sorted(set(graph[a]) & set(graph[b]))
             # Cells that meet only at a point (a corner no third bin covers)
-            # vanish when shrunk, so the last try keeps the closed cells and
-            # accepts the route only if the environment holds its bends.
+            # come apart when shrunk. The last tries keep the closed cells,
+            # then grow them by the clearance, for cells and an outline that
+            # a rotation moved apart at that point by rounding; either route
+            # is accepted only if the environment holds every bend.
             for bins, clearance in (
                 ([a, b], self.clearance),
                 ([a, b, *shared], self.clearance),
                 ([a, b], 0.0),
+                ([a, b], -self.clearance),
             ):
                 route = _shortest_route(self.region(bins, clearance), start, end)
                 if route is not None and (
-                    clearance or np.all(self.env.contains(route))
+                    clearance > 0 or np.all(self.env.contains(route))
                 ):
                     break
             else:

@@ -323,6 +323,18 @@ def _rotation(angle, offset=(0.0, 0.0)):
     )
 
 
+def _corner_walk_grid():
+    """Bins visited by a staircase walk: neighbors that meet only at corners."""
+    steps = np.array([[0.0, 0.0], [2.0, 2.0], [4.0, 0.0], [6.0, 2.0], [8.0, 4.0]])
+    return Environment.from_samples(steps + 1.0, bin_size=2.0, units="cm")
+
+
+def _checkerboard():
+    mask = (np.add.outer(np.arange(4), np.arange(4)) % 2) == 0
+    edges = np.arange(5.0) * 2
+    return Environment.from_grid_mask(mask, grid_edges=(edges, edges), units="cm")
+
+
 L_SHAPE = Polygon([(0, 0), (40, 0), (40, 10), (10, 10), (10, 40), (0, 40)])
 ANGLE = 0.5
 ROTATION = np.array(
@@ -369,6 +381,12 @@ LAYOUTS = {
     "grid_rotated": lambda: Environment.from_polygon(
         L_SHAPE, bin_size=3, units="cm"
     ).apply_transform(Affine2D(ROTATION)),
+    "grid_rotated_corners_only": lambda: _corner_walk_grid().apply_transform(
+        _rotation(0.3)
+    ),
+    "checkerboard_rotated_far": lambda: _checkerboard().apply_transform(
+        _rotation(0.7, offset=(1e4, -3e3))
+    ),
     "hexagonal": lambda: Environment.from_samples(
         _samples_in(L_SHAPE), bin_size=3, layout="hexagonal", units="cm"
     ),
