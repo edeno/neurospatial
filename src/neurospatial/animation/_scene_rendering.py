@@ -154,14 +154,9 @@ class SceneRenderer:
 
         self.scene = scene
         self.settings = (dpi, figsize)
-        self.signal_groups = self.prepared.signal_groups
-        self.track_env = self.prepared.track_env
-        self.track_extents = self.prepared.track_extents
-        self.projection = self.prepared.projection
-        self.panel_count = self.prepared.panel_count
         width = max(6, 5 * len(scene.fields))
         self.figure = Figure(
-            figsize=figsize or (width, 5 + 1.5 * self.panel_count), dpi=dpi
+            figsize=figsize or (width, 5 + 1.5 * self.prepared.panel_count), dpi=dpi
         )
         self._subplotpars = copy.copy(self.figure.subplotpars)
         self.canvas = FigureCanvasAgg(self.figure)
@@ -171,17 +166,6 @@ class SceneRenderer:
     def close(self) -> None:
         self.figure.clear()
         self._updates = []
-
-    def _sample(
-        self,
-        item: Any,
-        values: np.ndarray,
-        time: float,
-        *,
-        circular: bool = False,
-        name: str | None = None,
-    ) -> np.ndarray:
-        return self.prepared.sample(item, values, time, circular=circular, name=name)
 
     def render(self, time: float) -> np.ndarray:
         if not np.isfinite(time):
@@ -199,14 +183,14 @@ class SceneRenderer:
         One layout for every frame keeps the panels still during playback and
         makes a frame independent of which time was rendered first.
         """
-        scene = self.scene
+        scene, prepared = self.scene, self.prepared
         start = float(scene.frame_times[0])
         self.figure.clear()
         self.figure.subplotpars = copy.copy(self._subplotpars)
         grid = self.figure.add_gridspec(
-            1 + self.panel_count,
+            1 + prepared.panel_count,
             len(scene.fields),
-            height_ratios=[4] + [1] * self.panel_count,
+            height_ratios=[4] + [1] * prepared.panel_count,
         )
         updates: list[Update] = []
         for column, (name, field) in enumerate(scene.fields.items()):
@@ -215,34 +199,28 @@ class SceneRenderer:
             )
             updates.append(self._field(ax, name, field, start))
             if scene.env.n_dims in (2, 3):
-                _colorbar(ax, self.prepared.field_scales[name])
+                _colorbar(ax, prepared.field_scales[name])
             ax.set_title(name)
             updates.extend(self._spatial(ax))
         row = 1
         panels: list[Panel] = []
-        if self.track_extents is not None:
+        if prepared.track_extents is not None:
             for column, (name, field) in enumerate(scene.fields.items()):
                 ax = self.figure.add_subplot(grid[row, column])
-                panels.append(track_panel(ax, self.prepared, name, field))
+                panels.append(track_panel(ax, prepared, name, field))
             row += 1
-        for signals in self.signal_groups.values():
+        for signals in prepared.signal_groups.values():
             panels.append(
-                signal_panel(
-                    self.figure.add_subplot(grid[row, :]), self.prepared, signals
-                )
+                signal_panel(self.figure.add_subplot(grid[row, :]), prepared, signals)
             )
             row += 1
         for raster in scene._overlay_data.spike_rasters:
             panels.append(
-                raster_panel(
-                    self.figure.add_subplot(grid[row, :]), self.prepared, raster
-                )
+                raster_panel(self.figure.add_subplot(grid[row, :]), prepared, raster)
             )
             row += 1
         if scene._overlay_data.epochs:
-            panels.append(
-                epoch_panel(self.figure.add_subplot(grid[row, :]), self.prepared)
-            )
+            panels.append(epoch_panel(self.figure.add_subplot(grid[row, :]), prepared))
         updates += [panel.update for panel in panels]
         prefix = "" if scene.title is None else f"{scene.title} — "
         title = self.figure.suptitle("")
@@ -534,7 +512,7 @@ class SceneRenderer:
         )
 
         def update(time: float) -> None:
-            point = self._sample(position, position.data, time)
+            point = self.prepared.sample(position, position.data, time)
             if position.trail_length:
                 segments, alphas = self.prepared.trail(position, time)
                 trail.set(segments, alpha=alphas)
@@ -622,14 +600,14 @@ class SceneRenderer:
         )
 
         def update(time: float) -> None:
-            animal = self._sample(vectors, vectors.animal_positions, time)
+            animal = self.prepared.sample(vectors, vectors.animal_positions, time)
             objects = vectors.object_positions
             if objects.ndim == 3:
-                objects = self._sample(vectors, objects, time)
+                objects = self.prepared.sample(vectors, objects, time)
             objects = np.atleast_2d(objects)
             opacity = 1.0
             if vectors.firing_rates is not None:
-                rate = self._sample(
+                rate = self.prepared.sample(
                     vectors, vectors.firing_rates, time, name="firing_rates"
                 )
                 opacity = _rate_opacity(float(rate), vectors._rate_peak or 1.0)
