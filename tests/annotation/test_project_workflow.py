@@ -169,6 +169,27 @@ def test_pasted_polygon_with_hole_gets_its_own_identities_and_saves(
     assert all(len(region.data.interiors) == 1 for region in result.regions.values())
 
 
+def test_unnamed_outlines_continue_the_region_numbering(session_factory):
+    session, _viewer, shapes, controls = session_factory()
+    mask = np.zeros((16, 24), dtype=bool)
+    mask[1:6, 1:6] = True
+    mask[3:4, 3:4] = False
+    mask[8:12, 1:6] = True
+    session.accept_proposal(SegmentationProposal(mask))
+    mask = np.zeros((16, 24), dtype=bool)
+    mask[1:6, 10:14] = True
+    session.accept_proposal(SegmentationProposal(mask))
+    _draw_region(shapes, controls, [[13, 16], [13, 20], [15, 20], [15, 16]])
+    top_level = [
+        name
+        for name, parent in zip(
+            shapes.features["name"], shapes.features["_parent_id"], strict=True
+        )
+        if not parent
+    ]
+    assert top_level[:3] == ["region_1", "region_2", "region_3"]
+
+
 def test_resumed_project_is_not_rewritten_until_edited(
     session_factory, tmp_path, monkeypatch
 ):

@@ -350,8 +350,16 @@ class AnnotationProjectSession:
                 restore_shapes(existing, self.layer)
             with self.layer.events.blocker_all():
                 for polygon in polygons:
+                    # Number unnamed outlines after the existing top-level
+                    # shapes with this role; interior rings are not counted.
+                    features = self.layer.features
+                    count = int(
+                        (
+                            (features["role"] == role) & (features["_parent_id"] == "")
+                        ).sum()
+                    )
                     base = requested_name or (
-                        "arena" if role == "environment" else f"{role}_1"
+                        "arena" if role == "environment" else f"{role}_{count + 1}"
                     )
                     name = make_unique_name(base, names)
                     names.append(name)
