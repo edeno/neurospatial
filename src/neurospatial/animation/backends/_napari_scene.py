@@ -478,8 +478,6 @@ class NapariScene:
     def _build_overlays(self) -> None:
         from matplotlib import colormaps
 
-        from neurospatial.animation._region_names import shown_region_names
-
         scene, helper = self.scene, self._helper
         data, dims = scene._overlay_data, scene.env.n_dims
         empty = np.empty((0, dims))
@@ -752,11 +750,7 @@ class NapariScene:
                 return helper.video_frame(v, time)
 
             self._updates.append(_LayerUpdate(prepare_video, apply_video))
-        for name in (
-            shown_region_names(scene.env, scene.show_regions)
-            if scene.show_regions
-            else []
-        ):
+        for name in scene._region_names:
             region = scene.env.regions[name]
             if region.kind == "point":
                 self._add_overlay(

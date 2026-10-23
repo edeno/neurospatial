@@ -305,14 +305,15 @@ class Animation:
             raise ValueError(
                 "Animation supports one-, two- or three-dimensional environments."
             )
-        if env.n_dims == 1 and show_regions:
-            from neurospatial.animation._region_names import shown_region_names
+        from neurospatial.animation._region_names import shown_region_names
 
-            if shown_region_names(env, show_regions):
-                raise ValueError(
-                    "Animation cannot draw regions in a 1D environment. "
-                    "Use a 2D environment for region display, or omit show_regions."
-                )
+        # The shown regions, resolved once: an unknown name raises here.
+        region_names = tuple(shown_region_names(env, show_regions))
+        if env.n_dims == 1 and region_names:
+            raise ValueError(
+                "Animation cannot draw regions in a 1D environment. "
+                "Use a 2D environment for region display, or omit show_regions."
+            )
         if not np.isfinite(window_seconds) or window_seconds <= 0:
             raise ValueError("window_seconds must be positive finite seconds.")
         if not np.isfinite(region_alpha) or not 0 <= region_alpha <= 1:
@@ -358,15 +359,12 @@ class Animation:
             copy.deepcopy(scale_bar),
             track,
         )
+        self._region_names = region_names
         if env.n_dims == 3:
-            from neurospatial.animation._region_names import shown_region_names
-
             planar_regions = any(
                 env.regions[name].kind != "point"
                 or np.asarray(env.regions[name].data).shape != (3,)
-                for name in (
-                    shown_region_names(env, show_regions) if show_regions else []
-                )
+                for name in region_names
             )
             if planar_regions or scale_bar:
                 raise ValueError(

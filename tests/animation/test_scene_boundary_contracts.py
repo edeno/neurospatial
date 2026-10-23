@@ -404,6 +404,31 @@ def test_1d_regions_rejected_before_any_field_reads_or_readers():
     assert not conversions
 
 
+def test_unknown_region_names_rejected_before_any_field_reads_or_readers(env):
+    from neurospatial import RegionNotFoundError
+
+    regions = Regions()
+    regions.add("reward", point=(1, 1))
+    env = env.with_regions(regions)
+    values = LazyRows(env.n_bins)
+    conversions = []
+
+    class Video:
+        def convert_to_data(self, *args):
+            conversions.append(True)
+            raise AssertionError("Readers must not be acquired for an invalid scene")
+
+    with pytest.raises(RegionNotFoundError, match="rewrd"):
+        Animation(
+            env,
+            AnimationField(values, [0, 0.1, 0.2]),
+            overlays=[Video()],
+            show_regions=["rewrd"],
+        )
+    assert not values.reads
+    assert not conversions
+
+
 def test_1d_scene_without_regions_to_show_renders():
     # The scene refuses 1-D regions once, when it is built; with no regions
     # there is nothing to refuse, in the scene or its views.

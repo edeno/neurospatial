@@ -7,7 +7,7 @@ updates their data, so a frame costs drawing rather than figure construction.
 from __future__ import annotations
 
 import copy
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple, cast
 
@@ -422,15 +422,13 @@ class SceneRenderer:
         scene = self.scene
         data = scene._overlay_data
         updates = [self._video(ax, video) for video in data.videos]
-        if scene.show_regions:
+        if scene._region_names:
             if scene.env.n_dims == 2:
                 _render_regions_matplotlib(
-                    ax, scene.env, scene.show_regions, scene.region_alpha
+                    ax, scene.env, scene._region_names, scene.region_alpha
                 )
             elif scene.env.n_dims == 3:
-                from neurospatial.animation._region_names import shown_region_names
-
-                for name in shown_region_names(scene.env, scene.show_regions):
+                for name in scene._region_names:
                     point = scene.env.regions[name].data
                     ax.scatter(*point, color="white", alpha=scene.region_alpha, s=50)
                     ax.text(*point, name)
@@ -669,7 +667,7 @@ def _cell_colors(values: np.ndarray, cmap: Any, low: float, high: float) -> np.n
 
 
 def _render_regions_matplotlib(
-    ax: Any, env: Any, show_regions: bool | list[str], region_alpha: float
+    ax: Any, env: Any, region_names: Sequence[str], region_alpha: float
 ) -> None:
     """Render environment regions as patches on matplotlib axes.
 
@@ -679,8 +677,8 @@ def _render_regions_matplotlib(
         Matplotlib axes to render on
     env : Environment
         Environment with regions
-    show_regions : bool | list[str]
-        If True, show all regions. If list, show only specified regions.
+    region_names : sequence of str
+        The regions to draw.
     region_alpha : float
         Alpha transparency for regions (0-1)
 
@@ -691,9 +689,7 @@ def _render_regions_matplotlib(
     from matplotlib.patches import Circle, PathPatch
     from matplotlib.path import Path as MplPath
 
-    from neurospatial.animation._region_names import shown_region_names
-
-    for region_name in shown_region_names(env, show_regions):
+    for region_name in region_names:
         region = env.regions[region_name]
         if region.kind == "point":
             ax.add_patch(

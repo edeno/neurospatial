@@ -204,11 +204,6 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
     layout = options.get("layout")
     if layout is not None and layout not in {"horizontal", "vertical", "grid"}:
         raise ValueError("layout must be 'horizontal', 'vertical' or 'grid'.")
-    region_names: list[str] = []
-    if scene.show_regions:
-        from neurospatial.animation._region_names import shown_region_names
-
-        region_names = shown_region_names(scene.env, scene.show_regions)
     if backend == "napari" and options.get("ndisplay", scene.env.n_dims) not in (2, 3):
         raise ValueError("ndisplay must be 2 or 3 for a napari scene view.")
     if backend == "fastplotlib" and scene.scale_bar:
@@ -216,8 +211,8 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
             "The fastplotlib scene backend cannot draw scale_bar. "
             "Use backend='widget' or backend='napari', or omit scale_bar."
         )
-    if backend == "napari" and scene.show_regions:
-        for name in region_names:
+    if backend == "napari":
+        for name in scene._region_names:
             region = scene.env.regions[name]
             if region.kind not in {"point", "polygon"}:
                 raise ValueError(
