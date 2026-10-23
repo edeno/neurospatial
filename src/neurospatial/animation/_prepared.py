@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.animation._sampling import sample_observation
+from neurospatial.animation._sampling import sample_observation, sample_parts
 from neurospatial.animation._style import _heading_displacement
 from neurospatial.animation._tracks import (
     _project,
@@ -53,6 +53,30 @@ class VisibleEvents(NamedTuple):
     positions: NDArray[np.float64]
     opacity: NDArray[np.float64]
     key: tuple[int, ...]
+
+
+class Pose(NamedTuple):
+    """A pose at one time.
+
+    Attributes
+    ----------
+    points : ndarray of float64, shape (n_parts, n_dims)
+        Each body part, in ``bodyparts`` order; NaN where missing.
+    skeleton : ndarray of float64, shape (n_edges, 2, n_dims)
+        The skeleton edges whose two parts are both observed.
+    """
+
+    points: NDArray[np.float64]
+    skeleton: NDArray[np.float64]
+
+
+class _PoseStreams(NamedTuple):
+    """A bodypart overlay's parts with their support stacked by part."""
+
+    parts: list[NDArray[np.float64]]
+    sample_valid: NDArray[np.bool_]
+    interval_valid: NDArray[np.bool_]
+    edges: NDArray[np.intp]
 
 
 class TrackWindow(NamedTuple):
@@ -258,6 +282,23 @@ class PreparedScene:
                     positions[order],
                 )
         data = scene._overlay_data
+        self._poses = {}
+        for body in data.bodypart_sets:
+            names = list(body.bodyparts)
+            edges = () if body.skeleton is None else body.skeleton.edges
+            n_samples = len(body.times)
+            self._poses[id(body)] = _PoseStreams(
+                list(body.bodyparts.values()),
+                np.array([body.sample_valid[name] for name in names], bool)
+                .reshape(-1, n_samples)
+                .T,
+                np.array([body.interval_valid[name] for name in names], bool)
+                .reshape(-1, max(n_samples - 1, 0))
+                .T,
+                np.array(
+                    [[names.index(a), names.index(b)] for a, b in edges], dtype=np.intp
+                ).reshape(-1, 2),
+            )
         # Without exactly one position, heading arrows start at the arena's center.
         self._arena_center = np.mean(scene.env.bin_centers, axis=0)
         self.signal_groups = signal_groups(data.timeseries)
@@ -467,6 +508,24 @@ class PreparedScene:
                 opacity = np.full(stop - start, float(events.opacity))
             shown[name] = VisibleEvents(records.positions[start:stop], opacity, key)
         return shown
+
+    def pose(self, body: Any, time: float) -> Pose:
+        """The body parts and complete skeleton edges at ``time``.
+
+        One search of the overlay's clock samples every part, each with its
+        own support.
+        """
+        streams = self._poses[id(body)]
+        points = sample_parts(
+            body.times,
+            streams.parts,
+            streams.sample_valid,
+            streams.interval_valid,
+            time,
+            interp=body.interp,
+        )
+        pairs = points[streams.edges]
+        return Pose(points, pairs[np.isfinite(pairs).all(axis=(1, 2))])
 
     def heading_arrow(
         self, heading: Any, time: float

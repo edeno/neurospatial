@@ -556,3 +556,45 @@ def test_each_overlay_stream_is_sampled_once_per_frame_for_every_panel(
     # Three panels draw the marker, trail and arrow from one sample each.
     assert sorted(calls) == ["HeadDirectionData", "PositionData"]
     scene.close()
+
+
+@pytest.mark.parametrize("interp", ["linear", "nearest"])
+def test_parts_sampled_together_equal_each_part_sampled_alone(interp):
+    from neurospatial.animation._sampling import resolve_support, sample_parts
+
+    rng = np.random.default_rng(5)
+    times = np.sort(rng.uniform(0, 1, 40))
+    parts, valid, intervals = [], [], []
+    for _ in range(4):
+        rows = rng.normal(size=(40, 2))
+        rows[rng.random(40) < 0.2] = np.nan
+        rows, sample_valid, interval_valid = resolve_support(
+            rows, rng.random(40) > 0.1, rng.random(39) > 0.1
+        )
+        parts.append(rows)
+        valid.append(sample_valid)
+        intervals.append(interval_valid)
+    queries = np.r_[times, rng.uniform(-0.1, 1.1, 200)]
+    for query in queries:
+        together = sample_parts(
+            times,
+            parts,
+            np.column_stack(valid),
+            np.column_stack(intervals),
+            query,
+            interp=interp,
+        )
+        alone = [
+            sample_at_times(
+                times,
+                rows,
+                np.array([query]),
+                interp=interp,
+                sample_valid=sample_valid,
+                interval_valid=interval_valid,
+            )[0]
+            for rows, sample_valid, interval_valid in zip(
+                parts, valid, intervals, strict=True
+            )
+        ]
+        np.testing.assert_array_equal(together, alone)

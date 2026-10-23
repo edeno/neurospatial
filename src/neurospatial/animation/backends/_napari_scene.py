@@ -673,20 +673,11 @@ class NapariScene:
                 layers: Any = layers,
                 skeleton: Any = skeleton,
             ) -> None:
-                current = {
-                    name: sample(body, values, time, name=name)
-                    for name, values in body.bodyparts.items()
-                }
-                for name, layer in layers.items():
-                    points(layer, current[name])
+                pose = self._helper.pose(body, time)
+                for layer, point in zip(layers.values(), pose.points, strict=True):
+                    points(layer, point)
                 if skeleton is not None:
-                    paths(
-                        skeleton,
-                        [
-                            np.array([current[a], current[b]])
-                            for a, b in body.skeleton.edges
-                        ],
-                    )
+                    paths(skeleton, pose.skeleton)
 
             self._updates.append(update_body)
         for i, heading in enumerate(data.head_directions):

@@ -134,6 +134,66 @@ def sample_at_times(
     return result
 
 
+def sample_parts(
+    times: NDArray[np.float64],
+    parts: list[NDArray[np.float64]],
+    sample_valid: NDArray[np.bool_],
+    interval_valid: NDArray[np.bool_],
+    time: float,
+    *,
+    interp: Literal["linear", "nearest"],
+) -> NDArray[np.float64]:
+    """Sample several streams on one clock at one time, each with its support.
+
+    Equal to :func:`sample_at_times` on each part, with one search of the
+    clock for all of them.
+
+    Parameters
+    ----------
+    times : ndarray of float64, shape (n_samples,)
+        The parts' shared clock, in seconds.
+    parts : list of ndarray of float64, each shape (n_samples, n_dims)
+        Each part's rows, as :func:`resolve_support` returns them.
+    sample_valid : ndarray of bool, shape (n_samples, n_parts)
+        Each part's valid samples.
+    interval_valid : ndarray of bool, shape (n_samples - 1, n_parts)
+        Each part's valid intervals.
+    time : float
+        The time to sample, in seconds.
+    interp : {"linear", "nearest"}
+        How rows are sampled between observations.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_parts, n_dims)
+        NaN for a part without support at ``time``.
+    """
+    if not parts:
+        return np.empty((0, 0))
+    n_samples = len(times)
+    result = np.full((len(parts), *parts[0].shape[1:]), np.nan)
+    if not n_samples:
+        return result
+    right = int(np.searchsorted(times, time, side="left"))
+    exact = np.zeros(len(parts), dtype=bool)
+    if right < n_samples and times[right] == time:
+        exact = sample_valid[right]
+        result[exact] = np.stack([part[right] for part in parts])[exact]
+    if 0 < right < n_samples:
+        left = right - 1
+        keep = ~exact & interval_valid[left] & sample_valid[left] & sample_valid[right]
+        if keep.any():
+            fraction = (time - times[left]) / (times[right] - times[left])
+            if interp == "nearest":
+                row = right if fraction > 0.5 else left
+                result[keep] = np.stack([part[row] for part in parts])[keep]
+            else:
+                before = np.stack([part[left] for part in parts])[keep]
+                after = np.stack([part[right] for part in parts])[keep]
+                result[keep] = (1 - fraction) * before + fraction * after
+    return result
+
+
 def resample(
     times: NDArray[np.float64],
     values: NDArray[np.float64],

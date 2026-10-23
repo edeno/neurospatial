@@ -622,29 +622,23 @@ class SceneRenderer:
         return update
 
     def _bodyparts(self, ax: Any, body: Any) -> Update:
-        markers = {
-            name: _scatter(
+        markers = [
+            _scatter(
                 ax,
                 color=body.colors[name],
                 s=_marker_area(8.0, dpi=self.figure.dpi),
                 zorder=101,
             )
             for name in body.bodyparts
-        }
+        ]
         edges = () if body.skeleton is None else body.skeleton.edges
         skeleton = _Segments(ax, len(edges), color="white", zorder=100)
 
         def update(time: float) -> None:
-            points = {
-                name: self._sample(body, values, time, name=name)
-                for name, values in body.bodyparts.items()
-            }
-            for name, point in points.items():
-                _set_points(markers[name], point[None])
-            pairs = [
-                np.array([points[first], points[second]]) for first, second in edges
-            ]
-            skeleton.set([pair for pair in pairs if np.isfinite(pair).all()])
+            pose = self.prepared.pose(body, time)
+            for marker, point in zip(markers, pose.points, strict=True):
+                _set_points(marker, point[None])
+            skeleton.set(pose.skeleton)
 
         return update
 
