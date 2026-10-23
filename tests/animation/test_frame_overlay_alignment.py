@@ -138,7 +138,7 @@ def test_html_exports_visible_overlays_in_both_modes(
     # Frame 2 is after the event at frame 1: it also verifies decay support.
     changed = np.any(base_images[2] != overlay_images[2], axis=-1)
     assert np.count_nonzero(changed) > 10
-    assert "const overlayData = null;" in overlay_path.read_text(encoding="utf-8")
+    assert "overlayData" not in overlay_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("embed", [True, False])
