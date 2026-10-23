@@ -11,6 +11,8 @@ Tests cover:
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -1656,11 +1658,23 @@ class TestHTMLBackendVideoOverlay:
                 dpi=50,
             )
 
-        # Read HTML and check for position overlay data. Force UTF-8 so the
-        # test works on Windows runners (Python's default text-mode codec
-        # there is `charmap`, which fails on non-ASCII bytes in the export).
-        html_content = result_path.read_text(encoding="utf-8")
-        # HTML should contain the serialized position overlay
-        assert "positions" in html_content
-        # Position data should be present
-        assert "color" in html_content or '"red"' in html_content
+            baseline_path = render_html(
+                env=simple_env,
+                fields=fields,
+                save_path=str(tmp_path / "baseline.html"),
+                dpi=50,
+            )
+
+        # Positions are drawn into the frame images. Force UTF-8 so the test
+        # works on Windows runners (Python's default text-mode codec there is
+        # `charmap`, which fails on non-ASCII bytes in the export).
+        def frames(path):
+            text = path.read_text(encoding="utf-8")
+            return json.loads(re.search(r"const frames = (\[.*?\]);", text).group(1))
+
+        assert all(
+            drawn != plain
+            for drawn, plain in zip(
+                frames(result_path), frames(baseline_path), strict=True
+            )
+        )
