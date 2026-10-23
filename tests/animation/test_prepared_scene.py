@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 import sys
 import textwrap
-from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -81,36 +80,20 @@ def test_scene_video_uses_prepared_native_mapping_for_every_read(env):
         scene.close()
 
 
-def test_1d_headings_refused_consistently_before_render_or_export(
-    tmp_path, monkeypatch
-):
+def test_1d_headings_are_refused_when_the_scene_is_built():
+    # No view of a 1D scene draws them, and render_frame and export share the
+    # widget's renderer: the scene refuses them before any frame or file.
     env = Environment.from_grid_mask(np.ones(3, dtype=bool), (np.arange(4.0),))
-    scene = Animation(
-        env,
-        np.ones((2, env.n_bins)),
-        frame_times=[0.0, 0.1],
-        overlays=[
-            HeadDirectionOverlay(np.array([0.0, 1.0]), times=np.array([0.0, 0.1]))
-        ],
-    )
-    writer = Mock(
-        side_effect=AssertionError("No writer may open for an unsupported scene")
-    )
-    monkeypatch.setattr("imageio.v2.get_writer", writer)
-    for action in (
-        lambda: require_scene_view(scene, "widget", {}),
-        lambda: scene.show(backend="widget"),
-        lambda: scene.render_frame(0.05),
-        lambda: scene.export(tmp_path / "unsupported.gif", fps=10),
+    times = np.array([0.0, 0.1])
+    with pytest.raises(
+        ValueError, match=r"1D.*HeadDirectionOverlay.*TimeSeriesOverlay"
     ):
-        with pytest.raises(
-            ValueError, match=r"1D.*HeadDirectionOverlay.*TimeSeriesOverlay"
-        ):
-            action()
-    assert scene._renderer is None
-    writer.assert_not_called()
-    assert not (tmp_path / "unsupported.gif").exists()
-    scene.close()
+        Animation(
+            env,
+            np.ones((2, env.n_bins)),
+            frame_times=times,
+            overlays=[HeadDirectionOverlay(np.array([0.0, 1.0]), times=times)],
+        )
 
 
 def test_1d_positions_and_object_vectors_have_defined_spatial_baseline():

@@ -297,9 +297,6 @@ class PreparedScene:
     """
 
     def __init__(self, scene: Animation) -> None:
-        from neurospatial.animation._capabilities import require_scene_rendering
-
-        require_scene_rendering(scene)
         self.scene = scene
         self.source_lock = scene._source_lock
         # Bound overlapping-window retention by both row count and bytes. A

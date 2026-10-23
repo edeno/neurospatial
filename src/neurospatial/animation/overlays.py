@@ -4581,6 +4581,8 @@ def _convert_overlays_to_data(
     2. Checks a custom adapter's sample clock against the scene clock
     3. Checks every result's headings against the environment's dimensions
     4. Collects the results, which it owns, into one OverlayData container
+    5. Refuses overlays the scene renderer cannot draw in the environment's
+       dimensions (headings and video in 1D)
 
     Parameters
     ----------
@@ -4616,6 +4618,7 @@ def _convert_overlays_to_data(
         - Shape mismatch between overlay and environment dimensions
         - Skeleton references missing bodypart names
         - No temporal overlap between overlay and frame times
+        - Headings or video in a 1D environment
     TypeError
         If overlay does not implement ``OverlayProtocol``, or if
         ``convert_to_data()`` returns a type other than the nine internal
@@ -4697,6 +4700,9 @@ def _convert_overlays_to_data(
                 "whose heading you measured), or omit PositionOverlays to draw "
                 "the heading as a compass arrow at the arena center."
             )
+        from neurospatial.animation._capabilities import require_scene_overlays
+
+        require_scene_overlays(overlay_data, env.n_dims)
         cleanup.pop_all()
     return overlay_data, readers
 

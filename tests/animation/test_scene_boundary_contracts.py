@@ -180,7 +180,7 @@ def test_overlay_realign_borrows_single_reader_and_cannot_mutate_authority(env):
     reader.close.assert_not_called()
 
 
-@pytest.mark.parametrize("category", ["pose", "headings", "vectors", "videos"])
+@pytest.mark.parametrize("category", ["pose", "vectors"])
 def test_fast_1d_rejects_omitted_overlay_before_backend_allocation(
     category, monkeypatch
 ):
@@ -189,38 +189,50 @@ def test_fast_1d_rejects_omitted_overlay_before_backend_allocation(
     env = Environment.from_samples(np.arange(5.0)[:, None], bin_size=1)
     times = np.array([0.0, 0.1, 0.2])
     positions = np.array([[0.0], [1.0], [2.0]])
-    choices = {
+    overlay = {
         "pose": BodypartOverlay({"nose": positions}, times),
-        "headings": HeadDirectionOverlay(np.zeros(3), times),
         "vectors": ObjectVectorOverlay(np.array([[2.0]]), positions, times),
-    }
-    if category == "videos":
-        # Custom protocol overlays may supply data unsupported by a renderer.
-        class Video:
-            def convert_to_data(self, frame_times, n_frames, env):
-                return VideoData(
-                    np.arange(n_frames),
-                    np.zeros((3, 2, 2, 3), dtype=np.uint8),
-                    None,
-                    (0, 2, 0, 2),
-                    0.5,
-                    "above",
-                    times=frame_times,
-                )
-
-        overlay = Video()
-    else:
-        overlay = choices[category]
+    }[category]
     render = Mock()
     monkeypatch.setattr(fastplotlib_backend, "FastplotlibAnimation", render)
     with (
         Animation(
             env, np.ones((3, env.n_bins)), frame_times=times, overlays=[overlay]
         ) as scene,
-        pytest.raises(ValueError, match=r"cannot draw.*Overlay"),
+        # The widget draws them along the 1D field.
+        pytest.raises(
+            ValueError,
+            match=r"fastplotlib view of a 1D scene cannot draw .*Overlay: .*"
+            r"backend='widget'",
+        ),
     ):
         scene.show(backend="fastplotlib")
     render.assert_not_called()
+
+
+@pytest.mark.parametrize("category", ["headings", "videos"])
+def test_1d_scene_refuses_overlays_no_view_draws(category):
+    env = Environment.from_samples(np.arange(5.0)[:, None], bin_size=1)
+    times = np.array([0.0, 0.1, 0.2])
+
+    # A custom adapter's data is refused just as a built-in overlay's.
+    class Video:
+        def convert_to_data(self, frame_times, n_frames, env):
+            return VideoData(
+                np.arange(n_frames),
+                np.zeros((3, 2, 2, 3), dtype=np.uint8),
+                None,
+                (0, 2, 0, 2),
+                0.5,
+                "above",
+                times=frame_times,
+            )
+
+    overlay = (
+        HeadDirectionOverlay(np.zeros(3), times) if category == "headings" else Video()
+    )
+    with pytest.raises(ValueError, match=r"A 1D scene cannot draw .*Overlay: "):
+        Animation(env, np.ones((3, env.n_bins)), frame_times=times, overlays=[overlay])
 
 
 @pytest.mark.parametrize("option", [{"layout": "grid"}, {"layout": "horizontal"}])

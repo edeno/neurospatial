@@ -700,10 +700,11 @@ names the alternative, instead of producing an incomplete animation.
 
 - **1-D environments (tracks).** Fields are drawn against position (and, in
   fastplotlib, against time). Positions, pose and object vectors sit on the
-  track axis at zero field amplitude. Regions, head direction and video are
-  refused; show a heading as a `TimeSeriesOverlay` instead. Napari needs 2-D
-  or 3-D coordinates, and fastplotlib also refuses pose and object vectors on
-  a track.
+  track axis at zero field amplitude. No view draws regions, head direction
+  or video on a track, so `Animation` refuses them when the scene is built;
+  show a heading as a `TimeSeriesOverlay` instead. Napari needs 2-D or 3-D
+  coordinates, and fastplotlib also refuses pose and object vectors on a
+  track.
 - **3-D environments.** Headings must be 3-D unit vectors, not planar angles.
   Only point regions are drawn. Video (a planar image) and scale bars are
   refused; the 3-D axes show physical coordinates and units. Regular 3-D cells
