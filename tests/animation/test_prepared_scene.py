@@ -621,3 +621,24 @@ def test_track_mesh_rows_follow_the_track_and_leave_segment_spacing_empty():
     np.testing.assert_allclose(starts, window.track_edges[[0, 1, 3, 4]])
     np.testing.assert_allclose(stops, window.track_edges[[1, 2, 4, 5]])
     scene.close()
+
+
+def test_track_paths_break_where_the_position_changes_segment():
+    # Two segments 1.5 apart along the track: a line from one to the other
+    # would cross positions along the track that were never visited.
+    track = Environment.linear_track(
+        node_positions=[[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]],
+        bin_size=1.0,
+        edge_spacing=1.5,
+    )
+    times = np.arange(4) * 0.1
+    along = np.array([0.5, 1.5, 4.0, 5.0])  # 0-1, 0-1, then 1-2, 1-2
+    position = PositionOverlay(track.linear_to_nd(along), times=times)
+    with Animation(
+        track,
+        AnimationField(np.zeros((4, track.n_bins)), times),
+        overlays=[position],
+        window_seconds=2.0,
+    ) as scene:
+        paths = PreparedScene(scene).track_window(scene.fields["field"], 0.15).paths
+    np.testing.assert_allclose(paths[:, :, 1], [[0.5, 1.5], [4.0, 5.0]], atol=1e-9)

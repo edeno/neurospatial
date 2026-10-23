@@ -26,6 +26,7 @@ from neurospatial.animation._tracks import (
     _projection,
     track_extents,
     track_position,
+    track_segments,
 )
 
 if TYPE_CHECKING:
@@ -101,7 +102,7 @@ class TrackWindow(NamedTuple):
         a missing bin, or the spacing between track segments.
     paths : ndarray of float64, shape (n_segments, 2, 2)
         ``(time, position along the track)`` segments joining consecutive
-        supported position samples.
+        supported position samples on the same segment of the track.
     path_colors : list of str
         Each segment's position-overlay color.
     """
@@ -357,6 +358,10 @@ class PreparedScene:
         self.track_extents = track_extents(self.track_env)
         self._track_rows = (
             None if self.track_extents is None else _track_rows(*self.track_extents)
+        )
+        # Where each segment of a linearized track starts along it.
+        self._segment_starts = np.array(
+            [start for _, start, _ in track_segments(self.track_env)], dtype=float
         )
         self.projection = (
             None if scene.track is None else _projection(scene.env, scene.track)
@@ -732,11 +737,15 @@ class PreparedScene:
             start = int(np.searchsorted(times, left, side="left"))
             stop = int(np.searchsorted(times, right, side="right"))
             along = track_position(self.track_env, position.data[start:stop])
-            # A valid interval joins two supported samples on the track.
+            segment = np.searchsorted(self._segment_starts, along, side="right")
+            # A valid interval joins two supported samples on one segment of
+            # the track: a line between segments would cross positions along
+            # the track that the animal never passed.
             joined = np.flatnonzero(
                 position.interval_valid[start : max(start, stop - 1)]
                 & np.isfinite(along[:-1])
                 & np.isfinite(along[1:])
+                & (segment[:-1] == segment[1:])
             )
             segments = np.empty((len(joined), 2, 2))
             segments[:, :, 0] = np.column_stack(
