@@ -115,3 +115,32 @@ def test_raster_rows_stay_fixed_while_units_fall_silent(scene):
     renderer.render(1.1)  # the second unit has no spike in this window
     assert raster.get_ylim() == limits
     renderer.close()
+
+
+def test_1d_field_axes_stay_fixed_and_keep_markers_through_missing_rows():
+    # A missing field row must not move the axes or hide the animal, and the
+    # value axis keeps one scale so changes in magnitude stay visible.
+    from neurospatial import Environment
+    from neurospatial.animation import Animation, AnimationField, PositionOverlay
+
+    env = Environment.from_samples(np.linspace(0, 20, 200)[:, None], bin_size=2.0)
+    times = np.arange(4) * 0.1
+    values = np.vstack([np.linspace(1, 2, env.n_bins), np.full(env.n_bins, np.nan)] * 2)
+    field = AnimationField(values, times, vmin=0.5, vmax=3.0)
+    position = PositionOverlay(np.full((4, 1), 12.0), times=times)
+    with Animation(env, field, overlays=[position]) as scene:
+        scene.render_frame(0.0, dpi=30)
+        ax = scene._renderer.figure.axes[0]
+        limits = ax.get_xlim(), ax.get_ylim()
+        scene.render_frame(0.1, dpi=30)
+        assert (ax.get_xlim(), ax.get_ylim()) == limits
+        xmin, xmax = limits[0]
+        ymin, ymax = limits[1]
+        assert xmin <= env.dimension_ranges[0][0] and xmax >= env.dimension_ranges[0][1]
+        assert ymin <= 0 and ymax >= 3.0
+        markers = [
+            artist.get_offsets()
+            for artist in ax.collections
+            if artist.get_visible() and len(artist.get_offsets())
+        ]
+        assert any(np.allclose(offsets, [[12.0, 0.0]]) for offsets in markers)

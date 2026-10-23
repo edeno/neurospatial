@@ -317,6 +317,15 @@ class SceneRenderer:
                 ),
             )
             ax.set_title(name)
+            if shape == "line":
+                # One view for every frame: the track's extent and the field's
+                # fixed scale, with zero, where position markers are drawn. A
+                # missing row neither moves the axes nor hides the animal.
+                track = env.dimension_ranges[0]
+                _fit_view(
+                    ax,
+                    np.array([[track[0], min(low, 0.0)], [track[1], max(high, 0.0)]]),
+                )
             # Videos and overlays must not move the field's view.
             ax.set_xlim(ax.get_xlim())
             ax.set_ylim(ax.get_ylim())
@@ -332,7 +341,6 @@ class SceneRenderer:
                 return False
             if shape == "line":
                 artist.set_ydata(values)
-                _fit_view(ax, np.column_stack([artist.get_xdata(), values]))
             elif shape == "grid":
                 # pcolormesh draws the transposed (dim0, dim1) grid.
                 artist.set_array(
