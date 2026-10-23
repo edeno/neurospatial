@@ -28,7 +28,7 @@ from neurospatial.annotation._assist_widget import AnnotationAssistWidget
 from neurospatial.annotation._draft import add_polygons, annotation_roles
 from neurospatial.annotation._polygon_outline import PolygonOutline
 from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
-from neurospatial.annotation._state import make_unique_name
+from neurospatial.annotation._state import AnnotationModeState, make_unique_name
 from neurospatial.annotation._types import MultipleBoundaryStrategy
 from neurospatial.annotation.project import AnnotationProject, AnnotationShape
 from neurospatial.annotation.segmentation import (
@@ -360,15 +360,17 @@ class AnnotationProjectSession:
         try:
             if len(existing) != len(before.shapes):
                 restore_shapes(existing, self.layer)
-            # Number unnamed outlines after the annotations with this role, as
-            # the annotation controls count them.
-            count = annotation_roles(self.layer.features).count(role)
+            # Name unnamed outlines as the annotation controls name drawings.
+            state = AnnotationModeState(region_type=role)
+            state.sync_counts_from_region_types(annotation_roles(self.layer.features))
             batch = []
-            for number, polygon in enumerate(polygons, start=count + 1):
-                base = requested_name or (
-                    "arena" if role == "environment" else f"{role}_{number}"
+            for polygon in polygons:
+                name = (
+                    make_unique_name(requested_name, names)
+                    if requested_name
+                    else state.generate_auto_name(names)
                 )
-                name = make_unique_name(base, names)
+                state.record_shape_added(role)
                 names.append(name)
                 batch.append((polygon, name, role, metadata))
             with self.layer.events.blocker_all():
