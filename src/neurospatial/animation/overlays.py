@@ -567,22 +567,20 @@ class BodypartOverlay:
 
             aligned_bodyparts[part_name] = aligned_part
 
+        support = {
+            key: _support_metadata(
+                value, self.times, frame_times, self.max_gap, self.break_before
+            )
+            for key, value in self.data.items()
+        }
         return BodypartData(
             interp=self.interp,
             bodyparts=aligned_bodyparts,
             skeleton=self.skeleton,
             colors=self.colors,
-            sample_valid={
-                key: _support_metadata(
-                    value, self.times, frame_times, self.max_gap, self.break_before
-                )["sample_valid"]
-                for key, value in self.data.items()
-            },
+            sample_valid={key: part["sample_valid"] for key, part in support.items()},
             interval_valid={
-                key: _support_metadata(
-                    value, self.times, frame_times, self.max_gap, self.break_before
-                )["interval_valid"]
-                for key, value in self.data.items()
+                key: part["interval_valid"] for key, part in support.items()
             },
         )
 
