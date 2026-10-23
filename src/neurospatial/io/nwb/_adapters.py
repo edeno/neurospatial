@@ -56,24 +56,26 @@ def merge_overlay_coordinate_metadata(
     are accepted, while frame descriptions must agree verbatim. Coordinates
     are never transformed or rescaled by a metadata override.
     """
-    from neurospatial._units import normalize_position_units
+    from neurospatial._exceptions import _format_error
+    from neurospatial._units import same_coordinate_declaration
 
     declarations: dict[str, str | None] = {"units": units, "frame": frame}
     for name, known in declarations.items():
         if name not in kwargs:
             continue
         requested = kwargs.pop(name)
-        equivalent = requested == known
-        if name == "units" and requested is not None and known is not None:
-            equivalent = normalize_position_units(
-                requested
-            ) == normalize_position_units(known)
-        if known is not None and not equivalent:
+        # A known declaration can be restated, never erased or relabeled.
+        if known is not None and not same_coordinate_declaration(
+            name, requested, known, undeclared_matches=False
+        ):
             raise ValueError(
-                f"{context} {name} {requested!r} conflicts with NWB {source} "
-                f"{name} {known!r}. Fix: explicitly convert the source coordinates "
-                "before constructing the overlay; metadata cannot relabel or "
-                "rescale coordinates."
+                _format_error(
+                    f"{context} {name} {requested!r} conflicts with NWB {source} "
+                    f"{name} {known!r}.",
+                    fix="explicitly convert the source coordinates before "
+                    "constructing the overlay; metadata cannot relabel or "
+                    "rescale coordinates.",
+                )
             )
         if known is None:
             declarations[name] = requested

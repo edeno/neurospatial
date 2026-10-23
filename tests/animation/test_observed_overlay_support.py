@@ -199,7 +199,7 @@ def test_crop_resize_maps_pixel_centers_back_to_original_calibration(env):
     ],
 )
 def test_infinity_is_not_missing_tracking(env, overlay):
-    with pytest.raises(ValueError, match="Inf"):
+    with pytest.raises(ValueError, match="infinite"):
         overlay.convert_to_data(np.array([0.0]), 1, env)
 
 

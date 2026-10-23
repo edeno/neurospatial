@@ -48,7 +48,9 @@ from matplotlib import colormaps
 from matplotlib.colors import to_hex
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._units import normalize_position_units as _normalize_position_units
+from neurospatial._exceptions import _format_error
+from neurospatial._units import same_coordinate_declaration
+from neurospatial._validation import validate_finite
 from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import observation_support, sample_at_times
 from neurospatial.geometry import require_cartesian
@@ -336,7 +338,9 @@ class PositionOverlay:
         """
         _validate_position_metadata(self, env)
         # Validate position data
-        _validate_observed_values(self.positions, name="PositionOverlay.positions")
+        validate_finite(
+            self.positions, name="PositionOverlay.positions", allow_nan=True
+        )
         _validate_shape(self.positions, env.n_dims, name="PositionOverlay.positions")
 
         # Align to frame times (validates times if provided)
@@ -550,8 +554,8 @@ class BodypartOverlay:
 
         for part_name, part_data in self.data.items():
             # Validate each bodypart
-            _validate_observed_values(
-                part_data, name=f"BodypartOverlay.data['{part_name}']"
+            validate_finite(
+                part_data, name=f"BodypartOverlay.data['{part_name}']", allow_nan=True
             )
             _validate_shape(
                 part_data, env.n_dims, name=f"BodypartOverlay.data['{part_name}']"
@@ -766,7 +770,9 @@ class HeadDirectionOverlay:
             why="It draws allocentric heading arrows in arena coordinates.",
         )
         # Validate head direction data
-        _validate_observed_values(self.headings, name="HeadDirectionOverlay.headings")
+        validate_finite(
+            self.headings, name="HeadDirectionOverlay.headings", allow_nan=True
+        )
 
         # For head direction, validate shape only if 2D (vectors)
         if self.headings.ndim == 2:
@@ -1387,7 +1393,9 @@ class EventOverlay:
                     "EventOverlay.positions must have shape (n_samples, n_dims)."
                 )
             _validate_shape(self.positions, env.n_dims, name="EventOverlay.positions")
-            _validate_observed_values(self.positions, name="EventOverlay.positions")
+            validate_finite(
+                self.positions, name="EventOverlay.positions", allow_nan=True
+            )
             assert self.position_times is not None
             _validate_monotonic_time(
                 self.position_times, name="EventOverlay.position_times"
@@ -1417,8 +1425,10 @@ class EventOverlay:
                     env.n_dims,
                     name=f"EventOverlay.event_positions[{name!r}]",
                 )
-                _validate_observed_values(
-                    positions, name=f"EventOverlay.event_positions[{name!r}]"
+                validate_finite(
+                    positions,
+                    name=f"EventOverlay.event_positions[{name!r}]",
+                    allow_nan=True,
                 )
 
         # Type narrowing: __post_init__ normalizes these to dict format
@@ -2079,7 +2089,11 @@ class SpikeRasterOverlay:
                 ]
                 if missing:
                     raise ValueError(
-                        f"rates is missing raster unit IDs {missing!r}. Fix: provide rates for every spike unit."
+                        _format_error(
+                            f"rates is missing raster unit IDs {missing!r}.",
+                            why="Why: each raster row shows the rate map of its unit.",
+                            fix="provide rates for every spike unit.",
+                        )
                     )
                 rates = np.asarray(self.rates.firing_rates)[
                     [lookup[label] for label in original_ids.tolist()]
@@ -2368,8 +2382,10 @@ class ObjectVectorOverlay:
             why="It draws lines from the animal to objects in arena coordinates.",
         )
         # Validate object positions shape
-        _validate_observed_values(
-            self.object_positions, name="ObjectVectorOverlay.object_positions"
+        validate_finite(
+            self.object_positions,
+            name="ObjectVectorOverlay.object_positions",
+            allow_nan=True,
         )
         _validate_shape(
             self.object_positions,
@@ -2378,8 +2394,10 @@ class ObjectVectorOverlay:
         )
 
         # Validate animal positions
-        _validate_observed_values(
-            self.animal_positions, name="ObjectVectorOverlay.animal_positions"
+        validate_finite(
+            self.animal_positions,
+            name="ObjectVectorOverlay.animal_positions",
+            allow_nan=True,
         )
         _validate_shape(
             self.animal_positions,
@@ -2389,8 +2407,10 @@ class ObjectVectorOverlay:
 
         # Validate firing rates if provided
         if self.firing_rates is not None:
-            _validate_observed_values(
-                self.firing_rates, name="ObjectVectorOverlay.firing_rates"
+            validate_finite(
+                self.firing_rates,
+                name="ObjectVectorOverlay.firing_rates",
+                allow_nan=True,
             )
             if len(self.firing_rates) != len(self.animal_positions):
                 raise ValueError(
@@ -3564,15 +3584,10 @@ def _validate_video_processing(
         width, height = crop[2:]
     if width // downsample < 1 or height // downsample < 1:
         raise ValueError(
-            "downsample leaves no video pixels. Fix: use a smaller downsample factor or larger crop."
-        )
-
-
-def _validate_observed_values(data: NDArray[np.float64], *, name: str) -> None:
-    """NaN denotes missing observations; infinity is invalid input."""
-    if np.isinf(data).any():
-        raise ValueError(
-            f"{name} contains infinite values (Inf). Fix: replace missing observations with NaN."
+            _format_error(
+                "downsample leaves no video pixels.",
+                fix="use a smaller downsample factor or a larger crop.",
+            )
         )
 
 
@@ -3634,18 +3649,18 @@ def _validate_position_metadata(
 ) -> None:
     for name in ("units", "frame"):
         declared, expected = getattr(overlay, name), getattr(env, name, None)
-        if declared is None or expected is None:
-            continue
-        if name == "units":
-            declared, expected = (
-                _normalize_position_units(declared),
-                _normalize_position_units(expected),
-            )
-        if declared != expected:
+        # An overlay without a declaration is in the environment's coordinates.
+        if not same_coordinate_declaration(
+            name, declared, expected, undeclared_matches=True
+        ):
             raise ValueError(
-                f"{type(overlay).__name__} {name} {declared!r} does not match environment {name} "
-                f"{expected!r}. Fix: explicitly convert the coordinates to the environment's "
-                f"units and frame before constructing the overlay; coordinates are never silently rescaled."
+                _format_error(
+                    f"{type(overlay).__name__} {name} {declared!r} does not match "
+                    f"environment {name} {expected!r}.",
+                    fix="explicitly convert the coordinates to the environment's "
+                    "units and frame before constructing the overlay; "
+                    "coordinates are never silently rescaled.",
+                )
             )
 
 

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._units import units_per_centimeter
 from neurospatial.ops.transforms import (
     VideoCalibration,
@@ -436,9 +437,11 @@ def _calibration_units_per_cm(env: Environment) -> float:
     factor = units_per_centimeter(units)
     if factor is None:
         raise ValueError(
-            f"Video calibration maps pixels to centimeters, but environment units {units!r} "
-            "have no known conversion from centimeters. Fix: use metric environment "
-            "units (such as 'cm', 'm', or 'mm'), or omit calibration to fit video "
-            "to the environment bounds."
+            _format_error(
+                "Video calibration maps pixels to centimeters, but environment "
+                f"units {units!r} have no known conversion from centimeters.",
+                fix="use metric environment units (such as 'cm', 'm', or 'mm'), "
+                "or omit calibration to fit video to the environment bounds.",
+            )
         )
     return factor

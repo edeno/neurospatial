@@ -51,3 +51,38 @@ def normalize_position_units(units: str) -> str:
     """
     value = units.strip().lower()
     return _UNIT_SPELLINGS.get(value, value)
+
+
+def same_coordinate_declaration(
+    name: str,
+    first: str | None,
+    second: str | None,
+    *,
+    undeclared_matches: bool,
+) -> bool:
+    """Whether two ``units`` or ``frame`` declarations describe the same coordinates.
+
+    Units are compared by canonical spelling (``"metres"`` matches ``"m"``);
+    frames verbatim. Nothing is converted.
+
+    Parameters
+    ----------
+    name : {"units", "frame"}
+        Which declaration is compared.
+    first, second : str or None
+        The two declarations; None is undeclared.
+    undeclared_matches : bool
+        What an undeclared side means. True: it takes the other side's
+        coordinates, as an overlay without units is in its environment's.
+        False: one-sided metadata cannot establish a correspondence, so only
+        two undeclared sides match.
+
+    Returns
+    -------
+    bool
+    """
+    if first is None or second is None:
+        return undeclared_matches or first is second
+    if name == "units":
+        return normalize_position_units(first) == normalize_position_units(second)
+    return first == second

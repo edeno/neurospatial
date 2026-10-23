@@ -12,8 +12,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
-from neurospatial._units import normalize_position_units
+from neurospatial._units import (
+    normalize_position_units,
+    same_coordinate_declaration,
+)
 from neurospatial.io.nwb._adapters import (
     data_from_series,
     position_frame_from_series,
@@ -177,9 +181,11 @@ def _read_pose_with_metadata(
                 or (previous_time is not None and clock_chunk[0] <= previous_time)
             ):
                 raise ValueError(
-                    f"Pose bodypart {series_name!r} timestamps must be finite and "
-                    "strictly increasing. Fix: correct the source time axis "
-                    "before reading."
+                    _format_error(
+                        f"Pose bodypart {series_name!r} timestamps must be finite "
+                        "and strictly increasing.",
+                        fix="correct the source time axis before reading.",
+                    )
                 )
             previous_time = float(clock_chunk[-1])
             # Allow only floating-point roundoff, including clocks computed by
@@ -193,10 +199,13 @@ def _read_pose_with_metadata(
                 atol=precision,
             ):
                 raise ValueError(
-                    f"Pose bodypart {series_name!r} timestamps do not match "
-                    f"bodypart {clock_name!r}. All bodyparts must share identical "
-                    "timestamps. Fix: explicitly align the bodypart series to a "
-                    "common clock before reading; no resampling is performed."
+                    _format_error(
+                        f"Pose bodypart {series_name!r} timestamps do not match "
+                        f"bodypart {clock_name!r}.",
+                        why="Why: all bodyparts must share identical timestamps.",
+                        fix="explicitly align the bodypart series to a common "
+                        "clock before reading; no resampling is performed.",
+                    )
                 )
 
         series_units = position_units_from_series(series)
@@ -207,13 +216,17 @@ def _read_pose_with_metadata(
             ("units", series_units, units),
             ("reference_frame", series_frame, frame),
         ):
-            if series_name != clock_name and declared != shared:
+            if series_name != clock_name and not same_coordinate_declaration(
+                label, declared, shared, undeclared_matches=False
+            ):
                 raise ValueError(
-                    f"Pose bodypart {series_name!r} {label} {declared!r} does not "
-                    f"match the other bodyparts' {label} {shared!r}. Fix: explicitly "
-                    "declare common units and reference frame for every "
-                    "bodypart, converting coordinates where needed before "
-                    "reading; coordinates are never silently rescaled."
+                    _format_error(
+                        f"Pose bodypart {series_name!r} {label} {declared!r} does "
+                        f"not match the other bodyparts' {label} {shared!r}.",
+                        fix="explicitly declare common units and reference frame "
+                        "for every bodypart, converting coordinates where needed "
+                        "before reading; coordinates are never silently rescaled.",
+                    )
                 )
         if series_units is not None:
             units = series_units

@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._units import normalize_position_units
+from neurospatial._units import same_coordinate_declaration
 from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
@@ -89,10 +90,12 @@ def _checked_track(env: Environment, track: Environment) -> Environment:
         )
     if env.is_linearized_track or env.n_dims != 2 or track.n_dims != 2:
         raise ValueError(
-            "track= draws a 2-D environment's fields along a track of the same "
-            f"maze; the environment has {env.n_dims} dimensions"
-            + (" and is a track itself" if env.is_linearized_track else "")
-            + ". Fix: animate a 2-D environment, or leave track out."
+            _format_error(
+                "track= draws a 2-D environment's fields along a track of the "
+                f"same maze; the environment has {env.n_dims} dimensions"
+                + (" and is a track itself." if env.is_linearized_track else "."),
+                fix="animate a 2-D environment, or leave track out.",
+            )
         )
     for coordinates in (env.coordinate_system, track.coordinate_system):
         require_cartesian(
@@ -104,18 +107,21 @@ def _checked_track(env: Environment, track: Environment) -> Environment:
         )
     for name in ("units", "frame"):
         expected, declared = getattr(env, name), getattr(track, name)
-        if name == "units":
-            expected = None if expected is None else normalize_position_units(expected)
-            declared = None if declared is None else normalize_position_units(declared)
-        # Two unspecified declarations preserve the legacy caller-established
-        # correspondence; one-sided metadata cannot establish correspondence.
-        if expected != declared:
+        # Two undeclared environments keep the caller-established
+        # correspondence; metadata on one side alone cannot establish it.
+        if not same_coordinate_declaration(
+            name, expected, declared, undeclared_matches=False
+        ):
             raise ValueError(
-                f"track {name} {declared!r} does not match environment {name} "
-                f"{expected!r}. Why: nearest-bin projection requires shared "
-                "Cartesian coordinates. Fix: explicitly convert both environments "
-                "to the same units and frame and declare matching metadata; "
-                "coordinates are never silently rescaled or transformed."
+                _format_error(
+                    f"track {name} {declared!r} does not match environment "
+                    f"{name} {expected!r}.",
+                    why="Why: nearest-bin projection requires shared Cartesian "
+                    "coordinates.",
+                    fix="explicitly convert both environments to the same units "
+                    "and frame and declare matching metadata; coordinates are "
+                    "never silently rescaled or transformed.",
+                )
             )
     return track
 
@@ -133,10 +139,13 @@ def _projection(env: Environment, track: Environment) -> Any:
     empty = 1.0 - len(np.unique(nearest)) / track.n_bins
     if empty > 0.1:
         warnings.warn(
-            f"{empty:.0%} of the track's bins are nearest to no 2-D bin, so "
-            "they are drawn as missing along the track. Why: each 2-D bin's "
-            "probability goes to one track bin. Fix: build the track with a "
-            f"bin_size of at least the 2-D bins' ({_typical_bin_spacing(env):.3g}).",
+            _format_error(
+                f"{empty:.0%} of the track's bins are nearest to no 2-D bin, so "
+                "they are drawn as missing along the track.",
+                why="Why: each 2-D bin's probability goes to one track bin.",
+                fix="build the track with a bin_size of at least the 2-D bins' "
+                f"({_typical_bin_spacing(env):.3g}).",
+            ),
             UserWarning,
             stacklevel=_external_stacklevel(),
         )

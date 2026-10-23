@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from neurospatial._units import normalize_position_units, units_per_centimeter
+from neurospatial._units import (
+    normalize_position_units,
+    same_coordinate_declaration,
+    units_per_centimeter,
+)
 from neurospatial.io.nwb._adapters import position_units_from_series
 
 SPELLINGS = {
@@ -46,3 +50,26 @@ def test_overlay_units_alias_matches_environment():
         np.array([[0.5, 0.5], [1.5, 1.5]]), times=times, units="um"
     )
     overlay.convert_to_data(times, 2, env)
+
+
+@pytest.mark.parametrize(
+    ("name", "first", "second", "strict", "lenient"),
+    [
+        ("units", "metres", "m", True, True),
+        ("units", "cm", "m", False, False),
+        ("frame", "arena", "Arena", False, False),
+        ("frame", "arena", "arena", True, True),
+        ("units", None, "cm", False, True),
+        ("frame", "arena", None, False, True),
+        ("units", None, None, True, True),
+    ],
+)
+def test_coordinate_declarations_match_by_policy(name, first, second, strict, lenient):
+    assert (
+        same_coordinate_declaration(name, first, second, undeclared_matches=False)
+        is strict
+    )
+    assert (
+        same_coordinate_declaration(name, first, second, undeclared_matches=True)
+        is lenient
+    )
