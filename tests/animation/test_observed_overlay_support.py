@@ -163,7 +163,7 @@ def test_rates_align_unit_identity_before_row_order_and_validate_geometry(env):
         frame="arena",
     )
     assert moved.n_bins == env.n_bins
-    with pytest.raises(ValueError, match="geometry"):
+    with pytest.raises(ValueError, match="differs from the animated environment"):
         raster.convert_to_data(np.array([0.0, 0.2]), 2, moved)
     with pytest.raises(ValueError, match="missing raster unit IDs"):
         SpikeRasterOverlay(

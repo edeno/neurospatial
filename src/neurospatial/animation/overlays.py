@@ -2055,20 +2055,19 @@ class SpikeRasterOverlay:
             from neurospatial.encoding.spatial import SpatialRatesResult
 
             if isinstance(self.rates, SpatialRatesResult):
-                source_env = self.rates.env
-                if (
-                    any(
-                        not np.array_equal(
-                            getattr(source_env, attr), getattr(env, attr)
-                        )
-                        for attr in ("bin_centers", "bin_sizes")
-                    )
-                    or source_env.units != env.units
-                    or source_env.frame != env.frame
-                ):
-                    raise ValueError(
-                        "rates environment bin geometry, units or frame does not match the "
-                        "animated environment. Fix: compute rates on the animated environment."
+                from neurospatial._exceptions import IncompatibleEnvironmentError
+                from neurospatial.environment import _environment_differences
+
+                # A rate map drawn under the field must mean the same places;
+                # connectivity does not change what a drawn bin shows.
+                mismatch = _environment_differences(self.rates.env, env).bins
+                if mismatch is not None:
+                    raise IncompatibleEnvironmentError(
+                        "SpikeRasterOverlay rates were computed on an environment "
+                        f"that differs from the animated environment in {mismatch}.",
+                        fix="compute rates on the animated environment.",
+                        first=self.rates.env,
+                        second=env,
                     )
                 original_ids = unit_ids[np.argsort(self._order)]
                 lookup = {

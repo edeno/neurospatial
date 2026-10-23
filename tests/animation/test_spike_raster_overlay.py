@@ -99,6 +99,36 @@ def test_rate_maps_follow_the_rows_and_must_cover_the_bins(env):
         _convert_overlays_to_data([wrong], np.arange(3.0), 3, env)
 
 
+@pytest.mark.parametrize(
+    ("make_source", "difference"),
+    [
+        (lambda env: env.with_metadata(units="m"), "units or coordinate frames"),
+        (
+            lambda env: Environment.from_samples(
+                np.random.default_rng(0).uniform(0, 10, (200, 2)) + 0.5,
+                bin_size=2.0,
+            ),
+            "bin",
+        ),
+    ],
+)
+def test_rate_results_must_share_the_animated_bins(env, make_source, difference):
+    from neurospatial import IncompatibleEnvironmentError
+    from neurospatial.encoding.spatial import SpatialRatesResult
+
+    source = make_source(env)
+    rates = SpatialRatesResult(
+        np.ones((3, source.n_bins)), np.ones(source.n_bins), source, "binned", 2.0
+    )
+    with pytest.raises(IncompatibleEnvironmentError, match=difference):
+        SpikeRasterOverlay(SPIKES, rates=rates).convert_to_data(np.arange(3.0), 3, env)
+    same = SpatialRatesResult(
+        np.ones((3, env.n_bins)), np.ones(env.n_bins), env, "binned", 2.0
+    )
+    data = SpikeRasterOverlay(SPIKES, rates=same).convert_to_data(np.arange(3.0), 3, env)
+    assert data.rates.shape == (3, env.n_bins)
+
+
 def test_epochs_are_sorted_merged_and_checked():
     from neurospatial.animation import EpochOverlay
     from neurospatial.animation.overlays import EpochData
