@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,7 @@ from neurospatial.annotation.segmentation import (
     SegmentationProvider,
 )
 from neurospatial.ops.transforms import VideoCalibration
+from neurospatial.regions.core import _thaw_metadata
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -54,6 +56,11 @@ class _EditingState:
     bin_size: float | None
 
 
+def _metadata_key(shape: AnnotationShape) -> str:
+    # NaN never equals itself, so compare the serialized form instead.
+    return json.dumps(_thaw_metadata(shape.metadata), sort_keys=True)
+
+
 def _same(left: _EditingState, right: _EditingState) -> bool:
     if left.bin_size != right.bin_size or len(left.shapes) != len(right.shapes):
         return False
@@ -71,7 +78,7 @@ def _same(left: _EditingState, right: _EditingState) -> bool:
         and a.name == b.name
         and a.role == b.role
         and a.shape_type == b.shape_type
-        and a.metadata == b.metadata
+        and _metadata_key(a) == _metadata_key(b)
         and np.array_equal(a.vertices, b.vertices)
         for a, b in zip(left.shapes, right.shapes, strict=True)
     )

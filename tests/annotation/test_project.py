@@ -152,12 +152,23 @@ def test_broken_ring_associations_are_rejected(shapes, match):
         AnnotationProject(np.zeros((2, 2, 3), dtype=np.uint8), shapes=shapes)
 
 
-@pytest.mark.parametrize(
-    "metadata", [{"callable": lambda: 1}, {"missing": np.nan}, {3: "coerced"}]
-)
+@pytest.mark.parametrize("metadata", [{"callable": lambda: 1}, {3: "coerced"}])
 def test_non_json_metadata_cannot_enter_a_snapshot(metadata):
     with pytest.raises(ValueError, match="metadata"):
         AnnotationShape(np.zeros((3, 2)), metadata=metadata)
+
+
+def test_non_finite_metadata_survives_save_and_load(tmp_path):
+    # Region metadata allows NaN for a missing value; a draft must keep it.
+    shape = AnnotationShape(
+        np.zeros((3, 2)),
+        metadata={"missing": np.nan, "limits": [-np.inf, np.inf]},
+    )
+    path = tmp_path / "draft.nsp"
+    AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), shapes=[shape]).save(path)
+    metadata = AnnotationProject.load(path).shapes[0].metadata
+    assert np.isnan(metadata["missing"])
+    assert tuple(metadata["limits"]) == (-np.inf, np.inf)
 
 
 @pytest.mark.parametrize(

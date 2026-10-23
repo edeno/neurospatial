@@ -258,6 +258,8 @@ def annotate_video(
             f"Annotation project already exists: {project_path}. "
             "Use annotate_project to resume it, or choose a new project_path."
         )
+    if initial_regions is not None:
+        _validate_initial_metadata(initial_regions)
     _require_napari()
 
     # Convert to Path and load video frame
@@ -387,6 +389,24 @@ def _require_napari() -> None:
             "napari is required for interactive annotation. "
             "Install with: pip install napari[all]"
         ) from exc
+
+
+def _validate_initial_metadata(regions: Regions) -> None:
+    """Reject polygon metadata that an editable project cannot store."""
+    from neurospatial.annotation.project import _json_value
+    from neurospatial.regions.core import _thaw_metadata
+
+    for name, region in regions.items():
+        if region.kind != "polygon":
+            continue
+        try:
+            _json_value(_thaw_metadata(region.metadata))
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot edit region {name!r}: {exc} Editable annotations store "
+                "metadata as JSON objects, whose keys are strings. Convert the "
+                "region's metadata keys to strings before annotating."
+            ) from exc
 
 
 def _validate_autosave_interval(autosave_interval: float | None) -> None:

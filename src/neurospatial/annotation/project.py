@@ -33,7 +33,11 @@ _FORMAT = "neurospatial.annotation"
 
 
 def _json_value(value: Any) -> None:
-    """Reject values that JSON would silently coerce or cannot preserve."""
+    """Reject values that JSON would silently coerce or cannot preserve.
+
+    Non-finite floats are kept, as in :class:`~neurospatial.regions.Region`
+    metadata: Python's JSON reader restores ``NaN`` and ``Infinity`` exactly.
+    """
     if isinstance(value, Mapping):
         for key, item in value.items():
             if not isinstance(key, str):
@@ -44,8 +48,6 @@ def _json_value(value: Any) -> None:
             _json_value(item)
     elif value is not None and not isinstance(value, (str, bool, int, float)):
         raise ValueError("Shape metadata must contain only JSON values.")
-    elif isinstance(value, float) and not np.isfinite(value):
-        raise ValueError("Shape metadata numbers must be finite.")
 
 
 @dataclass(frozen=True, eq=False)
@@ -68,7 +70,8 @@ class AnnotationShape:
     parent_id : str
         Identity of the exterior ring for an interior ring, or an empty string.
     metadata : mapping
-        JSON attributes, recursively copied and made read-only.
+        JSON attributes with string keys, recursively copied and made
+        read-only. Non-finite floats such as ``NaN`` are kept.
     """
 
     vertices: NDArray[np.float64]
@@ -343,9 +346,7 @@ class AnnotationProject:
                 for shape in self.shapes
             ],
         }
-        metadata = np.frombuffer(
-            json.dumps(document, allow_nan=False).encode("utf-8"), dtype=np.uint8
-        )
+        metadata = np.frombuffer(json.dumps(document).encode("utf-8"), dtype=np.uint8)
         arrays: dict[str, Any] = {
             f"shape_{i}": shape.vertices for i, shape in enumerate(self.shapes)
         }

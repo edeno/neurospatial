@@ -24,9 +24,17 @@ def session_factory():
 
     sessions = []
 
-    def create(*, initial_mode="region", project_path=None, autosave_interval=None):
+    def create(
+        *,
+        initial_mode="region",
+        project_path=None,
+        autosave_interval=None,
+        populate=None,
+    ):
         viewer = napari.Viewer(show=False)
         shapes = setup_shapes_layer_for_annotation(viewer, initial_mode)
+        if populate is not None:
+            populate(shapes)
         controls = create_annotation_widget(viewer, initial_mode=initial_mode)
         viewer.window.add_dock_widget(controls, name="Annotations")
         session = AnnotationProjectSession(
@@ -102,6 +110,26 @@ def test_autosave_flushes_edits_without_closing_or_exporting(session_factory, tm
     session._autosave_timer.timeout.emit()
     updated = AnnotationProject.load(path)
     assert_array_equal(updated.shapes[0].vertices, project.shapes[0].vertices + 1)
+
+
+def test_initial_region_with_missing_metadata_value_starts_saves_and_has_no_history(
+    session_factory, tmp_path
+):
+    from shapely.geometry import box
+
+    from neurospatial.annotation._draft import add_polygon
+
+    def populate(shapes):
+        add_polygon(shapes, box(1, 1, 8, 8), "zone", "region", None, {"depth": np.nan})
+
+    session, _viewer, _shapes, _controls = session_factory(populate=populate)
+    # NaN never equals itself; unchanged metadata must not look like an edit.
+    session.checkpoint()
+    session.checkpoint()
+    assert not session._undo
+    path = tmp_path / "draft.nsp"
+    session.save_project(path)
+    assert np.isnan(AnnotationProject.load(path).shapes[0].metadata["depth"])
 
 
 def test_accepted_components_and_hole_are_one_undoable_annotation_edit(session_factory):
