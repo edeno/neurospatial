@@ -546,6 +546,10 @@ class DecodingResult(ResultMixin):
                 overlays=[overlay],
             )
 
+        ``neurospatial.animation.Animation.from_decoding(result)`` builds the
+        same scene and also keeps the result's recording windows, so known
+        gaps stay empty; use it to review replay events or export windows.
+
         When ``times`` is provided, the x-axis shows time in seconds with
         proper extent for contiguous bins. Recording breaks use bin indices
         with dashed lines marking the breaks. Without ``times``, the x-axis

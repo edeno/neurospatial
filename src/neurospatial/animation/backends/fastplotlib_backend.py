@@ -1,7 +1,8 @@
 """Animate fields over time on the GPU with fastplotlib.
 
 ``env.animate_fields(fields, frame_times=..., backend="fastplotlib")`` returns
-a :class:`FastplotlibAnimation`, a fastplotlib ``NDWidget`` with a time
+a view whose ``native`` viewer is a :class:`FastplotlibAnimation`, a
+fastplotlib ``NDWidget`` with a time
 slider in seconds and playback controls. Each frame recolors the bins' cells
 and moves the overlays; nothing is pre-rendered, so long recordings start at
 once. Inside Jupyter, frames are rendered where the kernel runs and streamed
@@ -1371,7 +1372,9 @@ class _Frame(NamedTuple):
 class FastplotlibAnimation:
     """Fields over time on the GPU, with a time slider and playback controls.
 
-    Returned by ``env.animate_fields(..., backend="fastplotlib")``. It is a
+    The ``native`` viewer of the view that
+    ``env.animate_fields(..., backend="fastplotlib")`` and
+    ``Animation.show(backend="fastplotlib")`` return. It is a
     fastplotlib ``NDWidget``: a slider in seconds, play, step and loop
     buttons, and a frame rate box. Time series and spike rasters are drawn
     beside the field on the same clock, each showing its window around the

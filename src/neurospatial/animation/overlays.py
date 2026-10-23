@@ -681,10 +681,6 @@ class HeadDirectionOverlay:
 
     For 3D environments, use unit vectors instead of angles.
 
-    **Performance Note**: This overlay uses napari's Tracks layer for efficient
-    rendering with time-based filtering, achieving smooth 30 FPS playback even
-    with 40k+ frames.
-
     Examples
     --------
     Head direction as angles (2D):
@@ -862,13 +858,14 @@ class EventOverlay:
 
         Default is None (instant, no decay).
     markers : str | dict[str, str] | None, optional
-        Marker style(s) for matplotlib/video backend ('o', 's', '^', 'v', 'd').
+        Matplotlib marker code(s) ('o', 's', '^', 'v', 'd'), drawn by every
+        backend.
 
         - str: Single marker for all event types
         - dict: Mapping event names to markers
         - None: Use 'o' (circle) for all
 
-        Napari uses circles regardless. Default is None.
+        Default is None.
     border_color : str, optional
         Border color for markers. Default is "white".
     border_width : float, optional
@@ -1595,9 +1592,9 @@ class TimeSeriesOverlay:
         Line color (matplotlib color string). Default is "white".
     window_seconds : float, optional
         Total time window to display, centered on current frame.
-        E.g., 2.0 shows ±1 second. Must be positive. Default is 2.0. The
-        fastplotlib backend shows every panel drawn against time over the
-        animation's own ``window_seconds`` instead, so they line up.
+        E.g., 2.0 shows ±1 second. Must be positive. Default is 2.0. Views
+        and exports show every panel drawn against time over the animation's
+        own ``window_seconds`` instead, so they line up.
     linewidth : float, optional
         Line width in points. Default is 1.0.
     alpha : float, optional
@@ -2010,10 +2007,10 @@ class SpikeRasterOverlay:
     Each unit is a row of ticks at its spike times, and the panel shows the
     animation's ``window_seconds`` around the current time, lined up with the
     other panels drawn against time, so replay or theta sequences
-    can be read against a decoded posterior or the animal's position.
-    Hovering over a spike names its unit; with ``rates``, clicking a unit's
-    row shows its rate map under the field and highlights its spikes. Drawn
-    by ``backend="fastplotlib"``; the other backends skip it with a warning.
+    can be read against a decoded posterior or the animal's position. Every
+    view and export draws it. In ``backend="fastplotlib"``, hovering over a
+    spike names its unit; with ``rates``, clicking a unit's row shows its rate
+    map under the field and highlights its spikes.
 
     Parameters
     ----------
@@ -2203,11 +2200,12 @@ class SpikeRasterOverlay:
 class EpochOverlay:
     """Intervals of time, such as ripples or run bouts, on every time panel.
 
-    Each epoch is shaded on the panels drawn against time (a track's fields
-    over time, spike rasters and time series), the line above the panels
-    names the epoch the current time is in, and N and Shift+N jump to the start of the
-    next and previous epoch. Drawn by ``backend="fastplotlib"``; the other
-    backends skip it with a warning.
+    Napari, the notebook widget and exported files draw each overlay as a
+    labeled row of shaded intervals in a panel against time. In
+    ``backend="fastplotlib"`` each epoch is shaded on the panels drawn against
+    time (a track's fields over time, spike rasters and time series), the line
+    above the panels names the epoch the current time is in, and N and Shift+N
+    jump to the start of the next and previous epoch.
 
     Parameters
     ----------

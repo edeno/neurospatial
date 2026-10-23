@@ -1,16 +1,21 @@
 """Animation module for neurospatial.
 
-This module provides multi-backend animation capabilities for visualizing
-spatial fields over time (place field learning, replay sequences, value
-function evolution).
+Spatial fields over time on the recording clock (a decoded posterior beside
+the animal's position, a place field across laps, replay sequences), with
+overlays for tracking, pose, spikes, signals, epochs and video. An
+:class:`Animation` scene is shared by every view and export.
 
-Available backends:
-- Napari: GPU-accelerated interactive viewer (large-scale exploration)
-- Video (MP4): Parallel video export (publications, presentations)
-- HTML: Standalone interactive files (sharing, remote viewing)
-- Jupyter Widget: Notebook integration (quick exploration)
-- Fastplotlib: GPU drawing in Jupyter (also from a remote GPU server) or a
-  desktop window, for 2-D and 3-D environments
+Views (``Animation.show`` or ``Environment.animate_fields``) return an
+:class:`AnimationView`:
+
+- ``"napari"``: desktop viewer for 2-D and 3-D environments.
+- ``"widget"``: notebook player drawn with Matplotlib.
+- ``"fastplotlib"``: GPU viewer in Jupyter (also from a remote GPU server) or
+  a desktop window, for 1-D, 2-D and 3-D environments.
+
+Exports (``Animation.export`` or ``animate_fields(save_path=...)``) write
+``.mp4``, ``.webm``, ``.mov``, ``.avi``, ``.gif`` or ``.html`` files, optionally
+rendering frames in worker processes.
 
 Public API
 ----------
@@ -24,9 +29,9 @@ EventOverlay, TimeSeriesOverlay, VideoOverlay : class
     Discrete events, scalar signals and calibrated video overlays.
 SpikeRasterOverlay, EpochOverlay : class
     Spikes of many units as a raster, and intervals such as ripples, on the
-    animation's clock (scene views/export and fastplotlib).
+    animation's clock.
 FastplotlibAnimation : class
-    The interactive animation ``animate_fields(backend="fastplotlib")`` returns.
+    The native fastplotlib viewer, ``view.native`` of a fastplotlib view.
 ScaleBarConfig : class
     Scale-bar settings shared by renderers.
 Skeleton : class

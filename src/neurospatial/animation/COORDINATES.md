@@ -63,7 +63,7 @@ downsampling, centimeter conversion or a presumed camera reflection.
 The display adapter accounts for its own array ordering and field geometry.
 There is no universal napari pixel space or universal `imshow` origin.
 
-### Matplotlib scenes and legacy exports/widgets
+### Matplotlib scenes (notebook widget and file exports)
 
 Calibrated images use `origin="upper"` with the raw-pixel extent
 `(-0.5, width - 0.5, height - 0.5, -0.5)` and the artist transform
@@ -72,8 +72,7 @@ at raw coordinate `(col, row)` before applying calibration. `origin="upper"`
 does not introduce a second calibration reflection in this arrangement.
 Axes limits and other overlays stay in environment coordinates.
 
-The shared legacy implementation is `_parallel._video_image_geometry`;
-the scene renderer uses the same calibrated convention.
+The implementation is `_scene_rendering.SceneRenderer`.
 
 ### Fastplotlib
 
@@ -92,36 +91,16 @@ centers, cell sizes and any environment frame transform.
 For 2-D video, let `S` swap the first two coordinates of a homogeneous vector.
 The video layer's affine is `S @ T @ S`: the input swap converts napari
 `(row, column)` to calibration `(column, row)`, and the output swap converts
-environment `(x, y)` to native `(y, x)`. This path does not use the legacy
-field-raster transform or apply a fixed vertical reflection.
-
-### Legacy napari field rasters
-
-`backends.napari_backend._build_video_napari_affine` aligns video with the
-legacy field raster, whose first row represents the greatest environment y.
-`EnvScale` uses the full grid edges, including inactive cells. Its
-`build_env_to_napari_matrix` maps environment `(x, y)` into raster indices:
-
-```text
-col = (x - x_min) * x_scale - 0.5
-row = (n_y - 0.5) - (y - y_min) * y_scale
-```
-
-Call this matrix `R`. The field layer scales raster indices into physical
-viewer distances with `D = diag(pixel_height, pixel_width, 1)`. The calibrated
-video affine is therefore `D @ R @ T @ S`. Omitting `D` misaligns video whenever
-grid cell sizes differ from one. Omitting `S` swaps camera axes. Legacy
-`EnvScale` cannot represent framed grids; the scene adapter handles their
-physical geometry directly.
+environment `(x, y)` to native `(y, x)`. This path does not apply a fixed
+vertical reflection.
 
 ## Uncalibrated fallback
 
 Without calibration, renderers fit video to `env_bounds` and preparation warns
 that alignment may be inaccurate. Scene Matplotlib, scene napari and
 fastplotlib place the first row at the top; fastplotlib and scene napari use
-half-pixel offsets so image edges coincide with the bounds. Legacy Matplotlib
-uses `origin="lower"`, and legacy napari retains its raster-fitting convention.
-These fallback conventions are not a calibrated coordinate contract. Supply a
+half-pixel offsets so image edges coincide with the bounds. These fallback
+conventions are not a calibrated coordinate contract. Supply a
 calibration when physical registration or consistent orientation across all
 entry points matters.
 
@@ -139,6 +118,6 @@ Relevant implementation boundaries:
 - `neurospatial._video_io`: decoded frames, crop and resize geometry.
 - `animation.calibration` and `animation.overlays`: environment-unit conversion
   and the prepared `VideoData` contract.
-- `animation.transforms`: legacy field-raster coordinate conversion.
-- `animation._parallel`, `animation._scene_rendering` and `animation.backends`:
-  display-specific array ordering and placement.
+- `animation._scene_rendering`, `animation.backends._napari_scene` and
+  `animation.backends.fastplotlib_backend`: display-specific array ordering
+  and placement.
