@@ -6,6 +6,8 @@ scene and provides utilities for working with large-scale time series data.
 
 from __future__ import annotations
 
+import copy
+
 import importlib.util
 import logging
 import warnings
@@ -274,36 +276,36 @@ def _field_streams(
                 )
             )
     label = field_options.pop("colorbar_label", None)
-
-    def build() -> dict[str, AnimationField]:
-        return {
-            name: AnimationField(
-                values, frame_times, max_gap=max_gap, label=label, **field_options
-            )
-            if not isinstance(values, AnimationField)
-            else values
-            for name, values in streams.items()
-        }
-
-    built = build()
+    built = {
+        name: values
+        if isinstance(values, AnimationField)
+        else AnimationField(
+            values, frame_times, max_gap=max_gap, label=label, **field_options
+        )
+        for name, values in streams.items()
+    }
     plain = [name for name, values in streams.items() if values is not built[name]]
-    if len(plain) > 1 and (
-        field_options.get("vmin") is None or field_options.get("vmax") is None
-    ):
+    vmin, vmax = field_options.get("vmin"), field_options.get("vmax")
+    if len(plain) > 1 and (vmin is None or vmax is None):
         # Fields shown side by side share one cmap and colorbar label, so they
         # share one color scale: the same color is the same value in each.
-        from neurospatial.animation._field_stats import frame_extremes, robust_limits
+        # Each field caches the rows it read, so its scale reads them once.
+        from neurospatial.animation._field_stats import robust_limits
 
-        extremes = [frame_extremes(built[name]._scale_rows()) for name in plain]
+        extremes = [built[name]._scale_extremes() for name in plain]
         low, high = robust_limits(
             np.concatenate([lows for lows, _ in extremes]),
             np.concatenate([highs for _, highs in extremes]),
         )
-        if field_options.get("vmin") is None:
-            field_options["vmin"] = low
-        if field_options.get("vmax") is None:
-            field_options["vmax"] = high
-        built = build()
+        vmin = low if vmin is None else vmin
+        vmax = high if vmax is None else vmax
+        if vmin > vmax:
+            raise ValueError("vmin must be less than or equal to vmax.")
+        for name in plain:
+            shared = copy.copy(built[name])
+            object.__setattr__(shared, "vmin", vmin)
+            object.__setattr__(shared, "vmax", vmax)
+            built[name] = shared
     return built
 
 
