@@ -232,3 +232,42 @@ def test_scene_close_waits_for_view_statistics_snapshot(env, monkeypatch):
         closed.result(timeout=5)
     assert closed_reader.is_set()
     assert native.close.called
+
+
+
+class _ProbedRows:
+    """Record whether another consumer could read while each row is read."""
+
+    def __init__(self, n_bins):
+        self.shape = (1000, n_bins)
+        self.scene = None
+        self.unguarded = []
+
+    def __len__(self):
+        return self.shape[0]
+
+    def __getitem__(self, index):
+        lock = self.scene._source_lock
+
+        def probe():
+            if lock.acquire(blocking=False):
+                lock.release()
+                self.unguarded.append(index)
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(probe).result(timeout=5)
+        return np.full(self.shape[1], index + 1.0)
+
+
+def test_scene_export_reads_sources_under_scene_lock(env, tmp_path):
+    # A view's worker or Animation.close() may run during an export. Each
+    # field read must exclude them, including reads for every encoded frame.
+    pytest.importorskip("imageio")
+    rows = _ProbedRows(env.n_bins)
+    scene = Animation(env, AnimationField(rows, np.arange(1000) * 0.1))
+    rows.scene = scene
+    try:
+        scene.export(tmp_path / "scene.gif", time_range=(0.0, 0.3), fps=10)
+    finally:
+        scene.close()
+    assert not rows.unguarded

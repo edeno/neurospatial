@@ -591,18 +591,21 @@ class Animation:
         """
         from neurospatial.animation._scene_rendering import export_scene
 
-        self._ensure_open()
-        return export_scene(
-            self,
-            Path(path),
-            time_range=time_range,
-            fps=fps,
-            speed=speed,
-            overwrite=overwrite,
-            dpi=dpi,
-            figsize=figsize,
-            codec=codec,
-        )
+        # Views' workers share these sources, and close() waits for a running
+        # export to finish before releasing readers.
+        with self._source_lock:
+            self._ensure_open()
+            return export_scene(
+                self,
+                Path(path),
+                time_range=time_range,
+                fps=fps,
+                speed=speed,
+                overwrite=overwrite,
+                dpi=dpi,
+                figsize=figsize,
+                codec=codec,
+            )
 
     def show(self, *, backend: str = "widget", **kwargs: Any) -> Any:
         """Open an interactive view of this scene."""
