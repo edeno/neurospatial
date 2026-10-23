@@ -266,10 +266,10 @@ class SceneRenderer:
             colors[:, 3] *= np.clip(values / field._typical_peak(), 0, 1)
             cmaps[True] = ListedColormap(colors)
         if env.n_dims == 3:
-            cells, faces = self._field3d(ax, field.sample(time), field.cmap, low, high)
+            cells, faces = self._field3d(ax, self.prepared.field_sample(field, time), field.cmap, low, high)
 
             def update3d(time: float) -> None:
-                colors = _cell_colors(field.sample(time), field.cmap, low, high)
+                colors = _cell_colors(self.prepared.field_sample(field, time), field.cmap, low, high)
                 cells.set_facecolor(np.repeat(colors, faces, axis=0))
 
             return update3d
@@ -364,10 +364,10 @@ class SceneRenderer:
                 return False
             return True
 
-        draw(field.sample(time), self._below_video(time))
+        draw(self.prepared.field_sample(field, time), self._below_video(time))
 
         def update(time: float) -> None:
-            values = field.sample(time)
+            values = self.prepared.field_sample(field, time)
             below = self._below_video(time)
             if not set_values(values, below):
                 draw(values, below)

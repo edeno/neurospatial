@@ -198,20 +198,26 @@ class PreparedScene:
 
     def field_samples(self, time: float) -> dict[str, np.ndarray]:
         """Hold one row per stream without rereading a slow source each tick."""
-        samples = {}
-        for name, field in self.scene.fields.items():
-            index = field._sample_index(time)
-            if index is not None:
-                previous = self._held.get(id(field))
-                if previous is None or previous[0] != index:
-                    previous = (index, self._field_row(field, index))
-                    self._held[id(field)] = previous
-                samples[name] = previous[1]
-            else:
-                if id(field) not in self._missing:
-                    self._missing[id(field)] = np.full(field.n_bins, np.nan)
-                samples[name] = self._missing[id(field)]
-        return samples
+        return {
+            name: self.field_sample(field, time)
+            for name, field in self.scene.fields.items()
+        }
+
+    def field_sample(self, field: AnimationField, time: float) -> np.ndarray:
+        """The row ``field`` shows at ``time``, held until its index changes.
+
+        The returned array is shared between calls; do not modify it.
+        """
+        index = field._sample_index(time)
+        if index is None:
+            if id(field) not in self._missing:
+                self._missing[id(field)] = np.full(field.n_bins, np.nan)
+            return self._missing[id(field)]
+        previous = self._held.get(id(field))
+        if previous is None or previous[0] != index:
+            previous = (index, self._field_row(field, index))
+            self._held[id(field)] = previous
+        return previous[1]
 
     def clock(self, item: Any) -> np.ndarray:
         """The source clock, with the scene clock for explicitly aligned rows."""

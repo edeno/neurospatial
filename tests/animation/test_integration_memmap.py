@@ -17,10 +17,6 @@ def env():
     return Environment.from_samples(positions, bin_size=10.0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="The persistent SceneRenderer reads the first shown row three times while building its artists.",
-)
 def test_a_lazy_session_is_read_only_at_the_shown_time(env):
     """A view reads a bounded sample for the color scale and the shown row."""
     pytest.importorskip("ipywidgets")
