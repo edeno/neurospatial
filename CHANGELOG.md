@@ -23,7 +23,8 @@
 
   times, still = np.arange(10) / 10, np.zeros((10, 2))
   goal = np.array([100.0, 0.0])
-  heading_direction_labels(times, still, min_speed=0.0)  # before: ['0–45°', ...]; after: ['stationary', ...]
+  heading_direction_labels(times, still, min_speed=0.0)
+  # before: ['0–45°', ...]; after: ['stationary', ...]
   goal_bias(times, still, goal, min_speed=0.0)  # before: 1.0; after: nan
   positions = np.column_stack([2.0 * np.arange(10), np.zeros(10)])  # 20 cm/s East
   positions[5] = np.nan
@@ -145,8 +146,9 @@
   `distance_to_boundary` move from `neurospatial.events` next to
   `distance_to_region`. There are no aliases, so the old imports raise
   `ImportError`. Both heading functions also change in this release (see the
-  `heading_from_velocity` and `heading_from_body_orientation` entries). `ops` keeps the egocentric
-  frame conversions, and `events` keeps the time-based regressors
+  `heading_from_velocity` and `heading_from_body_orientation` entries).
+  `ops` keeps the egocentric frame conversions, and `events` keeps the
+  time-based regressors
   (`time_to_nearest_event`, `event_count_in_window`, `event_indicator`) and
   its event-table utilities.
 
@@ -1844,9 +1846,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   interpolated across it. Recordings joined on one clock no longer need to be
   converted to `epochs` by hand (touching windows merge, so that never worked
   anyway). Rate results and fitted decoders record the break times in
-  `analysis_settings["break_times"]` (`None` when not given). A head-direction cell's held direction
-  does not carry over a break: each recording starts with its own first
-  direction of movement.
+  `analysis_settings["break_times"]` (`None` when not given). A
+  head-direction cell's held direction does not carry over a break: each
+  recording starts with its own first direction of movement.
 
   ```python
   new_recording = np.diff(recording_ids, prepend=recording_ids[0]) != 0
@@ -2529,7 +2531,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   Breaking).
 
   ```python
-  simulate_trajectory_laps(env, n_laps=3)  # before: 2679 s at 0.1 cm/s; after: ~14 s at ~20 cm/s
+  simulate_trajectory_laps(env, n_laps=3)  # before: 2679 s at 0.1 cm/s; after: ~15-19 s, running at ~20 cm/s
   ```
 
 - Publishing walls onto a rotated or clipped environment refuses a wall that
