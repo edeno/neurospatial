@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 from scipy import ndimage
-from shapely.geometry import Polygon, box
-from shapely.ops import unary_union
+from shapely.geometry import Polygon
 
 from neurospatial._results import ReadOnlyArraysMixin, read_only_copy
 from neurospatial.regions.core import _require_json_metadata
@@ -529,14 +529,15 @@ def mask_to_polygons(
     mask = _validate_mask(mask)
     if not np.isfinite(simplify_tolerance) or simplify_tolerance < 0:
         raise ValueError("simplify_tolerance must be finite and nonnegative in pixels.")
-    rectangles = []
-    for row, values in enumerate(mask):
-        edges = np.flatnonzero(np.diff(np.r_[False, values, False]))
-        for start, stop in edges.reshape(-1, 2):
-            rectangles.append(box(start - 0.5, row - 0.5, stop - 0.5, row + 0.5))
-    if not rectangles:
+    # One rectangle per horizontal run of foreground pixels, built at once.
+    edges = np.diff(np.pad(mask, ((0, 0), (1, 1))).astype(np.int8), axis=1)
+    rows, starts = np.nonzero(edges == 1)
+    _, stops = np.nonzero(edges == -1)
+    if not rows.size:
         return []
-    merged = unary_union(rectangles)
+    merged = shapely.union_all(
+        shapely.box(starts - 0.5, rows - 0.5, stops - 0.5, rows + 0.5)
+    )
     polygons = [merged] if isinstance(merged, Polygon) else list(merged.geoms)
     if simplify_tolerance:
         polygons = [
