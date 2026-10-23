@@ -23,6 +23,7 @@ from neurospatial._observation import (
 
 if TYPE_CHECKING:
     from neurospatial.animation._view import AnimationView
+    from neurospatial.decoding import DecodingResult
 
 
 def _readonly(value: Any, dtype: Any = None) -> np.ndarray:
@@ -511,7 +512,7 @@ class Animation:
         )
 
     @classmethod
-    def from_decoding(cls, result: Any, **kwargs: Any) -> Animation:
+    def from_decoding(cls, result: DecodingResult, **kwargs: Any) -> Animation:
         """Build a probability animation on its decoding clock and recording support.
 
         Known ``result.spike_window`` always intersects ``epochs`` supplied
@@ -519,7 +520,7 @@ class Animation:
         recording gaps. Held intervals must fit wholly inside one resulting
         half-open window; supported isolated samples remain visible exactly.
         """
-        if getattr(result, "times", None) is None:
+        if result.times is None:
             raise ValueError(
                 "Decoding result has no times. Decode with times to preserve its physical clock."
             )
@@ -536,7 +537,7 @@ class Animation:
             )
             if name in kwargs
         }
-        known = as_intervals(getattr(result, "spike_window", None), name="spike_window")
+        known = as_intervals(result.spike_window, name="spike_window")
         selected = as_intervals(field_options.get("epochs"), name="epochs")
         if known is not None:
             selected = (
@@ -549,8 +550,6 @@ class Animation:
                 )
         field_options["epochs"] = selected
         field_options.setdefault("label", "Probability")
-        field_options.setdefault("max_gap", getattr(result, "max_gap", 0.5))
-        field_options.setdefault("break_before", getattr(result, "break_before", None))
         field = AnimationField(result.posterior, result.times, **field_options)
         return cls(result.env, {"posterior": field}, **kwargs)
 
