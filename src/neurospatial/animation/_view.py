@@ -479,8 +479,6 @@ def show_animation(
         _field_styles=field_styles,
         **options,
     )
-    if native is None:
-        raise ValueError("Animation.show() creates a view; dry_run is not supported.")
     try:
         native.show()
     except BaseException as error:

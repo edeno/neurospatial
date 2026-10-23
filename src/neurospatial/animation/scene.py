@@ -706,7 +706,7 @@ class Animation:
             "track": self.track,
         }
 
-    def show(self, *, backend: str = "widget", **kwargs: Any) -> Any:
+    def show(self, *, backend: str = "widget", **kwargs: Any) -> AnimationView:
         """Open an interactive view of this scene."""
         from neurospatial.animation._view import show_animation
 

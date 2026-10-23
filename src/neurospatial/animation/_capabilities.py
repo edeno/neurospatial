@@ -1,13 +1,10 @@
-"""One capability table for validation of the existing backend adapters."""
+"""What each scene view and the scene renderer can draw, checked before drawing."""
 
 from __future__ import annotations
 
-import warnings
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
-
-from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
@@ -19,33 +16,27 @@ class _BackendCapabilities:
     overlays: frozenset[str]
     multi_field: bool
     dimensions: frozenset[int]
-    interactive: bool
 
 
-_SPATIAL = frozenset({"positions", "bodypart_sets", "head_directions", "events"})
-_ALL = _SPATIAL | {
-    "videos",
-    "timeseries",
-    "object_vectors",
-    "spike_rasters",
-    "epochs",
-}
+_ALL = frozenset(
+    {
+        "positions",
+        "bodypart_sets",
+        "head_directions",
+        "events",
+        "videos",
+        "timeseries",
+        "object_vectors",
+        "spike_rasters",
+        "epochs",
+    }
+)
 _CAPABILITIES = MappingProxyType(
     {
-        "napari": _BackendCapabilities(
-            _SPATIAL | {"videos", "timeseries"}, True, frozenset({2, 3}), True
-        ),
-        "fastplotlib": _BackendCapabilities(_ALL, True, frozenset({1, 2, 3}), True),
-        "napari_scene": _BackendCapabilities(_ALL, True, frozenset({2, 3}), True),
-        "video": _BackendCapabilities(
-            _SPATIAL | {"videos", "timeseries"}, False, frozenset({1, 2}), False
-        ),
-        "widget": _BackendCapabilities(
-            _SPATIAL | {"videos", "timeseries"}, False, frozenset({1, 2}), True
-        ),
-        "html": _BackendCapabilities(_SPATIAL, False, frozenset({1, 2}), False),
+        "fastplotlib": _BackendCapabilities(_ALL, True, frozenset({1, 2, 3})),
+        "napari_scene": _BackendCapabilities(_ALL, True, frozenset({2, 3})),
         # Animation's notebook and export paths use the same complete renderer.
-        "scene": _BackendCapabilities(_ALL, True, frozenset({1, 2, 3}), True),
+        "scene": _BackendCapabilities(_ALL, True, frozenset({1, 2, 3})),
     }
 )
 _OVERLAY_NAMES = {
@@ -108,29 +99,6 @@ def require_scene_rendering(scene: Animation) -> None:
         )
 
 
-def warn_unsupported_overlays(backend: str, data: OverlayData) -> OverlayData:
-    """Warn and remove unsupported collections at the legacy boundary."""
-    missing = unsupported_overlays(backend, data)
-    if not missing:
-        return data
-    names = " or ".join(_OVERLAY_NAMES[name] for name in missing)
-    warnings.warn(
-        f"The {backend} backend does not draw {names}, so it is skipped; "
-        "the other overlays are drawn. Use backend='fastplotlib' to show it, "
-        "or Animation.show(backend='widget') / Animation.export() for a "
-        "complete scene.",
-        UserWarning,
-        stacklevel=_external_stacklevel(),
-    )
-    if "videos" in missing:
-        for video in data.videos:
-            close = getattr(video.reader, "close", None)
-            if video._owns_reader and close is not None:
-                close()
-    changes: dict[str, Any] = {name: [] for name in missing}
-    return replace(data, **changes)
-
-
 _SCENE_OPTIONS = {
     "widget": frozenset({"dpi", "figsize", "speed", "max_playback_fps"}),
     "napari": frozenset(
@@ -152,7 +120,6 @@ _SCENE_OPTIONS = {
             "layer_names",
             "colorbar_label",
             "track",
-            "dry_run",
             "field_rendering",
             "volume_threshold",
             "slice_plane",
@@ -210,10 +177,6 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
             from neurospatial.animation._tracks import _checked_track
 
             _checked_track(scene.env, track)
-        if options.get("dry_run", False):
-            raise ValueError(
-                "Animation.show() creates a view; dry_run is not supported."
-            )
         if scene.scale_bar:
             raise ValueError(
                 "The fastplotlib scene backend cannot draw scale_bar. "

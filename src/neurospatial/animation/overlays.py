@@ -3720,10 +3720,6 @@ class OverlayData:
     - Shape consistency with environment dimensions
     - Finite values (no NaN/Inf)
 
-    Pickle-ability is validated via ``_validate_pickle_ability()`` during the
-    animation pipeline when ``n_workers > 1`` is specified for parallel video
-    rendering. Serial rendering (``n_workers=1``) does not require pickling.
-
     Backends access this object to render overlays without needing to handle
     temporal alignment or validation.
     """
@@ -3739,19 +3735,6 @@ class OverlayData:
     object_vectors: list[ObjectVectorData] = field(default_factory=list)
     regions: dict[int, list[str]] | None = None
     frame_times: NDArray[np.float64] | None = None
-
-    def __post_init__(self) -> None:
-        """Post-initialization hook.
-
-        Notes
-        -----
-        Currently, overlay pickle-ability is validated in the conversion
-        pipeline via ``_validate_pickle_ability`` rather than here. This keeps
-        construction of ``OverlayData`` lightweight while still providing
-        user-friendly errors when parallel backends are used (n_workers > 1).
-        """
-        # Intentionally no-op; validation lives in conversion pipeline.
-        return None
 
 
 # =============================================================================
@@ -4231,50 +4214,6 @@ def _validate_skeleton_consistency(
             f"       if p1 in data and p2 in data]\n"
             f"  )"
         )
-
-
-def _validate_pickle_ability(
-    overlay_data: OverlayData,
-    *,
-    n_workers: int | None,
-) -> None:
-    """Validate that OverlayData can be pickled for parallel rendering.
-
-    Parameters
-    ----------
-    overlay_data : OverlayData
-        The overlay data container to validate.
-    n_workers : int | None
-        Number of parallel workers. Validation is skipped if n_workers is None
-        or 1 (no parallelization).
-
-    Raises
-    ------
-    ValueError
-        If overlay_data cannot be pickled and n_workers > 1, with details about
-        the unpickleable attribute and actionable WHAT/WHY/HOW guidance.
-    """
-    # Skip validation if not using parallel rendering
-    if n_workers is None or n_workers <= 1:
-        return
-
-    import pickle
-
-    try:
-        # Attempt to pickle the overlay data
-        pickle.dumps(overlay_data)
-    except (pickle.PicklingError, TypeError, AttributeError) as e:
-        from neurospatial.animation._utils import _pickling_guidance
-
-        raise ValueError(
-            f"WHAT: OverlayData is not pickle-able, preventing parallel video "
-            f"rendering.\n"
-            f"  Pickling failed with: {type(e).__name__}: {e}\n\n"
-            f"WHY: Parallel video rendering (n_workers > 1) requires pickling "
-            f"OverlayData to pass it to worker processes. Unpickleable objects "
-            f"include lambdas, closures, local functions, and certain class instances.\n\n"
-            f"{_pickling_guidance('overlays')}"
-        ) from e
 
 
 def _require_allocentric(env: Any, overlay: str, *, why: str) -> None:

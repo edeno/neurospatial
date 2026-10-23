@@ -39,22 +39,12 @@ from neurospatial.animation._style import (
     _rate_opacity,
 )
 from neurospatial.animation._tracks import (
-    _checked_track as _checked_track,
-)
-from neurospatial.animation._tracks import (
-    _project as _project,
-)
-from neurospatial.animation._tracks import (
-    _projection as _projection,
-)
-from neurospatial.animation._tracks import (
-    track_extents as track_extents,
-)
-from neurospatial.animation._tracks import (
-    track_position as track_position,
-)
-from neurospatial.animation._tracks import (
-    track_segments as track_segments,
+    _checked_track,
+    _project,
+    _projection,
+    track_extents,
+    track_position,
+    track_segments,
 )
 from neurospatial.animation.overlays import _OWN_SAMPLE_TYPES
 from neurospatial.environment._fastplotlib import (
@@ -1532,14 +1522,13 @@ class FastplotlibAnimation:
         _reader_owner: _OwnedReaders | None = None,
         _source_lock: Any = None,
     ) -> None:
-        from neurospatial.animation._timeseries import _group_timeseries
-        from neurospatial.animation.rendering import (
-            _validate_frame_labels,
+        from neurospatial.animation._field_stats import (
             animation_colormap_range,
             frame_extremes,
             robust_limits,
             typical_peak,
         )
+        from neurospatial.animation._prepared import signal_groups
 
         rendering = resolve_field_rendering(
             env,
@@ -1584,17 +1573,21 @@ class FastplotlibAnimation:
             self._clock = frame_times - self._start
             if overlay_data is not None:
                 overlay_data = _on_clock(overlay_data, self._start)
-            self._labels = _validate_frame_labels(
-                None if frame_labels is None else list(frame_labels),
-                self.n_frames,
-                "fastplotlib",
-            )
+            self._labels = None if frame_labels is None else list(frame_labels)
+            if self._labels is not None and len(self._labels) != self.n_frames:
+                raise ValueError(
+                    f"frame_labels has {len(self._labels)} labels for "
+                    f"{self.n_frames} frames. Pass one label per frame, or omit "
+                    "frame_labels to label frames by their time."
+                )
             if window_seconds <= 0:
                 raise ValueError(
                     f"window_seconds must be positive, got {window_seconds}. It is "
                     "the seconds of fields shown in a track's position-by-time panel."
                 )
-            groups = _group_timeseries(overlay_data.timeseries if overlay_data else [])
+            groups = list(
+                signal_groups(overlay_data.timeseries if overlay_data else []).values()
+            )
             step, steps_per_second = _playback(
                 playback_step(frame_times),
                 _finest_interval(overlay_data),
@@ -2397,7 +2390,7 @@ def _add_series(
     """
     from fastplotlib import LinearSelector
 
-    from neurospatial.animation.rendering import tidy_range
+    from neurospatial.animation._field_stats import tidy_range
 
     drawn = []
 
@@ -2510,10 +2503,8 @@ def _shade_epochs(
 def render_fastplotlib(
     env: Environment,
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64] | Mapping[str, Any],
-    *,
-    dry_run: bool = False,
     **options: Any,
-) -> FastplotlibAnimation | None:
+) -> FastplotlibAnimation:
     """Animate ``fields`` with fastplotlib; see :class:`FastplotlibAnimation`.
 
     Parameters
@@ -2522,25 +2513,11 @@ def render_fastplotlib(
         The bins the fields are defined on.
     fields : sequence of ndarray, or ndarray (n_frames, n_bins)
         One field per frame.
-    dry_run : bool, default=False
-        Check that fastplotlib is installed and report the size of the
-        animation, without drawing.
     **options
         The options of :class:`FastplotlibAnimation`.
 
     Returns
     -------
-    FastplotlibAnimation or None
-        None for a dry run.
+    FastplotlibAnimation
     """
-    if dry_run:
-        from neurospatial.animation._utils import _emit_status
-
-        import_fastplotlib()
-        _emit_status(
-            f"Fastplotlib dry run: {len(fields):,} frames of {env.n_bins:,} bins, "
-            "each drawn when shown, so nothing is pre-rendered. Nothing was "
-            "displayed. To proceed, call again with dry_run=False."
-        )
-        return None
     return FastplotlibAnimation(env, fields, **options)

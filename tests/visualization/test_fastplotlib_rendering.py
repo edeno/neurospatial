@@ -1169,7 +1169,7 @@ def test_a_2d_posterior_is_drawn_along_a_track_of_the_maze(track):
     # A track bin no 2-D bin maps to, or only missing ones, is missing.
     from scipy.sparse import csr_matrix
 
-    from neurospatial.animation.backends.fastplotlib_backend import _project
+    from neurospatial.animation._tracks import _project
 
     to_track = csr_matrix(([1.0, 1.0, 1.0], ([0, 1, 2], [0, 0, 1])), shape=(3, 3))
     projected = _project(np.array([[0.2, 0.3, np.nan]]), to_track)
@@ -1211,7 +1211,7 @@ def test_side_by_side_posteriors_share_the_tracks_color_limits(track):
 
 
 def test_a_tracks_window_reuses_rows_read_for_the_last_one(track):
-    from neurospatial.animation.backends.fastplotlib_backend import _project
+    from neurospatial.animation._tracks import _project
 
     rng = np.random.default_rng(1)
     along = track.linear_to_nd(rng.uniform(0, 70, 3000))

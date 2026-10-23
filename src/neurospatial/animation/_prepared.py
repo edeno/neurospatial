@@ -90,6 +90,18 @@ def projected_field_limits(
     return animation_colormap_range(np.concatenate(projected), None, None)
 
 
+def signal_groups(signals: list[Any]) -> dict[tuple[str, str | int], list[Any]]:
+    """Signals sharing a ``group`` share a panel; others get their own.
+
+    Panels follow the order in which their first signal was listed.
+    """
+    groups: dict[tuple[str, str | int], list[Any]] = {}
+    for i, signal in enumerate(signals):
+        key = ("group", signal.group) if signal.group is not None else ("signal", i)
+        groups.setdefault(key, []).append(signal)
+    return groups
+
+
 class PreparedScene:
     """Interpret authoritative scene streams without allocating a renderer."""
 
@@ -124,11 +136,8 @@ class PreparedScene:
                     np.searchsorted(scene.frame_times, times, side="right") - 1, 0
                 )
                 self.event_clocks[id(events), name] = (times, indices)
-        self.signal_groups: dict[tuple[str, str | int], list[Any]] = {}
         data = scene._overlay_data
-        for i, signal in enumerate(data.timeseries):
-            key = ("group", signal.group) if signal.group is not None else ("signal", i)
-            self.signal_groups.setdefault(key, []).append(signal)
+        self.signal_groups = signal_groups(data.timeseries)
         self.track_env = scene.env if scene.track is None else scene.track
         self.track_extents = track_extents(self.track_env)
         self.projection = (

@@ -6,9 +6,6 @@ these helpers does not load a rendering backend or its artist machinery.
 
 from __future__ import annotations
 
-import itertools
-from typing import Any
-
 import numpy as np
 from numpy.typing import NDArray
 
@@ -60,70 +57,6 @@ def _event_visibility(
     else:
         alphas = np.ones(len(frame_indices))
     return shown, alphas
-
-
-def _build_trail_segments(
-    trail_positions: NDArray[np.float64],
-    color: Any,
-    *,
-    interval_valid: NDArray[np.bool_] | None = None,
-) -> tuple[list[NDArray[np.float64]], list[tuple[float, float, float, float]]]:
-    """Build decaying-alpha trail line segments from a position window.
-
-    Each segment connects adjacent observed positions within the
-    trail window. The per-segment alpha encodes the segment's true age: it is
-    derived from the segment's newer endpoint index within the *original*
-    window (length ``len(trail_positions)``), NOT from the compacted index
-    among surviving positions. This keeps the alpha gradient stable when
-    occluded (NaN) frames drop out of the window, so the trail does not "jump"
-    in opacity.
-
-    Parameters
-    ----------
-    trail_positions : NDArray[np.float64], shape (window_len, n_dims)
-        Positions in the trail window, ordered oldest-first. May contain NaN
-        rows for occluded frames; the newest frame is the last row.
-    color : Any
-        Matplotlib color spec for the trail (converted to RGBA).
-
-    Returns
-    -------
-    segments : list[NDArray[np.float64]]
-        Line segments, each of shape ``(2, n_dims)``. Empty if fewer than two
-        visible, consecutive positions exist.
-    colors : list[tuple[float, float, float, float]]
-        Per-segment RGBA colors with the age-based alpha applied. Same length
-        as ``segments``.
-    """
-    from matplotlib.colors import to_rgba
-
-    window_len = len(trail_positions)
-    if window_len < 2:
-        return [], []
-
-    valid_mask = np.isfinite(trail_positions).all(axis=1)
-    valid_indices = np.nonzero(valid_mask)[0]
-    if len(valid_indices) < 2:
-        return [], []
-
-    # Normalize alpha by the full window span so age reflects elapsed frames,
-    # not the count of surviving positions. window_len >= 2 here.
-    denom = window_len - 1
-    base_rgba = to_rgba(color)
-
-    segments: list[NDArray[np.float64]] = []
-    colors: list[tuple[float, float, float, float]] = []
-    for older, newer in itertools.pairwise(valid_indices):
-        if newer != older + 1 or (
-            interval_valid is not None and not interval_valid[older]
-        ):
-            continue
-        segments.append(trail_positions[[older, newer]])
-        # Newer endpoint's original window index sets the segment's age.
-        alpha = float(newer) / denom * _TRAIL_MAX_ALPHA
-        colors.append((base_rgba[0], base_rgba[1], base_rgba[2], alpha))
-
-    return segments, colors
 
 
 def _heading_displacement(

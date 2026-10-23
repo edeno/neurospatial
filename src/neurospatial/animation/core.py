@@ -220,7 +220,6 @@ def _unknown_option_error(
     )
 
 
-
 def _field_streams(
     fields: Any,
     frame_times: NDArray[np.float64],
@@ -303,9 +302,7 @@ def _n_frames(fields: Any) -> int:
 
 def animate_fields(
     env: Environment,
-    fields: Sequence[NDArray[np.float64]]
-    | NDArray[np.float64]
-    | Mapping[str, Any],
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64] | Mapping[str, Any],
     *,
     backend: Literal[
         "auto", "napari", "video", "html", "widget", "fastplotlib"
@@ -404,8 +401,12 @@ def animate_fields(
 
     Examples
     --------
-    >>> env.animate_fields(fields, frame_times=times, backend="napari")  # doctest: +SKIP
-    >>> env.animate_fields(fields, frame_times=times, save_path="replay.mp4")  # doctest: +SKIP
+    >>> env.animate_fields(
+    ...     fields, frame_times=times, backend="napari"
+    ... )  # doctest: +SKIP
+    >>> env.animate_fields(
+    ...     fields, frame_times=times, save_path="replay.mp4"
+    ... )  # doctest: +SKIP
     """
     from neurospatial.animation.scene import Animation
 
@@ -575,6 +576,7 @@ def _select_backend(
         )
     logger.info("Auto-selected 'napari' backend for %s frames", f"{n_frames:,}")
     return "napari"
+
 
 def _subsample_indices(n: int, source_fps: int, target_fps: int) -> NDArray[np.int_]:
     """Compute indices for frame subsampling with proper rounding.
@@ -771,4 +773,3 @@ def estimate_colormap_range_from_subset(
         else [fields[i] for i in indices]
     )
     return robust_limits(*frame_extremes(sampled), percentile)
-
