@@ -378,3 +378,30 @@ def test_workers_render_the_observations_the_scene_prepared(tmp_path, changed):
     assert len(parallel) == len(serial) == 6
     for frame, reference in zip(parallel, serial, strict=True):
         np.testing.assert_array_equal(frame, reference)
+
+
+@pytest.mark.parametrize(
+    ("name", "missing"), [("a.mp4", "imageio_ffmpeg"), ("a.gif", "imageio")]
+)
+def test_missing_encoder_is_named_before_rendering(
+    scene, tmp_path, monkeypatch, name, missing
+):
+    # Without imageio-ffmpeg, imageio would choose an image writer for a video
+    # path and fail on the first frame with an unrelated TypeError.
+    import importlib.util
+
+    from neurospatial.animation import _scene_rendering
+
+    find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda module, *args: None if module == missing else find_spec(module, *args),
+    )
+    with (
+        patch.object(_scene_rendering, "SceneRenderer") as renderer,
+        pytest.raises(ImportError, match=r"neurospatial\[video\].*\.html player"),
+    ):
+        scene.export(tmp_path / name)
+    renderer.assert_not_called()
+    assert not list(tmp_path.iterdir())

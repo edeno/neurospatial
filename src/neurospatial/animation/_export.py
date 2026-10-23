@@ -80,6 +80,26 @@ class _ExportPlan:
     def container(self) -> str:
         return self.path.suffix.lower()
 
+    def require_writer(self) -> None:
+        """Refuse a file type whose encoder is not installed, before rendering.
+
+        Without imageio-ffmpeg, imageio would pick an image writer for a video
+        path and fail on its first frame with an unrelated error.
+        """
+        import importlib.util
+
+        needed = {".html": (), ".gif": ("imageio",)}.get(
+            self.container, ("imageio", "imageio_ffmpeg")
+        )
+        missing = [name for name in needed if importlib.util.find_spec(name) is None]
+        if missing:
+            raise ImportError(
+                f"Writing {self.container} files needs {' and '.join(missing)}, "
+                "which is not installed. Install video support with "
+                "pip install 'neurospatial[video]', or export a .html player, "
+                "which needs no extra packages."
+            )
+
     def write(self, render_frame: Callable[[float], NDArray[np.uint8]]) -> Path:
         """Render each output time in order, then publish the finished file."""
         return self.write_frames(render_frame(float(time)) for time in self.times)

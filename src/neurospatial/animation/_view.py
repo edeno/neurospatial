@@ -180,6 +180,7 @@ class AnimationView:
             sample_times=iter_observation_clocks(self.animation),
             **kwargs,
         )
+        plan.require_writer()
         with self._backend.capture_session() as capture:
             return plan.write(capture)
 

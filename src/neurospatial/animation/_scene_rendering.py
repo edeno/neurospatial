@@ -914,6 +914,7 @@ def export_scene(
         sample_times=iter_observation_clocks(scene),
         **options,
     )
+    plan.require_writer()
     if plan.n_workers > 1:
         from neurospatial.animation._export_workers import render_in_workers
 
