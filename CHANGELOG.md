@@ -1314,8 +1314,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Assisted annotation previews update automatically as inside/outside points or
   CPU color tolerance change. Outlines keep the point tool active, stale results
   cannot be accepted, and paint/erase correction remains available explicitly.
-  Optional calibration and output settings start collapsed below the outlining
-  controls.
+  Optional calibration and output settings start collapsed above the outlining
+  controls, with a one-line summary of the units and bin size.
 
 - Polygon annotation uses **Done** to validate and return the result;
   `Escape` keeps napari's normal finish/cancel behavior. **Save Project** and

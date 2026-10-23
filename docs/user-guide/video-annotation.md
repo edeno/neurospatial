@@ -228,8 +228,10 @@ Click **Mark points**, then left-click the tan floor. An outline appears
 automatically; add inside/outside clicks to refine it, then **Accept outline**.
 Use **Paint / erase** for manual corrections. To compare providers on the
 same frame, launch again with `--provider sam2` after the optional setup below.
-Both providers run on the CPU by default; `--provider cpu` selects color region
-growing, while `--provider sam2` selects the neural segmentation model.
+`--provider cpu` selects color region growing, which runs on the CPU.
+`--provider sam2` selects the neural segmentation model, which runs on CUDA,
+then Apple silicon, then the CPU, whichever is available first; `--device`
+chooses one.
 
 Add `--image /path/to/frame.png` or `--video /path/to/movie.mp4 --frame-index 100`
 to use your own recording. `--save-project arena.annotation.npz` enables saves
@@ -323,8 +325,9 @@ Color similarity can include shadows or nearby objects, so the editable preview
 is part of the workflow. While a new prediction runs, the previous outline is
 dimmed and cannot be accepted. Rapid clicks are combined into the latest request;
 inference runs in the background. SAM 2 starts computing the frame's image
-features as soon as the panel opens, so the first prompt does not wait for them. For manual updates, turn off **Update outline as I
-click**, then click **Update outline** when ready. This works with both providers.
+features as soon as the panel opens, so the first prompt does not wait for
+them. For manual updates, turn off **Update as I prompt**, then click
+**Update outline** when ready. This works with both providers.
 
 With SAM 2, adding an inside or outside click refines the last displayed model
 prediction using its previous low-resolution logits. A single click is
@@ -507,8 +510,9 @@ nodes, returns to the automatic layout.
 Saving or closing either editor validates the draft before the editor closes.
 If it cannot be saved, a dialog says why: choose "Keep Editing" to fix it, or
 "Discard and Close" to close without a result, which raises a `RuntimeError`.
-Warnings about the result, such as an ignored boundary, print after the editor
-closes. If
+Warnings about the result, such as an ignored boundary, open a **Check
+Annotations** dialog before the editor closes: choose "Keep Editing" to fix them
+or "Return Results" to close; the warnings are then issued to your script. If
 the final draft save fails, for example because the disk is full, the result is
 still returned and a warning says so; choose "Keep Editing" and use **Save As…**
 if you need the draft.

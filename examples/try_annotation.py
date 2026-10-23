@@ -120,7 +120,7 @@ def main() -> None:
         "(or your target area) → refine the live outline → Accept outline.\n"
         "Right-click to exclude areas; Alt-click to remove a prompt.\n"
         "Polygon detail starts at 1.4 px; set it to 0 for the exact mask boundary.\n"
-        "Use Paint / erase preview for manual corrections.\n"
+        "Use Paint / erase for manual corrections.\n"
         "Choose the annotation role/name in Annotation Controls; click Done there to finish.",
         flush=True,
     )
