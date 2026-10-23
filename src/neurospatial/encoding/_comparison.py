@@ -53,9 +53,9 @@ __all__ = ["RateComparisonResult", "compare_spatial_rates"]
 _METHODS = ("pearson", "spearman")
 _UNIT_SELECTIONS = ("intersection", "exact")
 _TOPOLOGIES = ("same", "may_differ")
+
+
 # plot() default: no unit chosen (None is a valid unit label).
-
-
 class _AllUnits:
     """Default of ``plot(unit_id=)``: no unit chosen."""
 
