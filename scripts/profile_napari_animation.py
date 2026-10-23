@@ -7,8 +7,9 @@ modes and generates trace files for analysis.
 
 Usage
 -----
-Basic napari perfmon trace:
-    NAPARI_PERFMON=/tmp/napari_trace.json uv run python scripts/profile_napari_animation.py
+Basic napari perfmon trace (written to the trace file the config names,
+/tmp/napari_neurospatial_trace.json):
+    NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/profile_napari_animation.py
 
 With py-spy (sampling profiler, shows system calls):
     py-spy record -o profile.svg -- uv run python scripts/profile_napari_animation.py --mode=headless
@@ -118,12 +119,18 @@ def load_data(data_path: Path, n_frames: int | None = None):
             head_angles_full = head_angles_full[:max_samples]
         head_angles = head_angles_full[::subsample_rate]
 
+    # A shortened session keeps only the spikes recorded while it was tracked.
+    spike_times = np.asarray(spike_times_all[best_unit])
+    spike_times = spike_times[
+        (spike_times >= times_array[0]) & (spike_times <= times_array[-1])
+    ]
+
     return {
         "positions_2d": positions_2d,
         "positions_subsampled": positions_subsampled,
         "times_array": times_array,
         "times_subsampled": times_subsampled,
-        "spike_times": spike_times_all[best_unit],
+        "spike_times": spike_times,
         "head_angles": head_angles,
         "best_unit": best_unit,
     }
@@ -150,32 +157,35 @@ def compute_place_field(
     times_array: np.ndarray,
     positions: np.ndarray,
 ) -> np.ndarray:
-    """Compute place field for the best unit."""
-    from neurospatial import compute_place_field
+    """Compute place field for the best unit; unvisited bins stay NaN."""
+    from neurospatial import compute_spatial_rate
 
     with timer("Computing place field"):
-        firing_rate: np.ndarray = compute_place_field(
+        rates = compute_spatial_rate(
             env,
             spike_times,
             times_array,
             positions,
             method="diffusion_kde",
             bandwidth=8.0,
-            min_occupancy_seconds=0.5,
+            min_occupancy=0.5,
         )
 
-    return firing_rate
+    return np.asarray(rates.firing_rate)
 
 
-def create_overlays(positions: np.ndarray, head_angles: np.ndarray | None):
-    """Create animation overlays."""
-    from neurospatial import HeadDirectionOverlay, PositionOverlay
+def create_overlays(
+    times: np.ndarray, positions: np.ndarray, head_angles: np.ndarray | None
+):
+    """Create animation overlays on the frames' clock, in seconds."""
+    from neurospatial.animation import HeadDirectionOverlay, PositionOverlay
 
     overlays: list[PositionOverlay | HeadDirectionOverlay] = []
 
     with timer("Creating position overlay"):
         position_overlay = PositionOverlay(
             positions=positions,
+            times=times,
             color="cyan",
             size=15.0,
             trail_length=15,
@@ -186,6 +196,7 @@ def create_overlays(positions: np.ndarray, head_angles: np.ndarray | None):
         with timer("Creating head direction overlay"):
             head_direction_overlay = HeadDirectionOverlay(
                 headings=head_angles,
+                times=times,
                 # Uses defaults: color="hsv", length=15.0, width=3.0
             )
             overlays.append(head_direction_overlay)
@@ -196,6 +207,7 @@ def create_overlays(positions: np.ndarray, head_angles: np.ndarray | None):
 def run_napari_animation(
     env: Environment,
     fields: np.ndarray,
+    frame_times: np.ndarray,
     overlays: list,
     headless: bool = False,
     playback_frames: int = 100,
@@ -208,6 +220,8 @@ def run_napari_animation(
         Fitted environment
     fields : ndarray
         Fields to animate (n_frames, n_bins)
+    frame_times : ndarray
+        Time of each field row, in seconds (n_frames,)
     overlays : list
         List of overlay objects
     headless : bool
@@ -216,36 +230,45 @@ def run_napari_animation(
         Number of frames to simulate playback for
     """
     import napari
+    from qtpy.QtWidgets import QApplication
 
     n_frames = len(fields)
     print(f"\n[INFO] Animation setup: {n_frames:,} frames, {len(overlays)} overlays")
 
     # Profile the animation setup
     with timer("Total animation setup"):
-        viewer = env.animate_fields(
+        view = env.animate_fields(
             fields,
+            frame_times=frame_times,
             overlays=overlays,
             backend="napari",
             cmap="hot",
             title="Profiling Session",
+            show=not headless,
         )
 
-    if headless:
-        print("[INFO] Headless mode - closing viewer without display")
-        viewer.close()
-        return
+    try:
+        # Profile frame stepping (simulates playback): seeking reads the
+        # fields and overlays at each recording time and redraws the layers.
+        steps = min(playback_frames, n_frames)
+        print(f"\n[INFO] Simulating {steps} frame steps...")
+        with timer(f"Stepping through {steps} frames"):
+            for time in frame_times[:steps]:
+                view.seek(float(time))
+                # Process Qt events to measure real update time
+                QApplication.processEvents()
 
-    # Profile frame stepping (simulates playback)
-    print(f"\n[INFO] Simulating {playback_frames} frame steps...")
+        if not headless:
+            print("\n[INFO] Viewer open - close window to finish profiling")
+            napari.run()
+    finally:
+        view.close()
+        if os.environ.get("NAPARI_PERFMON"):
+            # napari writes the trace when tracing stops, which otherwise
+            # happens only when its application quits.
+            from napari.utils.perf import timers
 
-    with timer(f"Stepping through {playback_frames} frames"):
-        for i in range(min(playback_frames, n_frames)):
-            viewer.dims.set_current_step(0, i)
-            # Process Qt events to measure real update time
-            napari.qt.get_app().processEvents()
-
-    print("\n[INFO] Viewer open - close window to finish profiling")
-    napari.run()
+            timers.stop_trace_file()
 
 
 def profile_with_cprofile(func, *args, **kwargs):
@@ -301,7 +324,9 @@ def profile_memory():
 
     snapshot2 = tracemalloc.take_snapshot()
 
-    create_overlays(data["positions_subsampled"], data["head_angles"])
+    create_overlays(
+        data["times_subsampled"], data["positions_subsampled"], data["head_angles"]
+    )
 
     snapshot3 = tracemalloc.take_snapshot()
 
@@ -333,15 +358,16 @@ def print_perfmon_instructions():
     print("NAPARI PERFMON INSTRUCTIONS")
     print("=" * 80)
     print("""
-To generate a detailed trace file, run with NAPARI_PERFMON environment variable:
+To generate a detailed trace file, set NAPARI_PERFMON to the config file,
+which names the traced neurospatial callables and the trace file:
 
-    NAPARI_PERFMON=/tmp/napari_trace.json uv run python scripts/profile_napari_animation.py
+    NAPARI_PERFMON=scripts/perfmon_config.json uv run python scripts/profile_napari_animation.py
 
-This creates a Chrome Trace format JSON file that you can view:
+This writes a Chrome Trace format JSON file, /tmp/napari_neurospatial_trace.json:
 
 1. Chrome/Chromium:
    - Open chrome://tracing
-   - Click "Load" and select /tmp/napari_trace.json
+   - Click "Load" and select /tmp/napari_neurospatial_trace.json
    - Navigate timeline with WASD keys
 
 2. Speedscope (flame graphs):
@@ -382,7 +408,7 @@ def main():
     # Check for perfmon
     perfmon_path = os.environ.get("NAPARI_PERFMON")
     if perfmon_path:
-        print(f"[INFO] Napari perfmon enabled, output: {perfmon_path}")
+        print(f"[INFO] Napari perfmon enabled with config: {perfmon_path}")
     else:
         print_perfmon_instructions()
 
@@ -420,6 +446,7 @@ def main():
 
     # Create overlays
     overlays = create_overlays(
+        data["times_subsampled"],
         data["positions_subsampled"],
         data["head_angles"],
     )
@@ -430,6 +457,7 @@ def main():
             run_napari_animation,
             env,
             fields,
+            data["times_subsampled"],
             overlays,
             headless=True,
             playback_frames=args.playback_frames,
@@ -438,6 +466,7 @@ def main():
         run_napari_animation(
             env,
             fields,
+            data["times_subsampled"],
             overlays,
             headless=(args.mode == "headless"),
             playback_frames=args.playback_frames,

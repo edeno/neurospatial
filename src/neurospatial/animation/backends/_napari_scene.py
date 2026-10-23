@@ -30,6 +30,14 @@ from neurospatial.animation.backends._napari_compat import (
 )
 
 
+def _disconnect(owner: Any, name: str, slot: Any) -> None:
+    """Disconnect ``slot`` from the signal ``name`` of ``owner``.
+
+    The signal is looked up now: a deleted owner raises instead of crashing.
+    """
+    getattr(owner, name).disconnect(slot)
+
+
 def _unless_deleted(action: Callable[[], object]) -> Callable[[], None]:
     """``action``, ignoring Qt children a native window closure destroyed."""
 
@@ -247,6 +255,12 @@ class NapariScene:
             )
         self._layers: list[Any] = []
         self._updates: list[_LayerUpdate] = []
+        # Each (owner, signal name, slot) as connected. A profiler such as
+        # napari's perfmon may wrap the methods afterward, so release
+        # disconnects these exact slots rather than looking the methods up
+        # again. The signal is looked up on its owner at release: a closed
+        # window may already have deleted the owner, which then raises.
+        self._connections: list[tuple[Any, str, Any]] = []
         self.field_layers: dict[str, Any] = {}
         try:
             self._executor = ThreadPoolExecutor(
@@ -296,17 +310,21 @@ class NapariScene:
             )
             self.timer = QTimer(controls)
             self.timer.setInterval(max(1, round(1000 / fps)))
-            self.timer.timeout.connect(self._tick)
-            self.play_button.clicked.connect(self._toggle_play)
-            self.time_control.valueChanged.connect(self._request_seek)
+            for owner, name, slot in (
+                (self.timer, "timeout", self._tick),
+                (self.play_button, "clicked", self._toggle_play),
+                (self.time_control, "valueChanged", self._request_seek),
+            ):
+                getattr(owner, name).connect(slot)
+                self._connections.append((owner, name, slot))
 
             class PreparedBridge(QObject):
                 ready = Signal(object)
 
             self._bridge = PreparedBridge(controls)
-            self._bridge.ready.connect(
-                self._prepared_ready, Qt.ConnectionType.QueuedConnection
-            )
+            ready = self._prepared_ready
+            self._bridge.ready.connect(ready, Qt.ConnectionType.QueuedConnection)
+            self._connections.append((self._bridge, "ready", ready))
             if self._helper.panel_count:
                 self._panels = _ScientificPanels(scene, self._helper)
                 self._panel_dock = self.viewer.window.add_dock_widget(
@@ -969,27 +987,10 @@ class NapariScene:
         if executor is not None:
             # Drain reads before Animation.close closes its owned video readers.
             yield lambda: executor.shutdown(wait=True, cancel_futures=True)
-        bridge = getattr(self, "_bridge", None)
-        if bridge is not None:
-            yield lambda: bridge.ready.disconnect(self._prepared_ready)
         self._inflight = None
-        for control, signal_name, callback in (
-            (timer, "timeout", self._tick),
-            (getattr(self, "play_button", None), "clicked", self._toggle_play),
-            (getattr(self, "time_control", None), "valueChanged", self._request_seek),
-        ):
-            if control is not None:
-
-                def disconnect(
-                    control: Any = control,
-                    signal_name: str = signal_name,
-                    callback: Any = callback,
-                ) -> None:
-                    # Partial construction may not have connected this signal.
-                    with suppress(TypeError):
-                        getattr(control, signal_name).disconnect(callback)
-
-                yield disconnect
+        connections, self._connections = self._connections, []
+        for owner, name, slot in reversed(connections):
+            yield partial(_disconnect, owner, name, slot)
         native_window = qt_window(self.viewer)
         lifecycle = getattr(self, "_lifecycle", None)
         if lifecycle is not None:

@@ -182,6 +182,18 @@ class TestAddScaleBarToAxes:
             assert len(ax.artists) > 0
             plt.close(fig)
 
+    @pytest.mark.parametrize(
+        ("background", "box_style", "framed"),
+        [("white", "round", True), (None, "round", False), ("white", None, False)],
+    )
+    def test_background_none_draws_no_box(self, background, box_style, framed):
+        """``background=None`` is transparent: no box is drawn behind the bar."""
+        fig, ax = plt.subplots()
+        config = ScaleBarConfig(background=background, box_style=box_style)
+        artist = add_scale_bar_to_axes(ax, extent=100, config=config)
+        assert artist.patch.get_visible() is framed
+        plt.close(fig)
+
 
 class TestPlotFieldWithScaleBar:
     """Test scale bar integration in plot_field.
