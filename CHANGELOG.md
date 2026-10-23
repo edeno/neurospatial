@@ -1856,9 +1856,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `project_path=` and `autosave_interval=` (30 seconds by default, `None` to
   disable); `annotate_project` resumes without the original video. Both entry
   points and `AnnotationProject.save` refuse to replace an existing file other
-  than the one being resumed unless `overwrite=True`. `annotate_video` checks
+  than the one being resumed unless `overwrite=True`, and refuse a
+  `project_path` whose folder does not exist. `annotate_video` checks
   the calibration and settings against the video frame before the editor
-  opens. Draft saves
+  opens. If the final draft save fails, the validated result is still
+  returned with a warning. Draft saves
   retain unfinished geometry, including shapes copied and pasted in napari;
   **Done** validates the exported result.
 - The annotation dock can calibrate a known distance from two marked endpoints,

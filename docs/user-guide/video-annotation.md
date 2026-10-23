@@ -508,7 +508,10 @@ Saving or closing either editor validates the draft before the editor closes.
 If it cannot be saved, a dialog says why: choose "Keep Editing" to fix it, or
 "Discard and Close" to close without a result, which raises a `RuntimeError`.
 Warnings about the result, such as an ignored boundary, print after the editor
-closes.
+closes. If
+the final draft save fails, for example because the disk is full, the result is
+still returned and a warning says so; choose "Keep Editing" and use **Save As…**
+if you need the draft.
 
 ## Adding Calibration
 

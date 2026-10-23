@@ -438,3 +438,71 @@ def test_unrenderable_draft_fails_before_viewer_and_preserves_saved_geometry(
     assert path.read_bytes() == original
     loaded = AnnotationProject.load(path)
     np.testing.assert_array_equal(loaded.shapes[0].vertices, vertices)
+
+
+@pytest.mark.parametrize("entry", ["video", "project"])
+def test_missing_project_folder_fails_before_editing(tmp_path, monkeypatch, entry):
+    monkeypatch.setattr(
+        core,
+        "_load_video_frame",
+        lambda *args: pytest.fail("Must reject the destination before loading"),
+    )
+    monkeypatch.setattr(
+        core,
+        "_setup_annotation_viewer",
+        lambda *args, **kwargs: pytest.fail("Must reject the destination first"),
+    )
+    destination = tmp_path / "typo" / "draft.annotation.npz"
+    with pytest.raises(FileNotFoundError, match=r"folder for project_path.*typo"):
+        if entry == "video":
+            core.annotate_video("unused.mp4", bin_size=1.0, project_path=destination)
+        else:
+            draft = AnnotationProject(
+                np.zeros((4, 4, 3), dtype=np.uint8), mode="regions"
+            )
+            core.annotate_project(draft, project_path=destination)
+
+
+def test_failed_final_draft_save_still_returns_the_valid_result(monkeypatch):
+    from neurospatial.annotation import _session
+
+    draft = AnnotationProject(np.zeros((4, 4, 3), dtype=np.uint8), mode="regions")
+
+    class Session:
+        calibration = None
+        bin_size = None
+        simplify_tolerance = None
+        project_path = "/gone/draft.annotation.npz"
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def save_if_path(self):
+            raise OSError("disk full")
+
+        def dispose(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "napari", SimpleNamespace())
+    monkeypatch.setitem(
+        sys.modules,
+        "neurospatial.annotation._workflow",
+        SimpleNamespace(AnnotationProjectSession=Session),
+    )
+    monkeypatch.setattr(
+        core,
+        "_setup_annotation_viewer",
+        lambda *args, **kwargs: (
+            object(),
+            object(),
+            SimpleNamespace(flush_pending=lambda: None),
+        ),
+    )
+    monkeypatch.setattr(core, "_process_annotation_results", lambda *args: "result")
+    monkeypatch.setattr(
+        _session, "run_annotation_session", lambda viewer, prepare: prepare()
+    )
+    with pytest.warns(
+        UserWarning, match=r"valid, but the draft could not be saved.*disk full"
+    ):
+        assert core.annotate_project(draft) == "result"

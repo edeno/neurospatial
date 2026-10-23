@@ -187,6 +187,8 @@ def annotate_video(
     FileExistsError
         If ``project_path`` exists and ``overwrite`` is False. Resume it with
         :func:`annotate_project` instead.
+    FileNotFoundError
+        If the folder for ``project_path`` does not exist.
     RuntimeError
         If the drawn annotations cannot be saved, for example multiple
         environment boundaries with ``multiple_boundaries="error"``, and the
@@ -269,6 +271,7 @@ def annotate_video(
     _validate_annotate_params(mode, bin_size)
     _validate_autosave_interval(autosave_interval)
     if project_path is not None:
+        _check_project_folder(project_path)
         check_writable(
             [Path(project_path)],
             overwrite=overwrite,
@@ -369,6 +372,8 @@ def annotate_project(
     FileExistsError
         If ``project_path`` names an existing file other than the project
         being resumed, and ``overwrite`` is False.
+    FileNotFoundError
+        If the folder for ``project_path`` does not exist.
     ImportError
         If napari is not installed.
 
@@ -402,6 +407,8 @@ def annotate_project(
         and Path(project_path).exists()
         and Path(project_path).samefile(source)
     )
+    if project_path is not None:
+        _check_project_folder(project_path)
     if project_path is not None and not project_saved:
         check_writable(
             [Path(project_path)],
@@ -421,6 +428,16 @@ def annotate_project(
         autosave_interval=autosave_interval,
         segmentation_provider=segmentation_provider,
     )
+
+
+def _check_project_folder(project_path: str | Path) -> None:
+    """Fail before editing when draft saves could not reach the destination."""
+    folder = Path(project_path).parent
+    if not folder.is_dir():
+        raise FileNotFoundError(
+            f"The folder for project_path does not exist: {folder}. Create it, "
+            "or choose another project_path."
+        )
 
 
 def _require_napari() -> None:
@@ -514,7 +531,18 @@ def _run_annotation_editor(
             session.simplify_tolerance,
             project.multiple_boundaries,
         )
-        session.save_if_path()
+        try:
+            session.save_if_path()
+        except Exception as exc:
+            # A valid result outweighs its draft file. The warning appears
+            # before the editor closes, so the user can still Save As.
+            warnings.warn(
+                f"The annotations are valid, but the draft could not be saved "
+                f"to {session.project_path}: {exc}. Choose Keep Editing and use "
+                "Save As to keep a draft, or return the results without one.",
+                UserWarning,
+                stacklevel=2,
+            )
         return result
 
     try:
