@@ -1,7 +1,11 @@
-"""Backend-neutral sampling and scientific-panel data for a prepared scene.
+"""Backend-neutral display rules, sampling and panel data for a prepared scene.
 
-The scene owns its streams and support metadata. This interpreter retains those
-sources and derives only the requested time window; it owns no canvas or reader.
+Every view draws a scene through a PreparedScene, which decides what is shown
+at a time: color scales, trails, heading arrows, poses, shown events, signal
+limits and the windows of the time panels. The scene owns its streams and
+support metadata; this interpreter retains those sources and derives only the
+requested time window. It owns no canvas or reader, and returns arrays in
+environment coordinates for each view to draw.
 """
 
 from __future__ import annotations
@@ -276,7 +280,12 @@ def signal_groups(signals: list[Any]) -> dict[tuple[str, str | int], list[Any]]:
 
 
 class PreparedScene:
-    """Interpret authoritative scene streams without allocating a renderer."""
+    """Interpret authoritative scene streams without allocating a renderer.
+
+    Methods take a recording time in seconds and return what a view draws at
+    that time. Streams are sampled with their own clocks and support masks;
+    each stream's latest sample is held, so the panels of one time share it.
+    """
 
     def __init__(self, scene: Animation) -> None:
         from neurospatial.animation._capabilities import require_scene_rendering
@@ -324,7 +333,7 @@ class PreparedScene:
                     positions[order],
                 )
         data = scene._overlay_data
-        self._poses = {}
+        self._poses: dict[int, _PoseStreams] = {}
         for body in data.bodypart_sets:
             names = list(body.bodyparts)
             edges = () if body.skeleton is None else body.skeleton.edges
