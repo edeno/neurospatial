@@ -49,6 +49,11 @@ def env():
     )
 
 
+def shown(native, time):
+    """Draw the slider's ``time`` as the widget would."""
+    native._show(time, native._read(time))
+
+
 def test_native_track_respects_breaks_with_coarse_scene_clock(env):
     track = Environment.linear_track(endpoints=[[0.0, 5], [20.0, 5]], bin_size=10)
     field = AnimationField(
@@ -64,8 +69,8 @@ def test_native_track_respects_breaks_with_coarse_scene_clock(env):
         native = view.native
         native.capture_frame(0.15)
         panel = native._tracks[0]
-        np.testing.assert_allclose(panel.clock, field.times)
-        np.testing.assert_allclose(panel.ends, [0.1, 0.1, 0.3, 0.3])
+        # The held cells: none across the break before 0.2.
+        np.testing.assert_allclose(panel.edges, [[0.0, 0.1], [0.2, 0.3]])
         assert np.isnan(scene.sample_fields(0.15)["posterior"]).all()
         starts = panel.corners[:, 0, 0, 0]
         stops = panel.corners[:, 0, 1, 0]
@@ -77,7 +82,7 @@ def test_native_track_respects_breaks_with_coarse_scene_clock(env):
         scene.close()
 
 
-def test_track_windows_use_independent_sources_and_reuse_only_overlap(env):
+def test_track_windows_use_independent_sources_and_reread_only_new_rows(env):
     track = Environment.linear_track(endpoints=[[0.0, 5], [20.0, 5]], bin_size=10)
     sources = [
         LazyRows(np.arange(2000, dtype=float).reshape(1000, 2)),
@@ -96,22 +101,20 @@ def test_track_windows_use_independent_sources_and_reuse_only_overlap(env):
     )
     native = scene.show(backend="fastplotlib").native
     try:
-        assert len(native._tracks[0].clock) == 1000
-        assert len(native._tracks[1].clock) == 400
         for time in (0.3, 0.32, 0.6, 0.31, 8.0):
-            data = native._read(time)
-            for k, panel in enumerate(native._tracks):
-                window = panel.frames_at(time)
-                assert data.first[k] == window.start
-                np.testing.assert_array_equal(data.rows[k], sources[k].values[window])
+            shown(native, time)
+            for field, source, panel in zip(
+                fields, sources, native._tracks, strict=True
+            ):
+                held = np.searchsorted(field.times, panel.edges[:, 0], "right") - 1
+                np.testing.assert_array_equal(panel.values, source.values[held])
         for source in sources:
             source.reads.clear()
-        native._read(8.01)
+        shown(native, 8.01)
+        # The window moved by 10 ms: a new row of each source at most, each
+        # read once for the track and field panels.
         for source in sources:
-            slices = [index for index in source.reads if isinstance(index, slice)]
-            assert sum(index.stop - index.start for index in slices) <= 2
-        assert native._last_windows[0][1].shape[0] <= 22
-        assert native._last_windows[1][1].shape[0] <= 10
+            assert len(source.reads) <= 2
     finally:
         native.close()
         native.close()
@@ -123,9 +126,10 @@ def test_isolated_field_samples_have_no_positive_duration_cells(env):
     field = AnimationField(np.ones((3, 2)), [0.0, 0.1, 0.2], max_gap=0.05)
     native = Animation(env, field, track=track).show(backend="fastplotlib").native
     try:
+        shown(native, 0.05)
         panel = native._tracks[0]
-        np.testing.assert_array_equal(panel.ends, panel.clock)
-        assert np.isnan(native._read(0.05).values[0]).all()
+        assert len(panel.edges) == 0
+        assert np.isnan(native._field_graphics[0].values).all()
         assert np.all(panel.corners[:, :, 0, 0] == panel.corners[:, :, 1, 0])
     finally:
         native.close()
@@ -154,17 +158,18 @@ def test_native_epoch_masks_and_projected_scales_use_supported_source_rows(env):
         expected = (scale.vmin, scale.vmax)
         assert expected[0] > 1  # Neither coarse scene frame observes a valid row.
         assert (native._track_scales[0].vmin, native._track_scales[0].vmax) == expected
-        data = native._read(0.1)
-        np.testing.assert_array_equal(data.values[0], 20)
-        np.testing.assert_array_equal(data.rows[0][1:3], [[10, 10], [20, 20]])
-        assert np.isnan(data.rows[0][[0, 3, 4]]).all()
-        assert np.isnan(native._last_windows[0][1][[0, 3, 4]]).all()
+        shown(native, 0.1)
+        np.testing.assert_array_equal(native._field_graphics[0].values, 20)
+        panel = native._tracks[0]
+        # Only the epoch's rows are drawn; the excluded stop has no cell.
+        np.testing.assert_allclose(panel.edges, [[0.05, 0.1], [0.1, 0.15]])
+        np.testing.assert_array_equal(panel.values, [[10, 10], [20, 20]])
         # The excluded stop is missing exactly, while its preceding held cell
         # remains supported throughout [0.1, 0.15).
-        assert np.isnan(native._read(0.15).values[0]).all()
-        np.testing.assert_array_equal(native._read(0.125).values[0], 20)
-        panel = native._tracks[0]
-        assert panel.ends[2] == pytest.approx(0.15)
+        shown(native, 0.15)
+        assert np.isnan(native._field_graphics[0].values).all()
+        shown(native, 0.125)
+        np.testing.assert_array_equal(native._field_graphics[0].values, 20)
         native.capture_frame(0.125)
     finally:
         scene.close()

@@ -106,18 +106,9 @@ _SCENE_OPTIONS = {
         {
             "speed",
             "max_playback_fps",
-            "cmap",
-            "vmin",
-            "vmax",
             "frame_labels",
-            "title",
-            "show_regions",
-            "region_alpha",
-            "window_seconds",
             "layout",
             "layer_names",
-            "colorbar_label",
-            "track",
             "field_rendering",
             "volume_threshold",
             "slice_plane",
@@ -153,39 +144,19 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
     layout = options.get("layout")
     if layout is not None and layout not in {"horizontal", "vertical", "grid"}:
         raise ValueError("layout must be 'horizontal', 'vertical' or 'grid'.")
-    show_regions = options.get("show_regions", scene.show_regions)
     region_names: list[str] = []
-    if show_regions:
+    if scene.show_regions:
         from neurospatial.animation._region_names import shown_region_names
 
-        region_names = shown_region_names(scene.env, show_regions)
+        region_names = shown_region_names(scene.env, scene.show_regions)
     if backend == "napari" and options.get("ndisplay", scene.env.n_dims) not in (2, 3):
         raise ValueError("ndisplay must be 2 or 3 for a napari scene view.")
-    if backend == "fastplotlib":
-        from neurospatial.environment._fastplotlib_volume import resolve_field_rendering
-
-        resolve_field_rendering(
-            scene.env,
-            options.get("field_rendering", "auto"),
-            volume_threshold=options.get("volume_threshold"),
-            slice_plane=options.get("slice_plane"),
+    if backend == "fastplotlib" and scene.scale_bar:
+        raise ValueError(
+            "The fastplotlib scene backend cannot draw scale_bar. "
+            "Use backend='widget' or backend='napari', or omit scale_bar."
         )
-        track = options.get("track", scene.track)
-        if track is not None:
-            from neurospatial.animation._tracks import _checked_track
-
-            _checked_track(scene.env, track)
-        if scene.scale_bar:
-            raise ValueError(
-                "The fastplotlib scene backend cannot draw scale_bar. "
-                "Use backend='widget' or backend='napari', or omit scale_bar."
-            )
-        if scene.env.n_dims == 1 and show_regions:
-            raise ValueError(
-                "The fastplotlib backend cannot draw regions on a 1D time panel. "
-                "Use a 2D environment for region display, or omit show_regions."
-            )
-    if backend == "napari" and show_regions:
+    if backend == "napari" and scene.show_regions:
         for name in region_names:
             region = scene.env.regions[name]
             if region.kind not in {"point", "polygon"}:

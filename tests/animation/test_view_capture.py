@@ -10,6 +10,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.animation import Animation, AnimationField, AnimationView
+from neurospatial.animation._prepared import PreparedScene
 
 
 @pytest.fixture
@@ -213,7 +214,7 @@ def test_widget_export_retains_display_resolution_and_restores_playback(
         assert play.playing
 
 
-def test_scene_bridge_passes_independent_color_scales(scene, monkeypatch):
+def test_fastplotlib_view_draws_the_scenes_independent_color_scales(scene, monkeypatch):
     from neurospatial.animation.backends import fastplotlib_backend
 
     native = SimpleNamespace(
@@ -226,25 +227,19 @@ def test_scene_bridge_passes_independent_color_scales(scene, monkeypatch):
         _add_close_callback=Mock(),
     )
     render = Mock(return_value=native)
-    monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
+    monkeypatch.setattr(fastplotlib_backend, "FastplotlibAnimation", render)
     with scene.show(backend="fastplotlib"):
         native.show.assert_called_once_with()
-        styles = render.call_args.kwargs["_field_styles"]
-        assert [
-            (item.cmap, item.vmin, item.vmax, item.label, item.extend)
-            for item in styles
-        ] == [
-            ("magma", 0, 100, "Rate (Hz)", (False, False)),
-            ("viridis", 0, 1, "Probability", (False, False)),
-        ]
-    # Shared limits that clip a field's sampled values mark the clipped ends.
-    rates = np.asarray(scene.fields["rate"].values)
-    posterior = np.asarray(scene.fields["posterior"].values)
-    assert rates.min() < 0.05 and rates.max() > 5
-    assert posterior.min() >= 0.05 and posterior.max() <= 5
-    with scene.show(backend="fastplotlib", vmin=0.05, vmax=5):
-        styles = render.call_args.kwargs["_field_styles"]
-        assert [item.extend for item in styles] == [(True, True), (False, False)]
+        # The viewer draws the scene's own scales, as every view does.
+        render.assert_called_once_with(scene)
+    scales = PreparedScene(scene).field_scales
+    assert [
+        (item.cmap, item.vmin, item.vmax, item.label, item.extend)
+        for item in scales.values()
+    ] == [
+        ("magma", 0, 100, "Rate (Hz)", (False, False)),
+        ("viridis", 0, 1, "Probability", (False, False)),
+    ]
 
 
 def test_native_capture_rejects_window_resize_and_restores_state(

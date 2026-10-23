@@ -212,7 +212,7 @@ def test_fast_1d_rejects_omitted_overlay_before_backend_allocation(
     else:
         overlay = choices[category]
     render = Mock()
-    monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
+    monkeypatch.setattr(fastplotlib_backend, "FastplotlibAnimation", render)
     with (
         Animation(
             env, np.ones((3, env.n_bins)), frame_times=times, overlays=[overlay]
@@ -281,7 +281,7 @@ def test_fast_scale_bar_rejected_before_native_allocation(env, monkeypatch):
     from neurospatial.animation.backends import fastplotlib_backend
 
     render = Mock()
-    monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
+    monkeypatch.setattr(fastplotlib_backend, "FastplotlibAnimation", render)
     with (
         Animation(
             env, np.ones((2, env.n_bins)), frame_times=[0, 0.1], scale_bar=True
@@ -292,32 +292,32 @@ def test_fast_scale_bar_rejected_before_native_allocation(env, monkeypatch):
     render.assert_not_called()
 
 
-def test_fast_track_override_validated_before_native_allocation(env, monkeypatch):
+@pytest.mark.parametrize(
+    "option",
+    [
+        "cmap",
+        "vmin",
+        "vmax",
+        "colorbar_label",
+        "title",
+        "show_regions",
+        "region_alpha",
+        "window_seconds",
+        "track",
+    ],
+)
+def test_fast_view_does_not_override_the_scene(env, monkeypatch, option):
+    # Fields, title, regions, window and track belong to the scene, so every
+    # view and export of it shows the same.
     from neurospatial.animation.backends import fastplotlib_backend
 
-    track = Environment.linear_track(
-        endpoints=[[0.0, 0.5], [2.0, 0.5]], bin_size=1, units="cm"
-    )
     render = Mock()
-    monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
+    monkeypatch.setattr(fastplotlib_backend, "FastplotlibAnimation", render)
     with (
         Animation(env, np.ones((2, env.n_bins)), frame_times=[0, 0.1]) as scene,
-        pytest.raises(ValueError, match="track units"),
+        pytest.raises(TypeError, match=f"Unknown fastplotlib view options: {option}"),
     ):
-        scene.show(backend="fastplotlib", track=track)
-    render.assert_not_called()
-
-
-def test_fast_region_override_validated_before_native_allocation(env, monkeypatch):
-    from neurospatial.animation.backends import fastplotlib_backend
-
-    render = Mock()
-    monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
-    with (
-        Animation(env, np.ones((2, env.n_bins)), frame_times=[0, 0.1]) as scene,
-        pytest.raises(ValueError, match="missing"),
-    ):
-        scene.show(backend="fastplotlib", show_regions=["missing"])
+        scene.show(backend="fastplotlib", **{option: None})
     render.assert_not_called()
 
 

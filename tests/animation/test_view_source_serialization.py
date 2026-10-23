@@ -114,25 +114,30 @@ def test_fastplotlib_view_statistics_share_lock_with_existing_reader(
     from neurospatial.animation.backends import fastplotlib_backend
 
     scene, field, rows = _scene(env, explicit_limits=explicit_limits)
-    native = SimpleNamespace(
-        time=0.0, show=Mock(), close=Mock(), seek=Mock(), _add_close_callback=Mock()
-    )
 
-    def render(*args, **kwargs):
-        assert kwargs["_source_lock"] is scene._source_lock
-        assert kwargs["_field_styles"][0].opaque_from > 0
+    class NativeWorkError(Exception):
+        """Stops the viewer at its first native GUI allocation."""
+
+    def widget(**kwargs):
         _read_during_native_work(scene)
-        return native
+        raise NativeWorkError
 
-    monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
+    # The real viewer, up to its first native allocation, without a GPU.
+    monkeypatch.setattr(
+        fastplotlib_backend,
+        "import_fastplotlib",
+        lambda: SimpleNamespace(NDWidget=widget),
+    )
+    monkeypatch.setattr(
+        fastplotlib_backend, "require_animation_support", lambda module: None
+    )
     try:
         assert not field._extremes
-        with _existing_read(scene, rows):
-            view = scene.show(backend="fastplotlib")
+        with _existing_read(scene, rows), pytest.raises(NativeWorkError):
+            scene.show(backend="fastplotlib")
         assert not rows.overlaps
         # Scaling samples at most 100 rows, plus the two individual consumers.
         assert len(rows.reads) == 102
-        view.close()
     finally:
         scene.close()
 
@@ -205,9 +210,12 @@ def test_scene_close_waits_for_view_statistics_snapshot(env, monkeypatch):
     native = SimpleNamespace(
         time=0.0, show=Mock(), close=Mock(), seek=Mock(), _add_close_callback=Mock()
     )
-    monkeypatch.setattr(
-        fastplotlib_backend, "render_fastplotlib", Mock(return_value=native)
-    )
+
+    def build(scene, **options):
+        PreparedScene(scene)  # the viewer's first reads, under the source lock
+        return native
+
+    monkeypatch.setattr(fastplotlib_backend, "FastplotlibAnimation", build)
 
     def close():
         closing.set()

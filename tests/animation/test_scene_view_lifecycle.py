@@ -232,7 +232,7 @@ def test_parent_closing_during_backend_show_cleans_unregistered_native(
         time=0.0, show=scene.close, close=Mock(), seek=Mock(), capture_session=Mock()
     )
     monkeypatch.setattr(
-        fastplotlib_backend, "render_fastplotlib", Mock(return_value=native)
+        fastplotlib_backend, "FastplotlibAnimation", Mock(return_value=native)
     )
     with pytest.raises(RuntimeError, match="closed"):
         scene.show(backend="fastplotlib")

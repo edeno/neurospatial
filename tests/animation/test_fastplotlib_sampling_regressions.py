@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import CancelledError
+from contextlib import contextmanager
 from itertools import pairwise
 from threading import Event
 from types import SimpleNamespace
@@ -12,135 +12,180 @@ from unittest.mock import MagicMock, Mock
 import numpy as np
 import pytest
 
-from neurospatial.animation._backend_view import _CloseNotification
-from neurospatial.animation.backends import fastplotlib_backend as backend
-from neurospatial.animation.overlays import (
-    BodypartData,
-    HeadDirectionData,
-    ObjectVectorData,
-    PositionData,
+from neurospatial import Environment
+from neurospatial.animation import (
+    Animation,
+    BodypartOverlay,
+    HeadDirectionOverlay,
+    ObjectVectorOverlay,
+    PositionOverlay,
 )
+from neurospatial.animation._backend_view import _CloseNotification
+from neurospatial.animation._prepared import PreparedScene
+from neurospatial.animation.backends import fastplotlib_backend as backend
+from neurospatial.animation.overlays import VideoData
+from neurospatial.environment._fastplotlib import perceived_alpha
 
 
 class Plot:
     """Capture backend graphic updates without a graphics adapter."""
 
     def add_line(self, data, **kwargs):
-        return SimpleNamespace(data=data, **kwargs)
+        return SimpleNamespace(data=data, world_object=SimpleNamespace(), **kwargs)
 
     add_scatter = add_line
 
 
-def clock(times):
-    return backend._Samples(np.asarray(times, dtype=float), lambda time: int(time), 1.0)
+@pytest.fixture
+def env():
+    return Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool), (np.arange(0.0, 31, 10), np.arange(0.0, 31, 10))
+    )
+
+
+@contextmanager
+def drawn(env, layer, overlays, kind):
+    """``layer`` drawing the scene's first ``kind`` overlay, and its update."""
+    times = np.array([0.0, 1.0, 2.0])
+    with Animation(
+        env, np.ones((3, env.n_bins)), frame_times=times, overlays=overlays
+    ) as scene:
+        prepared = PreparedScene(scene)
+        graphic = layer([Plot()], prepared, getattr(scene._overlay_data, kind)[0])
+
+        def update(time):
+            graphic.apply(time, graphic.prepare(time))
+
+        yield graphic, update
 
 
 def position(interp="linear", *, break_interval=False):
-    return PositionData(
-        data=np.array([[0.0, 2.0], [10.0, 4.0], [20.0, 6.0]]),
-        color="red",
-        size=5,
-        trail_length=3,
+    return PositionOverlay(
+        np.array([[0.0, 2.0], [10.0, 4.0], [20.0, 6.0]]),
         times=np.array([0.0, 1.0, 2.0]),
+        trail_length=3,
         interp=interp,
-        sample_valid=np.ones(3, dtype=bool),
-        interval_valid=np.array([not break_interval, True]),
+        max_gap=None,
+        break_before=np.array([False, break_interval, False]),
     )
 
 
 @pytest.mark.parametrize(
     "interp, expected", [("linear", [2.5, 2.5]), ("nearest", [0.0, 2.0])]
 )
-def test_position_uses_actual_time_on_observation_clock(interp, expected):
-    data = position(interp)
-    drawn = backend._Position(Plot(), data, clock(data.times))
-    drawn.update(0.25)
-    np.testing.assert_allclose(drawn.marker.data[0, :2], expected)
-    drawn.update(2.01)
-    assert np.isnan(drawn.marker.data[0, :2]).all()
+def test_position_uses_actual_time_on_observation_clock(env, interp, expected):
+    with drawn(env, backend._Position, [position(interp)], "positions") as (
+        layer,
+        update,
+    ):
+        update(0.25)
+        np.testing.assert_allclose(layer.markers[0].data[0, :2], expected)
 
 
-def test_position_trail_never_bridges_explicit_tracking_break():
-    data = position(break_interval=True)
-    drawn = backend._Position(Plot(), data, clock(data.times))
-    drawn.update(0.25)
-    assert np.isnan(drawn.marker.data[0, :2]).all()
-    drawn.update(2.0)
-    trail = drawn.trail.data[:, :2]
-    # Consecutive finite vertices may join 10->20, never the unsupported 0->10.
-    for left, right in pairwise(trail):
-        if np.isfinite([left, right]).all():
-            np.testing.assert_allclose([left, right], [[10, 4], [20, 6]])
-    assert np.isfinite(trail).any()
+def test_position_trail_never_bridges_explicit_tracking_break(env):
+    with drawn(
+        env, backend._Position, [position(break_interval=True)], "positions"
+    ) as (layer, update):
+        update(0.25)
+        assert np.isnan(layer.markers[0].data[0, :2]).all()
+        update(2.0)
+        trail = layer.trails[0].data[:, :2]
+        # Consecutive finite vertices may join 10->20, never the unsupported 0->10.
+        for left, right in pairwise(trail):
+            if np.isfinite([left, right]).all():
+                np.testing.assert_allclose([left, right], [[10, 4], [20, 6]])
+        assert np.isfinite(trail).any()
 
 
-def test_heading_wraps_at_pi_and_hides_when_position_anchor_is_missing():
-    data = position()
-    anchor = backend._Position(Plot(), data, clock(data.times))
-    headings = HeadDirectionData(
-        data=np.deg2rad([170.0, -170.0]),
-        color="hsv",
+def test_trail_segments_fade_with_their_age(env):
+    # Each segment's opacity is the shared rule's, by the age of its newer
+    # sample, not by its place in the line.
+    with drawn(env, backend._Position, [position()], "positions") as (layer, update):
+        update(2.0)
+        _, alphas = layer.prepared.trail(layer.data, 2.0)
+        colors = layer.trails[0].colors
+        np.testing.assert_allclose(
+            colors[: 3 * len(alphas), 3], np.repeat(perceived_alpha(alphas), 3)
+        )
+        assert alphas[0] < alphas[-1]
+
+
+def test_heading_wraps_at_pi_and_hides_when_position_anchor_is_missing(env):
+    headings = HeadDirectionOverlay(
+        np.deg2rad([170.0, -170.0, -170.0]),
+        times=np.array([0.0, 1.0, 2.0]),
         length=1.0,
-        times=np.array([0.0, 1.0]),
-        interval_valid=np.array([True]),
+        max_gap=None,
     )
-    drawn = backend._HeadDirection(
-        Plot(), headings, clock(headings.times), anchor, np.zeros(2)
-    )
-    drawn.update(0.5)
-    np.testing.assert_allclose(drawn.line.data[:, :2], [[5, 3], [4, 3]], atol=1e-7)
-    data.interval_valid[0] = False
-    drawn.update(0.5)
-    assert np.isnan(drawn.line.data[:, :2]).all()
+    with drawn(
+        env, backend._HeadDirection, [position(), headings], "head_directions"
+    ) as (
+        layer,
+        update,
+    ):
+        update(0.5)
+        np.testing.assert_allclose(
+            layer.lines[0].data[:, :2], [[5, 3], [4, 3]], atol=1e-7
+        )
+    with drawn(
+        env,
+        backend._HeadDirection,
+        [position(break_interval=True), headings],
+        "head_directions",
+    ) as (layer, update):
+        update(0.5)
+        assert np.isnan(layer.lines[0].data[:, :2]).all()
 
 
-def test_bodyparts_and_object_vectors_sample_each_observed_time():
-    times = np.array([0.0, 1.0])
-    parts = BodypartData(
-        bodyparts={"nose": np.array([[0.0, 0.0], [4.0, 2.0]])},
-        skeleton=None,
-        colors=None,
+def test_bodyparts_and_object_vectors_sample_each_observed_time(env):
+    times = np.array([0.0, 1.0, 2.0])
+    nose = np.array([[0.0, 0.0], [4.0, 2.0], [4.0, 2.0]])
+    for breaks, expected in ((False, [2.0, 1.0]), (True, [np.nan, np.nan])):
+        parts = BodypartOverlay(
+            {"nose": nose},
+            times=times,
+            max_gap=None,
+            break_before=np.array([False, breaks, False]),
+        )
+        with drawn(env, backend._Bodyparts, [parts], "bodypart_sets") as (
+            layer,
+            update,
+        ):
+            update(0.5)
+            np.testing.assert_allclose(layer.points[0].data[0, :2], expected)
+    vectors = ObjectVectorOverlay(
+        np.array([[8.0, 8.0]]),
+        nose,
         times=times,
-        interval_valid={"nose": np.array([True])},
-    )
-    drawn = backend._Bodyparts(Plot(), parts, clock(times))
-    drawn.update(0.5)
-    np.testing.assert_allclose(drawn.points.data[0, :2], [2.0, 1.0])
-    parts.interval_valid["nose"][0] = False
-    drawn.update(0.5)
-    assert np.isnan(drawn.points.data[0, :2]).all()
-    vectors = ObjectVectorData(
-        object_positions=np.array([[8.0, 8.0]]),
-        animal_positions=np.array([[0.0, 0.0], [4.0, 2.0]]),
-        firing_rates=np.array([0.0, 10.0]),
-        color="red",
-        linewidth=1.0,
+        firing_rates=np.array([0.0, 10.0, 10.0]),
         show_objects=False,
-        object_marker="o",
-        object_size=5.0,
-        times=times,
-        interval_valid=np.array([True]),
+        max_gap=None,
     )
-    drawn = backend._ObjectVectors(Plot(), vectors, clock(times))
-    drawn.update(0.5)
-    np.testing.assert_allclose(drawn.lines.data[:2, :2], [[2.0, 1.0], [8.0, 8.0]])
-    np.testing.assert_allclose(drawn.lines.colors[3], 0.55)
+    with drawn(env, backend._ObjectVectors, [vectors], "object_vectors") as (
+        layer,
+        update,
+    ):
+        update(0.5)
+        np.testing.assert_allclose(
+            layer.lines[0].data[:2, :2], [[2.0, 1.0], [8.0, 8.0]]
+        )
+        np.testing.assert_allclose(layer.lines[0].colors[3], 0.55)
 
 
-def test_native_read_uses_absolute_time_callback_and_seek_uses_recording_time():
-    animation = object.__new__(backend.FastplotlibAnimation)
+def test_native_read_uses_recording_time_and_seek_uses_recording_time():
     from threading import RLock
 
+    animation = object.__new__(backend.FastplotlibAnimation)
     animation._source_lock = RLock()
     animation._closed = False
     animation._clock = np.array([0.0, 1.0])
     animation._start = 100.0
     animation.widget = SimpleNamespace(indices={"time": 0.0})
-    animation._videos, animation._tracks = [], []
-    animation._field_at_time = Mock(return_value=[np.array([0.75])])
+    layer = Mock()
+    animation._updates = [layer]
     frame = animation._read(0.75)
-    animation._field_at_time.assert_called_once_with(100.75)
-    np.testing.assert_array_equal(frame.values[0], [0.75])
+    layer.prepare.assert_called_once_with(100.75)
+    assert frame.time == 100.75
     animation.seek(100.75)
     assert animation.widget.indices == {"time": 0.75}
     with pytest.raises(ValueError, match="finite"):
@@ -149,10 +194,8 @@ def test_native_read_uses_absolute_time_callback_and_seek_uses_recording_time():
 
 def test_native_close_releases_graphics_and_canvas_once():
     animation = object.__new__(backend.FastplotlibAnimation)
-    from threading import RLock
-
-    animation._source_lock = RLock()
     animation._closed = False
+    animation._key_registered = False
     animation._close_notification = _CloseNotification()
     animation._frames = Mock()
     other = SimpleNamespace(slicer=Mock())
@@ -167,15 +210,6 @@ def test_native_close_releases_graphics_and_canvas_once():
     other.slicer.close.assert_called_once()
     animation.widget.close.assert_called_once()
     canvas.close.assert_called_once()
-
-
-def test_native_video_uses_nearest_frame_without_extrapolating():
-    samples = clock([0.0, 0.2])
-    assert samples.nearest(0.16) == 1
-    assert samples.nearest(0.10) == 0  # midpoint ties use the earlier sample
-    assert samples.nearest(0.20) == 1
-    assert samples.nearest(0.201) == -1
-    assert samples.nearest(-0.01) == -1
 
 
 def test_custom_native_graphic_closes_both_worker_executors():
@@ -239,17 +273,6 @@ def test_capture_synchronization_discards_an_in_flight_worker_read():
         graphic.close()
 
 
-def test_stale_time_series_read_cannot_overwrite_restored_viewer():
-    update = Mock()
-    series = SimpleNamespace(indices={"time": 0.25}, _update_graphic=update)
-    backend._guard_series_updates(series)
-    with pytest.raises(CancelledError):
-        series._update_graphic({"data": "old window"}, {"time": 0.75})
-    update.assert_not_called()
-    series._update_graphic({"data": "restored window"}, {"time": 0.25})
-    update.assert_called_once_with({"data": "restored window"}, {"time": 0.25})
-
-
 def _capture_view():
     class Indices(dict):
         def __init__(self, **kwargs):
@@ -261,6 +284,8 @@ def _capture_view():
 
     animation._source_lock = RLock()
     animation._closed = False
+    animation._start = 0.0
+    animation._prepared = Mock(scene=SimpleNamespace(frame_times=np.array([0.0, 1.0])))
     animation.show = Mock()
     animation._frames = Mock(pause=False)
     other = Mock(pause=True)
@@ -295,7 +320,7 @@ def test_initial_capture_synchronization_failure_restores_controls():
 def test_failed_time_restore_still_restores_cameras_and_playback():
     pytest.importorskip("fastplotlib.widgets.nd_widget")
     animation, camera, other = _capture_view()
-    animation._read = Mock(side_effect=RuntimeError("read failed"))
+    animation._prepare = Mock(side_effect=RuntimeError("read failed"))
     with pytest.raises(RuntimeError, match="read failed"), animation.capture_session():
         animation.widget.indices["time"] = 0.8
     assert animation.widget.indices["time"] == 0.25
@@ -305,40 +330,51 @@ def test_failed_time_restore_still_restores_cameras_and_playback():
     camera.set_state.assert_called_once_with({"width": 12.0})
 
 
-def test_worker_payload_owns_each_source_row_and_video_frame():
+def test_worker_payload_owns_each_source_row_and_video_frame(env):
     """Sources may reuse the same buffer across fields and later worker reads."""
-    from threading import RLock
+    scratch = np.empty(env.n_bins)
 
-    scratch = [np.empty(2), np.empty(2)]
+    class Rows:
+        # Like a lazy reader, each read reuses one row buffer.
+        shape = (2, env.n_bins)
+
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, index):
+            scratch[:] = index + 1
+            return scratch
+
     pixels = np.empty((2, 2, 3), dtype=np.uint8)
 
-    def sample_fields(time):
-        # Like a lazy reader, each field reuses its row buffer on the next read.
-        for buffer, base in zip(scratch, (1, 10), strict=True):
-            buffer[:] = base + time
-        return scratch
+    class Reader:
+        # Like a decoder, each read reuses one frame buffer.
+        frame_size_px = (2, 2)
 
-    def read_video(index):
-        pixels[:] = index + 20
-        return pixels
+        def __getitem__(self, index):
+            pixels[:] = index + 20
+            return pixels
 
-    animation = object.__new__(backend.FastplotlibAnimation)
-    animation._source_lock = RLock()
-    animation._clock = np.array([0.0, 1.0])
-    animation._start = 0.0
-    animation._field_at_time = sample_fields
-    animation._tracks = []
-    animation._videos = [
-        SimpleNamespace(
-            data=SimpleNamespace(get_frame=read_video),
-            clock=SimpleNamespace(nearest=lambda time: int(time)),
-        )
-    ]
-    first = animation._read(0.0)
-    second = animation._read(1.0)
-    np.testing.assert_array_equal(first.values[0], [1, 1])
-    np.testing.assert_array_equal(first.values[1], [10, 10])
-    np.testing.assert_array_equal(second.values[0], [2, 2])
-    np.testing.assert_array_equal(second.values[1], [11, 11])
-    np.testing.assert_array_equal(first.images[0], 20)
-    np.testing.assert_array_equal(second.images[0], 21)
+    class Video:
+        def convert_to_data(self, frame_times, n_frames, env):
+            return VideoData(
+                np.arange(2),
+                Reader(),
+                None,
+                (0, 2, 0, 2),
+                0.5,
+                "above",
+                times=frame_times,
+            )
+
+    with Animation(env, Rows(), frame_times=[0.0, 1.0], overlays=[Video()]) as scene:
+        prepared = PreparedScene(scene)
+        field = backend._Field(None, prepared, scene.fields["field"])
+        video = object.__new__(backend._Video)
+        video.prepared, video.data = prepared, scene._overlay_data.videos[0]
+        first = field.prepare(0.0), video.prepare(0.0)
+        second = field.prepare(1.0), video.prepare(1.0)
+    np.testing.assert_array_equal(first[0], 1)
+    np.testing.assert_array_equal(second[0], 2)
+    np.testing.assert_array_equal(first[1], 20)
+    np.testing.assert_array_equal(second[1], 21)

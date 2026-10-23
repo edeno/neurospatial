@@ -433,7 +433,7 @@ def test_native_view_time_follows_the_users_slider_and_borrows_scene_readers(
         _add_close_callback=Mock(),
     )
     render = Mock(return_value=native)
-    monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
+    monkeypatch.setattr(fastplotlib_backend, "FastplotlibAnimation", render)
     view = recording.show(backend="fastplotlib")
     try:
         native.widget.indices["time"] = 0.35
@@ -442,13 +442,9 @@ def test_native_view_time_follows_the_users_slider_and_borrows_scene_readers(
         native.seek.assert_called_once_with(10.7)
         # The native clock is authoritative even before a requested frame is drawn.
         assert view.time == pytest.approx(10.35)
-        arguments = render.call_args.kwargs
-        # The view borrows the scene's reader; the scene keeps it for exports.
-        assert arguments["overlay_data"].videos[0].reader is video.reader
-        callback = arguments["_field_at_time"]
-        np.testing.assert_allclose(
-            callback(10.35)[0], next(iter(recording.sample_fields(10.35).values()))
-        )
+        # The view draws the scene itself and borrows its reader; the scene
+        # keeps it for exports.
+        render.assert_called_once_with(recording)
     finally:
         view.close()
         view.close()

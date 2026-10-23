@@ -10,7 +10,7 @@ defect. No built-in material or shader is replaced globally.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import Any
 
@@ -31,7 +31,6 @@ def require_animation_support(fastplotlib: Any) -> None:
         from fastplotlib.widgets.nd_widget import (
             NDGraphic,
             NDSlicer,
-            NDTimeseries,
             NDWSubplot,
         )
         from fastplotlib.widgets.nd_widget._async import run_in_thread_pool, run_sync
@@ -48,7 +47,6 @@ def require_animation_support(fastplotlib: Any) -> None:
         (NDGraphic, ("pause", "indices_displayed")),
         (NDSlicer, ("close",)),
         (NDWSubplot, ("nd_graphics",)),
-        (NDTimeseries, ("_update_graphic",)),
         (
             ReferenceIndices,
             ("_fetch_indices", "_schedule_fetch", "_fetch_request_latest"),
@@ -188,22 +186,6 @@ def _frames_graphic(
                 self._slicer.close()
 
     return Frames()
-
-
-def _guard_series_updates(series: Any) -> None:
-    """Keep an older async series read from replacing the current time window."""
-    from concurrent.futures import CancelledError
-
-    update = series._update_graphic
-
-    def update_current(features: Any, indices: Mapping[str, Any]) -> None:
-        if dict(indices) != dict(series.indices):
-            # The NDWidget scheduler handles this as a superseded fetch.
-            # Cancel before it also records these indices as displayed.
-            raise CancelledError
-        update(features, indices)
-
-    series._update_graphic = update_current
 
 
 def _iso_shader_source(code: str, version: str) -> str:

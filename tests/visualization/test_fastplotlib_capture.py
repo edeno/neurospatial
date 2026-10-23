@@ -120,8 +120,11 @@ def test_projected_track_limits_are_derived_for_each_field(env):
         assert second.vmax != animation._field_scales[1].vmax
         assert animation._tracks[0].scale is first
         assert animation._tracks[1].scale is second
-        assert "probability" in labels(animation.figure["track 0"])
-        assert "Hz" in labels(animation.figure["track 1"])
+        # Summed along the track, each label says so, wrapped to the bar.
+        for panel, label in (("track 0", "probability"), ("track 1", "Hz")):
+            assert f"Projected {label} (sum per track bin)" in {
+                " ".join(text.split()) for text in labels(animation.figure[panel])
+            }
 
 
 def test_one_dimensional_track_panels_each_label_their_own_scale():
@@ -210,8 +213,8 @@ def test_capture_failure_restores_time_playback_and_selected_unit(env):
         ):
             capture(100.8)
             np.testing.assert_allclose(animation._unit.field.values, rates[1])
-            series = animation._series[0][0]
-            assert series.indices_displayed["time"] == pytest.approx(0.8)
+            low, high = animation.figure["series 0"].x_range
+            assert (low + high) / 2 == pytest.approx(0.8)
             raise RuntimeError("writer failed")
         assert animation.widget.indices["time"] == pytest.approx(0.2)
         assert animation.widget.ui_sliders._playing["time"]

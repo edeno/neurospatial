@@ -423,54 +423,11 @@ def show_animation(
         return AnimationView._from_backend(
             animation, _NativeBackendView(handle.viewer, handle)
         )
-    # Each field gets its own scale; cmap, vmin, vmax and colorbar_label
-    # override every field's own.
-    overrides = {
-        name: kwargs.pop(name)
-        for name in ("cmap", "vmin", "vmax", "colorbar_label")
-        if name in kwargs
-    }
-    # View construction shares lazy sources with existing views and exports.
-    # Snapshot source-derived settings before entering native GUI code, which
-    # may wait for workers or process events that also need this lock.
-    from dataclasses import replace
-
-    from neurospatial.animation._prepared import field_scale
-
-    with animation._source_lock:
-        animation._ensure_open()
-        data = animation._overlay_data
-        field_styles = []
-        for name, field in animation.fields.items():
-            low, high = field.color_limits()
-            vmin, vmax = overrides.get("vmin"), overrides.get("vmax")
-            scale = field_scale(
-                field,
-                overrides.get("colorbar_label", field.label or name),
-                see_through=True,
-                limits=(low if vmin is None else vmin, high if vmax is None else vmax),
-            )
-            field_styles.append(replace(scale, cmap=overrides.get("cmap", scale.cmap)))
-    from neurospatial.animation.backends.fastplotlib_backend import render_fastplotlib
-
-    options = {
-        "title": animation.title,
-        "show_regions": animation.show_regions,
-        "region_alpha": animation.region_alpha,
-        "window_seconds": animation.window_seconds,
-        "track": animation.track,
-        **kwargs,
-    }
-    native = render_fastplotlib(
-        animation.env,
-        animation.fields,
-        frame_times=animation.frame_times,
-        overlay_data=data,
-        _source_lock=animation._source_lock,
-        _field_at_time=lambda time: list(animation.sample_fields(time).values()),
-        _field_styles=field_styles,
-        **options,
+    from neurospatial.animation.backends.fastplotlib_backend import (
+        FastplotlibAnimation,
     )
+
+    native = FastplotlibAnimation(animation, **kwargs)
     try:
         native.show()
     except BaseException as error:

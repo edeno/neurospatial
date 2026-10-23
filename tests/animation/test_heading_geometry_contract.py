@@ -1,5 +1,6 @@
 """Undefined headings stay missing in every scene renderer."""
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -11,7 +12,7 @@ from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _heading_displacement, _heading_displacements
 from neurospatial.animation.backends import fastplotlib_backend as gpu
 from neurospatial.animation.backends._napari_scene import NapariScene
-from neurospatial.animation.overlays import HeadDirectionData, HeadDirectionOverlay
+from neurospatial.animation.overlays import HeadDirectionOverlay
 from neurospatial.animation.scene import Animation
 
 
@@ -38,6 +39,26 @@ def napari_heading(scene):
     handle._add = add
     handle._build_overlays()
     return handle, layers[0]
+
+
+@contextmanager
+def gpu_heading(env, overlay):
+    """The fastplotlib heading line of ``overlay``, and its update."""
+    times = overlay.times
+    with Animation(
+        env, np.ones((len(times), env.n_bins)), frame_times=times, overlays=[overlay]
+    ) as scene:
+        plot = SimpleNamespace(
+            add_line=lambda values, **opts: SimpleNamespace(data=values)
+        )
+        drawn = gpu._HeadDirection(
+            [plot], PreparedScene(scene), scene._overlay_data.head_directions[0]
+        )
+
+        def update(time):
+            drawn.apply(time, drawn.prepare(time))
+
+        yield drawn.lines[0], update
 
 
 def heading_artists(scene):
@@ -97,16 +118,12 @@ def test_finite_vectors_have_requested_length_in_environment_coordinates(env, sc
     expected = vector / np.linalg.norm(vector) * 0.5
     direction = _heading_displacement(vector * scale, 0.5, n_dims=env.n_dims)
     np.testing.assert_allclose(direction, expected)
-    origin = np.arange(env.n_dims, dtype=float)
-    segment = gpu.heading_segment(origin, vector * scale, 0.5)
-    np.testing.assert_allclose(segment, [origin, origin + expected])
 
 
 @pytest.mark.parametrize("missing", [0.0, np.nan, np.inf])
-def test_undefined_vectors_are_missing_in_shared_and_gpu_geometry(env, missing):
+def test_undefined_vectors_are_missing_in_shared_geometry(env, missing):
     vector = np.full(env.n_dims, missing)
     assert _heading_displacement(vector, 0.5, n_dims=env.n_dims) is None
-    assert np.isnan(gpu.heading_segment(np.zeros(env.n_dims), vector, 0.5)).all()
 
 
 @pytest.mark.parametrize("missing", [0.0, np.nan])
@@ -167,16 +184,16 @@ def test_native_napari_and_scene_normalize_interpolated_vector(env):
 def test_gpu_native_update_hides_opposite_vectors_midpoint(env):
     vector = np.zeros(env.n_dims)
     vector[-1] = 1.0
-    data = HeadDirectionData(
-        np.array([vector, -vector]), "red", 0.5, times=np.array([0.0, 0.2])
+    overlay = HeadDirectionOverlay(
+        np.array([vector, -vector]), np.array([0.0, 0.2]), color="red", length=0.5
     )
-    clock = gpu._Samples(data.times, lambda time: 0, 1.0)
-    plot = SimpleNamespace(add_line=lambda values, **opts: SimpleNamespace(data=values))
-    drawn = gpu._HeadDirection(plot, data, clock, None, np.zeros(env.n_dims))
-    drawn.update(0.0)
-    np.testing.assert_allclose(drawn.line.data[1, : env.n_dims], vector * 0.5)
-    drawn.update(0.1)
-    assert np.isnan(drawn.line.data[:, : env.n_dims]).all()
+    with gpu_heading(env, overlay) as (line, update):
+        update(0.0)
+        np.testing.assert_allclose(
+            line.data[1, : env.n_dims] - line.data[0, : env.n_dims], vector * 0.5
+        )
+        update(0.1)
+        assert np.isnan(line.data[:, : env.n_dims]).all()
 
 
 @pytest.mark.parametrize("angles", [False, True])
@@ -196,14 +213,17 @@ def test_batch_geometry_keeps_row_identity_with_missing_samples(env, angles):
 def test_angle_zero_is_east_and_circular_interpolation_still_wraps():
     np.testing.assert_allclose(_heading_displacement(0.0, 0.5, n_dims=2), [0.5, 0])
     assert _heading_displacement(np.inf, 0.5, n_dims=2) is None
-    data = HeadDirectionData(
-        np.deg2rad([170, -170]), "red", 0.5, times=np.array([0.0, 0.2])
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     )
-    clock = gpu._Samples(data.times, lambda time: 0, 1.0)
-    plot = SimpleNamespace(add_line=lambda values, **opts: SimpleNamespace(data=values))
-    drawn = gpu._HeadDirection(plot, data, clock, None, np.zeros(2))
-    drawn.update(0.1)
-    np.testing.assert_allclose(drawn.line.data[1, :2], [-0.5, 0], atol=1e-7)
+    overlay = HeadDirectionOverlay(
+        np.deg2rad([170, -170]), np.array([0.0, 0.2]), color="red", length=0.5
+    )
+    with gpu_heading(env, overlay) as (line, update):
+        update(0.1)
+        np.testing.assert_allclose(
+            line.data[1, :2] - line.data[0, :2], [-0.5, 0], atol=1e-7
+        )
 
 
 def test_heading_with_several_positions_is_refused():

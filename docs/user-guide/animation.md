@@ -509,7 +509,7 @@ Hovering over a bin shows its position and value. `frame_labels=` gives each
 frame your own label instead of its time.
 
 Time series are drawn beside the field on the same clock, with every sample
-in the window drawn (up to 100,000), so a ripple-band LFP keeps its shape.
+in the window drawn, so a ripple-band LFP keeps its shape.
 Event times from an `EventOverlay` are marked on every series panel in the
 events' colors. Drag the cursor in a series to move every panel. Every panel
 drawn against time (a track's fields, spike rasters, time series) shows the

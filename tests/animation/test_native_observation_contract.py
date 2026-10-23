@@ -13,7 +13,7 @@ from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _finite_rate_peak, _rate_opacity
 from neurospatial.animation.backends import fastplotlib_backend as gpu
-from neurospatial.animation.overlays import PositionData, _convert_overlays_to_data
+from neurospatial.animation.overlays import PositionData
 
 
 class Plot:
@@ -30,13 +30,14 @@ def env():
     )
 
 
-def samples(item, times):
-    return gpu._Samples(
-        item.times,
-        lambda time: max(int(np.searchsorted(times, time, side="right")) - 1, 0),
-        0.1,
-        frame_times=times,
-    )
+def native(layer, scene, item):
+    """A fastplotlib layer drawing ``item`` of ``scene``, and its update."""
+    drawn = layer([Plot()], PreparedScene(scene), item)
+
+    def update(time):
+        drawn.apply(time, drawn.prepare(time))
+
+    return drawn, update
 
 
 @pytest.mark.parametrize(
@@ -47,19 +48,19 @@ def test_inherited_native_clock_honors_interpolation_and_recording_gap(
 ):
     times = np.array([0.0, 0.1, 1.0, 1.1])
     positions = np.array([[0, 0], [1, 1], [0, 1], [1, 0]], dtype=float)
-    data = _convert_overlays_to_data(
-        [PositionOverlay(positions, interp=interp)],
-        times,
-        len(times),
+    with Animation(
         env,
-    )[0].positions[0]
-    drawn = gpu._Position(Plot(), data, samples(data, times))
-    drawn.update(0.025)
-    np.testing.assert_allclose(drawn.marker.data[0, :2], expected)
-    drawn.update(0.5)
-    assert np.isnan(drawn.marker.data[0, :2]).all()
-    drawn.update(0.1)
-    np.testing.assert_array_equal(drawn.marker.data[0, :2], positions[1])
+        np.ones((4, env.n_bins)),
+        frame_times=times,
+        overlays=[PositionOverlay(positions, interp=interp)],
+    ) as scene:
+        drawn, update = native(gpu._Position, scene, scene._overlay_data.positions[0])
+        update(0.025)
+        np.testing.assert_allclose(drawn.markers[0].data[0, :2], expected)
+        update(0.5)
+        assert np.isnan(drawn.markers[0].data[0, :2]).all()
+        update(0.1)
+        np.testing.assert_array_equal(drawn.markers[0].data[0, :2], positions[1])
 
 
 def test_custom_inherited_mask_matches_scene_and_native_renderers(env):
@@ -82,12 +83,12 @@ def test_custom_inherited_mask_matches_scene_and_native_renderers(env):
     ) as scene:
         item = scene._overlay_data.positions[0]
         prepared = PreparedScene(scene)
-        drawn = gpu._Position(Plot(), item, samples(item, times))
+        drawn, update = native(gpu._Position, scene, item)
         for time in (0.1, 0.15, 0.25):
-            drawn.update(time)
+            update(time)
             expected = prepared.sample(item, item.data, time)
             np.testing.assert_allclose(
-                drawn.marker.data[0, :2], expected, equal_nan=True
+                drawn.markers[0].data[0, :2], expected, equal_nan=True
             )
         assert np.isnan(prepared.sample(item, item.data, 0.1)).all()
 
@@ -156,19 +157,13 @@ def test_object_vector_consumers_share_full_recording_finite_peak(env, monkeypat
         for update in native_napari._updates:
             update.apply(update.prepare(0.2))
         assert native_napari._layers[0].opacity == 0
-        native = gpu._ObjectVectors(Plot(), data, samples(data, times))
-        native.update(0.1)
-        assert native.top_rate == 10
-        assert native.lines.colors[3] == pytest.approx(0.55)
-        native.update(0.2)
-        assert native.lines.colors[3] == 0
+        vectors, update = native(gpu._ObjectVectors, scene, data)
+        update(0.1)
+        assert vectors.lines[0].colors[3] == pytest.approx(0.55)
+        update(0.2)
+        assert vectors.lines[0].colors[3] == 0
         subset = scene.overlay_data(np.array([0.0, 0.1])).object_vectors[0]
         assert subset._rate_peak == 10
-        subset_native = gpu._ObjectVectors(
-            Plot(), subset, samples(subset, np.array([0.0, 0.1]))
-        )
-        subset_native.update(0.1)
-        assert subset_native.lines.colors[3] == pytest.approx(0.55)
         scene.render_frame(0.1, dpi=25)
         lines = next(
             lines
@@ -187,6 +182,7 @@ def test_native_close_drains_workers_and_notifies_after_window_failure():
     calls = []
     animation = gpu.FastplotlibAnimation.__new__(gpu.FastplotlibAnimation)
     animation._closed = False
+    animation._key_registered = False
     animation._close_notification = _CloseNotification()
     animation._close_notification.add(lambda: calls.append("view"))
     animation._frames = Mock()
@@ -220,7 +216,10 @@ def test_native_capture_does_not_restore_or_resume_a_closed_controller():
 
     animation = gpu.FastplotlibAnimation.__new__(gpu.FastplotlibAnimation)
     animation._closed = False
+    animation._key_registered = False
     animation._close_notification = _CloseNotification()
+    animation._start = 0.0
+    animation._prepared = Mock(scene=SimpleNamespace(frame_times=np.array([0.0, 1.0])))
     animation.show = Mock()
     animation._frames = Mock(pause=False)
     other = Mock(pause=False)
@@ -234,12 +233,14 @@ def test_native_capture_does_not_restore_or_resume_a_closed_controller():
     camera = Mock()
     animation.figure.__iter__.return_value = [SimpleNamespace(camera=camera)]
     animation._canvas = Mock()
-    animation._read = Mock(side_effect=AssertionError("Closed scenes cannot be read"))
+    animation._prepare = Mock(
+        side_effect=AssertionError("Closed scenes cannot be read")
+    )
     with animation.capture_session():
         animation.close()
     assert not animation.widget.ui_sliders._playing["time"]
     assert animation._frames.pause and other.pause
-    animation._read.assert_not_called()
+    animation._prepare.assert_not_called()
     camera.set_state.assert_not_called()
 
 

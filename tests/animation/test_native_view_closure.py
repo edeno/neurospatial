@@ -29,6 +29,7 @@ def native_controller(*, fail_cleanup=False):
     """Exercise the actual native canvas close handler without a GPU."""
     native = FastplotlibAnimation.__new__(FastplotlibAnimation)
     native._closed = False
+    native._key_registered = False
     native._close_notification = _CloseNotification()
     native._start = 0.0
     native._clock = np.array([0.0, 0.1])
