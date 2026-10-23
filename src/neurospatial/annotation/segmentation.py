@@ -192,9 +192,7 @@ def _clicked_components(
     return components, count, components[pixels[:, 1], pixels[:, 0]]
 
 
-def _validate_inputs(
-    image: NDArray[np.uint8], prompt: SegmentationPrompt
-) -> NDArray[np.uint8]:
+def _validate_image(image: NDArray[np.uint8]) -> NDArray[np.uint8]:
     image = np.asarray(image)
     if (
         image.dtype != np.uint8
@@ -205,6 +203,13 @@ def _validate_inputs(
         raise ValueError(
             "Segmentation image must be a nonzero-size RGB uint8 array (height, width, 3)."
         )
+    return image
+
+
+def _validate_inputs(
+    image: NDArray[np.uint8], prompt: SegmentationPrompt
+) -> NDArray[np.uint8]:
+    image = _validate_image(image)
     height, width = image.shape[:2]
     if not _inside_pixels(prompt.points, (0, 0, width, height)):
         raise ValueError(
@@ -346,6 +351,8 @@ class SegmentAnythingProvider:
     Notes
     -----
     Uses the highest-scoring mask and preserves all its components and holes.
+    Following Meta's guidance, a single click requests SAM's three candidate
+    masks for the ambiguous prompt; several clicks or a box request one mask.
     An owned image snapshot detects changes in content, including in-place
     edits, without relying on object identity. Instances are not thread-safe.
     Direct ``predict`` calls are independent of earlier prompts. The annotation
@@ -371,16 +378,21 @@ class SegmentAnythingProvider:
         config_file: str | Path,
         checkpoint_path: str | Path,
         *,
-        device: str = "cpu",
+        device: str | None = None,
     ) -> SegmentAnythingProvider:
         """Load installed SAM 2 using an existing local checkpoint.
 
         Install PyTorch and Meta's SAM 2 following
         https://github.com/facebookresearch/sam2#installation . Supply the
         installed model's config name (for example
-        ``configs/sam2.1/sam2.1_hiera_t.yaml``) and a matching checkpoint file.
+        ``configs/sam2.1/sam2.1_hiera_l.yaml``) and a matching checkpoint file.
         No weights are downloaded and no global torch settings are changed.
-        The default CPU device does not require a GPU.
+
+        ``device=None`` uses a CUDA GPU when available, then Apple silicon
+        (``"mps"``), then the CPU. On Apple silicon, SAM 2.1 Large computes a
+        frame's image features about ten times faster than on the CPU. Meta
+        describes MPS support as preliminary; pass ``device="cpu"`` if its
+        outlines look wrong.
         """
         checkpoint = Path(checkpoint_path).expanduser()
         if not checkpoint.is_file():
@@ -388,7 +400,7 @@ class SegmentAnythingProvider:
                 f"SAM 2 checkpoint does not exist: {checkpoint}. Supply a local checkpoint matching config_file; weights are not downloaded automatically."
             )
         try:
-            importlib.import_module("torch")
+            torch = importlib.import_module("torch")
             build_sam2 = importlib.import_module("sam2.build_sam").build_sam2
             predictor_class = importlib.import_module(
                 "sam2.sam2_image_predictor"
@@ -397,6 +409,14 @@ class SegmentAnythingProvider:
             raise ImportError(
                 "SegmentAnythingProvider.from_sam2 requires PyTorch and Meta SAM 2. Install them following https://github.com/facebookresearch/sam2#installation, or use RegionGrowProvider without model dependencies."
             ) from exc
+        if device is None:
+            device = (
+                "cuda"
+                if torch.cuda.is_available()
+                else "mps"
+                if torch.backends.mps.is_available()
+                else "cpu"
+            )
         try:
             model = build_sam2(str(config_file), str(checkpoint), device=device)
             predictor = predictor_class(model)
@@ -411,6 +431,26 @@ class SegmentAnythingProvider:
     ) -> SegmentationProposal:
         """Reuse image embeddings and select the highest-scoring mask."""
         return self._predict_with_refinement(image, prompt).proposal
+
+    def _prepare(self, image: NDArray[np.uint8]) -> None:
+        """Compute image features ahead of the first prompt."""
+        image = _validate_image(image)
+        try:
+            self._set_image(image)
+        except Exception as exc:
+            self._cached_image = None
+            raise RuntimeError(
+                f"SAM image preparation failed; check the installed predictor: {exc}"
+            ) from exc
+
+    def _set_image(self, image: NDArray[np.uint8]) -> None:
+        """Compute features unless this exact image is already cached."""
+        if self._cached_image is None or not np.array_equal(image, self._cached_image):
+            self._cached_image = None
+            owned_image = read_only_copy(image)
+            # Keep our snapshot separate from any predictor-owned buffer.
+            self._predictor.set_image(np.array(owned_image, copy=True))
+            self._cached_image = owned_image
 
     def _predict_with_refinement(
         self,
@@ -436,14 +476,7 @@ class SegmentAnythingProvider:
                 # back into itself without any new information.
                 return previous
         try:
-            if self._cached_image is None or not np.array_equal(
-                image, self._cached_image
-            ):
-                self._cached_image = None
-                owned_image = read_only_copy(image)
-                # Keep our snapshot separate from any predictor-owned buffer.
-                self._predictor.set_image(np.array(owned_image, copy=True))
-                self._cached_image = owned_image
+            self._set_image(image)
             refinement_args = (
                 {} if previous is None else {"mask_input": previous.logits.copy()}
             )
@@ -455,7 +488,11 @@ class SegmentAnythingProvider:
                 if len(prompt.points)
                 else None,
                 box=None if prompt.box is None else np.array(prompt.box, copy=True),
-                multimask_output=previous is None,
+                # One click is ambiguous: ask for SAM's candidate masks. More
+                # clicks, a box or a refinement give one better mask.
+                multimask_output=previous is None
+                and prompt.box is None
+                and len(prompt.points) == 1,
                 **refinement_args,
             )
         except Exception as exc:

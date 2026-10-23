@@ -8,7 +8,9 @@ Run from the annotation feature checkout with its optional viewers installed::
     uv run --no-sync python examples/try_annotation.py --provider cpu --video movie.mp4
 
 SAM 2 defaults to the Large model and requires its optional dependencies and a
-matching local checkpoint. Select Tiny explicitly for lower memory use.
+matching local checkpoint. It runs on a CUDA GPU or Apple silicon when available.
+Tiny loads faster but can flood dark, low-contrast frames; use it to try the
+workflow, not for final outlines.
 See the video annotation guide for setup. This script never downloads a model.
 """
 
@@ -77,7 +79,12 @@ def main() -> None:
     parser.add_argument(
         "--model-config", help="Override the selected model's matching SAM 2 config."
     )
-    parser.add_argument("--device", choices=("cpu", "mps", "cuda"), default="cpu")
+    parser.add_argument(
+        "--device",
+        choices=("auto", "cpu", "mps", "cuda"),
+        default="auto",
+        help="SAM 2 device (default: CUDA, then Apple silicon, then CPU).",
+    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -106,14 +113,16 @@ def main() -> None:
             / "data/annotation_demo"
             / f"sam2.1_hiera_{args.sam2_model.replace('-', '_')}.pt"
         )
+        device = None if args.device == "auto" else args.device
         print(
-            f"Loading SAM 2 on {args.device}: {model_config} ({checkpoint.name})…",
+            f"Loading SAM 2 on {device or 'the fastest available device'}: "
+            f"{model_config} ({checkpoint.name})…",
             flush=True,
         )
         provider = SegmentAnythingProvider.from_sam2(
             model_config,
             checkpoint,
-            device=args.device,
+            device=device,
         )
 
     if args.check:

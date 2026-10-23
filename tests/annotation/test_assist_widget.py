@@ -806,6 +806,96 @@ def test_removing_polygon_preview_disables_accept_and_paint_until_new_prediction
     assert widget.edit_button.isEnabled()
 
 
+class _WarmUp:
+    """A warm-up job that runs only when the test completes it."""
+
+    def __init__(self, provider, frame):
+        self.provider = provider
+        self.frame = frame
+        self.returned = _Signal()
+        self.errored = _Signal()
+        self.finished = _Signal()
+
+    def start(self):
+        pass
+
+    def quit(self):
+        pass
+
+    def complete(self):
+        try:
+            self.provider._prepare(self.frame)
+            self.returned.emit(None)
+        except Exception as exc:
+            self.errored.emit(exc)
+        finally:
+            self.finished.emit()
+
+
+def test_sam_features_are_prepared_before_the_first_prompt(monkeypatch):
+    napari = pytest.importorskip("napari")
+    from neurospatial.annotation import _assist_widget
+    from neurospatial.annotation.segmentation import SegmentAnythingProvider
+
+    class Predictor:
+        def __init__(self):
+            self.images = []
+            self.calls = []
+
+        def set_image(self, image):
+            self.images.append(image)
+
+        def predict(self, **kwargs):
+            self.calls.append(kwargs)
+            mask = np.zeros(self.images[-1].shape[:2], dtype=bool)
+            mask[1:5, 2:7] = True
+            return mask[None], np.array([0.9]), np.zeros((1, 2, 2))
+
+    warm_ups, predictions = [], []
+    monkeypatch.setattr(
+        _assist_widget,
+        "_warm_up",
+        lambda *args: warm_ups.append(_WarmUp(*args)) or warm_ups[-1],
+    )
+    monkeypatch.setattr(
+        _assist_widget,
+        "_predict",
+        lambda *args: predictions.append(_Worker(*args)) or predictions[-1],
+    )
+    predictor = Predictor()
+    viewer = napari.Viewer(show=False)
+    widget = _assist_widget.AnnotationAssistWidget(
+        viewer,
+        np.zeros((8, 12, 3), dtype=np.uint8),
+        provider=SegmentAnythingProvider(predictor),
+        calibration=None,
+        bin_size=None,
+        on_calibration=lambda _: None,
+        on_bin_size=lambda _: None,
+        on_accept=lambda _: None,
+    )
+    try:
+        assert len(warm_ups) == 1
+        assert "Preparing SAM 2" in widget.status.text()
+        assert not widget.suggest_button.isEnabled()
+        # A prompt made during preparation waits for it instead of competing
+        # for the model.
+        widget._inside.add([2.0, 3.0])
+        widget._update_preview()
+        assert not predictions
+        warm_ups[0].complete()
+        assert len(predictor.images) == 1
+        _wait_until(lambda: bool(predictions))
+        predictions[-1].complete()
+        # The prediction reuses the prepared features.
+        assert len(predictor.images) == 1
+        assert widget._proposal is not None
+    finally:
+        widget.dispose()
+        widget.close()
+        viewer.close()
+
+
 def test_sam_box_alone_outlines_and_clicks_refine_it(sam_assist):
     widget = sam_assist["widget"]
     predictor = sam_assist["predictor"]
@@ -819,6 +909,7 @@ def test_sam_box_alone_outlines_and_clicks_refine_it(sam_assist):
     first = predictor.calls[-1]
     assert first["point_coords"] is None
     assert_allclose(first["box"], [1.6, 0.6, 7.4, 5.4], atol=1e-6)
+    assert first["multimask_output"] is False
     assert widget._proposal is not None
     # An inside click refines the box result from its logits, keeping the box.
     widget._inside.add([2.0, 3.0])

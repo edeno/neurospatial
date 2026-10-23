@@ -333,8 +333,26 @@ def test_sam_prediction_selects_best_and_passes_xy_prompt():
     np.testing.assert_array_equal(passed["point_coords"], [[8, 2], [3, 1]])
     np.testing.assert_array_equal(passed["point_labels"], [1, 0])
     np.testing.assert_array_equal(passed["box"], [5, 0, 11, 4])
-    assert passed["multimask_output"] is True
     assert not np.shares_memory(passed["point_coords"], prompt.points)
+
+
+@pytest.mark.parametrize(
+    "points,labels,box,multimask",
+    [
+        # Meta's guidance: only a lone click is ambiguous enough for candidates.
+        (((7, 2),), (1,), None, True),
+        (((7, 2),), (1,), [5, 0, 11, 4], False),
+        (((7, 2), (1, 1)), (1, 0), None, False),
+        ((), (), [5, 0, 11, 4], False),
+    ],
+)
+def test_sam_requests_candidate_masks_only_for_a_single_click(
+    points, labels, box, multimask
+):
+    predictor = _Predictor()
+    image = np.ones((5, 12, 3), dtype=np.uint8)
+    SegmentAnythingProvider(predictor).predict(image, _prompt(points, labels, box))
+    assert predictor.prompts[-1]["multimask_output"] is multimask
 
 
 def test_sam_embedding_cache_content_and_shape_invalidation():
@@ -390,7 +408,6 @@ def test_sam_refinement_uses_selected_raw_logits_and_keeps_direct_calls_independ
     assert len(predictor.prompts) == 3
     direct = provider.predict(image, prompt)
     assert direct.metadata["refinement_steps"] == 0
-    assert predictor.prompts[-1]["multimask_output"] is True
     assert "mask_input" not in predictor.prompts[-1]
 
 
@@ -423,7 +440,6 @@ def test_sam_refinement_restarts_when_its_context_changes(change):
         image, _prompt(points, labels, bounds), previous
     )
     assert "mask_input" not in predictor.prompts[-1]
-    assert predictor.prompts[-1]["multimask_output"] is True
     assert result.steps == 0
     assert previous.image[0, 0, 0] == 1
 
@@ -547,16 +563,50 @@ def test_from_sam2_loads_local_model_on_requested_device(tmp_path, monkeypatch):
         return predictor
 
     modules = {
-        "torch": SimpleNamespace(),
+        "torch": _fake_torch(cuda=False, mps=False),
         "sam2.build_sam": SimpleNamespace(build_sam2=build),
         "sam2.sam2_image_predictor": SimpleNamespace(SAM2ImagePredictor=make_predictor),
     }
     monkeypatch.setattr(importlib, "import_module", modules.__getitem__)
     provider = SegmentAnythingProvider.from_sam2(
-        "configs/sam2.1/model.yaml", checkpoint
+        "configs/sam2.1/model.yaml", checkpoint, device="cpu"
     )
     assert calls == [("configs/sam2.1/model.yaml", str(checkpoint), "cpu")]
     assert provider.predict(np.ones((3, 4, 3), dtype=np.uint8), _prompt()).mask.all()
+
+
+def _fake_torch(*, cuda, mps):
+    return SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: cuda),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: mps)),
+    )
+
+
+@pytest.mark.parametrize(
+    "cuda,mps,expected",
+    [(True, True, "cuda"), (False, True, "mps"), (False, False, "cpu")],
+)
+def test_from_sam2_selects_the_fastest_available_device(
+    tmp_path, monkeypatch, cuda, mps, expected
+):
+    checkpoint = tmp_path / "weights.pt"
+    checkpoint.write_bytes(b"fake weights")
+    devices = []
+
+    def build(config, weights, *, device):
+        devices.append(device)
+        return object()
+
+    modules = {
+        "torch": _fake_torch(cuda=cuda, mps=mps),
+        "sam2.build_sam": SimpleNamespace(build_sam2=build),
+        "sam2.sam2_image_predictor": SimpleNamespace(
+            SAM2ImagePredictor=lambda model: _Predictor()
+        ),
+    }
+    monkeypatch.setattr(importlib, "import_module", modules.__getitem__)
+    SegmentAnythingProvider.from_sam2("configs/sam2.1/model.yaml", checkpoint)
+    assert devices == [expected]
 
 
 def test_from_sam2_incompatible_weights_error_has_context(tmp_path, monkeypatch):
@@ -567,7 +617,7 @@ def test_from_sam2_incompatible_weights_error_has_context(tmp_path, monkeypatch)
         raise ValueError("wrong state dict")
 
     modules = {
-        "torch": SimpleNamespace(),
+        "torch": _fake_torch(cuda=False, mps=False),
         "sam2.build_sam": SimpleNamespace(build_sam2=fail),
         "sam2.sam2_image_predictor": SimpleNamespace(SAM2ImagePredictor=_Predictor),
     }

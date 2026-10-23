@@ -77,6 +77,12 @@ def _run_prediction(
 
 
 @thread_worker(ignore_errors=True)
+def _warm_up(provider: SegmentAnythingProvider, frame: NDArray[np.uint8]) -> None:
+    """Compute SAM image features before the first prompt, off the GUI thread."""
+    provider._prepare(frame)
+
+
+@thread_worker(ignore_errors=True)
 def _predict(
     provider: SegmentationProvider,
     frame: NDArray[np.uint8],
@@ -119,6 +125,7 @@ class AnnotationAssistWidget(QWidget):
         self._generation = 0
         self._job_generation = -1
         self._worker: Any = None
+        self._worker_slots: list[tuple[Any, Any]] = []
         self._pending_preview = False
         # Own the timer separately: napari deletes the dock before dispose().
         self._preview_timer = QTimer()
@@ -292,6 +299,41 @@ class AnnotationAssistWidget(QWidget):
         layout.addWidget(self.roi)
         layout.addWidget(calibration_toggle)
         layout.addWidget(calibration_settings)
+        if isinstance(provider, SegmentAnythingProvider):
+            self._start_warm_up()
+
+    def _start_warm_up(self) -> None:
+        # The first prompt would otherwise wait for the image features. Prompts
+        # made meanwhile wait in the single worker slot and run afterwards.
+        self.suggest_button.setEnabled(False)
+        self.status.setText("Preparing SAM 2 for this frame…")
+        self._start_worker(
+            _warm_up(self._provider, self._frame),
+            self._warm_up_done,
+            self._warm_up_error,
+        )
+
+    def _start_worker(self, worker: Any, returned: Any, errored: Any) -> None:
+        """Run one background job; only one ever uses the provider at a time."""
+        self._worker = worker
+        self._worker_slots = [
+            (worker.returned, returned),
+            (worker.errored, errored),
+            (worker.finished, self._finished),
+        ]
+        for signal, callback in self._worker_slots:
+            signal.connect(callback)
+        worker.start()
+
+    @Slot(object)
+    def _warm_up_done(self, _result: object) -> None:
+        if not self._disposed and not self._pending_preview:
+            self.status.setText("SAM 2 is ready. " + self._prompt_hint())
+
+    @Slot(object)
+    def _warm_up_error(self, exc: Exception) -> None:
+        if not self._disposed:
+            self._error("Could not prepare SAM 2; prompts will retry", exc)
 
     @staticmethod
     def _spin(value: float) -> QDoubleSpinBox:
@@ -513,15 +555,13 @@ class AnnotationAssistWidget(QWidget):
                 provider = replace(provider, tolerance=self.tolerance.value())
             self._job_generation = self._generation
             self._job_prompt = prompt
-            self._worker = _predict(
-                provider, self._frame, prompt, self._refinement, bounds
-            )
-            self._worker.returned.connect(self._show_proposal)
-            self._worker.errored.connect(self._inference_error)
-            self._worker.finished.connect(self._finished)
             self.suggest_button.setEnabled(False)
             self.status.setText("Updating outline…")
-            self._worker.start()
+            self._start_worker(
+                _predict(provider, self._frame, prompt, self._refinement, bounds),
+                self._show_proposal,
+                self._inference_error,
+            )
         except Exception as exc:
             self._worker = None
             self._refinement = None
@@ -592,6 +632,7 @@ class AnnotationAssistWidget(QWidget):
     @Slot()
     def _finished(self) -> None:
         self._worker = None
+        self._worker_slots = []
         if not self._disposed:
             self.suggest_button.setEnabled(True)
             if self._pending_preview and not self._preview_timer.isActive():
@@ -635,16 +676,13 @@ class AnnotationAssistWidget(QWidget):
         self.outline_preview.dispose()
         self._invalidate()
         if self._worker is not None:
-            for signal, callback in (
-                (self._worker.returned, self._show_proposal),
-                (self._worker.errored, self._inference_error),
-                (self._worker.finished, self._finished),
-            ):
+            for signal, callback in self._worker_slots:
                 # Qt already disconnects receiver slots when the dock dies.
                 with suppress(RuntimeError, TypeError):
                     signal.disconnect(callback)
             self._worker.quit()
             self._worker = None
+            self._worker_slots = []
         for signal, callback in self._connections:
             signal.disconnect(callback)
         self._connections.clear()

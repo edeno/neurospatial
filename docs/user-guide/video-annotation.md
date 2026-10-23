@@ -308,14 +308,15 @@ Review the result against the arena walls and obstacles before clicking Done.
 Color similarity can include shadows or nearby objects, so the editable preview
 is part of the workflow. While a new prediction runs, the previous outline is
 dimmed and cannot be accepted. Rapid clicks are combined into the latest request;
-inference runs in the background. The first SAM 2 preview may take longer while
-the model embeds the image. For manual updates, turn off **Update outline as I
+inference runs in the background. SAM 2 starts computing the frame's image
+features as soon as the panel opens, so the first prompt does not wait for them. For manual updates, turn off **Update outline as I
 click**, then click **Update outline** when ready. This works with both providers.
 
 With SAM 2, adding an inside or outside click refines the last displayed model
-prediction using its previous low-resolution logits. The first prediction offers
-multiple candidates internally and selects the highest-scoring mask; later clicks
-request a single refined mask. Moving or removing an existing point starts a fresh
+prediction using its previous low-resolution logits. A single click is
+ambiguous, so the first prediction asks SAM for several candidate masks and
+selects the highest-scoring one; several clicks, a box, or a refinement request
+a single mask, following Meta's guidance. Moving or removing an existing point starts a fresh
 prediction from the remaining prompts. **Clear prompts**, **Discard outline**,
 accepting an outline, and inference errors also reset refinement. Repeating
 **Update outline** with unchanged prompts reuses the same model result.
@@ -388,8 +389,12 @@ and `--model-config configs/sam2.1/sam2.1_hiera_l.yaml` for a matching Large
 checkpoint/config pair. Keep `--no-sync` when launching so uv retains these
 optional packages, which are not part of the core dependency lockfile.
 
-With `--provider sam2`, the launcher defaults to **SAM 2.1 Large**. For a shorter
-initial load and lower memory use, download **Tiny** and choose it explicitly:
+With `--provider sam2`, the launcher defaults to **SAM 2.1 Large** and runs it on
+a CUDA GPU, then Apple silicon, then the CPU, whichever is available first; pass
+`--device cpu` to force the CPU. On Apple silicon, Large computes a frame's
+image features in about 0.2 s, against about 2 s on the CPU. **Tiny** loads
+faster and uses less memory, but on dark, low-contrast frames it can flood the
+background, so use it to try the workflow rather than for final outlines:
 
 ```bash
 curl --fail --location --output data/annotation_demo/sam2.1_hiera_tiny.pt \

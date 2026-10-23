@@ -1796,8 +1796,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `SegmentationProposal`, `SegmentationProvider` and `mask_to_polygons` also work
   without a viewer, preserving disconnected areas and holes. Optional
   `SegmentAnythingProvider.from_sam2` loads separately installed Meta SAM 2
-  from a local checkpoint; model libraries and weights are not bundled or
-  downloaded automatically.
+  from a local checkpoint on a CUDA GPU, then Apple silicon, then the CPU;
+  model libraries and weights are not bundled or downloaded automatically.
+  The editor computes SAM 2's image features as soon as it opens, and asks for
+  candidate masks only for a single click, as Meta recommends.
 
 - `neurospatial.encoding.population_vector_correlation(firing_rates_1,
   firing_rates_2, *, spatial_support, unit_selection, bin_mapping, topology)`
