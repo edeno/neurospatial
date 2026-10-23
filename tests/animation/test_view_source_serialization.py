@@ -126,7 +126,7 @@ def test_fastplotlib_view_statistics_share_lock_with_existing_reader(
 
     monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
     try:
-        assert field._peak is None
+        assert field._extremes is None
         with _existing_read(scene, rows):
             view = scene.show(backend="fastplotlib")
         assert not rows.overlaps
@@ -176,7 +176,7 @@ def test_napari_below_video_statistics_share_lock_with_existing_reader(env):
 
     handle._add = add
     try:
-        assert field._peak is None  # Explicit limits do not compute opacity.
+        assert field._extremes is None  # Nothing is sampled before the build.
         with _existing_read(scene, rows):
             handle._build_fields()
         assert not rows.overlaps

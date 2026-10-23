@@ -426,13 +426,16 @@ def show_animation(
         for name, field in animation.fields.items():
             low, high = field.color_limits()
             vmin, vmax = overrides.get("vmin"), overrides.get("vmax")
+            vmin, vmax = low if vmin is None else vmin, high if vmax is None else vmax
             field_styles.append(
                 {
                     "cmap": overrides.get("cmap", field.cmap),
-                    "vmin": low if vmin is None else vmin,
-                    "vmax": high if vmax is None else vmax,
+                    "vmin": vmin,
+                    "vmax": vmax,
                     "label": overrides.get("colorbar_label", field.label or name),
                     "opaque_from": field._typical_peak(),
+                    # Whether sampled values pass the bottom and top: clipped.
+                    "extend": field._beyond(vmin, vmax),
                 }
             )
     from neurospatial.animation.backends.fastplotlib_backend import render_fastplotlib

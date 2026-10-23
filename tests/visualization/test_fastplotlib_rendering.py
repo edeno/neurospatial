@@ -29,6 +29,7 @@ if _ADAPTER is None:
 
 from neurospatial import Environment  # noqa: E402
 from neurospatial.animation import (  # noqa: E402
+    Animation,
     AnimationView,
     EventOverlay,
     FastplotlibAnimation,
@@ -1023,10 +1024,15 @@ def test_a_1d_environment_is_drawn_as_position_against_time():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="show_animation passes computed color limits to fastplotlib as explicit ones, so the colorbar never marks frames clipped at the top.",
-)
+def _colorbar_triangles(plot):
+    """The clipped-end markers of a colorbar: bottom and top triangles."""
+    return [
+        g
+        for g in plot.docks["right"].graphics
+        if type(g).__name__ == "MeshGraphic" and len(g.positions) == 3
+    ]
+
+
 def test_side_by_side_fields_are_drawn_the_same_size(apparatus, walk):
     t, _, fields = walk
     animation = apparatus.animate_fields(
@@ -1034,21 +1040,41 @@ def test_side_by_side_fields_are_drawn_the_same_size(apparatus, walk):
     ).native
     first, second = animation._plots
     assert first.docks["right"].size == second.docks["right"].size > 0
-    # Computed limits clip about 1% of frames at the top: a triangle says so.
-    triangles = [
-        g
-        for g in first.docks["right"].graphics
-        if type(g).__name__ == "MeshGraphic" and len(g.positions) == 3
-    ]
-    assert len(triangles) == 1  # the bottom is 0: nothing below it
+    # The shared limits put the top at the 99th percentile of the sampled
+    # frames' maxima, so some sampled values pass it: a triangle says so.
+    # Every value is above the bottom, 0, so that end is not marked.
+    assert fields.min() > 0
+    for plot in (first, second):
+        triangles = _colorbar_triangles(plot)
+        assert len(triangles) == 1
+        assert triangles[0].positions.value[:, 1].max() > 1.0  # the top
     explicit = apparatus.animate_fields(
         fields, frame_times=t, backend="fastplotlib", vmin=0.0, vmax=1.0
     ).native
-    assert not [
-        g
-        for g in explicit._plot.docks["right"].graphics
-        if type(g).__name__ == "MeshGraphic" and len(g.positions) == 3
-    ]
+    assert not _colorbar_triangles(explicit._plot)  # 0 to 1 holds every value
+
+
+@pytest.mark.parametrize(
+    ("limits", "bottom", "top"),
+    [((0.2, 0.5), True, True), ((0.0, 0.5), False, True), ((0.2, 1.0), True, False)],
+)
+def test_explicit_limits_mark_the_ends_that_clip_sampled_values(
+    apparatus, walk, limits, bottom, top
+):
+    t, _, fields = walk
+    assert fields.min() < 0.2 and fields.max() > 0.5
+    with (
+        Animation(apparatus, fields, frame_times=t) as scene,
+        scene.show(backend="fastplotlib", vmin=limits[0], vmax=limits[1]) as view,
+    ):
+        tips = [
+            float(triangle.positions.value[:, 1].max())
+            for triangle in _colorbar_triangles(view.native._plot)
+        ]
+        assert (any(tip <= 0.0 for tip in tips), any(tip > 1.0 for tip in tips)) == (
+            bottom,
+            top,
+        )
 
 
 def test_track_lines_break_between_segments_and_across_gaps(track):

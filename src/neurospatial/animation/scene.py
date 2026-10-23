@@ -80,10 +80,7 @@ class AnimationField:
     epochs: np.ndarray | None
     sample_valid: np.ndarray = dataclass_field(init=False)
     interval_valid: np.ndarray = dataclass_field(init=False)
-    _limits: tuple[float, float] | None = dataclass_field(
-        default=None, init=False, repr=False, compare=False
-    )
-    _peak: float | None = dataclass_field(
+    _extremes: tuple[np.ndarray, np.ndarray] | None = dataclass_field(
         default=None, init=False, repr=False, compare=False
     )
 
@@ -164,8 +161,7 @@ class AnimationField:
         # A held [start, stop) row needs no observation at its excluded stop.
         # Keep canonical interval gates separate from exact-sample membership.
         object.__setattr__(self, "interval_valid", _readonly(support.interval_gates))
-        object.__setattr__(self, "_limits", None)
-        object.__setattr__(self, "_peak", None)
+        object.__setattr__(self, "_extremes", None)
 
     def __copy__(self) -> AnimationField:
         result = object.__new__(type(self))
@@ -230,28 +226,15 @@ class AnimationField:
 
     def color_limits(self) -> tuple[float, float]:
         """Return stable display limits, reading at most 100 source rows."""
-        if self._limits is None and self.vmin is not None and self.vmax is not None:
-            object.__setattr__(self, "_limits", (self.vmin, self.vmax))
-        if self._limits is None:
-            from neurospatial.animation._field_stats import (
-                frame_extremes,
-                robust_limits,
-                typical_peak,
-            )
+        if self.vmin is not None and self.vmax is not None:
+            return self.vmin, self.vmax
+        from neurospatial.animation._field_stats import robust_limits
 
-            lows, highs = frame_extremes(self._scale_rows())
-            low, high = robust_limits(lows, highs)
-            object.__setattr__(
-                self,
-                "_limits",
-                (
-                    low if self.vmin is None else self.vmin,
-                    high if self.vmax is None else self.vmax,
-                ),
-            )
-            object.__setattr__(self, "_peak", typical_peak(highs))
-        assert self._limits is not None
-        return self._limits
+        low, high = robust_limits(*self._scale_extremes())
+        return (
+            low if self.vmin is None else self.vmin,
+            high if self.vmax is None else self.vmax,
+        )
 
     def _scale_rows(self) -> list[np.ndarray]:
         indices = np.flatnonzero(self.sample_valid)
@@ -259,14 +242,29 @@ class AnimationField:
             indices = indices[np.linspace(0, len(indices) - 1, 100, dtype=int)]
         return [self[int(index)] for index in indices]
 
-    def _typical_peak(self) -> float:
-        if self._peak is None:
-            from neurospatial.animation._field_stats import frame_extremes, typical_peak
+    def _scale_extremes(self) -> tuple[np.ndarray, np.ndarray]:
+        """Each sampled row's smallest and largest finite value, read once."""
+        if self._extremes is None:
+            from neurospatial.animation._field_stats import frame_extremes
 
-            rows = self._scale_rows()
-            object.__setattr__(self, "_peak", typical_peak(frame_extremes(rows)[1]))
-        assert self._peak is not None
-        return self._peak if self._peak > 0 else 1.0
+            object.__setattr__(self, "_extremes", frame_extremes(self._scale_rows()))
+        assert self._extremes is not None
+        return self._extremes
+
+    def _beyond(self, vmin: float, vmax: float) -> tuple[bool, bool]:
+        """Whether sampled values lie below ``vmin`` and above ``vmax``.
+
+        Colors clip values outside the scale, so a colorbar marks each end
+        that sampled values pass, whether the limits were given or computed.
+        """
+        lows, highs = self._scale_extremes()
+        return bool(np.any(lows < vmin)), bool(np.any(highs > vmax))
+
+    def _typical_peak(self) -> float:
+        from neurospatial.animation._field_stats import typical_peak
+
+        peak = typical_peak(self._scale_extremes()[1])
+        return peak if peak > 0 else 1.0
 
 
 class Animation:

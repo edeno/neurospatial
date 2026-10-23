@@ -1366,7 +1366,9 @@ class FastplotlibAnimation:
     cmap, vmin, vmax, colorbar_label
         Override each field's colormap, limits and colorbar label. A field's
         own limits default to the 1st percentile of its sampled frames'
-        minima and the 99th of their maxima.
+        minima and the 99th of their maxima. A colorbar end has a triangle
+        when values sampled from the field pass it, so are clipped to its
+        color.
     frame_labels : sequence of str, optional
         A label per frame; the frame times by default.
     title : str, optional
@@ -1580,6 +1582,7 @@ class FastplotlibAnimation:
                 for style in styles
             ]
             labels = [style["label"] for style in styles]
+            extensions = [style["extend"] for style in styles]
             track_scales = scales
             if self._projection is not None:
                 # Projection sums bins, so its units keep the field's label
@@ -1683,7 +1686,7 @@ class FastplotlibAnimation:
                     show_regions=show_regions,
                     region_alpha=region_alpha,
                 )
-                draw_colorbar(plot, scales[i], labels[i])
+                draw_colorbar(plot, scales[i], labels[i], beyond=extensions[i])
                 self._layers += _spatial_overlays(
                     plot, overlay_data, clock, env, self._frame_of, self._clock
                 )
@@ -1725,7 +1728,9 @@ class FastplotlibAnimation:
             elif not with_fields:
                 # Independent units need a labeled scale on every track panel.
                 for i, name in enumerate(track_names):
-                    draw_colorbar(self.figure[name], scales[i], labels[i])
+                    draw_colorbar(
+                        self.figure[name], scales[i], labels[i], beyond=extensions[i]
+                    )
             if self._projection is not None or not with_fields:
                 # Every time panel keeps a colorbar's room, so their axes line up.
                 for name in time_panels:
