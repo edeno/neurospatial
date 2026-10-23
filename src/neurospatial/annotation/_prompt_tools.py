@@ -121,6 +121,10 @@ class PromptTools:
     def _layer_removed(self, event: Any) -> None:
         if event.value in self._layers:
             self.deactivate()
+            # Deleting a prompt layer discards its points. The data event
+            # invalidates any prediction made with them.
+            if len(event.value.data):
+                event.value.data = np.empty((0, 2))
 
     def _mouse_drag(self, layer: Points, event: Any) -> Generator[None, None, None]:
         if (

@@ -473,6 +473,27 @@ def test_removing_last_inside_point_clears_preview_without_empty_request(assist)
     assert len(assist["workers"]) == 1
 
 
+def test_deleting_a_prompt_layer_discards_its_points(assist):
+    widget = assist["widget"]
+    widget._activate(widget._inside)
+    widget._inside.add([2.0, 3.0])
+    widget._outside.add([5.0, 6.0])
+    _wait_until(lambda: len(assist["workers"]) == 1)
+    assist["workers"][0].complete()
+    assert widget.accept_button.isEnabled()
+    assist["viewer"].layers.remove(widget._outside)
+    # The prediction that used the outside point can no longer be accepted.
+    assert not widget.accept_button.isEnabled()
+    _wait_until(lambda: len(assist["workers"]) == 2)
+    np.testing.assert_array_equal(assist["workers"][1].prompt.labels, [1])
+    assist["viewer"].layers.remove(widget._inside)
+    assert widget._preview is None
+    assert not len(widget._inside.data)
+    widget._activate(widget._inside)
+    assert widget._inside in assist["viewer"].layers
+    assert not len(widget._inside.data)
+
+
 def test_manual_mode_waits_for_update_button(assist):
     from qtpy.QtTest import QTest
 
