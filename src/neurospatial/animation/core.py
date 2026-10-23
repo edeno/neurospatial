@@ -236,14 +236,6 @@ def _field_streams(
     from neurospatial.animation.scene import AnimationField
 
     if isinstance(fields, np.ndarray):
-        if fields.ndim != 2:
-            raise ValueError(
-                _format_error(
-                    f"fields must have shape (n_frames, n_bins), got {fields.shape}",
-                    fix="pass fields with shape (n_frames, n_bins), e.g. field[None, :]",
-                    why="Why: each animation frame needs one value per environment bin.",
-                )
-            )
         streams: dict[str, Any] = {"field": fields}
     elif isinstance(fields, Mapping):
         streams = dict(fields)
@@ -268,13 +260,18 @@ def _field_streams(
         else:
             streams = {"field": rows}
     if not streams or any(len(values) == 0 for values in streams.values()):
-        raise ValueError(
-            _format_error(
-                "fields cannot be empty (got 0 frames)",
-                fix="pass at least one field and a matching frame_times array",
-                why="Why: an animation cannot render zero frames.",
+        raise _empty_fields_error()
+    for name, values in streams.items():
+        if not isinstance(values, AnimationField) and len(values) != len(frame_times):
+            raise ValueError(
+                _format_error(
+                    f"Field {name!r} has {len(values)} frames, but frame_times "
+                    f"has {len(frame_times)} times",
+                    fix="pass one row per entry of frame_times for every field, "
+                    "or an AnimationField with its own times",
+                    why="Why: each field row is shown from its time in frame_times.",
+                )
             )
-        )
     label = field_options.pop("colorbar_label", None)
     return {
         name: AnimationField(
@@ -286,17 +283,44 @@ def _field_streams(
     }
 
 
+def _empty_fields_error() -> ValueError:
+    return ValueError(
+        _format_error(
+            "fields cannot be empty (got 0 frames)",
+            fix="pass at least one field and a matching frame_times array",
+            why="Why: an animation cannot render zero frames.",
+        )
+    )
+
+
 def _n_frames(fields: Any) -> int:
-    """Frames in the first field, before its streams are built."""
+    """Frames in the first field, before its streams are built.
+
+    Raises
+    ------
+    ValueError
+        If an array of fields is not 2-D, or there are no frames.
+    """
     if isinstance(fields, Mapping):
         fields = next(iter(fields.values()), [])
-    elif not isinstance(fields, np.ndarray):
+    elif isinstance(fields, np.ndarray):
+        if fields.ndim != 2:
+            raise ValueError(
+                _format_error(
+                    f"fields must have shape (n_frames, n_bins), got {fields.shape}",
+                    fix="pass fields with shape (n_frames, n_bins), e.g. field[None, :]",
+                    why="Why: each animation frame needs one value per environment bin.",
+                )
+            )
+    else:
         fields = list(fields)
         if fields and (
             isinstance(fields[0], (list, tuple))
             or (isinstance(fields[0], np.ndarray) and fields[0].ndim == 2)
         ):
             fields = fields[0]
+    if len(fields) == 0:
+        raise _empty_fields_error()
     return len(fields)
 
 
@@ -513,8 +537,9 @@ def animate_fields(
             )
         # The scene was made for this view; closing the view releases it.
         view._add_close_callback(scene.close)
-    except BaseException:
-        scene.close()
+    except BaseException as error:
+        # Report the failure itself; a cleanup failure is noted on it.
+        scene.__exit__(type(error), error, error.__traceback__)
         raise
     return view
 
