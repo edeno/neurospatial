@@ -175,8 +175,13 @@ def annotate_video(
     ------
     ValueError
         If bin_size is not provided when mode requires environment creation,
-        or if ``multiple_boundaries="error"`` and multiple environment
-        boundaries are drawn.
+        if ``multiple_boundaries="error"`` and multiple environment
+        boundaries are drawn, if ``autosave_interval`` is not positive and
+        finite, or if an initial polygon region has metadata keys that are
+        not strings.
+    FileExistsError
+        If ``project_path`` already exists. Resume it with
+        :func:`annotate_project` instead.
     ImportError
         If napari is not installed.
 
