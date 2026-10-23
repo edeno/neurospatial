@@ -210,8 +210,11 @@ class PositionOverlay:
         Position marker diameter in logical screen pixels, independent of
         coordinate units and zoom. Default is 10.0.
     trail_length : int | None, optional
-        Number of recent frames to show as a trail. If None, no trail is rendered.
-        Trail opacity decays over the length. Default is None.
+        Length of the trail in animation frames: the path through this
+        overlay's own samples over the last ``trail_length`` typical frame
+        intervals of the animation, so it spans the same time whatever the
+        tracking rate and in every viewer. If None, no trail is rendered.
+        Default is None.
     interp : {"linear", "nearest"}, optional
         Interpolation method for aligning overlay to animation frames.
         "linear" (default) for smooth trajectories.

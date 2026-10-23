@@ -292,7 +292,8 @@ class _Position:
                 else int(np.searchsorted(self.clock.times, time, side="right")) - 1
             )
             window = np.full((self._trail_points, self.data.data.shape[1]), np.nan)
-            if row >= 0:
+            # A missing position draws neither a marker nor a trail.
+            if row >= 0 and np.all(np.isfinite(current)):
                 shown = self.clock.recent(row, self.frames)
                 if self.clock.times is not None:
                     # Measure the trail from the actual display time. The
@@ -311,11 +312,7 @@ class _Position:
                 edges = np.ones(max(0, len(recent) - 1), dtype=bool)
                 if self.data.interval_valid is not None:
                     edges &= self.data.interval_valid[shown.start : shown.stop - 1]
-                if (
-                    self.clock.times is not None
-                    and time > self.clock.times[row]
-                    and np.all(np.isfinite(current))
-                ):
+                if self.clock.times is not None and time > self.clock.times[row]:
                     recent = np.vstack([recent, current])
                     edges = np.append(edges, True)
                 if len(recent):

@@ -598,7 +598,7 @@ class SceneRenderer:
     def _position(self, ax: Any, position: Any) -> Update:
         trail = _Segments(
             ax,
-            max((position.trail_length or 0) - 1, 0),
+            max(self.prepared.trail_capacity(position) - 1, 0),
             color=position.color,
             alpha=0.6,
             zorder=100,
@@ -610,7 +610,6 @@ class SceneRenderer:
             edgecolor="white",
             zorder=101,
         )
-        times = self.prepared.clock(position)
         valid = position.interval_valid
 
         def update(time: float) -> None:
@@ -619,11 +618,10 @@ class SceneRenderer:
             visible = np.isfinite(point).all()
             segments = []
             if visible and position.trail_length:
-                stop = int(np.searchsorted(times, time, side="right"))
-                start = max(0, stop - position.trail_length)
+                rows = self.prepared.trail_rows(position, time)
                 segments = [
                     position.data[index : index + 2]
-                    for index in range(start, stop - 1)
+                    for index in rows[:-1]
                     if valid is None or valid[index]
                 ]
             trail.set(segments)

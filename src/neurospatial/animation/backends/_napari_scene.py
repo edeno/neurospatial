@@ -634,14 +634,18 @@ class NapariScene:
                 layer: Any = layer,
                 trail: Any = trail,
             ) -> None:
-                points(layer, sample(p, p.data, time))
+                point = sample(p, p.data, time)
+                points(layer, point)
                 if trail is not None:
-                    times = p.times if p.times is not None else scene.frame_times
-                    stop = int(np.searchsorted(times, time, side="right"))
-                    start = max(0, stop - p.trail_length)
+                    # A missing position draws neither a marker nor a trail.
+                    rows = (
+                        self._helper.trail_rows(p, time)
+                        if np.isfinite(point).all()
+                        else range(0)
+                    )
                     segments = [
                         p.data[j : j + 2]
-                        for j in range(start, stop - 1)
+                        for j in rows[:-1]
                         if p.interval_valid is None or p.interval_valid[j]
                     ]
                     paths(trail, segments)

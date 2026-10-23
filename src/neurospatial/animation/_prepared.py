@@ -219,6 +219,32 @@ class PreparedScene:
             "np.ndarray", self.scene.frame_times if item.times is None else item.times
         )
 
+    def trail_seconds(self, position: Any) -> float:
+        """How far back a position's trail reaches: ``trail_length`` scene frames.
+
+        Measured in the scene's typical frame interval, as fastplotlib does,
+        so every view draws the same stretch of recent path whatever the
+        tracking rate.
+        """
+        frames = self.scene.frame_times
+        interval = float(np.median(np.diff(frames))) if len(frames) > 1 else 0.0
+        return float(position.trail_length or 0) * interval
+
+    def trail_rows(self, position: Any, time: float) -> range:
+        """The position's own samples in its trail at ``time``."""
+        times = self.clock(position)
+        stop = int(np.searchsorted(times, time, side="right"))
+        start = int(
+            np.searchsorted(times, time - self.trail_seconds(position), side="left")
+        )
+        return range(min(start, stop), stop)
+
+    def trail_capacity(self, position: Any) -> int:
+        """The most samples any trail of ``position`` holds."""
+        times = self.clock(position)
+        starts = np.searchsorted(times, times - self.trail_seconds(position), "left")
+        return int(np.max(np.arange(1, len(times) + 1) - starts, initial=0))
+
     def sample(
         self,
         item: Any,

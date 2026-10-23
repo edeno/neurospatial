@@ -144,3 +144,36 @@ def test_1d_field_axes_stay_fixed_and_keep_markers_through_missing_rows():
             if artist.get_visible() and len(artist.get_offsets())
         ]
         assert any(np.allclose(offsets, [[12.0, 0.0]]) for offsets in markers)
+
+
+def test_trail_spans_scene_frames_whatever_the_tracking_rate():
+    # trail_length counts animation frames, as in fastplotlib: 60 Hz tracking
+    # under a 10 Hz field still trails 0.3 s for trail_length=3, every sample.
+    from matplotlib.collections import LineCollection
+
+    from neurospatial import Environment
+    from neurospatial.animation import Animation, PositionOverlay
+
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), (np.arange(5.0), np.arange(5.0))
+    )
+    frames = np.arange(11) * 0.1
+    tracking = np.arange(61) / 60
+    path = np.column_stack([np.linspace(0.5, 3.5, 61), np.full(61, 2.0)])
+    position = PositionOverlay(path, times=tracking, trail_length=3)
+    with Animation(
+        env, np.ones((11, env.n_bins)), frame_times=frames, overlays=[position]
+    ) as scene:
+        # Off the sample grid, so the 0.3 s window edge is not a roundoff tie.
+        scene.render_frame(0.805, dpi=30)
+        rows = scene._renderer.prepared.trail_rows(
+            scene._overlay_data.positions[0], 0.805
+        )
+        assert tracking[rows.start] == pytest.approx(31 / 60)
+        assert tracking[rows.stop - 1] == pytest.approx(48 / 60)
+        (trail,) = [
+            artist
+            for artist in scene._renderer.figure.axes[0].collections
+            if isinstance(artist, LineCollection) and len(artist.get_segments())
+        ]
+        assert len(trail.get_segments()) == len(rows) - 1 == 17
