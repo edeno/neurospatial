@@ -7,7 +7,6 @@ scene and provides utilities for working with large-scale time series data.
 from __future__ import annotations
 
 import copy
-
 import importlib.util
 import logging
 import warnings
@@ -239,29 +238,22 @@ def _field_streams(
 
     if isinstance(fields, Mapping):
         streams: dict[str, Any] = dict(fields)
-    elif not isinstance(fields, (list, tuple)):
-        # Arrays and lazy readers (memmap, h5py) are one field, read by row.
-        streams = {"field": fields}
-    else:
-        rows = fields
-        several = bool(rows) and (
-            isinstance(rows[0], (list, tuple))
-            or (isinstance(rows[0], np.ndarray) and rows[0].ndim == 2)
+    elif _is_field_list(fields):
+        names = (
+            list(layer_names)
+            if layer_names is not None
+            else [f"field {i + 1}" for i in range(len(fields))]
         )
-        if several:
-            names = (
-                list(layer_names)
-                if layer_names is not None
-                else [f"field {i + 1}" for i in range(len(rows))]
+        if len(names) != len(fields):
+            raise ValueError(
+                f"layer_names has {len(names)} names for {len(fields)} fields. "
+                "Pass one name per field."
             )
-            if len(names) != len(rows):
-                raise ValueError(
-                    f"layer_names has {len(names)} names for {len(rows)} fields. "
-                    "Pass one name per field."
-                )
-            streams = dict(zip(names, rows, strict=True))
-        else:
-            streams = {"field": rows}
+        streams = dict(zip(names, fields, strict=True))
+    else:
+        # Arrays, lazy readers (memmap, h5py) and lists of frames are one
+        # field, read by row.
+        streams = {"field": fields}
     if not streams or any(len(values) == 0 for values in streams.values()):
         raise _empty_fields_error()
     for name, values in streams.items():
@@ -309,6 +301,22 @@ def _field_streams(
     return built
 
 
+def _is_field_list(fields: Any) -> bool:
+    """Whether a list holds several fields rather than one field's frames.
+
+    Each item of a field list is itself a sequence of frames: a list, a
+    tuple or a 2-D array.
+    """
+    return (
+        isinstance(fields, (list, tuple))
+        and bool(fields)
+        and (
+            isinstance(fields[0], (list, tuple))
+            or (isinstance(fields[0], np.ndarray) and fields[0].ndim == 2)
+        )
+    )
+
+
 def _empty_fields_error() -> ValueError:
     return ValueError(
         _format_error(
@@ -347,13 +355,7 @@ def _n_frames(fields: Any) -> int:
                     why="Why: each animation frame needs one value per environment bin.",
                 )
             )
-    elif isinstance(fields, (list, tuple)) and (
-        fields
-        and (
-            isinstance(fields[0], (list, tuple))
-            or (isinstance(fields[0], np.ndarray) and fields[0].ndim == 2)
-        )
-    ):
+    elif _is_field_list(fields):
         fields = fields[0]
     if len(fields) == 0:
         raise _empty_fields_error()
@@ -472,14 +474,9 @@ def animate_fields(
 
     # A misspelled region name fails here, before any frame is rendered.
     shown_region_names(env, show_regions)
-    if not np.isfinite(speed) or speed <= 0:
-        raise ValueError("speed must be a positive finite playback multiplier.")
-    if (
-        isinstance(max_playback_fps, bool)
-        or not isinstance(max_playback_fps, (int, np.integer))
-        or max_playback_fps <= 0
-    ):
-        raise ValueError("max_playback_fps must be a positive integer.")
+    from neurospatial.animation._view import _checked_playback
+
+    _checked_playback(speed, max_playback_fps)
     from neurospatial.animation.overlays import _validate_frame_times
 
     frame_times = _validate_frame_times(frame_times, _n_frames(fields))
