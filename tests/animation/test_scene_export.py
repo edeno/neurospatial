@@ -332,3 +332,49 @@ def test_published_files_get_the_usual_permissions(scene, tmp_path, name):
         os.umask(umask)
     # Readable by others, e.g. a web server, like any file the user writes.
     assert path.stat().st_mode & 0o777 == 0o644
+
+
+@pytest.mark.parametrize("changed", ["caller array", "adapter source"])
+def test_workers_render_the_observations_the_scene_prepared(tmp_path, changed):
+    # Changing the caller's arrays, or what an adapter would read, after the
+    # scene is built changes neither serial nor parallel rendering.
+    from neurospatial.animation.overlays import PositionData
+
+    rng = np.random.default_rng(5)
+    env = Environment.from_samples(rng.uniform(0, 10, (100, 2)), bin_size=2)
+    times = np.arange(6) / 10
+    path = rng.uniform(1, 9, (6, 2))
+
+    class Adapter:
+        """Reads a source the caller may change later; not picklable."""
+
+        times = None
+
+        def convert_to_data(self, frame_times, n_frames, env):
+            return PositionData(
+                data=path.copy(),
+                times=frame_times.copy(),
+                color="cyan",
+                size=6.0,
+                trail_length=None,
+            )
+
+    overlay = (
+        PositionOverlay(path, times, color="red")
+        if changed == "caller array"
+        else Adapter()
+    )
+    scene = Animation(
+        env,
+        {"rate": AnimationField(rng.random((6, env.n_bins)), times)},
+        overlays=[overlay],
+    )
+    with scene:
+        serial = _embedded(scene.export(tmp_path / "serial.html", fps=10, dpi=30))
+        path[:] = 5.0
+        parallel = _embedded(
+            scene.export(tmp_path / "parallel.html", fps=10, dpi=30, n_workers=2)
+        )
+    assert len(parallel) == len(serial) == 6
+    for frame, reference in zip(parallel, serial, strict=True):
+        np.testing.assert_array_equal(frame, reference)

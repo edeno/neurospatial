@@ -1,8 +1,9 @@
 """Render scene frames in worker processes, delivered in order to one encoder.
 
-Each worker rebuilds an equivalent :class:`Animation` from its construction
-arguments: the scene itself holds locks and open video readers, while file
-paths, arrays and environments travel by pickle. Memory-mapped arrays are
+Each worker rebuilds an equivalent :class:`Animation` around the overlay data
+the parent prepared, so every worker renders the parent's observations: the
+scene itself holds locks and open video readers, while file paths, arrays,
+environments and prepared overlays travel by pickle. Memory-mapped arrays are
 sent as a reference to their file and reopened read-only, so a recording is
 not copied into every worker. Workers apply the parent's Matplotlib settings,
 so frames are identical to rendering in the parent.
@@ -80,10 +81,7 @@ def _pickled_scene(scene: Any, n_workers: int) -> dict[str, Any]:
             (f"field {name!r}", f"field:{name}", field)
             for name, field in arguments.pop("fields").items()
         ),
-        *(
-            (f"overlay {index} ({type(overlay).__name__})", f"overlay:{index}", overlay)
-            for index, overlay in enumerate(arguments.pop("overlays"))
-        ),
+        ("the overlays", "overlay_data", arguments.pop("overlay_data")),
         *((name.replace("_", " "), name, value) for name, value in arguments.items()),
     ]
     pickled = {}
@@ -91,6 +89,8 @@ def _pickled_scene(scene: Any, n_workers: int) -> dict[str, Any]:
         try:
             pickled[key] = _dumps(value)
         except Exception as error:
+            if key == "overlay_data":
+                label = _unpicklable_overlay(value)
             raise ValueError(
                 f"Parallel export (n_workers={n_workers}) sends the scene to "
                 f"worker processes, but {label} cannot be pickled "
@@ -100,6 +100,21 @@ def _pickled_scene(scene: Any, n_workers: int) -> dict[str, Any]:
                 "open readers, locks, lambdas or local functions."
             ) from error
     return pickled
+
+
+def _unpicklable_overlay(data: Any) -> str:
+    """Name the first prepared overlay that cannot be pickled."""
+    import dataclasses
+
+    for field in dataclasses.fields(data):
+        items = getattr(data, field.name)
+        for index, item in enumerate(items if isinstance(items, list) else ()):
+            try:
+                _dumps(item)
+            except Exception:
+                kind = type(item).__name__.removesuffix("Data")
+                return f"{kind} overlay {index}"
+    return "the overlays"
 
 
 _worker: dict[str, Any] = {}
@@ -126,20 +141,18 @@ def _renderer() -> Any:
         from neurospatial.animation.scene import Animation
 
         matplotlib.rcParams.update(_worker.pop("rc_params"))
-        arguments: dict[str, Any] = {"fields": {}, "overlays": []}
+        arguments: dict[str, Any] = {"fields": {}}
         for key, data in _worker.pop("pickled").items():
             value = pickle.loads(data)
             kind, _, name = key.partition(":")
             if kind == "field":
                 arguments["fields"][name] = value
-            elif kind == "overlay":
-                arguments["overlays"].append(value)
             else:
                 arguments[key] = value
         # The parent already reported construction warnings for this scene.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            scene = Animation(**arguments)
+            scene = Animation._from_prepared(**arguments)
         # Release video readers when the worker exits.
         Finalize(None, scene.close, exitpriority=0)
         _worker["renderer"] = SceneRenderer(

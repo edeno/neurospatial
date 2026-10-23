@@ -597,12 +597,17 @@ class Animation:
             )
 
     def _construction_arguments(self) -> dict[str, Any]:
-        """Arguments that rebuild an equivalent scene, e.g. in a worker process."""
+        """Arguments of :meth:`_from_prepared` that rebuild this scene elsewhere.
+
+        Overlays travel as the data this scene prepared from them, so a rebuilt
+        scene renders the same observations even if the caller's arrays or an
+        adapter's source changed since.
+        """
         return {
             "env": self.env,
             "fields": dict(self.fields),
             "frame_times": self.frame_times,
-            "overlays": self.overlays,
+            "overlay_data": self._overlay_data,
             "title": self.title,
             "window_seconds": self.window_seconds,
             "show_regions": self.show_regions,
@@ -610,6 +615,24 @@ class Animation:
             "scale_bar": self.scale_bar,
             "track": self.track,
         }
+
+    @classmethod
+    def _from_prepared(cls, *, overlay_data: Any, **arguments: Any) -> Animation:
+        """A scene around overlay data another scene prepared, as in an export worker.
+
+        The data was validated when it was prepared; readers in it are this
+        scene's to close.
+        """
+        from neurospatial.animation._resources import _OwnedReaders
+        from neurospatial.animation.overlays import _freeze_overlay_arrays
+
+        scene = cls(**arguments)
+        _freeze_overlay_arrays(overlay_data)
+        scene._overlay_data = overlay_data
+        scene._owned_readers = _OwnedReaders(
+            video.reader for video in overlay_data.videos
+        )
+        return scene
 
     def show(self, *, backend: str = "widget", **kwargs: Any) -> AnimationView:
         """Open an interactive view of this scene."""
