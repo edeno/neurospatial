@@ -1258,13 +1258,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   lost.
 
 - `simulate_trajectory_laps` and `simulate_session(trajectory_method="laps")`
-  refuse three inputs they used to accept (see Fixed): a custom
+  refuse four inputs they used to accept (see Fixed): a custom
   `outbound_path` or `inbound_path` whose consecutive bins are not neighbors
   in `env.connectivity`; the default `speed_mean` on an environment whose
   units are unset or not a metric length (`simulate_trajectory_laps` only;
-  pass `speed_mean=`); and an environment whose bins at the smallest and
+  pass `speed_mean=`); an environment whose bins at the smallest and
   largest x are not connected, where there is no default path (pass
-  `outbound_path=`).
+  `outbound_path=`); and a path that steps between neighboring bins whose
+  cells do not touch inside the environment, such as across a bridge between
+  two rooms of an `Environment.combine()` environment with no bins between
+  them, where every route would leave the environment.
 
   ```python
   # before: jumped straight from bin 0 to bin 2
@@ -2520,9 +2523,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - `simulate_trajectory_laps` simulates a running animal: the default speed
   is 20 cm/s expressed in the environment's units (`speed_mean=None`;
   environments without metric units need `speed_mean=`), and positions move
-  continuously along the path instead of jumping between bin centers. On a
-  track the lap runs along the centerline and turns at the node where two
-  segments meet, so every position stays on the track. Before,
+  continuously along the path instead of jumping between bin centers. Every
+  position stays inside the environment: on a track the lap runs along the
+  centerline and turns at the node where two segments meet, and between
+  planar cells (grids, hexagons, triangles, polygon arenas, clipped or
+  wall-split cells, mazes) it takes the shortest route inside the two cells
+  that keeps to the arena outline and off walls. Before,
   the default `speed_mean=0.1` was read in environment units (0.1 cm/s), so
   three laps of a 1 m track took 45 minutes and 1.3 million samples, 99.99 %
   of them exactly zero steps. Sessions with `duration`, such as

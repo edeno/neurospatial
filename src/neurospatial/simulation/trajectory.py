@@ -672,6 +672,11 @@ def simulate_trajectory_laps(
         If custom paths are empty, contain invalid bin indices or are not
         chains of neighboring bins, or if no connected path joins the bins
         with the smallest and largest first coordinate.
+    ValueError
+        If a path steps between neighboring bins whose cells do not touch
+        inside the environment, such as a bridge between two rooms of an
+        ``Environment.combine()`` environment with no bins between them:
+        every route between them would leave the environment.
 
     Notes
     -----
@@ -681,8 +686,13 @@ def simulate_trajectory_laps(
     - On a track (``env.is_linearized_track``), it runs along the centerline
       and turns at the node where two track segments meet, so its distance
       along the track (``env.to_linear``) changes at the running speed.
-    - In other environments it runs straight between the centers of the
-      neighboring cells.
+    - Between planar cells (grids, hexagons, triangles, polygon arenas,
+      clipped or wall-split cells), it takes the shortest route between the
+      two centers inside the two cells, kept inside the arena outline and
+      off its walls. Cells that touch only at a corner outside the arena are
+      joined through the cells of the bins neighboring both.
+    - In other environments, such as 3-D grids, it runs straight between the
+      centers of the neighboring cells.
 
     Examples
     --------
@@ -861,6 +871,14 @@ def _simulate_trajectory_laps(
     # Initialize random number generator
     rng = np.random.default_rng(seed)
 
+    # Name the paths in errors as the scientist knows them.
+    path_names = (
+        "outbound_path"
+        if outbound_path is not None
+        else "the path between the bins at the smallest and largest x",
+        "inbound_path" if inbound_path is not None else "the reversed outbound path",
+    )
+
     # Compute paths if not provided
     if outbound_path is None:
         # Use shortest path between environment extrema
@@ -919,9 +937,12 @@ def _simulate_trajectory_laps(
                 )
 
     # Each step between neighboring bins follows the environment's geometry
-    # (along a track's centerline), not the straight line between their
-    # centers, which can leave the environment.
-    routes = [lap_route(env, path) for path in (outbound_path, inbound_path)]
+    # (along a track's centerline, inside the cells otherwise), not the
+    # straight line between their centers, which can leave the environment.
+    routes = [
+        lap_route(env, path, call=call, path_name=name)
+        for path, name in zip((outbound_path, inbound_path), path_names, strict=True)
+    ]
     # Distance run from the start of each route to each of its waypoints.
     route_distances = [
         np.concatenate(

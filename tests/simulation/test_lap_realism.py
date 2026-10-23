@@ -6,15 +6,20 @@ import warnings
 import networkx as nx
 import numpy as np
 import pytest
-from shapely.geometry import box
+import shapely
+from shapely.geometry import LineString, Polygon, box
 
 from neurospatial import Environment
+from neurospatial.geometry import OpenArena
+from neurospatial.layout import create_layout
+from neurospatial.ops import Affine2D
 from neurospatial.simulation import (
     linear_track_session,
     simulate_session,
     simulate_trajectory_laps,
     tmaze_alternation_session,
 )
+from neurospatial.simulation.mazes import make_y_maze
 
 DEFAULT_SPEED_CM_PER_S = 20.0
 MAX_SPEED_CM_PER_S = 1.5 * DEFAULT_SPEED_CM_PER_S
@@ -217,7 +222,7 @@ def test_path_errors_name_the_function_called(two_rooms_env, box_env):
 
 
 # Laps follow the environment's geometry: a step between two neighboring bins
-# never cuts across space outside the environment.
+# never cuts across space outside the environment or through a wall.
 
 
 @pytest.fixture(scope="module")
@@ -297,3 +302,131 @@ def _walk_over_every_neighbor_pair(env):
     """A chain of neighboring bins that steps across every open pair."""
     circuit = list(nx.eulerian_circuit(nx.eulerize(env.connectivity)))
     return [int(u) for u, _v in circuit] + [int(circuit[-1][1])]
+
+
+L_SHAPE = Polygon([(0, 0), (40, 0), (40, 10), (10, 10), (10, 40), (0, 40)])
+ANGLE = 0.5
+ROTATION = np.array(
+    [
+        [np.cos(ANGLE), -np.sin(ANGLE), 3.0],
+        [np.sin(ANGLE), np.cos(ANGLE), -2.0],
+        [0.0, 0.0, 1.0],
+    ]
+)
+
+
+def _star(n_points=5, outer=40.0, inner=12.0):
+    angle = np.linspace(0, 2 * np.pi, 2 * n_points, endpoint=False)
+    radius = np.where(np.arange(2 * n_points) % 2 == 0, outer, inner)
+    return Polygon(np.c_[radius * np.cos(angle), radius * np.sin(angle)])
+
+
+def _l_mask_grid():
+    mask = np.ones((6, 6), bool)
+    mask[3:, 3:] = False
+    edges = np.arange(7.0) * 2
+    return Environment.from_grid_mask(mask, grid_edges=(edges, edges), units="cm")
+
+
+def _walled_box(wall, **options):
+    return Environment.from_grid_mask(
+        np.ones((4, 4), bool),
+        grid_edges=(np.arange(5.0) * 5, np.arange(5.0) * 5),
+        arena=OpenArena(box(0, 0, 20, 20), walls=(wall,)),
+        units="cm",
+        **options,
+    )
+
+
+def _samples_in(polygon, n=6000, seed=0):
+    rng = np.random.default_rng(seed)
+    low_x, low_y, high_x, high_y = polygon.bounds
+    points = rng.uniform((low_x, low_y), (high_x, high_y), (n, 2))
+    return points[shapely.contains_xy(polygon, points[:, 0], points[:, 1])]
+
+
+LAYOUTS = {
+    "grid_concave_corner": _l_mask_grid,
+    "grid_rotated": lambda: Environment.from_polygon(
+        L_SHAPE, bin_size=3, units="cm"
+    ).apply_transform(Affine2D(ROTATION)),
+    "hexagonal": lambda: Environment.from_samples(
+        _samples_in(L_SHAPE), bin_size=3, layout="hexagonal", units="cm"
+    ),
+    "triangular_mesh": lambda: Environment.from_layout(
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon(
+                [(0, 0), (30, 0), (30, 30), (0, 30)],
+                [[(10, 10), (20, 10), (20, 20), (10, 20)]],
+            ),
+            point_spacing=4.0,
+        )
+    ).with_metadata(units="cm"),
+    "polygon_arena": lambda: Environment.from_polygon(_star(), bin_size=4, units="cm"),
+    "clipped_cells": lambda: Environment.from_polygon(
+        _star(), bin_size=5, units="cm"
+    ).clip(_star()),
+    "wall_split": lambda: _walled_box(
+        LineString([(1.5, 1.0), (18.5, 14.5)]), wall_fit="split"
+    ),
+    "wall_split_bent": lambda: _walled_box(
+        LineString([(1.0, 2.5), (7.5, 12.5), (1.0, 18.0)]), wall_fit="split"
+    ),
+    "combined": lambda: Environment.combine(
+        {
+            "box": Environment.from_polygon(box(0, 0, 20, 20), bin_size=2, units="cm"),
+            "corridor": Environment.from_polygon(
+                box(20, 8, 40, 12), bin_size=2, units="cm"
+            ),
+        }
+    ),
+    "y_maze": lambda: make_y_maze().env_2d,
+}
+
+
+@pytest.fixture(scope="module", params=list(LAYOUTS), ids=list(LAYOUTS))
+def layout_laps(request):
+    """An environment and laps that step across every one of its neighbor pairs."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        env = LAYOUTS[request.param]()
+    walk = _walk_over_every_neighbor_pair(env)
+    positions, _times = simulate_trajectory_laps(
+        env, n_laps=2, outbound_path=walk, seed=1, sampling_frequency=200.0
+    )
+    return env, positions
+
+
+def test_laps_stay_inside_every_layout(layout_laps):
+    env, positions = layout_laps
+    assert np.all(env.bin_at(positions) >= 0)
+
+
+def test_laps_do_not_cross_walls(layout_laps):
+    env, positions = layout_laps
+    walls = env.arena.walls if env.arena is not None else ()
+    if not walls:
+        pytest.skip("no walls")
+    steps = shapely.linestrings(np.stack([positions[:-1], positions[1:]], axis=1))
+    longest_step = shapely.length(steps).max()
+    for wall in walls:
+        # The straight line between two samples may clip the very end of a
+        # wall the lap runs around, but never cuts through the wall itself.
+        crossings = shapely.intersection(steps[shapely.crosses(steps, wall)], wall)
+        ends = shapely.multipoints(shapely.get_coordinates(wall)[[0, -1]])
+        assert np.all(shapely.distance(crossings, ends) <= longest_step)
+
+
+def test_bridge_across_a_gap_is_refused():
+    """Two rooms with no bins between them: no lap can stay inside."""
+    env = Environment.combine(
+        {
+            "left": Environment.from_polygon(box(0, 0, 20, 20), bin_size=2, units="cm"),
+            "right": Environment.from_polygon(
+                box(30, 0, 50, 20), bin_size=2, units="cm"
+            ),
+        }
+    )
+    with pytest.raises(ValueError, match="leave the environment"):
+        simulate_trajectory_laps(env, n_laps=2, seed=1)
