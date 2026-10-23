@@ -20,6 +20,10 @@ RegionType = Literal["environment", "hole", "region", "wall", "landmark"]
 # - "error": Raise an error if multiple boundaries are drawn
 MultipleBoundaryStrategy = Literal["last", "first", "error"]
 
+# What a session annotates: only the environment boundary, only named regions,
+# or both
+AnnotationMode = Literal["environment", "regions", "both"]
+
 
 @dataclass(frozen=True)
 class AnnotationConfig:

@@ -6,7 +6,7 @@ import json
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
@@ -29,7 +29,7 @@ from neurospatial.annotation._draft import add_polygons, annotation_roles
 from neurospatial.annotation._polygon_outline import PolygonOutline
 from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
 from neurospatial.annotation._state import AnnotationModeState, make_unique_name
-from neurospatial.annotation._types import MultipleBoundaryStrategy
+from neurospatial.annotation._types import AnnotationMode, MultipleBoundaryStrategy
 from neurospatial.annotation.project import AnnotationProject, AnnotationShape
 from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
@@ -97,7 +97,7 @@ class AnnotationProjectSession:
         video_path: str | Path | None,
         frame_index: int,
         calibration: VideoCalibration | None,
-        mode: Literal["environment", "regions", "both"],
+        mode: AnnotationMode,
         bin_size: float | None,
         simplify_tolerance: float | None,
         multiple_boundaries: MultipleBoundaryStrategy,

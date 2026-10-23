@@ -11,6 +11,7 @@ import numpy as np
 
 from neurospatial.annotation._types import (
     AnnotationConfig,
+    AnnotationMode,
     MultipleBoundaryStrategy,
     RegionType,
 )
@@ -448,7 +449,7 @@ def _run_annotation_editor(
     video_path: Path | None,
     frame_index: int,
     calibration: VideoCalibration | None,
-    mode: Literal["environment", "regions", "both"],
+    mode: AnnotationMode,
     bin_size: float | None,
     simplify_tolerance: float | None,
     multiple_boundaries: MultipleBoundaryStrategy,

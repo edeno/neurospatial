@@ -13,7 +13,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast, get_args
+from typing import Any, cast, get_args
 from uuid import uuid4
 from zipfile import BadZipFile
 
@@ -21,7 +21,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import read_only_copy
-from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
+from neurospatial.annotation._types import (
+    AnnotationMode,
+    MultipleBoundaryStrategy,
+    RegionType,
+)
 from neurospatial.ops.transforms import Affine2D, VideoCalibration
 from neurospatial.regions.core import (
     _freeze_metadata,
@@ -32,7 +36,6 @@ from neurospatial.regions.core import (
 __all__ = ["AnnotationProject", "AnnotationShape"]
 
 _SHAPE_TYPES = frozenset({"polygon", "path", "line", "rectangle", "ellipse"})
-_MODES = frozenset({"environment", "regions", "both"})
 _VERSION = 1
 _FORMAT = "neurospatial.annotation"
 
@@ -189,7 +192,7 @@ class AnnotationProject:
     shapes: tuple[AnnotationShape, ...]
     video_path: str | None
     frame_index: int
-    mode: Literal["environment", "regions", "both"]
+    mode: AnnotationMode
     bin_size: float | None
     simplify_tolerance: float | None
     multiple_boundaries: MultipleBoundaryStrategy
@@ -203,7 +206,7 @@ class AnnotationProject:
         video_path: str | Path | None = None,
         frame_index: int = 0,
         calibration: VideoCalibration | None = None,
-        mode: Literal["environment", "regions", "both"] = "both",
+        mode: AnnotationMode = "both",
         bin_size: float | None = None,
         simplify_tolerance: float | None = None,
         multiple_boundaries: MultipleBoundaryStrategy = "last",
@@ -227,7 +230,7 @@ class AnnotationProject:
             raise ValueError("frame_index must be a nonnegative integer.")
         if video_path is not None and not isinstance(video_path, (str, Path)):
             raise ValueError("video_path must be a string, Path, or None.")
-        if mode not in _MODES:
+        if mode not in get_args(AnnotationMode):
             raise ValueError(f"Unknown annotation mode {mode!r}.")
         if multiple_boundaries not in get_args(MultipleBoundaryStrategy):
             raise ValueError(
