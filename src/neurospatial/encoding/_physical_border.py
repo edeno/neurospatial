@@ -155,7 +155,7 @@ def _prepare_physical_border(
     contact_cells, contact_walls = cells, walls
     forward = None
     if frame is not None:
-        contact_cells, _internal, _centers, inverse, frames = frame
+        contact_cells, _internal, _centers, inverse, frames, _errors = frame
         contact_walls = physical_walls(frames[-1].base)
         forward = np.asarray(np.linalg.inv(inverse), dtype=np.float64)
 

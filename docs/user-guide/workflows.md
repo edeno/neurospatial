@@ -363,9 +363,9 @@ comparison.summary_table()
 - Labels come from your task: a trial table converted to one label per frame,
   `laps_to_direction_labels` on detected laps,
   `goal_pair_direction_labels` on segmented trials, or door-state intervals.
-  Samples labeled `None` or `NaN` are left out; pass `missing_label="other"`
-  for the `"other"` that the direction-label functions give to frames outside
-  any lap or trial.
+  Samples labeled `None` or `NaN` are left out; the direction-label
+  functions give `None` to frames outside any lap or trial; pass
+  `missing_label=` if your own labels use another value.
 - Build `valid` from your tracking quality, for example
   `np.isfinite(positions).all(axis=1)` plus your likelihood threshold.
 - When you join several recordings on one clock, pass `break_before`, True at

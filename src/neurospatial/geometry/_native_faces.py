@@ -86,9 +86,7 @@ class NativeFaces(ReadOnlyState):
         elif self.family == "hex":
             graph, volumes = hex_geometry(graph, bins.sizes)
         elif self.family == "mesh":
-            graph, volumes = mesh_geometry(
-                graph, bins.centers, bins.sizes, *self.arrays
-            )
+            graph, volumes = mesh_geometry(graph, bins.sizes, *self.arrays)
         else:
             input_order = {
                 frozenset((int(u), int(v))): i for i, (u, v) in enumerate(pairs)

@@ -50,6 +50,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, intervals_contain
 from neurospatial._observation import (
     _validated_signal_times,
+    label_codes,
     label_runs,
     resolve_sample_support,
     validate_break_before,
@@ -421,8 +422,8 @@ class LabelEpochsResult(
         Number of input samples.
     max_gap : float or None
         The gap limit that was applied, in seconds.
-    epochs : NDArray[np.float64] or None, shape (n_windows, 2)
-        Normalized half-open windows that were applied.
+    input_epochs : NDArray[np.float64] or None, shape (n_windows, 2)
+        The normalized ``epochs=`` windows that were applied, or None.
     missing_label : hashable or None
         The label value treated as missing, besides ``None`` and ``NaN``.
     n_declared_breaks : int
@@ -453,7 +454,7 @@ class LabelEpochsResult(
     unsupported_labels: tuple[Hashable, ...]
     n_samples: int
     max_gap: float | None
-    epochs: NDArray[np.float64] | None
+    input_epochs: NDArray[np.float64] | None
     missing_label: Hashable | None
     n_declared_breaks: int
 
@@ -558,7 +559,7 @@ class LabelEpochsResult(
         pandas.DataFrame
             Columns ``label``, ``start``, ``stop``, ``duration`` (seconds),
             ``first_interval``, ``last_interval`` and ``n_intervals``.
-            ``df.attrs`` holds ``max_gap``, ``epochs`` (list of rows or None),
+            ``df.attrs`` holds ``max_gap``, ``input_epochs`` (list of rows or None),
             ``missing_label``, ``n_declared_breaks`` and
             ``allocation="interval_start"``.
 
@@ -572,6 +573,15 @@ class LabelEpochsResult(
           label  start  stop  n_intervals
         0     a    0.0  0.50            2
         1     b    0.5  0.75            1
+
+        The ``epochs=`` windows that were applied are recorded as
+        ``input_epochs``:
+
+        >>> result = labels_to_epochs(times, ["a", "a", "b", "b"], epochs=[(0.0, 0.5)])
+        >>> result.input_epochs
+        array([[0. , 0.5]])
+        >>> result.epochs_table().attrs["input_epochs"]
+        [[0.0, 0.5]]
         """
         import pandas as pd
 
@@ -592,7 +602,9 @@ class LabelEpochsResult(
         )
         df.attrs.update(
             max_gap=self.max_gap,
-            epochs=None if self.epochs is None else self.epochs.tolist(),
+            input_epochs=(
+                None if self.input_epochs is None else self.input_epochs.tolist()
+            ),
             missing_label=self.missing_label,
             n_declared_breaks=self.n_declared_breaks,
             allocation="interval_start",
@@ -768,8 +780,6 @@ def labels_to_epochs(
     >>> list(labels_to_epochs(np.arange(5.0) / 10, labels))
     [('arm1', 'out'), ('arm1', 'in')]
     """
-    import pandas as pd
-
     call = "labels_to_epochs"
     t = _validated_signal_times(times, call=call)
     n_samples = t.size
@@ -791,17 +801,7 @@ def labels_to_epochs(
     breaks = validate_break_before(break_before, n_samples, call=call)
     windows = as_intervals(epochs, name="epochs")
 
-    factorized, uniques = pd.factorize(label_array[:-1], use_na_sentinel=True)
-    codes = factorized.astype(np.intp)
-    # tolist() already yields Python scalars; object arrays can still hold NumPy ones.
-    values: list[Hashable] = [
-        v.item() if isinstance(v, np.generic) else v
-        for v in np.asarray(uniques).tolist()
-    ]
-    if missing_label is not None:
-        # The trailing True maps code -1 (already missing) to itself.
-        is_missing = np.array([bool(v == missing_label) for v in values] + [True])
-        codes[is_missing[codes]] = -1
+    codes, values = label_codes(label_array[:-1], missing_label)
 
     support = resolve_sample_support(
         t,
@@ -835,7 +835,7 @@ def labels_to_epochs(
         unsupported_labels=tuple(values[c] for c in unsupported.tolist()),
         n_samples=n_samples,
         max_gap=max_gap,
-        epochs=windows,
+        input_epochs=windows,
         missing_label=missing_label,
         n_declared_breaks=0 if breaks is None else int(breaks[1:].sum()),
     )

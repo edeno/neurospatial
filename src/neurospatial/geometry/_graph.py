@@ -76,8 +76,11 @@ def _track_cell_segments(track: TrackLinearization) -> NDArray[np.intp] | None:
     Walks the segments in linear order the way a track layout bins them:
     each segment of positive length fills the cells up to its end, a
     zero-length segment gets one cell, and a positive gap after a segment is
-    one inactive cell (ID -1). Returns None when the stored cell edges do
-    not follow that rule, so no segment can be assigned.
+    one inactive cell (ID -1). A segment ends at the cell edge its length
+    reaches up to rounding: a rotated or shifted track recomputes its lengths
+    from moved node positions, which differ from the stored edges in the last
+    bits. Returns None when the stored cell edges do not follow that rule, so
+    no segment can be assigned.
     """
     edges = track.grid_edges[0]
     n_cells = len(edges) - 1
@@ -107,10 +110,21 @@ def _track_cell_segments(track: TrackLinearization) -> NDArray[np.intp] | None:
                 - np.asarray(positions[u], dtype=float)
             )
         )
+        # Rounding in the node positions, relative to their magnitude.
+        tolerance = (
+            64
+            * np.finfo(float).eps
+            * max(
+                abs(cursor + length),
+                *np.abs(np.asarray(positions[u], dtype=float)),
+                *np.abs(np.asarray(positions[v], dtype=float)),
+            )
+        )
         count = (
             1
             if length <= 0.0
-            else int(np.searchsorted(edges, cursor + length, side="left")) - cell
+            else int(np.searchsorted(edges, cursor + length - tolerance, side="left"))
+            - cell
         )
         if count < 1 or cell + count > n_cells:
             return None

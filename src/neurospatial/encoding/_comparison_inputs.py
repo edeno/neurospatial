@@ -4,9 +4,9 @@ Before any score is computed, the two results must be spatial rate maps of the
 same kind, their units must pair by label, and their bins must pair by place:
 either the same bins, or an explicit one-to-one ``bin_mapping`` between bins
 that are the same cells (coordinates, measures, cell shapes and boundary
-ownership). ``compare_spatial_rates`` and ``population_vector_correlation``
-share these checks; ``_Caller`` names the function and its arguments in the
-messages.
+ownership, and, for tracks, the same segments, spacing and linear bin edges).
+``compare_spatial_rates`` and ``population_vector_correlation`` share these
+checks; ``_Caller`` names the function and its arguments in the messages.
 """
 
 from __future__ import annotations
@@ -232,8 +232,9 @@ def _bin_pairs(
             raise IncompatibleEnvironmentError(
                 f"{caller.operation}: {caller.first} and {caller.second} were "
                 f"estimated on environments that differ in {named}, so bin j of "
-                "one map is not the same place as bin j of the other. Equal "
-                "numbers of bins do not make them the same places.",
+                f"one map is not {_paired_meaning(differences.bins)} as bin j of "
+                "the other. Equal numbers of bins do not make the bins "
+                "match.",
                 fix=fix,
                 first=env_a,
                 second=env_b,
@@ -320,7 +321,7 @@ def _validate_bin_mapping(
         named, fix = _bin_refusal(reason, env_a, env_b, caller)
         raise IncompatibleEnvironmentError(
             f"{operation}: bin_mapping pairs bins that differ in {named}, so "
-            "paired bins are not the same place.",
+            f"paired bins are not {_paired_meaning(reason)}.",
             fix=fix,
             first=env_a,
             second=env_b,
@@ -366,11 +367,30 @@ def _bin_refusal(
             "pair only bins with identical centers, or re-estimate both "
             "conditions on one common environment",
         )
+    if reason == "track geometry":
+        return (
+            reason,
+            "re-estimate both conditions on one common track environment; a "
+            "bin_mapping cannot pair bins along tracks with different "
+            "segments, spacing or bin edges",
+        )
     return (
         reason,
         "re-estimate both conditions on one common environment; a bin_mapping "
         "cannot pair bins whose cells differ",
     )
+
+
+def _paired_meaning(reason: str) -> str:
+    """What two paired bins that differ in ``reason`` fail to be.
+
+    Tracks that differ only in the spacing between segments keep the same
+    2-D places but put them at different linear positions, so a track
+    geometry difference is about the linearized track, not about places.
+    """
+    if reason == "track geometry":
+        return "the same stretch of the linearized track"
+    return "the same place"
 
 
 def _refuse_repeats(mapping: NDArray[np.integer], caller: _Caller) -> None:

@@ -258,7 +258,7 @@ def wall_hit_bins(
             bins,
             indexes,
         )
-    cells, _walls, _centers, _inverse, frames = frame
+    cells, _walls, _centers, _inverse, frames, _errors = frame
     query = np.vstack((hits, origins))
     error = None
     for arena in frames:

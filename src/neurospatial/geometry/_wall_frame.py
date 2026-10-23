@@ -33,29 +33,47 @@ def wall_source_frame(
         NDArray[np.float64],
         NDArray[np.float64],
         tuple[_TransformedArena, ...],
+        NDArray[np.float64],
     ]
     | None
 ):
-    """Recover a shared stored frame through retained cell-owner mappings."""
+    """Recover a shared stored frame through retained cell-owner mappings.
+
+    Returns the cells, walls and bin centers in the frame the walls were
+    stored in, the inverse affine into that frame, the transformed arenas
+    passed through (outermost first), and, for each cell, how far its boundary
+    can lie from the exact image of the published cell (0 where the frame
+    recovers the cells exactly). None when the walls share no stored frame
+    with the cells.
+    """
 
     if isinstance(locator, TransformedLocator) and isinstance(arena, _TransformedArena):
         if np.array_equal(locator.inverse, arena.inverse):
             original = (centers - arena.forward[:-1, -1]) @ arena.inverse[:-1, :-1].T
             inner = wall_source_frame(locator.base, arena.base, original)
             if inner is None:
+                cells = cells_from_locator(locator.base)
                 return (
-                    cells_from_locator(locator.base),
+                    cells,
                     arena.base.walls,
                     original,
                     locator.inverse,
                     (arena,),
+                    np.zeros(len(cells)),
                 )
-            cells, walls, original, inverse, frames = inner
-            return cells, walls, original, inverse @ locator.inverse, (arena, *frames)
+            cells, walls, original, inverse, frames, errors = inner
+            return (
+                cells,
+                walls,
+                original,
+                inverse @ locator.inverse,
+                (arena, *frames),
+                errors,
+            )
     elif isinstance(locator, (SubsetLocator, ClippedLocator)):
         inner = wall_source_frame(locator.base, arena, centers)
         if inner is not None:
-            cells, walls, original, inverse, frames = inner
+            cells, walls, original, inverse, frames, errors = inner
             if isinstance(locator, SubsetLocator):
                 selected = np.flatnonzero(locator.parent_to_child >= 0)
                 selected = selected[np.argsort(locator.parent_to_child[selected])]
@@ -65,6 +83,7 @@ def wall_source_frame(
                     original,
                     inverse,
                     frames,
+                    errors[selected],
                 )
             else:
                 # Retain the *current* clipped support in the exact wall frame.
@@ -87,6 +106,7 @@ def wall_source_frame(
                 source_errors = [_polygon_coordinate_errors(p) for p in cells]
                 projected = shapely.set_coordinates(polygons, mapped[indices])
                 clipped: list[Polygon | MultiPolygon] = []
+                clipped_errors = errors[locator.mapping.parent_bin_indices]
                 signed_permutation = all(
                     np.all(np.isin(frame.inverse[:2, :2], (-1.0, 0.0, 1.0)))
                     and np.all(np.count_nonzero(frame.inverse[:2, :2], axis=0) == 1)
@@ -133,6 +153,7 @@ def wall_source_frame(
                         error = projection_error + float(
                             np.linalg.norm(source_errors[parent])
                         )
+                        clipped_errors[child] += error
                         for wall in walls:
                             interior = wall.intersection(cells[parent]).difference(
                                 cells[parent].boundary
@@ -150,5 +171,12 @@ def wall_source_frame(
                                     "Declare walls before clipping or transforming, or recenter coordinates."
                                 )
                     clipped.append(retained)
-                return tuple(clipped), walls, original, inverse, frames
+                return (
+                    tuple(clipped),
+                    walls,
+                    original,
+                    inverse,
+                    frames,
+                    clipped_errors,
+                )
     return None

@@ -1,13 +1,17 @@
 """Trajectory simulation functions for generating movement patterns."""
 
+from itertools import pairwise
 from typing import Literal
 
+import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._units import default_speed
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
+from neurospatial.simulation._lap_routes import LapRouter
 
 
 def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
@@ -581,12 +585,16 @@ def simulate_trajectory_sinusoidal(
     return positions, times  # type: ignore[return-value]
 
 
+#: Default lap running speed, in centimeters per second.
+_DEFAULT_LAP_SPEED_CM_PER_S = 20.0
+
+
 def simulate_trajectory_laps(
     env: Environment,
     *,
     n_laps: int,
-    speed_mean: float = 0.1,
-    speed_std: float = 0.02,
+    speed_mean: float | None = None,
+    speed_std: float | None = None,
     outbound_path: list[int] | None = None,
     inbound_path: list[int] | None = None,
     pause_duration: float = 0.5,
@@ -609,16 +617,24 @@ def simulate_trajectory_laps(
     n_laps : int
         Number of one-way traversals, alternating outbound and inbound,
         starting outbound. Two traversals make one out-and-back cycle.
-    speed_mean : float, optional
-        Mean speed in environment units/second (default: 0.1).
-    speed_std : float, optional
-        Speed variability (default: 0.02).
+    speed_mean : float or None, optional
+        Mean running speed in position units per second. Each traversal runs
+        at one speed drawn from a normal distribution with this mean, floored
+        at ``0.1 * speed_mean``. None (default) uses 20 cm/s, a typical rodent
+        running speed on a track, expressed in ``env.units``; environments
+        without metric units need an explicit value.
+    speed_std : float or None, optional
+        Standard deviation of the per-traversal speed, in position units per
+        second. None (default) uses ``0.2 * speed_mean``.
     outbound_path : list[int] | None, optional
-        Sequence of bin indices for outbound trajectory.
-        If None, uses shortest path from start to end of environment.
+        Bin indices for the outbound traversal, a chain of neighboring bins:
+        every consecutive pair must be connected in ``env.connectivity`` or
+        repeat the same bin (a step of zero length). A single bin is also
+        valid. If None, uses the shortest path between the bins with the
+        smallest and largest first coordinate.
     inbound_path : list[int] | None, optional
-        Sequence of bin indices for inbound trajectory.
-        If None, reverses outbound_path.
+        Bin indices for the inbound traversal, with the same rule as
+        ``outbound_path``. If None, reverses outbound_path.
     pause_duration : float, optional
         Pause at lap ends in seconds (default: 0.5s).
     sampling_frequency : float, optional
@@ -632,7 +648,10 @@ def simulate_trajectory_laps(
     Returns
     -------
     positions : NDArray[np.float64], shape (n_time, n_dims)
-        Position coordinates.
+        Position coordinates, in ``env.units``. Positions move at constant
+        speed from bin center to bin center along the path, and hold still
+        during pauses. Every position lies inside the environment (see
+        Notes).
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds.
     metadata : dict, optional (if return_metadata=True)
@@ -648,7 +667,32 @@ def simulate_trajectory_laps(
         If n_laps <= 0, speed_mean <= 0, speed_std < 0, pause_duration < 0,
         or sampling_frequency <= 0.
     ValueError
-        If custom paths contain invalid bin indices or are empty.
+        If ``speed_mean`` is None and ``env.units`` is not a metric length.
+    ValueError
+        If custom paths are empty, contain invalid bin indices or are not
+        chains of neighboring bins, or if no connected path joins the bins
+        with the smallest and largest first coordinate.
+    ValueError
+        If a path steps between neighboring bins whose cells do not touch
+        inside the environment, such as a bridge between two rooms of an
+        ``Environment.combine()`` environment with no bins between them:
+        every route between them would leave the environment.
+
+    Notes
+    -----
+    Between two neighboring bins the animal follows the environment, not the
+    straight line between the bin centers, which can leave it:
+
+    - On a track (``env.is_linearized_track``), it runs along the centerline
+      and turns at the node where two track segments meet, so its distance
+      along the track (``env.to_linear``) changes at the running speed.
+    - Between planar cells (grids, hexagons, triangles, polygon arenas,
+      clipped or wall-split cells), it takes the shortest route between the
+      two centers inside the two cells, kept inside the arena outline and
+      off its walls. Cells that touch only at a corner outside the arena are
+      joined through the cells of the bins neighboring both.
+    - In other environments, such as 3-D grids, it runs straight between the
+      centers of the neighboring cells.
 
     Examples
     --------
@@ -657,10 +701,10 @@ def simulate_trajectory_laps(
     >>> from neurospatial import Environment
     >>> from neurospatial.simulation import simulate_trajectory_laps
     >>> import numpy as np
+    >>> from shapely.geometry import box
     >>>
-    >>> # Create environment
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(samples, bin_size=2.0)
+    >>> # Create a 100 x 100 cm arena
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0)
     >>> env = env.with_metadata(units="cm")
     >>>
     >>> # Simulate laps
@@ -677,6 +721,36 @@ def simulate_trajectory_laps(
     True
     >>> print("direction" in metadata)
     True
+
+    Three traversals of a 1 m track take about as long as for a running rat:
+
+    >>> track = Environment.from_polygon(box(0, 0, 100, 20), bin_size=2, units="cm")
+    >>> positions, times, metadata = simulate_trajectory_laps(
+    ...     track, n_laps=3, seed=1, return_metadata=True
+    ... )
+    >>> print(f"{times[-1]:.1f} s")
+    14.4 s
+    >>> moving = (metadata["lap_ids"][1:] == metadata["lap_ids"][:-1]) & np.any(
+    ...     np.diff(positions, axis=0) != 0, axis=1
+    ... )
+    >>> speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
+    >>> print(f"{np.median(speed[moving]):.0f} cm/s")
+    21 cm/s
+
+    On an L-shaped track the lap turns at the corner instead of cutting
+    across it, so every position is on the track:
+
+    >>> l_track = Environment.linear_track(
+    ...     node_positions=[(-5, 0), (5, 0), (5, 10)],
+    ...     bin_size=10,
+    ...     track_width=2,
+    ...     units="cm",
+    ... )
+    >>> positions, times = simulate_trajectory_laps(l_track, n_laps=1, seed=0)
+    >>> bool(np.all(l_track.bin_at(positions) >= 0))
+    True
+    >>> print(f"{l_track.to_linear(positions[[0, -1]])} cm along the track")
+    [ 5. 15.] cm along the track
 
     See Also
     --------
@@ -695,6 +769,7 @@ def simulate_trajectory_laps(
         sampling_frequency=sampling_frequency,
         seed=seed,
         return_metadata=return_metadata,
+        call="simulate_trajectory_laps()",
     )
 
 
@@ -702,8 +777,8 @@ def _simulate_trajectory_laps(
     env: Environment,
     n_laps: int,
     *,
-    speed_mean: float = 0.1,
-    speed_std: float = 0.02,
+    speed_mean: float | None = None,
+    speed_std: float | None = None,
     outbound_path: list[int] | None = None,
     inbound_path: list[int] | None = None,
     pause_duration: float = 0.5,
@@ -711,11 +786,31 @@ def _simulate_trajectory_laps(
     seed: int | None = None,
     return_metadata: bool = False,
     duration: float | None = None,
+    call: str,
 ) -> (
     tuple[NDArray[np.float64], NDArray[np.float64]]
     | tuple[NDArray[np.float64], NDArray[np.float64], dict]
 ):
-    """Shared lap engine; sessions allocate samples before generating positions."""
+    """Shared lap engine; sessions allocate samples before generating positions.
+
+    With ``duration``, speed draws only weight the traversal durations, so the
+    default mean is a unitless 1.0 instead of 20 cm/s in ``env.units``.
+    ``call`` is the public call the scientist made, named in path errors.
+    """
+    if speed_mean is None:
+        if duration is not None:
+            speed_mean = 1.0
+        else:
+            speed_mean = default_speed(
+                env.units,
+                _DEFAULT_LAP_SPEED_CM_PER_S,
+                name="speed_mean",
+                call=call,
+                problem="not a metric length unit, so the default 20 cm/s",
+                placeholder="running speed",
+            )
+    if speed_std is None:
+        speed_std = 0.2 * speed_mean
     if duration is not None:
         for name, value, positive in [
             ("duration", duration, True),
@@ -770,6 +865,14 @@ def _simulate_trajectory_laps(
     # Initialize random number generator
     rng = np.random.default_rng(seed)
 
+    # Name the paths in errors as the scientist knows them.
+    path_names = (
+        "outbound_path"
+        if outbound_path is not None
+        else "the path between the bins at the smallest and largest x",
+        "inbound_path" if inbound_path is not None else "the reversed outbound path",
+    )
+
     # Compute paths if not provided
     if outbound_path is None:
         # Use shortest path between environment extrema
@@ -779,15 +882,19 @@ def _simulate_trajectory_laps(
         start_bin = int(np.argmin(first_dim_positions))
         end_bin = int(np.argmax(first_dim_positions))
 
-        # Compute shortest path
-        import networkx as nx
-
         try:
-            path = nx.shortest_path(env.connectivity, start_bin, end_bin)
-            outbound_path = path
+            outbound_path = nx.shortest_path(env.connectivity, start_bin, end_bin)
         except nx.NetworkXNoPath:
-            # If no path, just use start and end
-            outbound_path = [start_bin, end_bin]
+            raise ValueError(
+                _format_error(
+                    f"{call} found no connected path between "
+                    f"the bins at the smallest and largest x ({start_bin} and "
+                    f"{end_bin}).",
+                    why="Why: the animal runs along neighboring bins, and these "
+                    "bins lie in disconnected parts of the environment.",
+                    fix="pass outbound_path= as a chain of neighboring bins",
+                )
+            ) from None
 
     if inbound_path is None:
         # Reverse outbound path
@@ -808,6 +915,41 @@ def _simulate_trajectory_laps(
                     f"(must be in [0, {env.n_bins}))"
                 )
                 raise ValueError(msg)
+        # A repeated bin is a zero-length step, so it needs no edge.
+        for a, b in pairwise(path):
+            if a != b and not env.connectivity.has_edge(a, b):
+                raise ValueError(
+                    _format_error(
+                        f"{call}: {path_name} steps from bin "
+                        f"{a} to bin {b}, which are not neighboring bins.",
+                        why="Why: the animal runs from each bin into the next "
+                        "through the space they share, which only neighboring "
+                        "bins have.",
+                        fix=f"replace the step with "
+                        f"nx.shortest_path(env.connectivity, {a}, {b})",
+                    )
+                )
+
+    # Each step between neighboring bins follows the environment's geometry
+    # (along a track's centerline, inside the cells otherwise), not the
+    # straight line between their centers, which can leave the environment.
+    router = LapRouter(env, call)
+    routes = [
+        router.route(path, name, argument)
+        for path, name, argument in zip(
+            (outbound_path, inbound_path),
+            path_names,
+            ("outbound_path", "inbound_path"),
+            strict=True,
+        )
+    ]
+    # Distance run from the start of each route to each of its waypoints.
+    route_distances = [
+        np.concatenate(
+            [[0.0], np.cumsum(np.linalg.norm(np.diff(route, axis=0), axis=1))]
+        )
+        for route in routes
+    ]
 
     # Time step
     dt = 1.0 / sampling_frequency
@@ -836,14 +978,11 @@ def _simulate_trajectory_laps(
         # Speed draws shape relative traversal durations. Absolute speeds follow
         # from the available time; no speed-driven trajectory is generated and
         # then rescaled or truncated.
-        distances_by_direction = [
-            np.linalg.norm(np.diff(env.bin_centers[path], axis=0), axis=1).sum()
-            for path in (outbound_path, inbound_path)
-        ]
+        distances_by_direction = [distances[-1] for distances in route_distances]
         weights = np.array(
             [
                 distances_by_direction[lap_idx % 2]
-                / max(rng.normal(speed_mean, speed_std), 0.01)
+                / max(rng.normal(speed_mean, speed_std), 0.1 * speed_mean)
                 for lap_idx in range(n_laps)
             ]
         )
@@ -867,32 +1006,24 @@ def _simulate_trajectory_laps(
 
     for lap_idx in range(n_laps):
         # Alternate between outbound and inbound
-        if lap_idx % 2 == 0:
-            path = outbound_path
-            direction = "outbound"
-        else:
-            path = inbound_path
-            direction = "inbound"
+        direction = "outbound" if lap_idx % 2 == 0 else "inbound"
 
-        # Generate positions along path
-        path_positions = env.bin_centers[path]
-
-        # Compute distances between consecutive bins
-        distances = np.linalg.norm(np.diff(path_positions, axis=0), axis=1)
-        total_distance = np.sum(distances)
+        # Generate positions along the path's route
+        path_positions = routes[lap_idx % 2]
+        cumulative_distances = route_distances[lap_idx % 2]
+        # The last waypoint's own distance, so the lap ends exactly on it.
+        total_distance = cumulative_distances[-1]
 
         if lap_sample_counts is None:
             # Direct calls retain their speed-driven timing and RNG draws.
             speed = rng.normal(speed_mean, speed_std)
-            speed = max(speed, 0.01)
+            speed = max(speed, 0.1 * speed_mean)
             path_duration = total_distance / speed
             n_samples = max(2, int(path_duration / dt))
         else:
             n_samples = int(lap_sample_counts[lap_idx])
 
-        # Interpolate positions along path
-        # Create cumulative distances
-        cumulative_distances = np.concatenate([[0], np.cumsum(distances)])
+        # Interpolate positions along the route
         interpolation_points = np.linspace(0, total_distance, n_samples)
 
         # Interpolate each dimension separately
@@ -901,13 +1032,6 @@ def _simulate_trajectory_laps(
             lap_positions[:, dim] = np.interp(
                 interpolation_points, cumulative_distances, path_positions[:, dim]
             )
-
-        # Ensure all positions are within environment bounds by mapping to bins
-        # This handles edge cases where interpolation might go slightly outside
-
-        bin_indices = env.nearest_bin(lap_positions, tie_break="lowest_index")
-        # Use bin centers to ensure all positions are valid
-        lap_positions = env.bin_centers[bin_indices]
 
         # Generate times for this lap
         lap_times = current_time + np.arange(n_samples) * dt
