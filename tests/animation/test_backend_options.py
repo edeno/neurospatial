@@ -126,10 +126,9 @@ def test_the_suggested_call_uses_the_option(animation, tmp_path, option, owner):
     assert _ignore_warnings(again) == []
     assert path.exists()
     if owner == "html":
-        # embed=False writes the frames beside the page.
+        # embed=False writes the frames beside the page, one per row.
         assert sorted(item.name for item in (tmp_path / "animation").iterdir()) == [
-            "frame_00000.png",
-            "frame_00001.png",
+            f"frame_{k:05d}.png" for k in range(len(times))
         ]
 
 

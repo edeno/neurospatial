@@ -41,9 +41,8 @@ def test_file_rate_is_the_sample_rate_times_speed(env, fields, tmp_path, speed, 
     )
     meta, n_frames = _metadata(path)
     assert meta["fps"] == pytest.approx(fps)
-    # Every row but the last is shown once: the export covers [0, 1) s, so the
-    # file lasts 1 / speed seconds.
-    assert n_frames == len(FRAME_TIMES) - 1
+    # Every row is shown once, through the last: the export covers [0, 1] s.
+    assert n_frames == len(FRAME_TIMES)
     assert [item.name for item in tmp_path.iterdir()] == ["replay.mp4"]
 
 
@@ -60,8 +59,9 @@ def test_capped_rate_keeps_speed_and_skips_rows(env, fields, tmp_path):
         )
     meta, n_frames = _metadata(path)
     assert meta["fps"] == pytest.approx(20)
-    # 1 s of recording at 4x lasts 0.25 s: 5 frames at 20 fps, not 20 rows.
-    assert n_frames == 5
+    # A frame every 0.2 s of recording (20 fps at 4x), not one per 0.05 s row:
+    # 0, 0.2, ..., 1.0 s.
+    assert n_frames == 6
 
 
 def test_encoder_options_reach_the_file(env, fields, tmp_path):

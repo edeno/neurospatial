@@ -72,9 +72,9 @@ def test_position_marker_lands_at_the_animals_position_and_hides_when_missing(
         tmp_path / "positions.html",
         overlays=[PositionOverlay(positions, TIMES, color="red", size=12)],
     )
-    # Export holds the half-open [0, 0.4): one frame per row but the last.
+    # The whole recording is exported: one frame per row, through the last.
     frames = _frames(path)
-    assert len(frames) == 4
+    assert len(frames) == 5
     rows, cols = [], []
     for frame in frames[:3]:
         r, c = np.nonzero(_red(frame))
@@ -88,8 +88,10 @@ def test_position_marker_lands_at_the_animals_position_and_hides_when_missing(
     assert abs(cols[2] - cols[1]) < 2
     # Equal displacements in x and y cover equal distances on an equal-aspect axis.
     assert cols[1] - cols[0] == pytest.approx(rows[1] - rows[2], rel=0.05)
-    # A missing tracking sample draws no marker rather than a stale or zero one.
+    # A missing tracking sample draws no marker rather than a stale or zero one,
+    # and the marker returns with the next sample.
     assert not _red(frames[3]).any()
+    assert _red(frames[4]).any()
 
 
 def test_regions_are_drawn_only_when_requested_and_where_they_are(arena, tmp_path):
@@ -123,4 +125,4 @@ def test_unpicklable_overlay_is_named_before_parallel_export(arena, tmp_path):
     assert not list(tmp_path.iterdir())
     # Rendering in this process needs no pickling.
     serial = _export(arena, tmp_path / "serial.html", overlays=[overlay], n_workers=1)
-    assert len(_frames(serial)) == 4
+    assert len(_frames(serial)) == len(TIMES)

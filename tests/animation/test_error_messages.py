@@ -58,7 +58,7 @@ def test_pickle_failure_error_message(test_env, test_fields, tmp_path, monkeypat
 def test_html_max_frames_error_message(test_env, tmp_path):
     """A page too large for a browser is refused before any frame renders."""
     fields = np.random.default_rng(42).random((2000, test_env.n_bins))
-    with pytest.raises(ValueError, match="1999 frames") as error:
+    with pytest.raises(ValueError, match="2000 frames") as error:
         animate_fields(
             test_env,
             fields,

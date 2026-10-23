@@ -65,8 +65,8 @@ def test_video_is_composited_into_every_frame_and_follows_the_clock(
     reader = imageio_ffmpeg.read_frames(str(path))
     next(reader)
     frames = [np.frombuffer(frame, dtype=np.uint8).astype(float) for frame in reader]
-    # One output frame per row in the half-open [first, last) time range.
-    assert len(frames) == N_ROWS - 1
+    # One output frame per row, through the last.
+    assert len(frames) == N_ROWS
     brightness = [frame.mean() for frame in frames]
     assert np.all(np.diff(brightness) > 0)
     assert [item.name for item in tmp_path.iterdir()] == ["with_video.mp4"]

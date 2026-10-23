@@ -37,8 +37,8 @@ def test_player_plays_rows_at_their_rate_times_speed(env, fields, tmp_path):
     )
     text = path.read_text(encoding="utf-8")
     assert re.search(r"const baseFPS = (\S+);", text).group(1) == "10.0"
-    # One labelled frame per row in the half-open [0, 0.5) s.
-    assert _labels(text) == [f"t = {k / 20:.3f} s" for k in range(10)]
+    # One labelled frame per row, through the last.
+    assert _labels(text) == [f"t = {t:.3f} s" for t in FRAME_TIMES]
     # Play, pause, stepping, a slider, a speed menu and arrow-key stepping.
     for control in ('id="play"', 'id="pause"', 'id="prev"', 'id="next"'):
         assert control in text

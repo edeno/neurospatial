@@ -242,8 +242,8 @@ class TestExports:
         assert result == tmp_path / "player.html"
         fps, labels, frames = _player(result)
         assert fps == pytest.approx(10.0)
-        # Output frames sample the half-open [first, last) frame time.
-        assert labels == ["t = 0.000 s", "t = 0.100 s"]
+        # The whole recording is exported, through its last row.
+        assert labels == ["t = 0.000 s", "t = 0.100 s", "t = 0.200 s"]
 
         def scene(**changes):
             settings = {**options, **changes}
@@ -285,7 +285,7 @@ class TestExports:
         reader = imageio_ffmpeg.read_frames(str(path))
         meta = next(reader)
         assert meta["fps"] == pytest.approx(20.0)
-        assert len(list(reader)) == 4
+        assert len(list(reader)) == 5
         assert [item.name for item in tmp_path.iterdir()] == ["a.mp4"]
 
     @pytest.mark.parametrize(("speed", "fps"), [(1.0, 30.0), (0.5, 15.0), (2.0, 60.0)])
@@ -301,7 +301,7 @@ class TestExports:
         )
         played, labels, _ = _player(path)
         assert played == pytest.approx(fps)
-        assert labels == [f"t = {t:.3f} s" for t in times[:-1]]
+        assert labels == [f"t = {t:.3f} s" for t in times]
 
     def test_capped_rate_keeps_speed_and_warns_at_the_call_site(self, env, tmp_path):
         times = np.linspace(0, 0.2, 101)  # 500 Hz
@@ -319,7 +319,7 @@ class TestExports:
         played, labels, _ = _player(path)
         assert played == MAX_PLAYBACK_FPS
         # Real time: frames are 1/60 s of recording apart.
-        assert labels == [f"t = {k / 60:.3f} s" for k in range(12)]
+        assert labels == [f"t = {k / 60:.3f} s" for k in range(13)]
 
     def test_uncapped_rate_does_not_warn(self, env, tmp_path):
         import warnings
@@ -345,7 +345,7 @@ class TestExports:
             save_path=tmp_path / "a.gif",
             dpi=20,
         )
-        assert iio.imread(path, index=None).shape[0] == 3
+        assert iio.imread(path, index=None).shape[0] == 4
 
 
 class TestViews:

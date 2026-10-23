@@ -88,4 +88,5 @@ def test_external_html_urls_resolve_relative_to_the_page(
     assert sorted(item.name for item in frames.iterdir()) == [
         "frame_00000.png",
         "frame_00001.png",
+        "frame_00002.png",
     ]

@@ -121,5 +121,5 @@ def test_subsampled_session_exports_on_its_own_clock(env, tmp_path):
     )
     text = path.read_text(encoding="utf-8")
     labels = json.loads(re.search(r"const labels = (\[.*?\]);", text).group(1))
-    # 20 rows at 10 Hz span [0, 1.9) s; the player keeps their physical times.
-    assert labels == [f"t = {k / 10:.3f} s" for k in range(19)]
+    # 20 rows at 10 Hz span [0, 1.9] s; the player keeps their physical times.
+    assert labels == [f"t = {k / 10:.3f} s" for k in range(20)]
