@@ -214,6 +214,17 @@ def call_unbound(env, name, *, bound=False):
     return function(*args, **kwargs)
 
 
+def rotation_matrix(angle, offset=(0, 0)):
+    """The 3 x 3 matrix of a rotation by ``angle`` radians, then a shift by ``offset``."""
+    return np.array(
+        [
+            [np.cos(angle), -np.sin(angle), offset[0]],
+            [np.sin(angle), np.cos(angle), offset[1]],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+
+
 def renumbered(env, order, distances=None, *, max_distance=5.0):
     """Publish ``env``'s bins and open connections in a new bin order.
 

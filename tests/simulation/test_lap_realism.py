@@ -7,6 +7,7 @@ import networkx as nx
 import numpy as np
 import pytest
 import shapely
+from environment_helpers import rotation_matrix
 from shapely.geometry import LineString, Polygon, box
 
 from neurospatial import Environment
@@ -112,21 +113,22 @@ def test_laps_stay_inside_environment(box_env, box_laps):
 SESSION_MAX_SPEED_CM_PER_S = 2 * DEFAULT_SPEED_CM_PER_S
 
 
-@pytest.fixture(
-    scope="module",
-    params=[
-        lambda: linear_track_session(duration=60, n_place_cells=3, n_laps=6, seed=42),
-        lambda: tmaze_alternation_session(
-            duration=60, n_trials=4, n_place_cells=3, seed=1
-        ),
-    ],
-    ids=["linear_track", "tmaze"],
-)
+LAP_SESSIONS = {
+    "linear_track": lambda: linear_track_session(
+        duration=60, n_place_cells=3, n_laps=6, seed=42
+    ),
+    "tmaze": lambda: tmaze_alternation_session(
+        duration=60, n_trials=4, n_place_cells=3, seed=1
+    ),
+}
+
+
+@pytest.fixture(scope="module", params=list(LAP_SESSIONS), ids=list(LAP_SESSIONS))
 def lap_session(request):
     """A built-in lap session."""
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", "Requested n_cells=3", UserWarning)
-        return request.param()
+        return LAP_SESSIONS[request.param]()
 
 
 def test_session_laps_stay_inside_environment(lap_session):
@@ -139,8 +141,9 @@ def test_session_laps_move_smoothly(lap_session):
     assert largest_step < SESSION_MAX_SPEED_CM_PER_S / sampling_frequency
 
 
-def test_session_paths_are_smooth():
-    session = linear_track_session(duration=60, n_laps=6, seed=42)
+@pytest.mark.parametrize("lap_session", ["linear_track"], indirect=True)
+def test_session_paths_are_smooth(lap_session):
+    session = lap_session
     pause_samples = int(
         session.metadata["pause_duration"] * session.metadata["sampling_frequency"]
     )
@@ -288,7 +291,7 @@ def _t_maze_track():
             bin_size=10,
             track_width=2,
             units="cm",
-        ).apply_transform(_rotation(0.4, offset=(100.0, 50.0))),
+        ).apply_transform(Affine2D(rotation_matrix(0.4, offset=(100.0, 50.0)))),
     ],
     ids=["zigzag", "t_maze", "rotated"],
 )
@@ -310,19 +313,6 @@ def _walk_over_every_neighbor_pair(env):
     return [int(u) for u, _v in circuit] + [int(circuit[-1][1])]
 
 
-def _rotation(angle, offset=(0.0, 0.0)):
-    """A rotation by ``angle`` radians followed by a shift by ``offset``."""
-    return Affine2D(
-        np.array(
-            [
-                [np.cos(angle), -np.sin(angle), offset[0]],
-                [np.sin(angle), np.cos(angle), offset[1]],
-                [0.0, 0.0, 1.0],
-            ]
-        )
-    )
-
-
 def _corner_walk_grid():
     """Bins visited by a staircase walk: neighbors that meet only at corners."""
     steps = np.array([[0.0, 0.0], [2.0, 2.0], [4.0, 0.0], [6.0, 2.0], [8.0, 4.0]])
@@ -336,14 +326,6 @@ def _checkerboard():
 
 
 L_SHAPE = Polygon([(0, 0), (40, 0), (40, 10), (10, 10), (10, 40), (0, 40)])
-ANGLE = 0.5
-ROTATION = np.array(
-    [
-        [np.cos(ANGLE), -np.sin(ANGLE), 3.0],
-        [np.sin(ANGLE), np.cos(ANGLE), -2.0],
-        [0.0, 0.0, 1.0],
-    ]
-)
 
 
 def _star(n_points=5, outer=40.0, inner=12.0):
@@ -380,12 +362,12 @@ LAYOUTS = {
     "grid_concave_corner": _l_mask_grid,
     "grid_rotated": lambda: Environment.from_polygon(
         L_SHAPE, bin_size=3, units="cm"
-    ).apply_transform(Affine2D(ROTATION)),
+    ).apply_transform(Affine2D(rotation_matrix(0.5, offset=(3.0, -2.0)))),
     "grid_rotated_corners_only": lambda: _corner_walk_grid().apply_transform(
-        _rotation(0.3)
+        Affine2D(rotation_matrix(0.3))
     ),
     "checkerboard_rotated_far": lambda: _checkerboard().apply_transform(
-        _rotation(0.7, offset=(1e4, -3e3))
+        Affine2D(rotation_matrix(0.7, offset=(1e4, -3e3)))
     ),
     "hexagonal": lambda: Environment.from_samples(
         _samples_in(L_SHAPE), bin_size=3, layout="hexagonal", units="cm"
@@ -422,6 +404,10 @@ LAYOUTS = {
 }
 
 
+# The layouts whose arenas have walls.
+WALLED_LAYOUTS = ["wall_split", "wall_split_bent"]
+
+
 @pytest.fixture(scope="module", params=list(LAYOUTS), ids=list(LAYOUTS))
 def layout_laps(request):
     """An environment and laps that step across every one of its neighbor pairs."""
@@ -440,11 +426,11 @@ def test_laps_stay_inside_every_layout(layout_laps):
     assert np.all(env.bin_at(positions) >= 0)
 
 
+@pytest.mark.parametrize("layout_laps", WALLED_LAYOUTS, indirect=True)
 def test_laps_do_not_cross_walls(layout_laps):
     env, positions = layout_laps
-    walls = env.arena.walls if env.arena is not None else ()
-    if not walls:
-        pytest.skip("no walls")
+    walls = env.arena.walls
+    assert walls
     steps = shapely.linestrings(np.stack([positions[:-1], positions[1:]], axis=1))
     longest_step = shapely.length(steps).max()
     for wall in walls:
