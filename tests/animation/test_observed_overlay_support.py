@@ -179,7 +179,8 @@ def test_crop_resize_maps_pixel_centers_back_to_original_calibration(env):
     frames = np.arange(2 * 9 * 11 * 3, dtype=np.uint8).reshape(2, 9, 11, 3)
     overlay = VideoOverlay(frames, calibration, crop=(2, 1, 7, 7), downsample=2)
     data = overlay.convert_to_data(np.array([0.0, 0.1]), 2, env)
-    assert data.reader.shape == (2, 3, 3, 3)
+    assert (data.reader.n_frames, data.reader.frame_size_px) == (2, (3, 3))
+    assert data.get_frame(1).shape == (3, 3, 3)
     pixels = np.array([[0.0, 0.0], [2.0, 2.0]])
     source_pixels = (pixels + 0.5) * (7 / 3) - 0.5 + np.array([2.0, 1.0])
     np.testing.assert_allclose(

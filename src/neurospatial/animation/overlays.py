@@ -2551,6 +2551,33 @@ class ObjectVectorOverlay:
         )
 
 
+class _DownsampledFrames:
+    """Resize in-memory video frames when read, as file readers do.
+
+    Resizing the whole array up front would copy the video on every
+    conversion.
+    """
+
+    def __init__(self, frames: NDArray[np.uint8], downsample: int) -> None:
+        self.frames = frames
+        self.n_frames = len(frames)
+        self.frame_size_px = (
+            frames.shape[2] // downsample,
+            frames.shape[1] // downsample,
+        )
+
+    def __len__(self) -> int:
+        return self.n_frames
+
+    def __getitem__(self, idx: int) -> NDArray[np.uint8]:
+        import cv2
+
+        return cast(
+            "NDArray[np.uint8]",
+            cv2.resize(np.ascontiguousarray(self.frames[idx]), self.frame_size_px),
+        )
+
+
 @dataclass
 class VideoOverlay:
     """Video background overlay for displaying recorded footage behind or above fields.
@@ -2873,17 +2900,11 @@ class VideoOverlay:
                     x, y, width, height = self.crop
                     reader = reader[:, y : y + height, x : x + width]
                 if self.downsample > 1:
-                    import cv2
-
-                    width, height = (
-                        reader.shape[2] // self.downsample,
-                        reader.shape[1] // self.downsample,
-                    )
-                    reader = np.stack(
-                        [cv2.resize(frame, (width, height)) for frame in reader]
-                    )
+                    reader = _DownsampledFrames(reader, self.downsample)
+                    processed_size = reader.frame_size_px
+                else:
+                    processed_size = (reader.shape[2], reader.shape[1])
                 n_video_frames = self.source.shape[0]
-                processed_size = (reader.shape[2], reader.shape[1])
             else:
                 # File path - create _VideoReader
                 from neurospatial._video_io import _VideoReader
