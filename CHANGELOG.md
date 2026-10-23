@@ -157,11 +157,21 @@
   sampling rate of `frame_times` times `speed`, capped at `max_playback_fps`;
   a capped file keeps `speed` and skips rows, with a warning, instead of
   playing slower than requested. An export of the whole recording ends on
-  its last row; selected `time_range` windows are half-open. Without
-  `vmin`/`vmax`, each field gets its own robust color limits from up to 100
-  rows. `trail_length` spans that many animation frames in every view,
-  drawing every tracked sample in that time, and no trail is drawn while the
-  current position is missing.
+  its last row; selected `time_range` windows are half-open. Fields shown side
+  by side share one cmap, colorbar label and, without `vmin`/`vmax`, one
+  robust color scale from up to 100 rows of each, so a color means the same
+  value in every panel; build an `Animation` with separate `AnimationField`s
+  for independent scales. Lazy sources that are not arrays (h5py datasets)
+  are read by row, and an iterator of rows raises `TypeError`. HTML players
+  label each frame with its recording time (`"t = 12.345 s"`).
+  `trail_length` spans that many animation frames in every view, drawing
+  every tracked sample in that time with older segments fading, and no trail
+  is drawn while the current position is missing. `TimeSeriesOverlay`'s
+  `show_cursor` and `cursor_color` apply in every view.
+- `TimeSeriesOverlay` no longer takes `window_seconds`, `interp`,
+  `update_mode`, `playback_throttle_hz` or `scrub_throttle_hz`: every signal
+  panel spans the scene's `window_seconds`, and no view throttled or paused
+  its panels by them.
 - Removed animation options: napari `cache_size`, `chunk_size` and
   `max_chunks`, widget `initial_cache_size`, `cache_limit`, `image_format`
   and `return_container`, `dry_run`, and `frame_labels` outside fastplotlib.

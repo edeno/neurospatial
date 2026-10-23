@@ -504,7 +504,6 @@ def create_selected_overlays(
             times=ts_times,
             label="LFP (mV)",
             color="cyan",
-            window_seconds=2.0,
         )
         overlays.append(timeseries_overlay)
 

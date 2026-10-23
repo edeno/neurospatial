@@ -401,3 +401,29 @@ def test_projected_track_uses_its_own_stable_scale(scene_env):
         "sum per track bin" in ax.get_ylabel() for ax in scene._renderer.figure.axes
     )
     scene.close()
+
+
+@pytest.mark.parametrize("show_cursor", [True, False])
+def test_signal_panel_cursor_follows_the_overlay_settings(scene_env, show_cursor):
+    # show_cursor and cursor_color apply in every view, not only fastplotlib.
+    from matplotlib.colors import to_rgba
+
+    times = np.arange(5) * 0.1
+    signal = TimeSeriesOverlay(
+        np.arange(5.0),
+        times,
+        label="speed",
+        show_cursor=show_cursor,
+        cursor_color="yellow",
+    )
+    with Animation(
+        scene_env,
+        np.ones((5, scene_env.n_bins)),
+        frame_times=times,
+        overlays=[signal],
+    ) as scene:
+        scene.render_frame(0.2, dpi=30)
+        panel = scene._renderer.figure.axes[-1]
+        (cursor,) = [line for line in panel.lines if line.get_label() != "speed"]
+        assert cursor.get_visible() is show_cursor
+        assert to_rgba(cursor.get_color()) == to_rgba("yellow")

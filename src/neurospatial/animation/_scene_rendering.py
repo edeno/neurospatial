@@ -460,10 +460,14 @@ class SceneRenderer:
             setter(f"{letter} ({env.units or 'units'})")
         return cells, 6 if grid is not None else 1
 
-    def _time_axis(self, ax: Any) -> Update:
+    def _time_axis(
+        self, ax: Any, *, cursor_visible: bool = True, cursor_color: Any = "red"
+    ) -> Update:
         """Style a time panel; its update centers the window and cursor."""
         ax.set_facecolor("#20252b")
-        cursor = ax.axvline(0.0, color="red", linewidth=1)
+        cursor = ax.axvline(
+            0.0, color=cursor_color, linewidth=1, visible=cursor_visible
+        )
         ax.set_xlabel("Time (s)")
 
         def update(time: float) -> None:
@@ -492,7 +496,12 @@ class SceneRenderer:
         if low == high:
             low, high = low - 0.5, high + 0.5
         ax.set_ylim(low, high)
-        time_axis = self._time_axis(ax)
+        # A panel's signals share one cursor, styled by its first signal.
+        time_axis = self._time_axis(
+            ax,
+            cursor_visible=signals[0].show_cursor,
+            cursor_color=signals[0].cursor_color,
+        )
 
         def update(time: float) -> None:
             for line, signal in zip(lines, signals, strict=True):

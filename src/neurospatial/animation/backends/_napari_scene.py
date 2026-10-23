@@ -124,6 +124,11 @@ class _ScientificPanels:
         self.rasters: list[tuple[Any, Any, int]] = []
         self.tracks: list[tuple[Any, Any, Any]] = []
         self.cursors: list[Any] = []
+        # A panel's signals share one cursor, styled by its first signal.
+        cursor_styles = [
+            (signals[0].show_cursor, signals[0].cursor_color)
+            for signals in helper.signal_groups.values()
+        ]
         for signals in helper.signal_groups.values():
             ax = self.figure.add_subplot(count, 1, len(self.axes) + 1)
             self.axes.append(ax)
@@ -188,11 +193,14 @@ class _ScientificPanels:
                         ax=ax,
                         label=f"Projected {field.label or name} (sum per track bin)",
                     )
-        for ax in self.axes:
+        cursor_styles += [(True, "red")] * (len(self.axes) - len(cursor_styles))
+        for ax, (visible, color) in zip(self.axes, cursor_styles, strict=True):
             ax.set_facecolor("#20252b")
             ax.set_xlabel("Time (s)")
             self.cursors.append(
-                ax.axvline(scene.frame_times[0], color="red", linewidth=1)
+                ax.axvline(
+                    scene.frame_times[0], color=color, linewidth=1, visible=visible
+                )
             )
         from matplotlib.collections import LineCollection, PolyCollection
         from matplotlib.colors import Normalize

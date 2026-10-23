@@ -33,7 +33,15 @@ from collections.abc import Iterator
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Literal,
+    Protocol,
+    cast,
+    runtime_checkable,
+)
 
 import numpy as np
 from matplotlib import colormaps
@@ -1593,11 +1601,6 @@ class TimeSeriesOverlay:
         Label for Y-axis or legend. Default is "".
     color : str, optional
         Line color (matplotlib color string). Default is "white".
-    window_seconds : float, optional
-        Total time window to display, centered on current frame.
-        E.g., 2.0 shows ±1 second. Must be positive. Default is 2.0. Views
-        and exports show every panel drawn against time over the animation's
-        own ``window_seconds`` instead, so they line up.
     linewidth : float, optional
         Line width in points. Default is 1.0.
     alpha : float, optional
@@ -1623,31 +1626,6 @@ class TimeSeriesOverlay:
     vmax : float | None, optional
         Maximum Y-axis value. If None, auto-computed from data.
         Default is None.
-    interp : {"linear", "nearest"}, optional
-        Interpolation method for computing the value at the current cursor time.
-        Used when displaying cursor value (e.g., "Speed: 45.3 cm/s" tooltip).
-
-        - "linear": Linearly interpolate between neighboring samples
-        - "nearest": Use nearest sample value
-
-        Default is "linear".
-    update_mode : {"live", "on_pause", "manual"}, optional
-        Controls when the time series dock widget updates during playback.
-
-        - "live" (default): Update on every frame change, throttled to 20 Hz max.
-          Best for real-time visualization during playback.
-        - "on_pause": Only update when playback pauses. Best for performance
-          when the time series isn't needed during playback.
-        - "manual": Never auto-update. Updates only via explicit API call.
-          Useful for custom update logic or debugging.
-
-        Default is "live".
-    playback_throttle_hz : float, optional
-        Maximum update frequency (Hz) during playback. Lower values improve
-        performance but reduce visual responsiveness. Default is 10.0.
-    scrub_throttle_hz : float, optional
-        Maximum update frequency (Hz) when scrubbing (paused). Higher values
-        make scrubbing feel more responsive. Default is 20.0.
 
     Attributes
     ----------
@@ -1659,8 +1637,6 @@ class TimeSeriesOverlay:
         Y-axis or legend label.
     color : str
         Line color.
-    window_seconds : float
-        Time window width in seconds.
     linewidth : float
         Line width in points.
     alpha : float
@@ -1677,14 +1653,6 @@ class TimeSeriesOverlay:
         Explicit Y-axis minimum.
     vmax : float | None
         Explicit Y-axis maximum.
-    interp : {"linear", "nearest"}
-        Interpolation method for cursor value.
-    update_mode : {"live", "on_pause", "manual"}
-        Update mode for dock widget during playback.
-    playback_throttle_hz : float
-        Maximum update frequency during playback.
-    scrub_throttle_hz : float
-        Maximum update frequency when scrubbing.
 
     See Also
     --------
@@ -1699,9 +1667,12 @@ class TimeSeriesOverlay:
     **Inf handling**: Inf values are NOT allowed and will raise an error.
     Use NaN for missing data instead.
 
-    **Group conflicts**: When multiple overlays share the same ``group`` but have
-    different ``window_seconds``, ``vmin``, or ``vmax``, a warning is emitted and
-    the first overlay's values are used ("first wins" strategy).
+    **Time window**: every signal panel spans the animation's
+    ``window_seconds`` around the current time, so the panels line up.
+
+    **Groups**: signals in one ``group`` share a panel, whose y-axis runs from
+    the lowest of their limits to the highest, and its cursor follows the
+    first signal's ``show_cursor`` and ``cursor_color``.
 
     **Y-axis limits**: By default, global limits (min/max across all data) are
     used for stable scales during animation. Use ``vmin``/``vmax`` to override.
@@ -1719,7 +1690,6 @@ class TimeSeriesOverlay:
     ...     times=times,
     ...     label="Speed (cm/s)",
     ...     color="cyan",
-    ...     window_seconds=3.0,
     ... )
     >>> overlay.label
     'Speed (cm/s)'
@@ -1766,7 +1736,6 @@ class TimeSeriesOverlay:
     # Display settings
     label: str = ""
     color: str = "white"
-    window_seconds: float = 2.0
     linewidth: float = 1.0
     alpha: float = 1.0
 
@@ -1782,15 +1751,9 @@ class TimeSeriesOverlay:
     vmin: float | None = None
     vmax: float | None = None
 
-    # Interpolation for cursor value
-    interp: Literal["linear", "nearest"] = "linear"
-
-    # Update mode for dock widget during playback
-    update_mode: Literal["live", "on_pause", "manual"] = "live"
-
-    # Throttle settings for performance optimization
-    playback_throttle_hz: float = 10.0
-    scrub_throttle_hz: float = 20.0
+    # Signals are drawn sample by sample at their own times; overlays that are
+    # sampled at animation times choose an interpolation.
+    interp: ClassVar[Literal["nearest"]] = "nearest"
 
     def __post_init__(self) -> None:
         """Validate inputs after initialization."""
@@ -1852,15 +1815,6 @@ class TimeSeriesOverlay:
                 "Fix: Sort the times array or remove duplicates."
             )
 
-        # Validate window_seconds is positive
-        if self.window_seconds <= 0:
-            raise ValueError(
-                f"WHAT: TimeSeriesOverlay.window_seconds must be positive "
-                f"(got {self.window_seconds}).\n\n"
-                "WHY: The time window must have a positive duration.\n\n"
-                "Fix: Use a positive value like window_seconds=2.0."
-            )
-
         # Validate alpha in [0, 1]
         if not (0.0 <= self.alpha <= 1.0):
             raise ValueError(
@@ -1890,39 +1844,6 @@ class TimeSeriesOverlay:
                 "Fix: Replace Inf values with NaN or finite values."
             )
 
-        # Validate update_mode
-        valid_modes = ("live", "on_pause", "manual")
-        if self.update_mode not in valid_modes:
-            raise ValueError(
-                f"WHAT: TimeSeriesOverlay.update_mode must be one of "
-                f"{valid_modes} (got '{self.update_mode}').\n\n"
-                "WHY: update_mode controls when the time series dock updates:\n"
-                "  - 'live': Update on every frame change (throttled to 20 Hz)\n"
-                "  - 'on_pause': Only update when playback pauses\n"
-                "  - 'manual': Never auto-update, only via explicit API call\n\n"
-                "Fix: Use one of: 'live', 'on_pause', or 'manual'."
-            )
-
-        # Validate playback_throttle_hz is positive
-        if self.playback_throttle_hz <= 0:
-            raise ValueError(
-                f"WHAT: TimeSeriesOverlay.playback_throttle_hz must be positive "
-                f"(got {self.playback_throttle_hz}).\n\n"
-                "WHY: The throttle frequency controls how often the time series "
-                "updates during playback. A positive value is required.\n\n"
-                "Fix: Use a positive value like playback_throttle_hz=10.0."
-            )
-
-        # Validate scrub_throttle_hz is positive
-        if self.scrub_throttle_hz <= 0:
-            raise ValueError(
-                f"WHAT: TimeSeriesOverlay.scrub_throttle_hz must be positive "
-                f"(got {self.scrub_throttle_hz}).\n\n"
-                "WHY: The throttle frequency controls how often the time series "
-                "updates during scrubbing. A positive value is required.\n\n"
-                "Fix: Use a positive value like scrub_throttle_hz=20.0."
-            )
-
     def convert_to_data(
         self,
         frame_times: NDArray[np.float64],
@@ -1931,7 +1852,7 @@ class TimeSeriesOverlay:
     ) -> TimeSeriesData:
         """Convert overlay to internal data representation.
 
-        Precomputes window indices for O(1) per-frame extraction during rendering.
+        Computes the y-axis limits and applies normalization.
 
         Parameters
         ----------
@@ -1945,13 +1866,8 @@ class TimeSeriesOverlay:
         Returns
         -------
         TimeSeriesData
-            Internal data container with precomputed window indices.
+            Internal data container with the display settings and limits.
         """
-        # Vectorized precomputation of window indices for all frames
-        half_window = self.window_seconds / 2
-        start_indices = np.searchsorted(self.times, frame_times - half_window)
-        end_indices = np.searchsorted(self.times, frame_times + half_window)
-
         # Compute global limits for stable y-axis (default behavior)
         finite_mask = np.isfinite(self.data)
         if finite_mask.any():
@@ -1982,11 +1898,8 @@ class TimeSeriesOverlay:
         return TimeSeriesData(
             data=output_data,
             times=self.times,
-            start_indices=start_indices,
-            end_indices=end_indices,
             label=self.label,
             color=self.color,
-            window_seconds=self.window_seconds,
             linewidth=self.linewidth,
             alpha=self.alpha,
             group=self.group,
@@ -1995,11 +1908,6 @@ class TimeSeriesOverlay:
             cursor_color=self.cursor_color,
             global_vmin=global_vmin,
             global_vmax=global_vmax,
-            use_global_limits=True,
-            interp=self.interp,
-            update_mode=self.update_mode,
-            playback_throttle_hz=self.playback_throttle_hz,
-            scrub_throttle_hz=self.scrub_throttle_hz,
         )
 
 
@@ -3347,16 +3255,10 @@ class TimeSeriesData:
         create gaps in the rendered line.
     times : ndarray of shape (n_samples,), dtype float64
         Timestamps for each sample, in seconds.
-    start_indices : ndarray of shape (n_frames,), dtype int64
-        Precomputed start index for each animation frame's window.
-    end_indices : ndarray of shape (n_frames,), dtype int64
-        Precomputed end index for each animation frame's window.
     label : str
         Label for Y-axis or legend.
     color : str
         Line color (matplotlib color string).
-    window_seconds : float
-        Time window width in seconds.
     linewidth : float
         Line width in points.
     alpha : float
@@ -3373,16 +3275,6 @@ class TimeSeriesData:
         Minimum Y-axis value (global across all data).
     global_vmax : float
         Maximum Y-axis value (global across all data).
-    use_global_limits : bool
-        If True, use global limits for stable Y-axis. Default is True.
-    interp : {"linear", "nearest"}
-        Interpolation method for cursor value computation.
-    update_mode : {"live", "on_pause", "manual"}
-        Update mode for dock widget during playback.
-    playback_throttle_hz : float
-        Maximum update frequency during playback. Default is 10.0.
-    scrub_throttle_hz : float
-        Maximum update frequency when scrubbing. Default is 20.0.
 
     Attributes
     ----------
@@ -3390,16 +3282,10 @@ class TimeSeriesData:
         Time series values.
     times : NDArray[np.float64]
         Sample timestamps.
-    start_indices : NDArray[np.int64]
-        Window start indices per frame.
-    end_indices : NDArray[np.int64]
-        Window end indices per frame.
     label : str
         Display label.
     color : str
         Line color.
-    window_seconds : float
-        Window width.
     linewidth : float
         Line width.
     alpha : float
@@ -3416,16 +3302,6 @@ class TimeSeriesData:
         Y-axis minimum.
     global_vmax : float
         Y-axis maximum.
-    use_global_limits : bool
-        Use global limits flag.
-    interp : str
-        Interpolation method.
-    update_mode : str
-        Update mode for dock widget.
-    playback_throttle_hz : float
-        Maximum update frequency during playback.
-    scrub_throttle_hz : float
-        Maximum update frequency when scrubbing.
 
     See Also
     --------
@@ -3436,14 +3312,9 @@ class TimeSeriesData:
     data: NDArray[np.float64]
     times: NDArray[np.float64]
 
-    # Precomputed window indices per frame
-    start_indices: NDArray[np.int64]
-    end_indices: NDArray[np.int64]
-
     # Display settings
     label: str
     color: str
-    window_seconds: float
     linewidth: float
     alpha: float
     group: str | None
@@ -3454,66 +3325,6 @@ class TimeSeriesData:
     # Y-axis limits
     global_vmin: float
     global_vmax: float
-    use_global_limits: bool = True
-
-    # Interpolation for cursor value
-    interp: Literal["linear", "nearest"] = "linear"
-
-    # Update mode for dock widget during playback
-    update_mode: Literal["live", "on_pause", "manual"] = "live"
-
-    # Throttle settings for performance optimization
-    playback_throttle_hz: float = 10.0
-    scrub_throttle_hz: float = 20.0
-
-    def get_window_slice(self, frame_idx: int) -> tuple[NDArray, NDArray]:
-        """O(1) window extraction using precomputed indices.
-
-        Parameters
-        ----------
-        frame_idx : int
-            Animation frame index (0-based).
-
-        Returns
-        -------
-        tuple[NDArray, NDArray]
-            Tuple of (data_slice, times_slice) for the window at this frame.
-        """
-        start = self.start_indices[frame_idx]
-        end = self.end_indices[frame_idx]
-        return self.data[start:end], self.times[start:end]
-
-    def get_cursor_value(self, current_time: float) -> float | None:
-        """Get interpolated value at cursor time for tooltip display.
-
-        Parameters
-        ----------
-        current_time : float
-            Current animation time in seconds.
-
-        Returns
-        -------
-        float | None
-            Interpolated value at cursor time, or None if current_time
-            is outside data range or data is empty.
-        """
-        if len(self.times) == 0:
-            return None
-        if current_time < self.times[0] or current_time > self.times[-1]:
-            return None
-
-        if self.interp == "nearest":
-            idx = np.searchsorted(self.times, current_time)
-            # Choose closer of idx-1 or idx
-            if idx == 0:
-                return float(self.data[0])
-            if idx >= len(self.times):
-                return float(self.data[-1])
-            if current_time - self.times[idx - 1] < self.times[idx] - current_time:
-                return float(self.data[idx - 1])
-            return float(self.data[idx])
-        else:  # linear
-            return float(np.interp(current_time, self.times, self.data))
 
 
 @dataclass
@@ -5127,17 +4938,9 @@ def _convert_overlays_to_data(
                     )
             if own_samples:
                 internal_data = _snapshot_internal_overlay(internal_data)
-                # Nonspatial panels retain their own values but index their
-                # windows and event visibility on the complete scene clock.
-                if isinstance(internal_data, TimeSeriesData):
-                    half = internal_data.window_seconds / 2
-                    internal_data.start_indices = np.searchsorted(
-                        internal_data.times, frame_times - half
-                    )
-                    internal_data.end_indices = np.searchsorted(
-                        internal_data.times, frame_times + half
-                    )
-                elif isinstance(internal_data, EventData):
+                # Events keep their own times but index their visibility on
+                # the complete scene clock.
+                if isinstance(internal_data, EventData):
                     _reindex_events(internal_data, frame_times)
 
             # Dispatch to appropriate list based on return type
@@ -5386,8 +5189,4 @@ def _realign_prepared_overlays(
             target_video.times = None
     for events in result.events:
         _reindex_events(events, clock)
-    for series in result.timeseries:
-        half = series.window_seconds / 2
-        series.start_indices = np.searchsorted(series.times, clock - half)
-        series.end_indices = np.searchsorted(series.times, clock + half)
     return result
