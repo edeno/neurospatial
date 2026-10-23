@@ -232,8 +232,16 @@ class AnnotationAssistWidget(QWidget):
 
         assistance_group = QGroupBox("Assisted outline")
         assistance = QVBoxLayout(assistance_group)
+        model = (
+            "Outlining with SAM 2.1 Large."
+            if isinstance(provider, SegmentAnythingProvider)
+            else "Outlining with CPU color region growing. For dark or "
+            "low-contrast video, SAM 2 usually outlines better; see the video "
+            "annotation guide."
+        )
         instructions = QLabel(
-            "Prompt with a box or clicks, check the cyan preview, then accept it."
+            f"{model} Prompt with a box or clicks, check the cyan preview, "
+            "then accept it."
         )
         instructions.setWordWrap(True)
         assistance.addWidget(instructions)

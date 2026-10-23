@@ -379,16 +379,77 @@ JSON provenance. A custom `SegmentationProvider` implements
 
 ### Optional SAM 2 Provider
 
-`SegmentAnythingProvider` can use Meta's SAM 2 image predictor for scenes where
-color alone gives a poor outline. Install PyTorch and SAM 2 separately by
-following [Meta's installation instructions](https://github.com/facebookresearch/sam2#installation),
-and obtain a matching model checkpoint from that repository. These model
-dependencies and weights are optional; the default CPU provider needs neither.
+SAM 2 is Meta's image segmentation model. Use it when the CPU region grower
+cannot separate the arena from its surroundings, as in dark or low-contrast
+video and multi-arm mazes. neurospatial supports **SAM 2.1 Large** only: the
+smaller SAM 2 models flood dark arenas with background. Setup takes four steps.
 
-To prepare the sample launcher on a Mac, install into the current checkout's
-virtual environment and download the default **SAM 2.1 Large** checkpoint
-(about 900 MB) once. These commands use a pinned revision of Meta's source and
-skip its optional CUDA extension:
+1. **On a Mac, check that Python is an Apple-silicon build.** PyTorch has no
+   packages for Intel Python on macOS, and an Intel Python under Rosetta fails
+   with a confusing "no matching platform tag" error:
+
+    ```bash
+    python -c "import platform; print(platform.machine())"   # must print arm64
+    ```
+
+    If it prints `x86_64`, create your environment from an arm64 Python, for
+    example Homebrew's (`/opt/homebrew/bin/python3`) or `uv python install`.
+    Intel Macs cannot run SAM 2 locally.
+
+2. **Install PyTorch and SAM 2** into the environment that has neurospatial.
+   With an NVIDIA GPU, first install PyTorch with CUDA using the selector at
+   [pytorch.org](https://pytorch.org/get-started/locally/). Then install Meta's
+   package from its repository; the PyPI package named `sam2` is a different,
+   unrelated project:
+
+    ```bash
+    pip install "sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
+    ```
+
+    Without an NVIDIA GPU (on a Mac, or CPU only), put `SAM2_BUILD_CUDA=0`
+    before `pip` to skip SAM 2's optional CUDA extension.
+
+3. **Download the SAM 2.1 Large checkpoint** (about 900 MB) once, to any
+   folder:
+
+    ```bash
+    curl -LO https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
+    ```
+
+4. **Load it, then open the editor.** Loading first reports any setup problem
+   before the viewer opens. It takes about 5 s, and uses a CUDA GPU, then Apple
+   silicon, then the CPU, whichever is available first. Each frame's image
+   features then take about 0.2 s on Apple silicon against about 2 s on the
+   CPU.
+
+<!-- docs-test: skip optional SAM 2 installation, local checkpoint and interactive viewer -->
+```python
+from neurospatial.annotation import SegmentAnythingProvider, annotate_video
+
+provider = SegmentAnythingProvider.from_sam2("~/models/sam2.1_hiera_large.pt")
+result = annotate_video(
+    "experiment.mp4",
+    bin_size=2.0,
+    project_path="arena.annotation.npz",
+    segmentation_provider=provider,
+)
+```
+
+If something is missing, `from_sam2` says what to do: the install command when
+SAM 2 is not installed, the Large download link when the checkpoint is missing
+or is a smaller model, and the arm64 check on an Intel Mac Python. Pass
+`device="cpu"` if outlines on Apple silicon look wrong; Meta describes that
+support as preliminary.
+
+You can instead wrap an already constructed SAM2-style image predictor with
+`SegmentAnythingProvider(predictor)`. Give the adapter exclusive use of that
+predictor: it caches embeddings for unchanged image content and selects the
+highest-scoring mask.
+
+#### Try SAM 2 with the demo (source checkout)
+
+From a neurospatial source checkout, install SAM 2 into its virtual environment,
+put the checkpoint where the demo looks for it, and launch:
 
 ```bash
 SAM2_BUILD_CUDA=0 uv pip install --python .venv/bin/python 'sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4'
@@ -398,61 +459,14 @@ curl --fail --location --output data/annotation_demo/sam2.1_hiera_large.pt \
 uv run --no-sync python examples/try_annotation.py --provider sam2
 ```
 
-The `data/` checkpoint is ignored by Git. Use `--checkpoint /path/to/model.pt`
-and `--model-config configs/sam2.1/sam2.1_hiera_l.yaml` for a matching Large
-checkpoint/config pair. Keep `--no-sync` when launching so uv retains these
-optional packages, which are not part of the core dependency lockfile.
-
-With `--provider sam2`, the launcher defaults to **SAM 2.1 Large** and runs it on
-a CUDA GPU, then Apple silicon, then the CPU, whichever is available first; pass
-`--device cpu` to force the CPU. On Apple silicon, Large computes a frame's
-image features in about 0.2 s, against about 2 s on the CPU. **Tiny** loads
-faster and uses less memory, but on dark, low-contrast frames it can flood the
-background, so use it to try the workflow rather than for final outlines:
-
-```bash
-curl --fail --location --output data/annotation_demo/sam2.1_hiera_tiny.pt \
-    https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
-uv run --no-sync python examples/try_annotation.py --provider sam2 --sam2-model tiny
-```
-
-Add `--video /path/to/movie.mp4 --frame-index 100` to compare on your own recording
-using the same frame and clicks. `--sam2-model` also accepts `small` and
-`base-plus`, and selects the matching config and local checkpoint filename.
-The launcher prints the config and checkpoint it actually loads. Image embeddings
-are reused between clicks, so a larger model's initial image processing can take
-longer than subsequent outline updates. `--checkpoint` and `--model-config` still
-override the selected defaults; weights are never downloaded by the launcher.
-Without `--provider sam2`, the launcher uses CPU color region growing and needs
-no SAM checkpoint. Both providers start the polygon preview at **1.4 pixels**
-of simplification; set **Polygon detail** to **0** for an exact mask outline.
-
-Load the provider **before** opening the editor so dependency, config or
-checkpoint errors are reported first. Supply an existing local checkpoint;
-this factory does not download weights. The default device is `"cpu"`.
-
-<!-- docs-test: skip optional SAM 2 installation, local checkpoint and interactive viewer -->
-```python
-from neurospatial.annotation import SegmentAnythingProvider, annotate_video
-
-provider = SegmentAnythingProvider.from_sam2(
-    "configs/sam2.1/sam2.1_hiera_l.yaml",
-    "/path/to/sam2.1_hiera_large.pt",
-    device="cpu",
-)
-result = annotate_video(
-    "experiment.mp4",
-    bin_size=2.0,
-    project_path="arena.annotation.npz",
-    segmentation_provider=provider,
-)
-```
-
-You can instead wrap an already constructed SAM2-style image predictor with
-`SegmentAnythingProvider(predictor)`. Give the adapter exclusive use of that
-predictor: it caches embeddings for unchanged image content and selects the
-highest-scoring mask. The integration is tested with mocked predictors;
-running real SAM 2 weights requires your separately installed model setup.
+Keep `--no-sync` so uv retains these optional packages, which are not part of
+the core dependency lockfile; the `data/` checkpoint is ignored by Git. Use
+`--checkpoint /path/to/sam2.1_hiera_large.pt` for a checkpoint elsewhere,
+`--device cpu` to force the CPU, and `--video /path/to/movie.mp4 --frame-index
+100` to try your own recording. Without `--provider sam2`, the demo uses CPU
+region growing and needs no checkpoint. Both providers start the polygon
+preview at **1.4 pixels** of simplification; set **Polygon detail** to **0**
+for an exact mask outline. The demo never downloads weights.
 
 ### Design Credit and References
 

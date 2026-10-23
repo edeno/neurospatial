@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import platform
+import sys
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import KW_ONLY, dataclass
@@ -32,6 +34,17 @@ __all__ = [
     "SegmentationProvider",
     "mask_to_polygons",
 ]
+
+
+# The only supported model: smaller SAM 2 models flood dark, low-contrast arenas.
+_SAM2_LARGE_CONFIG = "configs/sam2.1/sam2.1_hiera_l.yaml"
+_SAM2_LARGE_URL = (
+    "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"
+)
+_SAM2_PACKAGE = (
+    "sam-2 @ git+https://github.com/facebookresearch/sam2.git"
+    "@2b90b9f5ceec907a1c18123530e92e794ad901a4"
+)
 
 
 @dataclass(frozen=True)
@@ -375,29 +388,65 @@ class SegmentAnythingProvider:
     @classmethod
     def from_sam2(
         cls,
-        config_file: str | Path,
         checkpoint_path: str | Path,
         *,
         device: str | None = None,
     ) -> SegmentAnythingProvider:
-        """Load installed SAM 2 using an existing local checkpoint.
+        """Load Meta's SAM 2.1 Large from a downloaded checkpoint.
 
-        Install PyTorch and Meta's SAM 2 following
-        https://github.com/facebookresearch/sam2#installation . Supply the
-        installed model's config name (for example
-        ``configs/sam2.1/sam2.1_hiera_l.yaml``) and a matching checkpoint file.
-        No weights are downloaded and no global torch settings are changed.
+        Only SAM 2.1 Large is supported: the smaller models flood dark,
+        low-contrast arenas with background. Install PyTorch and SAM 2, then
+        download the checkpoint once (about 900 MB)::
 
-        ``device=None`` uses a CUDA GPU when available, then Apple silicon
-        (``"mps"``), then the CPU. On Apple silicon, SAM 2.1 Large computes a
-        frame's image features about ten times faster than on the CPU. Meta
-        describes MPS support as preliminary; pass ``device="cpu"`` if its
-        outlines look wrong.
+            pip install "sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
+            curl -LO https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
+
+        The PyPI package named ``sam2`` is unrelated; install ``sam-2`` from
+        Meta's repository as above. No weights are downloaded here and no
+        global torch settings are changed.
+
+        Parameters
+        ----------
+        checkpoint_path : str or Path
+            The downloaded ``sam2.1_hiera_large.pt``.
+        device : str, optional
+            ``None`` uses a CUDA GPU when available, then Apple silicon
+            (``"mps"``), then the CPU. On Apple silicon, a frame's image
+            features take about 0.2 s, against about 2 s on the CPU. Meta
+            describes MPS support as preliminary; pass ``device="cpu"`` if its
+            outlines look wrong.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the checkpoint does not exist.
+        ValueError
+            If the checkpoint is a smaller SAM 2 model.
+        ImportError
+            If PyTorch or SAM 2 is not installed.
+        RuntimeError
+            If the checkpoint is not SAM 2.1 Large or cannot be loaded.
         """
         checkpoint = Path(checkpoint_path).expanduser()
         if not checkpoint.is_file():
             raise FileNotFoundError(
-                f"SAM 2 checkpoint does not exist: {checkpoint}. Supply a local checkpoint matching config_file; weights are not downloaded automatically."
+                f"SAM 2 checkpoint does not exist: {checkpoint}. Download "
+                f"SAM 2.1 Large once from {_SAM2_LARGE_URL} and pass its path; "
+                "weights are not downloaded automatically."
+            )
+        smaller = next(
+            (
+                size
+                for size in ("tiny", "small", "base_plus")
+                if f"_{size}" in checkpoint.stem
+            ),
+            None,
+        )
+        if smaller is not None:
+            raise ValueError(
+                f"{checkpoint.name} is the SAM 2 {smaller.replace('_', '+')} model. "
+                "Only SAM 2.1 Large is supported: smaller models flood dark, "
+                f"low-contrast arenas with background. Download {_SAM2_LARGE_URL}."
             )
         try:
             torch = importlib.import_module("torch")
@@ -406,8 +455,19 @@ class SegmentAnythingProvider:
                 "sam2.sam2_image_predictor"
             ).SAM2ImagePredictor
         except ImportError as exc:
+            hint = ""
+            if sys.platform == "darwin" and platform.machine() == "x86_64":
+                hint = (
+                    " This Python is an Intel (x86_64) build, for which PyTorch "
+                    "2.5+ has no packages: on Apple silicon, use an arm64 Python "
+                    "(platform.machine() prints 'arm64')."
+                )
             raise ImportError(
-                "SegmentAnythingProvider.from_sam2 requires PyTorch and Meta SAM 2. Install them following https://github.com/facebookresearch/sam2#installation, or use RegionGrowProvider without model dependencies."
+                "SegmentAnythingProvider.from_sam2 needs PyTorch and Meta's SAM 2. "
+                f'Install them with: pip install "{_SAM2_PACKAGE}" (the PyPI '
+                "package named sam2 is unrelated). With an NVIDIA GPU, install "
+                f"PyTorch with CUDA first.{hint} Without SAM 2, use "
+                "RegionGrowProvider."
             ) from exc
         if device is None:
             device = (
@@ -418,11 +478,14 @@ class SegmentAnythingProvider:
                 else "cpu"
             )
         try:
-            model = build_sam2(str(config_file), str(checkpoint), device=device)
+            model = build_sam2(_SAM2_LARGE_CONFIG, str(checkpoint), device=device)
             predictor = predictor_class(model)
         except Exception as exc:
             raise RuntimeError(
-                f"Could not load SAM 2 config {str(config_file)!r} and checkpoint {str(checkpoint)!r} on device {device!r}. Check the matching model configuration, checkpoint, and installed SAM 2/PyTorch versions: {exc}"
+                f"Could not load {checkpoint.name} as SAM 2.1 Large on device "
+                f"{device!r}. Use the SAM 2.1 Large checkpoint from "
+                f"{_SAM2_LARGE_URL} (SAM 2.0 and smaller models do not fit), "
+                f"and a current SAM 2 install: {exc}"
             ) from exc
         return cls(predictor)
 

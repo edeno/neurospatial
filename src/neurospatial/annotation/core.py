@@ -162,7 +162,12 @@ def annotate_video(
         and positive; None disables periodic saves.
     segmentation_provider : SegmentationProvider, optional
         Provider for interactive outline proposals. The default CPU region
-        grower needs no model download. Proposals require explicit acceptance.
+        grower needs no model download and suits a floor whose color differs
+        clearly from its surroundings. For dark or low-contrast video, use
+        Meta's SAM 2.1 Large with
+        ``SegmentAnythingProvider.from_sam2("sam2.1_hiera_large.pt")``; see the
+        video annotation guide for installing it. Proposals require explicit
+        acceptance.
 
     Returns
     -------
@@ -345,7 +350,9 @@ def annotate_project(
         Seconds between saves to the current project path. Must be positive
         and finite; None disables periodic saves.
     segmentation_provider : SegmentationProvider, optional
-        Outline proposal provider; defaults to the CPU region grower.
+        Outline proposal provider; defaults to the CPU region grower. For dark
+        or low-contrast video, pass
+        ``SegmentAnythingProvider.from_sam2("sam2.1_hiera_large.pt")``.
 
     Returns
     -------

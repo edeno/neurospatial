@@ -528,27 +528,57 @@ def test_module_import_does_not_import_optional_model_or_viewer_libraries(monkey
 def test_from_sam2_checks_local_checkpoint_before_model_import(tmp_path, monkeypatch):
     imports = []
     monkeypatch.setattr(importlib, "import_module", lambda name: imports.append(name))
-    with pytest.raises(FileNotFoundError, match="not downloaded automatically"):
-        SegmentAnythingProvider.from_sam2("config.yaml", tmp_path / "absent.pt")
+    with pytest.raises(
+        FileNotFoundError, match=r"sam2.1_hiera_large.pt.*not downloaded"
+    ):
+        SegmentAnythingProvider.from_sam2(tmp_path / "absent.pt")
     assert not imports
 
 
-def test_from_sam2_missing_dependency_is_actionable(tmp_path, monkeypatch):
-    checkpoint = tmp_path / "weights.pt"
+@pytest.mark.parametrize(
+    "name",
+    ["sam2.1_hiera_tiny.pt", "sam2.1_hiera_small.pt", "sam2.1_hiera_base_plus.pt"],
+)
+def test_from_sam2_refuses_smaller_models_before_loading(tmp_path, monkeypatch, name):
+    checkpoint = tmp_path / name
+    checkpoint.write_bytes(b"fake weights")
+    imports = []
+    monkeypatch.setattr(importlib, "import_module", lambda name: imports.append(name))
+    with pytest.raises(ValueError, match=r"Only SAM 2.1 Large.*sam2.1_hiera_large.pt"):
+        SegmentAnythingProvider.from_sam2(checkpoint)
+    assert not imports
+
+
+@pytest.mark.parametrize("intel_mac", [False, True])
+def test_from_sam2_missing_dependency_gives_the_install_command(
+    tmp_path, monkeypatch, intel_mac
+):
+    from neurospatial.annotation import segmentation
+
+    checkpoint = tmp_path / "sam2.1_hiera_large.pt"
     checkpoint.write_bytes(b"fake weights")
 
     def missing(name):
         raise ImportError(name)
 
     monkeypatch.setattr(importlib, "import_module", missing)
-    with pytest.raises(
-        ImportError, match=r"PyTorch and Meta SAM 2.*RegionGrowProvider"
-    ):
-        SegmentAnythingProvider.from_sam2("config.yaml", checkpoint)
+    monkeypatch.setattr(
+        segmentation.sys, "platform", "darwin" if intel_mac else "linux"
+    )
+    monkeypatch.setattr(segmentation.platform, "machine", lambda: "x86_64")
+    with pytest.raises(ImportError) as raised:
+        SegmentAnythingProvider.from_sam2(checkpoint)
+    message = str(raised.value)
+    assert (
+        'pip install "sam-2 @ git+https://github.com/facebookresearch/sam2' in message
+    )
+    assert "package named sam2 is unrelated" in message
+    assert "RegionGrowProvider" in message
+    assert ("arm64 Python" in message) is intel_mac
 
 
-def test_from_sam2_loads_local_model_on_requested_device(tmp_path, monkeypatch):
-    checkpoint = tmp_path / "weights.pt"
+def test_from_sam2_loads_large_on_requested_device(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "sam2.1_hiera_large.pt"
     checkpoint.write_bytes(b"fake weights")
     calls = []
     predictor = _Predictor()
@@ -568,10 +598,8 @@ def test_from_sam2_loads_local_model_on_requested_device(tmp_path, monkeypatch):
         "sam2.sam2_image_predictor": SimpleNamespace(SAM2ImagePredictor=make_predictor),
     }
     monkeypatch.setattr(importlib, "import_module", modules.__getitem__)
-    provider = SegmentAnythingProvider.from_sam2(
-        "configs/sam2.1/model.yaml", checkpoint, device="cpu"
-    )
-    assert calls == [("configs/sam2.1/model.yaml", str(checkpoint), "cpu")]
+    provider = SegmentAnythingProvider.from_sam2(checkpoint, device="cpu")
+    assert calls == [("configs/sam2.1/sam2.1_hiera_l.yaml", str(checkpoint), "cpu")]
     assert provider.predict(np.ones((3, 4, 3), dtype=np.uint8), _prompt()).mask.all()
 
 
@@ -589,7 +617,7 @@ def _fake_torch(*, cuda, mps):
 def test_from_sam2_selects_the_fastest_available_device(
     tmp_path, monkeypatch, cuda, mps, expected
 ):
-    checkpoint = tmp_path / "weights.pt"
+    checkpoint = tmp_path / "sam2.1_hiera_large.pt"
     checkpoint.write_bytes(b"fake weights")
     devices = []
 
@@ -605,12 +633,12 @@ def test_from_sam2_selects_the_fastest_available_device(
         ),
     }
     monkeypatch.setattr(importlib, "import_module", modules.__getitem__)
-    SegmentAnythingProvider.from_sam2("configs/sam2.1/model.yaml", checkpoint)
+    SegmentAnythingProvider.from_sam2(checkpoint)
     assert devices == [expected]
 
 
-def test_from_sam2_incompatible_weights_error_has_context(tmp_path, monkeypatch):
-    checkpoint = tmp_path / "weights.pt"
+def test_from_sam2_wrong_weights_point_to_the_large_checkpoint(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "renamed.pt"
     checkpoint.write_bytes(b"fake weights")
 
     def fail(*args, **kwargs):
@@ -624,6 +652,7 @@ def test_from_sam2_incompatible_weights_error_has_context(tmp_path, monkeypatch)
     monkeypatch.setattr(importlib, "import_module", modules.__getitem__)
     with pytest.raises(
         RuntimeError,
-        match=r"Could not load.*config.yaml.*weights.pt.*cpu.*wrong state dict",
+        match=r"Could not load renamed.pt as SAM 2.1 Large.*cpu.*sam2.1_hiera_large.pt"
+        r".*wrong state dict",
     ):
-        SegmentAnythingProvider.from_sam2("config.yaml", checkpoint)
+        SegmentAnythingProvider.from_sam2(checkpoint)

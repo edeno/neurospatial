@@ -4,13 +4,10 @@ Run from the annotation feature checkout with its optional viewers installed::
 
     uv run --no-sync python examples/try_annotation.py --provider cpu
     uv run --no-sync python examples/try_annotation.py --provider sam2
-    uv run --no-sync python examples/try_annotation.py --provider sam2 --sam2-model tiny
     uv run --no-sync python examples/try_annotation.py --provider cpu --video movie.mp4
 
-SAM 2 defaults to the Large model and requires its optional dependencies and a
-matching local checkpoint. It runs on a CUDA GPU or Apple silicon when available.
-Tiny loads faster but can flood dark, low-contrast frames; use it to try the
-workflow, not for final outlines.
+SAM 2 uses Meta's SAM 2.1 Large, which needs its optional dependencies and the
+downloaded checkpoint, and runs on a CUDA GPU or Apple silicon when available.
 See the video annotation guide for setup. This script never downloads a model.
 """
 
@@ -55,12 +52,6 @@ def main() -> None:
     """Choose a provider, then open a frame in the annotation editor."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", choices=("cpu", "sam2"), default="cpu")
-    parser.add_argument(
-        "--sam2-model",
-        choices=("tiny", "small", "base-plus", "large"),
-        default="large",
-        help="SAM 2.1 checkpoint size (default: large). Tiny loads faster and uses less memory.",
-    )
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--video", type=Path, help="Use a frame from your video.")
     source.add_argument("--image", type=Path, help="Use a photo or extracted frame.")
@@ -74,10 +65,7 @@ def main() -> None:
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        help="Override the selected model's local checkpoint path.",
-    )
-    parser.add_argument(
-        "--model-config", help="Override the selected model's matching SAM 2 config."
+        help="SAM 2.1 Large checkpoint (default: data/annotation_demo/sam2.1_hiera_large.pt).",
     )
     parser.add_argument(
         "--device",
@@ -102,28 +90,17 @@ def main() -> None:
     if args.provider == "cpu":
         provider = RegionGrowProvider(tolerance=0.1)
     else:
-        config_suffix = {"tiny": "t", "small": "s", "base-plus": "b+", "large": "l"}[
-            args.sam2_model
-        ]
-        model_config = (
-            args.model_config or f"configs/sam2.1/sam2.1_hiera_{config_suffix}.yaml"
-        )
         checkpoint = args.checkpoint or (
             Path(__file__).resolve().parents[1]
-            / "data/annotation_demo"
-            / f"sam2.1_hiera_{args.sam2_model.replace('-', '_')}.pt"
+            / "data/annotation_demo/sam2.1_hiera_large.pt"
         )
         device = None if args.device == "auto" else args.device
         print(
-            f"Loading SAM 2 on {device or 'the fastest available device'}: "
-            f"{model_config} ({checkpoint.name})…",
+            f"Loading SAM 2.1 Large on {device or 'the fastest available device'} "
+            f"from {checkpoint}…",
             flush=True,
         )
-        provider = SegmentAnythingProvider.from_sam2(
-            model_config,
-            checkpoint,
-            device=device,
-        )
+        provider = SegmentAnythingProvider.from_sam2(checkpoint, device=device)
 
     if args.check:
         prompt = SegmentationPrompt(

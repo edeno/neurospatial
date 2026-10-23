@@ -1283,9 +1283,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 ### Changed
 
 - Assisted outlines now start with **1.4 px** polygon simplification; set
-  **Polygon detail** to **0** to restore exact mask boundaries. The SAM 2 demo
-  defaults to **Large**, with `--sam2-model tiny` available for lower memory use.
-  Setup instructions and launcher help describe the matching checkpoints and
+  **Polygon detail** to **0** to restore exact mask boundaries. Setup
+  instructions and launcher help describe the SAM 2.1 Large checkpoint and
   current prompt controls. The guide and source comments credit CVAT's interaction
   design and link to pinned upstream references for the workflow and defaults.
 
@@ -1311,10 +1310,6 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   the original prediction without another model call. Cleanup preserves holes
   and every region containing an inside click, and records removed fragments
   in accepted annotation metadata.
-
-- The annotation demo accepts `--sam2-model tiny|small|base-plus|large`, chooses
-  the matching local checkpoint and config, and prints the model it loads so
-  segmentation quality comparisons identify the actual model size.
 
 - Assisted annotation previews update automatically as inside/outside points or
   CPU color tolerance change. Outlines keep the point tool active, stale results
@@ -1874,9 +1869,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   painted or erased before acceptance. `SegmentationPrompt`,
   `SegmentationProposal`, `SegmentationProvider` and `mask_to_polygons` also work
   without a viewer, preserving disconnected areas and holes. Optional
-  `SegmentAnythingProvider.from_sam2` loads separately installed Meta SAM 2
-  from a local checkpoint on a CUDA GPU, then Apple silicon, then the CPU;
-  model libraries and weights are not bundled or downloaded automatically.
+  `SegmentAnythingProvider.from_sam2(checkpoint_path)` loads separately
+  installed Meta SAM 2.1 Large, the only supported size because smaller models
+  flood dark arenas, on a CUDA GPU, then Apple silicon, then the CPU. Its
+  errors give the install command, the checkpoint link, and the arm64 check for
+  an Intel Mac Python; model libraries and weights are not bundled or
+  downloaded automatically.
   The editor computes SAM 2's image features as soon as it opens, and asks for
   candidate masks only for a single click, as Meta recommends.
 - The annotation editor opens with the whole video frame in view. Its
