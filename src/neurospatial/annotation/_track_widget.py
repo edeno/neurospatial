@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
     import napari
     from napari.layers import Points, Shapes
+    from numpy.typing import NDArray
 
     from neurospatial.annotation._track_state import TrackBuilderState
     from neurospatial.ops.transforms import VideoCalibration
@@ -170,6 +171,14 @@ def _hex_to_rgba(hex_color: str) -> np.ndarray:
 # =============================================================================
 
 
+def edge_paths(state: TrackBuilderState) -> list[NDArray[np.float64]]:
+    """Return each edge as a napari ``(row, col)`` path between its two nodes."""
+    return [
+        np.array([state.nodes[a][::-1], state.nodes[b][::-1]], dtype=np.float64)
+        for a, b in state.edges
+    ]
+
+
 def _sync_layers_from_state(
     state: TrackBuilderState,
     nodes_layer: Points,
@@ -250,22 +259,15 @@ def _sync_layers_from_state(
 
         # Convert edges to paths for shapes layer
         if state.edges and state.nodes:
-            paths = []
-            edge_labels = []
-            for i, (n1, n2) in enumerate(state.edges):
-                if n1 < len(state.nodes) and n2 < len(state.nodes):
-                    x1, y1 = state.nodes[n1]
-                    x2, y2 = state.nodes[n2]
-                    # Convert to napari (row, col) = (y, x)
-                    path = np.array([[y1, x1], [y2, x2]], dtype=np.float64)
-                    paths.append(path)
-                    edge_labels.append(f"Edge {i}: {n1} → {n2}")
+            paths = edge_paths(state)
+            edge_labels = [
+                f"Edge {i}: {n1} → {n2}" for i, (n1, n2) in enumerate(state.edges)
+            ]
 
             if paths:
                 # Clear and re-add all paths
                 edges_layer.data = []
-                for path in paths:
-                    edges_layer.add_paths([path])
+                edges_layer.add_paths(paths)
 
                 # Set features for hover info (shown in status bar)
                 edges_layer.features = {"label": edge_labels}

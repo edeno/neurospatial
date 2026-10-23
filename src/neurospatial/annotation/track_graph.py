@@ -41,6 +41,7 @@ from neurospatial.annotation._track_widget import (
     _handle_key,
     _sync_layers_from_state,
     create_track_widget,
+    edge_paths,
     setup_track_layers,
 )
 
@@ -84,6 +85,19 @@ def _apply_initial_edges(
                 UserWarning,
                 stacklevel=2,
             )
+
+
+def _same_paths(actual: list[NDArray], reference: list[NDArray]) -> bool:
+    """Whether layer paths equal the reference paths at layer precision.
+
+    Shapes stores coordinates in its display dtype (currently float32).
+    Comparing the exact representable endpoints still detects a one-ULP
+    geometry edit without rejecting ordinary rounding.
+    """
+    return len(actual) == len(reference) and all(
+        np.array_equal(path, np.asarray(ref, dtype=path.dtype))
+        for path, ref in zip(actual, reference, strict=True)
+    )
 
 
 def annotate_track_graph(
@@ -342,15 +356,7 @@ def annotate_track_graph(
             if action == "removing":
                 pending_edge_removal = tuple(getattr(event, "data_indices", ()))
             return
-        expected = [
-            np.asarray(
-                [
-                    (state.nodes[a][1], state.nodes[a][0]),
-                    (state.nodes[b][1], state.nodes[b][0]),
-                ]
-            )
-            for a, b in state.edges
-        ]
+        expected = edge_paths(state)
         removed = pending_edge_removal
         pending_edge_removal = ()
         if action == "removed" and not removed:
@@ -369,22 +375,9 @@ def annotate_track_graph(
             for index, path in enumerate(edges_layer.data)
             if index != preview_index
         ]
-        # Shapes stores coordinates in its display dtype (currently float32).
-        # Compare the exact representable endpoints, preserving detection of
-        # even a one-ULP geometry edit without rejecting ordinary rounding.
-        matches = len(actual) == len(survivors) and all(
-            np.array_equal(path, np.asarray(reference, dtype=path.dtype))
-            for path, reference in zip(actual, survivors, strict=True)
-        )
-        if deleted and action == "removed" and matches:
+        if deleted and action == "removed" and _same_paths(actual, survivors):
             state._delete_edges(deleted)
-        elif not (
-            len(actual) == len(expected)
-            and all(
-                np.array_equal(path, np.asarray(reference, dtype=path.dtype))
-                for path, reference in zip(actual, expected, strict=True)
-            )
-        ):
+        elif not _same_paths(actual, expected):
             message = (
                 "Track edges must connect node positions. Move nodes to change "
                 "edge geometry, or use E to connect two nodes. The edge edit "
