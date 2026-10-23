@@ -199,7 +199,6 @@ class TrackBuilderState:
         """
         self._save_for_undo()
         self.nodes.append((x, y))
-        self._invalidate_edge_layout_overrides()
         self.node_labels.append(label if label is not None else "")
         return len(self.nodes) - 1
 
@@ -236,10 +235,10 @@ class TrackBuilderState:
                 if self.edge_start_node is not None
                 else None
             )
-        elif len(nodes) > old_count:
-            self.node_labels.extend([""] * (len(nodes) - old_count))
-        if len(nodes) != old_count:
             self._invalidate_edge_layout_overrides()
+        elif len(nodes) > old_count:
+            # New nodes have no edges, so a manual edge layout stays valid.
+            self.node_labels.extend([""] * (len(nodes) - old_count))
         self.nodes = list(nodes)
 
     def delete_node(self, idx: int) -> None:

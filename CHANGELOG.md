@@ -2431,8 +2431,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Annotation editing preserves surviving track edges, node labels and start
   nodes when deleting points in napari. Native additions, deletions and moves
   participate in undo/redo without state-to-view feedback corrupting the graph.
-- Track topology edits invalidate manual linearization overrides, and result
-  conversion rejects edge orders that omit, repeat or invent graph edges.
+- Edge edits and node deletions invalidate manual linearization overrides,
+  while adding a node keeps them, and result conversion rejects edge orders
+  that omit, repeat or invent graph edges.
 - Reopening polygon annotations preserves interior rings and their parent
   polygons. Invalid initial polygons open for repair, and invalid boundary and
   region polygons are rejected before the viewer closes, keeping the draft

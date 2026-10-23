@@ -122,7 +122,9 @@ an edge's geometry, move its endpoint nodes.
 Preview 1D uses the same node coordinates, edge order and gaps as the returned
 `TrackGraphResult`. Gaps are in centimeters with calibration and pixels without
 it; the spacing control displays the unit. Automatic gaps follow the selected
-edge order, and disconnected components are included in the result.
+edge order, and disconnected components are included in the result. Adding a
+node keeps a manual edge order and gaps; adding or deleting edges, or deleting
+nodes, returns to the automatic layout.
 
 Saving or closing either editor validates the draft before the editor closes.
 If it cannot be saved, a dialog says why: choose "Keep Editing" to fix it, or
