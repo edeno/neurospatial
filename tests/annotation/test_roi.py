@@ -24,9 +24,9 @@ from neurospatial.annotation.segmentation import (
 def test_crop_preserves_rgb_and_exact_subpixel_offsets():
     image = np.arange(7 * 13 * 3, dtype=np.uint8).reshape(7, 13, 3)
     prompt = SegmentationPrompt(
-        np.array([[4.25, 2.5], [9.75, 5.9]]),
+        np.array([[4.25, 2.5], [9.25, 5.4]]),
         np.array([1, 0]),
-        box=np.array([4.0, 2.0, 10.0, 6.0]),
+        box=np.array([4.0, 2.0, 9.0, 5.0]),
     )
     crop, local = crop_segmentation_input(image, prompt, bounds=(4, 2, 10, 6))
     assert crop.shape == (4, 6, 3)
@@ -34,11 +34,13 @@ def test_crop_preserves_rgb_and_exact_subpixel_offsets():
     assert_array_equal(crop, image[2:6, 4:10])
     assert_array_equal(local.points, prompt.points - [4, 2])
     assert_array_equal(local.labels, [1, 0])
-    assert_array_equal(local.box, [0, 0, 6, 4])
-    assert_array_equal(prompt.points, [[4.25, 2.5], [9.75, 5.9]])
+    assert_array_equal(local.box, [0, 0, 5, 3])
+    assert_array_equal(prompt.points, [[4.25, 2.5], [9.25, 5.4]])
 
 
-@pytest.mark.parametrize("point", [[3.9, 3], [10, 3], [5, 1.9], [5, 6]])
+# Integer coordinates are pixel centers: bounds (4, 2, 10, 6) cover
+# x in [3.5, 9.5) and y in [1.5, 5.5).
+@pytest.mark.parametrize("point", [[3.4, 3], [9.5, 3], [5, 1.4], [5, 5.5]])
 @pytest.mark.parametrize("label", [0, 1])
 def test_crop_rejects_every_outside_prompt_actionably(point, label):
     prompt = SegmentationPrompt(np.array([point]), np.array([label]))
@@ -75,10 +77,19 @@ def test_restore_mask_preserves_components_holes_score_and_metadata():
     assert not restored.mask.flags.writeable
 
 
+@pytest.mark.parametrize("point", [[3.5, 1.5], [9.49, 5.49]])
+def test_crop_accepts_prompts_on_the_outer_half_of_edge_pixels(point):
+    prompt = SegmentationPrompt(np.array([point]), np.array([1]))
+    _, local = crop_segmentation_input(
+        np.zeros((7, 13, 3), dtype=np.uint8), prompt, bounds=(4, 2, 10, 6)
+    )
+    assert_array_equal(local.points, [np.subtract(point, [4, 2])])
+
+
 def test_fractional_click_near_crop_upper_edges_selects_last_crop_pixel():
     image = np.zeros((7, 13, 3), dtype=np.uint8)
     image[4, 7] = 255
-    prompt = SegmentationPrompt(np.array([[7.9, 4.9]]), np.array([1]))
+    prompt = SegmentationPrompt(np.array([[7.4, 4.4]]), np.array([1]))
     bounds = (4, 2, 8, 5)
     crop, local = crop_segmentation_input(image, prompt, bounds=bounds)
     proposal = RegionGrowProvider(tolerance=0).predict(crop, local)
@@ -92,7 +103,7 @@ def test_roi_cleanup_retains_both_components_at_fractional_crop_edges():
     image = np.zeros((7, 13, 3), dtype=np.uint8)
     image[2, 4] = 255
     image[4, 7] = 255
-    prompt = SegmentationPrompt(np.array([[4, 2], [7.9, 4.9]]), np.array([1, 1]))
+    prompt = SegmentationPrompt(np.array([[4, 2], [7.4, 4.4]]), np.array([1, 1]))
     bounds = (4, 2, 8, 5)
     crop, local = crop_segmentation_input(image, prompt, bounds=bounds)
     restored = restore_roi_proposal(
@@ -110,7 +121,7 @@ def test_roi_cleanup_preserves_counters_score_and_provenance():
     mask[2, 4] = True
     mask[4, 7] = True
     proposal = SegmentationProposal(mask, score=0.9, metadata={"provider": "fake"})
-    prompt = SegmentationPrompt(np.array([[7.9, 4.9], [5, 3]]), np.array([1, 1]))
+    prompt = SegmentationPrompt(np.array([[7.4, 4.4], [5, 3]]), np.array([1, 1]))
     cleaned = clean_roi_fragments(proposal, prompt, bounds=(4, 2, 8, 5))
     expected = np.zeros_like(mask)
     expected[4, 7] = True
@@ -157,7 +168,9 @@ def test_restored_polygon_boundaries_follow_original_pixel_centers():
 @pytest.mark.parametrize("bounds", [None, (0, 0, 13, 7)])
 def test_full_frame_edges_keep_coordinates(bounds):
     image = np.zeros((7, 13, 3), dtype=np.uint8)
-    prompt = SegmentationPrompt(np.array([[0, 0], [12.99, 6.99]]), np.array([1, 0]))
+    prompt = SegmentationPrompt(
+        np.array([[-0.5, -0.5], [12.49, 6.49]]), np.array([1, 0])
+    )
     crop, local = crop_segmentation_input(image, prompt, bounds=bounds)
     assert_array_equal(crop, image)
     assert_array_equal(local.points, prompt.points)
@@ -187,6 +200,26 @@ def test_invalid_or_empty_bounds(bounds):
 def test_fractional_integer_bounds_are_not_silently_truncated():
     with pytest.raises(ValueError, match="integer"):
         validate_roi_bounds((1.5, 0, 3, 4), (7, 13))
+
+
+def test_rectangle_includes_partially_covered_edge_pixels():
+    # Pixel 21 covers [20.5, 21.5], so a rectangle ending at 20.6 overlaps it;
+    # pixel 9 covers [8.5, 9.5] and lies outside a rectangle starting at 9.6.
+    vertices = np.array([[9.6, 9.6], [9.6, 20.6], [20.6, 20.6], [20.6, 9.6]])
+    bounds = rectangle_to_roi_bounds(vertices, (30, 30))
+    assert bounds == (10, 10, 22, 22)
+    image = np.zeros((30, 30, 3), dtype=np.uint8)
+    image[15, 21] = 255
+    prompt = SegmentationPrompt(np.array([[20.55, 15]]), np.array([1]))
+    crop, local = crop_segmentation_input(image, prompt, bounds=bounds)
+    proposal = RegionGrowProvider(tolerance=0).predict(crop, local)
+    restored = restore_roi_proposal(proposal, image.shape, bounds=bounds)
+    assert np.argwhere(restored.mask).tolist() == [[15, 21]]
+
+
+def test_rectangle_corners_at_pixel_centers_cover_both_edge_pixels():
+    vertices = np.array([[1, 2], [1, 9], [6, 9], [6, 2]])
+    assert rectangle_to_roi_bounds(vertices, (7, 13)) == (2, 1, 10, 7)
 
 
 def test_napari_rectangle_uses_row_column_and_clips_edges():

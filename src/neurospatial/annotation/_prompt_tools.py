@@ -151,7 +151,7 @@ class PromptTools:
             # napari events carry world coordinates, not layer pixel coordinates.
             point = np.asarray(target.world_to_data(event.position), dtype=float)
             if np.all(np.isfinite(point)) and np.all(
-                (point >= 0) & (point < self._shape)
+                (point >= -0.5) & (point < self._shape - 0.5)
             ):
                 for prompt_layer in self._layers:
                     prompt_layer.selected_data = set()

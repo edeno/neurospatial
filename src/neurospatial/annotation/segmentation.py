@@ -189,17 +189,18 @@ def _validate_inputs(
             "Segmentation image must be a nonzero-size RGB uint8 array (height, width, 3)."
         )
     height, width = image.shape[:2]
+    # Integers are pixel centers, so the image covers [-0.5, size - 0.5).
     if (
-        (prompt.points < 0).any()
-        or (prompt.points[:, 0] >= width).any()
-        or (prompt.points[:, 1] >= height).any()
+        (prompt.points < -0.5).any()
+        or (prompt.points[:, 0] >= width - 0.5).any()
+        or (prompt.points[:, 1] >= height - 0.5).any()
     ):
         raise ValueError(
             f"Prompt (x, y) points fall outside the {width} by {height} image; use pixel coordinates."
         )
     if prompt.box is not None:
         x0, y0, x1, y1 = prompt.box
-        if x1 < 0 or y1 < 0 or x0 >= width or y0 >= height:
+        if x1 < -0.5 or y1 < -0.5 or x0 >= width - 0.5 or y0 >= height - 0.5:
             raise ValueError(
                 "Prompt box lies outside the image; choose bounds intersecting the image."
             )
@@ -243,9 +244,7 @@ class RegionGrowProvider:
                 "RegionGrowProvider needs at least one foreground click (label=1)."
             )
         height, width = image.shape[:2]
-        pixels = np.minimum(
-            np.floor(prompt.points + 0.5).astype(np.int64), [width - 1, height - 1]
-        )
+        pixels = np.floor(prompt.points + 0.5).astype(np.int64)
         colors = image.astype(np.float64) / (255 * np.sqrt(3))
         seeds = colors[pixels[:, 1], pixels[:, 0]]
 

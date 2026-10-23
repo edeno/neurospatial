@@ -35,15 +35,15 @@ def remove_unprompted_fragments(
     if not len(points):
         return _CleanedOutline(proposal, 0, 0)
     height, width = proposal.mask.shape
+    # Prompts use (x, y), with integers at pixel centers, so the image covers
+    # [-0.5, size - 0.5) and rounding selects the pixel under each click.
     if (
-        (points < 0).any()
-        or (points[:, 0] >= width).any()
-        or (points[:, 1] >= height).any()
+        (points < -0.5).any()
+        or (points[:, 0] >= width - 0.5).any()
+        or (points[:, 1] >= height - 0.5).any()
     ):
         raise ValueError("Inside points must lie within the preview image.")
-    # Prompts use (x, y), with integers at pixel centers. Clamp rounding at
-    # the image edge, consistent with the providers' [0, width) input bounds.
-    pixels = np.minimum(np.floor(points + 0.5).astype(int), [width - 1, height - 1])
+    pixels = np.floor(points + 0.5).astype(int)
     components, count = ndimage.label(proposal.mask)
     clicked = components[pixels[:, 1], pixels[:, 0]]
     missed = int(np.count_nonzero(clicked == 0))

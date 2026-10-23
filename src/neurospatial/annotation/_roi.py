@@ -60,8 +60,9 @@ def rectangle_to_roi_bounds(
 ) -> ROIBounds:
     """Enclose a napari rectangle in clipped integer array-slice bounds.
 
-    Napari supplies four ``(row, column)`` corners. Fractional lower limits
-    round down and upper limits round up, preserving all covered pixels.
+    Napari supplies four ``(row, column)`` corners. Integer coordinates are
+    pixel centers, so pixel ``i`` covers ``[i - 0.5, i + 0.5]``; the bounds
+    include every pixel that the rectangle overlaps with positive area.
     Rectangles entirely outside the image and incomplete draws are errors.
     """
     height, width = _frame_size(frame_shape)
@@ -77,8 +78,8 @@ def rectangle_to_roi_bounds(
             "Region of interest must have positive width and height; "
             "redraw it or choose Use full image."
         )
-    lower = np.floor(minimum)
-    upper = np.ceil(maximum)
+    lower = np.floor(minimum + 0.5)
+    upper = np.ceil(maximum + 0.5)
     bounds = (
         int(np.clip(lower[1], 0, width)),
         int(np.clip(lower[0], 0, height)),
@@ -129,14 +130,18 @@ def crop_segmentation_input(
 def _local_roi_prompt(
     prompt: SegmentationPrompt, bounds: ROIBounds
 ) -> SegmentationPrompt:
-    """Validate containment and subtract a previously validated crop offset."""
+    """Validate containment and subtract a previously validated crop offset.
+
+    Integer coordinates are pixel centers, so the crop covers
+    ``[x0 - 0.5, x1 - 0.5) × [y0 - 0.5, y1 - 0.5)``.
+    """
     x0, y0, x1, y1 = bounds
     points = prompt.points
     if (
-        (points[:, 0] < x0).any()
-        or (points[:, 0] >= x1).any()
-        or (points[:, 1] < y0).any()
-        or (points[:, 1] >= y1).any()
+        (points[:, 0] < x0 - 0.5).any()
+        or (points[:, 0] >= x1 - 0.5).any()
+        or (points[:, 1] < y0 - 0.5).any()
+        or (points[:, 1] >= y1 - 0.5).any()
     ):
         raise ValueError(
             "An inside or outside prompt lies outside the region of interest. "
@@ -145,7 +150,7 @@ def _local_roi_prompt(
     local_box = None
     if prompt.box is not None:
         bx0, by0, bx1, by1 = prompt.box
-        if bx0 < x0 or by0 < y0 or bx1 > x1 or by1 > y1:
+        if bx0 < x0 - 0.5 or by0 < y0 - 0.5 or bx1 > x1 - 0.5 or by1 > y1 - 0.5:
             raise ValueError(
                 "The prompt box extends outside the region of interest. "
                 "Enlarge the region or choose Use full image."
@@ -188,12 +193,9 @@ def clean_roi_fragments(
     *,
     bounds: ROIBounds | None,
 ) -> _CleanedOutline:
-    """Clean a full-frame proposal using the inference image's pixel rounding.
+    """Clean a full-frame proposal using only components inside the crop.
 
-    Near a crop's exclusive upper limits, nearest-pixel rounding must clamp to
-    the last crop pixel, as providers do. Cleaning in full-frame coordinates
-    would instead select a zero pixel just outside the crop and could remove a
-    component that the scientist explicitly selected. Bounds are explicit;
+    Inside points must lie in the crop, as for inference. Bounds are explicit;
     provenance metadata never determines geometry.
     """
     if bounds is None:

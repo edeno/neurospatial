@@ -58,17 +58,27 @@ def test_cleanup_respects_pixel_cell_connectivity_without_bridging_diagonal_gaps
     assert result.removed_components == 2
 
 
-def test_cleanup_uses_nearest_pixel_center_and_clamps_rounding_at_image_edge():
+def test_cleanup_selects_the_pixel_under_each_click_up_to_the_image_edge():
     mask = np.zeros((4, 8), dtype=bool)
     mask[1, 3] = mask[3, 7] = mask[0, 0] = True
+    # Pixel (x, y) covers [x - 0.5, x + 0.5), so 7.4 lies in the last column.
     result = remove_unprompted_fragments(
         SegmentationProposal(mask),
-        SegmentationPrompt(np.array([[2.7, 1.2], [7.8, 3.9]]), np.ones(2)),
+        SegmentationPrompt(np.array([[2.7, 1.2], [7.4, 3.4]]), np.ones(2)),
     )
     expected = mask.copy()
     expected[0, 0] = False
     assert_array_equal(result.proposal.mask, expected)
     assert result.removed_components == 1
+
+
+@pytest.mark.parametrize("point", [[-0.6, 0], [7.5, 0], [0, 3.5]])
+def test_cleanup_rejects_clicks_beyond_the_image_edge(point):
+    with pytest.raises(ValueError, match="within the preview image"):
+        remove_unprompted_fragments(
+            SegmentationProposal(np.ones((4, 8), dtype=bool)),
+            SegmentationPrompt(np.array([point]), np.ones(1)),
+        )
 
 
 @pytest.mark.parametrize("labels", [[1], [0]])

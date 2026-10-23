@@ -48,7 +48,7 @@ def test_drawing_invalidates_before_rectangle_exists_then_uses_integer_bounds(ro
     previous = len(changes)
     widget.layer.add_rectangles(_rectangle())
     assert len(changes) > previous
-    assert widget.bounds == (4, 2, 10, 6)
+    assert widget.bounds == (4, 2, 11, 7)
     assert widget.layer.mode == "select"
 
 
@@ -59,7 +59,7 @@ def test_edit_remove_and_full_image_are_explicit_and_notify(roi):
     before = len(changes)
     widget.layer.data = [_rectangle(-2, 3, 5, 15)]
     assert len(changes) > before
-    assert widget.bounds == (3, 0, 13, 5)
+    assert widget.bounds == (3, 0, 13, 6)
     before = len(changes)
     widget.layer.data = []
     assert len(changes) > before
@@ -80,7 +80,7 @@ def test_partial_draw_and_multiple_rectangles_do_not_fall_back_to_full_frame(roi
     with pytest.raises(ValueError, match="Finish drawing or editing"):
         _ = widget.bounds
     widget.layer.events.data(action="changed", value=widget.layer.data)
-    assert widget.bounds == (4, 2, 10, 6)
+    assert widget.bounds == (4, 2, 11, 7)
     widget.layer.add_rectangles(_rectangle(1, 1, 3, 3))
     with pytest.raises(ValueError, match="Draw one"):
         _ = widget.bounds

@@ -665,20 +665,21 @@ def test_roi_prediction_maps_mask_and_prompts_back_without_changing_annotations(
     widget = assist["widget"]
     original = assist["annotations"].data[0].copy()
     _select_roi(widget, [[1, 2], [1, 9], [6, 9], [6, 2]])
-    assert widget.roi.bounds == (2, 1, 9, 6)
+    # Integer corners are pixel centers, so both edge pixels are covered.
+    assert widget.roi.bounds == (2, 1, 10, 7)
     widget._inside.add([3.0, 5.0])
     widget._outside.add([1.0, 2.0])
     widget._suggest()
     assist["workers"][-1].complete()
     image, prompt = assist["provider"].calls[-1]
-    assert image.shape == (5, 7, 3)
+    assert image.shape == (6, 8, 3)
     assert_array_equal(prompt.points, [[3, 2], [0, 0]])
     expected = np.zeros((8, 12), dtype=bool)
     expected[2:5, 4:8] = True
     assert_array_equal(widget._proposal.mask, expected)
     widget._accept()
     assert_array_equal(assist["accepted"][0].mask, expected)
-    assert assist["accepted"][0].metadata["roi_bounds"] == [2, 1, 9, 6]
+    assert assist["accepted"][0].metadata["roi_bounds"] == [2, 1, 10, 7]
     assert_array_equal(assist["annotations"].data[0], original)
     assert assist["outlines"][0].polygons[0].bounds == (3.5, 1.5, 7.5, 4.5)
 
@@ -731,7 +732,7 @@ def test_roi_changes_reject_pending_results_and_reset_sam_logits(sam_assist):
     sam_assist["workers"][-1].complete()
     assert "mask_input" not in sam_assist["predictor"].calls[-1]
     assert widget._refinement.steps == 0
-    assert widget._proposal.metadata["roi_bounds"] == [1, 1, 8, 6]
+    assert widget._proposal.metadata["roi_bounds"] == [1, 1, 9, 7]
     widget.roi.full_image_button.click()
     assert widget._refinement is None
 

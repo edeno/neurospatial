@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 
 
 @pytest.fixture
@@ -104,9 +104,14 @@ def test_world_coordinates_are_transformed_once_and_bounded(
     _gesture(p.inside, button=button, position=(18, 13))
     assert_array_equal(target.data, [[4, 6]])
     assert len(calls) == 1
-    for position in [(9, 0), (50, 0), (20, 85), (np.nan, 4)]:
+    # Integer data coordinates are pixel centers, so the 20 by 30 image covers
+    # rows [-0.5, 19.5) and columns [-0.5, 29.5).
+    for position in [(8.8, 0), (49, 0), (20, 83.5), (np.nan, 4)]:
         _gesture(p.inside, button=button, position=position)
     assert len(target.data) == 1
+    for position in [(9.2, 0), (48.8, 83.3)]:
+        _gesture(p.inside, button=button, position=position)
+    assert_allclose(target.data[1:], [[-0.4, 5 / 3], [19.4, 88.3 / 3]])
 
 
 def test_alt_click_removes_nearest_of_either_set_and_respects_distance(prompts):
