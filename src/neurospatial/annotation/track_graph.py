@@ -145,6 +145,10 @@ def annotate_track_graph(
         If napari is not installed.
     FileNotFoundError
         If video_path does not exist.
+    RuntimeError
+        If the drawn graph cannot be saved, for example a single node, and the
+        user discards it. The editor shows the problem first and lets the user
+        keep editing.
 
     Examples
     --------

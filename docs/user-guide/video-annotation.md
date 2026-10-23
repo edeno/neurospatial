@@ -122,8 +122,13 @@ an edge's geometry, move its endpoint nodes.
 Preview 1D uses the same node coordinates, edge order and gaps as the returned
 `TrackGraphResult`. Gaps are in centimeters with calibration and pixels without
 it; the spacing control displays the unit. Automatic gaps follow the selected
-edge order, and disconnected components are included in the result. Saving or
-closing validates the draft before the editor closes.
+edge order, and disconnected components are included in the result.
+
+Saving or closing either editor validates the draft before the editor closes.
+If it cannot be saved, a dialog says why: choose "Keep Editing" to fix it, or
+"Discard and Close" to close without a result, which raises a `RuntimeError`.
+Warnings about the result, such as an ignored boundary, print after the editor
+closes.
 
 ## Adding Calibration
 
@@ -362,7 +367,8 @@ Check that:
 
 ### Viewer closes unexpectedly
 
-The viewer blocks until closed. If it closes without saving, check for Python errors in the console.
+The viewer blocks until closed, including in IPython with `%gui qt`. If it
+closes without saving, check for Python errors in the console.
 
 ## See Also
 

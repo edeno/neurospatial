@@ -2446,8 +2446,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   saved graph, and unsupported direct edge reshaping restores the graph view.
 - Polygon and track annotation validate their complete results before closing
   the editor. Invalid landmarks, walls and incomplete polygons remain editable
-  instead of being dropped during interactive saving. Standalone converters
-  retain their documented permissive behavior.
+  instead of being dropped during interactive saving; a dialog offers to keep
+  editing or to discard the draft, which raises `RuntimeError`. Result warnings
+  print to the console after the editor closes, and the editors also wait for
+  the user under IPython's `%gui qt`. Standalone converters retain their
+  documented permissive behavior.
 - Deleting polygon annotations keeps drawing bookkeeping synchronized, so the
   next shape receives its own name and role, including after deleting a polygon
   with interior rings.

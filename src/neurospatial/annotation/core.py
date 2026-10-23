@@ -154,9 +154,12 @@ def annotate_video(
     Raises
     ------
     ValueError
-        If bin_size is not provided when mode requires environment creation,
-        or if ``multiple_boundaries="error"`` and multiple environment
-        boundaries are drawn.
+        If bin_size is not provided when mode requires environment creation.
+    RuntimeError
+        If the drawn annotations cannot be saved, for example multiple
+        environment boundaries with ``multiple_boundaries="error"``, and the
+        user discards them. The editor shows the problem first and lets the
+        user keep editing.
     ImportError
         If napari is not installed.
 

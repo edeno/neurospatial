@@ -1358,7 +1358,11 @@ def test_track_invalid_close_preserves_draft_for_retry(monkeypatch, close_method
     monkeypatch.setattr(napari, "run", run)
     monkeypatch.setattr(QMessageBox, "warning", lambda *args: errors.append(args[-1]))
     monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
-    monkeypatch.setattr("napari.utils.notifications.show_error", errors.append)
+    from neurospatial.annotation import _session
+
+    monkeypatch.setattr(
+        _session, "_keep_editing", lambda parent, error: not errors.append(str(error))
+    )
     result = module.annotate_track_graph(
         image=np.zeros((40, 40, 3), np.uint8),
         initial_nodes=np.array([[5, 5], [5, 5]], float),
@@ -1403,7 +1407,11 @@ def test_track_incomplete_window_close_retains_draft(monkeypatch, invalid_draft)
 
     monkeypatch.setattr(module, "create_track_widget", capture)
     monkeypatch.setattr(napari, "run", run)
-    monkeypatch.setattr("napari.utils.notifications.show_error", errors.append)
+    from neurospatial.annotation import _session
+
+    monkeypatch.setattr(
+        _session, "_keep_editing", lambda parent, error: not errors.append(str(error))
+    )
     result = module.annotate_track_graph(
         image=np.zeros((40, 40, 3), np.uint8),
         initial_nodes=np.array(

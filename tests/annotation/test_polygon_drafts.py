@@ -94,7 +94,7 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
     napari = pytest.importorskip("napari")
     from qtpy.QtWidgets import QPushButton
 
-    from neurospatial.annotation import core
+    from neurospatial.annotation import _session, core
 
     viewers = []
     setup = core._setup_annotation_viewer
@@ -148,7 +148,9 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
     )
     monkeypatch.setattr(core, "_setup_annotation_viewer", capture_setup)
     monkeypatch.setattr(core, "_process_annotation_results", capture_process)
-    monkeypatch.setattr("napari.utils.notifications.show_error", errors.append)
+    monkeypatch.setattr(
+        _session, "_keep_editing", lambda parent, error: not errors.append(str(error))
+    )
     monkeypatch.setattr(napari, "run", run_session)
     result = core.annotate_video(
         "unused.mp4",
