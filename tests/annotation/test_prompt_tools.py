@@ -247,3 +247,13 @@ def test_dispose_keeps_other_callbacks_and_is_safe_during_gesture(prompts):
     assert p.tools.remove_selected() == 0
     p.tools.activate()
     assert not p.tools.active
+
+
+def test_left_click_can_add_outside_points_without_a_right_button(prompts):
+    p = prompts
+    p.tools.activate()
+    p.tools.left_click_outside = True
+    _gesture(p.inside)
+    _gesture(p.inside, button=2, position=(8, 9))
+    assert_array_equal(p.outside.data, [[4, 6]])
+    assert_array_equal(p.inside.data, [[8, 9]])

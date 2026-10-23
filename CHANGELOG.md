@@ -1800,6 +1800,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   model libraries and weights are not bundled or downloaded automatically.
   The editor computes SAM 2's image features as soon as it opens, and asks for
   candidate masks only for a single click, as Meta recommends.
+- The annotation editor opens with the whole video frame in view. Its
+  assistance panel shows **Accept as** (the role and name an outline will
+  get, mirroring Annotation Controls), puts **Units and bin size** first with a
+  live estimate of the environment's bin count, offers **Left-click adds:
+  Inside / Outside** for mice and trackpads without a right button, and draws
+  outside points as an orange × rather than a red dot. Warnings about a
+  result, such as a region outside the environment, appear in a **Check
+  Annotations** dialog before the editor closes, with **Keep Editing** or
+  **Return Results**.
 
 - `neurospatial.encoding.population_vector_correlation(firing_rates_1,
   firing_rates_2, *, spatial_support, unit_selection, bin_mapping, topology)`

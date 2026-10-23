@@ -64,12 +64,18 @@ class _AnnotationWidget(Container):
         flush_pending: Callable[[], None],
         sync_from_layer: Callable[[], None],
         next_annotation: Callable[[], tuple[RegionType, str]],
+        role_selector: Any,
+        name_input: Any,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.flush_pending = flush_pending
         self.sync_from_layer = sync_from_layer
         self.next_annotation = next_annotation
+        # Other docks mirror these, so the next shape's role and name are
+        # visible wherever a shape can be added.
+        self.role_selector = role_selector
+        self.name_input = name_input
 
 
 def confirm_environment_replacement(parent: Any) -> bool:
@@ -134,9 +140,11 @@ def create_annotation_widget(
     instructions = Label(
         value=(
             "Quick start:\n"
-            "1. Type a name in 'Next Shape Name' (applies to the next shape)\n"
-            "2. Draw the shape (click points, ENTER to finish)\n"
-            "3. Save your project, or click 'Done' to return results\n"
+            "1. Choose the Annotation Type and type a 'Next Shape Name'\n"
+            "2. Draw the shape (click points, ENTER to finish), or outline it\n"
+            "   automatically in the 'Project and Assistance' tab\n"
+            "3. Set centimeter calibration and bin size in that tab\n"
+            "4. Save your project there, or click 'Done' to return results\n"
             "Rename later: select a shape, edit the name, press Enter."
         ),
     )
@@ -775,6 +783,8 @@ def create_annotation_widget(
         flush_pending=flush_pending,
         sync_from_layer=mutation_finished,
         next_annotation=lambda: (state.region_type, name_input.value.strip()),
+        role_selector=role_selector,
+        name_input=name_input,
         widgets=container_widgets,
         labels=True,
     )

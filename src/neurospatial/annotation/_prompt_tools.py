@@ -49,6 +49,9 @@ class PromptTools:
         self._layers = (inside, outside)
         self._shape = np.asarray(frame_shape[:2])
         self._remove_radius = remove_radius
+        # Left-click adds inside points unless the user chooses outside, for
+        # mice and trackpads without a convenient right button.
+        self.left_click_outside = False
         self._active = False
         self._disposed = False
         self._connections: list[tuple[Any, Any]] = []
@@ -149,7 +152,8 @@ class PromptTools:
         if remove:
             self.remove_nearest(event.position, zoom=event.camera_zoom)
         else:
-            target = self._layers[0 if button == 1 else 1]
+            outside = (button == 2) != self.left_click_outside
+            target = self._layers[1 if outside else 0]
             # napari events carry world coordinates, not layer pixel coordinates.
             point = np.asarray(target.world_to_data(event.position), dtype=float)
             height, width = self._shape

@@ -66,7 +66,7 @@ def session_factory():
 
 
 def _accept(session, proposal):
-    session.accept_outline(polygon_outline(proposal))
+    return session.accept_outline(polygon_outline(proposal))
 
 
 def _draw_region(shapes, controls, vertices):
@@ -308,7 +308,7 @@ def test_calibration_and_explicit_bin_size_share_history_without_moving_shapes(
     assert session.calibration is None
     assert session.bin_size == 2.0
     assert session.assist.bin_size.value() == 2.0
-    assert session.assist.bin_size.suffix() == " pixels"
+    assert session.assist.bin_size.suffix() == " px"
     assert_array_equal(shapes.data[0], original)
     session.redo()
     assert session.calibration.cm_per_px == pytest.approx(0.5)
@@ -324,7 +324,7 @@ def test_calibration_and_explicit_bin_size_share_history_without_moving_shapes(
     assert session.bin_size == pytest.approx(4.0)
     session.set_calibration(None)
     assert session.bin_size == pytest.approx(2.0)
-    assert session.assist.bin_size.suffix() == " pixels"
+    assert session.assist.bin_size.suffix() == " px"
     assert_array_equal(shapes.data[0], original)
 
 
@@ -494,12 +494,12 @@ def test_environment_replacement_cancel_then_confirm_preserves_holes_on_undo(
     proposal = SegmentationProposal(mask)
     answers = [QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes]
     monkeypatch.setattr(QMessageBox, "question", lambda *args: answers.pop(0))
-    with pytest.raises(ValueError, match="cancelled"):
-        _accept(session, proposal)
+    # Declining the replacement is a choice, not an error.
+    assert _accept(session, proposal) is False
     assert shapes.features.equals(original_features)
     for actual, expected in zip(shapes.data, original_geometry, strict=True):
         assert_array_equal(actual, expected)
-    _accept(session, proposal)
+    assert _accept(session, proposal) is True
     assert len(shapes.data) == 2
     assert list(shapes.features["role"]).count("environment") == 1
     assert "reward" in list(shapes.features["name"])
@@ -516,3 +516,37 @@ def test_environment_replacement_cancel_then_confirm_preserves_holes_on_undo(
     assert len(shapes.data) == 2
     assert sum(bool(parent) for parent in shapes.features["_parent_id"]) == 0
     assert answers == []
+
+
+def test_accept_as_mirrors_the_next_shape_role_and_name(session_factory):
+    session, _viewer, _shapes, controls = session_factory(initial_mode="environment")
+    role, name = session.assist.accept_as_role, session.assist.accept_as_name
+    assert (role.currentText(), name.text()) == ("environment", "arena")
+    role.setCurrentText("region")
+    assert controls.role_selector.value == "region"
+    name.setText("reward")
+    name.textEdited.emit("reward")
+    assert controls.next_annotation() == ("region", "reward")
+    # Roles an outline cannot become leave the choice visibly open.
+    controls.role_selector.value = "wall"
+    assert role.currentIndex() == -1
+    controls.role_selector.value = "hole"
+    assert role.currentText() == "hole"
+
+
+def test_units_summary_estimates_bins_and_follows_calibration(session_factory):
+    session, _viewer, shapes, controls = session_factory()
+    assert session.assist.units_toggle.text().endswith("2 px bins")
+    _draw_region(shapes, controls, [[0, 0], [0, 20], [10, 20], [10, 0]])
+    controls.role_selector.value = "environment"
+    shapes.features.loc[0, "role"] = "environment"
+    session.checkpoint()
+    # A 20 x 10 pixel environment at 2 pixel bins.
+    assert "≈ 50 bins" in session.assist.units_toggle.text()
+    session.set_calibration(
+        VideoCalibration(
+            calibrate_from_scale_bar((0, 0), (10, 0), 5.0, (24, 16)), (24, 16)
+        )
+    )
+    # The grid keeps its size in the image, so the count is unchanged.
+    assert "1 cm bins, ≈ 50 bins" in session.assist.units_toggle.text()

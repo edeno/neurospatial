@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from napari.layers import Shapes
 from numpy.typing import NDArray
-from qtpy.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from neurospatial.annotation._roi import (
     ROIBounds,
@@ -48,6 +48,7 @@ class _RectangleControl(QWidget):
         draw_label: str,
         clear_label: str,
         idle_status: str,
+        compact: bool = False,
     ) -> None:
         super().__init__()
         self._viewer = viewer
@@ -71,17 +72,26 @@ class _RectangleControl(QWidget):
         viewer.layers.events.removed.connect(self._layer_removed)
 
         layout = QVBoxLayout(self)
-        help_label = QLabel(help_text)
-        help_label.setWordWrap(True)
-        layout.addWidget(help_label)
+        layout.setContentsMargins(0, 0, 0, 0)
         self.draw_button = QPushButton(draw_label)
         self.draw_button.clicked.connect(self._draw_region)
-        layout.addWidget(self.draw_button)
         self.clear_button = QPushButton(clear_label)
         self.clear_button.clicked.connect(self.clear)
-        layout.addWidget(self.clear_button)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.draw_button)
+        buttons.addWidget(self.clear_button)
         self.status = QLabel(idle_status)
         self.status.setWordWrap(True)
+        if compact:
+            # A compact control sits in another panel's button row and reports
+            # problems through that panel's status line.
+            self.draw_button.setToolTip(help_text)
+            self.status.hide()
+        else:
+            help_label = QLabel(help_text)
+            help_label.setWordWrap(True)
+            layout.addWidget(help_label)
+        layout.addLayout(buttons)
         layout.addWidget(self.status)
 
     @property
@@ -238,6 +248,7 @@ class BoxPromptControl(_RectangleControl):
             draw_label="Draw box",
             clear_label="Clear box",
             idle_status="No box.",
+            compact=True,
         )
 
     @property

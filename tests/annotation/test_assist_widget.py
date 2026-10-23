@@ -556,7 +556,7 @@ def test_calibration_swaps_coordinates_once_and_keeps_explicit_bin_size(assist):
     assert assist["bins"] == [4.0]
     widget._clear_calibration()
     assert assist["calibrations"][-1] is None
-    assert widget.bin_size.suffix() == " pixels"
+    assert widget.bin_size.suffix() == " px"
     assert widget.bin_size.value() == 4.0
 
 
@@ -936,3 +936,17 @@ def test_region_growing_needs_an_inside_point_even_with_a_box(assist):
     assist["workers"][-1].complete()
     _image, prompt = assist["provider"].calls[-1]
     assert_array_equal(prompt.box, [1, 0, 8, 6])
+
+
+def test_declined_accept_keeps_the_outline_without_a_warning(assist, monkeypatch):
+    widget = assist["widget"]
+    warnings_shown = []
+    monkeypatch.setattr(widget, "_error", lambda *args: warnings_shown.append(args))
+    widget._on_accept = lambda outline: False
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    widget._accept()
+    assert not warnings_shown
+    assert "Not accepted" in widget.status.text()
+    assert widget.accept_button.isEnabled()

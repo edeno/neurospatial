@@ -26,7 +26,7 @@ from neurospatial.annotation import annotate_video
 # Launch interactive annotation
 result = annotate_video(
     "experiment.mp4",
-    bin_size=2.0,
+    bin_size=2.0,  # pixels; centimeters once you calibrate (see below)
     project_path="arena.annotation.npz",
 )
 
@@ -119,6 +119,8 @@ bin_indices = env.bin_sequence(times, positions)
 | Key | Action |
 |-----|--------|
 | `M` | Cycle annotation mode (environment → hole → region → wall → landmark) |
+| `E` | Environment mode |
+| `R` | Region mode |
 | `3` | Move shape mode |
 | `4` | Edit vertices mode |
 | `Delete` | Remove selected shape |
@@ -224,7 +226,7 @@ uv run --no-sync python examples/try_annotation.py --provider cpu
 
 Click **Mark points**, then left-click the tan floor. An outline appears
 automatically; add inside/outside clicks to refine it, then **Accept outline**.
-Use **Paint / erase preview** for manual corrections. To compare providers on the
+Use **Paint / erase** for manual corrections. To compare providers on the
 same frame, launch again with `--provider sam2` after the optional setup below.
 Both providers run on the CPU by default; `--provider cpu` selects color region
 growing, while `--provider sam2` selects the neural segmentation model.
@@ -237,37 +239,46 @@ sample prediction without opening a viewer.
 ### Select and Correct an Outline
 
 Open **Project and Assistance** and use **Assisted outline** to suggest a
-boundary or region from clicks. The CPU provider works best with a distinctly
-colored surface; SAM 2 can handle more complex scenes:
+boundary or region from clicks. Choose the provider for your video: the default
+CPU region grower works when the floor color differs clearly from its
+surroundings; SAM 2 (optional, below) handles dark, low-contrast or multi-arm
+scenes.
 
-1. With SAM 2, start by clicking **Draw box** and dragging a box closely around
-   the arena or region; the box alone produces an outline. A box is the most
-   reliable SAM prompt: on a dark six-arm maze, a box found five or six of the
-   six arm ends across six frames of one session, while a single center click
-   found two to five. With either provider, click **Mark points**, then
-   left-click inside the desired area, adding an inside point in each
-   disconnected area that should be included. Region growing needs an inside
-   point; a box keeps its growth inside the box.
-2. Right-click to add outside points. Alt-click near a point to remove it, or use
-   **Undo last point**. To move or select several points, use napari's point
-   selection tool; **Delete selected** removes selected prompts. Click **Mark
-   points** again to resume left/right clicking. Dragging still pans the image.
-3. The outline updates automatically after each change. Keep clicking to refine
+1. Under **Accept as**, choose environment, hole or region and type a name;
+   these mirror **Annotation Type** and **Next Shape Name** in Annotation
+   Controls.
+2. Prompt the outline:
+   - **SAM 2:** click **Draw box** and drag a box closely around the arena or
+     region; the box alone produces an outline. A box is the most reliable SAM
+     prompt: on a dark six-arm maze, a box found five or six of the six arm ends
+     across six frames of one session, while a single center click found two to
+     five.
+   - **Either provider:** click **Mark points**, then left-click inside the
+     desired area, adding an inside point in each disconnected area that should
+     be included. Region growing needs an inside point; a box keeps its growth
+     inside the box.
+3. Right-click to add outside points (an orange ×; inside points are green
+   dots). Without a convenient right button, set **Left-click adds** to
+   **Outside**. Alt-click near a point to remove it, or use **Undo last point**.
+   To move or select several points, use napari's point selection tool; **Delete
+   selected** removes selected prompts. Click **Mark points** again to resume
+   clicking. Dragging still pans the image.
+4. The outline updates automatically after each change. Keep clicking to refine
    it; the point tool stays active. The default CPU provider keeps areas connected
    to inside points whose colors fall within **Color tolerance**. Increase the
    tolerance to include a wider range of colors; this also updates the preview.
-4. **Polygon detail** starts at **1.4 pixels** to reduce jagged edges and the
+5. **Polygon detail** starts at **1.4 pixels** to reduce jagged edges and the
    number of vertices. Set it to **0** for the exact pixel outline; increasing
    the tolerance simplifies it further. The cyan paths show the exact polygons
    that will be accepted, including every hole. This
    updates immediately without rerunning inference. The vertex count helps you
    balance detail against editing complexity.
-5. Optionally click **Paint / erase preview** to correct the mask with napari's
+6. Optionally click **Paint / erase** to correct the mask with napari's
    painting tools. Painting foreground includes pixels; erasing excludes them.
    The polygon paths update after each stroke. Changing polygon detail preserves
    painted edits; further prompt or fragment-cleanup changes replace them.
-6. Click **Accept outline** to add editable polygon geometry. Its holes and
-   disconnected components are retained. Use **Discard outline** to remove a
+7. Click **Accept outline** to add editable polygon geometry. Its holes and
+   disconnected components are retained. Use **Discard** to remove a
    preview, or **Clear prompts** before trying a different selection. Accepting
    an outline clears its prompts, including the box, so the next object starts
    with a fresh set.
@@ -302,8 +313,7 @@ or an explicit return to the full image. Changing the ROI resets SAM refinement
 and invalidates pending predictions. Accepted polygons always use original-frame
 coordinates, so cropping does not change calibration or committed annotations.
 
-Choose environment, hole, or region and a name in **Annotation Controls** before
-accepting. An environment boundary must be connected; if the preview has several
+The outline is accepted with the role and name under **Accept as**. An environment boundary must be connected; if the preview has several
 components, refine it or accept those areas as named regions. Draw walls and
 landmarks directly with their existing drawing tools. Replacing an existing
 environment outline asks for confirmation.
@@ -321,7 +331,7 @@ prediction using its previous low-resolution logits. A single click is
 ambiguous, so the first prediction asks SAM for several candidate masks and
 selects the highest-scoring one; several clicks, a box, or a refinement request
 a single mask, following Meta's guidance. Moving or removing an existing point starts a fresh
-prediction from the remaining prompts. **Clear prompts**, **Discard outline**,
+prediction from the remaining prompts. **Clear prompts**, **Discard**,
 accepting an outline, and inference errors also reset refinement. Repeating
 **Update outline** with unchanged prompts reuses the same model result.
 
@@ -496,8 +506,9 @@ same units.
 
 ### Calibrate in the Editor
 
-Expand **Calibration and output settings** below the outlining controls in
-**Project and Assistance**. Calibration is optional for drawing outlines; use it
+Expand **Units and bin size** at the top of **Project and Assistance**; its
+button always shows the current bin size and, once an environment is drawn, about
+how many bins the environment will have. Calibration is optional for drawing outlines; use it
 when you need output in centimeters. Click **Mark two scale endpoints** and mark the
 ends of an object of known length. Enter that length in centimeters, then click
 **Apply calibration**. **Output bin size** is converted to cm, so the grid keeps

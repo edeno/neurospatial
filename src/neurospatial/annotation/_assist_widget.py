@@ -14,12 +14,15 @@ from numpy.typing import NDArray
 from qtpy.QtCore import QTimer, Slot  # type: ignore[attr-defined]
 from qtpy.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
@@ -111,7 +114,8 @@ class AnnotationAssistWidget(QWidget):
         bin_size: float | None,
         on_calibration: Callable[[VideoCalibration | None], None],
         on_bin_size: Callable[[float], None],
-        on_accept: Callable[[PolygonOutline], None],
+        on_accept: Callable[[PolygonOutline], bool | None],
+        role_and_name: tuple[Any, Any] | None = None,
     ) -> None:
         super().__init__()
         self._viewer = viewer
@@ -151,12 +155,15 @@ class AnnotationAssistWidget(QWidget):
             face_color="lime",
             size=8,
         )
+        # Inside and outside differ in shape as well as color.
         self._outside = Points(
             np.empty((0, 2)),
             name="Outside prompts",
             ndim=2,
-            face_color="red",
-            size=8,
+            symbol="x",
+            face_color="orange",
+            border_color="orange",
+            size=10,
         )
         for layer in (self._inside, self._outside):
             self._connect(layer.events.data, self._prompts_changed)
@@ -175,59 +182,86 @@ class AnnotationAssistWidget(QWidget):
         )
 
         layout = QVBoxLayout(self)
-        calibration_toggle = QPushButton("Calibration and output settings ▸")
-        calibration_toggle.setCheckable(True)
-        calibration_settings = QWidget()
-        calibration_settings.hide()
-        calibration_toggle.toggled.connect(calibration_settings.setVisible)
-        calibration_toggle.toggled.connect(
-            lambda expanded: calibration_toggle.setText(
-                "Calibration and output settings " + ("▾" if expanded else "▸")
-            )
-        )
-        form = QFormLayout(calibration_settings)
+
+        # Units come first: the output grid depends on them. The toggle keeps a
+        # one-line summary visible while the settings are collapsed.
+        self._grid_estimate: int | None = None
+        self.units_toggle = QPushButton()
+        self.units_toggle.setCheckable(True)
+        self.units_toggle.setStyleSheet("text-align: left;")
+        units_settings = QWidget()
+        units_settings.hide()
+        self.units_toggle.toggled.connect(units_settings.setVisible)
+        self.units_toggle.toggled.connect(self._update_units_summary)
+        form = QFormLayout(units_settings)
         calibration_help = QLabel(
-            "Optional: set a known distance to export in centimeters. "
-            "Outlining works in pixels without calibration."
+            "To export in centimeters, mark the two ends of an object of known "
+            "length, enter its length, and apply. Without calibration, outputs "
+            "and the bin size are in pixels."
         )
         calibration_help.setWordWrap(True)
         form.addRow(calibration_help)
         mark_scale = QPushButton("Mark two scale endpoints")
         mark_scale.clicked.connect(lambda: self._activate(self._scale))
         form.addRow(mark_scale)
-        self.known_distance = self._spin(10.0)
+        self.known_distance = self._spin(10.0, decimals=2)
         self.known_distance.setSuffix(" cm")
         form.addRow("Known distance", self.known_distance)
+        calibration_actions = QHBoxLayout()
         apply_scale = QPushButton("Apply calibration")
         apply_scale.clicked.connect(self._apply_calibration)
-        form.addRow(apply_scale)
+        calibration_actions.addWidget(apply_scale)
         clear_scale = QPushButton("Clear calibration")
         clear_scale.clicked.connect(self._clear_calibration)
-        form.addRow(clear_scale)
-        self.bin_size = self._spin(1.0 if bin_size is None else bin_size)
+        calibration_actions.addWidget(clear_scale)
+        form.addRow(calibration_actions)
+        self.bin_size = self._spin(1.0 if bin_size is None else bin_size, decimals=3)
         self.bin_size.setEnabled(bin_size is not None)
+        if bin_size is None:
+            self.bin_size.setToolTip(
+                "Only environments are binned; this session has none."
+            )
         self.bin_size.valueChanged.connect(self._bin_changed)
         form.addRow("Output bin size", self.bin_size)
         self.units_status = QLabel()
         self.units_status.setWordWrap(True)
         form.addRow(self.units_status)
+        layout.addWidget(self.units_toggle)
+        layout.addWidget(units_settings)
         self.sync_calibration(calibration)
 
         assistance_group = QGroupBox("Assisted outline")
-        assistance = QFormLayout(assistance_group)
+        assistance = QVBoxLayout(assistance_group)
         instructions = QLabel(
-            "Choose a role and name in Annotation Controls. Draw a box around "
-            "the area, or mark points inside it, and outside to exclude areas. "
-            "The outline updates as you prompt. Refine it, then accept."
+            "Prompt with a box or clicks, check the cyan preview, then accept it."
         )
         instructions.setWordWrap(True)
-        assistance.addRow(instructions)
+        assistance.addWidget(instructions)
+        self.accept_as_role: QComboBox | None = None
+        self.accept_as_name: QLineEdit | None = None
+        if role_and_name is not None:
+            assistance.addLayout(self._mirror_role_and_name(*role_and_name))
+        prompt_row = QHBoxLayout()
         self.mark_points_button = QPushButton("Mark points")
         self.mark_points_button.clicked.connect(lambda: self._activate(self._inside))
-        assistance.addRow(self.mark_points_button)
-        prompt_help = QLabel("Left: inside • Right: outside • Alt-click: remove")
+        prompt_row.addWidget(self.mark_points_button)
+        prompt_row.addWidget(self.box)
+        assistance.addLayout(prompt_row)
+        click_row = QHBoxLayout()
+        click_row.addWidget(QLabel("Left-click adds:"))
+        self.left_inside = QRadioButton("Inside (dot)")
+        self.left_outside = QRadioButton("Outside (x)")
+        self.left_inside.setChecked(True)
+        self.left_outside.toggled.connect(
+            lambda outside: setattr(self.prompt_tools, "left_click_outside", outside)
+        )
+        click_row.addWidget(self.left_inside)
+        click_row.addWidget(self.left_outside)
+        click_row.addStretch()
+        assistance.addLayout(click_row)
+        prompt_help = QLabel("Right-click adds the other kind • Alt-click removes")
         prompt_help.setWordWrap(True)
-        assistance.addRow(prompt_help)
+        assistance.addWidget(prompt_help)
         point_actions = QHBoxLayout()
         self.undo_point_button = QPushButton("Undo last point")
         self.undo_point_button.clicked.connect(self.prompt_tools.undo_last)
@@ -239,12 +273,19 @@ class AnnotationAssistWidget(QWidget):
         )
         self.delete_points_button.clicked.connect(self.prompt_tools.remove_selected)
         point_actions.addWidget(self.delete_points_button)
-        assistance.addRow(point_actions)
-        assistance.addRow(self.box)
-        self.live_preview = QCheckBox("Update outline as I click")
+        clear_prompts = QPushButton("Clear prompts")
+        clear_prompts.clicked.connect(self._clear_prompts)
+        point_actions.addWidget(clear_prompts)
+        assistance.addLayout(point_actions)
+        update_row = QHBoxLayout()
+        self.live_preview = QCheckBox("Update as I prompt")
         self.live_preview.setChecked(True)
         self.live_preview.toggled.connect(self._live_preview_changed)
-        assistance.addRow(self.live_preview)
+        update_row.addWidget(self.live_preview)
+        self.suggest_button = QPushButton("Update outline")
+        self.suggest_button.clicked.connect(self._suggest)
+        update_row.addWidget(self.suggest_button)
+        assistance.addLayout(update_row)
         self.remove_fragments = QCheckBox("Remove stray fragments")
         self.remove_fragments.setChecked(True)
         self.remove_fragments.setToolTip(
@@ -253,41 +294,46 @@ class AnnotationAssistWidget(QWidget):
             "Changing this option replaces manual preview edits."
         )
         self.remove_fragments.toggled.connect(self._refresh_preview)
-        assistance.addRow(self.remove_fragments)
+        assistance.addWidget(self.remove_fragments)
         self.tolerance = QDoubleSpinBox()
         self.tolerance.setRange(0.0, 1.0)
         self.tolerance.setDecimals(3)
         self.tolerance.setSingleStep(0.01)
+        self.tolerance.setToolTip(
+            "Largest color difference from the clicked pixels, from 0 (exact) "
+            "to 1 (any color). Raise it if only part of the floor is selected; "
+            "lower it if shadows or walls are included."
+        )
         if isinstance(provider, RegionGrowProvider):
             self.tolerance.setValue(provider.tolerance)
             self.tolerance.valueChanged.connect(self._prompts_changed)
-            assistance.addRow("Color tolerance", self.tolerance)
+            tolerance_row = QHBoxLayout()
+            tolerance_row.addWidget(QLabel("Color tolerance"))
+            tolerance_row.addWidget(self.tolerance)
+            assistance.addLayout(tolerance_row)
         else:
             self.tolerance.hide()
-        self.suggest_button = QPushButton("Update outline")
-        self.suggest_button.clicked.connect(self._suggest)
-        assistance.addRow(self.suggest_button)
-        clear_prompts = QPushButton("Clear prompts")
-        clear_prompts.clicked.connect(self._clear_prompts)
-        assistance.addRow(clear_prompts)
-        assistance.addRow(self.outline_preview)
-        self.edit_button = QPushButton("Paint / erase preview")
+        assistance.addWidget(self.outline_preview)
+        outline_actions = QHBoxLayout()
+        self.edit_button = QPushButton("Paint / erase")
         self.edit_button.setEnabled(False)
         self.edit_button.clicked.connect(self._edit_preview)
-        assistance.addRow(self.edit_button)
+        outline_actions.addWidget(self.edit_button)
         self.accept_button = QPushButton("Accept outline")
         self.accept_button.setEnabled(False)
         self.accept_button.clicked.connect(self._accept)
-        assistance.addRow(self.accept_button)
-        discard = QPushButton("Discard outline")
+        outline_actions.addWidget(self.accept_button)
+        discard = QPushButton("Discard")
         discard.clicked.connect(self._invalidate)
-        assistance.addRow(discard)
+        outline_actions.addWidget(discard)
+        assistance.addLayout(outline_actions)
         self.status = QLabel(self._prompt_hint())
         self.status.setWordWrap(True)
-        assistance.addRow(self.status)
+        assistance.addWidget(self.status)
         layout.addWidget(assistance_group)
         roi_toggle = QPushButton("Region of interest ▸")
         roi_toggle.setCheckable(True)
+        roi_toggle.setStyleSheet("text-align: left;")
         self.roi.hide()
         roi_toggle.toggled.connect(self.roi.setVisible)
         roi_toggle.toggled.connect(
@@ -297,8 +343,6 @@ class AnnotationAssistWidget(QWidget):
         )
         layout.addWidget(roi_toggle)
         layout.addWidget(self.roi)
-        layout.addWidget(calibration_toggle)
-        layout.addWidget(calibration_settings)
         if isinstance(provider, SegmentAnythingProvider):
             self._start_warm_up()
 
@@ -336,12 +380,66 @@ class AnnotationAssistWidget(QWidget):
             self._error("Could not prepare SAM 2; prompts will retry", exc)
 
     @staticmethod
-    def _spin(value: float) -> QDoubleSpinBox:
+    def _spin(value: float, *, decimals: int) -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
-        spin.setRange(0.000001, 1_000_000.0)
-        spin.setDecimals(6)
+        spin.setDecimals(decimals)
+        spin.setRange(10.0**-decimals, 1_000_000.0)
         spin.setValue(value)
         return spin
+
+    def _mirror_role_and_name(self, role_widget: Any, name_widget: Any) -> QHBoxLayout:
+        """Show and edit the next annotation's role and name here as well."""
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Accept as"))
+        role = QComboBox()
+        # Assisted outlines are areas; walls and landmarks are drawn directly.
+        role.addItems(["environment", "hole", "region"])
+        role.setPlaceholderText("choose a role")
+        name = QLineEdit()
+        name.setPlaceholderText("auto-named")
+
+        def from_controls(*_args: Any) -> None:
+            role.blockSignals(True)
+            role.setCurrentIndex(role.findText(str(role_widget.value)))
+            role.blockSignals(False)
+            name.blockSignals(True)
+            name.setText(str(name_widget.value))
+            name.blockSignals(False)
+
+        def role_to_controls(text: str) -> None:
+            if text:
+                role_widget.value = text
+
+        def name_to_controls(text: str) -> None:
+            name_widget.value = text
+
+        self._connect(role_widget.changed, from_controls)
+        self._connect(name_widget.changed, from_controls)
+        role.currentTextChanged.connect(role_to_controls)
+        name.textEdited.connect(name_to_controls)
+        from_controls()
+        row.addWidget(role)
+        row.addWidget(name)
+        self.accept_as_role = role
+        self.accept_as_name = name
+        return row
+
+    def set_grid_estimate(self, bins: int | None) -> None:
+        """Show roughly how many bins the drawn environment will have."""
+        self._grid_estimate = bins
+        self._update_units_summary()
+
+    def _update_units_summary(self, *_args: Any) -> None:
+        arrow = "▾" if self.units_toggle.isChecked() else "▸"
+        unit = self.bin_size.suffix().strip()
+        summary = (
+            f"{self.bin_size.value():g} {unit} bins"
+            if self.bin_size.isEnabled()
+            else f"outputs in {unit}"
+        )
+        if self._grid_estimate is not None:
+            summary += f", ≈ {self._grid_estimate:,} bins"
+        self.units_toggle.setText(f"Units and bin size {arrow}   {summary}")
 
     def _connect(self, signal: Any, callback: Any) -> None:
         signal.connect(callback)
@@ -361,7 +459,7 @@ class AnnotationAssistWidget(QWidget):
 
     def sync_calibration(self, calibration: VideoCalibration | None) -> None:
         """Refresh unit labels without changing the explicit numeric bin size."""
-        self.bin_size.setSuffix(" pixels" if calibration is None else " cm")
+        self.bin_size.setSuffix(" px" if calibration is None else " cm")
         self.units_status.setText(
             "Output grid size is in pixels."
             if calibration is None
@@ -369,6 +467,7 @@ class AnnotationAssistWidget(QWidget):
             "bin size, so the grid keeps its size in the image. "
             "Pixel annotations stay in place."
         )
+        self._update_units_summary()
 
     def sync_bin_size(self, value: float) -> None:
         """Refresh an externally restored grid size without issuing a callback."""
@@ -377,8 +476,10 @@ class AnnotationAssistWidget(QWidget):
             self.bin_size.setValue(value)
         finally:
             self.bin_size.blockSignals(False)
+        self._update_units_summary()
 
     def _bin_changed(self, value: float) -> None:
+        self._update_units_summary()
         try:
             self._on_bin_size(value)
         except Exception as exc:
@@ -651,9 +752,12 @@ class AnnotationAssistWidget(QWidget):
         if self._disposed or self._proposal is None or self._preview is None:
             return
         try:
-            self._on_accept(self.outline_preview.snapshot())
+            accepted = self._on_accept(self.outline_preview.snapshot())
         except Exception as exc:
             self._error("Could not accept outline", exc)
+            return
+        if accepted is False:
+            self.status.setText("Not accepted; the outline is kept for you to adjust.")
             return
         self._clear_prompts()
         self.status.setText("Outline accepted. Mark new points to suggest another.")

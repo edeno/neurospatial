@@ -19,6 +19,7 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
     QVBoxLayout,
     QWidget,
 )
+from shapely.geometry import Polygon
 
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.annotation._assist_widget import AnnotationAssistWidget
@@ -148,6 +149,7 @@ class AnnotationProjectSession:
             on_calibration=self.set_calibration,
             on_bin_size=self.set_bin_size,
             on_accept=self.accept_outline,
+            role_and_name=(controls.role_selector, controls.name_input),
         )
         layout.addWidget(self.assist)
         layout.addStretch()
@@ -175,6 +177,7 @@ class AnnotationProjectSession:
         self.layer.events.data.connect(self._changed)
         self.layer.events.features.connect(self._changed)
         self._update_history_buttons()
+        self._update_grid_estimate()
 
     def _capture(self, previous: tuple[AnnotationShape, ...] = ()) -> _EditingState:
         self.controls.flush_pending()
@@ -207,9 +210,36 @@ class AnnotationProjectSession:
             self._redo.clear()
             self.status.setText("Unsaved changes")
         self._update_history_buttons()
+        self._update_grid_estimate()
 
     def _checkpoint_safely(self) -> None:
         self._run(self.checkpoint)
+
+    def _update_grid_estimate(self) -> None:
+        """Estimate the environment's bin count from its drawn area."""
+        shapes = self._current.shapes
+        environments = {
+            s.identifier: s
+            for s in shapes
+            if s.role == "environment" and not s.parent_id and len(s.vertices) >= 3
+        }
+        if not environments or self.bin_size is None:
+            self.assist.set_grid_estimate(None)
+            return
+        area = sum(Polygon(s.vertices).area for s in environments.values())
+        # Holes are environment interior rings or separately drawn hole shapes.
+        area -= sum(
+            Polygon(s.vertices).area
+            for s in shapes
+            if len(s.vertices) >= 3
+            and (s.parent_id in environments or (s.role == "hole" and not s.parent_id))
+        )
+        bin_px = (
+            self.bin_size
+            if self.calibration is None
+            else self.bin_size / self.calibration.cm_per_px
+        )
+        self.assist.set_grid_estimate(max(round(area / bin_px**2), 0))
 
     def _update_history_buttons(self) -> None:
         self.undo_button.setEnabled(bool(self._undo))
@@ -228,6 +258,7 @@ class AnnotationProjectSession:
         self._current = state
         self.status.setText("Unsaved changes")
         self._update_history_buttons()
+        self._update_grid_estimate()
 
     def undo(self) -> None:
         """Undo committed drawing edits, calibration, or an accepted proposal."""
@@ -280,21 +311,21 @@ class AnnotationProjectSession:
         self.checkpoint()
         self.assist.sync_bin_size(value)
 
-    def accept_outline(self, outline: PolygonOutline) -> None:
-        """Insert the previewed polygons as one undoable domain edit."""
+    def accept_outline(self, outline: PolygonOutline) -> bool:
+        """Insert the previewed polygons as one undoable domain edit.
+
+        Returns False when the user declines to replace the environment.
+        """
         self.checkpoint()
         proposal = outline.proposal
         if proposal.mask.shape != self.frame.shape[:2]:
             raise ValueError("Outline dimensions must match the reference frame.")
         role, requested_name = self.controls.next_annotation()
-        if role == "wall":
+        if role in ("wall", "landmark"):
             raise ValueError(
-                "For walls, draw a path instead of accepting a filled area."
-            )
-        if role == "landmark":
-            raise ValueError(
-                "Draw landmarks directly. Assisted outlines define environment, "
-                "region, or hole areas."
+                f"An outline is an area, not a {role}. Choose environment, hole "
+                f"or region under 'Accept as'; draw {role}s directly with "
+                "Annotation Controls."
             )
         polygons = outline.polygons
         metadata = proposal.metadata
@@ -313,9 +344,7 @@ class AnnotationProjectSession:
         existing = list(before.shapes)
         if role == "environment" and any(s.role == "environment" for s in existing):
             if not confirm_environment_replacement(self.viewer.window._qt_window):
-                raise ValueError(
-                    "Environment replacement cancelled; the preview is retained."
-                )
+                return False
             existing = [s for s in existing if s.role != "environment"]
         names = [s.name for s in existing]
         try:
@@ -342,6 +371,7 @@ class AnnotationProjectSession:
             raise
         self.viewer.layers.selection.active = self.layer
         self.checkpoint()
+        return True
 
     def save_project(self, path: str | Path | None = None) -> None:
         """Save an editable draft without closing or requiring valid polygons."""
@@ -371,8 +401,8 @@ class AnnotationProjectSession:
         path, _ = QFileDialog.getSaveFileName(
             self.viewer.window._qt_window,
             "Save annotation project",
-            str(self.project_path or "annotations.nsp"),
-            "Annotation project (*.nsp);;All files (*)",
+            str(self.project_path or "arena.annotation.npz"),
+            "Annotation project (*.annotation.npz);;All files (*)",
         )
         if path:
             self.save_project(path)
