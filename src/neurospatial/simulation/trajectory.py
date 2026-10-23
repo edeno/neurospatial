@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._units import units_per_centimeter
+from neurospatial._units import default_speed
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.simulation._lap_routes import LapRouter
@@ -801,20 +801,14 @@ def _simulate_trajectory_laps(
         if duration is not None:
             speed_mean = 1.0
         else:
-            per_cm = units_per_centimeter(env.units)
-            if per_cm is None:
-                raise ValueError(
-                    _format_error(
-                        f"{call} needs speed_mean: the environment's units "
-                        f"({env.units!r}) are not a metric length unit, so the "
-                        "default 20 cm/s cannot be expressed in them.",
-                        why="Why: speed_mean is in position units per second.",
-                        fix="pass speed_mean=<running speed in position units per "
-                        "second>, or declare the units with "
-                        "env.with_metadata(units='cm')",
-                    )
-                )
-            speed_mean = _DEFAULT_LAP_SPEED_CM_PER_S * per_cm
+            speed_mean = default_speed(
+                env.units,
+                _DEFAULT_LAP_SPEED_CM_PER_S,
+                name="speed_mean",
+                call=call,
+                problem="not a metric length unit, so the default 20 cm/s",
+                placeholder="running speed",
+            )
     if speed_std is None:
         speed_std = 0.2 * speed_mean
     if duration is not None:

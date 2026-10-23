@@ -68,24 +68,18 @@ def resolve_min_speed(env: Any, min_speed: float | None, *, call: str) -> float:
     ValueError
         If ``min_speed`` is None and ``env.units`` is not a metric length.
     """
-    from neurospatial._exceptions import _format_error
-    from neurospatial._units import units_per_centimeter
+    from neurospatial._units import default_speed
 
     if min_speed is not None:
         return float(min_speed)
-    per_cm = units_per_centimeter(env.units)
-    if per_cm is None:
-        raise ValueError(
-            _format_error(
-                f"{call} needs min_speed: the environment's units "
-                f"({env.units!r}) are not a known length, so the 5 cm/s default "
-                "cannot be expressed in them.",
-                why="Why: min_speed is in position units per second.",
-                fix="pass min_speed=<threshold in position units per second>, "
-                "or declare the units with env.with_metadata(units='cm')",
-            )
-        )
-    return DEFAULT_MIN_SPEED_CM_PER_S * per_cm
+    return default_speed(
+        env.units,
+        DEFAULT_MIN_SPEED_CM_PER_S,
+        name="min_speed",
+        call=call,
+        problem="not a known length, so the 5 cm/s default",
+        placeholder="threshold",
+    )
 
 
 def _validate_velocity_positions(
