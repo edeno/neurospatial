@@ -159,8 +159,14 @@ _SQUARE = box(0, 0.25, 1, 0.75)
 _DIAMOND = Polygon([(0.5, 0), (1, 0.5), (0.5, 1), (0, 0.5)])
 
 
-def test_polygon_cells_with_equal_centers_and_areas_differ_in_bins() -> None:
-    square, diamond = _clipped_cell(_SQUARE), _clipped_cell(_DIAMOND)
+@pytest.fixture(scope="module")
+def square() -> Environment:
+    """One cell clipped to ``_SQUARE``, with no walls."""
+    return _clipped_cell(_SQUARE)
+
+
+def test_polygon_cells_with_equal_centers_and_areas_differ_in_bins(square) -> None:
+    diamond = _clipped_cell(_DIAMOND)
     np.testing.assert_array_equal(square.bin_centers, diamond.bin_centers)
     np.testing.assert_array_equal(square.bin_sizes, diamond.bin_sizes)
     assert _environment_differences(square, diamond) == (
@@ -169,14 +175,16 @@ def test_polygon_cells_with_equal_centers_and_areas_differ_in_bins() -> None:
     )
 
 
-def test_a_wall_is_topology_and_does_not_hide_a_cell_difference() -> None:
+def test_a_wall_is_topology_and_does_not_hide_a_cell_difference(square) -> None:
     wall = (LineString([(0, 0.9), (0.2, 0.9)]),)
-    assert _environment_differences(
-        _clipped_cell(_SQUARE), _clipped_cell(_SQUARE, walls=wall)
-    ) == (None, "continuous arena or physical walls")
-    assert _environment_differences(
-        _clipped_cell(_SQUARE), _clipped_cell(_DIAMOND, walls=wall)
-    ) == ("polygon cell geometry", "continuous arena or physical walls")
+    assert _environment_differences(square, _clipped_cell(_SQUARE, walls=wall)) == (
+        None,
+        "continuous arena or physical walls",
+    )
+    assert _environment_differences(square, _clipped_cell(_DIAMOND, walls=wall)) == (
+        "polygon cell geometry",
+        "continuous arena or physical walls",
+    )
 
 
 def test_independently_built_environments_from_the_same_samples_agree() -> None:
