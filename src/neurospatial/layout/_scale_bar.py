@@ -287,7 +287,8 @@ def _add_scale_bar_to_axes(
         loc=loc,
         pad=config.pad,
         color=color,
-        frameon=config.box_style is not None,
+        # No background color is a transparent bar: there is no box to draw.
+        frameon=config.box_style is not None and config.background is not None,
         sep=config.sep,
         label_top=label_top,
         fontproperties=fontprops,

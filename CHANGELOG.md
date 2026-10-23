@@ -2823,6 +2823,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `ScaleBarConfig(background=None)` draws the scale bar without a box, as
+  documented; it drew the default white box behind it.
+
 - The annotation editor opens on **Annotation Controls**, showing the current
   annotation type and name before switching to assisted outlines.
 
