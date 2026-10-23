@@ -90,23 +90,6 @@ def rectangle_to_roi_bounds(
     return validate_roi_bounds(bounds, frame_shape)
 
 
-def roi_context_key(
-    frame_shape: Sequence[int], bounds: ROIBounds | None
-) -> tuple[int, int, int, int, int, int]:
-    """Identify inference geometry, including its original-frame offset.
-
-    Equal-sized crops at different offsets must not share SAM refinement state.
-    Callers also invalidate state when the image content or ROI selection changes.
-    """
-    height, width = _frame_size(frame_shape)
-    x0, y0, x1, y1 = (
-        (0, 0, width, height)
-        if bounds is None
-        else validate_roi_bounds(bounds, frame_shape)
-    )
-    return height, width, x0, y0, x1, y1
-
-
 def crop_segmentation_input(
     image: NDArray[np.uint8],
     prompt: SegmentationPrompt,

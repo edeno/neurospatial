@@ -17,7 +17,6 @@ from qtpy.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 from neurospatial.annotation._roi import (
     ROIBounds,
     rectangle_to_roi_bounds,
-    roi_context_key,
 )
 
 if TYPE_CHECKING:
@@ -41,7 +40,6 @@ class AnnotationROIControl(QWidget):
         on_change: Callable[[], None],
     ) -> None:
         super().__init__()
-        roi_context_key(frame_shape, None)
         self._viewer = viewer
         self._frame_shape = tuple(frame_shape[:2])
         self._on_change = on_change

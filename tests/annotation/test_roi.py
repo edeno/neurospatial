@@ -11,7 +11,6 @@ from neurospatial.annotation._roi import (
     crop_segmentation_input,
     rectangle_to_roi_bounds,
     restore_roi_proposal,
-    roi_context_key,
     validate_roi_bounds,
 )
 from neurospatial.annotation.segmentation import (
@@ -239,10 +238,3 @@ def test_napari_rectangle_uses_row_column_and_clips_edges():
 def test_incomplete_empty_or_outside_rectangle_is_invalid(vertices):
     with pytest.raises(ValueError, match="Use full image"):
         rectangle_to_roi_bounds(vertices, (7, 13))
-
-
-def test_context_key_distinguishes_equal_size_crops_at_different_offsets():
-    assert roi_context_key((7, 13), (1, 1, 5, 4)) != roi_context_key(
-        (7, 13), (2, 1, 6, 4)
-    )
-    assert roi_context_key((7, 13), None) == roi_context_key((7, 13), (0, 0, 13, 7))

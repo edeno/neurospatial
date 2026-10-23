@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -24,6 +24,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from neurospatial._results import read_only_copy
 from neurospatial.annotation._assist_roi import AnnotationROIControl
 from neurospatial.annotation._outline_preview import OutlinePreviewControl
 from neurospatial.annotation._polygon_outline import PolygonOutline
@@ -33,7 +34,6 @@ from neurospatial.annotation._roi import (
     clean_roi_fragments,
     crop_segmentation_input,
     restore_roi_proposal,
-    roi_context_key,
 )
 from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
@@ -55,7 +55,6 @@ class _PredictionResult:
 
     proposal: SegmentationProposal
     refinement: _SAMRefinement | None
-    roi_key: tuple[int, int, int, int, int, int]
 
 
 def _run_prediction(
@@ -73,9 +72,7 @@ def _run_prediction(
     else:
         proposal = provider.predict(image, local_prompt)
     return _PredictionResult(
-        restore_roi_proposal(proposal, frame.shape, bounds=bounds),
-        refinement,
-        roi_context_key(frame.shape, bounds),
+        restore_roi_proposal(proposal, frame.shape, bounds=bounds), refinement
     )
 
 
@@ -109,16 +106,15 @@ class AnnotationAssistWidget(QWidget):
         on_calibration: Callable[[VideoCalibration | None], None],
         on_bin_size: Callable[[float], None],
         on_accept: Callable[[PolygonOutline], None],
-        on_change: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self._viewer = viewer
-        self._frame = np.array(frame, copy=True)
+        # Inference threads share this frame, so it must never change.
+        self._frame = read_only_copy(frame)
         self._provider = provider
         self._on_calibration = on_calibration
         self._on_bin_size = on_bin_size
         self._on_accept = on_accept
-        self._on_change = on_change
         self._disposed = False
         self._generation = 0
         self._job_generation = -1
@@ -131,7 +127,6 @@ class AnnotationAssistWidget(QWidget):
         self._preview_timer.timeout.connect(self._update_preview)
         self._raw_proposal: SegmentationProposal | None = None
         self._refinement: _SAMRefinement | None = None
-        self._refinement_roi_key: tuple[int, int, int, int, int, int] | None = None
         self._job_prompt: SegmentationPrompt | None = None
         self._proposal: SegmentationProposal | None = None
         self._connections: list[tuple[Any, Any]] = []
@@ -337,14 +332,9 @@ class AnnotationAssistWidget(QWidget):
         finally:
             self.bin_size.blockSignals(False)
 
-    def _changed(self) -> None:
-        if self._on_change is not None:
-            self._on_change()
-
     def _bin_changed(self, value: float) -> None:
         try:
             self._on_bin_size(value)
-            self._changed()
         except Exception as exc:
             self._error("Could not change output bin size", exc)
 
@@ -367,7 +357,6 @@ class AnnotationAssistWidget(QWidget):
             calibration = VideoCalibration(transform, frame_size_px=(width, height))
             self._on_calibration(calibration)
             self.sync_calibration(calibration)
-            self._changed()
         except Exception as exc:
             self._error("Could not calibrate", exc)
 
@@ -375,7 +364,6 @@ class AnnotationAssistWidget(QWidget):
         try:
             self._on_calibration(None)
             self.sync_calibration(None)
-            self._changed()
         except Exception as exc:
             self._error("Could not clear calibration", exc)
 
@@ -397,7 +385,6 @@ class AnnotationAssistWidget(QWidget):
         self._raw_proposal = None
         if not keep_refinement:
             self._refinement = None
-            self._refinement_roi_key = None
         self._job_prompt = None
         self._proposal = None
         if not self._disposed:
@@ -436,10 +423,7 @@ class AnnotationAssistWidget(QWidget):
         self._prompts_changed()
 
     def _local_prompt(self, prompt: SegmentationPrompt) -> SegmentationPrompt:
-        bounds = self.roi.bounds
-        if self._refinement_roi_key != roi_context_key(self._frame.shape, bounds):
-            self._refinement = None
-        return crop_segmentation_input(self._frame, prompt, bounds=bounds)[1]
+        return crop_segmentation_input(self._frame, prompt, bounds=self.roi.bounds)[1]
 
     def _prompts_changed(self, *_args: Any) -> None:
         if self._disposed:
@@ -449,10 +433,10 @@ class AnnotationAssistWidget(QWidget):
             self.status.setText("Mark a point inside the desired area to begin.")
             return
         if self._refinement is not None:
+            # Any ROI change has already discarded the refinement.
             try:
-                local_prompt = self._local_prompt(self._snapshot_prompt())
-                if self._refinement is not None and not self._refinement.accepts(
-                    local_prompt
+                if not self._refinement.accepts(
+                    self._local_prompt(self._snapshot_prompt())
                 ):
                     self._refinement = None
             except ValueError:
@@ -502,11 +486,11 @@ class AnnotationAssistWidget(QWidget):
             bounds = self.roi.bounds
             provider = self._provider
             if isinstance(provider, RegionGrowProvider):
-                provider = RegionGrowProvider(tolerance=self.tolerance.value())
+                provider = replace(provider, tolerance=self.tolerance.value())
             self._job_generation = self._generation
             self._job_prompt = prompt
             self._worker = _predict(
-                provider, self._frame.copy(), prompt, self._refinement, bounds
+                provider, self._frame, prompt, self._refinement, bounds
             )
             self._worker.returned.connect(self._show_proposal)
             self._worker.errored.connect(self._inference_error)
@@ -525,12 +509,8 @@ class AnnotationAssistWidget(QWidget):
         if self._disposed or self._job_generation != self._generation:
             return
         try:
-            proposal = result.proposal
-            if proposal.mask.shape != self._frame.shape[:2]:
-                raise ValueError("Provider returned a mask with the wrong frame size.")
             self._refinement = result.refinement
-            self._refinement_roi_key = result.roi_key
-            self._raw_proposal = proposal
+            self._raw_proposal = result.proposal
             self._refresh_preview()
         except Exception as exc:
             self._invalidate()
