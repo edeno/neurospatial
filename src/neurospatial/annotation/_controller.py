@@ -17,11 +17,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple, cast
 from uuid import uuid4
 
-from neurospatial.annotation._draft import annotation_roles, reset_identity_defaults
+from neurospatial.annotation._draft import annotation_roles
 from neurospatial.annotation._helpers import (
     REGION_TYPE_COLORS,
     rebuild_features,
-    shapes_with_types,
+    select_shapes,
     sync_colors_from_features,
 )
 from neurospatial.annotation._state import AnnotationModeState, make_unique_name
@@ -120,7 +120,6 @@ class ShapesLayerController:
             self.shapes.mode = "add_path"
         elif region_type != "landmark":
             self.shapes.mode = "add_polygon"
-        reset_identity_defaults(self.shapes)
 
     def get_existing_names(self) -> list[str]:
         """Get list of existing shape names.
@@ -281,7 +280,6 @@ class ShapesLayerController:
 
         # Update layer defaults to match assigned name
         self.shapes.feature_defaults["name"] = assigned_name
-        reset_identity_defaults(self.shapes)
 
         # Get the region_type of the last shape added
         last_role = str(self.state.region_type)
@@ -324,7 +322,6 @@ class ShapesLayerController:
             self.shapes.features = self.shapes.features.drop(
                 columns=marker, errors="ignore"
             )
-            reset_identity_defaults(self.shapes)
         if not indices_to_delete:
             return 0
 
@@ -351,19 +348,11 @@ class ShapesLayerController:
                 self.shapes.data = []
                 self.shapes.features = rebuild_features([], [])
             else:
-                # Keep only non-deleted shapes, with their types, and features
-                new_data = shapes_with_types(self.shapes, indices_to_keep)
-                features = self.shapes.features.iloc[indices_to_keep].reset_index(
-                    drop=True
-                )
-                self.shapes.data = new_data
-                self.shapes.features = features
-                sync_colors_from_features(self.shapes)
+                select_shapes(self.shapes, indices_to_keep)
 
         self.shapes.selected_data = set()
         self.shapes.mode = old_mode
         self.shapes.refresh()
-        reset_identity_defaults(self.shapes)
 
         # Notify the widget synchronously: queued napari events may arrive after
         # another drawing and must not mistake the deletion for an addition.

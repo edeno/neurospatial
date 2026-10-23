@@ -315,18 +315,17 @@ def _add_initial_regions(
     (points) are silently skipped as they cannot be represented as shapes.
 
     """
-    from neurospatial.annotation._draft import add_polygon
+    from neurospatial.annotation._draft import add_polygons
 
-    for name, region in regions.items():
-        if region.kind == "polygon":
-            add_polygon(
-                shapes_layer,
-                region.data,
-                name,
-                region.metadata.get("role", "region"),
-                calibration,
-                region.metadata,
-            )
+    add_polygons(
+        shapes_layer,
+        [
+            (region.data, name, region.metadata.get("role", "region"), region.metadata)
+            for name, region in regions.items()
+            if region.kind == "polygon"
+        ],
+        calibration,
+    )
 
 
 def _add_positions_layer(

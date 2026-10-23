@@ -6,7 +6,7 @@ extracted to avoid circular dependencies.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, Any, get_args
 
 from neurospatial.annotation._types import RegionType
@@ -80,6 +80,17 @@ def shapes_with_types(
     wall after a deleted region would become that region's polygon.
     """
     return [(shapes_layer.data[i], shapes_layer.shape_type[i]) for i in indices]
+
+
+def select_shapes(shapes_layer: napari.layers.Shapes, indices: Sequence[int]) -> None:
+    """Keep only the shapes at ``indices``, in that order, with their features.
+
+    Each kept shape keeps its type, feature row and role color.
+    """
+    features = shapes_layer.features.iloc[list(indices)].reset_index(drop=True)
+    shapes_layer.data = shapes_with_types(shapes_layer, indices)
+    shapes_layer.features = features
+    sync_colors_from_features(shapes_layer)
 
 
 def sync_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:

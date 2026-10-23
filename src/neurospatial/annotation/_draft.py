@@ -1,6 +1,6 @@
 """Private editable polygon rings and their stable parent associations."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, cast
@@ -27,15 +27,24 @@ class PolygonDraft:
     metadata: dict[str, Any]
 
 
-def add_polygon(
+def add_polygons(
     layer: Any,
-    polygon: Polygon,
-    name: str,
-    role: RegionType,
+    polygons: Sequence[tuple[Polygon, str, RegionType, Mapping[str, Any] | None]],
     calibration: VideoCalibration | None,
-    metadata: Mapping[str, Any] | None = None,
 ) -> None:
-    """Append a polygon as independently editable rings with stable links."""
+    """Append polygons as independently editable rings with stable links.
+
+    Parameters
+    ----------
+    layer : napari.layers.Shapes
+        The annotation shapes layer.
+    polygons : sequence of (Polygon, str, RegionType, mapping or None)
+        Each polygon with its name, role and region metadata. Coordinates are
+        centimeters with calibration and video pixels without it.
+    calibration : VideoCalibration or None
+        Transform from centimeters to video pixels.
+
+    """
     import pandas as pd
 
     from neurospatial.annotation._helpers import (
@@ -45,35 +54,33 @@ def add_polygon(
     from neurospatial.regions.core import _thaw_metadata
 
     # Invalid geometry still loads, so it can be repaired; saving validates it.
-    if polygon.geom_type != "Polygon":
-        raise TypeError(
-            f"Initial polygon '{name}' must be a shapely Polygon, "
-            f"not {polygon.geom_type}."
-        )
-    existing = layer.features.copy()
-    identifier = uuid4().hex
-    rings = [polygon.exterior, *polygon.interiors]
-    vertices = []
-    for ring in rings:
-        coords = np.asarray(ring.coords)
-        if calibration is not None:
-            coords = calibration.transform_cm_to_px(coords)
-        vertices.append(coords[:, ::-1])
-    layer.add(vertices, shape_type="polygon")
-    rows = rebuild_features(
-        [role] * len(rings),
-        [name, *[f"{name} interior {i + 1}" for i in range(len(rings) - 1)]],
-    )
-    rows["_polygon_id"] = [identifier, *[uuid4().hex for _ in rings[1:]]]
-    rows["_parent_id"] = ["", *[identifier for _ in rings[1:]]]
-    combined = pd.concat([existing, rows], ignore_index=True)
-    for column in _IDENTITY_COLUMNS:
-        combined[column] = combined[column].fillna("")
-    layer.features = combined
-    layer.metadata.setdefault("_polygon_metadata", {})[identifier] = _thaw_metadata(
-        metadata or {}
-    )
-    reset_identity_defaults(layer)
+    for polygon, name, _, _ in polygons:
+        if polygon.geom_type != "Polygon":
+            raise TypeError(
+                f"Initial polygon '{name}' must be a shapely Polygon, "
+                f"not {polygon.geom_type}."
+            )
+    if not polygons:
+        return
+    vertices: list[NDArray[np.float64]] = []
+    roles: list[RegionType] = []
+    names: list[str] = []
+    ids: list[str] = []
+    parents: list[str] = []
+    polygon_metadata = layer.metadata.setdefault("_polygon_metadata", {})
+    for polygon, name, role, metadata in polygons:
+        identifier = uuid4().hex
+        rings = [polygon.exterior, *polygon.interiors]
+        for ring in rings:
+            coords = np.asarray(ring.coords)
+            if calibration is not None:
+                coords = calibration.transform_cm_to_px(coords)
+            vertices.append(coords[:, ::-1])
+        roles += [role] * len(rings)
+        names += [name, *[f"{name} interior {i}" for i in range(1, len(rings))]]
+        ids += [identifier, *[uuid4().hex for _ in rings[1:]]]
+        parents += ["", *[identifier] * (len(rings) - 1)]
+        polygon_metadata[identifier] = _thaw_metadata(metadata or {})
     if not layer.metadata.get("_polygon_defaults_guard"):
         # Mutate defaults only: current_properties' setter can overwrite the
         # selected shapes themselves in select mode.
@@ -81,21 +88,37 @@ def add_polygon(
             lambda event: reset_identity_defaults(layer)
         )
         layer.events.highlight.connect(lambda event: reset_identity_defaults(layer))
-        # Napari's paste emits only a features event, before any other edit.
-        layer.events.features.connect(lambda event: _identify_copies(layer))
+        # Every features assignment, paste and removal emits this event.
+        layer.events.features.connect(lambda event: _on_features_changed(layer))
         layer.metadata["_polygon_defaults_guard"] = True
+    existing = layer.features.copy()
+    layer.add(vertices, shape_type="polygon")
+    rows = rebuild_features(roles, names)
+    rows["_polygon_id"] = ids
+    rows["_parent_id"] = parents
+    combined = pd.concat([existing, rows], ignore_index=True)
+    for column in _IDENTITY_COLUMNS:
+        combined[column] = combined[column].fillna("")
+    layer.features = combined
     sync_colors_from_features(layer)
 
 
 def reset_identity_defaults(layer: Any) -> None:
-    """Keep new drawings from inheriting a selected ring's identity.
-
-    Napari rebuilds ``feature_defaults`` from the last row whenever
-    ``features`` is assigned, so call this after every such assignment.
-    """
+    """Keep new drawings from inheriting a selected ring's identity."""
     for column in _IDENTITY_COLUMNS:
         if column in layer.feature_defaults:
             layer.feature_defaults[column] = ""
+
+
+def _on_features_changed(layer: Any) -> None:
+    """Identify pasted copies, then clear identity defaults.
+
+    Napari rebuilds ``feature_defaults`` from the last row whenever
+    ``features`` is assigned, which would give the next drawing that row's
+    identity. Paste emits only this event, before any other edit.
+    """
+    _identify_copies(layer)
+    reset_identity_defaults(layer)
 
 
 def _identify_copies(layer: Any) -> None:
@@ -129,7 +152,6 @@ def _identify_copies(layer: Any) -> None:
         features["_polygon_id"] = ids
         features["_parent_id"] = parents
         layer.features = features
-        reset_identity_defaults(layer)
 
 
 def annotation_roles(features: Any) -> list[RegionType]:
@@ -158,25 +180,24 @@ def polygon_drafts(
     features = layer.features
     ids = list(features.get("_polygon_id", [""] * len(data)))
     parents = list(features.get("_parent_id", [""] * len(data)))
+    interiors: dict[str, list[NDArray[np.float64]]] = {}
+    for vertices, parent in zip(data, parents, strict=True):
+        if parent:
+            interiors.setdefault(parent, []).append(vertices)
+    polygon_metadata = layer.metadata.get("_polygon_metadata", {})
     output = []
-    for index, (vertices, name, role) in enumerate(
-        zip(data, names, roles, strict=True)
+    for vertices, name, role, identifier, parent in zip(
+        data, names, roles, ids, parents, strict=True
     ):
-        if parents[index]:
+        if parent:
             continue
         output.append(
             PolygonDraft(
                 vertices,
                 name,
                 role,
-                [
-                    data[j]
-                    for j, parent in enumerate(parents)
-                    if ids[index] and parent == ids[index]
-                ],
-                deepcopy(
-                    layer.metadata.get("_polygon_metadata", {}).get(ids[index], {})
-                ),
+                interiors.get(identifier, []) if identifier else [],
+                deepcopy(polygon_metadata.get(identifier, {})),
             )
         )
     return output
