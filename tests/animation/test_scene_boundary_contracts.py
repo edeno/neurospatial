@@ -170,7 +170,13 @@ def test_overlay_realign_borrows_single_reader_and_cannot_mutate_authority(env):
         assert data is not scene._overlay_data
         assert data.videos[0].reader is reader
         assert not data.videos[0]._owns_reader
-        data.videos[0].frame_indices[0] = -100
+        # Realigned indices are new arrays; shared prepared arrays are read-only.
+        indices = data.videos[0].frame_indices
+        if own_samples:
+            with pytest.raises(ValueError, match="read-only"):
+                indices[0] = -100
+        else:
+            indices[0] = -100
         assert scene._overlay_data.videos[0].frame_indices[0] == 0
     assert len(acquisitions) == 1
     reader.close.assert_not_called()

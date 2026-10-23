@@ -369,7 +369,10 @@ class Animation:
         self._renderer: Any = None
         # Validate overlays once on the scene clock. Keep converted video readers
         # for repeated frame inspection rather than reopening the source.
-        from neurospatial.animation.overlays import _convert_overlays_to_data
+        from neurospatial.animation.overlays import (
+            _convert_overlays_to_data,
+            _freeze_overlay_arrays,
+        )
 
         self._overlay_data = _convert_overlays_to_data(
             list(self.overlays),
@@ -379,6 +382,7 @@ class Animation:
             self.show_regions,
             own_samples=True,
         )
+        _freeze_overlay_arrays(self._overlay_data)
         from neurospatial.animation._resources import _OwnedReaders
 
         self._owned_readers = _OwnedReaders.from_overlay_data(self._overlay_data)
@@ -483,7 +487,10 @@ class Animation:
     def overlay_data(
         self, frame_times: Any = None, *, own_samples: bool = False
     ) -> Any:
-        """Convert overlays on a requested physical clock."""
+        """Convert overlays on a requested physical clock.
+
+        Arrays shared with the scene are read-only; copy one to modify it.
+        """
         from neurospatial.animation.overlays import _realign_prepared_overlays
 
         self._ensure_open()

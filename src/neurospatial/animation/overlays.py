@@ -27,7 +27,9 @@ Performance Considerations
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
+from collections.abc import Iterator
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field, replace
 from pathlib import Path
@@ -5261,6 +5263,28 @@ def _convert_overlays_to_data(
         return overlay_data
 
 
+def _overlay_arrays(data: Any) -> Iterator[np.ndarray]:
+    """Every array held by overlay data, through dataclasses and containers."""
+    if isinstance(data, np.ndarray):
+        yield data
+    elif dataclasses.is_dataclass(data) and not isinstance(data, type):
+        for item in dataclasses.fields(data):
+            if item.name != "reader":
+                yield from _overlay_arrays(getattr(data, item.name))
+    elif isinstance(data, dict):
+        for value in data.values():
+            yield from _overlay_arrays(value)
+    elif isinstance(data, (list, tuple)):
+        for value in data:
+            yield from _overlay_arrays(value)
+
+
+def _freeze_overlay_arrays(data: OverlayData) -> None:
+    """Make prepared overlay arrays read-only so realigned views can share them."""
+    for array in _overlay_arrays(data):
+        array.flags.writeable = False
+
+
 def _realign_prepared_overlays(
     prepared: OverlayData,
     frame_times: NDArray[np.float64],
@@ -5276,11 +5300,15 @@ def _realign_prepared_overlays(
     import copy
 
     clock = _validate_frame_times(frame_times, len(frame_times))
-    # Readers may own decoder handles and cannot be deep-copied. All other
-    # metadata is independent, including arrays exposed by the public scene API.
-    result = copy.deepcopy(
-        prepared, {id(video.reader): video.reader for video in prepared.videos}
+    # Readers may own decoder handles and cannot be deep-copied. Read-only
+    # arrays are shared; containers and writable arrays are independent.
+    memo: dict[int, Any] = {id(video.reader): video.reader for video in prepared.videos}
+    memo.update(
+        (id(array), array)
+        for array in _overlay_arrays(prepared)
+        if not array.flags.writeable
     )
+    result = copy.deepcopy(prepared, memo)
     result.frame_times = clock.copy()
 
     def source_clock(data: Any) -> NDArray[np.float64]:
