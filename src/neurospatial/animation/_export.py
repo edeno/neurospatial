@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -71,12 +72,34 @@ class _ExportPlan:
             if self.overwrite:
                 Path(temporary).replace(self.path)
             else:
-                # Linking is exclusive even if a different writer created the
-                # destination after prepare_export checked it.
-                os.link(temporary, self.path)
+                _publish_exclusive(Path(temporary), self.path)
         finally:
             Path(temporary).unlink(missing_ok=True)
         return self.path
+
+
+def _publish_exclusive(temporary: Path, path: Path) -> None:
+    """Publish ``temporary`` at ``path`` without replacing a file that appeared.
+
+    A different writer may create the destination after prepare_export checked
+    it. Hard links publish complete files exclusively; filesystems without them
+    (exFAT, FAT32, some network mounts) use an exclusive create and copy.
+    """
+    try:
+        os.link(temporary, path)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass
+    with open(path, "xb") as destination:
+        try:
+            with open(temporary, "rb") as source:
+                shutil.copyfileobj(source, destination)
+        except BaseException:
+            destination.close()
+            path.unlink(missing_ok=True)
+            raise
 
 
 def prepare_export(

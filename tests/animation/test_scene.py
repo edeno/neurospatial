@@ -293,6 +293,58 @@ def test_export_does_not_replace_file_created_during_rendering(
     assert path.read_bytes() == b"created by another writer"
 
 
+
+@pytest.mark.parametrize("raced", [False, True])
+def test_export_without_hard_links_still_refuses_to_replace(
+    scene_env, tmp_path, monkeypatch, raced
+):
+    # exFAT, FAT32 and some network mounts cannot hard-link the finished file.
+    import errno
+
+    import imageio.v2
+
+    import neurospatial.animation._export as export_module
+
+    scene = Animation(
+        scene_env, np.ones((3, scene_env.n_bins)), frame_times=[0.0, 0.1, 0.2]
+    )
+    path = tmp_path / "drive.mp4"
+
+    class Writer:
+        def __init__(self, temporary):
+            self.temporary = temporary
+
+        def __enter__(self):
+            if raced:
+                path.write_bytes(b"created by another writer")
+            return self
+
+        def __exit__(self, *exc):
+            with open(self.temporary, "wb") as file:
+                file.write(b"encoded")
+            return False
+
+        def append_data(self, frame):
+            pass
+
+    def no_links(source, destination):
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(
+        imageio.v2, "get_writer", lambda temporary, **kwargs: Writer(temporary)
+    )
+    monkeypatch.setattr(export_module.os, "link", no_links)
+    if raced:
+        with pytest.raises(FileExistsError):
+            scene.export(path, fps=10, dpi=30)
+        assert path.read_bytes() == b"created by another writer"
+    else:
+        assert scene.export(path, fps=10, dpi=30) == path
+        assert path.read_bytes() == b"encoded"
+    assert [item.name for item in tmp_path.iterdir()] == ["drive.mp4"]
+    scene.close()
+
+
 def test_projected_track_uses_its_own_stable_scale(scene_env):
     import networkx as nx
 
