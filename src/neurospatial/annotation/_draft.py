@@ -124,9 +124,11 @@ def _on_features_changed(layer: Any) -> None:
 def _identify_copies(layer: Any) -> None:
     """Give pasted copies their own identities, keeping their ring links.
 
-    A row repeating an earlier identity is a copy. A copied interior ring
-    follows the most recent copy of its exterior; one copied without its
-    exterior becomes a standalone polygon.
+    A row repeating an earlier identity is a copy. Each paste emits its own
+    features event, so the copies found here came from one paste, in the
+    selection's order rather than row order. A copied interior ring follows
+    the copy of its exterior pasted with it; one copied without its exterior
+    becomes a standalone polygon.
     """
     features = layer.features
     if "_polygon_id" not in features:
@@ -135,18 +137,22 @@ def _identify_copies(layer: Any) -> None:
     parents = [str(parent) for parent in features["_parent_id"]]
     seen: set[str] = set()
     copies: dict[str, str] = {}
-    copied = False
+    copied_rows: list[int] = []
     polygon_metadata = layer.metadata.setdefault("_polygon_metadata", {})
     for index, identifier in enumerate(ids):
         if not identifier or identifier not in seen:
             seen.add(identifier)
             continue
-        copied = True
+        copied_rows.append(index)
         ids[index] = copies[identifier] = uuid4().hex
         seen.add(ids[index])
-        parents[index] = copies.get(parents[index], "")
         if identifier in polygon_metadata:
             polygon_metadata[ids[index]] = deepcopy(polygon_metadata[identifier])
+    # Link rings only once every copy has its identity: an interior ring can
+    # be pasted before its exterior.
+    for index in copied_rows:
+        parents[index] = copies.get(parents[index], "")
+    copied = bool(copied_rows)
     if copied:
         features = features.copy()
         features["_polygon_id"] = ids

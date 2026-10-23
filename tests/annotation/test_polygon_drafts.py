@@ -652,3 +652,39 @@ def test_invalid_initial_region_loads_for_repair():
         assert result.regions["bowtie"].data.area == 100.0
     finally:
         viewer.close()
+
+
+@pytest.mark.gui
+def test_copied_interior_pasted_before_its_exterior_stays_linked():
+    napari = pytest.importorskip("napari")
+
+    from neurospatial.annotation._draft import polygon_drafts
+    from neurospatial.annotation._napari_widget import (
+        get_annotation_data,
+        setup_shapes_layer_for_annotation,
+    )
+
+    viewer = napari.Viewer(show=False)
+    try:
+        shapes = setup_shapes_layer_for_annotation(viewer, "region")
+        squares = [
+            Region(f"r{i}", "polygon", Polygon([(i, 30), (i + 1, 30), (i + 1, 31)]))
+            for i in range(7)
+        ]
+        _add_initial_regions(
+            shapes, Regions([*squares, *_donut_regions().values()]), None
+        )
+        shapes.mode = "select"
+        # Napari copies in set order, so rows {7, 8} paste as [8, 7].
+        shapes.selected_data = {7, 8}
+        assert list(shapes.selected_data) == [8, 7]
+        shapes._copy_data()
+        shapes._paste_data()
+        data, names, roles, _ = get_annotation_data(shapes)
+        drafts = polygon_drafts(shapes, data, names, roles)
+        assert [len(draft.interiors) for draft in drafts if draft.name == "donut"] == [
+            1,
+            1,
+        ]
+    finally:
+        viewer.close()
