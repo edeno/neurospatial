@@ -1455,7 +1455,7 @@ class FastplotlibAnimation:
         slice_plane: tuple[float, float, float, float] | None = None,
     ) -> None:
         from neurospatial.animation._prepared import (
-            projected_field_limits,
+            projected_field_scale,
             signal_groups,
         )
 
@@ -1588,14 +1588,15 @@ class FastplotlibAnimation:
                 # Projection sums bins, so its units keep the field's label
                 # but need limits derived from that field's projected values.
                 with self._source_lock:
-                    track_scales = [
-                        ColorScale(
-                            style["cmap"],
-                            *projected_field_limits((field,), self._projection),
-                            "lightgray",
-                        )
-                        for field, style in zip(streams, styles, strict=True)
+                    projected = [
+                        projected_field_scale((field,), self._projection)
+                        for field in streams
                     ]
+                track_scales = [
+                    ColorScale(style["cmap"], *limits, "lightgray")
+                    for (limits, _), style in zip(projected, styles, strict=True)
+                ]
+                track_extensions = [beyond for _, beyond in projected]
             self._field_scales = scales
             self._track_scales = track_scales
 
@@ -1723,7 +1724,7 @@ class FastplotlibAnimation:
                         self.figure[name],
                         track_scales[i],
                         labels[i],
-                        beyond=(False, True),
+                        beyond=track_extensions[i],
                     )
             elif not with_fields:
                 # Independent units need a labeled scale on every track panel.

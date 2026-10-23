@@ -373,14 +373,12 @@ def test_time_series_are_drawn_beside_the_field_on_its_clock(apparatus, walk):
         data=np.sin(series_times),
         times=series_times,
         label="speed",
-        window_seconds=1.0,
         cursor_color="orange",
     )
     accel = TimeSeriesOverlay(
         data=np.cos(series_times),
         times=series_times,
         label="accel",
-        window_seconds=1.0,
         group="kinematics",
     )
     rewards = EventOverlay(
@@ -436,7 +434,6 @@ def test_session_timestamps_keep_their_precision(apparatus, walk):
         data=np.sin(series_times - 1.7e9),
         times=series_times,
         label="speed",
-        window_seconds=1.0,
     )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -837,9 +834,7 @@ def test_panels_drawn_against_time_share_one_window(track, decoded):
     from neurospatial.animation import SpikeRasterOverlay
 
     times, _, fields = decoded
-    series = TimeSeriesOverlay(  # its own 2 s window is for other backends
-        data=np.sin(times), times=times, label="lfp", window_seconds=2.0
-    )
+    series = TimeSeriesOverlay(data=np.sin(times), times=times, label="lfp")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         animation = track.animate_fields(

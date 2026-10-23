@@ -168,6 +168,11 @@
   every tracked sample in that time with older segments fading, and no trail
   is drawn while the current position is missing. `TimeSeriesOverlay`'s
   `show_cursor` and `cursor_color` apply in every view.
+- `FastplotlibAnimation` is the fastplotlib view's `view.native`; build it
+  through `Animation.show(backend="fastplotlib")` or `animate_fields`. Its
+  colorbars mark an end with a triangle when sampled field values lie beyond
+  it, for computed, shared and explicit limits and for projected track
+  panels alike.
 - `TimeSeriesOverlay` no longer takes `window_seconds`, `interp`,
   `update_mode`, `playback_throttle_hz` or `scrub_throttle_hz`: every signal
   panel spans the scene's `window_seconds`, and no view throttled or paused

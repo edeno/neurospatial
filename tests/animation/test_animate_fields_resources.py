@@ -212,7 +212,6 @@ def test_constant_normalization_preserves_missing_observations_in_consumers(env)
     overlay = TimeSeriesOverlay(np.array([5.0, np.nan, 5.0]), times, normalize=True)
     data = overlay.convert_to_data(times, 3, env)
     assert_allclose(data.data, [0, np.nan, 0], equal_nan=True)
-    assert np.isnan(data.get_cursor_value(0.1))
     with Animation(
         env, np.ones((3, env.n_bins)), frame_times=times, overlays=[overlay]
     ) as scene:

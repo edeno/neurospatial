@@ -78,16 +78,31 @@ def projected_field_limits(
     fields: Sequence[AnimationField], projection: Any
 ) -> tuple[float, float]:
     """Bounded projected limits from each stream's own supported source rows."""
+    return projected_field_scale(fields, projection)[0]
+
+
+def projected_field_scale(
+    fields: Sequence[AnimationField], projection: Any
+) -> tuple[tuple[float, float], tuple[bool, bool]]:
+    """Projected limits, and whether sampled values fall below or above them."""
     from neurospatial.animation._field_stats import animation_colormap_range
 
-    projected = [
-        _project(
-            np.asarray(field._scale_rows(), dtype=float).reshape(-1, field.n_bins),
-            projection,
-        )
-        for field in fields
-    ]
-    return animation_colormap_range(np.concatenate(projected), None, None)
+    projected = np.concatenate(
+        [
+            _project(
+                np.asarray(field._scale_rows(), dtype=float).reshape(-1, field.n_bins),
+                projection,
+            )
+            for field in fields
+        ]
+    )
+    low, high = animation_colormap_range(projected, None, None)
+    finite = projected[np.isfinite(projected)]
+    beyond = (
+        bool(finite.size and finite.min() < low),
+        bool(finite.size and finite.max() > high),
+    )
+    return (low, high), beyond
 
 
 def signal_groups(signals: list[Any]) -> dict[tuple[str, str | int], list[Any]]:
