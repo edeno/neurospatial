@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import shapely.geometry as shp
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from neurospatial.annotation._draft import PolygonDraft
     from neurospatial.environment import Environment
-    from neurospatial.landmarks import Landmarks
+    from neurospatial.landmarks import Landmark, Landmarks
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Region, Regions
 
@@ -32,6 +32,23 @@ def _to_world(
     """Napari (row, col) vertices as (x, y), in cm with a calibration."""
     pts_px = vertices_rc[:, ::-1].astype(np.float64)
     return pts_px if calibration is None else calibration.transform_px_to_cm(pts_px)
+
+
+def _landmark_from_shape(
+    name: str, shape_type: str, points: NDArray[np.float64]
+) -> Landmark:
+    """Build a landmark whose kind follows from its napari shape type.
+
+    An ellipse marks a point at its center, a path or line marks a line, and
+    any other shape marks a polygon.
+    """
+    from neurospatial.landmarks import Landmark
+
+    if shape_type == "ellipse":
+        return Landmark(name, "point", points.mean(axis=0))
+    if shape_type in _LINE_SHAPES:
+        return Landmark(name, "line", points)
+    return Landmark(name, "polygon", points)
 
 
 def shapes_to_walls_and_landmarks(
@@ -79,7 +96,7 @@ def shapes_to_walls_and_landmarks(
     """
     import warnings
 
-    from neurospatial.landmarks import Landmark, Landmarks
+    from neurospatial.landmarks import Landmarks
 
     walls: dict[str, shp.LineString] = {}
     landmarks: list[Landmark] = []
@@ -103,12 +120,7 @@ def shapes_to_walls_and_landmarks(
             walls[str(name)] = shp.LineString(points)
             continue
         try:
-            if shape_type == "ellipse":
-                landmark = Landmark(str(name), "point", points.mean(axis=0))
-            elif shape_type in _LINE_SHAPES:
-                landmark = Landmark(str(name), "line", points)
-            else:
-                landmark = Landmark(str(name), "polygon", points)
+            landmark = _landmark_from_shape(str(name), shape_type, points)
         except ValueError as error:
             warnings.warn(
                 f"Skipping landmark '{name}': {error}",
@@ -516,8 +528,6 @@ def _validate_drawn_shapes(
     calibration: VideoCalibration | None,
 ) -> None:
     """Require every interactive drawing to survive conversion without repair."""
-    from neurospatial.landmarks import Landmark
-
     for vertices, name, role, shape_type in zip(
         shapes_data, names, region_types, shape_types, strict=True
     ):
@@ -540,16 +550,7 @@ def _validate_drawn_shapes(
                         "draw a wall with distinct vertices and positive length"
                     )
             elif role == "landmark":
-                kind: Literal["point", "line", "polygon"] = (
-                    "point"
-                    if shape_type == "ellipse"
-                    else "line"
-                    if shape_type in _LINE_SHAPES
-                    else "polygon"
-                )
-                Landmark(
-                    str(name), kind, points.mean(axis=0) if kind == "point" else points
-                )
+                _landmark_from_shape(str(name), shape_type, points)
         except (ValueError, TypeError) as exc:
             raise ValueError(
                 f"Cannot save {role} '{name}': {exc}. Edit or delete this shape and try again."
