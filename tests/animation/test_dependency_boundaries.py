@@ -41,7 +41,7 @@ import pytest
         ),
         (
             (
-                "neurospatial.animation._parallel",
+                "neurospatial.animation._scene_rendering",
                 "matplotlib.pyplot",
                 "matplotlib.collections",
                 "matplotlib.quiver",
@@ -51,14 +51,12 @@ import pytest
             """
             import numpy as np
             from neurospatial.animation._style import (
-                _event_visibility, _head_direction_color, _build_trail_segments,
+                _event_visibility, _head_direction_color,
             )
             shown, alpha = _event_visibility(np.array([0, 1, 3]), 1, 1)
             assert shown.tolist() == [True, True, False]
             assert alpha[:2].tolist() == [0.5, 1.0]
             assert _head_direction_color("red", np.array([1., 0.])) == (1., 0., 0., 1.)
-            segments, colors = _build_trail_segments(np.array([[0., 0.], [1., 1.]]), "red")
-            assert len(segments) == 1 and colors[0][-1] == 0.7
             """,
         ),
     ],

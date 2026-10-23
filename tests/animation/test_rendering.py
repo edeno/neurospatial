@@ -1,59 +1,7 @@
-"""Field color limits and frame-label checks shared by renderers."""
+"""Field color limits shared by renderers."""
 
 import numpy as np
 import pytest
-
-
-class TestValidateFrameLabels:
-    """Test _validate_frame_labels helper function."""
-
-    def test_valid_labels_returned_unchanged(self):
-        """Test that valid frame_labels are returned unchanged."""
-        from neurospatial.animation.rendering import _validate_frame_labels
-
-        labels = ["Frame 1", "Frame 2", "Frame 3"]
-        result = _validate_frame_labels(labels, n_frames=3, backend_name="test")
-
-        assert result == labels
-        assert result is labels  # Same object reference
-
-    def test_none_returns_none(self):
-        """Test that None frame_labels returns None."""
-        from neurospatial.animation.rendering import _validate_frame_labels
-
-        result = _validate_frame_labels(None, n_frames=10, backend_name="test")
-
-        assert result is None
-
-    def test_mismatched_length_raises_value_error(self):
-        """Test that mismatched length raises ValueError with helpful message."""
-        from neurospatial.animation.rendering import _validate_frame_labels
-
-        labels = ["Frame 1", "Frame 2"]  # 2 labels
-
-        with pytest.raises(ValueError) as exc_info:
-            _validate_frame_labels(labels, n_frames=5, backend_name="html")
-
-        error_msg = str(exc_info.value)
-        # Check WHAT/WHY/HOW format
-        assert "WHAT:" in error_msg
-        assert "WHY:" in error_msg
-        assert "Fix:" in error_msg
-        # Check specific details
-        assert "2" in error_msg  # frame_labels length
-        assert "5" in error_msg  # n_frames
-        assert "html" in error_msg  # backend_name
-
-    def test_error_message_includes_backend_name(self):
-        """Test error message includes the backend name."""
-        from neurospatial.animation.rendering import _validate_frame_labels
-
-        labels = ["Label"]
-
-        for backend_name in ["html", "video", "widget"]:
-            with pytest.raises(ValueError) as exc_info:
-                _validate_frame_labels(labels, n_frames=10, backend_name=backend_name)
-            assert backend_name in str(exc_info.value)
 
 
 def test_animation_color_limits_ignore_a_few_extreme_frames():

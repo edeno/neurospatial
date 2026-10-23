@@ -545,192 +545,21 @@ class TestTimeSeriesDataInOverlayData:
         assert result.timeseries[0].label == "Speed"
 
 
-class TestTimeSeriesGroupingHelpers:
-    """Test helper functions for grouping time series overlays."""
+def test_signals_sharing_a_group_share_a_panel_in_listed_order():
+    """Ungrouped signals get a panel each; panels follow the listed order."""
+    from types import SimpleNamespace
 
-    def test_group_timeseries_single_no_group(self):
-        """Test grouping a single overlay without explicit group."""
-        from neurospatial.animation._timeseries import _group_timeseries
-        from neurospatial.animation.overlays import TimeSeriesData
+    from neurospatial.animation._prepared import signal_groups
 
-        ts_data = TimeSeriesData(
-            data=np.array([1.0, 2.0, 3.0]),
-            times=np.array([0.0, 0.5, 1.0]),
-            start_indices=np.array([0]),
-            end_indices=np.array([3]),
-            label="Speed",
-            color="cyan",
-            window_seconds=2.0,
-            linewidth=1.0,
-            alpha=1.0,
-            group=None,  # No group
-            normalize=False,
-            show_cursor=True,
-            cursor_color="red",
-            global_vmin=1.0,
-            global_vmax=3.0,
-            use_global_limits=True,
-            interp="linear",
-        )
-
-        groups = _group_timeseries([ts_data])
-
-        # Single overlay without group should be in its own group
-        assert len(groups) == 1
-        assert len(groups[0]) == 1
-        assert groups[0][0] is ts_data
-
-    def test_group_timeseries_multiple_no_groups(self):
-        """Test that overlays without groups create separate rows."""
-        from neurospatial.animation._timeseries import _group_timeseries
-        from neurospatial.animation.overlays import TimeSeriesData
-
-        def make_ts_data(label):
-            return TimeSeriesData(
-                data=np.array([1.0, 2.0, 3.0]),
-                times=np.array([0.0, 0.5, 1.0]),
-                start_indices=np.array([0]),
-                end_indices=np.array([3]),
-                label=label,
-                color="cyan",
-                window_seconds=2.0,
-                linewidth=1.0,
-                alpha=1.0,
-                group=None,  # No group
-                normalize=False,
-                show_cursor=True,
-                cursor_color="red",
-                global_vmin=1.0,
-                global_vmax=3.0,
-                use_global_limits=True,
-                interp="linear",
-            )
-
-        ts_data1 = make_ts_data("Speed")
-        ts_data2 = make_ts_data("Accel")
-
-        groups = _group_timeseries([ts_data1, ts_data2])
-
-        # Two overlays without groups should be in separate groups
-        assert len(groups) == 2
-        assert len(groups[0]) == 1
-        assert len(groups[1]) == 1
-
-    def test_group_timeseries_same_group_overlaid(self):
-        """Test that overlays with same group are placed together."""
-        from neurospatial.animation._timeseries import _group_timeseries
-        from neurospatial.animation.overlays import TimeSeriesData
-
-        def make_ts_data(label, group):
-            return TimeSeriesData(
-                data=np.array([1.0, 2.0, 3.0]),
-                times=np.array([0.0, 0.5, 1.0]),
-                start_indices=np.array([0]),
-                end_indices=np.array([3]),
-                label=label,
-                color="cyan",
-                window_seconds=2.0,
-                linewidth=1.0,
-                alpha=1.0,
-                group=group,
-                normalize=False,
-                show_cursor=True,
-                cursor_color="red",
-                global_vmin=1.0,
-                global_vmax=3.0,
-                use_global_limits=True,
-                interp="linear",
-            )
-
-        ts_data1 = make_ts_data("Speed", "kinematics")
-        ts_data2 = make_ts_data("Accel", "kinematics")
-
-        groups = _group_timeseries([ts_data1, ts_data2])
-
-        # Two overlays with same group should be in single group
-        assert len(groups) == 1
-        assert len(groups[0]) == 2
-        # Use identity check (any with is) instead of 'in' for numpy array members
-        assert any(item is ts_data1 for item in groups[0])
-        assert any(item is ts_data2 for item in groups[0])
-
-    def test_group_timeseries_mixed_groups(self):
-        """Test mixed grouping: some overlaid, some stacked."""
-        from neurospatial.animation._timeseries import _group_timeseries
-        from neurospatial.animation.overlays import TimeSeriesData
-
-        def make_ts_data(label, group):
-            return TimeSeriesData(
-                data=np.array([1.0, 2.0, 3.0]),
-                times=np.array([0.0, 0.5, 1.0]),
-                start_indices=np.array([0]),
-                end_indices=np.array([3]),
-                label=label,
-                color="cyan",
-                window_seconds=2.0,
-                linewidth=1.0,
-                alpha=1.0,
-                group=group,
-                normalize=False,
-                show_cursor=True,
-                cursor_color="red",
-                global_vmin=1.0,
-                global_vmax=3.0,
-                use_global_limits=True,
-                interp="linear",
-            )
-
-        ts_data1 = make_ts_data("Speed", "kinematics")
-        ts_data2 = make_ts_data("Accel", "kinematics")
-        ts_data3 = make_ts_data("LFP", None)  # Separate
-
-        groups = _group_timeseries([ts_data1, ts_data2, ts_data3])
-
-        # Should have 2 groups: kinematics (2 items), None (1 item)
-        assert len(groups) == 2
-
-    def test_get_group_index(self):
-        """Test _get_group_index returns correct index."""
-        from neurospatial.animation._timeseries import (
-            _get_group_index,
-            _group_timeseries,
-        )
-        from neurospatial.animation.overlays import TimeSeriesData
-
-        def make_ts_data(label, group):
-            return TimeSeriesData(
-                data=np.array([1.0, 2.0, 3.0]),
-                times=np.array([0.0, 0.5, 1.0]),
-                start_indices=np.array([0]),
-                end_indices=np.array([3]),
-                label=label,
-                color="cyan",
-                window_seconds=2.0,
-                linewidth=1.0,
-                alpha=1.0,
-                group=group,
-                normalize=False,
-                show_cursor=True,
-                cursor_color="red",
-                global_vmin=1.0,
-                global_vmax=3.0,
-                use_global_limits=True,
-                interp="linear",
-            )
-
-        ts_data1 = make_ts_data("Speed", "kinematics")
-        ts_data2 = make_ts_data("Accel", "kinematics")
-        ts_data3 = make_ts_data("LFP", None)
-
-        groups = _group_timeseries([ts_data1, ts_data2, ts_data3])
-
-        # Items in same group should have same index
-        idx1 = _get_group_index(ts_data1, groups)
-        idx2 = _get_group_index(ts_data2, groups)
-        idx3 = _get_group_index(ts_data3, groups)
-
-        assert idx1 == idx2
-        assert idx1 != idx3
+    lfp, speed, theta, accel = (
+        SimpleNamespace(group=group) for group in (None, "kin", None, "kin")
+    )
+    panels = list(signal_groups([lfp, speed, theta, accel]).values())
+    assert [[id(s) for s in panel] for panel in panels] == [
+        [id(lfp)],
+        [id(speed), id(accel)],
+        [id(theta)],
+    ]
 
 
 class TestTimeSeriesDataPickleSafe:
