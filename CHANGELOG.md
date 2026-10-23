@@ -2823,6 +2823,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- Closing a napari scene view while napari's perfmon traces its methods no
+  longer fails to release the view: it disconnects the slots it connected.
 - `ScaleBarConfig(background=None)` draws the scale bar without a box, as
   documented; it drew the default white box behind it.
 

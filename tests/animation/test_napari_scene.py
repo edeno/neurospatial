@@ -944,3 +944,30 @@ def test_vertical_layout_keeps_video_below_each_panel_field():
     finally:
         handle.close()
         scene.close()
+
+
+def test_close_disconnects_slots_a_profiler_wrapped_after_connecting(monkeypatch):
+    # napari's perfmon replaces traced methods on the class with wrappers, so
+    # looking the methods up again at close finds slots that were never
+    # connected.
+    import functools
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    scene = Animation(env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.2])
+    handle = NapariScene(scene, show=False)
+    for name in ("_prepared_ready", "_tick", "_request_seek", "_toggle_play"):
+        method = getattr(NapariScene, name)
+        monkeypatch.setattr(
+            NapariScene,
+            name,
+            functools.wraps(method)(
+                lambda self, *args, _method=method: _method(self, *args)
+            ),
+        )
+    try:
+        handle.close()
+        assert handle._closed and not handle._connections
+    finally:
+        scene.close()
