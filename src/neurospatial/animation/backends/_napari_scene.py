@@ -19,11 +19,7 @@ import numpy as np
 
 from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
-from neurospatial.animation._style import (
-    _head_direction_color,
-    _heading_displacement,
-    _rate_opacity,
-)
+from neurospatial.animation._style import _head_direction_color, _rate_opacity
 from neurospatial.animation.backends._napari_compat import (
     canvas_grid,
     canvas_overlay,
@@ -712,14 +708,9 @@ class NapariScene:
             def update_heading(
                 time: float, samples: Any, *, h: Any = heading, layer: Any = layer
             ) -> None:
-                value = sample(h, h.data, time, circular=h.data.ndim == 1)
-                origin = (
-                    sample(data.positions[0], data.positions[0].data, time)
-                    if len(data.positions) == 1
-                    else np.mean(scene.env.bin_centers, axis=0)
-                )
-                direction = _heading_displacement(value, h.length, n_dims=dims)
-                if direction is not None and np.isfinite(origin).all():
+                arrow = self._helper.heading_arrow(h, time)
+                if arrow is not None:
+                    origin, direction = arrow
                     layer.data = np.array([[origin[::-1], direction[::-1]]])
                     if h.color in colormaps:
                         layer.edge_color = np.asarray(

@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.animation._sampling import sample_observation
+from neurospatial.animation._style import _heading_displacement
 from neurospatial.animation._tracks import (
     _project,
     _projection,
@@ -216,6 +217,8 @@ class PreparedScene:
                 )
                 self.event_clocks[id(events), name] = (times, indices)
         data = scene._overlay_data
+        # Without exactly one position, heading arrows start at the arena's center.
+        self._arena_center = np.mean(scene.env.bin_centers, axis=0)
         self.signal_groups = signal_groups(data.timeseries)
         self.track_env = scene.env if scene.track is None else scene.track
         self.track_extents = track_extents(self.track_env)
@@ -369,6 +372,30 @@ class PreparedScene:
     ) -> np.ndarray:
         """Sample a prepared stream using its existing clock and support masks."""
         return sample_observation(item, values, time, circular=circular, name=name)
+
+    def heading_arrow(
+        self, heading: Any, time: float
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
+        """The heading arrow at ``time``: origin and displacement, or None.
+
+        The arrow starts at the position overlay's sample when the scene has
+        exactly one, otherwise at the arena's center, and is
+        ``heading.length`` long in environment coordinates. None when the
+        heading or its origin is missing, or the heading has no direction.
+        """
+        positions = self.scene._overlay_data.positions
+        origin = (
+            self.sample(positions[0], positions[0].data, time)
+            if len(positions) == 1
+            else self._arena_center
+        )
+        value = self.sample(
+            heading, heading.data, time, circular=heading.data.ndim == 1
+        )
+        direction = _heading_displacement(value, heading.length, n_dims=len(origin))
+        if direction is None or not np.isfinite(origin).all():
+            return None
+        return origin, direction
 
     def video_frame(self, video: Any, time: float) -> np.ndarray | None:
         """Read the nearest supported source row through its authoritative map."""

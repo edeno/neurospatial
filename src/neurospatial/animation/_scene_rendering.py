@@ -17,7 +17,6 @@ from matplotlib.colors import to_rgba
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import (
     _head_direction_color,
-    _heading_displacement,
     _marker_area,
     _rate_opacity,
 )
@@ -651,24 +650,6 @@ class SceneRenderer:
 
         return update
 
-    def _heading_geometry(
-        self, heading: Any, time: float
-    ) -> tuple[np.ndarray, np.ndarray, Any] | None:
-        """Arrow origin, displacement and color, or None when undefined."""
-        data = self.scene._overlay_data
-        sampled = self._sample(
-            heading, heading.data, time, circular=heading.data.ndim == 1
-        )
-        point = (
-            self._sample(data.positions[0], data.positions[0].data, time)
-            if len(data.positions) == 1
-            else np.mean(self.scene.env.bin_centers, axis=0)
-        )
-        direction = _heading_displacement(sampled, heading.length, n_dims=len(point))
-        if direction is None or not np.isfinite(point).all():
-            return None
-        return point, direction, _head_direction_color(heading.color, direction)
-
     def _heading(self, ax: Any, heading: Any) -> Update:
         if ax.name == "3d":
             # A 3-D quiver cannot move in place; replace just this artist.
@@ -678,11 +659,14 @@ class SceneRenderer:
                 if state["quiver"] is not None:
                     state["quiver"].remove()
                     state["quiver"] = None
-                geometry = self._heading_geometry(heading, time)
-                if geometry is not None:
-                    point, direction, color = geometry
+                arrow = self.prepared.heading_arrow(heading, time)
+                if arrow is not None:
+                    point, direction = arrow
                     state["quiver"] = ax.quiver(
-                        *point, *direction, color=color, linewidth=heading.width
+                        *point,
+                        *direction,
+                        color=_head_direction_color(heading.color, direction),
+                        linewidth=heading.width,
                     )
 
             return update3d
@@ -698,12 +682,12 @@ class SceneRenderer:
         )
 
         def update(time: float) -> None:
-            geometry = self._heading_geometry(heading, time)
+            geometry = self.prepared.heading_arrow(heading, time)
             arrow.set_visible(geometry is not None)
             if geometry is not None:
-                point, direction, color = geometry
+                point, direction = geometry
                 arrow.set_data(x=point[0], y=point[1], dx=direction[0], dy=direction[1])
-                arrow.set_color(color)
+                arrow.set_color(_head_direction_color(heading.color, direction))
 
         return update
 

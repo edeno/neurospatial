@@ -432,3 +432,35 @@ def test_projected_scale_statistics_are_read_once_and_travel_with_the_field(env)
     assert field.values.reads == reads
     scene.close()
     rebuilt.close()
+
+
+def test_heading_arrows_start_at_the_one_position_else_the_arena_center(env):
+    times = np.array([0.0, 0.1, 0.2])
+    headings = np.array([0.0, np.pi / 2, np.nan])
+    tracked = Animation(
+        env,
+        np.ones((3, env.n_bins)),
+        frame_times=times,
+        overlays=[
+            PositionOverlay(np.array([[0.5, 0.5], [1.0, 1.0], [1.5, 1.5]]), times),
+            HeadDirectionOverlay(headings, times, length=2.0),
+        ],
+    )
+    compass = Animation(
+        env,
+        np.ones((3, env.n_bins)),
+        frame_times=times,
+        overlays=[HeadDirectionOverlay(headings, times, length=2.0)],
+    )
+    for scene, origin in ((tracked, [1.0, 1.0]), (compass, [1.0, 1.0])):
+        prepared = PreparedScene(scene)
+        heading = scene._overlay_data.head_directions[0]
+        start, displacement = prepared.heading_arrow(heading, 0.1)
+        np.testing.assert_allclose(start, origin)
+        np.testing.assert_allclose(displacement, [0.0, 2.0], atol=1e-12)
+        # A missing heading draws no arrow.
+        assert prepared.heading_arrow(heading, 0.2) is None
+        scene.close()
+    prepared = PreparedScene(tracked)
+    heading = tracked._overlay_data.head_directions[0]
+    np.testing.assert_allclose(prepared.heading_arrow(heading, 0.0)[0], [0.5, 0.5])
