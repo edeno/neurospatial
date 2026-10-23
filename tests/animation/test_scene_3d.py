@@ -113,6 +113,37 @@ def test_3d_ambiguous_planar_overlays_fail_before_rendering(env3d, overlay, matc
         )
 
 
+class _HeadingAdapter:
+    """A custom overlay that returns its own converted headings."""
+
+    def __init__(self, headings):
+        self.headings = headings
+
+    def convert_to_data(self, frame_times, n_frames, env):
+        from neurospatial.animation.overlays import HeadDirectionData
+
+        return HeadDirectionData(self.headings, "red", 1.0, times=np.array([0.0, 0.2]))
+
+
+@pytest.mark.parametrize(
+    "headings,match",
+    [
+        (np.array([0.0, 1.0]), "unit vectors"),
+        (np.array([[1.0, 0.0], [0.0, 1.0]]), "Shape mismatch"),
+    ],
+    ids=["angles", "planar-vectors"],
+)
+def test_custom_heading_adapters_meet_the_3d_heading_rule(env3d, headings, match):
+    """Adapters' converted headings are checked like the built-in overlay's."""
+    with pytest.raises(ValueError, match=match):
+        Animation(
+            env3d,
+            np.ones((2, env3d.n_bins)),
+            frame_times=[0.0, 0.2],
+            overlays=[_HeadingAdapter(headings)],
+        )
+
+
 def test_3d_point_regions_have_explicit_height(env3d):
     from neurospatial.regions import Regions
 

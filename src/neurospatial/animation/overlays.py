@@ -768,11 +768,10 @@ class HeadDirectionOverlay(_Overlay):
             The headings on their own clock: ``times``, or ``frame_times``
             when the overlay has none.
 
-        Raises
-        ------
-        ValueError
-            If headings are angles in a 3-D environment, where an angle alone
-            does not give a direction.
+        Notes
+        -----
+        The conversion pipeline checks the headings against the environment's
+        dimensions, for this overlay and custom adapters alike.
         """
         _require_allocentric(
             env,
@@ -782,19 +781,6 @@ class HeadDirectionOverlay(_Overlay):
         validate_finite(
             self.headings, name="HeadDirectionOverlay.headings", allow_nan=True
         )
-        if self.headings.ndim == 2:
-            _validate_shape(
-                self.headings, env.n_dims, name="HeadDirectionOverlay.headings"
-            )
-        elif env.n_dims == 3:
-            raise ValueError(
-                _format_error(
-                    "3D head directions require (n_samples, 3) unit vectors.",
-                    why="Why: angles alone do not specify a direction in 3D.",
-                    fix="pass each heading as a unit vector in the environment's "
-                    "(x, y, z) coordinates.",
-                )
-            )
         times = _sample_clock(
             self.times,
             frame_times,
@@ -4533,6 +4519,28 @@ def _check_adapter_clock(
         _validate_temporal_alignment(times, frame_times, name=name)
 
 
+def _check_spatial_dimensions(item: Any, env: Any, *, name: str) -> None:
+    """Check converted data against the environment's dimensions.
+
+    Built-in overlays and custom adapters share this rule: heading vectors
+    have one coordinate per environment dimension, and an angle names a
+    direction only in a plane.
+    """
+    if not isinstance(item, HeadDirectionData):
+        return
+    if item.data.ndim == 2:
+        _validate_shape(item.data, env.n_dims, name=f"{name}.headings")
+    elif env.n_dims == 3:
+        raise ValueError(
+            _format_error(
+                "3D head directions require (n_samples, 3) unit vectors.",
+                why="Why: angles alone do not specify a direction in 3D.",
+                fix="pass each heading as a unit vector in the environment's "
+                "(x, y, z) coordinates.",
+            )
+        )
+
+
 def _convert_overlays_to_data(
     overlays: list[OverlayProtocol],
     frame_times: NDArray[np.float64],
@@ -4544,7 +4552,8 @@ def _convert_overlays_to_data(
     This is the main conversion pipeline that:
     1. Calls each overlay's ``convert_to_data()`` method with the scene clock
     2. Checks a custom adapter's sample clock against the scene clock
-    3. Collects the results, which it owns, into one OverlayData container
+    3. Checks every result's headings against the environment's dimensions
+    4. Collects the results, which it owns, into one OverlayData container
 
     Parameters
     ----------
@@ -4643,6 +4652,7 @@ def _convert_overlays_to_data(
                 readers.add(cast("VideoData", item).reader)
             if not isinstance(overlay, _Overlay):
                 _check_adapter_clock(item, frame_times, name=type(overlay).__name__)
+            _check_spatial_dimensions(item, env, name=type(overlay).__name__)
             # Own the converted metadata; copies share video readers.
             item = copy.deepcopy(item)
             if isinstance(item, EventData):
