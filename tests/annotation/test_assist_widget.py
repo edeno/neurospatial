@@ -745,6 +745,10 @@ def test_polygon_detail_does_not_rerun_inference_and_accepts_displayed_rings(ass
     assist["workers"][-1].complete()
     control = widget.outline_preview
     control.detail_slider.setValue(10)
+    # The slider is debounced: the old outline cannot be accepted meanwhile.
+    assert control.outline is None
+    assert not widget.accept_button.isEnabled()
+    _wait_until(lambda: control.outline is not None)
     assert len(assist["workers"]) == 1
     assert widget.prompt_tools.active
     outline = control.outline

@@ -40,6 +40,15 @@ def _proposal():
     )
 
 
+def _set_detail(control, value):
+    """Move the detail slider and wait for its debounced refresh."""
+    from qtpy.QtTest import QTest
+
+    control.detail_slider.setValue(value)
+    while control._timer.isActive():
+        QTest.qWait(10)
+
+
 def _assert_paths_match(control):
     assert control.outline is not None
     assert control.polygon_layer is not None
@@ -90,15 +99,19 @@ def test_detail_changes_reuse_exact_vectorization_and_layers(preview, monkeypatc
     monkeypatch.setattr(_outline_preview, "polygon_outline", count)
     proposal = _proposal()
     control.display(proposal)
-    control.detail_slider.setValue(0)
+    _set_detail(control, 0)
     exact = control.outline
     mask_layer, polygon_layer = control.mask_layer, control.polygon_layer
-    control.detail_slider.setValue(10)
+    # Slider moves are debounced into one refresh; until then nothing is shown
+    # for acceptance.
+    control.detail_slider.setValue(5)
+    assert control.outline is None
+    _set_detail(control, 10)
     assert control.outline.simplify_tolerance_px == 1.0
     assert control.outline.vertex_count < exact.vertex_count
     _assert_paths_match(control)
-    control.detail_slider.setValue(20)
-    control.detail_slider.setValue(0)
+    _set_detail(control, 20)
+    _set_detail(control, 0)
     assert control.snapshot() is exact
     assert len(conversions) == 1
     assert viewer.layers.selection.active is points
@@ -127,7 +140,7 @@ def test_paint_updates_mask_authoritatively_and_snapshot_catches_silent_edits(pr
     control, viewer, _annotations, _points, _changes = preview
     source = _proposal()
     control.display(source)
-    control.detail_slider.setValue(10)
+    _set_detail(control, 10)
     control.edit()
     assert viewer.layers.selection.active is control.mask_layer
     assert control.mask_layer.mode == "paint"
@@ -161,7 +174,7 @@ def test_simplification_failure_keeps_slider_available_for_exact_recovery(
 
     control, _viewer, _annotations, _points, _changes = preview
     control.display(_proposal())
-    control.detail_slider.setValue(0)
+    _set_detail(control, 0)
     exact = control.outline
     original = _outline_preview.simplify_polygon_outline
 
@@ -173,13 +186,13 @@ def test_simplification_failure_keeps_slider_available_for_exact_recovery(
     monkeypatch.setattr(
         _outline_preview, "simplify_polygon_outline", reject_positive_tolerance
     )
-    control.detail_slider.setValue(10)
+    _set_detail(control, 10)
     assert control.outline is None
     assert control.detail_slider.isEnabled()
     assert control._exact is exact
     assert "Simplification could not" in control.detail_status.text()
     assert len(control.polygon_layer.data) == 0
-    control.detail_slider.setValue(0)
+    _set_detail(control, 0)
     assert control.outline is exact
     _assert_paths_match(control)
 

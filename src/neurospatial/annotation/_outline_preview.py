@@ -154,14 +154,19 @@ class OutlinePreviewControl(QWidget):
     def _mask_changed(self, event: Any = None) -> None:
         if self._disposed or self._updating or self._proposal is None:
             return
-        self._outline = None
-        self.detail_status.setText("Updating painted outline…")
-        self._timer.start()
-        self._on_change()
+        self._schedule_refresh("Updating painted outline…")
 
     def _detail_changed(self, value: int) -> None:
         if not self._disposed and self._proposal is not None:
-            self._refresh()
+            self._schedule_refresh("Updating polygon detail…")
+
+    def _schedule_refresh(self, status: str) -> None:
+        # Coalesce paint strokes and slider drags into one vectorization; the
+        # displayed outline is stale until then, so acceptance waits for it.
+        self._outline = None
+        self.detail_status.setText(status)
+        self._timer.start()
+        self._on_change()
 
     def _refresh(self) -> None:
         if not self._disposed:
