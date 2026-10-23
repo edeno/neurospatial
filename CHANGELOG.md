@@ -48,6 +48,9 @@
   dictionaries now follow the same rules during sampling and realignment.
 - Share heading geometry across renderers: zero vectors, including interpolated
   opposite directions, no longer produce an arbitrary eastward arrow.
+- Unit spellings are matched and converted through one table, so `"um"`,
+  `"µm"` and `"micrometers"` match each other in overlay, track and NWB
+  metadata checks as they already did in centimeter-based defaults.
 - A `HeadDirectionOverlay` with more than one `PositionOverlay` now raises
   `ValueError` in every backend. Its arrow was previously drawn at the arena
   center, because no single position identifies where it starts. Pass the one

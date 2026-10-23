@@ -7,17 +7,23 @@ threshold) are expressed in an environment's own units through
 
 from __future__ import annotations
 
-# Centimeters in one unit, for every accepted spelling of a metric length unit.
-_CENTIMETERS_PER_UNIT = {
-    **dict.fromkeys(["m", "meter", "meters", "metre", "metres"], 100.0),
+# Every accepted spelling of a length unit, mapped to its canonical name.
+_UNIT_SPELLINGS = {
+    **dict.fromkeys(["m", "meter", "meters", "metre", "metres"], "m"),
     **dict.fromkeys(
-        ["cm", "centimeter", "centimeters", "centimetre", "centimetres"], 1.0
+        ["cm", "centimeter", "centimeters", "centimetre", "centimetres"], "cm"
     ),
     **dict.fromkeys(
-        ["mm", "millimeter", "millimeters", "millimetre", "millimetres"], 0.1
+        ["mm", "millimeter", "millimeters", "millimetre", "millimetres"], "mm"
     ),
-    **dict.fromkeys(["um", "µm", "micrometer", "micrometers", "micrometre"], 1e-4),
+    **dict.fromkeys(
+        ["um", "µm", "micrometer", "micrometers", "micrometre", "micrometres"], "um"
+    ),
+    **dict.fromkeys(["px", "pixel", "pixels"], "px"),
 }
+
+# Centimeters in one canonical metric unit. Pixels have no conversion.
+_CENTIMETERS_PER_UNIT = {"m": 100.0, "cm": 1.0, "mm": 0.1, "um": 1e-4}
 
 
 def units_per_centimeter(units: str | None) -> float | None:
@@ -34,27 +40,14 @@ def units_per_centimeter(units: str | None) -> float | None:
         For example 100.0 for ``"mm"`` and 0.01 for ``"m"``; None for pixels,
         custom units and unset units.
     """
-    centimeters = _CENTIMETERS_PER_UNIT.get(str(units or "").lower().strip())
+    centimeters = _CENTIMETERS_PER_UNIT.get(normalize_position_units(str(units or "")))
     return None if centimeters is None else 1.0 / centimeters
 
 
 def normalize_position_units(units: str) -> str:
-    """Canonical spelling for matching spatial metadata, without conversion."""
-    aliases = {
-        "meter": "m",
-        "meters": "m",
-        "metre": "m",
-        "metres": "m",
-        "centimeter": "cm",
-        "centimeters": "cm",
-        "centimetre": "cm",
-        "centimetres": "cm",
-        "millimeter": "mm",
-        "millimeters": "mm",
-        "millimetre": "mm",
-        "millimetres": "mm",
-        "pixel": "px",
-        "pixels": "px",
-    }
+    """Canonical spelling for matching spatial metadata, without conversion.
+
+    Unknown units are returned lowercased and stripped.
+    """
     value = units.strip().lower()
-    return aliases.get(value, value)
+    return _UNIT_SPELLINGS.get(value, value)
