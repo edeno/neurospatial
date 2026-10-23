@@ -597,16 +597,16 @@ class PreparedScene:
         return origin, direction
 
     def video_frame(self, video: Any, time: float) -> np.ndarray | None:
-        """Read the nearest supported source row through its authoritative map."""
-        times = video.times
-        if not len(times) or time < times[0] or time > times[-1]:
+        """Read the nearest supported source row through its authoritative map.
+
+        The nearer sample wins and a tie goes to the earlier one; outside the
+        video's samples nothing is shown.
+        """
+        from neurospatial.animation.overlays import _find_nearest_indices
+
+        index = int(_find_nearest_indices(video.times, np.array([time]))[0])
+        if index < 0:
             return None
-        right = int(np.searchsorted(times, time, side="left"))
-        index = (
-            right - 1
-            if right > 0 and time - times[right - 1] <= times[right] - time
-            else right
-        )
         previous = self._video_held.get(id(video))
         if previous is None or previous[0] != index:
             with self.source_lock:
