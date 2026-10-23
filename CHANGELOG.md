@@ -2551,6 +2551,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   track.bin_at(positions) >= 0  # all True: the lap turns at the corner instead of cutting across it
   ```
 
+- A track rotated or shifted with `apply_transform` keeps the linear
+  position (`pos_1D`) and track segment (`source_edge_id`) of every bin in
+  `get_bin_attributes()` and `env.connectivity`. Before, rounding in the
+  moved segment lengths dropped both for about a third of rotation angles,
+  and `simulate_trajectory_laps` on such a track raised `KeyError: 0`.
+
+  ```python
+  rotated = track.apply_transform(Affine2D(matrix))  # e.g. a 0.4 rad rotation
+  rotated.get_bin_attributes()["source_edge_id"]  # before: KeyError (column missing); after: same as track
+  ```
+
 - Publishing walls onto a rotated or clipped environment refuses a wall that
   lies in a rounding-sized gap between two neighboring bins. Before, whether
   such a wall was refused or silently ignored depended on the last bits of
