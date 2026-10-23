@@ -19,7 +19,7 @@ from magicgui.widgets import (
 from numpy.typing import NDArray
 
 from neurospatial.annotation._controller import ShapesLayerController
-from neurospatial.annotation._draft import annotation_roles
+from neurospatial.annotation._draft import annotation_roles, guard_identity_defaults
 from neurospatial.annotation._helpers import (
     REGION_TYPE_CATEGORIES,
     REGION_TYPE_COLOR_CYCLE,
@@ -777,15 +777,9 @@ def setup_shapes_layer_for_annotation(
         Configured shapes layer ready for annotation.
 
     """
-    import pandas as pd
-
-    # Initialize with empty features DataFrame (categorical for color cycling)
-    features = pd.DataFrame(
-        {
-            "role": pd.Categorical([], categories=REGION_TYPE_CATEGORIES),
-            "name": pd.Series([], dtype=str),
-        },
-    )
+    # Categorical roles drive color cycling. Every shape also carries a ring
+    # identity and its exterior's identity (empty for an exterior).
+    features = rebuild_features([], [])
 
     shapes = viewer.add_shapes(
         name="Annotations",
@@ -814,6 +808,8 @@ def setup_shapes_layer_for_annotation(
     else:
         shapes.feature_defaults["name"] = "arena"
         shapes.current_face_color = REGION_TYPE_COLORS["environment"]
+
+    guard_identity_defaults(shapes)
 
     # Start in polygon drawing mode
     shapes.mode = "add_polygon"

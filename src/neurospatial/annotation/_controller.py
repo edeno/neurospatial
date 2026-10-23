@@ -231,14 +231,14 @@ class ShapesLayerController:
         name_was_modified = False
         assigned_name = ""
 
+        ids = self.shapes.features["_polygon_id"].fillna("").tolist()
+        parents = self.shapes.features["_parent_id"].fillna("").tolist()
+
         # Add entries for new shapes (from prev_count to current_count)
         for index in range(prev_count, current_count):
             # Clipboard rows already carry an identity and parent association;
             # keep their role, and their name unless it is already taken.
-            if (
-                "_polygon_id" in self.shapes.features
-                and self.shapes.features["_polygon_id"].iloc[index]
-            ):
+            if ids[index]:
                 row = self.shapes.features.iloc[[index]]
                 role = cast("RegionType", str(row["role"].iloc[0]))
                 region_types.append(role)
@@ -250,6 +250,9 @@ class ShapesLayerController:
                     self.state.record_shape_added(counted)
                 continue
             region_types.append(self.state.region_type)
+            # A drawing is a new exterior ring.
+            ids[index] = uuid4().hex
+            parents[index] = ""
 
             # Determine name
             if name_override and name_override.strip():
@@ -271,7 +274,11 @@ class ShapesLayerController:
         # Apply updated features
         updated = rebuild_features(region_types, names)
         for column in self.shapes.features:
-            if str(column).startswith("_"):
+            if column == "_polygon_id":
+                updated[column] = ids[:current_count]
+            elif column == "_parent_id":
+                updated[column] = parents[:current_count]
+            elif str(column).startswith("_"):
                 updated[column] = list(
                     self.shapes.features[column].iloc[:current_count]
                 )

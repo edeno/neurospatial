@@ -81,16 +81,7 @@ def add_polygons(
         ids += [identifier, *[uuid4().hex for _ in rings[1:]]]
         parents += ["", *[identifier] * (len(rings) - 1)]
         polygon_metadata[identifier] = _thaw_metadata(metadata or {})
-    if not layer.metadata.get("_polygon_defaults_guard"):
-        # Mutate defaults only: current_properties' setter can overwrite the
-        # selected shapes themselves in select mode.
-        layer.events.current_properties.connect(
-            lambda event: reset_identity_defaults(layer)
-        )
-        layer.events.highlight.connect(lambda event: reset_identity_defaults(layer))
-        # Every features assignment, paste and removal emits this event.
-        layer.events.features.connect(lambda event: _on_features_changed(layer))
-        layer.metadata["_polygon_defaults_guard"] = True
+    guard_identity_defaults(layer)
     existing = layer.features.copy()
     layer.add(vertices, shape_type="polygon")
     rows = rebuild_features(roles, names)
@@ -101,6 +92,22 @@ def add_polygons(
         combined[column] = combined[column].fillna("")
     layer.features = combined
     sync_colors_from_features(layer)
+
+
+def guard_identity_defaults(layer: Any) -> None:
+    """Keep ring identities unique after every layer event that copies them."""
+    reset_identity_defaults(layer)
+    if layer.metadata.get("_polygon_defaults_guard"):
+        return
+    # Mutate defaults only: current_properties' setter can overwrite the
+    # selected shapes themselves in select mode.
+    layer.events.current_properties.connect(
+        lambda event: reset_identity_defaults(layer)
+    )
+    layer.events.highlight.connect(lambda event: reset_identity_defaults(layer))
+    # Every features assignment, paste and removal emits this event.
+    layer.events.features.connect(lambda event: _on_features_changed(layer))
+    layer.metadata["_polygon_defaults_guard"] = True
 
 
 def reset_identity_defaults(layer: Any) -> None:

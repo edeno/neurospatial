@@ -188,7 +188,10 @@ def test_polygon_links_survive_append_and_controller_delete():
         )
         controller.update_features_for_new_shapes(2, name_override="new")
         assert shapes.features.loc[1, "_parent_id"] == identity
-        assert shapes.features.loc[2, "_polygon_id"] == ""
+        # A drawing is a new exterior with its own identity.
+        drawn = shapes.features.loc[2, "_polygon_id"]
+        assert drawn and drawn not in set(shapes.features.loc[:1, "_polygon_id"])
+        assert shapes.features.loc[2, "_parent_id"] == ""
         assert controller.delete_shapes_by_indices({0}) == 2
         assert list(shapes.features["name"]) == ["new"]
     finally:
@@ -294,6 +297,7 @@ def test_widget_delete_then_draw_assigns_fresh_features(delete_route):
         widget = create_annotation_widget(viewer, initial_mode="region")
         viewer.window.add_dock_widget(widget)
         shapes.selected_data = {0}
+        deleted = shapes.features["_polygon_id"].iloc[0]
         QApplication.processEvents()
         if delete_route == "button":
             button = next(
@@ -315,7 +319,8 @@ def test_widget_delete_then_draw_assigns_fresh_features(delete_route):
         assert len(result.regions) == 2
         assert len(set(shapes.features["name"])) == 2
         assert list(shapes.features["role"]) == ["region", "region"]
-        assert shapes.features["_polygon_id"].iloc[1] == ""
+        # The drawing gets a fresh identity, never the deleted shape's.
+        assert shapes.features["_polygon_id"].iloc[1] not in ("", deleted)
         assert shapes.features["_parent_id"].iloc[1] == ""
     finally:
         viewer.close()
