@@ -40,53 +40,78 @@ from neurospatial.geometry import cell_polygons, track_junctions
 _CLEARANCE = 1e-6
 
 
-def lap_route(
-    env: Environment, path: Sequence[int], *, call: str, path_name: str
-) -> NDArray[np.float64]:
-    """Return the waypoints of a lap along a chain of neighboring bins.
+class LapRouter:
+    """Routes laps along chains of neighboring bins of one environment.
+
+    One router serves every path of a lap call, so a step routed for the
+    outbound path is reused, reversed, by the inbound path.
 
     Parameters
     ----------
     env : Environment
         The environment the bins belong to.
-    path : sequence of int
-        Bin indices; consecutive bins are neighbors or the same bin.
     call : str
         The public call the scientist made, named in errors.
-    path_name : str
-        What the path is, such as ``"outbound_path"``, named in errors.
-
-    Returns
-    -------
-    ndarray of float64, shape (n_waypoints, n_dims)
-        Starts at the first bin's center and ends at the last bin's center.
-        The lap runs in straight lines between consecutive waypoints.
-
-    Raises
-    ------
-    ValueError
-        If no route between two consecutive bins stays inside the environment,
-        such as a bridge between separate parts of a combined environment.
     """
-    bins = np.asarray(path, dtype=np.intp)
-    bins = bins[np.r_[True, bins[1:] != bins[:-1]]]
-    centers = env.bin_centers
-    if len(bins) == 1:
+
+    def __init__(self, env: Environment, call: str) -> None:
+        self.env = env
+        self.call = call
+        self.cells: _CellRouter | None = None
+        if env.binning.linearization is not None:
+            self.segments = _track_segments(env)
+        elif env.n_dims == 2 and env.binning.bins.has_measure_dim(2):
+            self.cells = _CellRouter(env)
+
+    def route(
+        self, path: Sequence[int], path_name: str, argument: str
+    ) -> NDArray[np.float64]:
+        """Return the waypoints of a lap along ``path``.
+
+        Parameters
+        ----------
+        path : sequence of int
+            Bin indices; consecutive bins are neighbors or the same bin.
+        path_name : str
+            What the path is, such as ``"outbound_path"`` or ``"the reversed
+            outbound path"``, named in errors.
+        argument : str
+            The argument that sets the path, ``"outbound_path"`` or
+            ``"inbound_path"``, named in the fix of errors.
+
+        Returns
+        -------
+        ndarray of float64, shape (n_waypoints, n_dims)
+            Starts at the first bin's center and ends at the last bin's
+            center. The lap runs in straight lines between consecutive
+            waypoints.
+
+        Raises
+        ------
+        ValueError
+            If no route between two consecutive bins stays inside the
+            environment, such as a bridge between separate parts of a combined
+            environment.
+        """
+        bins = np.asarray(path, dtype=np.intp)
+        bins = bins[np.r_[True, bins[1:] != bins[:-1]]]
+        centers = self.env.bin_centers
+        if len(bins) == 1:
+            return centers[bins]
+        steps = np.column_stack([bins[:-1], bins[1:]])
+        if self.env.binning.linearization is not None:
+            return _track_route(self.env, self.segments, steps)
+        if self.cells is not None:
+            legs = [
+                self.cells.route(int(a), int(b), self.call, path_name, argument)
+                for a, b in steps
+            ]
+            return np.vstack([centers[bins[:1]], *(leg[1:] for leg in legs)])
         return centers[bins]
-    steps = np.column_stack([bins[:-1], bins[1:]])
-    if env.binning.linearization is not None:
-        return _track_route(env, steps)
-    if env.n_dims == 2 and env.binning.bins.has_measure_dim(2):
-        router = _CellRouter(env)
-        legs = [router.route(int(a), int(b), call, path_name) for a, b in steps]
-        return np.vstack([centers[bins[:1]], *(leg[1:] for leg in legs)])
-    return centers[bins]
 
 
-def _track_route(env: Environment, steps: NDArray[np.intp]) -> NDArray[np.float64]:
-    """Waypoints along a track's centerline, through the junction nodes."""
-    linearization = env.binning.linearization
-    assert linearization is not None
+def _track_segments(env: Environment) -> NDArray[np.intp]:
+    """The track-graph edge each bin of a track lies on."""
     segment_of = nx.get_node_attributes(env.connectivity, "source_edge_id")
     if len(segment_of) != env.n_bins:
         raise ValueError(
@@ -100,7 +125,15 @@ def _track_route(env: Environment, steps: NDArray[np.intp]) -> NDArray[np.float6
                 "Environment.maze or Environment.from_graph",
             )
         )
-    segments = np.array([segment_of[i] for i in range(env.n_bins)])
+    return np.array([segment_of[i] for i in range(env.n_bins)], dtype=np.intp)
+
+
+def _track_route(
+    env: Environment, segments: NDArray[np.intp], steps: NDArray[np.intp]
+) -> NDArray[np.float64]:
+    """Waypoints along a track's centerline, through the junction nodes."""
+    linearization = env.binning.linearization
+    assert linearization is not None
     # NaN where both bins lie on one straight segment: no turn between them.
     junctions = track_junctions(steps, segments, linearization.graph, env.n_dims)
     centers = env.bin_centers
@@ -119,9 +152,15 @@ class _CellRouter:
         self.env = env
         self.cells = cell_polygons(env.binning)
         self.domain = env.arena.polygonal_domain()
+        self.clearance = _CLEARANCE * float(np.sqrt(np.min(env.bin_sizes)))
         walls = env.arena.walls
         self.walls = shapely.union_all(list(walls)) if walls else None
-        self.clearance = _CLEARANCE * float(np.sqrt(np.min(env.bin_sizes)))
+        # Routes keep this far from walls in every try.
+        self.wall_strips = (
+            None
+            if self.walls is None
+            else self.walls.buffer(self.clearance, quad_segs=1)
+        )
         self.supports: dict[int, shapely.Geometry] = {}
         self.routes: dict[tuple[int, int], NDArray[np.float64]] = {}
 
@@ -142,13 +181,13 @@ class _CellRouter:
         union = shapely.union_all([self.support(i) for i in bins])
         region = union.buffer(-clearance, join_style="mitre")
         if self.walls is not None and self.walls.intersects(union):
-            region = region.difference(
-                self.walls.buffer(max(clearance, self.clearance), quad_segs=1)
-            )
+            region = region.difference(self.wall_strips)
         shapely.prepare(region)
         return region
 
-    def route(self, a: int, b: int, call: str, path_name: str) -> NDArray[np.float64]:
+    def route(
+        self, a: int, b: int, call: str, path_name: str, argument: str
+    ) -> NDArray[np.float64]:
         """Waypoints from bin ``a``'s center to bin ``b``'s center."""
         if (b, a) in self.routes:
             return self.routes[b, a][::-1]
@@ -182,7 +221,7 @@ class _CellRouter:
                         "but their cells do not touch inside the environment, "
                         "for example across a bridge between separate parts of "
                         "a combined environment.",
-                        fix="pass outbound_path= as a chain of bins whose cells "
+                        fix=f"pass {argument}= as a chain of bins whose cells "
                         "touch, or add bins for the space between the two parts",
                     )
                 )

@@ -455,9 +455,10 @@ def test_laps_do_not_cross_walls(layout_laps):
         assert np.all(shapely.distance(crossings, ends) <= longest_step)
 
 
-def test_bridge_across_a_gap_is_refused():
-    """Two rooms with no bins between them: no lap can stay inside."""
-    env = Environment.combine(
+@pytest.fixture(scope="module")
+def two_rooms_bridged():
+    """Two rooms 10 cm apart, joined by bridges with no bins between them."""
+    return Environment.combine(
         {
             "left": Environment.from_polygon(box(0, 0, 20, 20), bin_size=2, units="cm"),
             "right": Environment.from_polygon(
@@ -465,5 +466,21 @@ def test_bridge_across_a_gap_is_refused():
             ),
         }
     )
+
+
+def test_bridge_across_a_gap_is_refused(two_rooms_bridged):
+    """No lap across the gap can stay inside the environment."""
     with pytest.raises(ValueError, match="leave the environment"):
-        simulate_trajectory_laps(env, n_laps=2, seed=1)
+        simulate_trajectory_laps(two_rooms_bridged, n_laps=2, seed=1)
+
+
+def test_bridge_refusal_names_the_path_to_fix(two_rooms_bridged):
+    env = two_rooms_bridged
+    pairs = env.edge_pairs
+    gap = np.linalg.norm(np.diff(env.bin_centers[pairs], axis=1)[:, 0], axis=1)
+    left, right = (int(b) for b in pairs[np.argmax(gap)])
+    with pytest.raises(ValueError, match=r"inbound_path steps") as error:
+        simulate_trajectory_laps(
+            env, n_laps=2, outbound_path=[left], inbound_path=[right, left]
+        )
+    assert "pass inbound_path= as a chain" in str(error.value)

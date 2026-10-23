@@ -11,7 +11,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._units import units_per_centimeter
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
-from neurospatial.simulation._lap_routes import lap_route
+from neurospatial.simulation._lap_routes import LapRouter
 
 
 def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
@@ -939,9 +939,15 @@ def _simulate_trajectory_laps(
     # Each step between neighboring bins follows the environment's geometry
     # (along a track's centerline, inside the cells otherwise), not the
     # straight line between their centers, which can leave the environment.
+    router = LapRouter(env, call)
     routes = [
-        lap_route(env, path, call=call, path_name=name)
-        for path, name in zip((outbound_path, inbound_path), path_names, strict=True)
+        router.route(path, name, argument)
+        for path, name, argument in zip(
+            (outbound_path, inbound_path),
+            path_names,
+            ("outbound_path", "inbound_path"),
+            strict=True,
+        )
     ]
     # Distance run from the start of each route to each of its waypoints.
     route_distances = [
