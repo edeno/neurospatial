@@ -68,7 +68,11 @@ def test_scene_video_uses_prepared_native_mapping_for_every_read(env):
     try:
         for time, expected in [(0.0, 200), (0.05, 200), (0.1, None), (0.2, 20)]:
             scene.render_frame(time, dpi=25)
-            images = scene._renderer.figure.axes[0].images
+            images = [
+                image
+                for image in scene._renderer.figure.axes[0].images
+                if image.get_visible()
+            ]
             if expected is None:
                 assert not images
             else:
@@ -132,9 +136,17 @@ def test_1d_positions_and_object_vectors_have_defined_spatial_baseline():
     try:
         scene.render_frame(0.05, dpi=25)
         ax = scene._renderer.figure.axes[0]
-        line = next(line for line in ax.lines if line.get_color() == "magenta")
-        np.testing.assert_allclose(line.get_xdata(), [0.5, 2.0])
-        np.testing.assert_array_equal(line.get_ydata(), [0, 0])
+        from matplotlib.collections import LineCollection
+        from matplotlib.colors import to_rgba
+
+        (segment,) = next(
+            lines.get_segments()
+            for lines in ax.collections
+            if isinstance(lines, LineCollection)
+            and np.allclose(lines.get_edgecolor(), to_rgba("magenta"))
+        )
+        np.testing.assert_allclose(segment[:, 0], [0.5, 2.0])
+        np.testing.assert_array_equal(segment[:, 1], [0, 0])
         points = np.concatenate([artist.get_offsets() for artist in ax.collections])
         assert any(np.allclose(point, [2.0, 0.0]) for point in points)
         assert any(np.allclose(point, [0.5, 0.0]) for point in points)

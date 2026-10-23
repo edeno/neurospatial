@@ -160,7 +160,14 @@ def test_scene_trails_and_legacy_geometry_share_effective_support(env, case):
         env, np.ones((4, env.n_bins)), frame_times=CLOCK, overlays=[Adapter(source)]
     ) as scene:
         scene.render_frame(CLOCK[-1], dpi=25)
-        actual = [line.get_xydata() for line in scene._renderer.figure.axes[0].lines]
+        from matplotlib.collections import LineCollection
+
+        actual = [
+            segment
+            for lines in scene._renderer.figure.axes[0].collections
+            if isinstance(lines, LineCollection)
+            for segment in lines.get_segments()
+        ]
         assert len(actual) == len(expected_pairs)
         for pair, expected in zip(actual, expected_pairs, strict=True):
             np.testing.assert_array_equal(pair, expected)

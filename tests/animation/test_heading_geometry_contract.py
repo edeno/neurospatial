@@ -1,7 +1,7 @@
 """Undefined headings stay missing across scene and legacy renderers."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -52,7 +52,7 @@ def heading_artists(scene):
     return [
         artist
         for artist in [*ax.patches, *ax.collections]
-        if isinstance(artist, (FancyArrow, Line3DCollection))
+        if isinstance(artist, (FancyArrow, Line3DCollection)) and artist.get_visible()
     ]
 
 
@@ -142,15 +142,25 @@ def test_native_napari_and_scene_normalize_interpolated_vector(env):
         env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.2], overlays=[overlay]
     ) as scene:
         # Capture precisely the geometry sent to Matplotlib in either dimension.
-        from neurospatial.animation._scene_rendering import SceneRenderer
+        from matplotlib.patches import FancyArrow
+        from mpl_toolkits.mplot3d import Axes3D
 
-        renderer = SceneRenderer(scene, dpi=25)
-        ax = MagicMock()
-        renderer._spatial(ax, 0.1)
-        call = ax.arrow.call_args if env.n_dims == 2 else ax.quiver.call_args
-        np.testing.assert_allclose(call.args[: env.n_dims], env.bin_centers.mean(0))
-        np.testing.assert_allclose(call.args[env.n_dims :], expected)
-        renderer.close()
+        if env.n_dims == 2:
+            with patch.object(
+                FancyArrow, "set_data", autospec=True, side_effect=FancyArrow.set_data
+            ) as sent:
+                scene.render_frame(0.1, dpi=25)
+            sent_geometry = sent.call_args.kwargs
+            origin = [sent_geometry["x"], sent_geometry["y"]]
+            direction = [sent_geometry["dx"], sent_geometry["dy"]]
+        else:
+            with patch.object(
+                Axes3D, "quiver", autospec=True, side_effect=Axes3D.quiver
+            ) as sent:
+                scene.render_frame(0.1, dpi=25)
+            origin, direction = sent.call_args.args[1:4], sent.call_args.args[4:7]
+        np.testing.assert_allclose(origin, env.bin_centers.mean(0))
+        np.testing.assert_allclose(direction, expected)
         handle, layer = napari_heading(scene)
         for update in handle._updates:
             update(0.1, None)

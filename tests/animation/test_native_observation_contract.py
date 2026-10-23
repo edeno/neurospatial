@@ -174,19 +174,14 @@ def test_object_vector_consumers_share_full_recording_finite_peak(env, monkeypat
         subset_native.update(0.1)
         assert subset_native.lines.colors[3] == pytest.approx(0.55)
         scene.render_frame(0.1, dpi=25)
-        line = next(
-            line
-            for line in scene._renderer.figure.axes[0].lines
-            if line.get_zorder() == 102
+        lines = next(
+            lines
+            for lines in scene._renderer.figure.axes[0].collections
+            if lines.get_zorder() == 102
         )
-        assert line.get_alpha() == pytest.approx(0.55)
+        assert lines.get_alpha() == pytest.approx(0.55)
         scene.render_frame(0.2, dpi=25)
-        line = next(
-            line
-            for line in scene._renderer.figure.axes[0].lines
-            if line.get_zorder() == 102
-        )
-        assert line.get_alpha() == 0
+        assert lines.get_alpha() == 0
     assert len(calls) == 1  # Seeking and sampling windows do not rescan the recording.
 
 

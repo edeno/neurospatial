@@ -231,12 +231,17 @@ def test_events_start_at_actual_time_and_keep_cumulative_and_fading_modes(scene_
     scene = Animation(
         scene_env, np.ones((5, scene_env.n_bins)), frame_times=times, overlays=[event]
     )
+
+    def markers():
+        (collection,) = scene._renderer.figure.axes[0].collections[1:]
+        return collection.get_offsets() if collection.get_visible() else []
+
     scene.render_frame(0.14, dpi=30)
-    assert len(scene._renderer.figure.axes[0].collections) == 1
+    assert len(markers()) == 0
     scene.render_frame(0.15, dpi=30)
-    assert len(scene._renderer.figure.axes[0].collections) == 2
+    np.testing.assert_array_equal(markers(), [[4.0, 4.0]])
     scene.render_frame(0.4, dpi=30)
-    assert len(scene._renderer.figure.axes[0].collections) == 2
+    np.testing.assert_array_equal(markers(), [[4.0, 4.0]])
     scene.close()
     event.decay_frames = 2
     fading = Animation(

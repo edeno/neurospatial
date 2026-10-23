@@ -65,8 +65,9 @@ def test_3d_frame_preserves_z_for_positions_skeletons_and_vectors(env3d):
         if hasattr(item, "_offsets3d")
     ]
     assert any(np.allclose(z, [24.0]) for z in z_values)
-    assert any(np.allclose(line.get_data_3d()[2], [24.0, 24.1]) for line in ax.lines)
-    assert any(np.allclose(line.get_data_3d()[2], [24.0, 29.0]) for line in ax.lines)
+    lines = [line for line in ax.lines if line.get_visible()]
+    assert any(np.allclose(line.get_data_3d()[2], [24.0, 24.1]) for line in lines)
+    assert any(np.allclose(line.get_data_3d()[2], [24.0, 29.0]) for line in lines)
     scene.close()
 
 

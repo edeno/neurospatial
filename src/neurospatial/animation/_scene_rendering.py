@@ -1,8 +1,13 @@
-"""Display-independent complete-scene Matplotlib rendering and video writing."""
+"""Display-independent complete-scene Matplotlib rendering and video writing.
+
+The renderer creates its figure, axes and artists once and afterwards only
+updates their data, so a frame costs drawing rather than figure construction.
+"""
 
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,6 +21,116 @@ from neurospatial.animation._style import (
     _marker_area,
     _rate_opacity,
 )
+
+Update = Callable[[float], None]
+
+
+def _planar(points: np.ndarray) -> np.ndarray:
+    """Display coordinates: a native 1-D position is drawn at y = 0.
+
+    A 1-D field has physical position on x and field amplitude on y.
+    """
+    if points.shape[-1] > 1:
+        return points
+    return np.concatenate([points, np.zeros_like(points)], axis=-1)
+
+
+def _scatter(ax: Any, **style: Any) -> Any:
+    """An empty marker collection, filled per frame by :func:`_set_points`."""
+    return ax.scatter(*np.empty((3 if ax.name == "3d" else 2, 0)), **style)
+
+
+def _set_points(collection: Any, points: np.ndarray) -> None:
+    """Show the finite rows of ``points``, ``(n, n_dims)`` environment coordinates.
+
+    A missing (NaN) point draws no marker.
+    """
+    points = _planar(points[np.isfinite(points).all(axis=1)])
+    collection.set_visible(len(points) > 0)
+    collection.set_offsets(points[:, :2])
+    if points.shape[1] == 3:
+        collection.set_3d_properties(points[:, 2], "z")
+
+
+class _Segments:
+    """Line segments that draw exactly like one ``ax.plot`` call per segment.
+
+    Planar axes hold one line collection with ``Line2D``'s cap and join
+    styles. 3-D axes keep a fixed pool of lines: a collection there would join
+    the depth sort that ``Line3D`` stays outside of.
+    """
+
+    def __init__(
+        self,
+        ax: Any,
+        count: int,
+        *,
+        color: Any,
+        alpha: float | None = None,
+        linewidth: float | None = None,
+        zorder: float,
+    ) -> None:
+        from matplotlib import rcParams
+        from matplotlib.collections import LineCollection
+
+        self.lines: list[Any] = []
+        self.collection: Any = None
+        if ax.name == "3d":
+            for _ in range(count):
+                (line,) = ax.plot(
+                    [],
+                    [],
+                    [],
+                    color=color,
+                    alpha=alpha,
+                    linewidth=linewidth,
+                    zorder=zorder,
+                )
+                self.lines.append(line)
+            return
+        self.collection = LineCollection(
+            [],
+            colors=color,
+            alpha=alpha,
+            linewidths=rcParams["lines.linewidth"] if linewidth is None else linewidth,
+            capstyle=rcParams["lines.solid_capstyle"],
+            joinstyle=rcParams["lines.solid_joinstyle"],
+            zorder=zorder,
+        )
+        ax.add_collection(self.collection, autolim=False)
+
+    def set(self, segments: list[np.ndarray], *, alpha: float | None = None) -> None:
+        """Draw ``segments``, each ``(2, n_dims)`` in environment coordinates."""
+        if self.collection is not None:
+            self.collection.set_segments([_planar(s) for s in segments])
+            if alpha is not None:
+                self.collection.set_alpha(alpha)
+            return
+        for index, line in enumerate(self.lines):
+            line.set_visible(index < len(segments))
+            if index < len(segments):
+                line.set_data_3d(*segments[index].T)
+                if alpha is not None:
+                    line.set_alpha(alpha)
+
+
+def _fit_view(ax: Any, points: np.ndarray) -> None:
+    """Autoscale to ``points`` alone, as Matplotlib fits a new Axes, then lock.
+
+    Persistent axes remember earlier frames' data limits and view, so both
+    are reset: an unmodified (0, 1) view is how Matplotlib recognizes axes
+    that have no data limits yet.
+    """
+    from matplotlib.transforms import Bbox
+
+    ax.dataLim.set_points(Bbox.null().get_points())
+    ax.ignore_existing_data_limits = True
+    ax.update_datalim(points)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_autoscale_on(True)
+    ax.autoscale_view()
+    ax.set_autoscale_on(False)
 
 
 class SceneRenderer:
@@ -44,9 +159,12 @@ class SceneRenderer:
         )
         self._subplotpars = copy.copy(self.figure.subplotpars)
         self.canvas = FigureCanvasAgg(self.figure)
+        # Built on the first render; each entry updates its artists to a time.
+        self._updates: list[Update] = []
 
     def close(self) -> None:
         self.figure.clear()
+        self._updates = []
 
     def _sample(
         self,
@@ -62,7 +180,21 @@ class SceneRenderer:
     def render(self, time: float) -> np.ndarray:
         if not np.isfinite(time):
             raise ValueError("time must be finite seconds.")
+        if not self._updates:
+            self._build()
+        for update in self._updates:
+            update(time)
+        self.canvas.draw()
+        return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())
+
+    def _build(self) -> None:
+        """Create every axis and artist once, laid out at the scene's start.
+
+        One layout for every frame keeps the panels still during playback and
+        makes a frame independent of which time was rendered first.
+        """
         scene = self.scene
+        start = float(scene.frame_times[0])
         self.figure.clear()
         self.figure.subplotpars = copy.copy(self._subplotpars)
         grid = self.figure.add_gridspec(
@@ -70,113 +202,183 @@ class SceneRenderer:
             len(scene.fields),
             height_ratios=[4] + [1] * self.panel_count,
         )
+        updates: list[Update] = []
         for column, (name, field) in enumerate(scene.fields.items()):
             ax = self.figure.add_subplot(
                 grid[0, column], projection="3d" if scene.env.n_dims == 3 else None
             )
-            low, high = self.limits[name]
-            cmap = field.cmap
-            below_video = any(
-                video.z_order == "below"
-                and (video.times if video.times is not None else scene.frame_times)[0]
-                <= time
-                <= (video.times if video.times is not None else scene.frame_times)[-1]
-                for video in scene._overlay_data.videos
-            )
-            if below_video:
-                from matplotlib import colormaps
-                from matplotlib.colors import ListedColormap
-
-                colors = colormaps.get_cmap(field.cmap)(np.linspace(0, 1, 256))
-                values = np.linspace(low, high, 256)
-                colors[:, 3] *= np.clip(values / field._typical_peak(), 0, 1)
-                cmap = ListedColormap(colors)
-            if scene.env.n_dims == 3:
-                self._field3d(ax, field.sample(time), cmap, low, high)
-            else:
-                scene.env.plot_field(
-                    field.sample(time),
-                    ax=ax,
-                    cmap=cmap,
-                    nan_color=None if below_video else "lightgray",
-                    vmin=low,
-                    vmax=high,
-                    colorbar=False,
-                    scale_bar=scene.scale_bar or False,
-                )
+            updates.append(self._field(ax, name, field, start))
             if scene.env.n_dims in (2, 3):
                 from matplotlib.cm import ScalarMappable
                 from matplotlib.colors import Normalize
 
+                low, high = self.limits[name]
                 self.figure.colorbar(
                     ScalarMappable(Normalize(low, high), cmap=field.cmap),
                     ax=ax,
                     label=field.label or name,
                 )
             ax.set_title(name)
-            self._spatial(ax, time)
+            updates.extend(self._spatial(ax))
         row = 1
         if self.track_extents is not None:
             for column, (name, field) in enumerate(scene.fields.items()):
                 ax = self.figure.add_subplot(grid[row, column])
-                self._track(ax, name, field, time)
+                updates.append(track_panel(ax, self.prepared, name, field))
             row += 1
         for signals in self.signal_groups.values():
-            ax = self.figure.add_subplot(grid[row, :])
-            self._signals(ax, signals, time)
+            updates.append(
+                self._signals(self.figure.add_subplot(grid[row, :]), signals)
+            )
             row += 1
         for raster in scene._overlay_data.spike_rasters:
-            ax = self.figure.add_subplot(grid[row, :])
-            for unit in range(len(raster.spike_times)):
-                ax.vlines(
-                    self.prepared.raster_window(raster, unit, time),
-                    unit - 0.4,
-                    unit + 0.4,
-                    color=raster.color,
-                    linewidth=raster.linewidth,
-                )
-            ax.set_yticks(
-                range(len(raster.unit_ids)), [str(unit) for unit in raster.unit_ids]
-            )
-            ax.set_ylabel("Unit")
-            self._time_panel(ax, time)
+            updates.append(self._raster(self.figure.add_subplot(grid[row, :]), raster))
             row += 1
         if scene._overlay_data.epochs:
-            ax = self.figure.add_subplot(grid[row, :])
-            for number, epoch in enumerate(scene._overlay_data.epochs):
-                for start, stop in epoch.intervals:
-                    ax.broken_barh(
-                        [(start, stop - start)],
-                        (number - 0.35, 0.7),
-                        facecolors=epoch.color,
-                        alpha=epoch.alpha,
-                    )
-            ax.set_yticks(
-                range(len(scene._overlay_data.epochs)),
-                [e.label for e in scene._overlay_data.epochs],
-            )
-            self._time_panel(ax, time)
+            updates.append(self._epochs(self.figure.add_subplot(grid[row, :])))
         prefix = "" if scene.title is None else f"{scene.title} — "
-        self.figure.suptitle(f"{prefix}t = {time:.3f} s")
+        title = self.figure.suptitle("")
+        updates.append(lambda time: title.set_text(f"{prefix}t = {time:.3f} s"))
+        for update in updates:
+            update(start)
         self.figure.tight_layout(rect=(0, 0, 1, 0.95))
-        self.canvas.draw()
-        return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())
+        self._updates = updates
+
+    def _below_video(self, time: float) -> bool:
+        return any(
+            video.z_order == "below"
+            and self.prepared.clock(video)[0] <= time <= self.prepared.clock(video)[-1]
+            for video in self.scene._overlay_data.videos
+        )
+
+    def _field(self, ax: Any, name: str, field: Any, time: float) -> Update:
+        """Draw a field once; later frames update its values in place."""
+        env = self.scene.env
+        low, high = self.limits[name]
+        cmaps = {False: field.cmap}
+        if any(video.z_order == "below" for video in self.scene._overlay_data.videos):
+            from matplotlib import colormaps
+            from matplotlib.colors import ListedColormap
+
+            # Low values fade out so a video below shows through them.
+            colors = colormaps.get_cmap(field.cmap)(np.linspace(0, 1, 256))
+            values = np.linspace(low, high, 256)
+            colors[:, 3] *= np.clip(values / field._typical_peak(), 0, 1)
+            cmaps[True] = ListedColormap(colors)
+        if env.n_dims == 3:
+            cells, faces = self._field3d(ax, field.sample(time), field.cmap, low, high)
+
+            def update3d(time: float) -> None:
+                colors = _cell_colors(field.sample(time), field.cmap, low, high)
+                cells.set_facecolor(np.repeat(colors, faces, axis=0))
+
+            return update3d
+
+        from matplotlib.cm import ScalarMappable
+        from matplotlib.lines import Line2D
+
+        from neurospatial.layout import _cell_shape
+
+        shape = "line" if env.n_dims == 1 else _cell_shape(env.binning)
+        if shape == "grid":
+            from neurospatial.geometry import require_grid_context
+            from neurospatial.layout.helpers.utils import map_active_data_to_grid
+
+            grid, _ = require_grid_context(
+                env.binning, "animation", fix="use a cell renderer"
+            )
+        state: dict[str, Any] = {"artists": []}
+
+        def draw(values: np.ndarray, below: bool) -> None:
+            for artist in state["artists"]:
+                artist.remove()
+            before = set(ax.get_children())
+            # A redraw must autoscale and color its first line like a new Axes.
+            _fit_view(ax, np.empty((0, 2)))
+            ax.set_autoscale_on(True)
+            ax.set_prop_cycle(None)
+            env.plot_field(
+                values,
+                ax=ax,
+                cmap=cmaps[below],
+                nan_color=None if below else "lightgray",
+                vmin=low,
+                vmax=high,
+                colorbar=False,
+                scale_bar=self.scene.scale_bar or False,
+            )
+            added = [artist for artist in ax.get_children() if artist not in before]
+            state.update(
+                artists=added,
+                below=below,
+                drawn=np.isfinite(values) if below else np.ones(len(values), bool),
+                field=next(
+                    (a for a in added if isinstance(a, (ScalarMappable, Line2D))), None
+                ),
+            )
+            ax.set_title(name)
+            # Videos and overlays must not move the field's view.
+            ax.set_xlim(ax.get_xlim())
+            ax.set_ylim(ax.get_ylim())
+            # Videos keep drawing after the field, whose artists were re-added.
+            for image in [image for image in ax.images if image not in added]:
+                image.remove()
+                ax.add_image(image)
+
+        def set_values(values: np.ndarray, below: bool) -> bool:
+            """Update the drawn artist; False if this frame needs a redraw."""
+            artist = state["field"]
+            if artist is None or below != state["below"]:
+                return False
+            if shape == "line":
+                artist.set_ydata(values)
+                _fit_view(ax, np.column_stack([artist.get_xdata(), values]))
+            elif shape == "grid":
+                # pcolormesh draws the transposed (dim0, dim1) grid.
+                artist.set_array(
+                    map_active_data_to_grid(
+                        grid.shape, grid.active_mask, values, fill_value=np.nan
+                    ).T
+                )
+            elif shape == "polygons":
+                artist.set_array(np.ma.masked_invalid(values))
+            elif shape == "triangles":
+                artist.set_array(values)
+            elif shape in ("hexagons", "points"):
+                # Without a missing-value color only finite bins are drawn.
+                drawn = np.isfinite(values) if below else state["drawn"]
+                if shape == "points":
+                    artist.set_offsets(env.bin_centers[drawn, :2])
+                elif not np.array_equal(drawn, state["drawn"]):
+                    return False
+                artist.set_array(values[drawn])
+            else:
+                return False
+            return True
+
+        draw(field.sample(time), self._below_video(time))
+
+        def update(time: float) -> None:
+            values = field.sample(time)
+            below = self._below_video(time)
+            if not set_values(values, below):
+                draw(values, below)
+
+        return update
 
     def _field3d(
         self, ax: Any, values: np.ndarray, cmap: Any, low: float, high: float
-    ) -> None:
-        """Draw actual grid cells, or explicitly labelled centers without cell geometry."""
-        from matplotlib import colormaps
-        from matplotlib.colors import Normalize
+    ) -> tuple[Any, int]:
+        """Draw actual grid cells, or explicitly labelled centers without cell geometry.
+
+        Returns the colored collection and its number of faces per bin.
+        """
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
         env = self.scene.env
         frame = env.binning.grid_frame
         grid = frame.source if frame is not None else env.binning.rectilinear
-        colors = colormaps.get_cmap(cmap)(
-            Normalize(low, high)(np.nan_to_num(values, nan=low))
-        )
-        colors[~np.isfinite(values)] = (0.75, 0.75, 0.75, 0.4)
+        colors = _cell_colors(values, cmap, low, high)
         if grid is not None:
             # All six faces of each active cell, including transformed grids.
             corners = np.array(
@@ -213,15 +415,15 @@ class SceneRenderer:
             )
             if frame is not None:
                 vertices = vertices @ frame.forward[:3, :3].T + frame.forward[:3, 3]
-            collection = Poly3DCollection(
+            cells = Poly3DCollection(
                 vertices[:, faces, :].reshape(-1, 4, 3),
                 facecolors=np.repeat(colors, 6, axis=0),
                 edgecolors=(0.2, 0.2, 0.2, 0.15),
                 linewidths=0.2,
             )
-            ax.add_collection3d(collection)
+            ax.add_collection3d(cells)
         else:
-            ax.scatter(*env.bin_centers.T, c=colors, marker="s", s=35)
+            cells = ax.scatter(*env.bin_centers.T, c=colors, marker="s", s=35)
             ax.text2D(
                 0.02,
                 0.02,
@@ -238,26 +440,32 @@ class SceneRenderer:
             "xyz", (ax.set_xlabel, ax.set_ylabel, ax.set_zlabel), strict=True
         ):
             setter(f"{letter} ({env.units or 'units'})")
+        return cells, 6 if grid is not None else 1
 
-    def _time_panel(self, ax: Any, time: float) -> None:
+    def _time_axis(self, ax: Any) -> Update:
+        """Style a time panel; its update centers the window and cursor."""
         ax.set_facecolor("#20252b")
-        ax.set_xlim(
-            time - self.scene.window_seconds / 2, time + self.scene.window_seconds / 2
-        )
-        ax.axvline(time, color="red", linewidth=1)
+        cursor = ax.axvline(0.0, color="red", linewidth=1)
         ax.set_xlabel("Time (s)")
 
-    def _signals(self, ax: Any, signals: list[Any], time: float) -> None:
-        for signal in signals:
-            times, values = self.prepared.signal_window(signal, time)
+        def update(time: float) -> None:
+            ax.set_xlim(*self.prepared.bounds(time))
+            cursor.set_xdata([time, time])
+
+        return update
+
+    def _signals(self, ax: Any, signals: list[Any]) -> Update:
+        lines = [
             ax.plot(
-                times,
-                values,
+                [],
+                [],
                 color=signal.color,
                 linewidth=signal.linewidth,
                 alpha=signal.alpha,
                 label=signal.label,
-            )
+            )[0]
+            for signal in signals
+        ]
         if any(signal.label for signal in signals):
             ax.legend(loc="upper right", fontsize="small")
         lows = [0.0 if signal.normalize else signal.global_vmin for signal in signals]
@@ -266,48 +474,64 @@ class SceneRenderer:
         if low == high:
             low, high = low - 0.5, high + 0.5
         ax.set_ylim(low, high)
-        self._time_panel(ax, time)
+        time_axis = self._time_axis(ax)
 
-    def _track(
-        self, ax: Any, name: str, field: Any, time: float, *, colorbar: bool = True
-    ) -> None:
-        """Draw shared prepared track cells on this renderer's axes."""
-        draw_track_panel(ax, self.prepared, name, field, time, colorbar=colorbar)
+        def update(time: float) -> None:
+            for line, signal in zip(lines, signals, strict=True):
+                line.set_data(*self.prepared.signal_window(signal, time))
+            time_axis(time)
 
-    def _spatial(self, ax: Any, time: float) -> None:
-        from neurospatial.animation._style import _event_visibility
+        return update
 
+    def _raster(self, ax: Any, raster: Any) -> Update:
+        from matplotlib.collections import LineCollection
+
+        units = range(len(raster.spike_times))
+        rows = [
+            ax.add_collection(
+                LineCollection([], colors=raster.color, linewidths=raster.linewidth),
+                autolim=False,
+            )
+            for _ in units
+        ]
+        # Fixed rows: the limits Matplotlib fits when every unit has a spike
+        # in view, so rows stay put while units fall silent.
+        ax.update_datalim([(0.0, -0.4), (0.0, len(units) - 0.6)])
+        ax.autoscale_view(scalex=False)
+        ax.set_ylim(ax.get_ylim())
+        ax.set_yticks(units, [str(unit) for unit in raster.unit_ids])
+        ax.set_ylabel("Unit")
+        time_axis = self._time_axis(ax)
+
+        def update(time: float) -> None:
+            for unit, row in zip(units, rows, strict=True):
+                spikes = self.prepared.raster_window(raster, unit, time)
+                segments = np.empty((len(spikes), 2, 2))
+                segments[:, :, 0] = spikes[:, None]
+                segments[:, :, 1] = [unit - 0.4, unit + 0.4]
+                row.set_segments(segments)
+            time_axis(time)
+
+        return update
+
+    def _epochs(self, ax: Any) -> Update:
+        epochs = self.scene._overlay_data.epochs
+        for number, epoch in enumerate(epochs):
+            for start, stop in epoch.intervals:
+                ax.broken_barh(
+                    [(start, stop - start)],
+                    (number - 0.35, 0.7),
+                    facecolors=epoch.color,
+                    alpha=epoch.alpha,
+                )
+        ax.set_yticks(range(len(epochs)), [e.label for e in epochs])
+        return self._time_axis(ax)
+
+    def _spatial(self, ax: Any) -> list[Update]:
+        """Create the spatial overlays in drawing order, each with its update."""
         scene = self.scene
         data = scene._overlay_data
-
-        # Spatial overlays use environment coordinates. A native 1-D field has
-        # physical position on x and field amplitude on y.
-        def xy(point: np.ndarray) -> Any:
-            return point if len(point) > 1 else (point[0], 0)
-
-        spatial_xlim, spatial_ylim = ax.get_xlim(), ax.get_ylim()
-        for video in data.videos:
-            image = self.prepared.video_frame(video, time)
-            if image is None:
-                continue
-            image_artist = ax.imshow(
-                image,
-                extent=video.env_bounds,
-                origin="upper",
-                alpha=video.alpha,
-                zorder=-1 if video.z_order == "below" else 5,
-            )
-            if video.transform_to_env is not None:
-                from matplotlib.transforms import Affine2D
-
-                image_artist.set_extent(
-                    (-0.5, image.shape[1] - 0.5, image.shape[0] - 0.5, -0.5)
-                )
-                image_artist.set_transform(
-                    Affine2D(video.transform_to_env.A) + ax.transData
-                )
-        ax.set_xlim(spatial_xlim)
-        ax.set_ylim(spatial_ylim)
+        updates = [self._video(ax, video) for video in data.videos]
         if scene.show_regions:
             if scene.env.n_dims == 2:
                 _render_regions_matplotlib(
@@ -320,151 +544,259 @@ class SceneRenderer:
                     point = scene.env.regions[name].data
                     ax.scatter(*point, color="white", alpha=scene.region_alpha, s=50)
                     ax.text(*point, name)
-        for position in data.positions:
-            point = self._sample(position, position.data, time)
-            if np.isfinite(point).all():
-                if position.trail_length:
-                    times = (
-                        position.times
-                        if position.times is not None
-                        else scene.frame_times
-                    )
-                    stop = int(np.searchsorted(times, time, side="right"))
-                    start = max(0, stop - position.trail_length)
-                    valid = position.interval_valid
-                    for index in range(start, stop - 1):
-                        if valid is None or valid[index]:
-                            pair = np.array(
-                                [
-                                    xy(point)
-                                    for point in position.data[index : index + 2]
-                                ]
-                            )
-                            ax.plot(
-                                *pair.T,
-                                color=position.color,
-                                alpha=0.6,
-                                zorder=100,
-                            )
-                ax.scatter(
-                    *xy(point),
-                    s=_marker_area(position.size, dpi=self.figure.dpi),
-                    color=position.color,
-                    edgecolor="white",
-                    zorder=101,
+        updates += [self._position(ax, position) for position in data.positions]
+        updates += [self._bodyparts(ax, body) for body in data.bodypart_sets]
+        updates += [self._heading(ax, heading) for heading in data.head_directions]
+        updates += [
+            self._object_vectors(ax, vectors) for vectors in data.object_vectors
+        ]
+        updates += [self._events(ax, events) for events in data.events]
+        return updates
+
+    def _video(self, ax: Any, video: Any) -> Update:
+        # A placeholder image keeps the overlay order; frames replace its data.
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        image_artist = ax.imshow(
+            np.zeros((1, 1, 3), dtype=np.uint8),
+            extent=video.env_bounds,
+            origin="upper",
+            alpha=video.alpha,
+            zorder=-1 if video.z_order == "below" else 5,
+            aspect=ax.get_aspect(),
+            visible=False,
+        )
+        if video.transform_to_env is not None:
+            from matplotlib.transforms import Affine2D
+
+            image_artist.set_transform(
+                Affine2D(video.transform_to_env.A) + ax.transData
+            )
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+
+        def update(time: float) -> None:
+            image = self.prepared.video_frame(video, time)
+            image_artist.set_visible(image is not None)
+            if image is None:
+                return
+            image_artist.set_data(image)
+            if video.transform_to_env is not None:
+                image_artist.set_extent(
+                    (-0.5, image.shape[1] - 0.5, image.shape[0] - 0.5, -0.5)
                 )
-        for body in data.bodypart_sets:
+
+        return update
+
+    def _position(self, ax: Any, position: Any) -> Update:
+        trail = _Segments(
+            ax,
+            max((position.trail_length or 0) - 1, 0),
+            color=position.color,
+            alpha=0.6,
+            zorder=100,
+        )
+        marker = _scatter(
+            ax,
+            s=_marker_area(position.size, dpi=self.figure.dpi),
+            color=position.color,
+            edgecolor="white",
+            zorder=101,
+        )
+        times = self.prepared.clock(position)
+        valid = position.interval_valid
+
+        def update(time: float) -> None:
+            point = self._sample(position, position.data, time)
+            # A missing position draws neither a marker nor a trail.
+            visible = np.isfinite(point).all()
+            segments = []
+            if visible and position.trail_length:
+                stop = int(np.searchsorted(times, time, side="right"))
+                start = max(0, stop - position.trail_length)
+                segments = [
+                    position.data[index : index + 2]
+                    for index in range(start, stop - 1)
+                    if valid is None or valid[index]
+                ]
+            trail.set(segments)
+            _set_points(marker, point[None])
+
+        return update
+
+    def _bodyparts(self, ax: Any, body: Any) -> Update:
+        markers = {
+            name: _scatter(
+                ax,
+                color=(body.colors or {}).get(name, "red"),
+                s=_marker_area(8.0, dpi=self.figure.dpi),
+                zorder=101,
+            )
+            for name in body.bodyparts
+        }
+        edges = () if body.skeleton is None else body.skeleton.edges
+        skeleton = _Segments(ax, len(edges), color="white", zorder=100)
+
+        def update(time: float) -> None:
             points = {
                 name: self._sample(body, values, time, name=name)
                 for name, values in body.bodyparts.items()
             }
             for name, point in points.items():
-                if np.isfinite(point).all():
-                    ax.scatter(
-                        *xy(point),
-                        color=(body.colors or {}).get(name, "red"),
-                        s=_marker_area(8.0, dpi=self.figure.dpi),
-                        zorder=101,
+                _set_points(markers[name], point[None])
+            pairs = [
+                np.array([points[first], points[second]]) for first, second in edges
+            ]
+            skeleton.set([pair for pair in pairs if np.isfinite(pair).all()])
+
+        return update
+
+    def _heading_geometry(
+        self, heading: Any, time: float
+    ) -> tuple[np.ndarray, np.ndarray, Any] | None:
+        """Arrow origin, displacement and color, or None when undefined."""
+        data = self.scene._overlay_data
+        sampled = self._sample(
+            heading, heading.data, time, circular=heading.data.ndim == 1
+        )
+        point = (
+            self._sample(data.positions[0], data.positions[0].data, time)
+            if len(data.positions) == 1
+            else np.mean(self.scene.env.bin_centers, axis=0)
+        )
+        direction = _heading_displacement(sampled, heading.length, n_dims=len(point))
+        if direction is None or not np.isfinite(point).all():
+            return None
+        return point, direction, _head_direction_color(heading.color, direction)
+
+    def _heading(self, ax: Any, heading: Any) -> Update:
+        if ax.name == "3d":
+            # A 3-D quiver cannot move in place; replace just this artist.
+            state: dict[str, Any] = {"quiver": None}
+
+            def update3d(time: float) -> None:
+                if state["quiver"] is not None:
+                    state["quiver"].remove()
+                    state["quiver"] = None
+                geometry = self._heading_geometry(heading, time)
+                if geometry is not None:
+                    point, direction, color = geometry
+                    state["quiver"] = ax.quiver(
+                        *point, *direction, color=color, linewidth=heading.width
                     )
-            if body.skeleton is not None:
-                for first, second in body.skeleton.edges:
-                    pair = np.array([xy(points[first]), xy(points[second])])
-                    if np.isfinite(pair).all():
-                        ax.plot(*pair.T, color="white", zorder=100)
-        for heading in data.head_directions:
-            sampled_heading = self._sample(
-                heading, heading.data, time, circular=heading.data.ndim == 1
+
+            return update3d
+        arrow = ax.arrow(
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            width=heading.width,
+            length_includes_head=True,
+            zorder=103,
+            visible=False,
+        )
+
+        def update(time: float) -> None:
+            geometry = self._heading_geometry(heading, time)
+            arrow.set_visible(geometry is not None)
+            if geometry is not None:
+                point, direction, color = geometry
+                arrow.set_data(x=point[0], y=point[1], dx=direction[0], dy=direction[1])
+                arrow.set_color(color)
+
+        return update
+
+    def _object_vectors(self, ax: Any, vectors: Any) -> Update:
+        # Static object coordinates have no time axis.
+        n_objects = np.atleast_2d(vectors.object_positions).shape[-2]
+        markers = [
+            _scatter(
+                ax,
+                color=vectors.color,
+                marker=vectors.object_marker,
+                s=_marker_area(vectors.object_size, dpi=self.figure.dpi),
+                zorder=103,
             )
-            point = (
-                self._sample(data.positions[0], data.positions[0].data, time)
-                if len(data.positions) == 1
-                else np.mean(scene.env.bin_centers, axis=0)
-            )
-            direction = _heading_displacement(
-                sampled_heading, heading.length, n_dims=len(point)
-            )
-            if direction is not None and np.isfinite(point).all():
-                color = _head_direction_color(heading.color, direction)
-                if len(point) == 3:
-                    ax.quiver(
-                        *point,
-                        *direction,
-                        color=color,
-                        linewidth=heading.width,
-                    )
-                else:
-                    ax.arrow(
-                        *point,
-                        *direction,
-                        color=color,
-                        width=heading.width,
-                        length_includes_head=True,
-                        zorder=103,
-                    )
-        for vectors in data.object_vectors:
+            for _ in range(n_objects if vectors.show_objects else 0)
+        ]
+        lines = _Segments(
+            ax, n_objects, color=vectors.color, linewidth=vectors.linewidth, zorder=102
+        )
+
+        def update(time: float) -> None:
             animal = self._sample(vectors, vectors.animal_positions, time)
-            # Static object coordinates have no time axis.
             objects = vectors.object_positions
             if objects.ndim == 3:
                 objects = self._sample(vectors, objects, time)
+            objects = np.atleast_2d(objects)
             opacity = 1.0
             if vectors.firing_rates is not None:
                 rate = self._sample(vectors, vectors.firing_rates, time)
                 opacity = _rate_opacity(float(rate), vectors._rate_peak or 1.0)
-            for point in np.atleast_2d(objects):
-                if not np.isfinite(point).all():
-                    continue
-                if vectors.show_objects:
-                    ax.scatter(
-                        *xy(point),
-                        color=vectors.color,
-                        marker=vectors.object_marker,
-                        s=_marker_area(vectors.object_size, dpi=self.figure.dpi),
-                        zorder=103,
-                    )
-                if np.isfinite(animal).all():
-                    ax.plot(
-                        *np.array([xy(animal), xy(point)]).T,
-                        color=vectors.color,
-                        linewidth=vectors.linewidth,
-                        alpha=opacity,
-                        zorder=102,
-                    )
-        for events in data.events:
+            finite = np.isfinite(objects).all(axis=1)
+            for marker, point in zip(markers, objects, strict=True):
+                _set_points(marker, point[None])
+            segments = (
+                [np.array([animal, point]) for point in objects[finite]]
+                if np.isfinite(animal).all()
+                else []
+            )
+            lines.set(segments, alpha=opacity)
+
+        return update
+
+    def _events(self, ax: Any, events: Any) -> Update:
+        from neurospatial.animation._style import _event_visibility
+
+        scene = self.scene
+        markers = {
+            name: _scatter(
+                ax,
+                color="none",
+                marker=events.markers[name],
+                s=_marker_area(events.size, dpi=self.figure.dpi),
+                linewidths=events.border_width,
+                zorder=104,
+            )
+            for name in events.event_positions
+        }
+
+        def update(time: float) -> None:
+            # Event persistence uses the complete scene clock, so a selected
+            # export does not reset the age of an earlier event.
+            frame = int(np.searchsorted(scene.frame_times, time, side="right")) - 1
             for name, positions in events.event_positions.items():
                 event_times, event_indices = self.prepared.event_clocks[
                     id(events), name
                 ]
-                # Event persistence uses the complete scene clock, so a selected
-                # export does not reset the age of an earlier event.
-                frame = int(np.searchsorted(scene.frame_times, time, side="right")) - 1
                 visible, alphas = _event_visibility(
-                    event_indices,
-                    frame,
-                    events.decay_frames,
+                    event_indices, frame, events.decay_frames
                 )
                 visible &= event_times <= time
                 visible &= np.isfinite(positions).all(axis=1)
-                if not visible.any():
-                    continue
                 # One collection per event type; each marker keeps its own
                 # fade, applied to its face and border alike.
                 opacity = alphas[visible] * events.opacity
                 face = np.tile(to_rgba(events.colors[name]), (len(opacity), 1))
                 edge = np.tile(to_rgba(events.border_color), (len(opacity), 1))
                 face[:, 3] = edge[:, 3] = opacity
-                points = positions[visible]
-                ax.scatter(
-                    points[:, 0],
-                    points[:, 1] if points.shape[1] > 1 else np.zeros(len(points)),
-                    *([points[:, 2]] if points.shape[1] > 2 else []),
-                    c=face,
-                    marker=events.markers[name],
-                    s=_marker_area(events.size, dpi=self.figure.dpi),
-                    linewidths=events.border_width,
-                    edgecolors=edge,
-                    zorder=104,
-                )
+                markers[name].set_facecolor(face)
+                markers[name].set_edgecolor(edge)
+                _set_points(markers[name], positions[visible])
+
+        return update
+
+
+def _cell_colors(values: np.ndarray, cmap: Any, low: float, high: float) -> np.ndarray:
+    """RGBA per bin; missing bins are translucent gray, unlike observed zeros."""
+    from matplotlib import colormaps
+    from matplotlib.colors import Normalize
+
+    colors = colormaps.get_cmap(cmap)(
+        Normalize(low, high)(np.nan_to_num(values, nan=low))
+    )
+    colors[~np.isfinite(values)] = (0.75, 0.75, 0.75, 0.4)
+    return cast("np.ndarray", colors)
 
 
 def _render_regions_matplotlib(
@@ -517,32 +849,30 @@ def _render_regions_matplotlib(
             )
 
 
-def draw_track_panel(
+def track_panel(
     ax: Any,
     prepared: PreparedScene,
     name: str,
     field: Any,
-    time: float,
     *,
     colorbar: bool = True,
-) -> None:
-    """Draw prepared track data; usable by Agg and native scientific docks."""
-    from matplotlib.collections import PolyCollection
+) -> Update:
+    """Create a field-along-track panel; the returned update draws one time.
+
+    Usable by Agg and native scientific docks.
+    """
+    from matplotlib import rcParams
+    from matplotlib.collections import LineCollection, PolyCollection
     from matplotlib.colors import Normalize
 
-    window = prepared.track_window(field, time)
     low, high = prepared.track_limits[name]
-    collection = PolyCollection(
-        window.polygons.tolist(),
-        cmap=field.cmap,
-        norm=Normalize(low, high),
-        edgecolors="none",
-    )
-    collection.set_array(window.values)
-    ax.add_collection(collection)
+    cells = PolyCollection([], cmap=field.cmap, norm=Normalize(low, high))
+    cells.set_edgecolor("none")
+    cells.set_array(np.empty(0))
+    ax.add_collection(cells)
     if prepared.projection is not None and colorbar:
         ax.figure.colorbar(
-            collection,
+            cells,
             ax=ax,
             label=f"Projected {field.label or name} (sum per track bin)",
         )
@@ -551,12 +881,30 @@ def draw_track_panel(
     ax.set_ylim(float(np.min(starts)), float(np.max(stops)))
     ax.set_ylabel(f"Position ({prepared.track_env.units or 'units'})")
     ax.set_title(f"{name} along track")
-    for segment, color in window.positions:
-        ax.plot(*segment.T, color=color, linewidth=1, zorder=3)
+    # Drawn like one Line2D per observed segment.
+    positions = LineCollection(
+        [],
+        linewidths=1,
+        capstyle=rcParams["lines.solid_capstyle"],
+        joinstyle=rcParams["lines.solid_joinstyle"],
+        zorder=3,
+    )
+    ax.add_collection(positions, autolim=False)
     ax.set_facecolor("#20252b")
-    ax.set_xlim(*prepared.bounds(time))
-    ax.axvline(time, color="red", linewidth=1)
+    cursor = ax.axvline(0.0, color="red", linewidth=1)
     ax.set_xlabel("Time (s)")
+
+    def update(time: float) -> None:
+        window = prepared.track_window(field, time)
+        # Matplotlib's stubs omit the (n, 4, 2) array input it accepts.
+        cells.set_verts(cast("Any", window.polygons))
+        cells.set_array(window.values)
+        positions.set_segments([segment for segment, _ in window.positions])
+        positions.set_color([color for _, color in window.positions])
+        ax.set_xlim(*prepared.bounds(time))
+        cursor.set_xdata([time, time])
+
+    return update
 
 
 def export_scene(
