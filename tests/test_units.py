@@ -42,5 +42,7 @@ def test_overlay_units_alias_matches_environment():
         np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
     ).with_metadata(units="micrometers")
     times = np.array([0.0, 0.1])
-    overlay = PositionOverlay(np.array([[0.5, 0.5], [1.5, 1.5]]), times=times, units="um")
+    overlay = PositionOverlay(
+        np.array([[0.5, 0.5], [1.5, 1.5]]), times=times, units="um"
+    )
     overlay.convert_to_data(times, 2, env)

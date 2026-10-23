@@ -92,9 +92,9 @@ def _publish_exclusive(temporary: Path, path: Path) -> None:
         raise
     except OSError:
         pass
-    with open(path, "xb") as destination:
+    with path.open("xb") as destination:
         try:
-            with open(temporary, "rb") as source:
+            with temporary.open("rb") as source:
                 shutil.copyfileobj(source, destination)
         except BaseException:
             destination.close()

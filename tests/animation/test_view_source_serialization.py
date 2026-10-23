@@ -234,7 +234,6 @@ def test_scene_close_waits_for_view_statistics_snapshot(env, monkeypatch):
     assert native.close.called
 
 
-
 class _ProbedRows:
     """Record whether another consumer could read while each row is read."""
 

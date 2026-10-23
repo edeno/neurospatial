@@ -1,5 +1,7 @@
 """Physical-clock scenes retain support, identity and complete export content."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -248,7 +250,6 @@ def test_events_start_at_actual_time_and_keep_cumulative_and_fading_modes(scene_
     fading.close()
 
 
-
 def test_visible_events_of_one_type_draw_as_one_collection(scene_env):
     # Per-event artists made long sessions with persistent events render in
     # time proportional to the event count.
@@ -310,7 +311,6 @@ def test_export_does_not_replace_file_created_during_rendering(
     assert path.read_bytes() == b"created by another writer"
 
 
-
 @pytest.mark.parametrize("raced", [False, True])
 def test_export_without_hard_links_still_refuses_to_replace(
     scene_env, tmp_path, monkeypatch, raced
@@ -337,8 +337,7 @@ def test_export_without_hard_links_still_refuses_to_replace(
             return self
 
         def __exit__(self, *exc):
-            with open(self.temporary, "wb") as file:
-                file.write(b"encoded")
+            Path(self.temporary).write_bytes(b"encoded")
             return False
 
         def append_data(self, frame):
