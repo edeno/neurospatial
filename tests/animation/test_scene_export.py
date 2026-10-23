@@ -16,7 +16,7 @@ from PIL import Image
 from neurospatial import Environment
 from neurospatial.animation import Animation, AnimationField
 from neurospatial.animation._export import prepare_export
-from neurospatial.animation.overlays import PositionOverlay
+from neurospatial.animation.overlays import PositionOverlay, VideoOverlay
 
 TIMES = np.arange(4) / 10
 # Export samples the half-open [0, 0.3) at 10 fps.
@@ -252,7 +252,9 @@ def test_empty_frames_directory_is_writable(scene, tmp_path):
     assert len(list(frames.iterdir())) == N_FRAMES
 
 
-def test_workers_render_identical_frames_and_reopen_memmaps(tmp_path):
+def test_workers_render_identical_frames_and_reopen_sources(
+    tmp_path, sample_video, sample_calibration
+):
     rng = np.random.default_rng(4)
     env = Environment.from_samples(rng.uniform(0, 10, (100, 2)), bin_size=2)
     times = np.arange(12) / 10
@@ -265,7 +267,11 @@ def test_workers_render_identical_frames_and_reopen_memmaps(tmp_path):
         env,
         # A strided view of the recording, as from subsampling a long session.
         {"rate": AnimationField(values[::2], times)},
-        overlays=[PositionOverlay(rng.uniform(0, 10, (12, 2)), times, trail_length=3)],
+        overlays=[
+            PositionOverlay(rng.uniform(0, 10, (12, 2)), times, trail_length=3),
+            # Each worker opens its own reader on the video file.
+            VideoOverlay(sample_video, sample_calibration, times=np.arange(10) / 10),
+        ],
         window_seconds=0.5,
     )
     import matplotlib
@@ -311,3 +317,4 @@ def test_unpicklable_field_names_itself_before_rendering(scene, tmp_path):
     ):
         lazy.export(tmp_path / "a.gif", n_workers=2)
     assert not list(tmp_path.iterdir())
+
