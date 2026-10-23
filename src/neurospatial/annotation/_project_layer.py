@@ -95,8 +95,9 @@ def _validate_shapes_for_display(shapes: Sequence[AnnotationShape]) -> None:
 def restore_shapes(shapes: Sequence[AnnotationShape], shapes_layer: Any) -> None:
     """Replace geometry and domain features while keeping runtime callbacks.
 
-    All layer events are blocked during replacement. Existing widgets should
-    explicitly synchronize from the layer after this function returns.
+    All layer events are blocked during replacement, so the layer is redrawn
+    explicitly afterwards. Existing widgets should explicitly synchronize from
+    the layer after this function returns.
     """
     _validate_shapes_for_display(shapes)
     features = rebuild_features(
@@ -115,3 +116,6 @@ def restore_shapes(shapes: Sequence[AnnotationShape], shapes_layer: Any) -> None
         }
         guard_identity_defaults(shapes_layer)
         sync_colors_from_features(shapes_layer)
+    # The canvas redraws on the blocked data event; without this, it keeps
+    # showing the replaced shapes.
+    shapes_layer.refresh()

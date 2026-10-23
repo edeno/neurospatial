@@ -571,3 +571,38 @@ def test_units_summary_estimates_bins_and_follows_calibration(session_factory):
     )
     # The grid keeps its size in the image, so the count is unchanged.
     assert "1 cm bins, ≈ 50 bins" in session.assist.units_toggle.text()
+
+
+def _drawn_vertices(viewer, shapes):
+    """Count vertices in the canvas mesh after pending redraws run."""
+    from qtpy.QtWidgets import QApplication
+
+    for _ in range(20):
+        QApplication.processEvents()
+    visual = viewer.window._qt_viewer.canvas.layer_to_visual[shapes]
+    vertices = visual.node._subvisuals[0]._meshdata.get_vertices()
+    return 0 if vertices is None else len(vertices)
+
+
+def test_undo_redo_and_accept_redraw_the_canvas(session_factory):
+    session, viewer, shapes, controls = session_factory()
+    # An empty layer draws a placeholder mesh.
+    empty = _drawn_vertices(viewer, shapes)
+    _draw_region(shapes, controls, [[10, 10], [10, 15], [15, 15], [15, 10]])
+    session.checkpoint()
+    one = _drawn_vertices(viewer, shapes)
+    _draw_region(shapes, controls, [[1, 1], [1, 6], [6, 6], [6, 1]])
+    session.checkpoint()
+    two = _drawn_vertices(viewer, shapes)
+    assert two > one > empty
+    session.undo()
+    assert _drawn_vertices(viewer, shapes) == one
+    session.undo()
+    assert _drawn_vertices(viewer, shapes) == empty
+    session.redo()
+    session.redo()
+    assert _drawn_vertices(viewer, shapes) == two
+    mask = np.zeros((16, 24), dtype=bool)
+    mask[2:6, 18:22] = True
+    _accept(session, SegmentationProposal(mask))
+    assert _drawn_vertices(viewer, shapes) > two

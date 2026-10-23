@@ -382,6 +382,8 @@ class AnnotationProjectSession:
                 batch.append((polygon, name, role, metadata))
             with self.layer.events.blocker_all():
                 add_polygons(self.layer, batch, None)
+            # The blocked data event would have redrawn the canvas.
+            self.layer.refresh()
             self.controls.sync_from_layer()
         except Exception:
             self._restore(before)
