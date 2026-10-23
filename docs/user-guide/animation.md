@@ -153,9 +153,11 @@ rate would exceed `max_playback_fps` (default 60), the file is written at
 and a warning says so. Raise `max_playback_fps` or lower `speed` to keep every
 row.
 
-An exported file covers `frame_times` from the first time up to, but not
-including, the last: output frame *k* is at `start + k * speed / fps` over
-the half-open interval `[start, stop)`.
+Output frame *k* is at `start + k * speed / fps`. An export of the whole
+recording runs from the first to the last time in `frame_times`, so the last
+row is shown. A selected window, `time_range=(start, stop)` or
+`view.select_time(start, stop)`, is half-open, `[start, stop)`: clips of
+adjacent windows never repeat a frame.
 
 The viewers step in seconds too. The notebook widget has a "Time (s)" slider
 and a play button that advances `speed / max_playback_fps` seconds per tick.

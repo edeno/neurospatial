@@ -368,7 +368,10 @@ def prepare_export(
     title: str | None = None,
     sample_times: Iterable[NDArray[np.float64]] = (),
 ) -> _ExportPlan:
-    """Validate export before touching a viewer and select ``[start, stop)``.
+    """Validate export before touching a viewer and select its frame times.
+
+    A ``time_range`` selects ``[start, stop)``; without one, the whole
+    recording is exported, including its last sample when a frame lands on it.
 
     Correct arithmetic roundoff to the nearest observation within four ULPs.
     Exact queries stay exact; ties prefer the scene clock, then earlier clocks
@@ -476,7 +479,10 @@ def prepare_export(
     nearest = round(steps)
     if np.isclose(steps, nearest, rtol=1e-12, atol=1e-12):
         steps = float(nearest)
-    count = max(1, int(np.ceil(steps)))
+    # A selected [start, stop) excludes stop, so adjacent clips never repeat a
+    # frame; the whole recording includes its last sample when a frame lands on it.
+    whole = time_range is None
+    count = max(1, int(np.floor(steps)) + 1 if whole else int(np.ceil(steps)))
     times = bounds[0] + np.arange(count) * speed / fps
     # Adding a decimal frame interval to an absolute recording time can land
     # one ULP before an observation (100.1 + 0.1 < 100.2). That must not hold
@@ -498,7 +504,9 @@ def prepare_export(
             snapped[nearer] = candidate[nearer]
             best_distance[nearer] = distance[nearer]
     times = snapped
-    if bounds[1] > bounds[0]:
+    if whole:
+        times = times[times <= bounds[1]]
+    elif bounds[1] > bounds[0]:
         times = times[times < bounds[1]]
     times.flags.writeable = False
     if container == ".html" and embed and len(times) > max_html_frames:

@@ -151,9 +151,9 @@ class AnimationView:
         self._require_open()
         if render not in {"view", "scene"}:
             raise ValueError("render must be 'view' or 'scene'.")
+        whole = tuple(float(t) for t in self.animation.frame_times[[0, -1]])
         kwargs.setdefault(
-            "time_range",
-            self._selection if self._selection[0] < self._selection[1] else None,
+            "time_range", None if self._selection == whole else self._selection
         )
         if render == "scene" or self._backend.capture_session is None:
             return self.animation.export(path, **kwargs)

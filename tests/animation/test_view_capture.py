@@ -266,11 +266,20 @@ def test_export_clock_preserves_exact_observations_and_half_open_stop(tmp_path):
         [100.1, 100.2, 100.3],
         break_before=[False, True, True],
     )
+    # The whole recording ends on its last sample; a selection excludes stop.
     plan = prepare_export(
         tmp_path / "clock.gif", source, fps=10, sample_times=[field.times]
     )
+    np.testing.assert_array_equal(plan.times, [100.1, 100.2, 100.3])
+    assert [field.sample(t)[0] for t in plan.times] == [1.0, 2.0, 3.0]
+    plan = prepare_export(
+        tmp_path / "clock.gif",
+        source,
+        time_range=(100.1, 100.3),
+        fps=10,
+        sample_times=[field.times],
+    )
     np.testing.assert_array_equal(plan.times, [100.1, 100.2])
-    assert [field.sample(t)[0] for t in plan.times] == [1.0, 2.0]
 
     # A time measurably before a sample must stay before it. Snapping is
     # limited to floating-point arithmetic noise, not a time-bin tolerance.

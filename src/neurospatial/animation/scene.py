@@ -613,8 +613,8 @@ class Animation:
             Destination. The extension selects the container: ``.mp4``,
             ``.webm``, ``.mov``, ``.avi``, ``.gif`` or ``.html``.
         time_range : (float, float), optional
-            Half-open ``[start, stop)`` recording interval in seconds; the
-            whole scene by default.
+            Half-open ``[start, stop)`` recording interval in seconds. By
+            default the whole scene, through its last time.
         fps : float, default=30
             Output frames per second.
         speed : float, default=1

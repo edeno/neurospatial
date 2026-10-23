@@ -23,9 +23,9 @@ def test_fixed_scale_html_player_renders_timestamped_frames(monkeypatch, tmp_pat
         html = Path("scaled_rates.html").read_text(encoding="utf-8")
         frames = json.loads(re.search(r"const frames = (\[.*?\]);", html, re.S)[1])
         labels = json.loads(re.search(r"const labels = (\[.*?\]);", html, re.S)[1])
-        # Five rows 0.1 s apart cover the half-open [10.05, 10.45) s.
-        assert labels == [f"t = {10.05 + 0.1 * k:.3f} s" for k in range(4)]
-        assert len(frames) == 4
+        # Every one of the five rows 0.1 s apart, through the last at 10.45 s.
+        assert labels == [f"t = {10.05 + 0.1 * k:.3f} s" for k in range(5)]
+        assert len(frames) == 5
         assert all(
             base64.b64decode(frame).startswith(b"\x89PNG\r\n\x1a\n") for frame in frames
         )

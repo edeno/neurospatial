@@ -156,8 +156,12 @@
   longer gaps show as missing instead of a stale field. The frame rate is the
   sampling rate of `frame_times` times `speed`, capped at `max_playback_fps`;
   a capped file keeps `speed` and skips rows, with a warning, instead of
-  playing slower than requested. Without `vmin`/`vmax`, each field gets its
-  own robust color limits from up to 100 rows.
+  playing slower than requested. An export of the whole recording ends on
+  its last row; selected `time_range` windows are half-open. Without
+  `vmin`/`vmax`, each field gets its own robust color limits from up to 100
+  rows. `trail_length` spans that many animation frames in every view,
+  drawing every tracked sample in that time, and no trail is drawn while the
+  current position is missing.
 - Removed animation options: napari `cache_size`, `chunk_size` and
   `max_chunks`, widget `initial_cache_size`, `cache_limit`, `image_format`
   and `return_container`, `dry_run`, and `frame_labels` outside fastplotlib.

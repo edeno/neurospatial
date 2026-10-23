@@ -20,8 +20,8 @@ from neurospatial.animation._export import prepare_export
 from neurospatial.animation.overlays import PositionOverlay, VideoOverlay
 
 TIMES = np.arange(4) / 10
-# Export samples the half-open [0, 0.3) at 10 fps.
-N_FRAMES = 3
+# Exporting the whole recording samples [0, 0.3] at 10 fps, last row included.
+N_FRAMES = 4
 
 
 @pytest.fixture
@@ -200,7 +200,7 @@ def test_html_player_with_external_frames(scene, tmp_path, frames_dir):
     np.testing.assert_array_equal(
         np.asarray(Image.open(directory / names[2])), scene.render_frame(0.2, dpi=30)
     )
-    assert _labels(path) == ["t = 0.000 s", "t = 0.100 s", "t = 0.200 s"]
+    assert _labels(path) == [f"t = {time:.3f} s" for time in TIMES]
 
 
 def test_html_frame_limit_is_checked_before_rendering(scene, tmp_path):
@@ -215,7 +215,7 @@ def test_html_frame_limit_is_checked_before_rendering(scene, tmp_path):
     assert not list(tmp_path.iterdir())
     # External frames load on demand, so the page itself stays small.
     scene.export(tmp_path / "long.html", fps=100, dpi=20, embed=False)
-    assert len(list((tmp_path / "long").iterdir())) == 30
+    assert len(list((tmp_path / "long").iterdir())) == 31  # [0, 0.3] at 100 fps
 
 
 def test_html_overwrite_replaces_page_and_frames_only(scene, tmp_path):
@@ -235,14 +235,14 @@ def test_html_overwrite_replaces_page_and_frames_only(scene, tmp_path):
     assert sorted(item.name for item in frames.iterdir()) == ["notes.txt"]
 
     scene.export(path, fps=20, dpi=20, embed=False, frames_dir=frames, overwrite=True)
-    assert len(list(frames.glob("frame_*.png"))) == 6
+    assert len(list(frames.glob("frame_*.png"))) == 7  # [0, 0.3] at 20 fps
     scene.export(path, fps=10, dpi=20, embed=False, frames_dir=frames, overwrite=True)
     # Frames of the earlier, longer export do not linger beside the new page.
     assert sorted(item.name for item in frames.iterdir()) == [
-        *(f"frame_{index:05d}.png" for index in range(3)),
+        *(f"frame_{index:05d}.png" for index in range(N_FRAMES)),
         "notes.txt",
     ]
-    assert len(_labels(path)) == 3
+    assert len(_labels(path)) == N_FRAMES
     assert not list(tmp_path.glob(".animation-*"))
 
 
@@ -282,7 +282,7 @@ def test_workers_render_identical_frames_and_reopen_sources(
         serial = scene.export(tmp_path / "serial.html", fps=10, dpi=30)
         parallel = scene.export(tmp_path / "parallel.html", fps=10, dpi=30, n_workers=3)
     expected, frames = _embedded(serial), _embedded(parallel)
-    assert len(frames) == len(expected) == 11
+    assert len(frames) == len(expected) == 12
     for frame, reference in zip(frames, expected, strict=True):
         np.testing.assert_array_equal(frame, reference)
 
