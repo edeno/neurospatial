@@ -2185,14 +2185,25 @@ def heading_direction_labels(
     >>> from neurospatial.encoding import compute_directional_place_fields
     >>> env = Environment.from_samples(positions, bin_size=4.0)
     >>> fields = compute_directional_place_fields(
-    ...     env, np.array([0.5, 1.5]), times, positions, labels,
-    ...     method="binned", max_gap=None,
+    ...     env,
+    ...     np.array([0.5, 1.5]),
+    ...     times,
+    ...     positions,
+    ...     labels,
+    ...     method="binned",
+    ...     max_gap=None,
     ... )
     >>> sorted(fields.labels)
     ['45–90°', 'stationary']
     >>> fields = compute_directional_place_fields(
-    ...     env, np.array([0.5, 1.5]), times, positions, labels,
-    ...     method="binned", max_gap=None, missing_label="stationary",
+    ...     env,
+    ...     np.array([0.5, 1.5]),
+    ...     times,
+    ...     positions,
+    ...     labels,
+    ...     method="binned",
+    ...     max_gap=None,
+    ...     missing_label="stationary",
     ... )
     >>> sorted(fields.labels)
     ['45–90°']
