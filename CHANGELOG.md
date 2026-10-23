@@ -119,6 +119,25 @@
 - Fix cropped/downsampled video calibration and napari physical-scale video
   placement, missing-value colors, grouped trace limits and duplicate labels.
   Capability checks name any overlay a view cannot draw before it opens.
+- Every view draws overlays and panels from one preparation layer, so they
+  follow the same rules. Colorbars mark an end with a triangle when sampled
+  values lie beyond it, for computed, shared and explicit limits and for
+  projected track panels. Over a video below the field, opacity rises from
+  `vmin` to the field's typical peak (scene and napari used to fade from 0,
+  hiding negative values). Trails fade with each segment's age; track paths
+  break where the position changes maze segment; skeletons use their
+  `edge_color` and `edge_width`; body parts take their given color, then the
+  skeleton's node color, then red; signal panels use rounded limits, so a
+  near-zero floor reads as 0; events of one type draw in time order. In
+  fastplotlib, time series draw every sample in the window (no 100,000-point
+  cap) and a signal with no values draws an empty panel instead of being
+  skipped.
+- Faster views and exports: the field along a track is one mesh (a 1-D
+  track frame went from 196 ms to 17 ms), trails are vectorized (2.9 ms to
+  9 µs at a million frames), poses are sampled in one pass, napari prepares
+  overlay layers on its worker thread, and fastplotlib reads each lazy field
+  row once instead of 6 to 10 times during slow playback. Event tables copy
+  in 14 ms instead of 230 ms for 10,000 events.
 - `Animation.export` writes `.mp4`, `.webm`, `.mov`, `.avi`, `.gif` and
   self-contained `.html` players. Video takes `codec` (`"h264"`, `"h265"`,
   `"vp9"`, `"mpeg4"`), `crf` (default 18), `preset` and `bitrate`; HTML takes
@@ -169,10 +188,25 @@
   is drawn while the current position is missing. `TimeSeriesOverlay`'s
   `show_cursor` and `cursor_color` apply in every view.
 - `FastplotlibAnimation` is the fastplotlib view's `view.native`; build it
-  through `Animation.show(backend="fastplotlib")` or `animate_fields`. Its
-  colorbars mark an end with a triangle when sampled field values lie beyond
-  it, for computed, shared and explicit limits and for projected track
-  panels alike.
+  through `Animation.show(backend="fastplotlib")` or `animate_fields`.
+  `Animation.show(backend="fastplotlib")` no longer takes `cmap`, `vmin`,
+  `vmax`, `colorbar_label`, `title`, `show_regions`, `region_alpha`,
+  `window_seconds` or `track`: set them on the `Animation` or its
+  `AnimationField`s, which every view reads. `animate_fields` still takes them.
+- Custom overlay adapters: `OverlayProtocol` needs only `convert_to_data`,
+  which is called once with the scene clock; sampled data must carry its
+  `times`, and its support masks and shapes are checked when it is built.
+  Readers an adapter returns stay the adapter's to close
+  (`VideoData._owns_reader` is removed). `Animation.overlay_data()` has no
+  `own_samples` argument and returns sampled overlays with `times` set to the
+  requested clock.
+- Requests no view can draw are refused when the `Animation` is built, for
+  built-in overlays and custom adapters alike: angle-only headings in 3-D,
+  headings or video in 1-D, and misspelled `show_regions` names. `speed`,
+  `max_playback_fps` and napari's `fps` are checked before any viewer opens.
+  `animate_fields(speed="fast")` raises `ValueError`, and
+  `SpikeRasterOverlay` rates on a different environment raise
+  `IncompatibleEnvironmentError`.
 - `TimeSeriesOverlay` no longer takes `window_seconds`, `interp`,
   `update_mode`, `playback_throttle_hz` or `scrub_throttle_hz`: every signal
   panel spans the scene's `window_seconds`, and no view throttled or paused
@@ -192,8 +226,7 @@
   required ones (bin widths `dt` and `bin_size`, sampling rates, durations,
   thresholds such as `min_speed`, counts, radii and NWB table names). An NWB
   reader or writer given a former positional option raises a `TypeError`
-  that shows the corrected call. `large_session_napari_config` no longer
-  takes `sample_rate_hz`, which it ignored.
+  that shows the corrected call.
 
   ```python
   # before
