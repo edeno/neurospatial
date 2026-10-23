@@ -60,9 +60,7 @@
   constant signals and share finite, bounded object-vector rate opacity across
   scene renderers without changing its scale for selected windows.
 - Close scene-owned views, playback and inspection controls before releasing
-  video readers. Legacy animation dispatch now cleans up readers on failures,
-  completed exports and interactive window/widget closure, while retaining
-  caller ownership of borrowed resources.
+  video readers, while retaining caller ownership of borrowed resources.
   Native window closure also unregisters its scene view and runs close callbacks,
   allowing a reusable scene to release closed viewers.
 - Correct the internal coordinate guide to distinguish prepared environment
@@ -107,7 +105,7 @@
   succeeds.
 - Move shared video reading out of animation so annotation can load frames
   without importing rendering modules. Extract styling and track geometry into
-  lightweight shared helpers; existing reader imports and pickles remain usable.
+  lightweight shared helpers.
 - `EventInspector` preserves overlapping event IDs and analysis metadata during
   filtering, selection and annotation, and exports selected event clips and
   typed review tables. Scene exports include multiple fields, spike rasters,
@@ -119,11 +117,54 @@
   Position metadata and NWB units are validated against the environment;
   raster rate-result adapters align maps by unit identity.
 - Fix cropped/downsampled video calibration and napari physical-scale video
-  placement, missing-value colors, grouped trace limits and duplicate labels,
-  final widget slider updates, JPEG output and external HTML frame paths.
-  Backend capability checks explicitly report unsupported overlays.
+  placement, missing-value colors, grouped trace limits and duplicate labels.
+  Capability checks name any overlay a view cannot draw before it opens.
+- `Animation.export` writes `.mp4`, `.webm`, `.mov`, `.avi`, `.gif` and
+  self-contained `.html` players. Video takes `codec` (`"h264"`, `"h265"`,
+  `"vp9"`, `"mpeg4"`), `crf` (default 18), `preset` and `bitrate`; HTML takes
+  `image_format`, `max_html_frames`, `embed` and `frames_dir`. An option the
+  chosen file type does not use raises `TypeError`. Exports to filesystems
+  without hard links (exFAT, FAT32, some network drives) still refuse to
+  replace a file created during encoding, and files get the usual permissions.
+- `Animation.export(n_workers=...)` renders frames in worker processes, with
+  output identical to one process; `None` uses every CPU. A field or overlay
+  that cannot be sent to a worker raises before rendering and names it.
+  File-backed memory maps are reopened in each worker rather than copied.
+  Scripts using workers need an `if __name__ == "__main__":` guard on macOS
+  and Windows.
+- Napari scene views draw every overlay and region in each field's panel of a
+  `layout="horizontal"`, `"vertical"` or `"grid"` view, in 2-D and 3-D, and
+  view capture includes all panels. With a layout, overlay layer names carry
+  their field's name (`"cellA: Position 1"`).
+- Export and render frames faster: each event type is drawn as one marker
+  collection (a frame with 10,000 persistent events went from 8.6 s to
+  86 ms), in-memory video is downsampled as frames are read rather than
+  copied on every conversion, and views share the scene's prepared overlay
+  arrays instead of copying them. Arrays returned by `Animation.overlay_data()`
+  are read-only.
 
 ### Breaking
+
+- `Environment.animate_fields` now builds an `Animation` and returns an
+  `AnimationView` (napari, widget, fastplotlib; the viewer is `view.native`)
+  or the written `Path` (video, HTML), instead of a napari `Viewer`,
+  `FastplotlibAnimation` or `None`. Closing the view releases the readers it
+  opened. Every backend draws every overlay type and several fields side by
+  side (a mapping of name to field, or a list named by `layer_names`).
+  Fields are shown on their recording clock: each row is held until the next
+  for at most `max_gap` (new, default 0.5 s; `None` holds every row), and
+  longer gaps show as missing instead of a stale field. The frame rate is the
+  sampling rate of `frame_times` times `speed`, capped at `max_playback_fps`;
+  a capped file keeps `speed` and skips rows, with a warning, instead of
+  playing slower than requested. Without `vmin`/`vmax`, each field gets its
+  own robust color limits from up to 100 rows.
+- Removed animation options: napari `cache_size`, `chunk_size` and
+  `max_chunks`, widget `initial_cache_size`, `cache_limit`, `image_format`
+  and `return_container`, `dry_run`, and `frame_labels` outside fastplotlib.
+  `large_session_napari_config` is removed: napari scene views read on a
+  worker thread with bounded caches. The legacy napari, video, HTML and widget
+  backend modules, `neurospatial.animation.transforms` and the
+  `neurospatial.animation._video_io` import path are removed.
 
 - Options of public free functions are keyword-only, as `Environment`
   method options already were; data stays positional, and a test rejects any
