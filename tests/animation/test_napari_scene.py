@@ -804,6 +804,38 @@ def test_layout_draws_overlays_and_regions_in_every_field_panel():
 
 
 @pytest.mark.napari
+def test_3d_layout_draws_overlays_in_every_volume_panel():
+    from neurospatial.animation.backends._napari_compat import canvas_grid
+    from neurospatial.animation.backends._napari_scene import build_napari_scene
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2, 2), dtype=bool),
+        tuple(np.array([0.0, 5.0, 10.0]) for _ in range(3)),
+    )
+    times = np.array([0.0, 1.0])
+    scene = Animation(
+        env,
+        {"a": np.ones((2, env.n_bins)), "b": np.zeros((2, env.n_bins))},
+        frame_times=times,
+        overlays=[PositionOverlay(np.array([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]]), times)],
+    )
+    handle = build_napari_scene(scene, layout="horizontal", show=True)
+    try:
+        assert handle.viewer.dims.ndisplay == 3
+        assert canvas_grid(handle.viewer).stride == 2
+        handle.seek(1.0)
+        for name in ("a", "b"):
+            np.testing.assert_allclose(
+                handle.viewer.layers[f"{name}: Position 1"].data, [[5.0, 4.0, 3.0]]
+            )
+        with handle.capture_session() as capture:
+            assert capture(0.0).shape[2] == 3
+    finally:
+        handle.close()
+        scene.close()
+
+
+@pytest.mark.napari
 def test_vertical_layout_keeps_video_below_each_panel_field():
     from neurospatial.animation.backends._napari_compat import canvas_grid
     from neurospatial.animation.backends._napari_scene import build_napari_scene
