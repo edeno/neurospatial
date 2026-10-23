@@ -1,140 +1,129 @@
-"""Headless renderers never connect trajectories through unobserved intervals."""
+"""Views never draw an animal where it was not observed.
 
-from unittest.mock import MagicMock
+Trails do not connect samples across a recording break, a missing keypoint
+hides its marker and skeleton edges, and a heading arrow with no observed
+anchor is not drawn.
+"""
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.animation._parallel import (
-    OverlayArtistManager,
-    _render_head_direction_overlay_matplotlib,
-    _render_position_overlay_matplotlib,
-)
+from neurospatial.animation import Animation, AnimationField
 from neurospatial.animation.overlays import (
-    BodypartData,
-    HeadDirectionData,
-    OverlayData,
-    PositionData,
+    BodypartOverlay,
+    HeadDirectionOverlay,
+    PositionOverlay,
 )
+from neurospatial.animation.skeleton import Skeleton
+
+TIMES = np.arange(6) * 0.1
 
 
 @pytest.fixture
 def env():
-    return Environment.from_samples(
-        np.array([[0.0, 0.0], [10.0, 10.0], [0.0, 10.0], [10.0, 0.0]]), bin_size=2.0
+    return Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool), (np.arange(11.0), np.arange(11.0))
     )
 
 
-@pytest.mark.parametrize("persistent", [False, True])
-def test_trails_preserve_segments_on_both_sides_of_recording_break(env, persistent):
-    positions = np.column_stack([np.arange(6.0), np.zeros(6)])
-    positions[2] = np.nan
-    data = PositionData(
-        positions,
-        "red",
-        10.0,
-        6,
-        interval_valid=np.array([True, False, False, False, True]),
-    )
-    fig, ax = plt.subplots()
-    try:
-        if persistent:
-            manager = OverlayArtistManager(
-                ax, env, OverlayData(positions=[data]), False, 0.3
-            )
-            manager.initialize(0)
-            manager.update_frame(5)
-            trail = manager._position_trails[0]
-        else:
-            _render_position_overlay_matplotlib(ax, data, 5)
-            trail = ax.collections[0]
-        np.testing.assert_array_equal(
-            trail.get_segments(), [positions[[0, 1]], positions[[4, 5]]]
+@pytest.fixture
+def napari_view(env):
+    pytest.importorskip("napari")
+    views = []
+
+    def open_(overlays):
+        view = env.animate_fields(
+            np.ones((len(TIMES), env.n_bins)),
+            frame_times=TIMES,
+            overlays=overlays,
+            backend="napari",
+            show=False,
         )
-        np.testing.assert_allclose(
-            trail.get_colors()[:, 3], np.array([1.0, 5.0]) / 5 * 0.7
-        )
-    finally:
-        plt.close(fig)
+        views.append(view)
+        return view
+
+    yield open_
+    for view in views:
+        view.close()
 
 
-def test_napari_trail_ids_keep_new_run_endpoints():
-    from neurospatial.animation.backends.napari_backend import (
-        _build_position_trail_tracks,
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+def test_napari_trail_breaks_at_missing_samples_and_recording_breaks(napari_view):
+    path = np.column_stack([np.arange(6.0) + 2, np.full(6, 5.0)])
+    path[2] = np.nan  # tracking lost
+    breaks = np.zeros(6, dtype=bool)
+    breaks[4] = True  # a recording break between samples 3 and 4
+    view = napari_view(
+        [PositionOverlay(path, TIMES, trail_length=6, break_before=breaks)]
     )
+    view.seek(TIMES[-1])
+    trail = view.native.layers["Position trail 1"].data
+    expected = [path[[0, 1]], path[[4, 5]]]
+    assert len(trail) == len(expected)
+    for segment, pair in zip(trail, expected, strict=True):
+        np.testing.assert_allclose(segment, pair[:, ::-1])
+    view.seek(TIMES[2])
+    assert len(view.native.layers["Position 1"].data) == 0
 
-    positions = np.column_stack([np.arange(6.0), np.zeros(6)])
-    positions[2] = np.nan
-    tracks = _build_position_trail_tracks(
-        positions, np.array([True, False, False, False, True])
+
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+def test_napari_pose_hides_missing_keypoints_and_their_edges(napari_view):
+    nose = np.column_stack([np.arange(6.0) + 2, np.full(6, 6.0)])
+    nose[1] = np.nan
+    tail = nose.copy()
+    tail[:, 1] = 4.0
+    tail[1] = [3.0, 4.0]
+    skeleton = Skeleton(name="rat", nodes=("nose", "tail"), edges=(("nose", "tail"),))
+    view = napari_view(
+        [BodypartOverlay({"nose": nose, "tail": tail}, TIMES, skeleton=skeleton)]
     )
-    np.testing.assert_array_equal(tracks[:, 1], [0, 1, 3, 4, 5])
-    assert tracks[0, 0] == tracks[1, 0]
-    assert tracks[2, 0] != tracks[3, 0]
-    assert tracks[3, 0] == tracks[4, 0]
-    np.testing.assert_array_equal(tracks[-2:, 2:], positions[-2:])
+    layers = view.native.layers
+    view.seek(TIMES[1])
+    assert len(layers["Body 1: nose"].data) == 0
+    np.testing.assert_allclose(layers["Body 1: tail"].data, [[4.0, 3.0]])
+    assert len(layers["Skeleton 1"].data) == 0
+    view.seek(TIMES[2])
+    np.testing.assert_allclose(layers["Body 1: nose"].data, [[6.0, 4.0]])
+    assert len(layers["Skeleton 1"].data) == 1
 
 
-def test_napari_pose_filters_missing_points_and_matching_feature_labels(
-    env, monkeypatch
-):
-    from neurospatial.animation.backends import napari_backend
-
-    monkeypatch.setattr(
-        napari_backend, "screen_point_options", lambda size: {"size": size}
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+def test_napari_heading_is_hidden_while_its_animal_is_missing(napari_view):
+    path = np.full((6, 2), 5.0)
+    path[1] = np.nan
+    view = napari_view(
+        [PositionOverlay(path, TIMES), HeadDirectionOverlay(np.zeros(6), TIMES)]
     )
+    layer = view.native.layers["Head direction 1"]
+    view.seek(TIMES[1])
+    assert len(layer.data) == 0
+    view.seek(TIMES[2])
+    np.testing.assert_allclose(layer.data[0, 0], [5.0, 5.0])
 
-    body = BodypartData(
-        {
-            "nose": np.array([[1.0, 1.0], [np.nan, np.nan]]),
-            "body": np.array([[2.0, 2.0], [3.0, 3.0]]),
-        },
-        None,
-        {"nose": "red", "body": "blue"},
+
+def _red_pixels(frame):
+    frame = frame.astype(int)
+    red, green, blue = frame[..., 0], frame[..., 1], frame[..., 2]
+    return np.argwhere((red > 200) & (green < 60) & (blue < 60))
+
+
+def test_rendered_heading_is_hidden_while_its_animal_is_missing(env):
+    """Exported frames draw no heading arrow without an observed anchor."""
+    path = np.full((6, 2), 5.0)
+    path[1] = np.nan
+    heading = HeadDirectionOverlay(np.zeros(6), TIMES, length=3.0, color="red")
+    # A white field, so red pixels can only come from the arrow.
+    field = AnimationField(
+        np.zeros((6, env.n_bins)), TIMES, cmap="Greys", vmin=0.0, vmax=1.0
     )
-    viewer = MagicMock()
-    napari_backend._render_bodypart_overlay(viewer, body, env)
-    points = viewer.add_points.call_args.args[0]
-    assert points.shape == (3, 3)
-    assert np.isfinite(points).all()
-    assert viewer.add_points.call_args.kwargs["features"]["bodypart"] == [
-        "nose",
-        "body",
-        "body",
-    ]
-    assert viewer.add_points.call_args.kwargs["face_color"] == ["red", "blue", "blue"]
-
-
-@pytest.mark.parametrize("persistent", [False, True])
-def test_missing_position_hides_heading_but_absent_anchor_uses_center(env, persistent):
-    positions = PositionData(np.array([[np.nan, np.nan]]), "red", 10.0, None)
-    heading = HeadDirectionData(np.array([0.0]), "red", 1.0)
-    ax = MagicMock()
-    if persistent:
-        manager = OverlayArtistManager(ax, env, OverlayData(), False, 0.3)
-        assert manager._create_head_direction_quiver(heading, 0, positions) is None
-        ax.quiver.assert_not_called()
-        manager._create_head_direction_quiver(heading, 0, None)
-    else:
-        _render_head_direction_overlay_matplotlib(ax, heading, 0, env, positions)
-        ax.quiver.assert_not_called()
-        _render_head_direction_overlay_matplotlib(ax, heading, 0, env)
-    ax.quiver.assert_called_once()
-    np.testing.assert_array_equal(
-        ax.quiver.call_args.args[:2], env.bin_centers.mean(axis=0)
-    )
-
-
-def test_napari_heading_omits_missing_position_anchor(env):
-    from neurospatial.animation.backends.napari_backend import (
-        _build_head_direction_tracks,
-    )
-
-    positions = PositionData(
-        np.array([[np.nan, np.nan], [2.0, 2.0]]), "red", 10.0, None
-    )
-    heading = HeadDirectionData(np.array([0.0, 0.0]), "red", 1.0)
-    tracks = _build_head_direction_tracks(heading, env, positions)
-    np.testing.assert_array_equal(tracks[:, 0], [1, 1])
+    position = PositionOverlay(path, TIMES, color="blue")
+    with Animation(env, {"field": field}, overlays=[position, heading]) as scene:
+        assert len(_red_pixels(scene.render_frame(TIMES[1], dpi=40))) == 0
+        assert len(_red_pixels(scene.render_frame(TIMES[2], dpi=40))) > 0
+    # With no position overlay the arrow is a compass at the arena center.
+    with Animation(env, {"field": field}, overlays=[heading]) as scene:
+        assert len(_red_pixels(scene.render_frame(TIMES[1], dpi=40))) > 0

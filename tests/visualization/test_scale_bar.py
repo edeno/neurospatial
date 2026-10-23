@@ -224,66 +224,55 @@ class TestPlotWithScaleBar:
 
 
 class TestAnimateFieldsWithScaleBar:
-    """Test scale bar in animate_fields.
+    """Test scale bar in animate_fields exports.
 
     Uses fixtures from tests/conftest.py:
     - small_2d_env: 10x10 cm grid (25 bins)
     """
 
-    def test_video_backend_with_scale_bar(self, small_2d_env, rng):
-        """Test video backend renders scale bar in frames."""
-        pytest.importorskip("subprocess")
+    def test_exported_frames_draw_the_configured_scale_bar(
+        self, small_2d_env, rng, tmp_path
+    ):
+        """The bar is drawn into every exported frame, in its corner."""
+        import base64
+        import io
+        import json
+        import re
 
-        # Check if ffmpeg is available
-        from neurospatial.animation.backends.video_backend import check_ffmpeg_available
+        from PIL import Image
 
-        if not check_ffmpeg_available():
-            pytest.skip("ffmpeg not available")
+        fields = rng.random((4, small_2d_env.n_bins))
+        frame_times = np.arange(4) / 10
 
-        fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
-        frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
-
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-            small_2d_env.animate_fields(
+        def frames(name, scale_bar):
+            path = small_2d_env.animate_fields(
                 fields,
                 frame_times=frame_times,
-                backend="video",
-                save_path=f.name,
-                overwrite=True,
-                scale_bar=True,
-                # Serial rendering: this test checks scale_bar parameter flow,
-                # not parallelism. The default n_workers is cpu_count // 2, which
-                # goes parallel on multi-core CI and pulls in the env-pickling
-                # path (every sibling video test uses n_workers=1 for the same
-                # reason; parallel rendering has its own dedicated coverage).
-                n_workers=1,
+                save_path=tmp_path / name,
+                scale_bar=scale_bar,
+                vmin=0,
+                vmax=1,
+                dpi=80,
             )
-            # Video should be created (validates parameter flows through)
-            from pathlib import Path
+            text = path.read_text(encoding="utf-8")
+            encoded = json.loads(re.search(r"const frames = (\[.*?\]);", text).group(1))
+            return [
+                np.asarray(Image.open(io.BytesIO(base64.b64decode(item))), dtype=int)
+                for item in encoded
+            ]
 
-            assert Path(f.name).exists()
+        def red(frame):
+            return (frame[..., 0] > 180) & (frame[..., 1] < 120) & (frame[..., 2] < 120)
 
-    @pytest.mark.napari
-    @pytest.mark.xdist_group(name="napari_gui")
-    def test_napari_backend_with_scale_bar(self, small_2d_env, rng):
-        """Test napari backend configures native scale bar."""
-        pytest.importorskip("napari")
-
-        fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
-        frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
-
-        # This should configure napari's native scale bar
-        viewer = small_2d_env.animate_fields(
-            fields,
-            frame_times=frame_times,
-            backend="napari",
-            scale_bar=True,
+        plain = frames("plain.html", False)
+        barred = frames(
+            "bar.html",
+            ScaleBarConfig(color="red", position="lower right", background=None),
         )
-
-        try:
-            # Verify napari's scale bar is enabled
-            assert viewer.scale_bar.visible is True
-        finally:
-            viewer.close()
+        assert not any(red(frame).any() for frame in plain)
+        for frame in barred:
+            rows, cols = np.nonzero(red(frame))
+            assert rows.size > 0
+            # Lower right of the field axes: right of and below the image center.
+            assert cols.mean() > frame.shape[1] / 2
+            assert rows.mean() > frame.shape[0] / 2

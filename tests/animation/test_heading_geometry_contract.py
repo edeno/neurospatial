@@ -1,4 +1,4 @@
-"""Undefined headings stay missing across scene and legacy renderers."""
+"""Undefined headings stay missing in every scene renderer."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -7,10 +7,6 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.animation._parallel import (
-    OverlayArtistManager,
-    _render_head_direction_overlay_matplotlib,
-)
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _heading_displacement, _heading_displacements
 from neurospatial.animation.backends import fastplotlib_backend as gpu
@@ -181,38 +177,6 @@ def test_gpu_native_update_hides_opposite_vectors_midpoint(env):
     np.testing.assert_allclose(drawn.line.data[1, : env.n_dims], vector * 0.5)
     drawn.update(0.1)
     assert np.isnan(drawn.line.data[:, : env.n_dims]).all()
-
-
-@pytest.mark.parametrize("persistent", [False, True])
-@pytest.mark.parametrize("missing", [0.0, np.nan, np.inf])
-def test_legacy_matplotlib_omits_undefined_vectors(persistent, missing):
-    env = SimpleNamespace(bin_centers=np.array([[0.0, 0.0]]))
-    data = HeadDirectionData(np.full((1, 2), missing), "red", 0.5)
-    ax = MagicMock()
-    if persistent:
-        manager = OverlayArtistManager(ax, env, SimpleNamespace(), False, 0.3)
-        assert manager._create_head_direction_quiver(data, 0, None) is None
-    else:
-        _render_head_direction_overlay_matplotlib(ax, data, 0, env)
-    ax.quiver.assert_not_called()
-
-
-def test_legacy_napari_tracks_skip_undefined_vectors_and_keep_valid_frames():
-    from neurospatial.animation.backends.napari_backend import (
-        _build_head_direction_tracks,
-    )
-
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
-    )
-    data = HeadDirectionData(
-        np.array([[0, 1], [0, 0], [np.nan, np.nan], [np.inf, 0], [1, 0]]),
-        "red",
-        0.5,
-    )
-    tracks = _build_head_direction_tracks(data, env)
-    np.testing.assert_array_equal(tracks[:, 0], [0, 0, 4, 4])
-    assert np.isfinite(tracks).all()
 
 
 @pytest.mark.parametrize("angles", [False, True])

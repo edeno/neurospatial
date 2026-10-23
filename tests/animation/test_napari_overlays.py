@@ -1,1413 +1,161 @@
-"""Tests for Napari backend with overlay rendering.
+"""animate_fields(backend="napari") draws overlays where the animal was.
 
-Tests overlay integration with napari backend, including:
-- Position overlays (tracks + points with trails)
-- Bodypart overlays (points + skeleton shapes)
-- Head direction overlays (vectors)
-- Region overlays (polygon shapes)
-- Coordinate transformation (x, y) → (y, x)
-- Batched update callback mechanism
-- Multi-animal scenarios (multiple overlays)
+Overlay data are environment ``(x, y)`` coordinates; napari stores ``(y, x)``.
+The arena is wider in y than in x so a swapped or flipped axis shows up.
 """
 
 from __future__ import annotations
 
-import importlib.util
-from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
-
 import numpy as np
 import pytest
-from numpy.typing import NDArray
 
-from neurospatial import Regions
+from neurospatial import Environment
+from neurospatial.animation.overlays import (
+    BodypartOverlay,
+    HeadDirectionOverlay,
+    PositionOverlay,
+    VideoData,
+)
 from neurospatial.animation.skeleton import Skeleton
+from neurospatial.regions import Regions
 
-if TYPE_CHECKING:
-    from neurospatial.animation.overlays import OverlayData
-    from neurospatial.environment.core import Environment
+pytestmark = [pytest.mark.napari, pytest.mark.xdist_group(name="napari_gui")]
 
-HAS_NAPARI = importlib.util.find_spec("napari") is not None
-
-pytestmark = [
-    pytest.mark.napari,
-    pytest.mark.xdist_group(name="napari_gui"),
-    pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed"),
-]
+TIMES = np.array([0.0, 0.5, 1.0])
+# Nose and tail sit this (x, y) offset ahead of and behind the animal.
+OFFSET = np.array([1.0, 2.0])
 
 
 @pytest.fixture
-def simple_env():
-    """Create simple 2D environment for testing."""
-    from neurospatial import Environment
+def env():
+    from shapely.geometry import Polygon
 
-    positions = np.array(
+    env = Environment.from_grid_mask(
+        np.ones((4, 6), dtype=bool),
+        (np.linspace(0.0, 40.0, 5), np.linspace(0.0, 60.0, 7)),
+        units="cm",
+    )
+    regions = Regions()
+    regions.add("reward", point=(35.0, 55.0))
+    regions.add("start", polygon=Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]))
+    return env.with_regions(regions)
+
+
+@pytest.fixture
+def open_view(env):
+    pytest.importorskip("napari")
+    views = []
+
+    def open_(overlays=(), **options):
+        view = env.animate_fields(
+            np.ones((len(TIMES), env.n_bins)),
+            frame_times=TIMES,
+            overlays=list(overlays),
+            backend="napari",
+            show=False,
+            vmin=0,
+            vmax=1,
+            **options,
+        )
+        views.append(view)
+        return view
+
+    yield open_
+    for view in views:
+        view.close()
+
+
+def test_position_pose_and_heading_land_at_environment_coordinates(open_view):
+    path = np.array([[5.0, 50.0], [20.0, 30.0], [35.0, 10.0]])
+    skeleton = Skeleton(name="rat", nodes=("nose", "tail"), edges=(("nose", "tail"),))
+    view = open_view(
         [
-            [0.0, 0.0],
-            [10.0, 0.0],
-            [20.0, 0.0],
-            [0.0, 10.0],
-            [10.0, 10.0],
-            [20.0, 10.0],
+            PositionOverlay(path, TIMES, color="red"),
+            BodypartOverlay(
+                {"nose": path + OFFSET, "tail": path - OFFSET},
+                TIMES,
+                skeleton=skeleton,
+                colors={"nose": "yellow", "tail": "cyan"},
+            ),
+            # East, then North: (x, y) displacements (2, 0) and (0, 2).
+            HeadDirectionOverlay(
+                np.array([0.0, np.pi / 2, np.pi / 2]), TIMES, length=2.0, color="red"
+            ),
         ]
     )
-    return Environment.from_samples(positions, bin_size=5.0)
+    layers = view.native.layers
+    for k, time in enumerate(TIMES[:2]):
+        view.seek(time)
+        x, y = path[k]
+        np.testing.assert_allclose(layers["Position 1"].data, [[y, x]])
+        np.testing.assert_allclose(layers["Body 1: nose"].data, [[y + 2, x + 1]])
+        np.testing.assert_allclose(layers["Body 1: tail"].data, [[y - 2, x - 1]])
+        (edge,) = layers["Skeleton 1"].data
+        np.testing.assert_allclose(edge, [[y + 2, x + 1], [y - 2, x - 1]])
+        # The arrow starts at the animal, the only position overlay.
+        direction = [[0.0, 2.0], [2.0, 0.0]][k]
+        np.testing.assert_allclose(
+            layers["Head direction 1"].data, [[[y, x], direction]], atol=1e-12
+        )
+    # Each bodypart keeps its own color.
+    np.testing.assert_allclose(layers["Body 1: nose"].face_color[0], [1, 1, 0, 1])
+    np.testing.assert_allclose(layers["Body 1: tail"].face_color[0], [0, 1, 1, 1])
 
 
-@pytest.fixture
-def simple_fields(simple_env: Environment) -> list[NDArray[np.float64]]:
-    """Create simple field sequence for testing (10 frames)."""
-    rng = np.random.default_rng(42)
-    return [rng.random(simple_env.n_bins) for _ in range(10)]
-
-
-@pytest.fixture
-def position_overlay_data():
-    """Create PositionData for testing."""
-    from neurospatial.animation.overlays import PositionData
-
-    # 10 frames, 2D coordinates
-    data = np.array(
-        [
-            [5.0 + i * 0.5, 5.0 + i * 0.3]  # Diagonal trajectory
-            for i in range(10)
-        ]
-    )
-    return PositionData(data=data, color="red", size=10.0, trail_length=5)
-
-
-@pytest.fixture
-def bodypart_overlay_data():
-    """Create BodypartData for testing."""
-    from neurospatial.animation.overlays import BodypartData
-
-    # 10 frames, 3 bodyparts (head, body, tail)
-    bodyparts = {
-        "head": np.array([[5.0 + i, 5.0] for i in range(10)]),
-        "body": np.array([[4.0 + i, 5.0] for i in range(10)]),
-        "tail": np.array([[3.0 + i, 5.0] for i in range(10)]),
-    }
-    skeleton = Skeleton(
-        name="test_skeleton",
-        nodes=("head", "body", "tail"),
-        edges=(("head", "body"), ("body", "tail")),
-        edge_color="white",
-        edge_width=2.0,
-    )
-    colors = {"head": "red", "body": "green", "tail": "blue"}
-    return BodypartData(
-        bodyparts=bodyparts,
-        skeleton=skeleton,
-        colors=colors,
+def test_heading_without_an_animal_is_a_compass_at_the_center(open_view, env):
+    view = open_view([HeadDirectionOverlay(np.zeros(3), TIMES, length=2.0)])
+    view.seek(0.5)
+    center = env.bin_centers.mean(axis=0)
+    np.testing.assert_allclose(
+        view.native.layers["Head direction 1"].data,
+        [[center[::-1], [0.0, 2.0]]],
+        atol=1e-12,
     )
 
 
-@pytest.fixture
-def head_direction_overlay_data():
-    """Create HeadDirectionData for testing (angles)."""
-    from neurospatial.animation.overlays import HeadDirectionData
-
-    # 10 frames, angles in radians
-    data = np.linspace(0, np.pi, 10)  # Rotate from 0 to 180 degrees
-    return HeadDirectionData(data=data, color="yellow", length=2.0, width=1.0)
-
-
-@pytest.fixture
-def overlay_data_all_types(
-    position_overlay_data, bodypart_overlay_data, head_direction_overlay_data
-):
-    """Create OverlayData with all overlay types."""
-    from neurospatial.animation.overlays import OverlayData
-
-    return OverlayData(
-        positions=[position_overlay_data],
-        bodypart_sets=[bodypart_overlay_data],
-        head_directions=[head_direction_overlay_data],
-        regions=None,
-    )
-
-
-# =============================================================================
-# Position Overlay Tests
-# =============================================================================
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_position_overlay_creates_layers(
-    mock_viewer_class, simple_env, simple_fields, position_overlay_data
-):
-    """Test position overlay creates both tracks and points layers."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    # Create mock viewer instance
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Create overlay data
-    overlay_data = OverlayData(positions=[position_overlay_data])
-
-    # Render with overlay
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Verify tracks layer created for trail
-    assert mock_viewer.add_tracks.called
-    tracks_call = mock_viewer.add_tracks.call_args
-
-    # Verify track data shape: (n_trail_points, 4) for (track_id, time, y, x)
-    track_data = tracks_call[0][0]
-    assert track_data.shape[1] == 4  # (track_id, time, y, x)
-    assert track_data.shape[0] > 0  # Has trail points
-
-    # Verify points layer created for current position marker
-    assert mock_viewer.add_points.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_position_overlay_coordinate_transform(
-    mock_viewer_class, simple_env, simple_fields, position_overlay_data
-):
-    """Test position overlay applies (x, y) → (row, col) coordinate transformation.
-
-    The transformation maps environment coordinates to napari pixel indices:
-    - X maps to column (scaled to grid width)
-    - Y maps to row (scaled and inverted - high Y → low row)
-    """
-    from neurospatial.animation.backends.napari_backend import (
-        _transform_coords_for_napari,
-        render_napari,
-    )
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(positions=[position_overlay_data])
-
-    # Get expected transformed coordinates using the actual transform function
-    original_coords = position_overlay_data.data[0:1]  # First point as (1, 2)
-    expected_transformed = _transform_coords_for_napari(original_coords, simple_env)
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Get tracks data (should be transformed to row, col)
-    track_data = mock_viewer.add_tracks.call_args[0][0]
-
-    # Track data format: (track_id, time, row, col)
-    # First point should have row in position 2, col in position 3
-    assert np.isclose(track_data[0, 2], expected_transformed[0, 0])  # Row coordinate
-    assert np.isclose(track_data[0, 3], expected_transformed[0, 1])  # Col coordinate
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_position_overlay_applies_color_and_size(
-    mock_viewer_class, simple_env, simple_fields, position_overlay_data
-):
-    """Test position overlay applies color and size properties."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(positions=[position_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Check tracks layer color (kwargs should include color)
-    # NOTE: Implementation uses color parameter in add_tracks call
-
-    # Check points layer size
-    points_kwargs = mock_viewer.add_points.call_args[1]
-    # Size should be specified
-    assert "size" in points_kwargs or "point_size" in points_kwargs
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_position_overlay_trail_color_by_workaround(
-    mock_viewer_class, simple_env, simple_fields, position_overlay_data
-):
-    """Test that trail color is set via post-creation assignment to avoid napari warning.
-
-    napari 0.5.x has a known issue where passing color_by at layer creation time
-    triggers a warning because napari's internal data setter resets features to {}
-    before our features are applied. The workaround is:
-    1. Pass features and colormaps_dict at creation time
-    2. Set color_by AFTER creation via attribute assignment
-
-    This test documents and locks in the workaround behavior.
-    """
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Create a mock layer to track attribute assignment
-    mock_tracks_layer = MagicMock()
-    mock_viewer.add_tracks.return_value = mock_tracks_layer
-
-    overlay_data = OverlayData(positions=[position_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Verify add_tracks was called
-    assert mock_viewer.add_tracks.called
-
-    # Verify color_by was NOT passed as a kwarg (to avoid napari warning)
-    tracks_kwargs = mock_viewer.add_tracks.call_args[1]
-    assert "color_by" not in tracks_kwargs, (
-        "color_by should NOT be passed at layer creation (causes napari warning)"
-    )
-
-    # Verify features and colormaps_dict ARE passed at creation
-    assert "features" in tracks_kwargs, "features should be passed at creation"
-    assert "colormaps_dict" in tracks_kwargs, (
-        "colormaps_dict should be passed at creation"
-    )
-    assert "color" in tracks_kwargs["features"], (
-        "features should include 'color' key for uniform coloring"
-    )
-    assert "color" in tracks_kwargs["colormaps_dict"], (
-        "colormaps_dict should include 'color' key"
-    )
-
-    # Verify color_by was set AFTER creation via attribute assignment
-    # The mock layer should have had its color_by attribute set
-    assert mock_tracks_layer.color_by == "color", (
-        "color_by should be set to 'color' via post-creation assignment"
-    )
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_position_overlay_without_trail(mock_viewer_class, simple_env, simple_fields):
-    """Test position overlay without trail_length (points only, no tracks)."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData, PositionData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Position data without trail
-    position_data = PositionData(
-        data=np.array([[5.0 + i, 5.0] for i in range(10)]),
-        color="blue",
-        size=8.0,
-        trail_length=None,  # No trail
-    )
-    overlay_data = OverlayData(positions=[position_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should NOT create tracks layer (no trail)
-    assert not mock_viewer.add_tracks.called
-
-    # Should create points layer only
-    assert mock_viewer.add_points.called
-
-
-# =============================================================================
-# Bodypart Overlay Tests
-# =============================================================================
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_bodypart_overlay_creates_layers(
-    mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
-):
-    """Test bodypart overlay creates points and vectors layers."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(bodypart_sets=[bodypart_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should create points layer(s) for bodyparts
-    assert mock_viewer.add_points.called
-
-    # Should create vectors layer for skeleton (precomputed, not per-frame shapes)
-    assert mock_viewer.add_vectors.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_bodypart_overlay_skeleton_as_precomputed_vectors(
-    mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
-):
-    """Test bodypart skeleton rendered as precomputed vectors layer.
-
-    The skeleton is now rendered using napari's Vectors layer with precomputed
-    data for all frames, eliminating per-frame callback overhead.
-    """
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(bodypart_sets=[bodypart_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Check vectors layer created for skeleton
-    assert mock_viewer.add_vectors.called
-
-    # Verify vectors data shape: (n_segments, 2, 3) for [[t, y0, x0], [t, y1, x1]]
-    vectors_call = mock_viewer.add_vectors.call_args
-    vectors_data = vectors_call[0][0]
-
-    # Should have 3D data: (n_segments, 2 points per segment, 3 coords per point)
-    assert vectors_data.ndim == 3
-    assert vectors_data.shape[1] == 2  # Start and end points
-    assert vectors_data.shape[2] == 3  # (time, row, col)
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_bodypart_overlay_coordinate_transform(
-    mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
-):
-    """Test bodypart overlay applies (x, y) → (row, col) transformation.
-
-    The transformation maps environment coordinates to napari pixel indices:
-    - X maps to column (scaled to grid width)
-    - Y maps to row (scaled and inverted - high Y → low row)
-    """
-    from neurospatial.animation.backends.napari_backend import (
-        _transform_coords_for_napari,
-        render_napari,
-    )
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(bodypart_sets=[bodypart_overlay_data])
-
-    # Get expected transformed coordinates for "head" bodypart
-    original_coords = bodypart_overlay_data.bodyparts["head"][0:1]  # First point
-    expected_transformed = _transform_coords_for_napari(original_coords, simple_env)
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Get points data (should be transformed to row, col)
-    points_data = mock_viewer.add_points.call_args[0][0]
-
-    # Points format: (time, row, col) for 2D + time
-    # First point should have row, col from transformation
-    assert np.isclose(points_data[0, 1], expected_transformed[0, 0])  # Row coordinate
-    assert np.isclose(points_data[0, 2], expected_transformed[0, 1])  # Col coordinate
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_bodypart_overlay_per_part_colors(
-    mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
-):
-    """Test bodypart overlay applies per-part colors."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(bodypart_sets=[bodypart_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Check points layer has color properties
-    points_kwargs = mock_viewer.add_points.call_args[1]
-    # Colors may be specified via 'face_color', 'edge_color', or 'properties'
-    has_color = (
-        "face_color" in points_kwargs
-        or "edge_color" in points_kwargs
-        or "properties" in points_kwargs
-    )
-    assert has_color
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_bodypart_overlay_skeleton_color_and_width(
-    mock_viewer_class, simple_env, simple_fields, bodypart_overlay_data
-):
-    """Test bodypart skeleton applies color and width properties to vectors layer."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(bodypart_sets=[bodypart_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Check vectors layer has edge_color and edge_width
-    vectors_kwargs = mock_viewer.add_vectors.call_args[1]
-    assert "edge_color" in vectors_kwargs or "edge_colour" in vectors_kwargs
-    assert "edge_width" in vectors_kwargs
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_bodypart_overlay_without_skeleton(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test bodypart overlay without skeleton (points only, no vectors for skeleton)."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import BodypartData, OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Bodypart data without skeleton
-    bodypart_data = BodypartData(
-        bodyparts={"head": np.array([[5.0 + i, 5.0] for i in range(10)])},
-        skeleton=None,  # No skeleton
-        colors={"head": "red"},
-    )
-    overlay_data = OverlayData(bodypart_sets=[bodypart_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should create points layer
-    assert mock_viewer.add_points.called
-
-    # Should NOT create vectors layer for skeleton (no skeleton defined)
-    # Note: head direction overlays use vectors, so we check call count = 0
-    # when only bodypart overlay without skeleton is present
-    assert mock_viewer.add_vectors.call_count == 0
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_bodypart_skeleton_all_nan_no_vectors_layer(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test skeleton layer NOT created when all bodypart coords are NaN."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import BodypartData, OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Bodypart data with ALL NaN coordinates
-    skeleton = Skeleton(
-        name="test_skeleton",
-        nodes=("head", "body"),
-        edges=(("head", "body"),),
-        edge_color="white",
-        edge_width=2.0,
-    )
-    bodypart_data = BodypartData(
-        bodyparts={
-            "head": np.full((10, 2), np.nan),
-            "body": np.full((10, 2), np.nan),
-        },
-        skeleton=skeleton,
-        colors={"head": "red", "body": "green"},
-    )
-    overlay_data = OverlayData(bodypart_sets=[bodypart_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Points layer still created (even if NaN)
-    assert mock_viewer.add_points.called
-
-    # NO vectors layer should be created (all segments filtered due to NaN)
-    assert mock_viewer.add_vectors.call_count == 0
-
-
-# =============================================================================
-# Head Direction Overlay Tests
-# =============================================================================
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_head_direction_overlay_creates_tracks_layer(
-    mock_viewer_class, simple_env, simple_fields, head_direction_overlay_data
-):
-    """Test head direction overlay creates Tracks layer for efficient time-based rendering."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(head_directions=[head_direction_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should create tracks layer (not vectors - vectors are slow)
-    # Head direction now uses Tracks layer for efficient time-based filtering
-    tracks_calls = [
-        call
-        for call in mock_viewer.add_tracks.call_args_list
-        if call[1].get("name", "").startswith("Head Direction")
-    ]
-    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_head_direction_overlay_applies_colormap_and_width(
-    mock_viewer_class, simple_env, simple_fields, head_direction_overlay_data
-):
-    """Test head direction overlay applies colormap and line width properties."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(head_directions=[head_direction_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Find the Head Direction tracks layer call
-    tracks_calls = [
-        call
-        for call in mock_viewer.add_tracks.call_args_list
-        if call[1].get("name", "").startswith("Head Direction")
-    ]
-    assert len(tracks_calls) > 0
-
-    tracks_kwargs = tracks_calls[0][1]
-    # Line width specified via 'tail_width'
-    assert "tail_width" in tracks_kwargs
-    # Blending set to opaque for visibility
-    assert tracks_kwargs.get("blending") == "opaque"
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_head_direction_overlay_coordinate_transform(
-    mock_viewer_class, simple_env, simple_fields, head_direction_overlay_data
-):
-    """Test head direction overlay applies coordinate transformation."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    overlay_data = OverlayData(head_directions=[head_direction_overlay_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Find the Head Direction tracks layer call
-    tracks_calls = [
-        call
-        for call in mock_viewer.add_tracks.call_args_list
-        if call[1].get("name", "").startswith("Head Direction")
-    ]
-    assert len(tracks_calls) > 0
-
-    # Get tracks data (should be transformed to [track_id, t, y, x])
-    tracks_data = tracks_calls[0][0][0]
-
-    # Tracks format: [track_id, time, y, x]
-    # Should have correct dimensionality
-    assert tracks_data.shape[1] == 4  # (track_id, time, y, x)
-
-
-# =============================================================================
-# Region Overlay Tests
-# =============================================================================
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_region_overlay_creates_shapes_layer(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test region overlay creates shapes layer with polygons."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Add region to environment (just a point)
-    region_builder = Regions(simple_env.regions.values())
-    region_builder.add("goal", point=np.array([5.0, 5.0]))
-    simple_env = simple_env.with_regions(region_builder)
-
-    # Render with show_regions=True
-    render_napari(simple_env, simple_fields, show_regions=True, region_alpha=0.3)
-
-    # Should create shapes layer for regions
-    # NOTE: May create single shapes layer or multiple calls
-    assert mock_viewer.add_shapes.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_region_overlay_applies_alpha(mock_viewer_class, simple_env, simple_fields):
-    """Test region overlay applies alpha transparency."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    region_builder = Regions(simple_env.regions.values())
-    region_builder.add("goal", point=np.array([5.0, 5.0]))
-    simple_env = simple_env.with_regions(region_builder)
-
-    render_napari(simple_env, simple_fields, show_regions=True, region_alpha=0.5)
-
-    # Check shapes layer has opacity/alpha property
-    shapes_kwargs = mock_viewer.add_shapes.call_args[1]
-    has_alpha = (
-        "opacity" in shapes_kwargs
-        or "face_color" in shapes_kwargs
-        or "edge_color" in shapes_kwargs
-    )
-    assert has_alpha
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_region_overlay_filters_by_list(mock_viewer_class, simple_env, simple_fields):
-    """Test region overlay filters regions by name list."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Add multiple regions
-    region_builder = Regions(simple_env.regions.values())
-    region_builder.add("goal", point=np.array([5.0, 5.0]))
-    region_builder.add("start", point=np.array([15.0, 15.0]))
-    simple_env = simple_env.with_regions(region_builder)
-
-    # Render with specific region filter
-    render_napari(simple_env, simple_fields, show_regions=["goal"], region_alpha=0.3)
-
-    # Should create shapes layer (with only "goal" region)
-    assert mock_viewer.add_shapes.called
-    # NOTE: Verification of actual filtering logic happens in implementation
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_region_overlay_disabled_by_default(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test region overlay is disabled when show_regions=False."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    region_builder = Regions(simple_env.regions.values())
-    region_builder.add("goal", point=np.array([5.0, 5.0]))
-    simple_env = simple_env.with_regions(region_builder)
-
-    # Render WITHOUT show_regions (default False)
-    render_napari(simple_env, simple_fields)
-
-    # Should NOT create shapes layer for regions
-    # NOTE: May have shapes for bodyparts, but not regions
-    # We'll verify in implementation that region shapes are skipped
-
-
-# =============================================================================
-# Multi-Animal / Multiple Overlays Tests
-# =============================================================================
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_multiple_position_overlays(mock_viewer_class, simple_env, simple_fields):
-    """Test multiple position overlays (multi-animal scenario)."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData, PositionData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Create two position overlays (two animals)
-    pos1 = PositionData(
-        data=np.array([[5.0 + i, 5.0] for i in range(10)]),
-        color="red",
-        size=10.0,
-        trail_length=5,
-    )
-    pos2 = PositionData(
-        data=np.array([[15.0 - i, 15.0] for i in range(10)]),
-        color="blue",
-        size=8.0,
-        trail_length=3,
-    )
-
-    overlay_data = OverlayData(positions=[pos1, pos2])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should create tracks layers for both animals
-    assert mock_viewer.add_tracks.call_count == 2
-
-    # Should create points layers for both animals
-    assert mock_viewer.add_points.call_count == 2
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_mixed_overlay_types(
-    mock_viewer_class, simple_env, simple_fields, overlay_data_all_types
-):
-    """Test rendering with all overlay types simultaneously."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data_all_types)
-
-    # Should create tracks layers (position with trail + head direction)
-    assert mock_viewer.add_tracks.call_count >= 2  # position trail + head direction
-
-    # Should create points layers (position marker + bodyparts)
-    assert mock_viewer.add_points.call_count >= 2  # position + bodyparts
-
-    # Should create vectors layer for skeleton only
-    assert mock_viewer.add_vectors.call_count >= 1  # Skeleton only
-
-    # Verify head direction creates Tracks layer (for efficient time-based rendering)
-    tracks_calls = [
-        call
-        for call in mock_viewer.add_tracks.call_args_list
-        if call[1].get("name", "").startswith("Head Direction")
-    ]
-    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
-
-
-# =============================================================================
-# Batched Update Tests
-# =============================================================================
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_batched_update_callback_registered(
-    mock_viewer_class, simple_env, simple_fields, overlay_data_all_types
-):
-    """Test batched update callback is registered to viewer.dims.events."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Mock dims events
-    mock_viewer.dims.events.current_step = MagicMock()
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data_all_types)
-
-    # Verify callback registered to current_step event
-    assert mock_viewer.dims.events.current_step.connect.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_batched_update_updates_all_layers(
-    mock_viewer_class, simple_env, simple_fields, overlay_data_all_types
-):
-    """Test batched update callback updates all overlay layers."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Mock dims events
-    mock_viewer.dims.events.current_step = MagicMock()
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data_all_types)
-
-    # Get the callback function that was registered
-    callback = mock_viewer.dims.events.current_step.connect.call_args[0][0]
-
-    # Create mock layers that the callback will update
-    mock_tracks_layer = MagicMock()
-    mock_points_layer = MagicMock()
-    mock_shapes_layer = MagicMock()
-    mock_vectors_layer = MagicMock()
-
-    mock_viewer.layers = [
-        mock_tracks_layer,
-        mock_points_layer,
-        mock_shapes_layer,
-        mock_vectors_layer,
-    ]
-
-    # Mock current_step change (frame 5)
-    mock_event = MagicMock()
-    mock_event.value = (5, 0, 0, 0)  # Frame 5
-    mock_viewer.dims.current_step = (5, 0, 0, 0)
-
-    # Call the callback
-    callback(mock_event)
-
-    # Verify layers were updated (data property modified)
-    # NOTE: Specific update mechanism depends on implementation
-    # We verify that the callback doesn't raise errors and executes
-
-
-# =============================================================================
-# Edge Cases and Error Handling
-# =============================================================================
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_no_overlays_backward_compatibility(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test render_napari works without overlay_data (backward compatibility)."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Render without overlay_data parameter
-    render_napari(simple_env, simple_fields)
-
-    # Should complete without errors
-    # Should NOT create overlay layers
-    assert not mock_viewer.add_tracks.called
-    assert not mock_viewer.add_vectors.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_empty_overlay_data(mock_viewer_class, simple_env, simple_fields):
-    """Test render_napari with empty OverlayData (no overlays)."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Empty overlay data
-    overlay_data = OverlayData(
-        positions=[], bodypart_sets=[], head_directions=[], regions=None
-    )
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should complete without errors
-    # Should NOT create overlay layers
-    assert not mock_viewer.add_tracks.called
-    assert not mock_viewer.add_vectors.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_overlay_data_none_parameter(mock_viewer_class, simple_env, simple_fields):
-    """Test render_napari with overlay_data=None (explicit None)."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Explicitly pass None
-    render_napari(simple_env, simple_fields, overlay_data=None)
-
-    # Should complete without errors
-    assert not mock_viewer.add_tracks.called
-
-
-# =============================================================================
-# Signature Update Test
-# =============================================================================
-
-
-def test_render_napari_signature_includes_overlay_params():
-    """Test render_napari signature includes all new overlay parameters."""
-    import inspect
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    sig = inspect.signature(render_napari)
-    param_names = list(sig.parameters.keys())
-
-    # Check all required overlay parameters are present
-    assert "overlay_data" in param_names
-    assert "show_regions" in param_names
-    assert "region_alpha" in param_names
-
-    # Verify default values
-    assert sig.parameters["show_regions"].default is False
-    assert sig.parameters["region_alpha"].default == 0.3
-    assert sig.parameters["overlay_data"].default is None
-
-
-# =============================================================================
-# Head Direction + Position Pairing Tests
-# =============================================================================
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_head_direction_paired_with_single_position(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test head direction lines are anchored at position when exactly one position overlay exists."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import (
-        HeadDirectionData,
-        OverlayData,
-        PositionData,
-    )
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Create position data with known trajectory
-    n_frames = 10
-    positions = np.array([[5.0 + i, 5.0 + i * 0.5] for i in range(n_frames)])
-    pos_data = PositionData(
-        data=positions,
-        color="red",
-        size=10.0,
-        trail_length=5,
-    )
-
-    # Create head direction data (angles)
-    angles = np.linspace(0, np.pi, n_frames)
-    head_dir_data = HeadDirectionData(
-        data=angles,
-        color="hsv",
-        length=5.0,
-    )
-
-    overlay_data = OverlayData(positions=[pos_data], head_directions=[head_dir_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should create tracks layer for head direction (efficient time-based rendering)
-    tracks_calls = [
-        call
-        for call in mock_viewer.add_tracks.call_args_list
-        if call[1].get("name", "").startswith("Head Direction")
-    ]
-    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
-
-    # Get tracks data
-    tracks_data = tracks_calls[0][0][0]
-
-    # Tracks should have 2 points per frame (origin + indicator)
-    # Format: [track_id, time, y, x]
-    assert tracks_data.shape[0] == n_frames * 2  # Two points per frame
-    assert tracks_data.shape[1] == 4  # (track_id, time, y, x)
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_head_direction_not_paired_with_multiple_positions(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test head direction uses centroid when multiple position overlays exist."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import (
-        HeadDirectionData,
-        OverlayData,
-        PositionData,
-    )
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    n_frames = 10
-
-    # Create TWO position overlays (multi-animal scenario)
-    pos1 = PositionData(
-        data=np.array([[5.0 + i, 5.0] for i in range(n_frames)]),
-        color="red",
-        size=10.0,
-        trail_length=5,
-    )
-    pos2 = PositionData(
-        data=np.array([[15.0 - i, 15.0] for i in range(n_frames)]),
-        color="blue",
-        size=8.0,
-        trail_length=3,
-    )
-
-    # Create head direction data
-    angles = np.linspace(0, np.pi, n_frames)
-    head_dir_data = HeadDirectionData(
-        data=angles,
-        color="hsv",
-        length=5.0,
-    )
-
-    overlay_data = OverlayData(positions=[pos1, pos2], head_directions=[head_dir_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should still create tracks layer for head direction (uses centroid as origin)
-    tracks_calls = [
-        call
-        for call in mock_viewer.add_tracks.call_args_list
-        if call[1].get("name", "").startswith("Head Direction")
-    ]
-    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_head_direction_without_position_uses_centroid(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test head direction uses environment centroid when no position overlay exists."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import HeadDirectionData, OverlayData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    n_frames = 10
-
-    # Create head direction data WITHOUT any position overlay
-    angles = np.linspace(0, np.pi, n_frames)
-    head_dir_data = HeadDirectionData(
-        data=angles,
-        color="hsv",
-        length=5.0,
-    )
-
-    overlay_data = OverlayData(head_directions=[head_dir_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Should create tracks layer for head direction (uses centroid as origin)
-    tracks_calls = [
-        call
-        for call in mock_viewer.add_tracks.call_args_list
-        if call[1].get("name", "").startswith("Head Direction")
-    ]
-    assert len(tracks_calls) > 0, "Expected Tracks layer for Head Direction"
-
-    # Tracks should have origin at centroid
-    tracks_data = tracks_calls[0][0][0]
-
-    # Tracks format: [track_id, time, y, x]
-    # Since directions change but origin is fixed centroid
-    assert tracks_data.shape[0] == n_frames * 2  # Two points per frame
-    assert tracks_data.shape[1] == 4  # (track_id, time, y, x)
-
-
-# =============================================================================
-# Video Overlay Layer Tests
-# =============================================================================
-
-
-@pytest.fixture
-def video_data_array() -> tuple[NDArray[np.uint8], NDArray[np.int_]]:
-    """Create video data as numpy array for testing."""
-    rng = np.random.default_rng(42)
-    # 10 frames, 64x64 pixels, RGB
-    n_frames = 10
-    height, width = 64, 64
-    video_frames = rng.integers(0, 256, (n_frames, height, width, 3), dtype=np.uint8)
-    frame_indices = np.arange(n_frames)
-
-    return video_frames, frame_indices
-
-
-@pytest.fixture
-def video_overlay_data(video_data_array, simple_env) -> OverlayData:
-    """Create OverlayData with VideoData for testing."""
-    from neurospatial.animation.overlays import OverlayData, VideoData
-
-    video_frames, frame_indices = video_data_array
-
-    video_data = VideoData(
-        frame_indices=frame_indices,
-        reader=video_frames,
-        transform_to_env=None,
-        env_bounds=(0.0, 20.0, 0.0, 10.0),  # xmin, xmax, ymin, ymax
-        alpha=0.8,
-        z_order="below",
-    )
-
-    return OverlayData(videos=[video_data])
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_video_layer_created_when_video_data_present(
-    mock_viewer_class, simple_env, simple_fields, video_overlay_data
-):
-    """Test that video overlay adds an Image layer to napari viewer."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    render_napari(simple_env, simple_fields, overlay_data=video_overlay_data)
-
-    # Should call add_image for video layer
-    assert mock_viewer.add_image.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_video_layer_z_order_below(
-    mock_viewer_class, simple_env, simple_fields, video_data_array
-):
-    """Test that z_order='below' positions video under field layer."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData, VideoData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    video_frames, frame_indices = video_data_array
-    video_data = VideoData(
-        frame_indices=frame_indices,
-        reader=video_frames,
-        transform_to_env=None,
-        env_bounds=(0.0, 20.0, 0.0, 10.0),
-        alpha=0.8,
-        z_order="below",  # Video below field
-    )
-    overlay_data = OverlayData(videos=[video_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Video layer should be added before field layer (lower in stack = below)
-    # We can verify by checking call order
-    assert mock_viewer.add_image.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_video_layer_z_order_above(
-    mock_viewer_class, simple_env, simple_fields, video_data_array
-):
-    """Test that z_order='above' positions video over field layer."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData, VideoData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    video_frames, frame_indices = video_data_array
-    video_data = VideoData(
-        frame_indices=frame_indices,
-        reader=video_frames,
-        transform_to_env=None,
-        env_bounds=(0.0, 20.0, 0.0, 10.0),
-        alpha=0.5,
-        z_order="above",  # Video above field
-    )
-    overlay_data = OverlayData(videos=[video_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Video layer should be added after field layer (higher in stack = above)
-    assert mock_viewer.add_image.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_video_layer_alpha_applied(
-    mock_viewer_class, simple_env, simple_fields, video_data_array
-):
-    """Test that video layer opacity is set correctly."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData, VideoData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    video_frames, frame_indices = video_data_array
-    alpha_value = 0.65
-    video_data = VideoData(
-        frame_indices=frame_indices,
-        reader=video_frames,
-        transform_to_env=None,
-        env_bounds=(0.0, 20.0, 0.0, 10.0),
-        alpha=alpha_value,
-        z_order="below",
-    )
-    overlay_data = OverlayData(videos=[video_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Check that add_image was called with opacity parameter
-    assert mock_viewer.add_image.called
-    call_kwargs = mock_viewer.add_image.call_args[1]
-    assert "opacity" in call_kwargs
-    assert call_kwargs["opacity"] == pytest.approx(alpha_value)
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_video_layer_updates_on_frame_change(
-    mock_viewer_class, simple_env, simple_fields, video_overlay_data
-):
-    """Test that video layer data updates when animation frame changes."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Mock dims events for frame change callback
-    mock_viewer.dims.events.current_step = MagicMock()
-
-    render_napari(simple_env, simple_fields, overlay_data=video_overlay_data)
-
-    # Verify callback was registered for frame changes
-    assert mock_viewer.dims.events.current_step.connect.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_video_layer_handles_missing_frames(
-    mock_viewer_class, simple_env, simple_fields
-):
-    """Test video layer handles frame_indices with -1 (missing frames)."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData, VideoData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    # Create video with fewer frames than animation
-    rng = np.random.default_rng(42)
-    n_video_frames = 5
-    n_animation_frames = 10
-    video_frames = rng.integers(0, 256, (n_video_frames, 32, 32, 3), dtype=np.uint8)
-
-    # Frame indices with -1 for missing frames
-    frame_indices = np.array([0, 1, 2, 3, 4, -1, -1, -1, -1, -1])
-
-    video_data = VideoData(
-        frame_indices=frame_indices,
-        reader=video_frames,
-        transform_to_env=None,
-        env_bounds=(0.0, 20.0, 0.0, 10.0),
-        alpha=0.8,
-        z_order="below",
-    )
-    overlay_data = OverlayData(videos=[video_data])
-
-    # Extend simple_fields to match n_animation_frames
-    extended_fields = [rng.random(simple_env.n_bins) for _ in range(n_animation_frames)]
-
-    render_napari(simple_env, extended_fields, overlay_data=overlay_data)
-
-    # Should not raise error - missing frames handled gracefully
-    assert mock_viewer.add_image.called
-
-
-@patch("neurospatial.animation.backends.napari_backend.napari.Viewer")
-def test_video_with_other_overlays(
-    mock_viewer_class, simple_env, simple_fields, video_data_array
-):
-    """Test video overlay works alongside position and other overlays."""
-    from neurospatial.animation.backends.napari_backend import render_napari
-    from neurospatial.animation.overlays import OverlayData, PositionData, VideoData
-
-    mock_viewer = MagicMock()
-    mock_viewer_class.return_value = mock_viewer
-    mock_viewer.dims.ndim = 4
-    mock_viewer.dims.current_step = (0, 0, 0, 0)
-
-    video_frames, frame_indices = video_data_array
-    video_data = VideoData(
-        frame_indices=frame_indices,
-        reader=video_frames,
-        transform_to_env=None,
-        env_bounds=(0.0, 20.0, 0.0, 10.0),
-        alpha=0.7,
-        z_order="below",
-    )
-
-    # Add position overlay too
-    positions = np.array([[5.0 + i, 5.0 + i * 0.3] for i in range(10)])
-    pos_data = PositionData(data=positions, color="red", size=10.0, trail_length=5)
-
-    overlay_data = OverlayData(videos=[video_data], positions=[pos_data])
-
-    render_napari(simple_env, simple_fields, overlay_data=overlay_data)
-
-    # Both video and position layers should be created
-    assert mock_viewer.add_image.called
-    assert mock_viewer.add_tracks.called or mock_viewer.add_points.called
-
-
-def test_video_overlay_data_signature():
-    """Test OverlayData includes videos parameter."""
-    # Check that videos parameter exists
-    import inspect
-
-    from neurospatial.animation.overlays import OverlayData
-
-    sig = inspect.signature(OverlayData)
-    param_names = list(sig.parameters.keys())
-    assert "videos" in param_names
-
-
-def test_video_data_fields():
-    """Test VideoData has expected fields."""
-    # Check required attributes exist
-    import dataclasses
-
-    from neurospatial.animation.overlays import VideoData
-
-    fields = {f.name for f in dataclasses.fields(VideoData)}
-    assert "frame_indices" in fields
-    assert "reader" in fields
-    assert "transform_to_env" in fields
-    assert "env_bounds" in fields
-    assert "alpha" in fields
-    assert "z_order" in fields
+def test_heading_with_several_animals_is_refused(open_view):
+    """No single position anchors the arrow, so the call says how to choose."""
+    overlays = [PositionOverlay(np.full((3, 2), 5.0 + 10 * i), TIMES) for i in range(2)]
+    with pytest.raises(
+        ValueError, match=r"cannot tell which of the 2 PositionOverlays"
+    ):
+        open_view([*overlays, HeadDirectionOverlay(np.zeros(3), TIMES)])
+
+
+def test_regions_are_drawn_only_when_requested(open_view):
+    def regions(view):
+        return {
+            layer.name: layer
+            for layer in view.native.layers
+            if layer.name.startswith("Region")
+        }
+
+    assert regions(open_view()) == {}
+    shown = regions(open_view(show_regions=["reward"], region_alpha=0.4))
+    assert list(shown) == ["Region: reward"]
+    np.testing.assert_allclose(shown["Region: reward"].data, [[55.0, 35.0]])
+    assert shown["Region: reward"].opacity == pytest.approx(0.4)
+    shown = regions(open_view(show_regions=True))
+    assert set(shown) == {"Region: reward", "Region: start"}
+    (square,) = shown["Region: start"].data
+    np.testing.assert_allclose(square.min(axis=0), [0.0, 0.0])
+    np.testing.assert_allclose(square.max(axis=0), [10.0, 10.0])
+
+
+@pytest.mark.parametrize("z_order", ["above", "below"])
+def test_video_is_stacked_against_the_field_with_its_opacity(open_view, z_order):
+    class Video:
+        times = None
+        interp = "nearest"
+
+        def convert_to_data(self, frame_times, n_frames, env):
+            frames = np.zeros((n_frames, 2, 2, 3), dtype=np.uint8)
+            return VideoData(
+                np.arange(n_frames), frames, None, (0, 40, 0, 60), 0.4, z_order
+            )
+
+    view = open_view([Video()])
+    names = [layer.name for layer in view.native.layers]
+    assert names.index("Video 1") == (1 if z_order == "above" else 0)
+    assert names[1 - names.index("Video 1")] == "field"
+    assert view.native.layers["Video 1"].opacity == pytest.approx(0.4)

@@ -1,4 +1,4 @@
-"""SpikeRasterOverlay: its rows, its checks, and backends that skip it."""
+"""SpikeRasterOverlay and EpochOverlay: their rows, checks and drawn panels."""
 
 from __future__ import annotations
 
@@ -58,18 +58,35 @@ def test_spikes_must_be_finite_and_there_must_be_a_unit():
         SpikeRasterOverlay([])
 
 
-def test_other_backends_skip_the_raster_with_a_warning(env):
-    fields = np.zeros((3, env.n_bins))
-    with pytest.warns(
-        UserWarning, match="html backend does not draw SpikeRasterOverlay"
-    ):
-        env.animate_fields(
-            fields,
-            frame_times=np.arange(3.0),
-            backend="html",
-            dry_run=True,
-            overlays=[SpikeRasterOverlay(SPIKES)],
+def test_scene_frames_draw_each_spike_in_its_units_row(env):
+    from neurospatial.animation import Animation, EpochOverlay
+
+    times = np.arange(6) * 0.1
+    raster = SpikeRasterOverlay(SPIKES, order=[2, 0, 1], unit_ids=["a", "b", "c"])
+    with Animation(
+        env,
+        np.zeros((6, env.n_bins)),
+        frame_times=times,
+        overlays=[raster, EpochOverlay([[0.05, 0.25]], label="Run")],
+        window_seconds=2.0,
+    ) as scene:
+        scene.render_frame(0.3, dpi=30)
+        axes = {ax.get_ylabel(): ax for ax in scene._renderer.figure.axes}
+        rows = axes["Unit"]
+        assert [tick.get_text() for tick in rows.get_yticklabels()] == ["c", "a", "b"]
+        spikes = sorted(
+            (round(float(segment[0, 0]), 6), round(float(segment[:, 1].mean())))
+            for collection in rows.collections
+            for segment in collection.get_segments()
         )
+        # Unit "a" (row 1) spiked at 0.1 and 0.5 s, unit "b" (row 2) at 0.3 s.
+        assert spikes == [(0.1, 1), (0.3, 2), (0.5, 1)]
+        epochs = next(
+            ax
+            for ax in scene._renderer.figure.axes
+            if [t.get_text() for t in ax.get_yticklabels()] == ["Run"]
+        )
+        assert len(epochs.collections) == 1
 
 
 def test_rate_maps_follow_the_rows_and_must_cover_the_bins(env):
@@ -95,16 +112,3 @@ def test_epochs_are_sorted_merged_and_checked():
         EpochOverlay([[2.0, 1.0]])
     with pytest.raises(ValueError, match="alpha must be between 0 and 1"):
         EpochOverlay([[0.0, 1.0]], alpha=2.0)
-
-
-def test_other_backends_skip_epochs_with_a_warning(env):
-    from neurospatial.animation import EpochOverlay
-
-    with pytest.warns(UserWarning, match="does not draw EpochOverlay"):
-        env.animate_fields(
-            np.zeros((3, env.n_bins)),
-            frame_times=np.arange(3.0),
-            backend="html",
-            dry_run=True,
-            overlays=[EpochOverlay([[0.5, 1.5]])],
-        )

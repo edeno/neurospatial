@@ -184,7 +184,7 @@ def test_native_capture_uses_exact_time_and_preserves_camera_custom_graphics(env
 def test_capture_failure_restores_time_playback_and_selected_unit(env):
     fields = np.zeros((2, env.n_bins))
     rates = np.arange(2 * env.n_bins, dtype=float).reshape(2, -1)
-    animation = env.animate_fields(
+    view = env.animate_fields(
         fields,
         frame_times=np.array([100.0, 101.0]),
         backend="fastplotlib",
@@ -195,8 +195,8 @@ def test_capture_failure_restores_time_playback_and_selected_unit(env):
             ),
         ],
     )
+    animation = view.native
     try:
-        animation.show()
         animation._unit.show(animation._rasters[0], 1)
         animation.widget.indices = {"time": 0.2}
         animation.widget.ui_sliders._playing["time"] = True
@@ -214,7 +214,7 @@ def test_capture_failure_restores_time_playback_and_selected_unit(env):
         assert all(not graphic.pause for graphic in animation.widget.ndgraphics)
         np.testing.assert_allclose(animation._unit.field.values, rates[1])
     finally:
-        animation.close()
+        view.close()
 
 
 def test_scene_view_exports_native_3d_camera_and_independent_streams(tmp_path):

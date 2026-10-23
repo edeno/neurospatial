@@ -169,32 +169,17 @@ def test_suggested_name_resolves(env, call, tmp_path):
     lookup(ast.literal_eval(suggestion))
 
 
-@pytest.mark.parametrize("render", ["html", "napari", "matplotlib"])
-def test_each_renderer_refuses_a_misspelled_shown_region(env, render):
-    """Renderers called directly refuse the name too; none skips it silently."""
-    if render == "html":
-        from neurospatial.animation.backends.html_backend import (
-            _estimate_overlay_json_size,
-        )
+def test_animation_refuses_a_misspelled_shown_region_before_any_view(env):
+    """Every view and export starts from the scene, which refuses the name."""
+    from neurospatial.animation import Animation
 
-        call = lambda: _estimate_overlay_json_size(None, env, ["rewrd"])  # noqa: E731
-    elif render == "napari":
-        pytest.importorskip("napari")
-        from neurospatial.animation.backends.napari_backend import _render_regions
-
-        call = lambda: _render_regions(None, env, ["rewrd"], 0.3)  # noqa: E731
-    else:
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        from neurospatial.animation._scene_rendering import _render_regions_matplotlib
-
-        _, ax = plt.subplots()
-        call = lambda: _render_regions_matplotlib(ax, env, ["rewrd"], 0.3)  # noqa: E731
     with pytest.raises(RegionNotFoundError, match=r"show_regions=\['reward'\]"):
-        call()
+        Animation(
+            env,
+            np.zeros((2, env.n_bins)),
+            frame_times=[0.0, 0.1],
+            show_regions=["rewrd"],
+        )
 
 
 def test_membership_and_get_do_not_raise(env):

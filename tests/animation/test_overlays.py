@@ -24,7 +24,6 @@ from neurospatial.animation.overlays import (
     _validate_bounds,
     _validate_finite_values,
     _validate_monotonic_time,
-    _validate_pickle_ability,
     _validate_shape,
     _validate_skeleton_consistency,
     _validate_temporal_alignment,
@@ -1271,54 +1270,27 @@ class TestValidateSkeletonConsistency:
         _validate_skeleton_consistency(skeleton, bodypart_names, name="test_skeleton")
 
 
-class TestValidatePickleAbility:
-    """Test _validate_pickle_ability() function."""
+def test_parallel_export_names_an_overlay_it_cannot_pickle(tmp_path):
+    """Worker processes need picklable overlays; one process does not."""
+    from neurospatial import Environment
+    from neurospatial.animation import Animation
 
-    def test_pickleable_overlay_data(self):
-        """Test that pickle-able OverlayData passes validation."""
-        # Import the internal data classes (will implement later)
-        from neurospatial.animation.overlays import OverlayData, PositionData
-
-        position_data = PositionData(
-            data=np.array([[0.0, 1.0], [2.0, 3.0]]),
-            color="red",
-            size=10.0,
-            trail_length=None,
-        )
-        overlay_data = OverlayData(positions=[position_data])
-
-        # Should not raise
-        _validate_pickle_ability(overlay_data, n_workers=4)
-
-    def test_unpickleable_with_lambda(self):
-        """Test that OverlayData with lambda raises ValueError."""
-        from neurospatial.animation.overlays import OverlayData
-
-        # Create OverlayData with unpickleable attribute
-        overlay_data = OverlayData()
-        overlay_data._unpickleable_func = lambda x: x * 2  # Add unpickleable attribute
-
-        with pytest.raises(ValueError) as exc_info:
-            _validate_pickle_ability(overlay_data, n_workers=4)
-
-        error_msg = str(exc_info.value)
-        # WHAT: OverlayData not pickle-able
-        assert "pickle" in error_msg.lower()
-        # WHY: Parallel video rendering requires pickling
-        assert "parallel" in error_msg.lower()
-        # HOW: Remove unpickleable obj or n_workers=1
-        assert "n_workers=1" in error_msg or "remove" in error_msg.lower()
-
-    def test_skip_validation_with_single_worker(self):
-        """Test that pickle validation is skipped when n_workers=1."""
-        from neurospatial.animation.overlays import OverlayData
-
-        overlay_data = OverlayData()
-        overlay_data._unpickleable_func = lambda x: x * 2
-
-        # Should not raise when n_workers=1 or None
-        _validate_pickle_ability(overlay_data, n_workers=1)
-        _validate_pickle_ability(overlay_data, n_workers=None)
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    times = np.arange(3) * 0.1
+    overlay = PositionOverlay(np.ones((3, 2)), times)
+    overlay.on_frame = lambda frame: frame  # cannot be pickled
+    with Animation(
+        env, np.zeros((3, env.n_bins)), frame_times=times, overlays=[overlay]
+    ) as scene:
+        with pytest.raises(
+            ValueError, match=r"overlay 0 \(PositionOverlay\) cannot be pickled"
+        ) as caught:
+            scene.export(tmp_path / "parallel.gif", fps=10, dpi=20, n_workers=2)
+        assert "n_workers=1" in str(caught.value)
+        assert not list(tmp_path.iterdir())
+        assert scene.export(tmp_path / "serial.gif", fps=10, dpi=20).exists()
 
 
 # =============================================================================

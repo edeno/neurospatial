@@ -1,4 +1,7 @@
-"""Events survive missing tracking while every renderer hides unknown locations."""
+"""Events survive missing tracking while every renderer hides unknown locations.
+
+Scene frames are checked in test_scene_frame_pixels.py.
+"""
 
 from types import SimpleNamespace
 
@@ -61,65 +64,39 @@ def test_native_events_submit_only_located_points(located_events, decay, all_mis
 
 
 @pytest.mark.parametrize("decay", [None, 0, 2])
-@pytest.mark.parametrize("all_missing", [False, True])
-@pytest.mark.napari
-def test_legacy_napari_events_keep_finite_layer_bounds(
-    located_events, decay, all_missing, monkeypatch
-):
-    from napari.layers import Points
+def test_napari_scene_events_show_only_located_points(located_events, decay):
+    pytest.importorskip("napari")
+    from neurospatial.animation import Animation
+    from neurospatial.animation._prepared import PreparedScene
+    from neurospatial.animation.backends._napari_scene import NapariScene
 
-    from neurospatial.animation.backends import napari_backend as backend
-
-    env, times, data = located_events
-    data.decay_frames = decay
-    if all_missing:
-        data.event_positions["event"][:] = np.nan
-    source_positions = data.event_positions["event"].copy()
-    layers = []
-
-    def add_points(positions, **kwargs):
-        assert np.isfinite(positions).all()
-        layer = Points(positions, **kwargs)
-        layers.append(layer)
-        return layer
-
-    monkeypatch.setattr(
-        backend, "_register_event_visibility_callback", lambda *args: None
+    env, times, _ = located_events
+    overlay = EventOverlay.from_trajectory(
+        times,
+        np.array([[1.0, 2.0], [2.0, 3.0], [4.0, 5.0]]),
+        np.array([0.0, 0.2, 1.0]),
+        decay_frames=decay,
     )
-    result = backend._render_event_overlay(
-        SimpleNamespace(add_points=add_points), data, env
-    )
-    assert result == layers
-    if all_missing:
-        assert layers == []
-    else:
-        assert len(layers) == 1
-        assert len(layers[0].data) == 3
-        assert np.isfinite(layers[0].extent.data).all()
-        if decay != 0:
-            assert_array_equal(layers[0].metadata["event_frame_indices"], [0, 1, 3])
-    assert_array_equal(data.event_positions["event"], source_positions)
-    assert_array_equal(data.event_times["event"], times)
+    with Animation(
+        env, np.zeros((len(times), env.n_bins)), frame_times=times, overlays=[overlay]
+    ) as scene:
+        # The native layer model, without a Qt viewer.
+        handle = NapariScene.__new__(NapariScene)
+        handle.scene, handle._helper, handle._updates = scene, PreparedScene(scene), []
+        handle._panel_stacks = {None: []}
+        layers = []
 
+        def add(kind, values, **options):
+            layers.append(SimpleNamespace(data=values, **options))
+            return layers[-1]
 
-@pytest.mark.napari
-@pytest.mark.parametrize("decay", [None, 0, 2])
-def test_legacy_napari_gap_events_in_viewer(located_events, decay):
-    import napari
-
-    from neurospatial.animation.backends.napari_backend import _render_event_overlay
-
-    env, times, data = located_events
-    data.decay_frames = decay
-    viewer = napari.Viewer(show=False)
-    try:
-        viewer.add_image(np.zeros((len(times), 10, 10)))
-        (layer,) = _render_event_overlay(viewer, data, env)
-        assert len(layer.data) == 3
-        assert np.isfinite(layer.extent.data).all()
-        for frame in (3, 0, 2, 1):
-            viewer.dims.current_step = (frame, 0, 0)
-        assert_array_equal(data.event_times["event"], times)
-        assert np.isnan(data.event_positions["event"][2]).all()
-    finally:
-        viewer.close()
+        handle._add = add
+        handle._build_overlays()
+        (layer,) = layers
+        for update in handle._updates:
+            update(times[-1], None)
+        # Napari draws (y, x); the event at 0.6 s has no tracked location.
+        shown = layer.data[:, ::-1]
+        assert np.isfinite(shown).all()
+        expected = {None: [[1.0, 2.0], [2.0, 3.0], [4.0, 5.0]], 0: [[4.0, 5.0]]}
+        assert_array_equal(shown, expected.get(decay, [[2.0, 3.0], [4.0, 5.0]]))

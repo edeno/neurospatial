@@ -4,11 +4,9 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from matplotlib.figure import Figure
 
 from neurospatial import Environment
 from neurospatial.animation import Animation
-from neurospatial.animation._parallel import _render_position_overlay_matplotlib
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._sampling import sample_observation
 from neurospatial.animation.overlays import (
@@ -143,7 +141,7 @@ def test_spatial_adapter_rows_respect_rejected_samples(env, own_samples, kind):
 
 
 @pytest.mark.parametrize("case", ["sample", "interval", "both"])
-def test_scene_trails_and_legacy_geometry_share_effective_support(env, case):
+def test_scene_trails_and_markers_follow_effective_support(env, case):
     samples, intervals, expected_intervals = position_masks(case)
     source = PositionData(
         POINTS.copy(),
@@ -177,23 +175,12 @@ def test_scene_trails_and_legacy_geometry_share_effective_support(env, case):
         np.testing.assert_allclose(
             aligned.data, scene._overlay_data.positions[0].data, equal_nan=True
         )
-        legacy = _convert_overlays_to_data(
-            [Adapter(source)], CLOCK, len(CLOCK), env
-        ).positions[0]
-        ax = Figure().subplots()
-        _render_position_overlay_matplotlib(ax, legacy, 1)
-        if samples is not None:
-            assert not ax.collections
-        else:
-            np.testing.assert_array_equal(ax.collections[-1].get_offsets(), POINTS[1:2])
-        ax.clear()
-        _render_position_overlay_matplotlib(ax, legacy, 3)
-        if expected_pairs:
-            np.testing.assert_array_equal(
-                ax.collections[0].get_segments(), expected_pairs
-            )
-        else:
-            assert len(ax.collections) == 1  # The exact final marker remains visible.
+        # A rejected sample hides the marker rather than drawing it there.
+        image = scene.render_frame(CLOCK[1], dpi=50)
+        col, row = scene._renderer.figure.axes[0].transData.transform(POINTS[1])
+        pixel = image[int(image.shape[0] - row), int(col)]
+        drawn = np.array_equal(pixel, [255, 0, 0])
+        assert drawn == (samples is None)
 
 
 @pytest.mark.parametrize("case", ["sample", "interval", "both"])

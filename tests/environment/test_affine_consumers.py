@@ -58,7 +58,7 @@ def test_linear_interpolation_uses_source_axes_and_preserves_missing_support(
 
 @pytest.mark.parametrize("linear", MAPS)
 def test_quadmesh_corners_values_masks_and_animation_updates(linear):
-    from neurospatial.animation._parallel import _update_field_artist
+    from neurospatial.animation import Animation
 
     env = grid(hole=True)
     mapping = transform(linear, 17.0)
@@ -71,14 +71,24 @@ def test_quadmesh_corners_values_masks_and_animation_updates(linear):
         x, y = np.meshgrid(np.arange(4.0), np.arange(4.0), indexing="xy")
         expected = mapping(np.column_stack([x.ravel(), y.ravel()])).reshape(4, 4, 2)
         np.testing.assert_allclose(artist.get_coordinates(), expected)
-        _update_field_artist(artist, child.binning, values + 10)
+    finally:
+        plt.close(fig)
+    # Animation frames draw later values on the same transformed cells.
+    with Animation(
+        child, np.stack([values, values + 10]), frame_times=[0.0, 0.1]
+    ) as scene:
+        scene.render_frame(0.1, dpi=20)
+        artist = next(
+            item
+            for item in scene._renderer.figure.axes[0].collections
+            if isinstance(item, QuadMesh)
+        )
+        np.testing.assert_allclose(artist.get_coordinates(), expected)
         actual = artist.get_array()
         assert actual.mask[1, 1]
         np.testing.assert_array_equal(
             actual.compressed(), (values + 10).reshape(-1)[[0, 3, 5, 1, 6, 2, 4, 7]]
         )
-    finally:
-        plt.close(fig)
     fig, ax = plt.subplots()
     try:
         child.plot(ax=ax, show_connectivity=False)
@@ -156,17 +166,20 @@ def test_transformed_linear_motion_does_not_cross_physical_walls(offset):
         )
 
 
-def test_napari_raster_helpers_refuse_framed_grids_explicitly():
-    from neurospatial.animation.rendering import field_to_rgb_for_napari
-    from neurospatial.animation.transforms import EnvScale
+@pytest.mark.parametrize("linear", MAPS)
+def test_napari_scene_places_transformed_grid_cells_at_their_world_centers(linear):
+    from neurospatial.animation.backends._napari_scene import _image, _native_grid
 
-    env = grid().apply_transform(transform(MAPS[0]))
-    with pytest.raises(NotImplementedError, match=r"framed.*Matplotlib"):
-        EnvScale.from_env(env)
-    with pytest.raises(NotImplementedError, match=r"framed.*Matplotlib"):
-        field_to_rgb_for_napari(
-            env, np.ones(env.n_bins), np.zeros((256, 3), dtype=np.uint8), 0.0, 1.0
-        )
+    env = grid(hole=True)
+    child = env.apply_transform(transform(linear, 17.0))
+    source, affine = _native_grid(child)
+    values = np.arange(child.n_bins, dtype=float)
+    image = _image(values, source)
+    # Napari indexes the image (row, column) and the world (y, x).
+    rows, cols = np.nonzero(np.isfinite(image))
+    world = (affine @ np.column_stack([rows, cols, np.ones(len(rows))]).T).T
+    order = image[rows, cols].astype(int)
+    np.testing.assert_allclose(world[:, 1::-1], child.bin_centers[order], atol=1e-9)
 
 
 def test_nearest_interpolation_still_uses_world_euclidean_distance_under_shear():
@@ -210,19 +223,6 @@ def test_nested_subset_3d_fractions_preserve_native_outside_stop_normalization(o
             env.occupancy(times, points, **options),
             atol=2e-6,
         )
-
-
-def test_widget_reuses_transformed_quadmesh_with_updated_values():
-    from neurospatial.animation.backends.widget_backend import PersistentFigureRenderer
-
-    env = grid(hole=True).apply_transform(transform(MAPS[2]))
-    renderer = PersistentFigureRenderer(env, cmap="viridis", vmin=0.0, vmax=20.0)
-    try:
-        first = renderer.render(np.zeros(env.n_bins), frame_idx=0)
-        second = renderer.render(np.ones(env.n_bins) * 10, frame_idx=1)
-        assert first != second
-    finally:
-        renderer.close()
 
 
 def test_raster_shuffle_refuses_source_axes_as_world_axes():
