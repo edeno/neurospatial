@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import html
 from collections.abc import Mapping, Sequence
+from functools import partial
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -393,25 +394,20 @@ class EventInspector:
 
     def close(self) -> None:
         """Close this inspector's view and controls; keep the scene available."""
-        from neurospatial.animation._resources import _cleanup_error
+        from neurospatial.animation._resources import _run_all
 
         self._refresh = None
         view, self._view = self._view, None
         controls, self._controls = self._controls, []
         observers, self._observers = self._observers, []
-        failures: list[BaseException] = []
-        for control, callback in observers:
-            try:
-                control.unobserve(callback, names="value")
-            except BaseException as error:
-                failures.append(error)
-        cleanup = ([] if view is None else [view.close]) + [
-            control.close for control in controls
-        ]
-        for close in cleanup:
-            try:
-                close()
-            except BaseException as error:
-                failures.append(error)
-        if failures:
-            raise _cleanup_error("Event inspector cleanup failed.", failures)
+        _run_all(
+            [
+                *(
+                    partial(control.unobserve, callback, names="value")
+                    for control, callback in observers
+                ),
+                *([] if view is None else [view.close]),
+                *(control.close for control in controls),
+            ],
+            "Event inspector cleanup failed.",
+        )

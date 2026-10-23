@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import builtins
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any, cast
 
 
@@ -27,7 +27,19 @@ def _cleanup_error(message: str, failures: Sequence[BaseException]) -> BaseExcep
     return _CleanupError(message, failures)
 
 
-def _raise_cleanup_errors(message: str, failures: list[BaseException]) -> None:
+def _run_all(actions: Iterable[Callable[[], object]], message: str) -> None:
+    """Run every cleanup action, even after one fails, then raise the failures.
+
+    Actions run in the order ``actions`` yields them, so a generator can
+    prepare each one after the previous has run. The failures are raised
+    together as one grouped error carrying ``message``.
+    """
+    failures: list[BaseException] = []
+    for action in actions:
+        try:
+            action()
+        except BaseException as error:
+            failures.append(error)
     if failures:
         raise _cleanup_error(message, failures)
 
@@ -41,6 +53,22 @@ def _add_cleanup_note(error: BaseException, message: str) -> None:
         notes = list(getattr(error, "__notes__", ()))
         notes.append(message)
         setattr(error, "__notes__", notes)  # noqa: B010 - Python 3.10 typing compatibility
+
+
+def _close_keeping_error(
+    close: Callable[[], object], error: BaseException | None, *, what: str
+) -> None:
+    """Close; while ``error`` propagates, a cleanup failure is noted on it.
+
+    Without ``error`` a cleanup failure is raised itself. ``what`` names the
+    resource in the note, as in ``"<what> cleanup also failed: ..."``.
+    """
+    try:
+        close()
+    except BaseException as cleanup:
+        if error is None:
+            raise
+        _add_cleanup_note(error, f"{what} cleanup also failed: {cleanup!r}")
 
 
 class _OwnedReaders:
@@ -63,13 +91,7 @@ class _OwnedReaders:
             return
         self._closed = True
         readers, self._readers = self._readers, {}
-        failures = []
-        for reader in readers.values():
-            try:
-                reader.close()
-            except BaseException as exc:
-                failures.append(exc)
-        if failures:
-            raise _cleanup_error(
-                "Failed to close owned animation video readers.", failures
-            )
+        _run_all(
+            [reader.close for reader in readers.values()],
+            "Failed to close owned animation video readers.",
+        )

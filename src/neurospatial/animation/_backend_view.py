@@ -9,7 +9,7 @@ from typing import Any, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.animation._resources import _add_cleanup_note, _raise_cleanup_errors
+from neurospatial.animation._resources import _run_all
 
 FrameCapture = Callable[[float], NDArray[np.uint8]]
 CaptureSession = Callable[[], AbstractContextManager[FrameCapture]]
@@ -33,13 +33,7 @@ class _CloseNotification:
             return
         self._closed = True
         callbacks, self._callbacks = self._callbacks, []
-        failures: list[BaseException] = []
-        for callback in callbacks:
-            try:
-                callback()
-            except BaseException as error:
-                failures.append(error)
-        _raise_cleanup_errors("Native view close notification failed.", failures)
+        _run_all(callbacks, "Native view close notification failed.")
 
 
 class _ViewController(Protocol):
@@ -133,11 +127,3 @@ class _CallbackBackendView:
     def _add_close_callback(self, callback: Callable[[], None]) -> None:
         # Callables carry no native close event; close() is the only path.
         pass
-
-
-def _close_after_error(close: Callable[[], None], error: BaseException) -> None:
-    """Preserve a construction/capture failure while still attempting cleanup."""
-    try:
-        close()
-    except BaseException as cleanup:
-        _add_cleanup_note(error, f"View cleanup also failed: {cleanup!r}")

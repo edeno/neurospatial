@@ -12,6 +12,7 @@ import weakref
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager, suppress
+from functools import partial
 from time import monotonic
 from typing import Any, NamedTuple, cast
 
@@ -27,6 +28,19 @@ from neurospatial.animation.backends._napari_compat import (
     screen_point_options,
     set_spatial_units,
 )
+
+
+def _unless_deleted(action: Callable[[], object]) -> Callable[[], None]:
+    """``action``, ignoring Qt children a native window closure destroyed."""
+
+    def run() -> None:
+        try:
+            action()
+        except RuntimeError as error:
+            if "deleted" not in str(error):
+                raise
+
+    return run
 
 
 class _PreparedFrame(NamedTuple):
@@ -334,14 +348,9 @@ class NapariScene:
             if not self._owns_viewer and "show" in options:
                 window.setVisible(options["show"])
         except BaseException as error:
-            from neurospatial.animation._resources import _add_cleanup_note
+            from neurospatial.animation._resources import _close_keeping_error
 
-            try:
-                self.close()
-            except BaseException as cleanup:
-                _add_cleanup_note(
-                    error, f"Native napari cleanup also failed: {cleanup!r}"
-                )
+            _close_keeping_error(self.close, error, what="Native napari")
             raise
 
     @property
@@ -951,30 +960,25 @@ class NapariScene:
             return
         self._closed = True
         self._invalidate_pending()
-        from neurospatial.animation._resources import _raise_cleanup_errors
+        from neurospatial.animation._resources import _run_all
 
-        failures: list[BaseException] = []
+        _run_all(
+            map(_unless_deleted, self._release_actions()),
+            "Failed to release native napari scene resources.",
+        )
 
-        def release(action: Any) -> None:
-            try:
-                action()
-            except RuntimeError as exc:
-                # Native window closure can already have destroyed Qt children.
-                if "deleted" not in str(exc):
-                    failures.append(exc)
-            except Exception as exc:
-                failures.append(exc)
-
+    def _release_actions(self) -> Iterator[Callable[[], object]]:
+        """Each release step, after the previous one ran; for partial builds too."""
         timer = getattr(self, "timer", None)
         if timer is not None:
-            release(timer.stop)
+            yield timer.stop
         executor = getattr(self, "_executor", None)
         if executor is not None:
             # Drain reads before Animation.close closes its owned video readers.
-            release(lambda: executor.shutdown(wait=True, cancel_futures=True))
+            yield lambda: executor.shutdown(wait=True, cancel_futures=True)
         bridge = getattr(self, "_bridge", None)
         if bridge is not None:
-            release(lambda: bridge.ready.disconnect(self._prepared_ready))
+            yield lambda: bridge.ready.disconnect(self._prepared_ready)
         self._inflight = None
         for control, signal_name, callback in (
             (timer, "timeout", self._tick),
@@ -992,41 +996,38 @@ class NapariScene:
                     with suppress(TypeError):
                         getattr(control, signal_name).disconnect(callback)
 
-                release(disconnect)
+                yield disconnect
         native_window = qt_window(self.viewer)
         lifecycle = getattr(self, "_lifecycle", None)
         if lifecycle is not None:
             if native_window is not None:
-                release(lambda: native_window.removeEventFilter(lifecycle))
-            release(lambda: lifecycle.setParent(None))
-            release(lifecycle.deleteLater)
+                yield lambda: native_window.removeEventFilter(lifecycle)
+            yield lambda: lifecycle.setParent(None)
+            yield lifecycle.deleteLater
             self._lifecycle = None
         if self._panels is not None:
-            release(self._panels.figure.clear)
+            yield self._panels.figure.clear
         for layer in self._layers:
             if layer in self.viewer.layers:
-                release(lambda layer=layer: self.viewer.layers.remove(layer))
+                yield partial(self.viewer.layers.remove, layer)
         for attr in ("_dock", "_panel_dock"):
             dock = getattr(self, attr, None)
             if dock is not None and native_window is not None:
-                release(lambda dock=dock: self.viewer.window.remove_dock_widget(dock))
+                yield partial(self.viewer.window.remove_dock_widget, dock)
         for widget in (
             getattr(self, "_controls", None),
             self._panels.canvas if self._panels is not None else None,
         ):
             if widget is not None:
-                release(lambda widget=widget: widget.setParent(None))
-                release(widget.deleteLater)
-        release(self._helper.clear_cache)
+                yield partial(widget.setParent, None)
+                yield widget.deleteLater
+        yield self._helper.clear_cache
         self.last_error = None
         self._panels = None
         self._updates.clear()
         self._layers.clear()
         self.field_layers.clear()
-        release(self._close_notification.notify)
-        _raise_cleanup_errors(
-            "Failed to release native napari scene resources.", failures
-        )
+        yield self._close_notification.notify
 
     def close(self) -> None:
         if self._closed:

@@ -1556,14 +1556,9 @@ class FastplotlibAnimation:
             self._show(0.0, self._prepare(float(frame_times[0])))
             self.figure.canvas.add_event_handler(self._canvas_closed, "close")
         except BaseException as exc:
-            from neurospatial.animation._resources import _add_cleanup_note
+            from neurospatial.animation._resources import _close_keeping_error
 
-            try:
-                self.close()
-            except BaseException as cleanup:
-                _add_cleanup_note(
-                    exc, f"Native animation cleanup also failed: {cleanup!r}"
-                )
+            _close_keeping_error(self.close, exc, what="Native animation")
             raise
 
     @property
@@ -1821,51 +1816,46 @@ class FastplotlibAnimation:
         if self._closed:
             return
         self._closed = True
+        # Continue cleanup after native-window errors so all workers drain
+        # before the scene may release its readers; report every failure
+        # afterward.
+        from neurospatial.animation._resources import _run_all
+
+        _run_all(self._release_actions(), "Failed to close native animation resources.")
+
+    def _release_actions(self) -> Iterator[Callable[[], object]]:
+        """Each release step, after the previous one ran; for partial builds too."""
         widget = getattr(self, "widget", None)
         figure = getattr(self, "figure", None)
         frames = getattr(self, "_frames", None)
         playing = playback_state(widget)
         for dimension in playing:
             playing[dimension] = False
-        # Continue cleanup after native-window errors so all workers drain
-        # before the scene may release its readers; report every failure
-        # afterward.
-        from neurospatial.animation._resources import _raise_cleanup_errors
-
-        failures: list[BaseException] = []
-
-        def release(action: Callable[[], Any]) -> None:
-            try:
-                action()
-            except Exception as exc:
-                failures.append(exc)
-
         if frames is not None:
-            release(frames.close)
+            yield frames.close
         for graphic in getattr(widget, "ndgraphics", []):
             graphic.pause = True
             if graphic is not frames:
-                release(graphic.slicer.close)
+                yield graphic.slicer.close
         if figure is not None:
             if self._key_registered:
-                release(
-                    lambda: figure.renderer.remove_event_handler(self._key, "key_down")
+                yield lambda: figure.renderer.remove_event_handler(
+                    self._key, "key_down"
                 )
                 self._key_registered = False
             prepare_figure_close(figure)
         if widget is not None:
-            release(widget.close)
+            yield widget.close
         canvas = getattr(self, "_canvas", None)
         if canvas is not None:
             if canvas is not figure_output(figure):
-                release(canvas.close)
+                yield canvas.close
             self._canvas = None
         prepared = getattr(self, "_prepared", None)
         if prepared is not None:
             # The workers have drained: release the view's held rows.
-            release(prepared.clear_cache)
-        release(self._close_notification.notify)
-        _raise_cleanup_errors("Failed to close native animation resources.", failures)
+            yield prepared.clear_cache
+        yield self._close_notification.notify
 
     def show(self, **kwargs: Any) -> Any:
         """Display the animation with its controls.

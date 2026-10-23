@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
@@ -651,41 +651,39 @@ class Animation:
                 return
             self._closing = True
             views = tuple(self._views)
-        from neurospatial.animation._resources import _cleanup_error
+        from neurospatial.animation._resources import _run_all
 
-        failures: list[BaseException] = []
         try:
-            # Keep sources open while native controls stop and pending reads drain.
-            for view in views:
-                try:
-                    view.close()
-                except BaseException as error:
-                    failures.append(error)
-            with self._view_lock:
-                self._views.clear()
-            # Native workers have drained. Also let any already-running public
-            # read/export finish before closing shared sources, and publish the
-            # closed state before a waiting reader can acquire this lock.
-            with self._source_lock:
-                try:
-                    if self._renderer is not None:
-                        renderer, self._renderer = self._renderer, None
-                        try:
-                            renderer.close()
-                        except BaseException as error:
-                            failures.append(error)
-                    try:
-                        self._owned_readers.close()
-                    except BaseException as error:
-                        failures.append(error)
-                finally:
-                    self._closed = True
+            _run_all(self._release(views), "Animation cleanup failed.")
         finally:
             with self._view_lock:
                 self._closed = True
                 self._closing = False
-        if failures:
-            raise _cleanup_error("Animation cleanup failed.", failures)
+
+    def _release(
+        self, views: tuple[AnimationView, ...]
+    ) -> Iterator[Callable[[], None]]:
+        """Close actions in order: the views, then the renderer and readers.
+
+        The renderer and readers close while this generator holds the source
+        lock, so no public read or export runs against a closing source.
+        """
+        # Keep sources open while native controls stop and pending reads drain.
+        for view in views:
+            yield view.close
+        with self._view_lock:
+            self._views.clear()
+        # Native workers have drained. Also let any already-running public
+        # read/export finish before closing shared sources, and publish the
+        # closed state before a waiting reader can acquire this lock.
+        with self._source_lock:
+            try:
+                renderer, self._renderer = self._renderer, None
+                if renderer is not None:
+                    yield renderer.close
+                yield self._owned_readers.close
+            finally:
+                self._closed = True
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -697,13 +695,7 @@ class Animation:
         self._ensure_open()
         return self
 
-    def __exit__(self, *exc: Any) -> None:
-        try:
-            self.close()
-        except BaseException as cleanup:
-            if len(exc) > 1 and isinstance(exc[1], BaseException):
-                from neurospatial.animation._resources import _add_cleanup_note
+    def __exit__(self, kind: Any, error: BaseException | None, traceback: Any) -> None:
+        from neurospatial.animation._resources import _close_keeping_error
 
-                _add_cleanup_note(exc[1], f"Animation cleanup also failed: {cleanup!r}")
-            else:
-                raise
+        _close_keeping_error(self.close, error, what="Animation")

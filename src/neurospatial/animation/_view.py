@@ -11,20 +11,18 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.animation._resources import _add_cleanup_note
-
-if TYPE_CHECKING:
-    from neurospatial.animation.scene import Animation
-
 from neurospatial.animation._backend_view import (
     CaptureSession as _CaptureSession,
 )
 from neurospatial.animation._backend_view import (
     _BackendView,
     _CallbackBackendView,
-    _close_after_error,
     _NativeBackendView,
 )
+from neurospatial.animation._resources import _close_keeping_error, _run_all
+
+if TYPE_CHECKING:
+    from neurospatial.animation.scene import Animation
 
 
 class AnimationView:
@@ -90,7 +88,7 @@ class AnimationView:
         except BaseException as error:
             self._closed = True
             animation._unregister_view(self)
-            _close_after_error(backend.close, error)
+            _close_keeping_error(backend.close, error, what="View")
             raise
 
     @property
@@ -199,28 +197,18 @@ class AnimationView:
     def _finish_close(self, *, close_backend: bool) -> None:
         if self._closed:
             return
-        from neurospatial.animation._resources import _cleanup_error
-
-        failures: list[BaseException] = []
-        try:
-            # A native window may already have disposed its time controls.
-            with suppress(Exception):
-                self._time = float(self._backend.time)
-        except BaseException as error:
-            failures.append(error)
         self._closed = True
         callbacks, self._close_callbacks = self._close_callbacks, []
+        closes = (self._backend.close, *callbacks) if close_backend else callbacks
         try:
-            actions = (self._backend.close, *callbacks) if close_backend else callbacks
-            for close in actions:
-                try:
-                    close()
-                except BaseException as error:
-                    failures.append(error)
+            _run_all((self._read_final_time, *closes), "Animation view cleanup failed.")
         finally:
             self.animation._unregister_view(self)
-        if failures:
-            raise _cleanup_error("Animation view cleanup failed.", failures)
+
+    def _read_final_time(self) -> None:
+        # A native window may already have disposed its time controls.
+        with suppress(Exception):
+            self._time = float(self._backend.time)
 
     def _require_open(self) -> None:
         self.animation._ensure_view_allowed()
@@ -233,14 +221,8 @@ class AnimationView:
         self._require_open()
         return self
 
-    def __exit__(self, *args: Any) -> None:
-        try:
-            self.close()
-        except BaseException as cleanup:
-            if len(args) > 1 and isinstance(args[1], BaseException):
-                _add_cleanup_note(args[1], f"View cleanup also failed: {cleanup!r}")
-            else:
-                raise
+    def __exit__(self, kind: Any, error: BaseException | None, traceback: Any) -> None:
+        _close_keeping_error(self.close, error, what="View")
 
     def _ipython_display_(self) -> None:
         from IPython.display import display
@@ -398,7 +380,7 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
     try:
         view.seek(start)
     except BaseException as error:
-        _close_after_error(view.close, error)
+        _close_keeping_error(view.close, error, what="View")
         raise
     return view
 
@@ -428,6 +410,6 @@ def show_animation(
     try:
         native.show()
     except BaseException as error:
-        _close_after_error(native.close, error)
+        _close_keeping_error(native.close, error, what="View")
         raise
     return AnimationView._from_backend(animation, _NativeBackendView(native, native))

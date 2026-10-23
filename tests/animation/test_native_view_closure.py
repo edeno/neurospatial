@@ -96,6 +96,30 @@ def test_native_close_runs_remaining_callbacks_after_callback_failure(scene):
     called.assert_called_once_with()
 
 
+def test_fastplotlib_close_finishes_after_an_interrupted_step(scene):
+    # An interrupt during one release step still drains the rest, so the
+    # scene never releases readers a view's workers may still read.
+    native = native_controller()
+    native.widget.close.side_effect = KeyboardInterrupt
+    canvas = native._canvas
+    view = AnimationView._from_backend(scene, _NativeBackendView(native, native))
+    with pytest.raises(BaseException, match="view cleanup failed") as caught:
+        view.close()
+    assert any(isinstance(error, KeyboardInterrupt) for error in _leaves(caught.value))
+    native._frames.close.assert_called_once_with()
+    canvas.close.assert_called_once_with()  # the step after the interrupt
+    assert view._closed and not scene._views
+
+
+def _leaves(error):
+    nested = getattr(error, "exceptions", None)
+    if nested is None:
+        yield error
+    else:
+        for inner in nested:
+            yield from _leaves(inner)
+
+
 def test_native_closed_before_registration_does_not_leave_a_registered_view(scene):
     native = native_controller()
     native.close()
