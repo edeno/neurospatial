@@ -221,15 +221,16 @@ def test_selected_interior_and_native_paste_keep_polygon_associations(paste):
             shapes, AnnotationModeState(region_type="region")
         )
         controller.update_features_for_new_shapes(2, name_override="new")
+        result = _process_annotation_results(
+            shapes, "regions", None, None, None, "last"
+        )
+        assert result.regions["donut"].data.equals(donut)
+        assert result.regions["new"].data.area == 100.0
         if paste:
-            with pytest.raises(ValueError, match="duplicate identities"):
-                _process_annotation_results(shapes, "regions", None, None, None, "last")
+            # A pasted hole ring without its exterior becomes its own shape.
+            assert result.regions["donut interior 1_2"].data.area == 16.0
         else:
-            result = _process_annotation_results(
-                shapes, "regions", None, None, None, "last"
-            )
-            assert result.regions["donut"].data.equals(donut)
-            assert result.regions["new"].data.area == 100.0
+            assert len(result.regions) == 2
     finally:
         viewer.close()
 

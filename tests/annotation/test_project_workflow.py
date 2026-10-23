@@ -132,6 +132,41 @@ def test_initial_region_with_missing_metadata_value_starts_saves_and_has_no_hist
     assert np.isnan(AnnotationProject.load(path).shapes[0].metadata["depth"])
 
 
+def test_pasted_polygon_with_hole_gets_its_own_identities_and_saves(
+    session_factory, tmp_path
+):
+    from shapely.geometry import Polygon
+
+    from neurospatial.annotation._draft import add_polygon
+
+    def populate(shapes):
+        ring = Polygon(
+            [(1, 1), (10, 1), (10, 10), (1, 10)], [[(4, 4), (6, 4), (6, 6), (4, 6)]]
+        )
+        add_polygon(shapes, ring, "zone", "region", None, {"source": "import"})
+
+    session, _viewer, shapes, _controls = session_factory(populate=populate)
+    shapes.selected_data = {0, 1}
+    shapes._copy_data()
+    shapes._paste_data()
+    assert len(shapes.data) == 4
+    path = tmp_path / "draft.nsp"
+    session.save_project(path)
+    saved = AnnotationProject.load(path).shapes
+    assert len({shape.identifier for shape in saved}) == 4
+    original, hole, copy, copied_hole = saved
+    assert hole.parent_id == original.identifier
+    assert copied_hole.parent_id == copy.identifier
+    assert (original.name, copy.name) == ("zone", "zone_2")
+    assert dict(copy.metadata) == {"source": "import"}
+    # Export sees distinct polygons, each with its own hole.
+    from neurospatial.annotation.core import _process_annotation_results
+
+    result = _process_annotation_results(shapes, "regions", None, None, None, "last")
+    assert len(result.regions) == 2
+    assert all(len(region.data.interiors) == 1 for region in result.regions.values())
+
+
 def test_accepted_components_and_hole_are_one_undoable_annotation_edit(session_factory):
     session, viewer, shapes, _controls = session_factory()
     mask = np.zeros((16, 24), dtype=bool)

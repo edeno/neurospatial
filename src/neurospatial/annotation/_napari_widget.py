@@ -725,9 +725,24 @@ def create_annotation_widget(
             _pending_update[0] = True
             qt_core.QTimer.singleShot(0, flush_pending)
 
+    def on_features_changed(event: Any) -> None:
+        """Process pasted shapes, which napari announces with features only."""
+        shapes = get_shapes()
+        if shapes is None or _pending_update[0]:
+            return
+        count = _prev_shape_count[0]
+        if (
+            len(shapes.data) > count
+            and "_polygon_id" in shapes.features
+            and any(shapes.features["_polygon_id"].iloc[count:])
+        ):
+            _pending_update[0] = True
+            qt_core.QTimer.singleShot(0, flush_pending)
+
     shapes = get_shapes()
     if shapes is not None:
         shapes.events.data.connect(on_data_changed)
+        shapes.events.features.connect(on_features_changed)
         _prev_shape_count[0] = len(shapes.data)
 
         # Initialize shape defaults from widget state (ensures consistency)

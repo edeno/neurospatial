@@ -14,6 +14,7 @@ UI-specific concerns (status messages, list updates, dialogs).
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import TYPE_CHECKING, NamedTuple, cast
 from uuid import uuid4
 
@@ -233,17 +234,35 @@ class ShapesLayerController:
         name_was_modified = False
         assigned_name = ""
 
+        features = self.shapes.features
+        ids = list(features["_polygon_id"]) if "_polygon_id" in features else []
+        parents = list(features["_parent_id"]) if "_parent_id" in features else []
+        existing_ids = set(ids[:prev_count])
+        copied: dict[str, str] = {}
+
         # Add entries for new shapes (from prev_count to current_count)
         for index in range(prev_count, current_count):
-            # Clipboard rows already carry an identity and parent association.
-            # Preserve them so conversion can reject duplicate IDs explicitly.
-            if (
-                "_polygon_id" in self.shapes.features
-                and self.shapes.features["_polygon_id"].iloc[index]
-            ):
-                role = cast("RegionType", str(self.shapes.features["role"].iloc[index]))
+            # Clipboard rows carry an identity, a parent and a name. A row whose
+            # identity is already in use is a pasted copy: give it its own
+            # identity, metadata and unique name. A pasted interior stays an
+            # interior only of an exterior pasted with it.
+            if ids and ids[index]:
+                role = cast("RegionType", str(features["role"].iloc[index]))
                 region_types.append(role)
-                assigned_name = str(self.shapes.features["name"].iloc[index])
+                assigned_name = str(features["name"].iloc[index])
+                if ids[index] in existing_ids:
+                    identifier = uuid4().hex
+                    copied[ids[index]] = identifier
+                    polygon_metadata = self.shapes.metadata.setdefault(
+                        "_polygon_metadata", {}
+                    )
+                    polygon_metadata[identifier] = deepcopy(
+                        polygon_metadata.get(ids[index], {})
+                    )
+                    ids[index] = identifier
+                    parents[index] = copied.get(parents[index], "")
+                    assigned_name = make_unique_name(assigned_name, names)
+                existing_ids.add(ids[index])
                 names.append(assigned_name)
                 self.state.record_shape_added(role)
                 continue
@@ -268,11 +287,13 @@ class ShapesLayerController:
 
         # Apply updated features
         updated = rebuild_features(region_types, names)
-        for column in self.shapes.features:
-            if str(column).startswith("_"):
-                updated[column] = list(
-                    self.shapes.features[column].iloc[:current_count]
-                )
+        for column in features:
+            if column == "_polygon_id":
+                updated[column] = ids[:current_count]
+            elif column == "_parent_id":
+                updated[column] = parents[:current_count]
+            elif str(column).startswith("_"):
+                updated[column] = list(features[column].iloc[:current_count])
         self.shapes.features = updated
         sync_colors_from_features(self.shapes)
 

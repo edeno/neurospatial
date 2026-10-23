@@ -1781,7 +1781,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `project_path=` and `autosave_interval=` (30 seconds by default, `None` to
   disable); `annotate_project` resumes without the original video and refuses
   to overwrite an existing file other than the one it resumes. Draft saves
-  retain unfinished geometry; **Done** validates the exported result.
+  retain unfinished geometry, including shapes copied and pasted in napari;
+  **Done** validates the exported result.
 - The annotation dock can calibrate a known distance from two marked endpoints
   and propose outlines from foreground/background clicks. The default
   `RegionGrowProvider` uses CPU color segmentation, and its preview can be
