@@ -98,6 +98,27 @@ class AnnotationShape:
         object.__setattr__(self, "vertices", vertices)
         object.__setattr__(self, "metadata", _freeze_metadata(metadata))
 
+    def __eq__(self, other: object) -> bool:
+        """Compare by value; ``NaN`` metadata equals itself, as it round-trips."""
+        if not isinstance(other, AnnotationShape):
+            return NotImplemented
+        return self is other or (
+            (self.identifier, self.parent_id, self.name, self.role, self.shape_type)
+            == (
+                other.identifier,
+                other.parent_id,
+                other.name,
+                other.role,
+                other.shape_type,
+            )
+            and np.array_equal(self.vertices, other.vertices)
+            and _metadata_json(self.metadata) == _metadata_json(other.metadata)
+        )
+
+    def __hash__(self) -> int:
+        """Hash by identity of the ring, consistent with value equality."""
+        return hash(self.identifier)
+
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         """Reconstruct immutable metadata and arrays after pickle or deepcopy."""
         return (
@@ -114,6 +135,10 @@ class AnnotationShape:
                 },
             ),
         )
+
+
+def _metadata_json(metadata: Mapping[str, Any]) -> str:
+    return json.dumps(_thaw_metadata(metadata), sort_keys=True)
 
 
 def _restore_shape(

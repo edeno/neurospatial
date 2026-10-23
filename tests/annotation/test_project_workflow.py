@@ -252,6 +252,22 @@ def test_accepted_components_and_hole_are_one_undoable_annotation_edit(session_f
     assert shapes.features.equals(saved_features)
 
 
+def test_history_shares_unchanged_shapes_between_steps(session_factory):
+    session, _viewer, shapes, controls = session_factory()
+    _draw_region(shapes, controls, [[1, 1], [1, 10], [10, 10], [10, 1]])
+    session.checkpoint()
+    first = session._current.shapes[0]
+    _draw_region(shapes, controls, [[12, 12], [12, 15], [15, 15], [15, 12]])
+    session.checkpoint()
+    # The untouched region is the same object in both history steps.
+    assert session._current.shapes[0] is first
+    assert session._undo[-1].shapes[0] is first
+    shapes.data = [shapes.data[0] + 1.0, shapes.data[1]]
+    session.checkpoint()
+    assert session._current.shapes[0] is not first
+    assert session._current.shapes[1] is session._undo[-1].shapes[1]
+
+
 def test_redo_survives_the_delayed_checkpoint_after_undo(session_factory):
     from qtpy.QtTest import QTest
 

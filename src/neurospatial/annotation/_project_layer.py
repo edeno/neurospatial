@@ -16,13 +16,16 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
+def capture_shapes(
+    shapes_layer: Any, previous: Sequence[AnnotationShape] = ()
+) -> tuple[AnnotationShape, ...]:
     """Capture pixel ``(x, y)`` shapes without changing the layer.
 
     The caller must first flush pending widget edits; every processed shape
     already has its ring identity. Only domain features and JSON polygon
     metadata enter snapshots; runtime deletion markers and widget callbacks
-    remain local to the layer.
+    remain local to the layer. A shape equal to one in ``previous`` is that
+    same object, so unchanged shapes are shared between history steps.
     """
     features = shapes_layer.features
     if len(features) != len(shapes_layer.data):
@@ -33,7 +36,8 @@ def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
             "Flush pending annotation edits before saving."
         )
     metadata = shapes_layer.metadata.get("_polygon_metadata", {})
-    return tuple(
+    earlier = {shape.identifier: shape for shape in previous}
+    captured = (
         AnnotationShape(
             np.asarray(vertices, dtype=float)[:, ::-1],
             shape_type=str(shape_type),
@@ -52,6 +56,10 @@ def capture_shapes(shapes_layer: Any) -> tuple[AnnotationShape, ...]:
             features["_parent_id"].tolist(),
             strict=True,
         )
+    )
+    return tuple(
+        earlier[shape.identifier] if earlier.get(shape.identifier) == shape else shape
+        for shape in captured
     )
 
 

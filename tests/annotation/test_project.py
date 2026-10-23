@@ -152,6 +152,19 @@ def test_broken_ring_associations_are_rejected(shapes, match):
         AnnotationProject(np.zeros((2, 2, 3), dtype=np.uint8), shapes=shapes)
 
 
+def test_shapes_compare_by_value_including_missing_metadata():
+    vertices = np.array([[0.0, 0.0], [4.0, 0.0], [4.0, 3.0]])
+    shape = AnnotationShape(vertices, identifier="ring", metadata={"depth": np.nan})
+    same = AnnotationShape(
+        vertices.copy(), identifier="ring", metadata={"depth": np.nan}
+    )
+    assert shape == same
+    assert hash(shape) == hash(same)
+    assert shape != AnnotationShape(vertices + 1, identifier="ring")
+    assert shape != AnnotationShape(vertices, identifier="ring", name="renamed")
+    assert shape == pickle.loads(pickle.dumps(shape))
+
+
 @pytest.mark.parametrize("metadata", [{"callable": lambda: 1}, {3: "coerced"}])
 def test_non_json_metadata_cannot_enter_a_snapshot(metadata):
     with pytest.raises(ValueError, match="Metadata"):

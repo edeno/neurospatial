@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (  # type: ignore[attr-defined]
@@ -39,7 +37,6 @@ from neurospatial.annotation.segmentation import (
     SegmentationProvider,
 )
 from neurospatial.ops.transforms import VideoCalibration
-from neurospatial.regions.core import _thaw_metadata
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -58,31 +55,14 @@ class _EditingState:
     bin_size: float | None
 
 
-def _metadata_key(shape: AnnotationShape) -> str:
-    # NaN never equals itself, so compare the serialized form instead.
-    return json.dumps(_thaw_metadata(shape.metadata), sort_keys=True)
-
-
 def _same(left: _EditingState, right: _EditingState) -> bool:
-    if left.bin_size != right.bin_size or len(left.shapes) != len(right.shapes):
-        return False
-    if (left.calibration is None) != (right.calibration is None):
-        return False
-    if (
-        left.calibration is not None
-        and right.calibration is not None
-        and left.calibration.to_dict() != right.calibration.to_dict()
-    ):
-        return False
-    return all(
-        a.identifier == b.identifier
-        and a.parent_id == b.parent_id
-        and a.name == b.name
-        and a.role == b.role
-        and a.shape_type == b.shape_type
-        and _metadata_key(a) == _metadata_key(b)
-        and np.array_equal(a.vertices, b.vertices)
-        for a, b in zip(left.shapes, right.shapes, strict=True)
+    # Unchanged shapes are shared between states, so most comparisons are
+    # identity checks.
+    return (
+        left.bin_size == right.bin_size
+        and (None if left.calibration is None else left.calibration.to_dict())
+        == (None if right.calibration is None else right.calibration.to_dict())
+        and left.shapes == right.shapes
     )
 
 
@@ -196,7 +176,7 @@ class AnnotationProjectSession:
         self.layer.events.features.connect(self._changed)
         self._update_history_buttons()
 
-    def _capture(self) -> _EditingState:
+    def _capture(self, previous: tuple[AnnotationShape, ...] = ()) -> _EditingState:
         self.controls.flush_pending()
         height, width = self.frame.shape[:2]
         calibration = (
@@ -204,7 +184,11 @@ class AnnotationProjectSession:
             if self.calibration is None
             else _copy_calibration(self.calibration, (width, height))
         )
-        return _EditingState(capture_shapes(self.layer), calibration, self.bin_size)
+        return _EditingState(
+            capture_shapes(self.layer, previous),
+            calibration,
+            self.bin_size,
+        )
 
     def _changed(self, event: Any = None) -> None:
         # A change made by the session itself only leads to a checkpoint that
@@ -215,7 +199,7 @@ class AnnotationProjectSession:
     def checkpoint(self) -> None:
         """Flush pending shape edits and record one coherent history step."""
         self._checkpoint_timer.stop()
-        state = self._capture()
+        state = self._capture(self._current.shapes)
         if not _same(state, self._current):
             self._undo.append(self._current)
             del self._undo[:-50]
