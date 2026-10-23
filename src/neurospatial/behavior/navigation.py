@@ -2147,6 +2147,12 @@ def heading_direction_labels(
     Precomputed speed/heading inputs have no time gate and refuse
     ``break_before``; a NaN speed is not observed.
 
+    Passing these labels straight to
+    :func:`~neurospatial.encoding.compute_directional_place_fields` gives a
+    "stationary" map as well, because ``"stationary"`` is an ordinary label
+    there; ``missing_label="stationary"`` drops it. ``None`` samples are
+    always left out.
+
     Examples
     --------
     Label one second of running north-east (about 63 deg, 22 cm/s), then one
@@ -2171,6 +2177,25 @@ def heading_direction_labels(
     ...     min_speed=5.0,
     ... ).tolist()
     ['0–45°', 'stationary', None]
+
+    ``"stationary"`` is an ordinary label for the place-field helper, which
+    drops it only when told to:
+
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import compute_directional_place_fields
+    >>> env = Environment.from_samples(positions, bin_size=4.0)
+    >>> fields = compute_directional_place_fields(
+    ...     env, np.array([0.5, 1.5]), times, positions, labels,
+    ...     method="binned", max_gap=None,
+    ... )
+    >>> sorted(fields.labels)
+    ['45–90°', 'stationary']
+    >>> fields = compute_directional_place_fields(
+    ...     env, np.array([0.5, 1.5]), times, positions, labels,
+    ...     method="binned", max_gap=None, missing_label="stationary",
+    ... )
+    >>> sorted(fields.labels)
+    ['45–90°']
 
     See Also
     --------

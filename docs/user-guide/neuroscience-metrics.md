@@ -584,6 +584,10 @@ These are spatial maps conditioned on travel direction, rather than angular
 head-direction tuning curves. Compare rates only where both conditions have
 adequate occupancy. Different paths, speeds or trial outcomes can explain a
 map difference; the helper does not perform a condition-comparison test.
+Labels from `heading_direction_labels` also include `"stationary"` for an
+animal that was observed but not moving; passing them straight to
+`compute_directional_place_fields` gives a "stationary" map as well, and
+`missing_label="stationary"` drops it (a `None` label is always dropped).
 For gapped tracking, derive velocity within each observed run rather than
 across a dropout.
 
