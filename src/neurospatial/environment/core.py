@@ -6129,7 +6129,11 @@ class Environment(Generic[_C]):
         ...     fields, frame_times=frame_times, backend="napari"
         ... )  # doctest: +SKIP
         >>> env.animate_fields(
-        ...     fields, frame_times=frame_times, save_path="learning.mp4", speed=0.5
+        ...     fields,
+        ...     frame_times=frame_times,
+        ...     backend="video",
+        ...     save_path="learning.mp4",
+        ...     speed=0.5,
         ... )  # doctest: +SKIP
 
         Share an HTML player, with the animal's position and heading:
