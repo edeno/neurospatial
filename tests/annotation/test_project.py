@@ -154,7 +154,7 @@ def test_broken_ring_associations_are_rejected(shapes, match):
 
 @pytest.mark.parametrize("metadata", [{"callable": lambda: 1}, {3: "coerced"}])
 def test_non_json_metadata_cannot_enter_a_snapshot(metadata):
-    with pytest.raises(ValueError, match="metadata"):
+    with pytest.raises(ValueError, match="Metadata"):
         AnnotationShape(np.zeros((3, 2)), metadata=metadata)
 
 

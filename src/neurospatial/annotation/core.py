@@ -416,14 +416,13 @@ def _require_napari() -> None:
 
 def _validate_initial_metadata(regions: Regions) -> None:
     """Reject polygon metadata that an editable project cannot store."""
-    from neurospatial.annotation.project import _json_value
-    from neurospatial.regions.core import _thaw_metadata
+    from neurospatial.regions.core import _require_json_metadata, _thaw_metadata
 
     for name, region in regions.items():
         if region.kind != "polygon":
             continue
         try:
-            _json_value(_thaw_metadata(region.metadata))
+            _require_json_metadata(_thaw_metadata(region.metadata), allow_nan=True)
         except ValueError as exc:
             raise ValueError(
                 f"Cannot edit region {name!r}: {exc} Editable annotations store "

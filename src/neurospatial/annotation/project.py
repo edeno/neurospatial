@@ -22,7 +22,11 @@ from numpy.typing import NDArray
 
 from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
 from neurospatial.ops.transforms import Affine2D, VideoCalibration
-from neurospatial.regions.core import _freeze_metadata, _thaw_metadata
+from neurospatial.regions.core import (
+    _freeze_metadata,
+    _require_json_metadata,
+    _thaw_metadata,
+)
 
 __all__ = ["AnnotationProject", "AnnotationShape"]
 
@@ -30,24 +34,6 @@ _SHAPE_TYPES = frozenset({"polygon", "path", "line", "rectangle", "ellipse"})
 _MODES = frozenset({"environment", "regions", "both"})
 _VERSION = 1
 _FORMAT = "neurospatial.annotation"
-
-
-def _json_value(value: Any) -> None:
-    """Reject values that JSON would silently coerce or cannot preserve.
-
-    Non-finite floats are kept, as in :class:`~neurospatial.regions.Region`
-    metadata: Python's JSON reader restores ``NaN`` and ``Infinity`` exactly.
-    """
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError("Shape metadata keys must be strings.")
-            _json_value(item)
-    elif isinstance(value, (list, tuple)):
-        for item in value:
-            _json_value(item)
-    elif value is not None and not isinstance(value, (str, bool, int, float)):
-        raise ValueError("Shape metadata must contain only JSON values.")
 
 
 @dataclass(frozen=True, eq=False)
@@ -102,7 +88,8 @@ class AnnotationShape:
         if not isinstance(self.metadata, Mapping):
             raise ValueError("Shape metadata must be a mapping of JSON values.")
         metadata = _thaw_metadata(self.metadata)
-        _json_value(metadata)
+        # Non-finite floats are kept, as Region metadata allows them.
+        _require_json_metadata(metadata, allow_nan=True)
         vertices.setflags(write=False)
         object.__setattr__(self, "vertices", vertices)
         object.__setattr__(self, "metadata", _freeze_metadata(metadata))

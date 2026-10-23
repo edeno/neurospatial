@@ -92,6 +92,29 @@ def _thaw_metadata(value: Any, *, _active: set[int] | None = None) -> Any:
         active.remove(identity)
 
 
+def _require_json_metadata(value: Any, *, allow_nan: bool) -> None:
+    """Reject metadata that JSON would coerce or cannot store.
+
+    Mapping keys must be strings at every level and leaves must be JSON
+    scalars. Non-finite floats are rejected unless ``allow_nan``; Python's JSON
+    reader restores ``NaN`` and ``Infinity`` exactly.
+    """
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(
+                    "Metadata keys must be strings at every nesting level."
+                )
+            _require_json_metadata(item, allow_nan=allow_nan)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _require_json_metadata(item, allow_nan=allow_nan)
+    elif value is not None and not isinstance(value, (str, bool, int, float)):
+        raise ValueError("Metadata must contain only JSON values.")
+    elif not allow_nan and isinstance(value, float) and not np.isfinite(value):
+        raise ValueError("Metadata numbers must be finite.")
+
+
 # ---------------------------------------------------------------------
 # Region — immutable value object
 # ---------------------------------------------------------------------

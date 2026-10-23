@@ -21,6 +21,7 @@ from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 
 from neurospatial._results import ReadOnlyArraysMixin, read_only_copy
+from neurospatial.regions.core import _require_json_metadata
 
 __all__ = [
     "RegionGrowProvider",
@@ -118,7 +119,7 @@ class SegmentationProposal(ReadOnlyArraysMixin):
         owned_metadata = {} if metadata is None else deepcopy(dict(metadata))
         try:
             encoded = json.dumps(owned_metadata, allow_nan=False)
-            _require_metadata_string_keys(owned_metadata)
+            _require_json_metadata(owned_metadata, allow_nan=False)
             # Round-tripping also owns nested values and normalizes JSON tuples.
             owned_metadata = json.loads(encoded)
         except (TypeError, ValueError, OverflowError) as exc:
@@ -133,23 +134,6 @@ class SegmentationProposal(ReadOnlyArraysMixin):
     def metadata(self) -> dict[str, Any]:
         """Return an independent copy of the JSON provenance."""
         return deepcopy(self._metadata)
-
-
-def _require_metadata_string_keys(value: Any) -> None:
-    """Prevent JSON from coercing mapping keys, including nested provenance.
-
-    Called after JSON serialization has rejected cycles and unsupported values.
-    """
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError(
-                    "Metadata keys must be strings at every nesting level."
-                )
-            _require_metadata_string_keys(item)
-    elif isinstance(value, (list, tuple)):
-        for item in value:
-            _require_metadata_string_keys(item)
 
 
 class SegmentationProvider(Protocol):
