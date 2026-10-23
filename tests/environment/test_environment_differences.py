@@ -10,15 +10,24 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
+from typing import NoReturn
 from uuid import uuid4
 
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import renumbered
+import shapely
+from environment_helpers import (
+    WALL_SPLIT_PIECES,
+    order_preserving_permutation,
+    rates_result,
+    renumbered,
+    renumbered_cells,
+    wall_split_arena,
+)
 from shapely.geometry import LineString, Point, Polygon, box
 
-from neurospatial import Environment
+from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.arena import OpenArena
 from neurospatial.binning import (
     BinConnections,
@@ -31,11 +40,17 @@ from neurospatial.binning import (
     SpatialBins,
     TriangleShapes,
 )
+from neurospatial.decoding.posterior import decode_position
+from neurospatial.encoding import compare_spatial_rates
+from neurospatial.encoding.spatial import SpatialRatesResult
 from neurospatial.environment import (
     _environment_differences,
+    _fields,
     _mapped_bin_difference,
     _mapped_topology_difference,
 )
+from neurospatial.environment._comparison import _conductances, _ownership_keys
+from neurospatial.geometry import MissingCellGeometryError
 from neurospatial.layout import create_layout
 from neurospatial.ops import AffineND
 
@@ -144,8 +159,14 @@ _SQUARE = box(0, 0.25, 1, 0.75)
 _DIAMOND = Polygon([(0.5, 0), (1, 0.5), (0.5, 1), (0, 0.5)])
 
 
-def test_polygon_cells_with_equal_centers_and_areas_differ_in_bins() -> None:
-    square, diamond = _clipped_cell(_SQUARE), _clipped_cell(_DIAMOND)
+@pytest.fixture(scope="module")
+def square() -> Environment:
+    """One cell clipped to ``_SQUARE``, with no walls."""
+    return _clipped_cell(_SQUARE)
+
+
+def test_polygon_cells_with_equal_centers_and_areas_differ_in_bins(square) -> None:
+    diamond = _clipped_cell(_DIAMOND)
     np.testing.assert_array_equal(square.bin_centers, diamond.bin_centers)
     np.testing.assert_array_equal(square.bin_sizes, diamond.bin_sizes)
     assert _environment_differences(square, diamond) == (
@@ -154,14 +175,16 @@ def test_polygon_cells_with_equal_centers_and_areas_differ_in_bins() -> None:
     )
 
 
-def test_a_wall_is_topology_and_does_not_hide_a_cell_difference() -> None:
+def test_a_wall_is_topology_and_does_not_hide_a_cell_difference(square) -> None:
     wall = (LineString([(0, 0.9), (0.2, 0.9)]),)
-    assert _environment_differences(
-        _clipped_cell(_SQUARE), _clipped_cell(_SQUARE, walls=wall)
-    ) == (None, "continuous arena or physical walls")
-    assert _environment_differences(
-        _clipped_cell(_SQUARE), _clipped_cell(_DIAMOND, walls=wall)
-    ) == ("polygon cell geometry", "continuous arena or physical walls")
+    assert _environment_differences(square, _clipped_cell(_SQUARE, walls=wall)) == (
+        None,
+        "continuous arena or physical walls",
+    )
+    assert _environment_differences(square, _clipped_cell(_DIAMOND, walls=wall)) == (
+        "polygon cell geometry",
+        "continuous arena or physical walls",
+    )
 
 
 def test_independently_built_environments_from_the_same_samples_agree() -> None:
@@ -189,11 +212,6 @@ def _hexagons() -> Environment:
     )
 
 
-# Comparing builds the mesh's faces, which warn when many triangles are skewed;
-# whether this square-grid Delaunay mesh is skewed depends on the platform.
-_MESH_WARNING = "ignore:Triangular mesh is non-K-orthogonal:UserWarning"
-
-
 def _polar() -> Environment:
     return Environment.from_polar_egocentric(
         distance_range=(0.0, 20.0),
@@ -211,7 +229,7 @@ def _grid_3d() -> Environment:
 @pytest.mark.parametrize(
     "build",
     [
-        pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+        pytest.param(_mesh, id="mesh"),
         pytest.param(_hexagons, id="hexagons"),
         pytest.param(_polar, id="polar grid"),
         pytest.param(_grid_3d, id="3-D grid"),
@@ -347,7 +365,7 @@ def _without_cells(env: Environment, *, size_scale: float = 1.0) -> Environment:
     [
         pytest.param(_clipped_grid, id="polygon cells"),
         pytest.param(_grid, id="grid"),
-        pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+        pytest.param(_mesh, id="mesh"),
     ],
 )
 def test_bins_without_cells_are_compared_by_center_and_measure(build) -> None:
@@ -427,6 +445,66 @@ def test_two_environments_that_cannot_smooth_have_the_same_conductances() -> Non
     assert _mapped_topology_difference(first, second, identity) is None
 
 
+def _sheared_combined_grids() -> Environment:
+    def grid(offset: float) -> Environment:
+        return Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool),
+            grid_edges=(offset + np.arange(3.0) * 10,) * 2,
+            units="cm",
+        )
+
+    combined = Environment.combine({"a": grid(0.0), "b": grid(40.0)})
+    shear = AffineND(np.array([[1.0, 0.5, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+    return combined.apply_transform(shear, units="cm")
+
+
+def test_two_sheared_combined_environments_cannot_smooth_alike() -> None:
+    # A shear is not a similarity transform, so the combined conductances
+    # cannot be carried into the new coordinates.
+    first, second = _sheared_combined_grids(), _sheared_combined_grids()
+    assert _conductances(first) is None
+    assert _environment_differences(first, second) == (None, None)
+    with pytest.raises(NotImplementedError, match="similarity transform"):
+        first.smooth(np.ones(first.n_bins), bandwidth=5.0, mode="average")
+
+
+def test_a_combined_environment_with_a_child_without_faces_cannot_smooth() -> None:
+    # The combined conductances need every child's faces; one child without
+    # them leaves the whole environment unable to smooth, as MissingFaces does.
+    def combined() -> Environment:
+        first = _grid()
+        second = _grid(offset=40.0)
+        without = Environment.from_bins(
+            replace(second.binning, faces=MissingFaces("no cell faces for a test")),
+            arena=second.arena,
+        )
+        return Environment.combine({"a": first, "b": without})
+
+    first, second = combined(), combined()
+    assert _conductances(first) is None
+    assert _environment_differences(first, second) == (None, None)
+    with pytest.raises(MissingCellGeometryError, match="no cell faces for a test"):
+        first.smooth(np.ones(first.n_bins), bandwidth=5.0, mode="average")
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (NotImplementedError("a bug"), NotImplementedError),
+        (ValueError("bad faces"), ValueError),
+    ],
+)
+def test_an_error_other_than_missing_cell_geometry_is_not_hidden(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, expected: type[Exception]
+) -> None:
+    def broken(*args: object, **kwargs: object) -> NoReturn:
+        raise error
+
+    monkeypatch.setattr(_fields, "_build_diffusion_geometry", broken)
+    with pytest.raises(expected, match=str(error)):
+        _environment_differences(_grid(), _grid())
+
+
 _IDENTITY_3 = np.column_stack([np.arange(3), np.arange(3)])
 
 
@@ -481,7 +559,7 @@ _ROUND_TRIP_LAYOUTS = [
         id="polygon",
     ),
     pytest.param(_t_maze, id="track"),
-    pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+    pytest.param(_mesh, id="mesh"),
     pytest.param(_hexagons, id="hexagons"),
     pytest.param(_rotated_grid, id="rotated grid"),
 ]
@@ -651,3 +729,229 @@ def test_a_wall_that_closes_no_pair_is_still_a_topology_difference() -> None:
         _mapped_topology_difference(_corridor(), walled, identity)
         == "continuous arena or physical walls"
     )
+
+
+# ---------------------------------------------------------------------------
+# Boundary ownership does not depend on bin numbering
+# ---------------------------------------------------------------------------
+
+# Pieces 12 and 13 of the wall-split arena share the wall segment
+# x = 12.5, 0 <= y <= 5.
+
+
+def _renumbering(order: np.ndarray) -> np.ndarray:
+    return np.column_stack([order, np.arange(len(order))])
+
+
+def test_the_wall_split_arena_cuts_four_cells_in_two() -> None:
+    env = wall_split_arena()
+    sources = env.clip_mapping.parent_bin_indices
+    assert env.n_bins == 40
+    np.testing.assert_array_equal(
+        np.flatnonzero(np.bincount(sources) > 1), [12, 13, 14, 15]
+    )
+    for parent, pieces in zip([12, 13, 14, 15], WALL_SPLIT_PIECES, strict=True):
+        np.testing.assert_array_equal(np.flatnonzero(sources == parent), pieces)
+
+
+def test_a_piece_cedes_the_line_it_shares_with_an_earlier_piece() -> None:
+    env = wall_split_arena()
+    rows = np.arange(env.n_bins)
+    cells = np.empty(env.n_bins, dtype=object)
+    cells[:] = env.binning.shapes.polygons
+    _, keys, ceded = _ownership_keys(env.binning.locator, rows, cells)
+    np.testing.assert_array_equal(keys, env.clip_mapping.parent_bin_indices)
+    # The second piece of each cut cell cedes its stretch of the wall.
+    later = np.array([second for _, second in WALL_SPLIT_PIECES])
+    for piece, low in zip(later, [0.0, 5.0, 10.0, 15.0], strict=True):
+        assert shapely.equals(ceded[piece], LineString([(12.5, low), (12.5, low + 5)]))
+    # Every other bin cedes nothing, and nothing equals nothing.
+    others = ~np.isin(rows, later)
+    assert np.all(shapely.is_empty(ceded[others]))
+    assert np.all(shapely.equals(ceded[others], ceded[others][::-1]))
+
+
+def test_an_order_preserving_renumbering_of_split_cells_is_the_same_cells() -> None:
+    env = wall_split_arena()
+    order = order_preserving_permutation(env.n_bins)
+    copy = renumbered_cells(env, order)
+    assert _mapped_bin_difference(env, copy, _renumbering(order)) is None
+
+
+def test_swapping_two_touching_pieces_changes_boundary_ownership() -> None:
+    env = wall_split_arena()
+    order = np.arange(env.n_bins)
+    order[[12, 13]] = [13, 12]
+    copy = renumbered_cells(env, order)
+    # The point on the line between the pieces moves to the other piece.
+    on_the_line = [[12.5, 2.0]]
+    assert order[copy.bin_at(on_the_line)[0]] != env.bin_at(on_the_line)[0]
+    assert (
+        _mapped_bin_difference(env, copy, _renumbering(order))
+        == "bin-boundary ownership"
+    )
+
+
+def test_a_renumbered_clip_that_kept_every_cell_whole_is_the_same_cells() -> None:
+    disk = Environment.from_grid_mask(
+        np.ones((6, 6), dtype=bool), grid_edges=(np.arange(7.0) * 5,) * 2, units="cm"
+    ).clip(Point(15, 15).buffer(13))
+    order = np.random.default_rng(2).permutation(disk.n_bins)
+    copy = renumbered_cells(disk, order)
+    assert _mapped_bin_difference(disk, copy, _renumbering(order)) is None
+
+
+def test_a_subset_of_a_split_clip_maps_onto_its_parent() -> None:
+    env = wall_split_arena()
+    kept = np.flatnonzero(np.arange(env.n_bins) != 20)
+    part = env.subset(mask=np.arange(env.n_bins) != 20)
+    pairs = np.column_stack([kept, np.arange(len(kept))])
+    assert _mapped_bin_difference(env, part, pairs) is None
+
+
+def test_independently_built_split_arenas_agree() -> None:
+    first, second = wall_split_arena(), wall_split_arena()
+    assert first._geometry is not second._geometry
+    assert _environment_differences(first, second) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# Tracks are compared by their geometry
+# ---------------------------------------------------------------------------
+
+
+def _track(
+    nodes: list[tuple[float, float]],
+    edges: list[tuple[int, int]],
+    spacing: float = 0.0,
+    bin_size: float = 10.0,
+) -> Environment:
+    graph = nx.Graph()
+    for node, pos in enumerate(nodes):
+        graph.add_node(node, pos=pos)
+    for u, v in edges:
+        graph.add_edge(u, v, distance=float(np.hypot(*np.subtract(nodes[u], nodes[v]))))
+    return Environment.from_graph(
+        graph=graph,
+        edge_order=edges,
+        edge_spacing=spacing,
+        bin_size=bin_size,
+        track_width=2.0,
+        units="cm",
+    )
+
+
+def _crossing_l_tracks() -> tuple[Environment, Environment]:
+    """Two L-shaped tracks whose two bins have the same centers and lengths."""
+    edges = [(0, 1), (1, 2)]
+    return (
+        _track([(-5.0, 0.0), (5.0, 0.0), (5.0, 10.0)], edges),
+        _track([(0.0, -5.0), (0.0, 5.0), (10.0, 5.0)], edges),
+    )
+
+
+def test_tracks_with_equal_bin_centers_along_different_segments_differ() -> None:
+    # (3, 0) lies on the first track's first segment and on neither segment
+    # of the second track, so the bins do not mean the same places.
+    first, second = _crossing_l_tracks()
+    np.testing.assert_array_equal(first.bin_centers, second.bin_centers)
+    np.testing.assert_array_equal(first.bin_sizes, second.bin_sizes)
+    np.testing.assert_array_equal(first.bin_at([[3.0, 0.0]]), [0])
+    np.testing.assert_array_equal(second.bin_at([[3.0, 0.0]]), [-1])
+    assert _environment_differences(first, second).bins == "track geometry"
+    # An identity mapping is refused exactly as no mapping is.
+    identity = np.column_stack([np.arange(first.n_bins)] * 2)
+    assert _mapped_bin_difference(first, second, identity) == "track geometry"
+    rates_a, rates_b = (
+        rates_result(track, np.arange(1.0, track.n_bins + 1), np.ones(track.n_bins))
+        for track in (first, second)
+    )
+    for mapping in (None, identity):
+        with pytest.raises(IncompatibleEnvironmentError, match="track geometry"):
+            compare_spatial_rates(rates_a, rates_b, bin_mapping=mapping)
+
+
+def test_a_track_with_different_edge_spacing_differs_in_track_geometry() -> None:
+    # The gap between segments shifts every later bin's linear coordinate.
+    nodes = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]
+    edges = [(0, 1), (1, 2)]
+    touching = _track(nodes, edges, spacing=0.0, bin_size=2.0)
+    spaced = _track(nodes, edges, spacing=5.0, bin_size=2.0)
+    np.testing.assert_array_equal(touching.bin_centers, spaced.bin_centers)
+    np.testing.assert_array_equal(touching.bin_sizes, spaced.bin_sizes)
+    assert _environment_differences(touching, spaced) == ("track geometry", None)
+
+
+@pytest.mark.parametrize("mapped", [False, True])
+def test_a_track_geometry_refusal_names_the_linearized_track(mapped) -> None:
+    # Bins at the same 2-D places can sit at different linear positions, so
+    # the refusal speaks of the linearized track, not of places.
+    nodes = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]
+    edges = [(0, 1), (1, 2)]
+    touching = _track(nodes, edges, spacing=0.0, bin_size=2.0)
+    spaced = _track(nodes, edges, spacing=5.0, bin_size=2.0)
+    identity = np.column_stack([np.arange(touching.n_bins)] * 2)
+    with pytest.raises(IncompatibleEnvironmentError) as refused:
+        compare_spatial_rates(
+            rates_result(
+                touching, np.arange(1.0, touching.n_bins + 1), np.ones(touching.n_bins)
+            ),
+            rates_result(
+                spaced, np.arange(1.0, spaced.n_bins + 1), np.ones(spaced.n_bins)
+            ),
+            bin_mapping=identity if mapped else None,
+        )
+    message = str(refused.value)
+    assert "differ in track geometry" in message
+    assert "same stretch of the linearized track" in message
+    assert "same place" not in message
+    assert "cells differ" not in message
+
+
+def test_identically_built_tracks_agree() -> None:
+    first, second = _t_maze(), _t_maze()
+    assert first._geometry is not second._geometry
+    assert _environment_differences(first, second) == (None, None)
+
+
+def test_a_track_subset_maps_onto_its_parent() -> None:
+    track = _t_maze()
+    part = track.subset(mask=np.arange(track.n_bins) != 2)
+    kept = np.flatnonzero(np.arange(track.n_bins) != 2)
+    pairs = np.column_stack([kept, np.arange(len(kept))])
+    assert _mapped_bin_difference(track, part, pairs) is None
+    mapped = part.bin_mapping_from(track).pairs
+    np.testing.assert_array_equal(mapped[np.argsort(mapped[:, 1])], pairs)
+
+
+def test_explicit_point_bins_are_compared_by_center_and_measure() -> None:
+    # Explicit point bins record no track, so a copy of a track's centers,
+    # lengths and measured dimensions is the same bins.
+    track, _ = _crossing_l_tracks()
+    bins = track.binning.bins
+    points = Environment.from_bins(
+        Binning(
+            "explicit",
+            SpatialBins.from_arrays(bins.centers, bins.sizes, bins.measure_dims),
+            track.binning.connections,
+            NearestBinLocator(bins.centers, max_distance=5.0),
+            MissingFaces("explicit point bins without cells"),
+        ),
+        units="cm",
+        arena=track.arena,
+    )
+    assert points.binning.linearization is None
+    assert _environment_differences(track, points).bins is None
+
+
+def test_decoding_refuses_rates_from_a_different_track() -> None:
+    decoding_track, rates_track = _crossing_l_tracks()
+    rates = SpatialRatesResult(
+        firing_rates=np.array([[1.0, 2.0]]),
+        occupancy=np.ones(2),
+        env=rates_track,
+        method="binned",
+        bandwidth=5.0,
+    )
+    with pytest.raises(IncompatibleEnvironmentError, match="track geometry"):
+        decode_position(decoding_track, np.array([[0], [1]]), rates, dt=0.1)

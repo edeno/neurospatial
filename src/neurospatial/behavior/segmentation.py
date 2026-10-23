@@ -184,12 +184,10 @@ def _positive_dt(
 def _interval_labels(
     times: NDArray[np.float64],
     intervals: Iterable[tuple[float, float, object]],
-    *,
-    default: object = "other",
 ) -> NDArray[np.object_]:
     """Build a per-timepoint object label array from labeled time intervals.
 
-    Allocates an object array of length ``len(times)`` filled with ``default``
+    Allocates an object array of length ``len(times)`` filled with ``None``
     and, for each ``(start_time, end_time, label)`` interval, assigns ``label``
     to every sample with ``start_time <= times < end_time``. This is the shared
     primitive behind the trial/lap/run direction-label helpers (so the
@@ -205,17 +203,15 @@ def _interval_labels(
     intervals : iterable of (float, float, object)
         ``(start_time, end_time, label)`` tuples, half-open
         ``[start_time, end_time)``.
-    default : object, optional
-        Value for samples outside every interval. Default is ``"other"`` (the
-        sentinel ``compute_directional_place_fields`` excludes from results).
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
-        Per-timepoint labels, dtype ``object``.
+        Per-timepoint labels, dtype ``object``; ``None`` outside every
+        interval.
     """
     times = np.asarray(times, dtype=np.float64)
-    labels: NDArray[np.object_] = np.full(len(times), default, dtype=object)
+    labels: NDArray[np.object_] = np.full(len(times), None, dtype=object)
 
     for start_time, end_time, label in intervals:
         mask = (times >= start_time) & (times < end_time)
@@ -1566,17 +1562,15 @@ def _detect_laps_search_contiguous(
 def laps_to_direction_labels(
     laps: list[Lap],
     times: NDArray[np.float64],
-    *,
-    unknown_label: object = "other",
 ) -> NDArray[np.object_]:
     """Convert detected laps into per-timepoint direction labels.
 
-    Bridges :func:`detect_laps` to :func:`compute_directional_place_fields`:
-    every sample falling inside a lap is labeled with that lap's
-    ``direction`` (``"clockwise"`` or ``"counter-clockwise"``), and every other
-    sample is labeled ``"other"`` (the sentinel
-    :func:`compute_directional_place_fields` excludes). The returned array is
-    drop-in for that function's ``direction_labels`` argument.
+    Bridges :func:`detect_laps` to :func:`compute_directional_place_fields`
+    and :func:`labels_to_epochs`: every sample falling inside a lap is labeled
+    with that lap's ``direction`` (``"clockwise"`` or ``"counter-clockwise"``).
+    Samples outside every lap, and inside a lap whose direction is
+    ``"unknown"``, are ``None``, which both functions leave out. The returned
+    array is drop-in for their labels argument.
 
     Parameters
     ----------
@@ -1585,17 +1579,13 @@ def laps_to_direction_labels(
         end_time)`` interval (half-open) and ``direction``.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds). The output has this length.
-    unknown_label : object, optional
-        Label applied to laps whose ``direction`` is ``"unknown"`` (direction
-        could not be resolved, e.g. non-2D environments). Default ``"other"`` so
-        such laps are excluded from directional fields; pass e.g. an explicit
-        string to keep them as their own group.
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
         Per-timepoint direction label, dtype ``object``. Samples outside every
-        lap are ``"other"``.
+        lap, or in a lap of unknown direction (not resolved, e.g. in non-2D
+        environments), are ``None``.
 
     See Also
     --------
@@ -1623,13 +1613,13 @@ def laps_to_direction_labels(
     ... ]
     >>> labels = laps_to_direction_labels(laps, times)
     >>> labels[0], labels[5], labels[9], labels[-1]
-    ('clockwise', 'other', 'counter-clockwise', 'other')
+    ('clockwise', None, 'counter-clockwise', None)
     """
     intervals = [
         (
             lap.start_time,
             lap.end_time,
-            unknown_label if lap.direction == "unknown" else lap.direction,
+            None if lap.direction == "unknown" else lap.direction,
         )
         for lap in laps
     ]
@@ -1647,10 +1637,11 @@ def runs_to_direction_labels(
 
     Bridges run detectors (:func:`detect_runs_between_regions`,
     :func:`detect_goal_directed_runs`, :func:`segment_by_velocity`) to
-    :func:`compute_directional_place_fields`. :class:`Run` carries no intrinsic
-    direction, so the caller supplies the label(s): either a single label for
-    every run, or one label per run. Samples inside no run are ``"other"``. The
-    returned array is drop-in for ``direction_labels``.
+    :func:`compute_directional_place_fields` and :func:`labels_to_epochs`.
+    :class:`Run` carries no intrinsic direction, so the caller supplies the
+    label(s): either a single label for every run, or one label per run.
+    Samples inside no run are ``None``, which both functions leave out. The
+    returned array is drop-in for their labels argument.
 
     Parameters
     ----------
@@ -1666,13 +1657,13 @@ def runs_to_direction_labels(
         length must equal ``len(runs)``.
     success_only : bool, optional
         If True, only runs with ``success=True`` contribute labels (failed /
-        timed-out runs are left as ``"other"``). Default False.
+        timed-out runs are left as ``None``). Default False.
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
         Per-timepoint label, dtype ``object``. Samples outside every (selected)
-        run are ``"other"``.
+        run are ``None``.
 
     Raises
     ------
@@ -1708,7 +1699,7 @@ def runs_to_direction_labels(
     ... ]
     >>> labels = runs_to_direction_labels(runs, times, labels=["outbound", "inbound"])
     >>> labels[0], labels[5], labels[9], labels[-1]
-    ('outbound', 'other', 'inbound', 'other')
+    ('outbound', None, 'inbound', None)
     """
     if isinstance(labels, (Sequence, np.ndarray)) and not isinstance(
         labels, (str, bytes)
@@ -1753,8 +1744,9 @@ def running_direction_labels(
     ``start_region`` to an end region; inbound runs come back from an end region
     to ``start_region``. Every sample inside an outbound run is labeled
     ``"outbound"``, every sample inside an inbound run ``"inbound"``, and all
-    other samples ``"other"``. The returned array is drop-in for
-    :func:`compute_directional_place_fields`'s ``direction_labels`` argument.
+    other samples ``None``, which :func:`compute_directional_place_fields` and
+    :func:`labels_to_epochs` leave out. The returned array is drop-in for
+    their labels argument.
 
     Follows the segmentation argument-order convention
     (``position_bins, times, env, *, ...``).
@@ -1787,7 +1779,7 @@ def running_direction_labels(
         :func:`detect_runs_between_regions`. Default None.
     successful_only : bool, optional
         If True (default), only runs that reached their target contribute
-        labels; timed-out runs stay ``"other"``. If False, timed-out runs are
+        labels; timed-out runs stay ``None``. If False, timed-out runs are
         labeled by their attempted direction.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
@@ -1805,7 +1797,7 @@ def running_direction_labels(
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
-        Per-timepoint label drawn from ``{"inbound", "outbound", "other"}``,
+        Per-timepoint label drawn from ``{"inbound", "outbound", None}``,
         dtype ``object``.
 
     Raises
@@ -1833,7 +1825,7 @@ def running_direction_labels(
     -> end and end -> start). Where intervals overlap, inbound labels are
     applied after outbound (last-writer-wins); on a well-behaved out-and-back
     trajectory the two never overlap, yielding contiguous ``"outbound"`` then
-    ``"inbound"`` stretches separated by ``"other"`` at the turnaround.
+    ``"inbound"`` stretches separated by ``None`` at the turnaround.
 
     Examples
     --------

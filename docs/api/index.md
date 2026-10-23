@@ -187,8 +187,8 @@ Behavioral analysis built on trajectory + environment.
   curvature, planar turning angles, planar curvature, movement angular
   velocity, home range
 - `compute_speed(times, positions)`, `heading_from_velocity(times, positions)`,
-  `heading_from_body_orientation(nose, tail)`: Per-sample speed and heading
-  (radians, 0 = East) from tracking data
+  `heading_from_body_orientation(times, nose, tail)`: Per-sample speed and
+  heading (radians, 0 = East) from tracking data
 - `behavior.resampling`: Distance resampling of observed runs
 - `behavior.navigation`: Path efficiency, goal-directed metrics,
   graph turn sequences

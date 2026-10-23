@@ -8,6 +8,7 @@ import pytest
 from neurospatial import behavior
 from neurospatial._observation import (
     ObservationSupport,
+    label_codes,
     label_runs,
     resolve_observation_support,
     resolve_sample_support,
@@ -196,7 +197,7 @@ def test_empty_input_raises_actionable_error(name, kwargs):
         getattr(behavior, name)(np.array([]), np.zeros((0, 2)), **kwargs)
     what, why, fix = str(excinfo.value).split("\n")
     assert what == f"{name}() got no samples: times and positions are empty."
-    assert why == "there is no observation to measure."
+    assert why == "Why: there is no observation to measure."
     assert fix.startswith("Fix: pass at least one sample")
     assert "epoch or trial selection" in fix
 
@@ -414,3 +415,18 @@ def test_label_runs_with_nothing_retained_is_empty():
     ):
         first, last, code = label_runs(codes, mask)
         assert first.shape == last.shape == code.shape == (0,)
+
+
+def test_label_codes_declared_missing_integer():
+    codes, values = label_codes(np.array([0, 0, 1, -1, 0]), -1)
+    np.testing.assert_array_equal(codes, [0, 0, 1, -1, 0])
+    assert codes.dtype == np.intp
+    assert values == [0, 1]
+    assert type(values[0]) is int
+
+
+def test_label_codes_none_and_nan_are_missing():
+    labels = np.array(["a", None, "b", np.nan, "a"], dtype=object)
+    codes, values = label_codes(labels, None)
+    np.testing.assert_array_equal(codes, [0, -1, 1, -1, 0])
+    assert values == ["a", "b"]

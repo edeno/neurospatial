@@ -358,7 +358,7 @@ def retained_linear_intervals(
         ):
             # Cells prove that the shared wall frame uses these source axes.
             # Retain exact stored walls/domain instead of undoing rounded world vertices.
-            source_arena = source[-1][-1].base
+            source_arena = source[4][-1].base
             domain = (
                 source_arena.polygonal_domain() if source_arena.domain_known else None
             )

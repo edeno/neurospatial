@@ -531,7 +531,7 @@ def head_sweep_from_positions(
         break_before=break_before,
         result="no head sweep was observed",
     )
-    _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions, call="head_sweep_from_positions")
     return _head_sweep(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -870,7 +870,7 @@ def compute_vte_trial(
         break_before=break_before,
         result="no VTE metric was observed",
     )
-    _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions, call="compute_vte_trial")
     window = _pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
@@ -1100,7 +1100,7 @@ def compute_vte_session(
         decision_region_entry_time,
     )
 
-    _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions, call="compute_vte_session")
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session()")
     # First pass: compute raw metrics for all trials
     raw_head_sweeps: list[float] = []

@@ -257,8 +257,9 @@ def generate_population_spikes(
         ``k`` (for example where a new recording starts), whatever the elapsed
         time. Entry 0 is ignored. Used only to derive head-direction models'
         headings, so the velocity is never smoothed across a break; the held
-        direction carries over a break until the animal moves again. Not
-        allowed together with ``headings``.
+        direction never carries over a break: each recording starts with its
+        own first direction of movement. Not allowed together with
+        ``headings``.
     refractory_period : float, optional
         Refractory period for each neuron in seconds (default: 2ms).
     seed : int | None, optional
@@ -518,7 +519,9 @@ def _held_movement_heading(
     A simulated head-direction cell needs a heading at every sample, including
     where the animal is still and its movement direction is not defined. The
     last defined direction is held forward through each stop, and samples
-    before the first movement take the first defined direction.
+    before a recording's first movement take that recording's first defined
+    direction. Recordings are split only at declared breaks; nothing is held
+    across one.
 
     Parameters
     ----------
@@ -528,7 +531,7 @@ def _held_movement_heading(
         Positions in environment units.
     break_before : ndarray of bool, shape (n_time,), optional
         Already validated declared recording breaks; the velocity is not
-        smoothed across them.
+        smoothed across them and the held direction does not carry over them.
 
     Returns
     -------
@@ -538,9 +541,25 @@ def _held_movement_heading(
     Raises
     ------
     ValueError
-        If no movement direction is ever defined: the trajectory never moves,
-        or every interval between samples is longer than the default
+        If a recording never has a movement direction: it never moves, or
+        every interval between its samples is longer than the default
         ``max_gap`` (0.5 s).
+
+    Examples
+    --------
+    Two recordings: the first heads East then stops, the second is still and
+    then heads North. The second keeps its own first direction, not East.
+
+    >>> import numpy as np
+    >>> from neurospatial.simulation.spikes import _held_movement_heading
+    >>> times = np.arange(40) / 10
+    >>> x = np.r_[np.arange(10), np.full(10, 9.0), np.full(20, 50.0)]
+    >>> y = np.r_[np.zeros(30), np.arange(10)]
+    >>> held = _held_movement_heading(
+    ...     times, np.c_[x, y], break_before=np.arange(40) == 20
+    ... )
+    >>> print(f"{held[9]:.3f} {held[20]:.3f}")
+    0.000 1.571
     """
     from neurospatial._exceptions import _format_error
     from neurospatial.behavior import heading_from_velocity
@@ -556,23 +575,38 @@ def _held_movement_heading(
             times, positions, break_before=break_before, allow_all_nan=True
         )
     defined = np.isfinite(heading)
-    if not defined.any():
+    n = heading.size
+    breaks = np.zeros(n, dtype=bool)
+    if break_before is not None:
+        breaks[:] = break_before
+    breaks[0] = False
+    recording = np.cumsum(breaks)
+    starts = np.flatnonzero(np.r_[True, breaks[1:]])
+    ends = np.r_[starts[1:], n]
+    idx = np.arange(n)
+    # Last defined sample at or before each sample, valid inside its recording.
+    last = np.maximum.accumulate(np.where(defined, idx, -1))
+    # First defined sample at or after each sample (the back-fill source).
+    following = np.minimum.accumulate(np.where(defined, idx, n)[::-1])[::-1]
+    first_in_recording = following[starts]
+    for r in np.flatnonzero(first_in_recording >= ends):
+        first_t, last_t = times[starts[r]], times[ends[r] - 1]
         raise ValueError(
             _format_error(
                 "Cannot derive head direction for HeadDirectionCellModel: no "
-                "movement direction is defined, because the trajectory never "
-                "moves or no interval between samples is short enough to use "
-                "(intervals longer than max_gap=0.5 s are not used).",
+                f"movement direction is defined in recording {r + 1} (samples "
+                f"{starts[r]} to {ends[r] - 1}, {first_t:g} to {last_t:g} s), "
+                "because it never moves or no interval between its samples is "
+                "short enough to use (intervals longer than max_gap=0.5 s are "
+                "not used).",
                 why="without headings=, the simulated heading is the direction "
-                "of the velocity.",
+                "of the velocity, held within each recording.",
                 fix="pass headings= with one angle in radians per sample, "
                 "e.g. headings=np.zeros(len(times)) for an animal facing East.",
             )
         )
-    last_defined = np.maximum.accumulate(np.where(defined, np.arange(heading.size), 0))
-    first = int(np.argmax(defined))
-    last_defined[:first] = first
-    held: NDArray[np.float64] = heading[last_defined]
+    source = np.where(last >= starts[recording], last, first_in_recording[recording])
+    held: NDArray[np.float64] = heading[source]
     return held
 
 
