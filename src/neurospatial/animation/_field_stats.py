@@ -20,41 +20,6 @@ _EXACT_RANGE_MAX_FRAMES = 200_000
 _ROBUST_PERCENTILES = (1.0, 99.0)
 
 
-def animation_colormap_range(
-    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
-    vmin: float | None,
-    vmax: float | None,
-) -> tuple[float, float]:
-    """Color limits for an animation, robust to a few extreme frames.
-
-    The top of the colormap is the 99th percentile of the frames' maxima
-    and the bottom the 1st percentile of their minima (see
-    `robust_limits`). A percentile of all bin values would not do, because
-    a sharp posterior fills few bins: its peak would pass the top in every
-    frame.
-
-    Parameters
-    ----------
-    fields : sequence of ndarray, or ndarray of shape (n_frames, n_bins)
-        The frames.
-    vmin, vmax : float or None
-        Given limits; None computes them.
-
-    Returns
-    -------
-    vmin, vmax : float
-
-    Warns
-    -----
-    UserWarning
-        When the range is estimated from every n-th frame.
-    """
-    if vmin is not None and vmax is not None:
-        return vmin, vmax
-    low, high = robust_limits(*frame_extremes(fields))
-    return (low if vmin is None else vmin), (high if vmax is None else vmax)
-
-
 def robust_limits(
     lows: NDArray[np.float64],
     highs: NDArray[np.float64],

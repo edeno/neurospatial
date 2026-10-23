@@ -633,7 +633,7 @@ class TestEstimateColormapRangeFromSubset:
 
     def test_matches_the_animation_default_for_a_sharp_posterior(self):
         """The top is a percentile of the frames' peaks, not of all values."""
-        from neurospatial.animation._field_stats import animation_colormap_range
+        from neurospatial.animation._field_stats import frame_extremes, robust_limits
         from neurospatial.animation.core import estimate_colormap_range_from_subset
 
         rng = np.random.default_rng(42)
@@ -645,7 +645,7 @@ class TestEstimateColormapRangeFromSubset:
 
         # Nearly every frame's peak is below the top color, not above it.
         assert vmin == 0.0 and vmax > np.percentile(peaks, 95)
-        assert (vmin, vmax) == animation_colormap_range(fields, None, None)
+        assert (vmin, vmax) == robust_limits(*frame_extremes(fields))
 
     def test_custom_percentiles(self):
         """A lower top percentile lets more frames' peaks pass the top."""
