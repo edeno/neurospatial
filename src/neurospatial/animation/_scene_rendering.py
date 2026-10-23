@@ -521,6 +521,7 @@ def export_scene(
     """Stream complete scene frames to a file, replacing only on success.
 
     ``options`` are those of :func:`~neurospatial.animation._export.prepare_export`.
+    With ``n_workers > 1`` worker processes render equivalent scenes.
     """
     from neurospatial.animation._export import prepare_export
     from neurospatial.animation._prepared import iter_observation_clocks
@@ -532,6 +533,14 @@ def export_scene(
         sample_times=iter_observation_clocks(scene),
         **options,
     )
+    if plan.n_workers > 1:
+        from neurospatial.animation._export_workers import render_in_workers
+
+        return plan.write_frames(
+            render_in_workers(
+                scene, plan.times, dpi=dpi, figsize=figsize, n_workers=plan.n_workers
+            )
+        )
     renderer = SceneRenderer(scene, dpi=dpi, figsize=figsize)
     try:
         return plan.write(renderer.render)

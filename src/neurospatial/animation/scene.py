@@ -592,6 +592,7 @@ class Animation:
         crf: int | None = None,
         preset: str | None = None,
         bitrate: float | None = None,
+        n_workers: int | None = 1,
         image_format: str = "png",
         max_html_frames: int = 500,
         embed: bool = True,
@@ -639,6 +640,13 @@ class Animation:
         bitrate : float, optional
             Constant bitrate in kilobits per second; overrides ``crf``.
             Video containers only.
+        n_workers : int or None, default=1
+            Processes that render frames; None uses every CPU. Workers rebuild
+            this scene, so its environment, fields and overlays must be
+            picklable. Memory-mapped fields are reopened from their files
+            rather than copied. Frames are identical to ``n_workers=1``.
+            Scripts that use workers need an ``if __name__ == "__main__":``
+            guard on macOS and Windows.
         image_format : {"png", "jpeg"}, default="png"
             HTML frame encoding. PNG is lossless; JPEG is smaller. ``.html``
             only.
@@ -676,11 +684,27 @@ class Animation:
                 crf=crf,
                 preset=preset,
                 bitrate=bitrate,
+                n_workers=n_workers,
                 image_format=image_format,
                 max_html_frames=max_html_frames,
                 embed=embed,
                 frames_dir=frames_dir,
             )
+
+    def _construction_arguments(self) -> dict[str, Any]:
+        """Arguments that rebuild an equivalent scene, e.g. in a worker process."""
+        return {
+            "env": self.env,
+            "fields": dict(self.fields),
+            "frame_times": self.frame_times,
+            "overlays": self.overlays,
+            "title": self.title,
+            "window_seconds": self.window_seconds,
+            "show_regions": self.show_regions,
+            "region_alpha": self.region_alpha,
+            "scale_bar": self.scale_bar,
+            "track": self.track,
+        }
 
     def show(self, *, backend: str = "widget", **kwargs: Any) -> Any:
         """Open an interactive view of this scene."""

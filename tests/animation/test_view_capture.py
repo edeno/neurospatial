@@ -122,6 +122,9 @@ def test_native_capture_writes_an_html_player(scene, tmp_path):
 
     with _view(scene) as view:
         view.select_time(100.1, 100.3)
+        with pytest.raises(ValueError, match="n_workers=1"):
+            view.export(tmp_path / "view.html", fps=10, n_workers=2)
+        assert not view.native.captures
         path = view.export(tmp_path / "view.html", fps=10)
         assert view.time == 100.25
     text = path.read_text(encoding="utf-8")

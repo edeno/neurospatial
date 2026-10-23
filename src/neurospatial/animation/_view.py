@@ -140,7 +140,7 @@ class AnimationView:
         size and preserves native camera, styling and custom graphics. Export
         pauses playback and restores the time/playback state even if encoding
         fails. ``render="scene"`` uses the standard scene renderer and accepts
-        ``dpi`` and ``figsize``. Other options are those of
+        ``dpi``, ``figsize`` and ``n_workers``. Other options are those of
         :meth:`Animation.export`, for every container.
         """
         self._require_open()
@@ -160,6 +160,12 @@ class AnimationView:
             raise TypeError(
                 "View capture uses the current viewer size. Resize the viewer "
                 "first, or use render='scene' with dpi/figsize."
+            )
+        if kwargs.get("n_workers", 1) != 1:
+            raise ValueError(
+                "View capture reads each frame from this viewer, so it renders in "
+                "this process. Pass n_workers=1, or render='scene' to render the "
+                "standard scene layout in worker processes."
             )
         plan = prepare_export(
             path,

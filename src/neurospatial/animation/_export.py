@@ -64,6 +64,7 @@ class _ExportPlan:
     times: NDArray[np.float64]
     fps: float
     overwrite: bool
+    n_workers: int = 1
     title: str = "Animation"
     # Video encoding.
     codec: str | None = None
@@ -351,6 +352,7 @@ def prepare_export(
     crf: int | None = None,
     preset: str | None = None,
     bitrate: float | None = None,
+    n_workers: int | None = 1,
     image_format: str = "png",
     max_html_frames: int = 500,
     embed: bool = True,
@@ -391,6 +393,12 @@ def prepare_export(
         for option, value in video.items():
             if value is not None:
                 raise _inapplicable(option, container, ".mp4, .webm, .mov and .avi")
+    if n_workers is None:
+        n_workers = os.cpu_count() or 1
+    elif not _number(n_workers) >= 1:
+        raise ValueError(
+            "n_workers must be a positive integer, or None to use every CPU."
+        )
     resolved_codec, output_params, quality = (
         _video_output_params(container, codec, crf, preset, bitrate)
         if container in _VIDEO_CODECS
@@ -499,6 +507,7 @@ def prepare_export(
         times,
         float(fps),
         overwrite,
+        n_workers=int(n_workers),
         title=title or path.stem,
         codec=resolved_codec,
         output_params=output_params,

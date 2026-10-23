@@ -1,8 +1,9 @@
-"""Scene exports: containers, encoder options and HTML players."""
+"""Scene exports: containers, encoder options, HTML players and worker rendering."""
 
 import base64
 import io
 import json
+import pickle
 import re
 from pathlib import Path
 from unittest.mock import patch
@@ -144,6 +145,8 @@ def test_options_that_do_not_apply_are_refused(scene, tmp_path, name, options, m
         ("a.mkv", {}, r"writes \.mp4, \.mov"),
         ("a.html", {"image_format": "tiff"}, "image_format"),
         ("a.html", {"max_html_frames": 0}, "max_html_frames"),
+        ("a.gif", {"n_workers": 0}, "n_workers"),
+        ("a.gif", {"n_workers": True}, "n_workers"),
     ],
 )
 def test_invalid_option_values_are_actionable(tmp_path, name, options, message):
@@ -247,3 +250,64 @@ def test_empty_frames_directory_is_writable(scene, tmp_path):
     frames.mkdir()
     scene.export(tmp_path / "a.html", fps=10, dpi=20, embed=False, frames_dir=frames)
     assert len(list(frames.iterdir())) == N_FRAMES
+
+
+def test_workers_render_identical_frames_and_reopen_memmaps(tmp_path):
+    rng = np.random.default_rng(4)
+    env = Environment.from_samples(rng.uniform(0, 10, (100, 2)), bin_size=2)
+    times = np.arange(12) / 10
+    values = np.memmap(
+        tmp_path / "rates.dat", mode="w+", dtype=float, shape=(24, env.n_bins)
+    )
+    values[:] = rng.random(values.shape)
+    values.flush()
+    scene = Animation(
+        env,
+        # A strided view of the recording, as from subsampling a long session.
+        {"rate": AnimationField(values[::2], times)},
+        overlays=[PositionOverlay(rng.uniform(0, 10, (12, 2)), times, trail_length=3)],
+        window_seconds=0.5,
+    )
+    import matplotlib
+
+    # Workers draw with the caller's Matplotlib style, not the defaults.
+    with scene, matplotlib.rc_context({"figure.facecolor": "black"}):
+        serial = scene.export(tmp_path / "serial.html", fps=10, dpi=30)
+        parallel = scene.export(tmp_path / "parallel.html", fps=10, dpi=30, n_workers=3)
+    expected, frames = _embedded(serial), _embedded(parallel)
+    assert len(frames) == len(expected) == 11
+    for frame, reference in zip(frames, expected, strict=True):
+        np.testing.assert_array_equal(frame, reference)
+
+
+def test_memmap_is_sent_to_workers_by_reference(tmp_path):
+    from neurospatial.animation._export_workers import _dumps
+
+    values = np.memmap(tmp_path / "big.dat", mode="w+", dtype=float, shape=(500, 64))
+    values[:] = np.arange(values.size).reshape(values.shape)
+    view = values[100:400:3, 5:40]
+    data = _dumps(view)
+    assert len(data) < 1000
+    np.testing.assert_array_equal(pickle.loads(data), view)
+    # Copy-on-write maps may differ from their file, so they are sent by value.
+    private = np.memmap(tmp_path / "big.dat", mode="c", dtype=float, shape=(500, 64))
+    private[0] = -1
+    np.testing.assert_array_equal(pickle.loads(_dumps(private))[0], -1)
+
+
+def test_unpicklable_field_names_itself_before_rendering(scene, tmp_path):
+    class Rows:
+        shape = (4, scene.env.n_bins)
+
+        def __len__(self):
+            return 4
+
+        def __getitem__(self, index):
+            return np.ones(scene.env.n_bins)
+
+    with (
+        Animation(scene.env, {"lazy": AnimationField(Rows(), TIMES)}) as lazy,
+        pytest.raises(ValueError, match=r"field 'lazy' cannot be pickled.*n_workers=1"),
+    ):
+        lazy.export(tmp_path / "a.gif", n_workers=2)
+    assert not list(tmp_path.iterdir())
