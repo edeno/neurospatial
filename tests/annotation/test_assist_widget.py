@@ -7,7 +7,7 @@ import time
 
 import numpy as np
 import pytest
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_allclose, assert_array_equal
 
 pytestmark = pytest.mark.gui
 
@@ -703,7 +703,7 @@ def test_invalid_roi_and_outside_prompts_cannot_start_inference(assist):
     widget._suggest()
     assert not assist["workers"]
     assert "outside the region of interest" in widget.status.text()
-    widget.roi.full_image_button.click()
+    widget.roi.clear_button.click()
     widget._suggest()
     assist["workers"][-1].complete()
     assert widget.accept_button.isEnabled()
@@ -739,7 +739,7 @@ def test_roi_changes_reject_pending_results_and_reset_sam_logits(sam_assist):
     assert "mask_input" not in sam_assist["predictor"].calls[-1]
     assert widget._refinement.steps == 0
     assert widget._proposal.metadata["roi_bounds"] == [1, 1, 9, 7]
-    widget.roi.full_image_button.click()
+    widget.roi.clear_button.click()
     assert widget._refinement is None
 
 
@@ -804,3 +804,44 @@ def test_removing_polygon_preview_disables_accept_and_paint_until_new_prediction
     assist["workers"][-1].complete()
     assert widget.accept_button.isEnabled()
     assert widget.edit_button.isEnabled()
+
+
+def test_sam_box_alone_outlines_and_clicks_refine_it(sam_assist):
+    widget = sam_assist["widget"]
+    predictor = sam_assist["predictor"]
+    widget.box.draw_button.click()
+    widget.box.layer.add(
+        np.array([[0.6, 1.6], [0.6, 7.4], [5.4, 7.4], [5.4, 1.6]]),
+        shape_type="rectangle",
+    )
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    first = predictor.calls[-1]
+    assert first["point_coords"] is None
+    assert_allclose(first["box"], [1.6, 0.6, 7.4, 5.4], atol=1e-6)
+    assert widget._proposal is not None
+    # An inside click refines the box result from its logits, keeping the box.
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert_allclose(predictor.calls[-1]["box"], [1.6, 0.6, 7.4, 5.4], atol=1e-6)
+    assert "mask_input" in predictor.calls[-1]
+    # Clearing prompts removes the box too.
+    widget._clear_prompts()
+    assert widget.box.box is None
+
+
+def test_region_growing_needs_an_inside_point_even_with_a_box(assist):
+    widget = assist["widget"]
+    widget.box.draw_button.click()
+    widget.box.layer.add(
+        np.array([[0, 1], [0, 8], [6, 8], [6, 1]]), shape_type="rectangle"
+    )
+    widget._suggest()
+    assert not assist["workers"]
+    assert "Mark a point inside" in widget.status.text()
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    _image, prompt = assist["provider"].calls[-1]
+    assert_array_equal(prompt.box, [1, 0, 8, 6])

@@ -66,7 +66,7 @@ def test_edit_remove_and_full_image_are_explicit_and_notify(roi):
     with pytest.raises(ValueError, match="Draw one"):
         _ = widget.bounds
     before = len(changes)
-    widget.full_image_button.click()
+    widget.clear_button.click()
     assert len(changes) > before
     assert widget.bounds is None
     assert not widget.layer.visible
@@ -121,5 +121,5 @@ def test_dispose_removes_callbacks_layer_and_is_idempotent(roi):
     assert annotation in viewer.layers
     widget.layer.data = [_rectangle()]
     widget.draw_button.click()
-    widget.full_image_button.click()
+    widget.clear_button.click()
     assert len(changes) == before

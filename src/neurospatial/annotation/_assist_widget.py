@@ -25,7 +25,7 @@ from qtpy.QtWidgets import (
 )
 
 from neurospatial._results import read_only_copy
-from neurospatial.annotation._assist_roi import AnnotationROIControl
+from neurospatial.annotation._assist_roi import AnnotationROIControl, BoxPromptControl
 from neurospatial.annotation._outline_preview import OutlinePreviewControl
 from neurospatial.annotation._polygon_outline import PolygonOutline
 from neurospatial.annotation._prompt_tools import PromptTools
@@ -160,6 +160,9 @@ class AnnotationAssistWidget(QWidget):
         self.roi = AnnotationROIControl(
             viewer, self._frame.shape, on_change=self._roi_changed
         )
+        self.box = BoxPromptControl(
+            viewer, self._frame.shape, on_change=self._prompts_changed
+        )
         self.outline_preview = OutlinePreviewControl(
             viewer, on_change=self._outline_changed
         )
@@ -206,9 +209,9 @@ class AnnotationAssistWidget(QWidget):
         assistance_group = QGroupBox("Assisted outline")
         assistance = QFormLayout(assistance_group)
         instructions = QLabel(
-            "Choose a role and name in Annotation Controls. "
-            "Mark points inside the desired area, and outside to exclude areas. "
-            "The outline updates as you click. Refine it, then accept."
+            "Choose a role and name in Annotation Controls. Draw a box around "
+            "the area, or mark points inside it, and outside to exclude areas. "
+            "The outline updates as you prompt. Refine it, then accept."
         )
         instructions.setWordWrap(True)
         assistance.addRow(instructions)
@@ -230,6 +233,7 @@ class AnnotationAssistWidget(QWidget):
         self.delete_points_button.clicked.connect(self.prompt_tools.remove_selected)
         point_actions.addWidget(self.delete_points_button)
         assistance.addRow(point_actions)
+        assistance.addRow(self.box)
         self.live_preview = QCheckBox("Update outline as I click")
         self.live_preview.setChecked(True)
         self.live_preview.toggled.connect(self._live_preview_changed)
@@ -271,7 +275,7 @@ class AnnotationAssistWidget(QWidget):
         discard = QPushButton("Discard outline")
         discard.clicked.connect(self._invalidate)
         assistance.addRow(discard)
-        self.status = QLabel("Ready for inside points.")
+        self.status = QLabel(self._prompt_hint())
         self.status.setWordWrap(True)
         assistance.addRow(self.status)
         layout.addWidget(assistance_group)
@@ -368,8 +372,27 @@ class AnnotationAssistWidget(QWidget):
     def _clear_prompts(self) -> None:
         self._inside.data = np.empty((0, 2))
         self._outside.data = np.empty((0, 2))
+        self.box.clear()
         self._invalidate()
-        self.status.setText("Ready for inside points.")
+        self.status.setText(self._prompt_hint())
+
+    def _prompt_hint(self) -> str:
+        if isinstance(self._provider, SegmentAnythingProvider):
+            return "Draw a box or mark a point inside the desired area to begin."
+        return "Mark a point inside the desired area to begin."
+
+    def _missing_prompt(self) -> str | None:
+        """Explain why prediction cannot start yet, or return None when ready."""
+        try:
+            box = self.box.box
+        except ValueError as exc:
+            return str(exc)
+        if len(self._inside.data):
+            return None
+        # SAM 2 can outline from a box alone; region growing needs a seed.
+        if box is not None and isinstance(self._provider, SegmentAnythingProvider):
+            return None
+        return self._prompt_hint()
 
     def _invalidate(
         self,
@@ -426,9 +449,10 @@ class AnnotationAssistWidget(QWidget):
     def _prompts_changed(self, *_args: Any) -> None:
         if self._disposed:
             return
-        if len(self._inside.data) == 0:
+        missing = self._missing_prompt()
+        if missing is not None:
             self._invalidate()
-            self.status.setText("Mark a point inside the desired area to begin.")
+            self.status.setText(missing)
             return
         if self._refinement is not None:
             # Any ROI change has already discarded the refinement.
@@ -469,14 +493,16 @@ class AnnotationAssistWidget(QWidget):
         return SegmentationPrompt(
             points=np.concatenate((inside, outside)),
             labels=np.concatenate((np.ones(len(inside)), np.zeros(len(outside)))),
+            box=self.box.box,
         )
 
     def _suggest(self) -> None:
         if self._disposed or self._worker is not None:
             return
         self._invalidate(keep_preview=True, keep_refinement=True)
-        if len(self._inside.data) == 0:
-            self.status.setText("Mark a point inside the desired area to begin.")
+        missing = self._missing_prompt()
+        if missing is not None:
+            self.status.setText(missing)
             return
         try:
             prompt = self._snapshot_prompt()
@@ -605,6 +631,7 @@ class AnnotationAssistWidget(QWidget):
         self._disposed = True
         self.prompt_tools.dispose()
         self.roi.dispose()
+        self.box.dispose()
         self.outline_preview.dispose()
         self._invalidate()
         if self._worker is not None:

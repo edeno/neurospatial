@@ -236,8 +236,14 @@ Open **Project and Assistance** and use **Assisted outline** to suggest a
 boundary or region from clicks. The CPU provider works best with a distinctly
 colored surface; SAM 2 can handle more complex scenes:
 
-1. Click **Mark points**, then left-click inside the desired area. Add an inside
-   point in each disconnected area that should be included.
+1. With SAM 2, start by clicking **Draw box** and dragging a box closely around
+   the arena or region; the box alone produces an outline. A box is the most
+   reliable SAM prompt: on a dark six-arm maze, a box found five or six of the
+   six arm ends across six frames of one session, while a single center click
+   found two to five. With either provider, click **Mark points**, then
+   left-click inside the desired area, adding an inside point in each
+   disconnected area that should be included. Region growing needs an inside
+   point; a box keeps its growth inside the box.
 2. Right-click to add outside points. Alt-click near a point to remove it, or use
    **Undo last point**. To move or select several points, use napari's point
    selection tool; **Delete selected** removes selected prompts. Click **Mark
@@ -259,7 +265,8 @@ colored surface; SAM 2 can handle more complex scenes:
 6. Click **Accept outline** to add editable polygon geometry. Its holes and
    disconnected components are retained. Use **Discard outline** to remove a
    preview, or **Clear prompts** before trying a different selection. Accepting
-   an outline clears its prompts so the next object starts with a fresh set.
+   an outline clears its prompts, including the box, so the next object starts
+   with a fresh set.
 
 **Remove stray fragments** is enabled by default. It keeps every connected
 foreground region containing an inside point, including holes within those
@@ -276,6 +283,10 @@ fill gaps or join fragments. Returning it to zero restores the exact current
 mask outline. The accepted polygons and their pixel tolerance are retained by
 project save/load and Undo/Redo. Any separately configured export simplification
 still applies when producing the final result.
+
+The box prompt and the region of interest are different rectangles. The box
+tells SAM what to outline and should fit the object closely. The region of
+interest only crops the image SAM sees, and can be generous.
 
 For a small arena within a larger image, expand **Region of interest**, click
 **Draw region of interest**, and drag a rectangle around the inference area.
@@ -438,11 +449,14 @@ for this integration so it remains traceable as upstream develops:
 - [SAM 2 interactor](https://github.com/cvat-ai/cvat-models/blob/d2ebbc7f37d9c002d74fa8d392e9f3f8cb3aa419/interactor/sam2/func.py) in [cvat-models](https://github.com/cvat-ai/cvat-models): model prompting and image-embedding reuse.
 
 CVAT's referenced default accuracy of 9 maps to `10 / 7` pixels (about 1.43);
-our **1.4 px** default rounds that to the slider's 0.1 px steps. Neurospatial's
+our **1.4 px** default rounds that to the slider's 0.1 px steps. Like CVAT, the
+editor offers a box prompt alongside inside/outside clicks. Neurospatial's
 polygon conversion preserves holes and every retained component, without adding
-dilation. Our subsequent SAM clicks also use previous-logit refinement. These
-choices mean the implementations can produce different outlines from the same
-prompts; the references do not establish CVAT Online's deployed model settings.
+dilation; CVAT's polygon mode keeps the longest outer contour. Our subsequent
+SAM 2 clicks use previous-logit refinement, which CVAT's SAM 2 interactor does
+not. These choices mean the implementations can produce different outlines from
+the same prompts; the references do not establish CVAT Online's deployed model
+settings.
 
 ## Track Graph Annotation
 

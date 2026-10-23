@@ -1789,7 +1789,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   **Done** validates the exported result.
 - The annotation dock can calibrate a known distance from two marked endpoints,
   converting the output bin size so the grid keeps its size in the image, and
-  propose outlines from foreground/background clicks. The default
+  propose outlines from foreground/background clicks or a box drawn around
+  the area (with SAM 2 a box alone is enough). The default
   `RegionGrowProvider` uses CPU color segmentation, and its preview can be
   painted or erased before acceptance. `SegmentationPrompt`,
   `SegmentationProposal`, `SegmentationProvider` and `mask_to_polygons` also work
