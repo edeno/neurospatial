@@ -57,6 +57,7 @@ class LapRouter:
     def __init__(self, env: Environment, call: str) -> None:
         self.env = env
         self.call = call
+        self.segments: NDArray[np.intp] | None = None
         self.cells: _CellRouter | None = None
         if env.binning.linearization is not None:
             self.segments = _track_segments(env)
@@ -99,15 +100,34 @@ class LapRouter:
         if len(bins) == 1:
             return centers[bins]
         steps = np.column_stack([bins[:-1], bins[1:]])
-        if self.env.binning.linearization is not None:
+        if self.segments is not None:
             return _track_route(self.env, self.segments, steps)
         if self.cells is not None:
-            legs = [
-                self.cells.route(int(a), int(b), self.call, path_name, argument)
-                for a, b in steps
-            ]
+            legs = []
+            for a, b in steps.tolist():
+                leg = self.cells.route(a, b)
+                if leg is None:
+                    raise ValueError(
+                        _no_route_message(self.call, path_name, argument, a, b)
+                    )
+                legs.append(leg)
             return np.vstack([centers[bins[:1]], *(leg[1:] for leg in legs)])
         return centers[bins]
+
+
+def _no_route_message(call: str, path_name: str, argument: str, a: int, b: int) -> str:
+    """The error for a step between two bins that no route can take."""
+    return _format_error(
+        f"{call}: {path_name} steps from bin {a} to bin {b}, "
+        "but every route between them would leave the "
+        "environment.",
+        why="Why: the two bins are neighbors in env.connectivity, "
+        "but their cells do not touch inside the environment, "
+        "for example across a bridge between separate parts of "
+        "a combined environment.",
+        fix=f"pass {argument}= as a chain of bins whose cells "
+        "touch, or add bins for the space between the two parts",
+    )
 
 
 def _track_segments(env: Environment) -> NDArray[np.intp]:
@@ -185,48 +205,42 @@ class _CellRouter:
         shapely.prepare(region)
         return region
 
-    def route(
-        self, a: int, b: int, call: str, path_name: str, argument: str
-    ) -> NDArray[np.float64]:
-        """Waypoints from bin ``a``'s center to bin ``b``'s center."""
+    def route(self, a: int, b: int) -> NDArray[np.float64] | None:
+        """Waypoints from bin ``a``'s center to bin ``b``'s center, or None.
+
+        None means every route between the two bins leaves the environment.
+        """
         if (b, a) in self.routes:
             return self.routes[b, a][::-1]
         if (a, b) not in self.routes:
             start, end = self.env.bin_centers[[a, b]]
-            graph = self.env.connectivity
-            shared = sorted(set(graph[a]) & set(graph[b]))
             # Cells that meet only at a point (a corner no third bin covers)
-            # come apart when shrunk. The last tries keep the closed cells,
-            # then grow them by the clearance, for cells and an outline that
-            # a rotation moved apart at that point by rounding; either route
-            # is accepted only if the environment holds every bend.
-            for bins, clearance in (
-                ([a, b], self.clearance),
-                ([a, b, *shared], self.clearance),
-                ([a, b], 0.0),
-                ([a, b], -self.clearance),
+            # come apart when shrunk. The second try adds the bins neighboring
+            # both. The last tries keep the closed cells, then grow them by the
+            # clearance, for cells and an outline that a rotation moved apart
+            # at that point by rounding; either route is accepted only if the
+            # environment holds every bend.
+            for with_shared, clearance, verify_contains in (
+                (False, self.clearance, False),
+                (True, self.clearance, False),
+                (False, 0.0, True),
+                (False, -self.clearance, True),
             ):
+                bins = [a, b, *self.shared(a, b)] if with_shared else [a, b]
                 route = _shortest_route(self.region(bins, clearance), start, end)
                 if route is not None and (
-                    clearance > 0 or np.all(self.env.contains(route))
+                    not verify_contains or np.all(self.env.contains(route))
                 ):
                     break
             else:
-                raise ValueError(
-                    _format_error(
-                        f"{call}: {path_name} steps from bin {a} to bin {b}, "
-                        "but every route between them would leave the "
-                        "environment.",
-                        why="Why: the two bins are neighbors in env.connectivity, "
-                        "but their cells do not touch inside the environment, "
-                        "for example across a bridge between separate parts of "
-                        "a combined environment.",
-                        fix=f"pass {argument}= as a chain of bins whose cells "
-                        "touch, or add bins for the space between the two parts",
-                    )
-                )
+                return None
             self.routes[a, b] = route
         return self.routes[a, b]
+
+    def shared(self, a: int, b: int) -> list[int]:
+        """The bins neighboring both ``a`` and ``b``, in index order."""
+        graph = self.env.connectivity
+        return sorted(set(graph[a]) & set(graph[b]))
 
 
 def _shortest_route(
