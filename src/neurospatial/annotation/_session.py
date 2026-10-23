@@ -29,6 +29,23 @@ def _keep_editing(parent: Any, error: Exception) -> bool:
     return box.clickedButton() is not discard
 
 
+def _accept_with_warnings(parent: Any, messages: list[str]) -> bool:
+    """Show result warnings while they can still be fixed; True returns results."""
+    from qtpy.QtWidgets import QMessageBox
+
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle("Check Annotations")
+    box.setText("The annotations can be saved, but check these first:")
+    box.setInformativeText("\n\n".join(messages))
+    keep = box.addButton("Keep Editing", QMessageBox.ButtonRole.RejectRole)
+    box.addButton("Return Results", QMessageBox.ButtonRole.AcceptRole)
+    box.setDefaultButton(keep)
+    box.setEscapeButton(keep)
+    box.exec()
+    return box.clickedButton() is not keep
+
+
 def run_annotation_session(
     viewer: "napari.Viewer", prepare_result: Callable[[], _Result]
 ) -> _Result:
@@ -36,8 +53,10 @@ def run_annotation_session(
 
     A result is prepared when the window closes. If that fails, the user keeps
     editing or discards the draft, which raises here. Warnings raised while
-    preparing the result are re-issued to the caller once the window is closed,
-    since napari shows warnings raised inside its event loop only in the window.
+    preparing the result are shown before the window closes, while they can
+    still be fixed; if the user returns results anyway, they are re-issued to
+    the caller, since napari shows warnings raised inside its event loop only in
+    the window.
     """
     import napari
     from qtpy.QtCore import (  # type: ignore[attr-defined]
@@ -80,6 +99,11 @@ def run_annotation_session(
                         return True
                     discarded[:] = [exc]
                 else:
+                    if recorded and not _accept_with_warnings(
+                        window, [str(warning.message) for warning in recorded]
+                    ):
+                        event.ignore()
+                        return True
                     results[:] = [result]
                     caught[:] = recorded
                 closing[0] = True

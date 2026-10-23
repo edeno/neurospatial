@@ -165,6 +165,10 @@ video has moved. Click **Done** when the draft is ready to export an
 
 Done and the window close button both require valid output. Saving an invalid
 draft keeps the editor open; it does not export a partial analysis result.
+If the result can be saved but has problems worth checking, such as a region
+extending outside the environment, a **Check Annotations** dialog lists them
+before the editor closes: choose **Keep Editing** to fix them, or **Return
+Results** to continue.
 
 Start `annotate_video` with a new project path; if the file already exists, use
 `annotate_project` to resume it, or pass `overwrite=True` to start over. When
