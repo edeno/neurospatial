@@ -1783,8 +1783,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   to overwrite an existing file other than the one it resumes. Draft saves
   retain unfinished geometry, including shapes copied and pasted in napari;
   **Done** validates the exported result.
-- The annotation dock can calibrate a known distance from two marked endpoints
-  and propose outlines from foreground/background clicks. The default
+- The annotation dock can calibrate a known distance from two marked endpoints,
+  converting the output bin size so the grid keeps its size in the image, and
+  propose outlines from foreground/background clicks. The default
   `RegionGrowProvider` uses CPU color segmentation, and its preview can be
   painted or erased before acceptance. `SegmentationPrompt`,
   `SegmentationProposal`, `SegmentationProvider` and `mask_to_polygons` also work

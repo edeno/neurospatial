@@ -541,7 +541,7 @@ def test_calibration_swaps_coordinates_once_and_keeps_explicit_bin_size(assist):
     )
     assert widget.bin_size.value() == 2.0
     assert widget.bin_size.suffix() == " cm"
-    assert "now in cm" in widget.units_status.text()
+    assert "converts the bin size" in widget.units_status.text()
     assert_array_equal(assist["annotations"].data[0], original)
     assert assist["bins"] == []
     widget.sync_bin_size(3.0)

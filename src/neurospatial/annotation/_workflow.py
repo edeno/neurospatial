@@ -280,11 +280,28 @@ class AnnotationProjectSession:
             self._restore(self._redo.pop())
 
     def set_calibration(self, calibration: VideoCalibration | None) -> None:
-        """Change export coordinates without moving pixel-space annotations."""
+        """Change export coordinates without moving pixel-space annotations.
+
+        The output bin size is converted to the new units, so the grid keeps
+        its size in the image.
+        """
         self.checkpoint()
+        if self.bin_size is not None:
+            bin_size_px = (
+                self.bin_size
+                if self.calibration is None
+                else self.bin_size / self.calibration.cm_per_px
+            )
+            self.bin_size = (
+                bin_size_px
+                if calibration is None
+                else bin_size_px * calibration.cm_per_px
+            )
         self.calibration = calibration
         self.checkpoint()
         self.assist.sync_calibration(calibration)
+        if self.bin_size is not None:
+            self.assist.sync_bin_size(self.bin_size)
 
     def set_bin_size(self, value: float) -> None:
         """Record an explicit positive output grid size."""

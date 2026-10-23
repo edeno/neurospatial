@@ -468,11 +468,12 @@ Expand **Calibration and output settings** below the outlining controls in
 **Project and Assistance**. Calibration is optional for drawing outlines; use it
 when you need output in centimeters. Click **Mark two scale endpoints** and mark the
 ends of an object of known length. Enter that length in centimeters, then click
-**Apply calibration**. Check **Output bin size** after applying the scale: its
-unit changes to cm, and its numeric value remains your explicit choice. Shapes
-stay aligned with the reference frame because editable geometry remains in
-pixels. **Clear calibration** returns output units to pixels; these changes
-can be undone and are saved in the project.
+**Apply calibration**. **Output bin size** is converted to cm, so the grid keeps
+its size in the image: an 8 pixel bin at 0.3 cm per pixel becomes 2.4 cm. Enter
+a new value if you want a different grid. Shapes stay aligned with the
+reference frame because editable geometry remains in pixels. **Clear
+calibration** returns output units to pixels and converts the bin size back;
+these changes can be undone and are saved in the project.
 
 ### Using Scale Bar
 

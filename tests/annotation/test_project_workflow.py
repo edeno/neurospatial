@@ -254,20 +254,37 @@ def test_calibration_and_explicit_bin_size_share_history_without_moving_shapes(
     calibration = VideoCalibration(
         calibrate_from_scale_bar((0, 0), (10, 0), 5.0, (24, 16)), (24, 16)
     )
+    # A 2 pixel bin at 0.5 cm per pixel stays the same grid: 1 cm.
     session.set_calibration(calibration)
     assert session.calibration.cm_per_px == pytest.approx(0.5)
-    assert session.bin_size == 2.0
+    assert session.bin_size == pytest.approx(1.0)
+    assert session.assist.bin_size.value() == pytest.approx(1.0)
     assert session.assist.bin_size.suffix() == " cm"
     session.set_bin_size(3.0)
     session.undo()
-    assert session.bin_size == 2.0
-    assert session.assist.bin_size.value() == 2.0
+    assert session.bin_size == pytest.approx(1.0)
+    assert session.assist.bin_size.value() == pytest.approx(1.0)
     session.undo()
     assert session.calibration is None
+    assert session.bin_size == 2.0
+    assert session.assist.bin_size.value() == 2.0
     assert session.assist.bin_size.suffix() == " pixels"
     assert_array_equal(shapes.data[0], original)
     session.redo()
     assert session.calibration.cm_per_px == pytest.approx(0.5)
+    assert session.bin_size == pytest.approx(1.0)
+    assert_array_equal(shapes.data[0], original)
+    # Recalibrating from cm to cm keeps the pixel grid: 1 cm at 0.5 cm/px is
+    # 2 px, which is 4 cm at 2 cm/px. Clearing returns the 2 px grid.
+    session.set_calibration(
+        VideoCalibration(
+            calibrate_from_scale_bar((0, 0), (10, 0), 20.0, (24, 16)), (24, 16)
+        )
+    )
+    assert session.bin_size == pytest.approx(4.0)
+    session.set_calibration(None)
+    assert session.bin_size == pytest.approx(2.0)
+    assert session.assist.bin_size.suffix() == " pixels"
     assert_array_equal(shapes.data[0], original)
 
 
