@@ -140,7 +140,8 @@ class AnimationView:
         size and preserves native camera, styling and custom graphics. Export
         pauses playback and restores the time/playback state even if encoding
         fails. ``render="scene"`` uses the standard scene renderer and accepts
-        ``dpi`` and ``figsize``.
+        ``dpi`` and ``figsize``. Other options are those of
+        :meth:`Animation.export`, for every container.
         """
         self._require_open()
         if render not in {"view", "scene"}:
@@ -163,6 +164,7 @@ class AnimationView:
         plan = prepare_export(
             path,
             self.animation.frame_times,
+            title=self.animation.title,
             sample_times=iter_observation_clocks(self.animation),
             **kwargs,
         )

@@ -112,6 +112,26 @@ def test_native_export_preserves_edits_and_restores_clock(
         assert encoded_frames[1][1, 1, 0] == 20
 
 
+def test_native_capture_writes_an_html_player(scene, tmp_path):
+    import base64
+    import io
+    import json
+    import re
+
+    from PIL import Image
+
+    with _view(scene) as view:
+        view.select_time(100.1, 100.3)
+        path = view.export(tmp_path / "view.html", fps=10)
+        assert view.time == 100.25
+    text = path.read_text(encoding="utf-8")
+    frames = json.loads(re.search(r"const frames = (\[.*?\]);", text).group(1))
+    images = [np.asarray(Image.open(io.BytesIO(base64.b64decode(f)))) for f in frames]
+    assert [image[1, 1, 0] for image in images] == [10, 20]
+    assert np.all(images[0][0, 0] == 73)  # The user's edit is in the page.
+    assert '"t = 100.100 s", "t = 100.200 s"' in text
+
+
 def test_failed_capture_restores_view_and_preserves_existing_export(scene, tmp_path):
     path = tmp_path / "existing.gif"
     path.write_bytes(b"original")

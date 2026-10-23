@@ -589,12 +589,73 @@ class Animation:
         dpi: int = 100,
         figsize: tuple[float, float] | None = None,
         codec: str | None = None,
+        crf: int | None = None,
+        preset: str | None = None,
+        bitrate: float | None = None,
+        image_format: str = "png",
+        max_html_frames: int = 500,
+        embed: bool = True,
+        frames_dir: str | Path | None = None,
     ) -> Path:
-        """Write MP4 or GIF at uniform physical-clock intervals.
+        """Write a video, GIF or HTML player at uniform physical-clock intervals.
 
         Adjacent output frames advance by ``speed / fps`` seconds. A selected
-        half-open range ``[start, stop)`` changes only the output clock; scales and overlay clocks remain
-        those of the complete scene. Returns the destination ``Path``.
+        half-open range ``[start, stop)`` changes only the output clock; scales
+        and overlay clocks remain those of the complete scene. The file appears
+        only when complete, and an existing file is replaced only with
+        ``overwrite=True``. Options that do not apply to the container raise
+        ``TypeError``.
+
+        Parameters
+        ----------
+        path : str or Path
+            Destination. The extension selects the container: ``.mp4``,
+            ``.webm``, ``.mov``, ``.avi``, ``.gif`` or ``.html``.
+        time_range : (float, float), optional
+            Half-open ``[start, stop)`` recording interval in seconds; the
+            whole scene by default.
+        fps : float, default=30
+            Output frames per second.
+        speed : float, default=1
+            Recording seconds per playback second.
+        overwrite : bool, default=False
+            Replace an existing file, and the frames in a nonempty
+            ``frames_dir``.
+        dpi : int, default=100
+            Resolution of the rendered frames.
+        figsize : (float, float), optional
+            Figure size in inches; sized to the panels by default.
+        codec : str, optional
+            Video encoder: ``"h264"``, ``"h265"``, ``"vp9"``, ``"mpeg4"`` or
+            another ffmpeg encoder name. Defaults to H.264, or VP9 for
+            ``.webm``. Video containers only.
+        crf : int, optional
+            Constant quality from 0 (best) to 51 (63 for VP9); lower values
+            give larger files. H.264, H.265 and VP9 use 18, visually
+            lossless, unless ``bitrate`` is given. Video containers only.
+        preset : str, optional
+            H.264/H.265 encoding speed, ``"ultrafast"`` to ``"veryslow"``;
+            slower presets compress better. Defaults to ``"medium"``.
+        bitrate : float, optional
+            Constant bitrate in kilobits per second; overrides ``crf``.
+            Video containers only.
+        image_format : {"png", "jpeg"}, default="png"
+            HTML frame encoding. PNG is lossless; JPEG is smaller. ``.html``
+            only.
+        max_html_frames : int, default=500
+            Most frames embedded in one page, which a browser holds in
+            memory. ``.html`` with ``embed=True`` only.
+        embed : bool, default=True
+            Embed frames in one self-contained page. False writes image files
+            to ``frames_dir``, loaded by relative URL. ``.html`` only.
+        frames_dir : str or Path, optional
+            Directory for ``embed=False`` frames. Defaults to a directory
+            beside the page named after it (``player.html`` -> ``player/``).
+
+        Returns
+        -------
+        Path
+            The destination path.
         """
         from neurospatial.animation._scene_rendering import export_scene
 
@@ -605,13 +666,20 @@ class Animation:
             return export_scene(
                 self,
                 Path(path),
+                dpi=dpi,
+                figsize=figsize,
                 time_range=time_range,
                 fps=fps,
                 speed=speed,
                 overwrite=overwrite,
-                dpi=dpi,
-                figsize=figsize,
                 codec=codec,
+                crf=crf,
+                preset=preset,
+                bitrate=bitrate,
+                image_format=image_format,
+                max_html_frames=max_html_frames,
+                embed=embed,
+                frames_dir=frames_dir,
             )
 
     def show(self, *, backend: str = "widget", **kwargs: Any) -> Any:

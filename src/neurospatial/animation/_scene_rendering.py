@@ -514,27 +514,23 @@ def export_scene(
     scene: Any,
     path: Path,
     *,
-    time_range: Any,
-    fps: float,
-    speed: float,
-    overwrite: bool,
     dpi: int,
     figsize: tuple[float, float] | None,
-    codec: str | None,
+    **options: Any,
 ) -> Path:
-    """Stream complete scene frames to a file, replacing only on success."""
+    """Stream complete scene frames to a file, replacing only on success.
+
+    ``options`` are those of :func:`~neurospatial.animation._export.prepare_export`.
+    """
     from neurospatial.animation._export import prepare_export
     from neurospatial.animation._prepared import iter_observation_clocks
 
     plan = prepare_export(
         path,
         scene.frame_times,
-        time_range=time_range,
-        fps=fps,
-        speed=speed,
-        overwrite=overwrite,
-        codec=codec,
+        title=scene.title,
         sample_times=iter_observation_clocks(scene),
+        **options,
     )
     renderer = SceneRenderer(scene, dpi=dpi, figsize=figsize)
     try:
