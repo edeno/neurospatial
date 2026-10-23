@@ -19,6 +19,7 @@ from neurospatial.annotation._mask_cleanup import (
 from neurospatial.annotation.segmentation import (
     SegmentationPrompt,
     SegmentationProposal,
+    _inside_pixels,
     _validate_inputs,
 )
 
@@ -130,19 +131,10 @@ def crop_segmentation_input(
 def _local_roi_prompt(
     prompt: SegmentationPrompt, bounds: ROIBounds
 ) -> SegmentationPrompt:
-    """Validate containment and subtract a previously validated crop offset.
-
-    Integer coordinates are pixel centers, so the crop covers
-    ``[x0 - 0.5, x1 - 0.5) × [y0 - 0.5, y1 - 0.5)``.
-    """
+    """Validate containment and subtract a previously validated crop offset."""
     x0, y0, x1, y1 = bounds
     points = prompt.points
-    if (
-        (points[:, 0] < x0 - 0.5).any()
-        or (points[:, 0] >= x1 - 0.5).any()
-        or (points[:, 1] < y0 - 0.5).any()
-        or (points[:, 1] >= y1 - 0.5).any()
-    ):
+    if not _inside_pixels(points, bounds):
         raise ValueError(
             "An inside or outside prompt lies outside the region of interest. "
             "Move or remove that point, enlarge the region, or choose Use full image."

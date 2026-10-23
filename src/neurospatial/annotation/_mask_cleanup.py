@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy import ndimage
 
 from neurospatial.annotation.segmentation import (
     SegmentationPrompt,
     SegmentationProposal,
+    _clicked_components,
+    _inside_pixels,
 )
 
 
@@ -35,17 +36,9 @@ def remove_unprompted_fragments(
     if not len(points):
         return _CleanedOutline(proposal, 0, 0)
     height, width = proposal.mask.shape
-    # Prompts use (x, y), with integers at pixel centers, so the image covers
-    # [-0.5, size - 0.5) and rounding selects the pixel under each click.
-    if (
-        (points < -0.5).any()
-        or (points[:, 0] >= width - 0.5).any()
-        or (points[:, 1] >= height - 0.5).any()
-    ):
+    if not _inside_pixels(points, (0, 0, width, height)):
         raise ValueError("Inside points must lie within the preview image.")
-    pixels = np.floor(points + 0.5).astype(int)
-    components, count = ndimage.label(proposal.mask)
-    clicked = components[pixels[:, 1], pixels[:, 0]]
+    components, count, clicked = _clicked_components(proposal.mask, points)
     missed = int(np.count_nonzero(clicked == 0))
     keep = np.unique(clicked[clicked != 0])
     if not len(keep) or len(keep) == count:

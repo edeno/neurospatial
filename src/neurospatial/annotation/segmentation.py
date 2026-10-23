@@ -175,6 +175,38 @@ def _validate_mask(mask: Any, *, nonempty: bool = False) -> NDArray[np.bool_]:
     return array
 
 
+def _inside_pixels(
+    points: NDArray[np.float64], bounds: tuple[float, float, float, float]
+) -> bool:
+    """Return whether every ``(x, y)`` point lies on pixels ``[x0, x1) × [y0, y1)``.
+
+    Integer coordinates are pixel centers, so pixel ``i`` covers
+    ``[i - 0.5, i + 0.5)``. Non-finite points are outside.
+    """
+    x0, y0, x1, y1 = bounds
+    return bool(
+        ((points >= [x0 - 0.5, y0 - 0.5]) & (points < [x1 - 0.5, y1 - 0.5])).all()
+    )
+
+
+def _pixel_indices(points: NDArray[np.float64]) -> NDArray[np.int64]:
+    """Return the ``(x, y)`` index of the pixel under each point."""
+    return np.floor(points + 0.5).astype(np.int64)
+
+
+def _clicked_components(
+    mask: NDArray[np.bool_], points: NDArray[np.float64]
+) -> tuple[NDArray[np.int32], int, NDArray[np.int32]]:
+    """Label four-connected components and the label under each point.
+
+    Returns the label image, the number of components and one label per
+    point, zero where a point misses the foreground.
+    """
+    components, count = ndimage.label(mask)
+    pixels = _pixel_indices(points)
+    return components, count, components[pixels[:, 1], pixels[:, 0]]
+
+
 def _validate_inputs(
     image: NDArray[np.uint8], prompt: SegmentationPrompt
 ) -> NDArray[np.uint8]:
@@ -189,12 +221,7 @@ def _validate_inputs(
             "Segmentation image must be a nonzero-size RGB uint8 array (height, width, 3)."
         )
     height, width = image.shape[:2]
-    # Integers are pixel centers, so the image covers [-0.5, size - 0.5).
-    if (
-        (prompt.points < -0.5).any()
-        or (prompt.points[:, 0] >= width - 0.5).any()
-        or (prompt.points[:, 1] >= height - 0.5).any()
-    ):
+    if not _inside_pixels(prompt.points, (0, 0, width, height)):
         raise ValueError(
             f"Prompt (x, y) points fall outside the {width} by {height} image; use pixel coordinates."
         )
@@ -244,7 +271,7 @@ class RegionGrowProvider:
                 "RegionGrowProvider needs at least one foreground click (label=1)."
             )
         height, width = image.shape[:2]
-        pixels = np.floor(prompt.points + 0.5).astype(np.int64)
+        pixels = _pixel_indices(prompt.points)
         colors = image.astype(np.float64) / (255 * np.sqrt(3))
         seeds = colors[pixels[:, 1], pixels[:, 0]]
 
@@ -265,17 +292,11 @@ class RegionGrowProvider:
             x0, y0, x1, y1 = prompt.box
             rows, columns = np.ogrid[:height, :width]
             eligible &= (columns >= x0) & (columns <= x1) & (rows >= y0) & (rows <= y1)
-        components, _ = ndimage.label(eligible)
-        foreground_pixels = pixels[prompt.labels == 1]
-        selected = np.unique(
-            components[foreground_pixels[:, 1], foreground_pixels[:, 0]]
-        )
-        selected = selected[selected != 0]
-        mask = (
-            np.isin(components, selected) if selected.size else np.zeros_like(eligible)
+        components, _, clicked = _clicked_components(
+            eligible, prompt.points[prompt.labels == 1]
         )
         return SegmentationProposal(
-            mask,
+            np.isin(components, clicked[clicked != 0]),
             metadata={
                 "provider": "region_grow",
                 "tolerance": self.tolerance,

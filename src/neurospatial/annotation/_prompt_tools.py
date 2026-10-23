@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from neurospatial.annotation.segmentation import _inside_pixels
+
 if TYPE_CHECKING:
     import napari
     from napari.layers import Points
@@ -150,9 +152,9 @@ class PromptTools:
             target = self._layers[0 if button == 1 else 1]
             # napari events carry world coordinates, not layer pixel coordinates.
             point = np.asarray(target.world_to_data(event.position), dtype=float)
-            if np.all(np.isfinite(point)) and np.all(
-                (point >= -0.5) & (point < self._shape - 0.5)
-            ):
+            height, width = self._shape
+            # Data coordinates are (row, column); the bounds check takes (x, y).
+            if _inside_pixels(point[None, ::-1], (0, 0, width, height)):
                 for prompt_layer in self._layers:
                     prompt_layer.selected_data = set()
                 target.add(point)
