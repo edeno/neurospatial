@@ -88,6 +88,25 @@ def test_notebook_pair_and_docs_mirror_agree(source):
         )
 
 
+def test_docs_mirror_holds_exactly_the_notebook_collection():
+    # Scripts run from a checkout, such as try_annotation.py, are not mirrored.
+    collection = {
+        path.name
+        for pattern in ("[0-9][0-9]_*.ipynb", "[0-9][0-9]_*.py", "_*.py")
+        for path in EXAMPLES.glob(pattern)
+    }
+    mirrored = {
+        path.name
+        for pattern in ("*.ipynb", "*.py")
+        for path in (ROOT / "docs/examples").glob(pattern)
+    }
+    assert mirrored == collection, "Run python docs/sync_notebooks.py"
+    for name in collection:
+        assert (EXAMPLES / name).read_bytes() == (
+            ROOT / "docs/examples" / name
+        ).read_bytes(), f"Run python docs/sync_notebooks.py ({name})"
+
+
 def test_catalog_covers_every_notebook_and_matches_its_prerequisites():
     readme = (EXAMPLES / "README.md").read_text(encoding="utf-8")
     catalog = readme.split("<!-- notebook-catalog:start -->", 1)[1].split(
