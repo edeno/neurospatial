@@ -369,46 +369,27 @@ class SceneRenderer:
         """
         from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+        from neurospatial.environment._bin_mapping import _lattice
+        from neurospatial.environment._comparison import _box_corners
+
         env = self.scene.env
-        frame = env.binning.grid_frame
-        grid = frame.source if frame is not None else env.binning.rectilinear
+        lattice = _lattice(env.binning)
         colors = _cell_colors(values, cmap, low, high)
-        if grid is not None:
+        if lattice is not None:
             # All six faces of each active cell, including transformed grids.
-            corners = np.array(
-                [
-                    [0, 0, 0],
-                    [1, 0, 0],
-                    [1, 1, 0],
-                    [0, 1, 0],
-                    [0, 0, 1],
-                    [1, 0, 1],
-                    [1, 1, 1],
-                    [0, 1, 1],
-                ]
-            )
+            # Corner k of a cell is (low or high on x, y, z) by k's bits.
             faces = np.array(
                 [
-                    [0, 1, 2, 3],
-                    [4, 5, 6, 7],
-                    [0, 1, 5, 4],
-                    [2, 3, 7, 6],
-                    [1, 2, 6, 5],
-                    [0, 3, 7, 4],
+                    [0, 4, 6, 2],
+                    [1, 5, 7, 3],
+                    [0, 4, 5, 1],
+                    [6, 2, 3, 7],
+                    [4, 6, 7, 5],
+                    [0, 2, 3, 1],
                 ]
             )
-            indices = np.argwhere(grid.active_mask)
-            starts = np.column_stack(
-                [edge[indices[:, d]] for d, edge in enumerate(grid.edges)]
-            )
-            stops = np.column_stack(
-                [edge[indices[:, d] + 1] for d, edge in enumerate(grid.edges)]
-            )
-            vertices = (
-                starts[:, None, :] + corners[None, :, :] * (stops - starts)[:, None, :]
-            )
-            if frame is not None:
-                vertices = vertices @ frame.forward[:3, :3].T + frame.forward[:3, 3]
+            forward, grid = lattice
+            vertices = _box_corners(grid) @ forward[:3, :3].T + forward[:3, 3]
             cells = Poly3DCollection(
                 vertices[:, faces, :].reshape(-1, 4, 3),
                 facecolors=np.repeat(colors, 6, axis=0),
@@ -434,7 +415,7 @@ class SceneRenderer:
             "xyz", (ax.set_xlabel, ax.set_ylabel, ax.set_zlabel), strict=True
         ):
             setter(f"{letter} ({env.units or 'units'})")
-        return cells, 6 if grid is not None else 1
+        return cells, 6 if lattice is not None else 1
 
     def _spatial(self, ax: Any) -> list[Update]:
         """Create the spatial overlays in drawing order, each with its update."""

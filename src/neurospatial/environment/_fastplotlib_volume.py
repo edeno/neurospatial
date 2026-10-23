@@ -21,14 +21,18 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class VolumeGrid:
-    """Active source cells and the native XYZ voxel-center to world affine."""
+class UniformGrid:
+    """Active cells of a uniform grid and the cell-center to world affine.
+
+    ``matrix`` maps a cell's index ``(i, j[, k])`` to its center in world
+    ``(x, y[, z])``, any environment frame transform included.
+    """
 
     active_mask: NDArray[np.bool_]
     matrix: NDArray[np.float64]
 
     def encode(self, values: NDArray[np.float64]) -> NDArray[np.float32]:
-        """Contiguous ZYX channels: unclipped scalar and observation support.
+        """Contiguous reversed-axis channels: unclipped scalar and support.
 
         Color limits never participate in scalar encoding. Keeping support in
         its own channel preserves negative values and true zeros without a
@@ -42,40 +46,40 @@ class VolumeGrid:
                 finite,
             )
         )
-        return np.ascontiguousarray(grid.transpose(2, 1, 0, 3))
+        n_dims = self.active_mask.ndim
+        return np.ascontiguousarray(grid.transpose(*range(n_dims - 1, -1, -1), n_dims))
 
     @property
     def middle_plane(self) -> tuple[float, float, float, float]:
-        """A world-horizontal plane through the volume's central voxel."""
+        """A world-horizontal plane through a 3-D volume's central voxel."""
         center = (np.asarray(self.active_mask.shape) - 1) / 2
         world = self.matrix @ np.r_[center, 1.0]
         return (0.0, 0.0, 1.0, -float(world[2]))
 
 
-def volume_grid(env: Environment) -> VolumeGrid | None:
-    """Resolve uniform source cells, preserving transformed bin ordering."""
-    if env.n_dims != 3:
+def uniform_grid(env: Environment) -> UniformGrid | None:
+    """The environment's uniform grid cells, transformed grids included.
+
+    None when the bins are not a grid, or a grid with unequal cells.
+    """
+    from neurospatial.environment._bin_mapping import _lattice
+
+    lattice = _lattice(env.binning)
+    if lattice is None:
         return None
-    binning = env.binning
-    frame = binning.grid_frame
-    if frame is not None:
-        grid, forward = frame.source, frame.forward
-    elif binning.rectilinear is not None:
-        grid, forward = binning.rectilinear, np.eye(4)
-    else:
-        return None
+    forward, grid = lattice
     widths = np.array([np.diff(edge)[0] for edge in grid.edges])
     if any(
         not np.allclose(np.diff(edge), width, rtol=1e-7, atol=1e-12)
         for edge, width in zip(grid.edges, widths, strict=True)
     ):
         return None
-    # Native image/volume coordinate (0,0,0) is a pixel CENTER, not an edge.
-    centers = np.array([edge[0] for edge in grid.edges]) + widths / 2
-    native = np.eye(4)
-    native[:3, :3] = np.diag(widths)
-    native[:3, 3] = centers
-    return VolumeGrid(grid.active_mask, forward @ native)
+    # Native image/volume coordinate (0, ...) is a pixel CENTER, not an edge.
+    n_dims = len(grid.edges)
+    native = np.eye(n_dims + 1)
+    native[:n_dims, :n_dims] = np.diag(widths)
+    native[:n_dims, n_dims] = np.array([edge[0] for edge in grid.edges]) + widths / 2
+    return UniformGrid(grid.active_mask, forward @ native)
 
 
 def resolve_field_rendering(
@@ -90,7 +94,7 @@ def resolve_field_rendering(
         raise ValueError(
             "field_rendering must be 'auto', 'points', 'mip', 'iso', or 'slice'."
         )
-    supported = volume_grid(env) is not None
+    supported = env.n_dims == 3 and uniform_grid(env) is not None
     if mode in {"mip", "iso", "slice"} and not supported:
         raise ValueError(
             f"field_rendering={mode!r} requires a uniform regular 3D grid "
@@ -141,9 +145,9 @@ class VolumeField:
             configure_volume_material,
         )
 
-        grid = volume_grid(env)
+        grid = uniform_grid(env)
         assert grid is not None
-        self.grid: VolumeGrid = grid
+        self.grid: UniformGrid = grid
         self.scale = scale
         chosen = (scale.vmin + scale.vmax) / 2 if threshold is None else threshold
         if not scale.vmin <= chosen <= scale.vmax:

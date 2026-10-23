@@ -12,7 +12,7 @@ from neurospatial.animation import Animation, AnimationField
 from neurospatial.environment._fastplotlib import ColorScale, FieldGraphic
 from neurospatial.environment._fastplotlib_volume import (
     resolve_field_rendering,
-    volume_grid,
+    uniform_grid,
 )
 
 
@@ -37,7 +37,7 @@ def grid_env():
 
 
 def test_volume_native_zyx_centers_and_missing_are_distinct_from_zero(grid_env):
-    grid = volume_grid(grid_env)
+    grid = uniform_grid(grid_env)
     assert grid is not None
     values = np.linspace(-10, 0, grid_env.n_bins)
     values[0] = np.nan
@@ -58,7 +58,7 @@ def test_volume_native_zyx_centers_and_missing_are_distinct_from_zero(grid_env):
 
 
 def test_volume_scalars_preserve_order_outside_independent_color_limits(grid_env):
-    grid = volume_grid(grid_env)
+    grid = uniform_grid(grid_env)
     values = np.resize(np.array([-2e6, -1.5e6, -4, 0, 2, 4, np.nan]), grid_env.n_bins)
     for low, high in ((0, 1), (-3e6, -2.5e6), (10, 20)):
         scale = ColorScale("viridis", low, high, "lightgray")
@@ -82,7 +82,7 @@ def test_transformed_grid_preserves_world_xyz_and_bin_order(grid_env):
         [[0, -2, 0, 70], [3, 0, 0, -25], [0, 0, 4, 3], [0, 0, 0, 1]], dtype=float
     )
     transformed = grid_env.apply_transform(AffineND(matrix))
-    grid = volume_grid(transformed)
+    grid = uniform_grid(transformed)
     assert grid is not None
     native_centers = np.argwhere(grid.active_mask)
     mapped = native_centers @ grid.matrix[:3, :3].T + grid.matrix[:3, 3]
@@ -98,8 +98,12 @@ def test_irregular_grid_auto_points_and_explicit_volume_rejected():
         (2, 2, 2),
         np.ones((2, 2, 2), dtype=bool),
     )
+    # Environments refuse unequal grid cells; a bare binning still has them.
     env = SimpleNamespace(
-        n_dims=3, binning=SimpleNamespace(grid_frame=None, rectilinear=grid)
+        n_dims=3,
+        binning=SimpleNamespace(
+            bins=SimpleNamespace(n_dims=3), grid_frame=None, rectilinear=grid
+        ),
     )
     assert resolve_field_rendering(env, "auto") == "points"
     for mode in ("mip", "iso", "slice"):

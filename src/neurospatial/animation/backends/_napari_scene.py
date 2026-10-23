@@ -48,24 +48,21 @@ class _LayerUpdate(NamedTuple):
 
 
 def _native_grid(env: Any) -> tuple[Any, np.ndarray] | None:
-    """Return uniform source cells and the pixel-center to napari-world map."""
-    frame = env.binning.grid_frame
-    grid = frame.source if frame is not None else env.binning.rectilinear
-    if grid is None or any(
-        not np.allclose(np.diff(e), np.diff(e)[0]) for e in grid.edges
-    ):
+    """Uniform source cells and their pixel-center to napari-world affine.
+
+    Napari orders axes in reverse: ``(y, x)`` and ``(z, y, x)``.
+    """
+    from neurospatial.environment._fastplotlib_volume import uniform_grid
+
+    grid = uniform_grid(env)
+    if grid is None:
         return None
-    dims = env.n_dims
-    pixel = np.eye(dims + 1)
-    pixel[np.arange(dims), np.arange(dims)] = [np.diff(e)[0] for e in grid.edges]
-    pixel[:dims, -1] = [(e[0] + e[1]) / 2 for e in grid.edges]
-    world = pixel if frame is None else frame.forward @ pixel
-    order = [*range(dims - 1, -1, -1), dims]
-    return grid, world[np.ix_(order, order)]
+    order = [*range(env.n_dims - 1, -1, -1), env.n_dims]
+    return grid, grid.matrix[np.ix_(order, order)]
 
 
 def _image(values: np.ndarray, grid: Any) -> np.ndarray:
-    image = np.full(grid.shape, np.nan, dtype=np.float32)
+    image = np.full(grid.active_mask.shape, np.nan, dtype=np.float32)
     image[grid.active_mask] = values
     return cast("np.ndarray", image.transpose())
 
