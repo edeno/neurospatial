@@ -598,8 +598,9 @@ class SceneRenderer:
                 )
                 opacity = _rate_opacity(float(rate), vectors._rate_peak)
             finite = np.isfinite(objects).all(axis=1)
-            for marker, point in zip(markers, objects, strict=True):
-                _set_points(marker, point[None])
+            if vectors.show_objects:
+                for marker, point in zip(markers, objects, strict=True):
+                    _set_points(marker, point[None])
             segments = (
                 [np.array([animal, point]) for point in objects[finite]]
                 if np.isfinite(animal).all()

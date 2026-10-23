@@ -431,3 +431,24 @@ def test_signal_panel_cursor_follows_the_overlay_settings(scene_env, show_cursor
         (cursor,) = [line for line in panel.lines if line.get_label() != "speed"]
         assert cursor.get_visible() is show_cursor
         assert to_rgba(cursor.get_color()) == to_rgba("yellow")
+
+
+def test_object_vectors_without_object_markers_render_their_lines(scene_env):
+    # show_objects=False hides the object markers but keeps the vectors.
+    from matplotlib.collections import LineCollection
+
+    times = np.array([0.0, 0.1])
+    positions = np.array([[2.0, 2.0], [3.0, 3.0]])
+    vectors = ObjectVectorOverlay(
+        np.array([[8.0, 8.0], [1.0, 8.0]]), positions, times, show_objects=False
+    )
+    with Animation(
+        scene_env, np.ones((2, scene_env.n_bins)), frame_times=times, overlays=[vectors]
+    ) as scene:
+        scene.render_frame(0.1, dpi=30)
+        lines = [
+            artist.get_segments()
+            for artist in scene._renderer.figure.axes[0].collections
+            if isinstance(artist, LineCollection) and len(artist.get_segments())
+        ]
+        assert len(lines) == 1 and len(lines[0]) == 2
