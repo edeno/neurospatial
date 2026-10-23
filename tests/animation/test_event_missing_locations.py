@@ -94,7 +94,7 @@ def test_napari_scene_events_show_only_located_points(located_events, decay):
         handle._build_overlays()
         (layer,) = layers
         for update in handle._updates:
-            update(times[-1], None)
+            update.apply(update.prepare(times[-1]))
         # Napari draws (y, x); the event at 0.6 s has no tracked location.
         shown = layer.data[:, ::-1]
         assert np.isfinite(shown).all()

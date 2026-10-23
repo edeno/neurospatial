@@ -30,11 +30,21 @@ from neurospatial.animation.backends._napari_compat import (
 
 
 class _PreparedFrame(NamedTuple):
-    """Keep arbitrary scientific field names separate from view metadata."""
+    """One time's layer and panel data, computed on the worker thread."""
 
-    fields: dict[str, np.ndarray]
-    videos: dict[int, np.ndarray | None]
+    layers: list[Any]
     panels: Any
+
+
+class _LayerUpdate(NamedTuple):
+    """One layer group's update at a time.
+
+    ``prepare`` computes the group's data on the worker thread; ``apply``
+    only assigns it to the layers, on the GUI thread.
+    """
+
+    prepare: Callable[[float], Any]
+    apply: Callable[[Any], None]
 
 
 def _native_grid(env: Any) -> tuple[Any, np.ndarray] | None:
@@ -222,7 +232,6 @@ class NapariScene:
         self._generation = 0
         self._capturing = False
         self.last_error: BaseException | None = None
-        self._last_samples: dict[str, np.ndarray] = {}
         self.viewer: Any = options.get("viewer")
         self._owns_viewer = self.viewer is None
         if self.viewer is None:
@@ -232,7 +241,7 @@ class NapariScene:
                 show=options.get("show", True),
             )
         self._layers: list[Any] = []
-        self._updates: list[Any] = []
+        self._updates: list[_LayerUpdate] = []
         self.field_layers: dict[str, Any] = {}
         try:
             self._executor = ThreadPoolExecutor(
@@ -422,21 +431,11 @@ class NapariScene:
                     rendering="attenuated_mip",
                 )
 
-                def update_image(
-                    time: float,
-                    samples: Any,
-                    *,
-                    layer: Any = layer,
-                    name: str = name,
-                    grid: Any = grid,
+                def assign(
+                    values: np.ndarray, layer: Any = layer, grid: Any = grid
                 ) -> None:
-                    if (
-                        getattr(self, "_last_samples", {}).get(name)
-                        is not samples.fields[name]
-                    ):
-                        layer.data = _image(samples.fields[name], grid)
+                    layer.data = _image(values, grid)
 
-                self._updates.append(update_image)
             else:
                 layer = self._add(
                     "points",
@@ -450,17 +449,13 @@ class NapariScene:
                     size=5,
                 )
 
-                def update(
-                    time: float, samples: Any, *, layer: Any = layer, name: str = name
+                def assign(
+                    values: np.ndarray, layer: Any = layer, grid: Any = None
                 ) -> None:
-                    if (
-                        getattr(self, "_last_samples", {}).get(name)
-                        is not samples.fields[name]
-                    ):
-                        layer.features = {"value": samples.fields[name]}
-                        layer.shown = np.isfinite(samples.fields[name])
+                    layer.features = {"value": values}
+                    layer.shown = np.isfinite(values)
 
-                self._updates.append(update)
+            self._updates.append(self._field_update(field, assign))
             self.field_layers[name] = layer
         # Without a layout, all fields share one panel and one overlay stack.
         self._panel_stacks: dict[str | None, list[Any]] = (
@@ -469,39 +464,40 @@ class NapariScene:
             else {None: list(self.field_layers.values())}
         )
 
+    def _field_update(
+        self, field: Any, assign: Callable[[np.ndarray], None]
+    ) -> _LayerUpdate:
+        """A field layer's update; a held row is not assigned again."""
+        drawn: list[np.ndarray | None] = [None]
+
+        def apply(values: np.ndarray) -> None:
+            if values is not drawn[0]:
+                assign(values)
+                drawn[0] = values
+
+        return _LayerUpdate(lambda time: self._helper.field_sample(field, time), apply)
+
     def _build_overlays(self) -> None:
         from matplotlib import colormaps
 
         from neurospatial.animation._region_names import shown_region_names
 
-        scene, sample = self.scene, self._helper.sample
+        scene, helper = self.scene, self._helper
         data, dims = scene._overlay_data, scene.env.n_dims
         empty = np.empty((0, dims))
+        no_vectors = np.empty((0, 2, dims))
 
-        def points(layer: Any, coordinates: Any) -> None:
+        def points(coordinates: Any) -> np.ndarray:
+            """Finite points in napari's (..., y, x) order."""
             values = np.asarray(coordinates, dtype=float).reshape(-1, dims)
-            layer.data = values[np.isfinite(values).all(axis=1), ::-1]
+            return values[np.isfinite(values).all(axis=1), ::-1]
 
-        def paths(
-            layer: Any,
-            segments: Any,
-            alphas: np.ndarray | None = None,
-            color: Any = None,
-        ) -> None:
-            keep = [
-                np.isfinite(segment).all() and bool(np.any(np.diff(segment, axis=0)))
-                for segment in segments
-            ]
-            layer.data = [
-                np.asarray(segment)[:, ::-1]
-                for segment, kept in zip(segments, keep, strict=True)
-                if kept
-            ]
-            if alphas is not None and any(keep):
-                # Each segment fades with its age, as in the other views.
-                colors = np.tile(np.asarray(color, dtype=float), (sum(keep), 1))
-                colors[:, 3] = np.asarray(alphas)[keep]
-                layer.edge_color = colors
+        def paths(segments: np.ndarray) -> tuple[list[np.ndarray], np.ndarray]:
+            """Drawable segments in napari order, and which were kept."""
+            keep = np.isfinite(segments).all(axis=(1, 2)) & np.any(
+                np.diff(segments, axis=1) != 0, axis=(1, 2)
+            )
+            return list(segments[keep][:, :, ::-1]), keep
 
         for i, position in enumerate(data.positions):
             layer = self._add_overlay(
@@ -527,19 +523,29 @@ class NapariScene:
                 else None
             )
 
-            def update_position(
-                time: float,
-                samples: Any,
-                *,
-                p: Any = position,
-                layer: Any = layer,
-                trail: Any = trail,
-            ) -> None:
-                points(layer, sample(p, p.data, time))
-                if trail is not None:
-                    paths(trail, *self._helper.trail(p, time), _rgba(p.color))
+            def prepare_position(time: float, p: Any = position) -> Any:
+                marker = points(helper.sample(p, p.data, time))
+                if not p.trail_length:
+                    return marker, None
+                segments, alphas = helper.trail(p, time)
+                shown, keep = paths(segments)
+                # Each segment fades with its age, as in the other views.
+                colors = np.tile(_rgba(p.color), (len(shown), 1))
+                colors[:, 3] = alphas[keep]
+                return marker, (shown, colors)
 
-            self._updates.append(update_position)
+            def apply_position(
+                prepared: Any, layer: Any = layer, trail: Any = trail
+            ) -> None:
+                marker, segments = prepared
+                layer.data = marker
+                if trail is not None:
+                    shown, colors = segments
+                    trail.data = shown
+                    if len(colors):
+                        trail.edge_color = colors
+
+            self._updates.append(_LayerUpdate(prepare_position, apply_position))
         for i, body in enumerate(data.bodypart_sets):
             names = list(body.bodyparts)
             layers = {
@@ -567,21 +573,20 @@ class NapariScene:
                 else None
             )
 
-            def update_body(
-                time: float,
-                samples: Any,
-                *,
-                body: Any = body,
-                layers: Any = layers,
-                skeleton: Any = skeleton,
-            ) -> None:
-                pose = self._helper.pose(body, time)
-                for layer, point in zip(layers.values(), pose.points, strict=True):
-                    points(layer, point)
-                if skeleton is not None:
-                    paths(skeleton, pose.skeleton)
+            def prepare_body(time: float, body: Any = body) -> Any:
+                pose = helper.pose(body, time)
+                return [points(point) for point in pose.points], paths(pose.skeleton)[0]
 
-            self._updates.append(update_body)
+            def apply_body(
+                prepared: Any, layers: Any = layers, skeleton: Any = skeleton
+            ) -> None:
+                parts, edges = prepared
+                for layer, part in zip(layers.values(), parts, strict=True):
+                    layer.data = part
+                if skeleton is not None:
+                    skeleton.data = edges
+
+            self._updates.append(_LayerUpdate(prepare_body, apply_body))
         for i, heading in enumerate(data.head_directions):
             color = "white" if heading.color in colormaps else _rgba(heading.color)
             layer = self._add_overlay(
@@ -594,21 +599,25 @@ class NapariScene:
                 length=1,
             )
 
-            def update_heading(
-                time: float, samples: Any, *, h: Any = heading, layer: Any = layer
-            ) -> None:
-                arrow = self._helper.heading_arrow(h, time)
-                if arrow is not None:
-                    origin, direction = arrow
-                    layer.data = np.array([[origin[::-1], direction[::-1]]])
-                    if h.color in colormaps:
-                        layer.edge_color = np.asarray(
-                            _head_direction_color(h.color, direction)
-                        )
-                else:
-                    layer.data = np.empty((0, 2, dims))
+            def prepare_heading(time: float, h: Any = heading) -> Any:
+                arrow = helper.heading_arrow(h, time)
+                if arrow is None:
+                    return no_vectors, None
+                origin, direction = arrow
+                hue = (
+                    np.asarray(_head_direction_color(h.color, direction))
+                    if h.color in colormaps
+                    else None
+                )
+                return np.array([[origin[::-1], direction[::-1]]]), hue
 
-            self._updates.append(update_heading)
+            def apply_heading(prepared: Any, layer: Any = layer) -> None:
+                arrow, hue = prepared
+                layer.data = arrow
+                if hue is not None:
+                    layer.edge_color = hue
+
+            self._updates.append(_LayerUpdate(prepare_heading, apply_heading))
         for i, vector in enumerate(data.object_vectors):
             layer = self._add_overlay(
                 "vectors",
@@ -633,35 +642,37 @@ class NapariScene:
                 else None
             )
 
-            def update_vectors(
-                time: float,
-                samples: Any,
-                *,
-                v: Any = vector,
-                layer: Any = layer,
-                objects: Any = objects,
-            ) -> None:
-                animal = sample(v, v.animal_positions, time)
+            def prepare_vectors(time: float, v: Any = vector) -> Any:
+                animal = helper.sample(v, v.animal_positions, time)
                 targets = (
-                    sample(v, v.object_positions, time)
+                    helper.sample(v, v.object_positions, time)
                     if v.object_positions.ndim == 3
                     else v.object_positions
                 )
                 targets = targets[np.isfinite(targets).all(axis=1)]
-                if objects is not None:
-                    points(objects, targets)
-                layer.data = (
-                    np.array(
-                        [[animal[::-1], (target - animal)[::-1]] for target in targets]
-                    ).reshape(-1, 2, dims)
-                    if np.isfinite(animal).all()
-                    else np.empty((0, 2, dims))
-                )
+                vectors = no_vectors
+                if np.isfinite(animal).all():
+                    vectors = np.stack(
+                        [np.broadcast_to(animal, targets.shape), targets - animal],
+                        axis=1,
+                    )[:, :, ::-1]
+                opacity = None
                 if v.firing_rates is not None:
-                    rate = sample(v, v.firing_rates, time, name="firing_rates")
-                    layer.opacity = _rate_opacity(float(rate), v._rate_peak or 1.0)
+                    rate = helper.sample(v, v.firing_rates, time, name="firing_rates")
+                    opacity = _rate_opacity(float(rate), v._rate_peak or 1.0)
+                return points(targets), vectors, opacity
 
-            self._updates.append(update_vectors)
+            def apply_vectors(
+                prepared: Any, layer: Any = layer, objects: Any = objects
+            ) -> None:
+                targets, vectors, opacity = prepared
+                layer.data = vectors
+                if objects is not None:
+                    objects.data = targets
+                if opacity is not None:
+                    layer.opacity = opacity
+
+            self._updates.append(_LayerUpdate(prepare_vectors, apply_vectors))
         for i, events in enumerate(data.events):
             layers = {
                 name: self._add_overlay(
@@ -679,24 +690,25 @@ class NapariScene:
             }
             drawn: dict[str, tuple[int, ...]] = {}
 
-            def update_events(
-                time: float,
-                samples: Any,
-                *,
-                e: Any = events,
-                layers: Any = layers,
-                drawn: Any = drawn,
-            ) -> None:
-                for name, shown in self._helper.events(e, time).items():
-                    if drawn.get(name) == shown.key:
-                        continue
-                    drawn[name] = shown.key
-                    layers[name].data = shown.positions[:, ::-1]
+            def prepare_events(time: float, e: Any = events) -> Any:
+                prepared = {}
+                for name, shown in helper.events(e, time).items():
                     colors = np.tile(_rgba(e.colors[name]), (len(shown.opacity), 1))
                     colors[:, 3] *= shown.opacity
-                    layers[name].face_color = colors
+                    prepared[name] = (shown.key, shown.positions[:, ::-1], colors)
+                return prepared
 
-            self._updates.append(update_events)
+            def apply_events(
+                prepared: Any, layers: Any = layers, drawn: Any = drawn
+            ) -> None:
+                # Markers are assigned only when the shown events change.
+                for name, (key, positions, colors) in prepared.items():
+                    if drawn.get(name) != key:
+                        layers[name].data = positions
+                        layers[name].face_color = colors
+                        drawn[name] = key
+
+            self._updates.append(_LayerUpdate(prepare_events, apply_events))
         for i, video in enumerate(data.videos):
             # A custom map may intentionally begin with a missing frame. Use
             # the first mapped image only to establish layer geometry; seeking
@@ -751,19 +763,15 @@ class NapariScene:
                 )
                 self.viewer.layers.move(self.viewer.layers.index(copy), destination)
 
-            def update_video(
-                time: float,
-                samples: Any,
-                *,
-                v: Any = video,
-                layer: Any = layer,
-            ) -> None:
-                image = samples.videos[id(v)]
+            def apply_video(image: Any, layer: Any = layer) -> None:
                 layer.visible = image is not None
                 if image is not None:
                     layer.data = image
 
-            self._updates.append(update_video)
+            def prepare_video(time: float, v: Any = video) -> Any:
+                return helper.video_frame(v, time)
+
+            self._updates.append(_LayerUpdate(prepare_video, apply_video))
         for name in (
             shown_region_names(scene.env, scene.show_regions)
             if scene.show_regions
@@ -811,22 +819,22 @@ class NapariScene:
         return time
 
     def _prepare(self, time: float) -> _PreparedFrame:
-        # Decoders and lazy source adapters need not support concurrent reads.
-        # Synchronous seek, worker jobs and close share this source lifetime.
-        with getattr(self, "_source_lock", self._helper.source_lock):
+        """Sample, read and lay out every layer and panel; no Qt or artists.
+
+        Runs on the worker thread. Decoders and lazy source adapters need not
+        support concurrent reads: synchronous seek, worker jobs and close
+        share the scene's source lock.
+        """
+        with self._helper.source_lock:
             return _PreparedFrame(
-                self._helper.field_samples(time),
-                {
-                    id(video): self._helper.video_frame(video, time)
-                    for video in self.scene._overlay_data.videos
-                },
+                [update.prepare(time) for update in self._updates],
                 self._panels.prepare(time) if self._panels is not None else None,
             )
 
     def _apply(self, time: float, samples: _PreparedFrame) -> None:
-        for update in self._updates:
-            update(time, samples)
-        self._last_samples = {name: samples.fields[name] for name in self.scene.fields}
+        """Assign prepared data to the layers and panels, on the GUI thread."""
+        for update, prepared in zip(self._updates, samples.layers, strict=True):
+            update.apply(prepared)
         self._time = time
         self.time_control.blockSignals(True)
         try:
@@ -1051,7 +1059,6 @@ class NapariScene:
                 release(lambda widget=widget: widget.setParent(None))
                 release(widget.deleteLater)
         release(self._helper.clear_cache)
-        self._last_samples = {}
         self.last_error = None
         self._panels = None
         self._updates.clear()

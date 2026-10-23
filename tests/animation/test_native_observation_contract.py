@@ -151,10 +151,10 @@ def test_object_vector_consumers_share_full_recording_finite_peak(env, monkeypat
         )
         native_napari._build_overlays()
         for update in native_napari._updates:
-            update(0.1, {})
+            update.apply(update.prepare(0.1))
         assert native_napari._layers[0].opacity == pytest.approx(0.55)
         for update in native_napari._updates:
-            update(0.2, {})
+            update.apply(update.prepare(0.2))
         assert native_napari._layers[0].opacity == 0
         native = gpu._ObjectVectors(Plot(), data, samples(data, times))
         native.update(0.1)

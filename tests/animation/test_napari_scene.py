@@ -191,6 +191,42 @@ def test_native_qt_capture_restores_time_camera_and_custom_graphics():
         scene.close()
 
 
+def test_gui_thread_only_assigns_layer_data_prepared_on_the_worker(monkeypatch):
+    from neurospatial.animation.overlays import ObjectVectorOverlay
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    times = np.array([0.0, 0.1, 0.2])
+    positions = np.array([[0.5, 0.5], [1.0, 1.0], [1.5, 1.5]])
+    scene = Animation(
+        env,
+        np.ones((3, env.n_bins)),
+        frame_times=times,
+        overlays=[
+            PositionOverlay(positions, times, trail_length=2),
+            BodypartOverlay({"nose": positions + 0.1}, times),
+            HeadDirectionOverlay(times, times),
+            ObjectVectorOverlay(np.array([[2.0, 2.0]]), positions, times),
+            EventOverlay.from_fixed_positions(np.array([0.05]), np.array([[1.0, 1.0]])),
+        ],
+    )
+    handle = model_handle(scene)
+    prepared = handle._prepare(0.15)
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("sampled on the GUI thread")
+
+    for name in ("sample", "trail", "pose", "heading_arrow", "events", "field_sample"):
+        monkeypatch.setattr(handle._helper, name, refuse)
+    handle._apply(0.15, prepared)
+    names = {layer.name: layer for layer in handle.viewer.layers}
+    np.testing.assert_allclose(names["Position 1"].data, [[1.25, 1.25]])
+    np.testing.assert_allclose(names["Events 1: event"].data, [[1.0, 1.0]])
+    assert len(names["Position trail 1"].data) == 1
+    scene.close()
+
+
 def test_irregular_cells_use_physical_bin_centers_and_keep_missing_values():
     env = Environment.from_samples(
         np.random.default_rng(3).uniform(0, 10, (100, 2)),
