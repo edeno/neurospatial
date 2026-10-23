@@ -140,10 +140,7 @@ class _ScientificPanels:
                 self.signals.append((line, signal))
             if any(s.label for s in signals):
                 ax.legend(loc="upper right", fontsize="small")
-            lows = [0 if s.normalize else s.global_vmin for s in signals]
-            highs = [1 if s.normalize else s.global_vmax for s in signals]
-            low, high = min(lows), max(highs)
-            ax.set_ylim(low - (low == high) * 0.5, high + (low == high) * 0.5)
+            ax.set_ylim(*helper.signal_limits(signals))
         for raster in scene._overlay_data.spike_rasters:
             ax = self.figure.add_subplot(count, 1, len(self.axes) + 1)
             self.axes.append(ax)

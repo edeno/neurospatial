@@ -501,3 +501,28 @@ def test_shown_events_follow_the_frame_rule_for_unordered_records(env, decay):
         keys.add(shown.key)
     assert len(keys) > 1
     scene.close()
+
+
+def test_signal_panels_share_one_limit_rule(env):
+    times = np.linspace(0, 1, 11)
+    scene = Animation(
+        env,
+        np.ones((11, env.n_bins)),
+        frame_times=times,
+        overlays=[
+            TimeSeriesOverlay(np.full(11, 3.0), times, label="constant"),
+            # A speed's tiny floor reads as zero.
+            TimeSeriesOverlay(2e-6 + times * 5, times, label="speed"),
+            TimeSeriesOverlay(times * 4, times, group="g", normalize=True),
+            TimeSeriesOverlay(times - 2, times, group="g"),
+        ],
+    )
+    prepared = PreparedScene(scene)
+    limits = [
+        prepared.signal_limits(group) for group in prepared.signal_groups.values()
+    ]
+    assert limits == [(2.5, 3.5), (0.0, 5.000002), (-2.0, 1.0)]
+    scene.render_frame(0.5, dpi=30)
+    panels = [ax for ax in scene._renderer.figure.axes if ax.get_xlabel() == "Time (s)"]
+    assert [ax.get_ylim() for ax in panels] == limits
+    scene.close()

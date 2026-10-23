@@ -475,12 +475,7 @@ class SceneRenderer:
         ]
         if any(signal.label for signal in signals):
             ax.legend(loc="upper right", fontsize="small")
-        lows = [0.0 if signal.normalize else signal.global_vmin for signal in signals]
-        highs = [1.0 if signal.normalize else signal.global_vmax for signal in signals]
-        low, high = min(lows), max(highs)
-        if low == high:
-            low, high = low - 0.5, high + 0.5
-        ax.set_ylim(low, high)
+        ax.set_ylim(*self.prepared.signal_limits(signals))
         # A panel's signals share one cursor, styled by its first signal.
         time_axis = self._time_axis(
             ax,

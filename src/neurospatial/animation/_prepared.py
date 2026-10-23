@@ -505,6 +505,21 @@ class PreparedScene:
         # consumer, including custom adapters with separate display metadata.
         return clock[keep], signal.data[keep]
 
+    def signal_limits(self, signals: list[Any]) -> tuple[float, float]:
+        """The y-limits of a panel of ``signals``: their whole recording.
+
+        Fixed limits keep the panel still during playback. A near-zero floor
+        reads as zero and a constant signal gets half a unit either side
+        (:func:`~neurospatial.animation._field_stats.tidy_range`).
+        Normalized signals span [0, 1].
+        """
+        from neurospatial.animation._field_stats import tidy_range
+
+        return tidy_range(
+            min(signal.global_vmin for signal in signals),
+            max(signal.global_vmax for signal in signals),
+        )
+
     def raster_window(self, raster: Any, row: int, time: float) -> np.ndarray:
         """One unit's spike times in the current window, preserving unit order."""
         left, right = self.bounds(time)
