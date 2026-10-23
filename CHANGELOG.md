@@ -93,7 +93,9 @@
   lazy sources and fixed color scales across notebook viewing and MP4/GIF
   export. `Animation.from_decoding` retains the result's environment and times.
   `AnimationView` adds recording-time seeking, interval selection and export,
-  with native viewers available through `native`.
+  with native viewers available through `native`. A view exports the whole
+  recording through its last time until `select_time(start, stop)` selects a
+  half-open window, even one spanning the whole recording.
 - Extend scenes to 3-D and napari, preserving independent field clocks and
   scales. Napari combines native layers with synchronized signal, raster,
   epoch and projected-track panels; fastplotlib now supports a separate
@@ -146,8 +148,11 @@
   without hard links (exFAT, FAT32, some network drives) still refuse to
   replace a file created during encoding, and files get the usual permissions.
 - `Animation.export(n_workers=...)` renders frames in worker processes, with
-  output identical to one process; `None` uses every CPU. A field or overlay
-  that cannot be sent to a worker raises before rendering and names it.
+  output identical to one process; `None` uses every CPU. Workers render the
+  observations the scene prepared, so changing an overlay's arrays or an
+  adapter's source afterward changes neither serial nor parallel output, and
+  adapters need not be picklable. A field or prepared overlay that cannot be
+  sent to a worker raises before rendering and names it.
   File-backed memory maps are reopened in each worker rather than copied.
   Scripts using workers need an `if __name__ == "__main__":` guard on macOS
   and Windows.
