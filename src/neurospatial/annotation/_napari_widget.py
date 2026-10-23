@@ -58,9 +58,38 @@ _MODE_STATUS: dict[str, str] = {
 class _AnnotationWidget(Container):
     """Annotation controls with an explicit pending-edit save boundary."""
 
-    def __init__(self, *, flush_pending: Callable[[], None], **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        flush_pending: Callable[[], None],
+        sync_from_layer: Callable[[], None],
+        next_annotation: Callable[[], tuple[RegionType, str]],
+        role_selector: Any,
+        name_input: Any,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.flush_pending = flush_pending
+        self.sync_from_layer = sync_from_layer
+        self.next_annotation = next_annotation
+        # Other docks mirror these, so the next shape's role and name are
+        # visible wherever a shape can be added.
+        self.role_selector = role_selector
+        self.name_input = name_input
+
+
+def confirm_environment_replacement(parent: Any) -> bool:
+    """Ask whether a new environment boundary should replace the existing one."""
+    from qtpy.QtWidgets import QMessageBox
+
+    answer = QMessageBox.question(
+        parent,
+        "Replace Environment Boundary?",
+        "An environment boundary already exists.\n\nReplace it with the new boundary?",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return bool(answer == QMessageBox.StandardButton.Yes)
 
 
 def create_annotation_widget(
@@ -111,9 +140,11 @@ def create_annotation_widget(
     instructions = Label(
         value=(
             "Quick start:\n"
-            "1. Type a name in 'Next Shape Name' (applies to the next shape)\n"
-            "2. Draw the shape (click points, ENTER to finish)\n"
-            "3. Click 'Save and Close' when done\n"
+            "1. Choose the Annotation Type and type a 'Next Shape Name'\n"
+            "2. Draw the shape (click points, ENTER to finish), or outline it\n"
+            "   automatically in the 'Project and Assistance' tab\n"
+            "3. Set centimeter calibration and bin size in that tab\n"
+            "4. Save your project there, or click 'Done' to return results\n"
             "Rename later: select a shape, edit the name, press Enter."
         ),
     )
@@ -136,7 +167,7 @@ def create_annotation_widget(
             "• Press M → draw landmarks (orange): an ellipse marks a point\n"
             "  such as a reward port, a path a line such as a monitor, a\n"
             "  polygon or rectangle an object\n"
-            "• Save and Close when finished\n"
+            "• Save Project to keep editing; Done to return results\n"
             "\n"
             "Drawing\n"
             "• Click points to draw polygon, ENTER to finish\n"
@@ -196,9 +227,27 @@ def create_annotation_widget(
     # Set placeholder text (magicgui uses native widget underneath)
     name_input.native.setPlaceholderText("Type name, press Enter to apply")
 
-    # Shapes list for tracking annotations
+    def annotation_choices(widget: Any = None) -> tuple[tuple[str, int], ...]:
+        """Derive choices from domain data when napari refreshes magicgui."""
+        shapes = get_shapes()
+        if shapes is None:
+            return ()
+        features = shapes.features
+        choices = []
+        for index in range(len(shapes.data)):
+            name = (
+                features["name"].iloc[index]
+                if index < len(features)
+                else f"shape_{index}"
+            )
+            role = features["role"].iloc[index] if index < len(features) else "region"
+            choices.append((f"#{index + 1}: {name} ({role})", index))
+        return tuple(choices)
+
+    # A callable keeps choices intact when adding calibration or prompt layers
+    # causes napari to reset every categorical widget in the dock.
     shapes_list = Select(
-        choices=[],
+        choices=annotation_choices,
         label="Annotations:",
         allow_multiple=False,
     )
@@ -214,8 +263,8 @@ def create_annotation_widget(
         enabled=False,  # Disabled until shape selected
     )
     save_btn = PushButton(
-        text="Save and Close",
-        tooltip="Close viewer and return annotations to Python. Shortcut: Escape",
+        text="Done",
+        tooltip="Validate annotations and return the results to Python.",
     )
 
     def get_controller() -> ShapesLayerController | None:
@@ -261,25 +310,7 @@ def create_annotation_widget(
 
     def update_shapes_list() -> None:
         """Refresh the shapes list from layer data in creation order."""
-        shapes = get_shapes()
-        if shapes is None or len(shapes.data) == 0:
-            shapes_list.choices = ()
-            return
-
-        # Build list of (label, value) tuples in creation order
-        # Magicgui Select expects (label, value) format where label is displayed
-        # Using tuples ensures index extraction works even if names contain colons
-        features = shapes.features
-        choices: list[tuple[str, int]] = []
-        for i in range(len(shapes.data)):
-            name = features["name"].iloc[i] if i < len(features) else f"shape_{i}"
-            role = features["role"].iloc[i] if i < len(features) else "region"
-            # Show index for easy reference: "#1: name (role)"
-            display_label = f"#{i + 1}: {name} ({role})"
-            choices.append((display_label, i))
-
-        # Preserve creation order - no sorting
-        shapes_list.choices = tuple(choices)
+        shapes_list.reset_choices()
 
     def select_shape_in_layer(idx: int) -> None:
         """Select a shape in the layer by index."""
@@ -485,11 +516,6 @@ def create_annotation_widget(
         role_selector.value = "region"
         viewer.status = _MODE_STATUS["region"]
 
-    @viewer.bind_key("Escape")
-    def finish_annotation(viewer: napari.Viewer) -> None:
-        """Finish annotation and close viewer."""
-        save_and_close()
-
     # --- Data Change Callback ---
     # Use events.data instead of mouse_drag_callbacks for reliable detection
     # of when shapes are actually added (learned from napari-segment-anything)
@@ -535,19 +561,7 @@ def create_annotation_widget(
                 if i < pre_existing_count and str(r) == "environment"
             )
             if state.region_type == "environment" and existing_env_count > 0:
-                # Show dialog asking if they want to replace the existing boundary
-                from qtpy.QtWidgets import QMessageBox
-
-                parent = viewer.window._qt_window
-                reply = QMessageBox.question(
-                    parent,
-                    "Environment Already Exists",
-                    "An environment boundary already exists.\n\n"
-                    "Replace it with this new boundary?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                if reply == QMessageBox.StandardButton.Yes:
+                if confirm_environment_replacement(viewer.window._qt_window):
                     # Delete the existing environment boundary
                     env_indices = [
                         i for i, r in enumerate(roles) if str(r) == "environment"
@@ -767,9 +781,14 @@ def create_annotation_widget(
     ]
     widget = _AnnotationWidget(
         flush_pending=flush_pending,
+        sync_from_layer=mutation_finished,
+        next_annotation=lambda: (state.region_type, name_input.value.strip()),
+        role_selector=role_selector,
+        name_input=name_input,
         widgets=container_widgets,
         labels=True,
     )
+    mutation_finished()
 
     return widget
 

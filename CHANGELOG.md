@@ -1500,6 +1500,46 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Assisted outlines now start with **1.4 px** polygon simplification; set
+  **Polygon detail** to **0** to restore exact mask boundaries. Setup
+  instructions and launcher help describe the SAM 2.1 Large checkpoint and
+  current prompt controls. The guide and source comments credit CVAT's interaction
+  design and link to pinned upstream references for the workflow and defaults.
+
+- Assisted annotation previews now show the exact polygons that **Accept outline**
+  commits. **Polygon detail** adjusts pixel tolerance and reports vertex count
+  without rerunning inference; holes and components survive simplification,
+  painting, undo/redo, and project saves.
+- **Mark points** supports left-click inside, right-click outside, Alt-click
+  removal, **Undo last point**, and **Delete selected**. Native selection and
+  painting tools remain available.
+- An optional **Region of interest** crops inference inputs and maps masks back
+  to original image coordinates. Editing the crop resets SAM refinement and
+  rejects stale predictions; prompts outside it require correction.
+
+- SAM 2 assisted annotation now refines new clicks using the last displayed
+  prediction's raw logits. Moving/removing prompts or clearing/discarding an
+  outline resets refinement; stale background results cannot seed later requests.
+  Painted previews remain separate from model state, and accepted annotations
+  record the number of refinement steps.
+
+- Assisted annotation now removes unprompted disconnected fragments from the
+  preview by default. **Remove stray fragments** can be turned off to compare
+  the original prediction without another model call. Cleanup preserves holes
+  and every region containing an inside click, and records removed fragments
+  in accepted annotation metadata.
+
+- Assisted annotation previews update automatically as inside/outside points or
+  CPU color tolerance change. Outlines keep the point tool active, stale results
+  cannot be accepted, and paint/erase correction remains available explicitly.
+  Optional calibration and output settings start collapsed above the outlining
+  controls, with a one-line summary of the units and bin size.
+
+- Polygon annotation uses **Done** to validate and return the result;
+  `Escape` keeps napari's normal finish/cancel behavior. **Save Project** and
+  `Ctrl`/`Cmd`+`S` save editable work separately, while Undo and Redo include
+  accepted assisted outlines and calibration changes.
+
 - More results own their arrays as read-only copies that survive pickle and
   `copy.deepcopy`, like the other analysis results: `ShuffleTestResult`
   (its `null_scores` became writable again after copying),
@@ -2022,6 +2062,56 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   are reported.
 
 ### Added
+
+- `examples/try_annotation.py` launches CPU or optional SAM 2 assisted
+  annotation on a sample arena, image, or video frame. A `--check` mode runs
+  sample inference without opening a viewer.
+
+- Resumable polygon annotation projects: `AnnotationProject` and
+  `AnnotationShape` save editable pixel geometry, calibration, output settings
+  and the RGB reference frame in one portable file. Shapes compare by value,
+  and undo history shares unchanged shapes between steps. `annotate_video` accepts
+  `project_path=` and `autosave_interval=` (30 seconds by default, `None` to
+  disable); `annotate_project` resumes without the original video.
+  `AnnotationResult.calibration` returns the calibration the outputs use,
+  including one applied in the editor, to map pixel tracking into the
+  environment. Both entry
+  points and `AnnotationProject.save` refuse to replace an existing file other
+  than the one being resumed unless `overwrite=True`, and refuse a
+  `project_path` whose folder does not exist. `annotate_video` checks
+  the calibration and settings against the video frame before the editor
+  opens. If the final draft save fails, the validated result is still
+  returned with a warning. Draft saves
+  retain unfinished geometry, including shapes copied and pasted in napari;
+  **Done** validates the exported result.
+- The annotation dock can calibrate a known distance from two marked endpoints,
+  converting a pixel output bin size and export simplification so the grid
+  keeps its size in the image (replacing a calibration keeps centimeter
+  values), and propose outlines from foreground/background clicks or a box
+  drawn around the area (with SAM 2 a box alone is enough; region growing
+  stays within the pixels the box overlaps). The default
+  `RegionGrowProvider` uses CPU color segmentation, and its preview can be
+  painted or erased before acceptance; while painting, Ctrl/Cmd+Z undoes
+  brush strokes. `SegmentationPrompt`,
+  `SegmentationProposal`, `SegmentationProvider` and `mask_to_polygons` also work
+  without a viewer, preserving disconnected areas and holes. Optional
+  `SegmentAnythingProvider.from_sam2(checkpoint_path)` loads separately
+  installed Meta SAM 2.1 Large, the only supported size because smaller models
+  flood dark arenas, on a CUDA GPU, then Apple silicon, then the CPU. Its
+  errors give the install command, the checkpoint link, and the arm64 check for
+  an Intel Mac Python; model libraries and weights are not bundled or
+  downloaded automatically.
+  The editor computes SAM 2's image features as soon as it opens, and asks for
+  candidate masks only for a single click, as Meta recommends.
+- The annotation editor opens with the whole video frame in view. Its
+  assistance panel shows **Accept as** (the role and name an outline will
+  get, mirroring Annotation Controls), puts **Units and bin size** first with a
+  live estimate of the environment's bin count, offers **Left-click adds:
+  Inside / Outside** for mice and trackpads without a right button, and draws
+  outside points as an orange × rather than a red dot. Warnings about a
+  result, such as a region outside the environment, appear in a **Check
+  Annotations** dialog before the editor closes, with **Keep Editing** or
+  **Return Results**.
 
 - `neurospatial.encoding.population_vector_correlation(firing_rates_1,
   firing_rates_2, *, spatial_support, unit_selection, bin_mapping, topology)`
@@ -2730,6 +2820,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- The annotation editor opens on **Annotation Controls**, showing the current
+  annotation type and name before switching to assisted outlines.
 
 - Annotation editing preserves surviving track edges, node labels and start
   nodes when deleting points in napari. Native additions, deletions and moves

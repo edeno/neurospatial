@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -260,8 +261,50 @@ def format_times_positions_error(
     )
 
 
+def validate_finite_scalar(
+    value: Any, *, name: str, positive: bool, none_allowed: bool = False
+) -> None:
+    """Require one finite real number, nonnegative or strictly positive.
+
+    Booleans and non-numeric values are rejected rather than coerced.
+
+    Parameters
+    ----------
+    value : Any
+        The value to check.
+    name : str
+        Name used in the error message.
+    positive : bool
+        Require ``value > 0``; otherwise ``value >= 0``.
+    none_allowed : bool, default=False
+        Accept ``None`` as "not set".
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is not an allowed finite real number.
+    """
+    if none_allowed and value is None:
+        return
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, (int, float, np.integer, np.floating))
+        or not np.isfinite(value)
+        or (value <= 0 if positive else value < 0)
+    ):
+        raise ValueError(
+            f"{name} must be finite and {'positive' if positive else 'nonnegative'}"
+            f"{', or None' if none_allowed else ''}; got {value!r}."
+        )
+
+
 def check_writable(
-    paths: Sequence[Path], *, overwrite: bool, what: str, argument: str
+    paths: Sequence[Path],
+    *,
+    overwrite: bool,
+    what: str,
+    argument: str,
+    alternative: str = "",
 ) -> None:
     """Refuse existing files/nonempty directories unless overwrite is explicit.
 
@@ -275,6 +318,8 @@ def check_writable(
         Description of the outputs for the diagnostic.
     argument : str
         Path argument name used in corrected-call guidance.
+    alternative : str, optional
+        Another fix to offer, as a clause such as ``"or resume it with ..."``.
 
     Raises
     ------
@@ -289,6 +334,8 @@ def check_writable(
             _format_error(
                 f"Refusing to overwrite existing {what}: {', '.join(map(str, existing))}.",
                 fix=f"pass overwrite=True to replace {'it' if len(existing) == 1 else 'them'}, "
-                f"or choose a different {argument}.",
+                f"or choose a different {argument}"
+                + (f", {alternative}" if alternative else "")
+                + ".",
             )
         )

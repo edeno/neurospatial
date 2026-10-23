@@ -424,7 +424,12 @@ warn_unused_ignores = true
 # Optional Qt/magicgui attributes depend on the installed GUI backend and stubs.
 # Attribute ignores are needed in headless CI but can be unused with Qt installed.
 [[tool.mypy.overrides]]
-module = ["neurospatial.annotation._napari_widget", "neurospatial.annotation._session"]
+module = [
+    "neurospatial.annotation._napari_widget",
+    "neurospatial.annotation._session",
+    "neurospatial.annotation._outline_preview",
+    "neurospatial.annotation._workflow",
+]
 warn_unused_ignores = false
 
 # backend selection: Disable warn_unreachable due to platform-conditional code.

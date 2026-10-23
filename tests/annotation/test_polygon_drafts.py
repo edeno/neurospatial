@@ -86,7 +86,7 @@ def test_invalid_polygons_rejected_without_implicit_repair():
 
 
 @pytest.mark.gui
-@pytest.mark.parametrize("close_route", ["save", "escape", "window"])
+@pytest.mark.parametrize("close_route", ["done", "window"])
 @pytest.mark.parametrize("invalid_role", ["environment", "landmark"])
 def test_public_annotation_rejects_invalid_close_and_allows_retry(
     monkeypatch, close_route, invalid_role
@@ -103,9 +103,9 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
     process = core._process_annotation_results
 
     def capture_setup(*args, **kwargs):
-        viewer, layer, flush_pending = setup(*args, **kwargs)
+        viewer, layer, controls = setup(*args, **kwargs)
         viewers.append((viewer, layer))
-        return viewer, layer, flush_pending
+        return viewer, layer, controls
 
     def capture_process(*args, **kwargs):
         builds.append(1)
@@ -119,19 +119,13 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
         window = viewer.window._qt_window
 
         def close():
-            if close_route == "save":
+            if close_route == "done":
                 button = next(
                     button
                     for button in window.findChildren(QPushButton)
-                    if button.text() == "Save and Close"
+                    if button.text() == "Done"
                 )
                 button.click()
-            elif close_route == "escape":
-                next(
-                    callback
-                    for key, callback in viewer.keymap.items()
-                    if str(key).lower() == "escape"
-                )(viewer)
             else:
                 window.close()
 
@@ -391,9 +385,9 @@ def test_close_flush_finishes_rejected_boundary_before_export(monkeypatch):
     setup = core._setup_annotation_viewer
 
     def capture(*args, **kwargs):
-        viewer, shapes, flush = setup(*args, **kwargs)
+        viewer, shapes, controls = setup(*args, **kwargs)
         captured.update(viewer=viewer, shapes=shapes)
-        return viewer, shapes, flush
+        return viewer, shapes, controls
 
     def run():
         shapes = captured["shapes"]

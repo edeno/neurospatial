@@ -157,28 +157,38 @@ class TestAnnotationResult:
         """Create AnnotationResult with environment, regions, walls, landmarks."""
         regions = Regions([])
         result = AnnotationResult(
-            environment=None, regions=regions, walls={}, landmarks=Landmarks()
+            environment=None,
+            regions=regions,
+            walls={},
+            landmarks=Landmarks(),
+            calibration=None,
         )
 
         assert result.environment is None
         assert isinstance(result.regions, Regions)
         assert result.walls == {}
         assert len(result.landmarks) == 0
+        assert result.calibration is None
 
     def test_unpacking(self):
         """Unpack AnnotationResult as tuple."""
         regions = Regions([])
         landmarks = Landmarks()
         result = AnnotationResult(
-            environment=None, regions=regions, walls={}, landmarks=landmarks
+            environment=None,
+            regions=regions,
+            walls={},
+            landmarks=landmarks,
+            calibration=None,
         )
 
-        env, regs, walls, marks = result
+        env, regs, walls, marks, calibration = result
 
         assert env is None
         assert regs is regions
         assert walls == {}
         assert marks is landmarks
+        assert calibration is None
 
 
 @pytest.mark.gui

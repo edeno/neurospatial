@@ -12,22 +12,30 @@ The video annotation workflow allows you to:
 4. **Draw named walls** that block movement, such as a divider or a barrier
 5. **Place named landmarks**: reward ports, cue cards, monitors and objects
 6. **Apply calibration** to convert pixel coordinates to real-world units (cm)
+7. **Save an editable project** and resume from its embedded reference frame
+8. **Suggest an outline** from inside/outside clicks, then correct its preview
 
 This is particularly useful when you have tracking data and want to define the spatial structure from the same video used for tracking.
 
 ## Quick Start
 
+<!-- docs-test: skip interactive viewer and user video -->
 ```python
 from neurospatial.annotation import annotate_video
 
 # Launch interactive annotation
-result = annotate_video("experiment.mp4", bin_size=2.0)
+result = annotate_video(
+    "experiment.mp4",
+    bin_size=2.0,  # pixels; calibrating in the editor converts it to cm (see below)
+    project_path="arena.annotation.npz",
+)
 
 # Access results
 env = result.environment  # Discretized Environment, holding all of the below
 regions = result.regions   # Named Regions
 walls = result.walls       # Named walls, {name: LineString}
 landmarks = result.landmarks  # Named Landmarks
+calibration = result.calibration  # Pixel-to-cm calibration used, or None
 env.plot()                 # Check the result against the video frame
 ```
 
@@ -78,12 +86,16 @@ When the napari viewer opens:
      **rectangle** around an object marks its area
    - Landmarks may lie outside the boundary, as a cue on the room wall does
 
-6. **Press `Escape` or click "Save and Close"** to return results
+6. **Click "Done"** to validate the annotations and return results
 
-Saving validates the complete result before closing the viewer. If a boundary,
+Done validates the complete result before closing the viewer. If a boundary,
 region, wall or landmark is invalid, the viewer stays open and explains what
 to correct. Incomplete shapes are kept for correction as well. Edit the affected
-vertices, then save again.
+vertices, then click Done again. `Escape` keeps napari's normal finish/cancel
+behavior while drawing; it does not finish the annotation session.
+
+**Save Project** saves work in progress without requiring a valid final
+boundary. Use it before taking a break, even if a polygon is unfinished.
 
 ### Step 3: Use the Results
 
@@ -108,10 +120,380 @@ bin_indices = env.bin_sequence(times, positions)
 | Key | Action |
 |-----|--------|
 | `M` | Cycle annotation mode (environment → hole → region → wall → landmark) |
+| `E` | Environment mode |
+| `R` | Region mode |
 | `3` | Move shape mode |
 | `4` | Edit vertices mode |
 | `Delete` | Remove selected shape |
-| `Escape` | Save and close viewer |
+| `Escape` | Finish/cancel the current napari drawing operation |
+| `Ctrl`/`Cmd` + `S` | Save Project |
+| `Ctrl`/`Cmd` + `Z` | Undo (a brush stroke while painting an outline) |
+| Platform redo shortcut | Redo (typically `Ctrl` + `Y` or `Cmd` + `Shift` + `Z`) |
+
+The dock also has Undo and Redo buttons. Accepted assisted outlines and
+calibration changes participate in the same history as hand-drawn shapes.
+
+## Save and Resume a Project
+
+Pass `project_path=` to keep an editable draft alongside the exported analysis
+result. A project contains the RGB reference frame, pixel coordinates and names
+of shapes, their roles and hole associations, calibration, and output settings.
+It can retain incomplete or invalid geometry for later correction.
+
+<!-- docs-test: skip interactive viewer and user video -->
+```python
+from neurospatial.annotation import annotate_project, annotate_video
+
+result = annotate_video(
+    "experiment.mp4",
+    bin_size=2.0,
+    project_path="arena.annotation.npz",
+    autosave_interval=30.0,
+)
+
+# Resume later, using the reference frame stored in the project.
+result = annotate_project(
+    "arena.annotation.npz",
+    project_path="arena.annotation.npz",
+)
+```
+
+Use **Save Project** or `Ctrl`/`Cmd` + `S` for an immediate draft save. If no
+path has been chosen, Save Project asks for one. Autosave runs every 30 seconds
+once a destination is available; set `autosave_interval=None` to disable it.
+Draft files are written atomically, so a failed save does not replace the
+previous file. A resumed project uses its embedded image even if the original
+video has moved. Click **Done** when the draft is ready to export an
+`AnnotationResult`.
+
+Done and the window close button both require valid output. Saving an invalid
+draft keeps the editor open; it does not export a partial analysis result.
+If the result can be saved but has problems worth checking, such as a region
+extending outside the environment, a **Check Annotations** dialog lists them
+before the editor closes: choose **Keep Editing** to fix them, or **Return
+Results** to continue.
+
+Start `annotate_video` with a new project path; if the file already exists, use
+`annotate_project` to resume it, or pass `overwrite=True` to start over. When
+resuming a path, draft saves default to that same file; set `project_path=` to
+save to another destination. Like other neurospatial writers,
+`AnnotationProject.save` refuses an existing file unless `overwrite=True`.
+
+You can also inspect or prepare drafts without launching a viewer. The example
+below uses a synthetic frame; replace it with your reference RGB image and
+pixel vertices in your own work.
+
+<!-- docs-test: run -->
+```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import numpy as np
+
+from neurospatial.annotation import AnnotationProject, AnnotationShape
+
+frame = np.zeros((24, 32, 3), dtype=np.uint8)
+boundary = AnnotationShape(
+    np.array([[2, 2], [29, 2], [29, 21], [2, 21]], dtype=float),
+    role="environment",
+    name="arena",
+)
+draft = AnnotationProject(frame, shapes=[boundary], bin_size=2.0)
+
+with TemporaryDirectory() as directory:
+    path = Path(directory) / "arena.annotation.npz"
+    draft.save(path)
+    restored = AnnotationProject.load(path)
+    assert np.array_equal(restored.frame, frame)
+    assert restored.shapes[0].identifier == boundary.identifier
+```
+
+`annotate_project` also accepts an `AnnotationProject` object directly. Project
+coordinates stay in pixels; calibration is applied when producing the final
+environment, regions, walls and landmarks.
+
+## Assisted Outlines
+
+### Try the Sample Arena
+
+From a checkout with the animation dependencies installed, this launcher opens
+a synthetic arena with an obstacle and reward area. Run from the checkout
+containing `examples/try_annotation.py`; if using a separate worktree, change
+into that worktree first:
+
+```bash
+uv run --no-sync python examples/try_annotation.py --provider cpu
+```
+
+Click **Mark points**, then left-click the tan floor. An outline appears
+automatically; add inside/outside clicks to refine it, then **Accept outline**.
+Use **Paint / erase** for manual corrections. To compare providers on the
+same frame, launch again with `--provider sam2` after the optional setup below.
+`--provider cpu` selects color region growing, which runs on the CPU.
+`--provider sam2` selects the neural segmentation model, which runs on CUDA,
+then Apple silicon, then the CPU, whichever is available first; `--device`
+chooses one.
+
+Add `--image /path/to/frame.png` or `--video /path/to/movie.mp4 --frame-index 100`
+to use your own recording. `--save-project arena.annotation.npz` enables saves
+and autosave to a new project file. Add `--check` with either provider to run a
+sample prediction without opening a viewer.
+
+### Select and Correct an Outline
+
+Open **Project and Assistance** and use **Assisted outline** to suggest a
+boundary or region from clicks. Choose the provider for your video: the default
+CPU region grower works when the floor color differs clearly from its
+surroundings; SAM 2 (optional, below) handles dark, low-contrast or multi-arm
+scenes.
+
+1. Under **Accept as**, choose environment, hole or region and type a name;
+   these mirror **Annotation Type** and **Next Shape Name** in Annotation
+   Controls.
+2. Prompt the outline:
+   - **SAM 2:** click **Draw box** and drag a box closely around the arena or
+     region; the box alone produces an outline. A box is the most reliable SAM
+     prompt: on a dark six-arm maze, a box found five or six of the six arm ends
+     across six frames of one session, while a single center click found two to
+     five.
+   - **Either provider:** click **Mark points**, then left-click inside the
+     desired area, adding an inside point in each disconnected area that should
+     be included. Region growing needs an inside point; a box keeps its growth
+     inside the box.
+3. Right-click to add outside points (an orange ×; inside points are green
+   dots). Without a convenient right button, set **Left-click adds** to
+   **Outside**. Alt-click near a point to remove it, or use **Undo last point**.
+   To move or select several points, use napari's point selection tool; **Delete
+   selected** removes selected prompts. Click **Mark points** again to resume
+   clicking. Dragging still pans the image.
+4. The outline updates automatically after each change. Keep clicking to refine
+   it; the point tool stays active. The default CPU provider keeps areas connected
+   to inside points whose colors fall within **Color tolerance**. Increase the
+   tolerance to include a wider range of colors; this also updates the preview.
+5. **Polygon detail** starts at **1.4 pixels** to reduce jagged edges and the
+   number of vertices. Set it to **0** for the exact pixel outline; increasing
+   the tolerance simplifies it further. The cyan paths show the exact polygons
+   that will be accepted, including every hole. This
+   updates immediately without rerunning inference. The vertex count helps you
+   balance detail against editing complexity.
+6. Optionally click **Paint / erase** to correct the mask with napari's
+   painting tools. Painting foreground includes pixels; erasing excludes them.
+   The polygon paths update after each stroke. Changing polygon detail preserves
+   painted edits; further prompt or fragment-cleanup changes replace them.
+7. Click **Accept outline** to add editable polygon geometry. Its holes and
+   disconnected components are retained. Use **Discard** to remove a
+   preview, or **Clear prompts** before trying a different selection. Accepting
+   an outline clears its prompts, including the box, so the next object starts
+   with a fresh set.
+
+**Remove stray fragments** is enabled by default. It keeps every connected
+foreground region containing an inside point, including holes within those
+regions, and removes disconnected pieces you have not marked. Add an inside
+point to any separate region you want to retain. The status shows how many
+fragments were removed. Turn the option off to see the original prediction;
+switching it updates the preview without rerunning the model. If none of your
+inside points fall within the predicted foreground, the preview is left intact
+and the status asks you to refine it. Cleanup does not fill holes or bridge gaps.
+Manual paint/erase corrections made afterward are retained when you accept.
+
+The detail slider preserves holes and disconnected components; it does not
+fill gaps or join fragments. Returning it to zero restores the exact current
+mask outline. The accepted polygons and their pixel tolerance are retained by
+project save/load and Undo/Redo. Any separately configured export simplification
+still applies when producing the final result.
+
+The box prompt and the region of interest are different rectangles. The box
+tells SAM what to outline and should fit the object closely. The region of
+interest only crops the image SAM sees, and can be generous.
+
+For a small arena within a larger image, expand **Region of interest**, click
+**Draw region of interest**, and drag a rectangle around the inference area.
+SAM then uses that crop for its image embedding; no image resizing is introduced
+by the annotation tool. Keep every inside and outside point within the crop.
+Move/remove outlying points or enlarge the crop if prompted. Use **Use full image**
+to return to the full frame. An incomplete or deleted ROI requires a new rectangle
+or an explicit return to the full image. Changing the ROI resets SAM refinement
+and invalidates pending predictions. Accepted polygons always use original-frame
+coordinates, so cropping does not change calibration or committed annotations.
+
+The outline is accepted with the role and name under **Accept as**. An environment boundary must be connected; if the preview has several
+components, refine it or accept those areas as named regions. Draw walls and
+landmarks directly with their existing drawing tools. Replacing an existing
+environment outline asks for confirmation.
+
+Review the result against the arena walls and obstacles before clicking Done.
+Color similarity can include shadows or nearby objects, so the editable preview
+is part of the workflow. While a new prediction runs, the previous outline is
+dimmed and cannot be accepted. Rapid clicks are combined into the latest request;
+inference runs in the background. SAM 2 starts computing the frame's image
+features as soon as the panel opens, so the first prompt does not wait for
+them. For manual updates, turn off **Update as I prompt**, then click
+**Update outline** when ready. This works with both providers.
+
+With SAM 2, adding an inside or outside click refines the last displayed model
+prediction using its previous low-resolution logits. A single click is
+ambiguous, so the first prediction asks SAM for several candidate masks and
+selects the highest-scoring one; several clicks, a box, or a refinement request
+a single mask, following Meta's guidance. Moving or removing an existing point starts a fresh
+prediction from the remaining prompts. **Clear prompts**, **Discard**,
+accepting an outline, and inference errors also reset refinement. Repeating
+**Update outline** with unchanged prompts reuses the same model result.
+
+Refinement uses the model's raw prediction before fragment cleanup or manual
+painting. Further clicks therefore replace manual preview edits. Temporary model
+state is not saved in projects; resumed sessions start fresh. Accepted annotations
+record the number of refinement steps in their metadata. Direct
+`SegmentAnythingProvider.predict(image, prompt)` calls remain independent of
+earlier prompts and only reuse image embeddings.
+
+The same segmentation tools work without napari. Prompts use pixel `(x, y)`
+coordinates, while masks use `[row, column]` indexing. Polygon boundaries follow
+pixel edges: a pixel centered at `(x, y)` covers a unit square extending half a
+pixel in each direction. The conversion preserves exact mask area, holes and
+every component when `simplify_tolerance=0`.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial.annotation import (
+    RegionGrowProvider,
+    SegmentationPrompt,
+    mask_to_polygons,
+)
+
+image = np.zeros((12, 18, 3), dtype=np.uint8)
+image[2:10, 5:15] = [180, 170, 140]  # Arena surface
+image[4:7, 8:11] = 0                # Obstacle inside it
+prompt = SegmentationPrompt(
+    points=np.array([[6.0, 3.0]]),
+    labels=np.array([1]),  # 1 = inside, 0 = outside
+)
+proposal = RegionGrowProvider(tolerance=0.1).predict(image, prompt)
+polygons = mask_to_polygons(proposal.mask)
+assert len(polygons) == 1
+assert len(polygons[0].interiors) == 1
+assert polygons[0].area == proposal.mask.sum()
+```
+
+`SegmentationProposal` owns a read-only boolean mask, an optional score, and
+JSON provenance. A custom `SegmentationProvider` implements
+`predict(image, prompt)` and returns a proposal. Pass it as
+`segmentation_provider=` to `annotate_video` or `annotate_project`.
+
+### Optional SAM 2 Provider
+
+SAM 2 is Meta's image segmentation model. Use it when the CPU region grower
+cannot separate the arena from its surroundings, as in dark or low-contrast
+video and multi-arm mazes. neurospatial supports **SAM 2.1 Large** only: the
+smaller SAM 2 models flood dark arenas with background. Setup takes four steps.
+
+1. **On a Mac, check that Python is an Apple-silicon build.** PyTorch has no
+   packages for Intel Python on macOS, and an Intel Python under Rosetta fails
+   with a confusing "no matching platform tag" error:
+
+    ```bash
+    python -c "import platform; print(platform.machine())"   # must print arm64
+    ```
+
+    If it prints `x86_64`, create your environment from an arm64 Python, for
+    example Homebrew's (`/opt/homebrew/bin/python3`) or `uv python install`.
+    Intel Macs cannot run SAM 2 locally.
+
+2. **Install PyTorch and SAM 2** into the environment that has neurospatial.
+   With an NVIDIA GPU, first install PyTorch with CUDA using the selector at
+   [pytorch.org](https://pytorch.org/get-started/locally/). Then install Meta's
+   package from its repository; the PyPI package named `sam2` is a different,
+   unrelated project:
+
+    ```bash
+    pip install "sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
+    ```
+
+    Without an NVIDIA GPU (on a Mac, or CPU only), put `SAM2_BUILD_CUDA=0`
+    before `pip` to skip SAM 2's optional CUDA extension.
+
+3. **Download the SAM 2.1 Large checkpoint** (about 900 MB) once, to any
+   folder:
+
+    ```bash
+    curl -LO https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
+    ```
+
+4. **Load it, then open the editor.** Loading first reports any setup problem
+   before the viewer opens. It takes about 5 s, and uses a CUDA GPU, then Apple
+   silicon, then the CPU, whichever is available first. Each frame's image
+   features then take about 0.2 s on Apple silicon against about 2 s on the
+   CPU.
+
+<!-- docs-test: skip optional SAM 2 installation, local checkpoint and interactive viewer -->
+```python
+from neurospatial.annotation import SegmentAnythingProvider, annotate_video
+
+provider = SegmentAnythingProvider.from_sam2("~/models/sam2.1_hiera_large.pt")
+result = annotate_video(
+    "experiment.mp4",
+    bin_size=2.0,
+    project_path="arena.annotation.npz",
+    segmentation_provider=provider,
+)
+```
+
+If something is missing, `from_sam2` says what to do: the install command when
+SAM 2 is not installed, the Large download link when the checkpoint is missing
+or is a smaller model, and the arm64 check on an Intel Mac Python. Pass
+`device="cpu"` if outlines on Apple silicon look wrong; Meta describes that
+support as preliminary.
+
+You can instead wrap an already constructed SAM2-style image predictor with
+`SegmentAnythingProvider(predictor)`. Give the adapter exclusive use of that
+predictor: it caches embeddings for unchanged image content and selects the
+highest-scoring mask.
+
+#### Try SAM 2 with the demo (source checkout)
+
+From a neurospatial source checkout, install SAM 2 into its virtual environment,
+put the checkpoint where the demo looks for it, and launch:
+
+```bash
+SAM2_BUILD_CUDA=0 uv pip install --python .venv/bin/python 'sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4'
+mkdir -p data/annotation_demo
+curl --fail --location --output data/annotation_demo/sam2.1_hiera_large.pt \
+    https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
+uv run --no-sync python examples/try_annotation.py --provider sam2
+```
+
+Keep `--no-sync` so uv retains these optional packages, which are not part of
+the core dependency lockfile; the `data/` checkpoint is ignored by Git. Use
+`--checkpoint /path/to/sam2.1_hiera_large.pt` for a checkpoint elsewhere,
+`--device cpu` to force the CPU, and `--video /path/to/movie.mp4 --frame-index
+100` to try your own recording. Without `--provider sam2`, the demo uses CPU
+region growing and needs no checkpoint. Both providers start the polygon
+preview at **1.4 pixels** of simplification; set **Polygon detail** to **0**
+for an exact mask outline. The demo never downloads weights.
+
+### Design Credit and References
+
+We credit [CVAT](https://github.com/cvat-ai/cvat), CVAT.ai, and its contributors
+for the interaction design that inspired our assisted outlining: inside/outside
+clicks, live mask-to-polygon previews with adjustable detail, and an optional
+inference region of interest. The following links pin the public source reviewed
+for this integration so it remains traceable as upstream develops:
+
+- [Prompting and ROI workflow](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/site/content/en/docs/annotation/auto-annotation/ai-tools.md): user interactions and polygon-detail controls.
+- [Annotation interaction controls](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/cvat-ui/src/components/annotation-page/standard-workspace/controls-side-bar/tools-control.tsx): prompt requests, live previews, ROI submission, and contour selection.
+- [Polygon conversion](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/cvat-core/src/opencv/opencv-interface.ts) and [default settings](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/cvat-ui/src/reducers/settings-reducer.ts): contour extraction and the accuracy-to-pixel-tolerance mapping.
+- [SAM 2 interactor](https://github.com/cvat-ai/cvat-models/blob/d2ebbc7f37d9c002d74fa8d392e9f3f8cb3aa419/interactor/sam2/func.py) in [cvat-models](https://github.com/cvat-ai/cvat-models): model prompting and image-embedding reuse.
+
+CVAT's referenced default accuracy of 9 maps to `10 / 7` pixels (about 1.43);
+our **1.4 px** default rounds that to the slider's 0.1 px steps. Like CVAT, the
+editor offers a box prompt alongside inside/outside clicks. Neurospatial's
+polygon conversion preserves holes and every retained component, without adding
+dilation; CVAT's polygon mode keeps the longest outer contour. Our subsequent
+SAM 2 clicks use previous-logit refinement, which CVAT's SAM 2 interactor does
+not. These choices mean the implementations can produce different outlines from
+the same prompts; the references do not establish CVAT Online's deployed model
+settings.
 
 ## Track Graph Annotation
 
@@ -129,8 +511,12 @@ nodes, returns to the automatic layout.
 Saving or closing either editor validates the draft before the editor closes.
 If it cannot be saved, a dialog says why: choose "Keep Editing" to fix it, or
 "Discard and Close" to close without a result, which raises a `RuntimeError`.
-Warnings about the result, such as an ignored boundary, print after the editor
-closes.
+Warnings about the result, such as an ignored boundary, open a **Check
+Annotations** dialog before the editor closes: choose "Keep Editing" to fix them
+or "Return Results" to close; the warnings are then issued to your script. If
+the final draft save fails, for example because the disk is full, the result is
+still returned and a warning says so; choose "Keep Editing" and use **Save As…**
+if you need the draft.
 
 ## Adding Calibration
 
@@ -139,6 +525,32 @@ Convert pixel coordinates to real-world units (e.g., centimeters):
 The resulting environment records `units="cm"` when calibration is supplied,
 or `units="pixels"` otherwise. `bin_size` and `simplify_tolerance` use those
 same units.
+
+### Calibrate in the Editor
+
+Expand **Units and bin size** at the top of **Project and Assistance**; its
+button always shows the current bin size and, once an environment is drawn, about
+how many bins the environment will have. Calibration is optional for drawing outlines; use it
+when you need output in centimeters. Click **Mark two scale endpoints** and mark the
+ends of an object of known length. Enter that length in centimeters, then click
+**Apply calibration**. Lengths convert only when the output units change. A
+pixel **Output bin size** is converted to cm, so the grid keeps its size in the
+image: an 8 pixel bin at 0.3 cm per pixel becomes 2.4 cm. Applying a new
+calibration to an already calibrated project keeps the cm value, because a bin
+size chosen in cm is a physical choice. Enter a new value if you want a
+different grid. Shapes stay aligned with the reference frame because editable
+geometry remains in pixels. **Clear calibration** returns output units to
+pixels and converts the bin size back. The export `simplify_tolerance` follows
+the same rule. These changes can be undone and are saved in the project.
+
+`result.calibration` holds the calibration the outputs use, including one made
+in the editor, so pixel tracking can be put into the environment's
+coordinates without a saved project:
+
+<!-- docs-test: skip interactive viewer and user video -->
+```python
+positions_cm = result.calibration.transform_px_to_cm(positions_px)
+```
 
 ### Using Scale Bar
 
@@ -152,7 +564,7 @@ known_length_cm = 50.0  # Known length in cm
 frame_size = (640, 480) # Video dimensions
 
 transform = calibrate_from_scale_bar(
-    point1_px, point2_px, known_length_cm, frame_size
+    point1_px, point2_px, known_length_cm, frame_size_px=frame_size
 )
 calibration = VideoCalibration(transform, frame_size)
 
@@ -343,6 +755,11 @@ def process_annotation(role: RegionType) -> None:
 ## API Reference
 
 - [`annotate_video()`](../api/neurospatial/annotation/index.md#neurospatial.annotation.annotate_video)
+- [`annotate_project()`](../api/neurospatial/annotation/index.md#neurospatial.annotation.annotate_project)
+- [`AnnotationProject`](../api/neurospatial/annotation/project.md#neurospatial.annotation.project.AnnotationProject)
+- [`AnnotationShape`](../api/neurospatial/annotation/project.md#neurospatial.annotation.project.AnnotationShape)
+- [`RegionGrowProvider`](../api/neurospatial/annotation/segmentation.md#neurospatial.annotation.segmentation.RegionGrowProvider)
+- [`SegmentAnythingProvider`](../api/neurospatial/annotation/segmentation.md#neurospatial.annotation.segmentation.SegmentAnythingProvider)
 - [`AnnotationResult`](../api/neurospatial/annotation/index.md#neurospatial.annotation.AnnotationResult)
 - [`regions_from_labelme()`](../api/neurospatial/annotation/index.md#neurospatial.annotation.regions_from_labelme)
 - [`regions_from_cvat()`](../api/neurospatial/annotation/index.md#neurospatial.annotation.regions_from_cvat)

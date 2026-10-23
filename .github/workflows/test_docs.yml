@@ -65,6 +65,10 @@ jobs:
         # and finish in ~30s, well within budget.
         run: >-
           uv run pytest --doctest-modules src/neurospatial/ -n0
+          --ignore=src/neurospatial/annotation/_assist_roi.py
+          --ignore=src/neurospatial/annotation/_assist_widget.py
+          --ignore=src/neurospatial/annotation/_outline_preview.py
+          --ignore=src/neurospatial/annotation/_workflow.py
           --ignore=src/neurospatial/annotation/_napari_widget.py
           --ignore=src/neurospatial/annotation/_track_widget.py
           --ignore=src/neurospatial/animation/config.py

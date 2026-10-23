@@ -25,6 +25,10 @@ def test_result_warnings_reach_the_caller_after_close(viewer, monkeypatch):
     import napari
     from napari.utils.notifications import notification_manager
 
+    from neurospatial.annotation import _session
+
+    shown = []
+
     def run():
         # napari.run shows warnings raised inside its event loop as toasts.
         with notification_manager:
@@ -35,10 +39,45 @@ def test_result_warnings_reach_the_caller_after_close(viewer, monkeypatch):
         return "result"
 
     monkeypatch.setattr(napari, "run", run)
+    monkeypatch.setattr(
+        _session,
+        "_accept_with_warnings",
+        lambda parent, messages: shown.append(messages) or True,
+    )
     with pytest.warns(UserWarning, match="No annotations were drawn") as record:
         assert _annotate(viewer, prepare_result) == "result"
     assert len(record) == 1
     assert record[0].filename == __file__
+    # The warning was shown in the window while it could still be fixed.
+    assert shown == [["No annotations were drawn."]]
+
+
+@pytest.mark.gui
+def test_result_warnings_let_the_user_keep_editing(viewer, monkeypatch):
+    import napari
+
+    from neurospatial.annotation import _session
+
+    answers = [False, True]
+    drawn = []
+
+    def run():
+        window = viewer.window._qt_window
+        assert not window.close()  # Keep Editing leaves the editor open.
+        drawn.append("arena")
+        assert window.close()
+
+    def prepare_result():
+        if not drawn:
+            warnings.warn("No annotations were drawn.", UserWarning, stacklevel=2)
+        return f"{len(drawn)} drawn"
+
+    monkeypatch.setattr(napari, "run", run)
+    monkeypatch.setattr(
+        _session, "_accept_with_warnings", lambda parent, messages: answers.pop(0)
+    )
+    assert _annotate(viewer, prepare_result) == "1 drawn"
+    assert answers == [True]
 
 
 @pytest.mark.gui
@@ -140,3 +179,22 @@ def test_cancelled_close_keeps_the_session_running(viewer, monkeypatch):
     assert _annotate(viewer, prepare_result) == 2
     assert after_cancel == [True]
     assert not window.isVisible()
+
+
+@pytest.mark.gui
+def test_view_is_fitted_once_the_window_has_its_final_size(viewer, monkeypatch):
+    import napari
+    from qtpy.QtWidgets import QApplication
+
+    fitted = []
+    monkeypatch.setattr(
+        type(viewer), "reset_view", lambda self, *args, **kwargs: fitted.append(True)
+    )
+
+    def run():
+        QApplication.processEvents()
+        assert fitted
+        assert viewer.window._qt_window.close()
+
+    monkeypatch.setattr(napari, "run", run)
+    assert _annotate(viewer, lambda: "result") == "result"
