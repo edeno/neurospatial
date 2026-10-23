@@ -218,9 +218,10 @@ class NapariScene:
         if not np.isfinite([self._speed, fps]).all() or self._speed <= 0 or fps <= 0:
             raise ValueError("fps and speed must be positive finite numbers.")
         self._step = self._speed / fps
+        # Playback advances from this recording time at this wall-clock time.
+        self._play_origin, self._play_started = self._time, monotonic()
         self._helper = PreparedScene(scene)
         self._panels: _ScientificPanels | None = None
-        self._source_lock = self._helper.source_lock
         self._inflight: Future[Any] | None = None
         self._pending: tuple[int, float] | None = None
         self._generation = 0
@@ -833,7 +834,7 @@ class NapariScene:
         self.last_error = None
 
     def _invalidate_pending(self) -> None:
-        self._generation = getattr(self, "_generation", 0) + 1
+        self._generation += 1
         self._pending = None
 
     def seek(self, time: float) -> None:
@@ -841,7 +842,7 @@ class NapariScene:
         time = self._validate_time(time)
         self._invalidate_pending()
         self._apply(time, self._prepare(time))
-        if getattr(self, "timer", None) is not None and self.timer.isActive():
+        if self.timer.isActive():
             self._play_origin, self._play_started = time, monotonic()
 
     def _request_seek(self, time: float, *, playback: bool = False) -> None:
@@ -900,8 +901,6 @@ class NapariScene:
             self._submit(pending)
 
     def _tick(self) -> None:
-        if not hasattr(self, "_play_started"):
-            self._play_origin, self._play_started = self.time, monotonic()
         time = min(
             float(self.scene.frame_times[-1]),
             self._play_origin + (monotonic() - self._play_started) * self._speed,
@@ -926,11 +925,7 @@ class NapariScene:
         return {"time": self.time, "playing": self.timer.isActive()}
 
     def restore_state(self, state: dict[str, Any]) -> None:
-        if (
-            self._closed
-            or getattr(self.scene, "_closed", False)
-            or getattr(self.scene, "_closing", False)
-        ):
+        if self._closed or self.scene._closed or self.scene._closing:
             return
         self.seek(state["time"])
         if state["playing"]:
@@ -944,7 +939,7 @@ class NapariScene:
             raise RuntimeError("This napari view is closed.")
         state = self.capture_state()
         self.timer.stop()
-        was_capturing = getattr(self, "_capturing", False)
+        was_capturing = self._capturing
         self._capturing = True
         self._invalidate_pending()
         try:

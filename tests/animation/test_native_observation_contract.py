@@ -254,6 +254,7 @@ def test_napari_capture_does_not_restart_after_close_or_parent_shutdown():
     native.timer = Mock()
     native.play_button = Mock()
     native._time = 0.1
+    native._capturing, native._generation, native._pending = False, 0, None
     native.seek = Mock()
     with native.capture_session():
         native._closed = True

@@ -63,6 +63,8 @@ def model_handle(scene):
     handle.time_control = SimpleNamespace(
         blockSignals=lambda _: None, setValue=lambda _: None
     )
+    handle.timer = SimpleNamespace(isActive=lambda: False)
+    handle._generation, handle._pending = 0, None
     handle._build_fields()
     handle._build_overlays()
     return handle
@@ -393,6 +395,8 @@ def test_native_video_uses_custom_mapping_and_hides_missing_rows(mapping):
     handle.time_control = SimpleNamespace(
         blockSignals=lambda _: None, setValue=lambda _: None
     )
+    handle.timer = SimpleNamespace(isActive=lambda: False)
+    handle._generation, handle._pending = 0, None
     handle._build_fields()
     handle._build_overlays()
     video = next(layer for layer in handle.viewer.layers if layer.name == "Video 1")
@@ -476,7 +480,6 @@ def test_async_scrubs_coalesce_and_playback_does_not_starve(monkeypatch):
     handle = model_handle(scene)
     handle._generation, handle._inflight, handle._pending = 0, None, None
     handle._capturing = False
-    handle._source_lock = handle._helper.source_lock
     handle._bridge = SimpleNamespace(ready=SimpleNamespace(emit=lambda _: None))
     handle.timer = SimpleNamespace(isActive=lambda: False)
     entered, release = Event(), Event()
