@@ -25,14 +25,13 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
 
 from neurospatial.annotation._assist_widget import AnnotationAssistWidget
 from neurospatial.annotation._draft import add_polygons, annotation_roles
-from neurospatial.annotation._polygon_outline import PolygonOutline, polygon_outline
+from neurospatial.annotation._polygon_outline import PolygonOutline
 from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
 from neurospatial.annotation._state import make_unique_name
 from neurospatial.annotation._types import MultipleBoundaryStrategy
 from neurospatial.annotation.project import AnnotationProject, AnnotationShape
 from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
-    SegmentationProposal,
     SegmentationProvider,
 )
 from neurospatial.ops.transforms import VideoCalibration
@@ -311,10 +310,6 @@ class AnnotationProjectSession:
         self.bin_size = value
         self.checkpoint()
         self.assist.sync_bin_size(value)
-
-    def accept_proposal(self, proposal: SegmentationProposal) -> None:
-        """Convert all accepted mask components into one undoable domain edit."""
-        self.accept_outline(polygon_outline(proposal))
 
     def accept_outline(self, outline: PolygonOutline) -> None:
         """Insert the previewed polygons as one undoable domain edit."""

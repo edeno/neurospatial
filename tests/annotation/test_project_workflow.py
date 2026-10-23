@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
+from neurospatial.annotation._polygon_outline import polygon_outline
 from neurospatial.annotation.project import AnnotationProject
 from neurospatial.annotation.segmentation import SegmentationProposal
 from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
@@ -63,6 +64,10 @@ def session_factory():
     for session, viewer, _shapes, _controls in reversed(sessions):
         session.dispose()
         viewer.close()
+
+
+def _accept(session, proposal):
+    session.accept_outline(polygon_outline(proposal))
 
 
 def _draw_region(shapes, controls, vertices):
@@ -177,10 +182,10 @@ def test_unnamed_outlines_continue_the_region_numbering(session_factory):
     mask[1:6, 1:6] = True
     mask[3:4, 3:4] = False
     mask[8:12, 1:6] = True
-    session.accept_proposal(SegmentationProposal(mask))
+    _accept(session, SegmentationProposal(mask))
     mask = np.zeros((16, 24), dtype=bool)
     mask[1:6, 10:14] = True
-    session.accept_proposal(SegmentationProposal(mask))
+    _accept(session, SegmentationProposal(mask))
     _draw_region(shapes, controls, [[13, 16], [13, 20], [15, 20], [15, 16]])
     top_level = [
         name
@@ -215,7 +220,7 @@ def test_accepted_components_and_hole_are_one_undoable_annotation_edit(session_f
     mask[1:10, 1:10] = True
     mask[4:6, 4:6] = False
     mask[11:14, 16:20] = True
-    session.accept_proposal(SegmentationProposal(mask, metadata={"model": "test"}))
+    _accept(session, SegmentationProposal(mask, metadata={"model": "test"}))
     # Two exteriors and one interior all survive as editable linked rings.
     assert len(shapes.data) == 3
     roles = list(shapes.features["role"])
@@ -366,7 +371,7 @@ def test_unsupported_assisted_outline_does_not_partially_mutate_history(
     mask[1:4, 1:4] = True
     mask[10:14, 16:20] = True
     with pytest.raises(ValueError):
-        session.accept_proposal(SegmentationProposal(mask))
+        _accept(session, SegmentationProposal(mask))
     assert len(shapes.data) == 0
     session.undo()
     assert len(shapes.data) == 0
@@ -457,11 +462,11 @@ def test_environment_replacement_cancel_then_confirm_preserves_holes_on_undo(
     answers = [QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes]
     monkeypatch.setattr(QMessageBox, "question", lambda *args: answers.pop(0))
     with pytest.raises(ValueError, match="cancelled"):
-        session.accept_proposal(proposal)
+        _accept(session, proposal)
     assert shapes.features.equals(original_features)
     for actual, expected in zip(shapes.data, original_geometry, strict=True):
         assert_array_equal(actual, expected)
-    session.accept_proposal(proposal)
+    _accept(session, proposal)
     assert len(shapes.data) == 2
     assert list(shapes.features["role"]).count("environment") == 1
     assert "reward" in list(shapes.features["name"])
