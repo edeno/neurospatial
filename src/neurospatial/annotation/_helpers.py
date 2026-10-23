@@ -56,7 +56,10 @@ def rebuild_features(region_types: list[RegionType], names: list[str]) -> pd.Dat
     Returns
     -------
     pd.DataFrame
-        DataFrame with categorical 'region_type' (stored as 'role') and string 'name' columns.
+        Categorical ``role`` and string ``name`` columns, plus empty
+        ``_polygon_id`` and ``_parent_id`` ring-identity columns. Every
+        annotation layer carries the identity columns; callers that keep
+        existing rings copy their identities into them.
 
     """
     import pandas as pd
@@ -65,6 +68,8 @@ def rebuild_features(region_types: list[RegionType], names: list[str]) -> pd.Dat
         {
             "role": pd.Categorical(region_types, categories=REGION_TYPE_CATEGORIES),
             "name": pd.Series(names, dtype=str),
+            "_polygon_id": pd.Series([""] * len(names), dtype=object),
+            "_parent_id": pd.Series([""] * len(names), dtype=object),
         },
     )
 

@@ -19,7 +19,7 @@ from magicgui.widgets import (
 from numpy.typing import NDArray
 
 from neurospatial.annotation._controller import ShapesLayerController
-from neurospatial.annotation._draft import annotation_roles
+from neurospatial.annotation._draft import annotation_roles, guard_identity_defaults
 from neurospatial.annotation._helpers import (
     REGION_TYPE_CATEGORIES,
     REGION_TYPE_COLOR_CYCLE,
@@ -499,18 +499,9 @@ def create_annotation_widget(
     # of when shapes are actually added (learned from napari-segment-anything)
     _prev_shape_count = [0]  # Mutable container for closure
     _pending_update = [False]  # Flag to prevent duplicate scheduled updates
-    _processing_depth = [0]  # Nested _process_data_change calls in progress
     _deferred_changes: list[Callable[[], None]] = []
 
     def _process_data_change() -> None:
-        # Features assigned while processing must not schedule another pass.
-        _processing_depth[0] += 1
-        try:
-            _update_from_layer()
-        finally:
-            _processing_depth[0] -= 1
-
-    def _update_from_layer() -> None:
         """Handle shape additions: update list, auto-switch mode, update status.
 
         This is called via QTimer.singleShot(0, ...) to accumulate rapid events
@@ -586,9 +577,9 @@ def create_annotation_widget(
                     features[marker] = [
                         i >= _prev_shape_count[0] for i in range(current_count)
                     ]
+                    _prev_shape_count[0] = current_count
                     shapes.features = features
                     shapes.feature_defaults[marker] = False
-                    _prev_shape_count[0] = current_count
 
                     def delete_shape() -> None:
                         features_before = shapes.features.copy()
@@ -624,6 +615,10 @@ def create_annotation_widget(
                 _prev_shape_count[0],
                 name_override=name_override,
             )
+            # Record the processed rows before anything else mutates the layer:
+            # cleanup below flushes pending work, which must not see these
+            # rows as new again.
+            _prev_shape_count[0] = current_count
 
             # Widget handles UI updates
             update_shapes_list()
@@ -713,23 +708,25 @@ def create_annotation_widget(
             if not has_environment_conflict:
                 _process_data_change()
                 return
+        schedule_update()
+
+    def schedule_update() -> None:
         if not _pending_update[0]:
             _pending_update[0] = True
             qt_core.QTimer.singleShot(0, flush_pending)
 
     def on_features_changed(event: Any) -> None:
-        """Process pasted shapes, which napari announces with features only."""
+        """Process pasted shapes, which napari announces with features only.
+
+        Pasted rows arrive with identities; a drawing's row has none until it
+        is processed, and its data event schedules that.
+        """
         shapes = get_shapes()
-        if shapes is None or _pending_update[0] or _processing_depth[0]:
+        if shapes is None:
             return
-        count = _prev_shape_count[0]
-        if (
-            len(shapes.data) > count
-            and "_polygon_id" in shapes.features
-            and any(shapes.features["_polygon_id"].iloc[count:])
-        ):
-            _pending_update[0] = True
-            qt_core.QTimer.singleShot(0, flush_pending)
+        added = shapes.features["_polygon_id"].iloc[_prev_shape_count[0] :]
+        if len(added) and added.astype(bool).any():
+            schedule_update()
 
     shapes = get_shapes()
     if shapes is not None:
@@ -808,15 +805,9 @@ def setup_shapes_layer_for_annotation(
         Configured shapes layer ready for annotation.
 
     """
-    import pandas as pd
-
-    # Initialize with empty features DataFrame (categorical for color cycling)
-    features = pd.DataFrame(
-        {
-            "role": pd.Categorical([], categories=REGION_TYPE_CATEGORIES),
-            "name": pd.Series([], dtype=str),
-        },
-    )
+    # Categorical roles drive color cycling. Every shape also carries a ring
+    # identity and its exterior's identity (empty for an exterior).
+    features = rebuild_features([], [])
 
     shapes = viewer.add_shapes(
         name="Annotations",
@@ -845,6 +836,8 @@ def setup_shapes_layer_for_annotation(
     else:
         shapes.feature_defaults["name"] = "arena"
         shapes.current_face_color = REGION_TYPE_COLORS["environment"]
+
+    guard_identity_defaults(shapes)
 
     # Start in polygon drawing mode
     shapes.mode = "add_polygon"
