@@ -258,14 +258,7 @@ def annotate_video(
             f"Annotation project already exists: {project_path}. "
             "Use annotate_project to resume it, or choose a new project_path."
         )
-
-    try:
-        import napari  # noqa: F401 - verify the optional GUI dependency
-    except ImportError as e:
-        raise ImportError(
-            "napari is required for interactive annotation. "
-            "Install with: pip install napari[all]",
-        ) from e
+    _require_napari()
 
     # Convert to Path and load video frame
     video_path = Path(video_path)
@@ -368,6 +361,7 @@ def annotate_project(
         raise TypeError("project must be an AnnotationProject or a project file path.")
     _validate_annotate_params(draft.mode, draft.bin_size)
     _validate_shapes_for_display(draft.shapes)
+    _require_napari()
     return _run_annotation_editor(
         draft.frame,
         video_path=None if draft.video_path is None else Path(draft.video_path),
@@ -382,6 +376,17 @@ def annotate_project(
         segmentation_provider=segmentation_provider,
         draft=draft,
     )
+
+
+def _require_napari() -> None:
+    """Fail before loading frames or creating a viewer without the GUI extra."""
+    try:
+        import napari  # noqa: F401 - verify the optional GUI dependency
+    except ImportError as exc:
+        raise ImportError(
+            "napari is required for interactive annotation. "
+            "Install with: pip install napari[all]"
+        ) from exc
 
 
 def _validate_autosave_interval(autosave_interval: float | None) -> None:
@@ -414,14 +419,6 @@ def _run_annotation_editor(
     draft: AnnotationProject | None = None,
 ) -> AnnotationResult:
     """Run the common editor and export from its current scientific settings."""
-    try:
-        import napari  # noqa: F401 - verify the optional GUI dependency
-    except ImportError as exc:
-        raise ImportError(
-            "napari is required for interactive annotation. "
-            "Install with: pip install napari[all]"
-        ) from exc
-
     from neurospatial.annotation._session import run_annotation_session
     from neurospatial.annotation._workflow import AnnotationProjectSession
 
@@ -819,11 +816,6 @@ def _setup_annotation_viewer(
         Annotation controls used by the shared project workflow.
 
     """
-    if draft is not None:
-        from neurospatial.annotation._project_layer import _validate_shapes_for_display
-
-        _validate_shapes_for_display(draft.shapes)
-
     import napari
 
     from neurospatial.annotation._napari_widget import (
