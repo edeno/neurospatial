@@ -36,7 +36,7 @@ class TrackBuilderState:
     node_labels : list[str]
         Labels for each node (empty string if unlabeled).
     start_node : int or None
-        Designated start node for linearization (used by infer_edge_layout).
+        Designated start node for linearization (used by the shared layout resolver).
     edge_start_node : int or None
         Transient state for two-click edge creation (first clicked node).
     undo_stack : list[dict]
@@ -202,6 +202,45 @@ class TrackBuilderState:
         self.node_labels.append(label if label is not None else "")
         return len(self.nodes) - 1
 
+    def _apply_node_edit(
+        self,
+        nodes: list[tuple[float, float]],
+        *,
+        removed_indices: tuple[int, ...] = (),
+    ) -> None:
+        """Apply one native layer edit as one undoable state command.
+
+        Removal indices refer to the old node array. Surviving identities retain
+        their labels, edges and start designation, even at duplicate positions.
+        """
+        if nodes == self.nodes:
+            return
+        self._save_for_undo()
+        old_count = len(self.nodes)
+        removed = set(removed_indices)
+        if removed:
+            surviving = [i for i in range(old_count) if i not in removed]
+            reindex = {old: new for new, old in enumerate(surviving)}
+            self.node_labels = [self.node_labels[i] for i in surviving]
+            self.edges = [
+                (reindex[a], reindex[b])
+                for a, b in self.edges
+                if a in reindex and b in reindex
+            ]
+            self.start_node = (
+                reindex.get(self.start_node) if self.start_node is not None else None
+            )
+            self.edge_start_node = (
+                reindex.get(self.edge_start_node)
+                if self.edge_start_node is not None
+                else None
+            )
+            self._invalidate_edge_layout_overrides()
+        elif len(nodes) > old_count:
+            # New nodes have no edges, so a manual edge layout stays valid.
+            self.node_labels.extend([""] * (len(nodes) - old_count))
+        self.nodes = list(nodes)
+
     def delete_node(self, idx: int) -> None:
         """Delete a node and all connected edges.
 
@@ -222,33 +261,10 @@ class TrackBuilderState:
         if idx < 0 or idx >= len(self.nodes):
             raise IndexError(f"Node index {idx} out of range")
 
-        self._save_for_undo()
-
-        # Remove node and its label
-        self.nodes.pop(idx)
-        self.node_labels.pop(idx)
-
-        # Remove edges connected to deleted node and reindex remaining edges
-        new_edges = []
-        for n1, n2 in self.edges:
-            if n1 == idx or n2 == idx:
-                # Edge connected to deleted node - remove it
-                continue
-            # Reindex: decrement indices > deleted index
-            new_n1 = n1 - 1 if n1 > idx else n1
-            new_n2 = n2 - 1 if n2 > idx else n2
-            new_edges.append((new_n1, new_n2))
-        self.edges = new_edges
-
-        # Update start_node if affected
-        if self.start_node is not None:
-            if self.start_node == idx:
-                self.start_node = None
-            elif self.start_node > idx:
-                self.start_node -= 1
-
-        # A manual edge-order/spacing override is keyed to the old topology.
-        self._invalidate_edge_layout_overrides()
+        self._apply_node_edit(
+            [node for i, node in enumerate(self.nodes) if i != idx],
+            removed_indices=(idx,),
+        )
 
     def _invalidate_edge_layout_overrides(self) -> None:
         """Clear manual edge-order/spacing overrides after a topology edit.
@@ -265,7 +281,7 @@ class TrackBuilderState:
         """Designate a node as the start node for linearization.
 
         The start node determines the origin for track linearization algorithms
-        (used by track_linearization.infer_edge_layout).
+        (used by the shared layout resolver).
 
         Parameters
         ----------
@@ -353,6 +369,7 @@ class TrackBuilderState:
 
         self._save_for_undo()
         self.edges.append(edge)
+        self._invalidate_edge_layout_overrides()
         return True
 
     def delete_edge(self, edge_idx: int) -> None:
@@ -372,11 +389,29 @@ class TrackBuilderState:
         if edge_idx < 0 or edge_idx >= len(self.edges):
             raise IndexError(f"Edge index {edge_idx} out of range")
 
-        self._save_for_undo()
-        self.edges.pop(edge_idx)
+        self._delete_edges((edge_idx,))
 
-        # A manual edge-order/spacing override is keyed to the old topology.
+    def _delete_edges(self, indices: tuple[int, ...]) -> None:
+        """Delete one native selection as a single undoable command."""
+        selected = set(indices)
+        if not selected:
+            return
+        if any(index < 0 or index >= len(self.edges) for index in selected):
+            raise IndexError("Edge selection contains an invalid edge index")
+        self._save_for_undo()
+        self.edges = [
+            edge for index, edge in enumerate(self.edges) if index not in selected
+        ]
         self._invalidate_edge_layout_overrides()
+
+    def _set_node_label(self, index: int, label: str) -> None:
+        """Rename a node as one undoable command."""
+        if index < 0 or index >= len(self.nodes):
+            raise IndexError("Node index out of range")
+        if self.node_labels[index] == label:
+            return
+        self._save_for_undo()
+        self.node_labels[index] = label
 
     def to_track_graph(self) -> nx.Graph:
         """Build NetworkX graph from current state.
@@ -492,7 +527,7 @@ class TrackBuilderState:
         """Set manual edge order override.
 
         When set, the manual edge order will be used instead of
-        automatically inferred order from infer_edge_layout().
+        automatically computed traversal order.
 
         Parameters
         ----------
@@ -507,7 +542,7 @@ class TrackBuilderState:
         """Clear manual edge order override.
 
         After clearing, the edge order will be automatically inferred
-        using infer_edge_layout() when building the result.
+        using the shared layout resolver when building the result.
         """
         self._save_for_undo()
         self.edge_order_override = None
@@ -516,7 +551,7 @@ class TrackBuilderState:
         """Set manual edge spacing override.
 
         When set, the manual spacing will be used instead of
-        automatically inferred spacing from infer_edge_layout().
+        automatically computed spacing for the effective edge order.
 
         Parameters
         ----------
@@ -532,13 +567,13 @@ class TrackBuilderState:
         """Clear manual edge spacing override.
 
         After clearing, the edge spacing will be automatically inferred
-        using infer_edge_layout() when building the result.
+        using the shared layout resolver when building the result.
         """
         self._save_for_undo()
         self.edge_spacing_override = None
 
     def compute_edge_order(self) -> list[tuple[int, int]]:
-        """Compute edge order using infer_edge_layout.
+        """Resolve the effective edge order, including a manual override.
 
         Uses the current nodes, edges, and start_node to compute
         the recommended edge traversal order.
@@ -547,7 +582,7 @@ class TrackBuilderState:
         -------
         list of tuple
             Ordered list of edges as (node1_idx, node2_idx) tuples.
-            Returns empty list if graph is invalid or empty.
+            Returns an empty list if no edges exist. Invalid overrides raise ValueError.
 
         Notes
         -----
@@ -558,24 +593,17 @@ class TrackBuilderState:
         if len(self.nodes) < 2 or len(self.edges) < 1:
             return []
 
-        try:
-            from track_linearization import infer_edge_layout
+        from neurospatial.annotation._track_layout import resolve_track_layout
 
-            graph = self.to_track_graph()
-            edge_order, _spacing = infer_edge_layout(
-                graph,
-                start_node=self.get_effective_start_node(),
-            )
-            return list(edge_order)
-        except ImportError:
-            # Fallback: return edges in creation order
-            return list(self.edges)
-        except (IndexError, ValueError):
-            # Fallback when graph is disconnected or start_node is isolated
-            return list(self.edges)
+        order, _ = resolve_track_layout(
+            self.to_track_graph(),
+            start_node=self.get_effective_start_node(),
+            edge_order=self.edge_order_override,
+        )
+        return order
 
     def compute_edge_spacing(self) -> NDArray[np.float64]:
-        """Compute edge spacing using infer_edge_layout.
+        """Resolve spacing for the effective edge order, including overrides.
 
         Uses the current nodes, edges, and start_node to compute
         the recommended spacing between consecutive edges.
@@ -584,7 +612,7 @@ class TrackBuilderState:
         -------
         np.ndarray
             Array of spacing values between consecutive edges.
-            Returns empty array if graph is invalid or empty.
+            Returns an empty array if no edges exist. Invalid overrides raise ValueError.
 
         Notes
         -----
@@ -595,18 +623,12 @@ class TrackBuilderState:
         if len(self.nodes) < 2 or len(self.edges) < 1:
             return np.array([], dtype=np.float64)
 
-        try:
-            from track_linearization import infer_edge_layout
+        from neurospatial.annotation._track_layout import resolve_track_layout
 
-            graph = self.to_track_graph()
-            _edge_order, edge_spacing = infer_edge_layout(
-                graph,
-                start_node=self.get_effective_start_node(),
-            )
-            return np.asarray(edge_spacing, dtype=np.float64)
-        except ImportError:
-            # Fallback: zero spacing
-            return np.zeros(max(0, len(self.edges) - 1), dtype=np.float64)
-        except (IndexError, ValueError):
-            # Fallback when graph is disconnected or start_node is isolated
-            return np.zeros(max(0, len(self.edges) - 1), dtype=np.float64)
+        _, spacing = resolve_track_layout(
+            self.to_track_graph(),
+            start_node=self.get_effective_start_node(),
+            edge_order=self.edge_order_override,
+            edge_spacing=self.edge_spacing_override,
+        )
+        return spacing

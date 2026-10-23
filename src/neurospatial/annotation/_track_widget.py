@@ -23,8 +23,10 @@ if TYPE_CHECKING:
 
     import napari
     from napari.layers import Points, Shapes
+    from numpy.typing import NDArray
 
     from neurospatial.annotation._track_state import TrackBuilderState
+    from neurospatial.ops.transforms import VideoCalibration
 
 
 # =============================================================================
@@ -169,6 +171,14 @@ def _hex_to_rgba(hex_color: str) -> np.ndarray:
 # =============================================================================
 
 
+def edge_paths(state: TrackBuilderState) -> list[NDArray[np.float64]]:
+    """Return each edge as a napari ``(row, col)`` path between its two nodes."""
+    return [
+        np.array([state.nodes[a][::-1], state.nodes[b][::-1]], dtype=np.float64)
+        for a, b in state.edges
+    ]
+
+
 def _sync_layers_from_state(
     state: TrackBuilderState,
     nodes_layer: Points,
@@ -194,84 +204,80 @@ def _sync_layers_from_state(
     format by swapping axes: napari uses (y, x) ordering.
 
     """
-    # Convert state nodes (x, y) to napari (row, col) = (y, x)
-    if state.nodes:
-        # Stack as (row, col) = (y, x)
-        node_data = np.array([(y, x) for x, y in state.nodes], dtype=np.float64)
+    # State is authoritative during redraws, including widget edits and undo.
+    edges_layer.metadata.pop("_track_preview_index", None)
+    with nodes_layer.events.data.blocker(), edges_layer.events.data.blocker():
+        # Convert state nodes (x, y) to napari (row, col) = (y, x)
+        if state.nodes:
+            # Stack as (row, col) = (y, x)
+            node_data = np.array([(y, x) for x, y in state.nodes], dtype=np.float64)
 
-        # Build per-node colors (as RGBA arrays) and sizes
-        n_nodes = len(state.nodes)
-        node_rgba = _hex_to_rgba(NODE_COLOR)
-        start_rgba = _hex_to_rgba(START_NODE_COLOR)
+            # Build per-node colors (as RGBA arrays) and sizes
+            n_nodes = len(state.nodes)
+            node_rgba = _hex_to_rgba(NODE_COLOR)
+            start_rgba = _hex_to_rgba(START_NODE_COLOR)
 
-        # Create color array (n_nodes, 4)
-        face_colors = np.tile(node_rgba, (n_nodes, 1))
-        sizes = np.full(n_nodes, DEFAULT_NODE_SIZE, dtype=np.float64)
+            # Create color array (n_nodes, 4)
+            face_colors = np.tile(node_rgba, (n_nodes, 1))
+            sizes = np.full(n_nodes, DEFAULT_NODE_SIZE, dtype=np.float64)
 
-        # Highlight start node
-        if state.start_node is not None and 0 <= state.start_node < n_nodes:
-            face_colors[state.start_node] = start_rgba
-            sizes[state.start_node] = START_NODE_SIZE
+            # Highlight start node
+            if state.start_node is not None and 0 <= state.start_node < n_nodes:
+                face_colors[state.start_node] = start_rgba
+                sizes[state.start_node] = START_NODE_SIZE
 
-        # Build node labels for hover text
-        node_labels = []
-        for i in range(n_nodes):
-            label = f"Node {i}"
-            if i < len(state.node_labels) and state.node_labels[i]:
-                label += f" ({state.node_labels[i]})"
-            if i == state.start_node:
-                label += " [START]"
-            node_labels.append(label)
+            # Build node labels for hover text
+            node_labels = []
+            for i in range(n_nodes):
+                label = f"Node {i}"
+                if i < len(state.node_labels) and state.node_labels[i]:
+                    label += f" ({state.node_labels[i]})"
+                if i == state.start_node:
+                    label += " [START]"
+                node_labels.append(label)
 
-        # Update nodes layer
-        nodes_layer.data = node_data
-        nodes_layer.face_color = face_colors
-        nodes_layer.size = sizes
-
-        # Set features for hover info (shown in status bar)
-        nodes_layer.features = {"label": node_labels}
-
-        # Set text to show node IDs on the points
-        nodes_layer.text = {
-            "string": "{label}",
-            "size": 10,
-            "color": "white",
-            "anchor": "upper_left",
-        }
-    else:
-        # Clear nodes layer
-        nodes_layer.data = np.empty((0, 2), dtype=np.float64)
-        nodes_layer.features = {}
-        nodes_layer.text = None
-
-    # Convert edges to paths for shapes layer
-    if state.edges and state.nodes:
-        paths = []
-        edge_labels = []
-        for i, (n1, n2) in enumerate(state.edges):
-            if n1 < len(state.nodes) and n2 < len(state.nodes):
-                x1, y1 = state.nodes[n1]
-                x2, y2 = state.nodes[n2]
-                # Convert to napari (row, col) = (y, x)
-                path = np.array([[y1, x1], [y2, x2]], dtype=np.float64)
-                paths.append(path)
-                edge_labels.append(f"Edge {i}: {n1} → {n2}")
-
-        if paths:
-            # Clear and re-add all paths
-            edges_layer.data = []
-            for path in paths:
-                edges_layer.add_paths([path])
+            # Update nodes layer
+            nodes_layer.data = node_data
+            nodes_layer.face_color = face_colors
+            nodes_layer.size = sizes
 
             # Set features for hover info (shown in status bar)
-            edges_layer.features = {"label": edge_labels}
+            nodes_layer.features = {"label": node_labels}
+
+            # Set text to show node IDs on the points
+            nodes_layer.text = {
+                "string": "{label}",
+                "size": 10,
+                "color": "white",
+                "anchor": "upper_left",
+            }
         else:
+            # Clear nodes layer
+            nodes_layer.data = np.empty((0, 2), dtype=np.float64)
+            nodes_layer.features = {}
+            nodes_layer.text = None
+
+        # Convert edges to paths for shapes layer
+        if state.edges and state.nodes:
+            paths = edge_paths(state)
+            edge_labels = [
+                f"Edge {i}: {n1} → {n2}" for i, (n1, n2) in enumerate(state.edges)
+            ]
+
+            if paths:
+                # Clear and re-add all paths
+                edges_layer.data = []
+                edges_layer.add_paths(paths)
+
+                # Set features for hover info (shown in status bar)
+                edges_layer.features = {"label": edge_labels}
+            else:
+                edges_layer.data = []
+                edges_layer.features = {}
+        else:
+            # Clear edges layer
             edges_layer.data = []
             edges_layer.features = {}
-    else:
-        # Clear edges layer
-        edges_layer.data = []
-        edges_layer.features = {}
 
 
 # =============================================================================
@@ -346,9 +352,6 @@ def _handle_click(
 # Edge Preview
 # =============================================================================
 
-# Track preview shape index for removal
-_PREVIEW_INDEX: int | None = None
-
 
 def _show_edge_preview(
     state: TrackBuilderState,
@@ -367,8 +370,6 @@ def _show_edge_preview(
         Current cursor position as (row, col) in napari coordinates.
 
     """
-    global _PREVIEW_INDEX
-
     if state.edge_start_node is None or state.edge_start_node >= len(state.nodes):
         return
 
@@ -387,8 +388,9 @@ def _show_edge_preview(
     _clear_edge_preview(edges_layer)
 
     # Add new preview path with preview color
-    edges_layer.add_paths([preview_path], edge_color=PREVIEW_COLOR)
-    _PREVIEW_INDEX = len(edges_layer.data) - 1
+    with edges_layer.events.data.blocker():
+        edges_layer.add_paths([preview_path], edge_color=PREVIEW_COLOR)
+    edges_layer.metadata["_track_preview_index"] = len(edges_layer.data) - 1
 
 
 def _clear_edge_preview(edges_layer: Shapes) -> None:
@@ -400,12 +402,14 @@ def _clear_edge_preview(edges_layer: Shapes) -> None:
         The Shapes layer containing the preview.
 
     """
-    global _PREVIEW_INDEX
-
-    if len(edges_layer.data) > 0:
-        # Remove all data (we'll re-sync from state)
-        edges_layer.data = []
-    _PREVIEW_INDEX = None
+    preview_index = edges_layer.metadata.pop("_track_preview_index", None)
+    if preview_index is not None and preview_index < len(edges_layer.data):
+        with edges_layer.events.data.blocker():
+            edges_layer.data = [
+                path
+                for index, path in enumerate(edges_layer.data)
+                if index != preview_index
+            ]
 
 
 # =============================================================================
@@ -433,6 +437,8 @@ def _cancel_edge_creation(state: TrackBuilderState) -> None:
 def _show_1d_preview(
     state: TrackBuilderState,
     show: bool = True,
+    *,
+    calibration: VideoCalibration | None = None,
 ) -> Any | None:
     """Show a 1D linearized preview of the track graph.
 
@@ -464,20 +470,12 @@ def _show_1d_preview(
     if len(state.nodes) < 2 or len(state.edges) < 1:
         return None
 
-    # Build track graph from current state
-    track_graph = state.to_track_graph()
+    from neurospatial.annotation._track_helpers import build_track_graph_result
 
-    # Get edge order (use override if set, otherwise compute)
-    if state.edge_order_override is not None:
-        edge_order = list(state.edge_order_override)
-    else:
-        edge_order = state.compute_edge_order()
-
-    # Get edge spacing (use override if set, otherwise compute)
-    if state.edge_spacing_override is not None:
-        edge_spacing: list[float] | np.ndarray = list(state.edge_spacing_override)
-    else:
-        edge_spacing = state.compute_edge_spacing()
+    result = build_track_graph_result(state, calibration)
+    track_graph = result.track_graph
+    edge_order = result.edge_order
+    edge_spacing = result.edge_spacing
 
     # Import and use track_linearization plotting
     try:
@@ -614,6 +612,8 @@ def create_track_widget(
     edges_layer: Shapes,
     nodes_layer: Points,
     state: TrackBuilderState,
+    *,
+    calibration: VideoCalibration | None = None,
 ) -> TrackGraphWidget:
     """Create the track graph builder control widget.
 
@@ -639,6 +639,9 @@ def create_track_widget(
         The Points layer for track nodes.
     state : TrackBuilderState
         The shared state object (modified in place by handlers).
+    calibration : VideoCalibration, optional
+        Pixel-to-centimeter transform for the result, preview and gap units.
+        None keeps pixel coordinates.
 
     Returns
     -------
@@ -655,7 +658,9 @@ def create_track_widget(
     >>> viewer.window.add_dock_widget(widget)  # doctest: +SKIP
 
     """
-    return TrackGraphWidget(viewer, edges_layer, nodes_layer, state)
+    return TrackGraphWidget(
+        viewer, edges_layer, nodes_layer, state, calibration=calibration
+    )
 
 
 class TrackGraphWidget:
@@ -674,6 +679,9 @@ class TrackGraphWidget:
         The Points layer for track nodes.
     state : TrackBuilderState
         The shared state object.
+    calibration : VideoCalibration, optional
+        Pixel-to-centimeter transform for the result, preview and gap units.
+        None keeps pixel coordinates.
 
     """
 
@@ -683,6 +691,8 @@ class TrackGraphWidget:
         edges_layer: Shapes,
         nodes_layer: Points,
         state: TrackBuilderState,
+        *,
+        calibration: VideoCalibration | None = None,
     ) -> None:
         from qtpy.QtWidgets import (
             QComboBox,
@@ -702,6 +712,7 @@ class TrackGraphWidget:
         self._nodes_layer = nodes_layer
         self._state = state
         self._saved = False
+        self._calibration = calibration
 
         # Create main widget
         self._widget = QWidget()
@@ -1055,16 +1066,13 @@ class TrackGraphWidget:
         idx = self._node_combo.currentIndex()
         if idx >= 0 and idx < len(self._state.nodes):
             label = self._label_input.text()
-            # Update label in state
-            while len(self._state.node_labels) <= idx:
-                self._state.node_labels.append("")
-            self._state.node_labels[idx] = label
+            self._state._set_node_label(idx, label)
             self.sync_from_state()
 
     def _on_save(self) -> None:
         """Handle Save and Close button click."""
         if self.try_save():
-            self._viewer.close()
+            self._viewer.window._qt_window.close()
 
     def _on_move_up(self) -> None:
         """Handle Move Up button click."""
@@ -1142,7 +1150,18 @@ class TrackGraphWidget:
         """Handle Preview Linearization button click."""
         import matplotlib.pyplot as plt
 
-        ax = _show_1d_preview(self._state, show=False)
+        try:
+            ax = _show_1d_preview(
+                self._state, show=False, calibration=self._calibration
+            )
+        except (ValueError, IndexError) as error:
+            from napari.utils.notifications import show_error
+
+            show_error(
+                f"Cannot preview track graph: {error} "
+                "Correct the nodes, edges, or layout settings and try Preview 1D again."
+            )
+            return
         if ax is not None:
             # Use non-blocking show to avoid freezing the napari viewer
             plt.show(block=False)
@@ -1153,6 +1172,12 @@ class TrackGraphWidget:
 
     def sync_from_state(self) -> None:
         """Synchronize widget UI from current state."""
+        self._edge_spacing_spin.setSuffix(
+            " cm" if self._calibration is not None else " pixels"
+        )
+        self._edge_spacing_spin.setToolTip(
+            "Gap between edges in output coordinate units; also used by Preview 1D."
+        )
         # Update mode selector
         self._mode_combo.blockSignals(True)
         self._mode_combo.setCurrentText(self._state.mode)
@@ -1170,6 +1195,7 @@ class TrackGraphWidget:
         self._update_status()
 
         # Update node list (block signals to prevent mode changes)
+        selected_node = self._node_combo.currentIndex()
         self._node_combo.blockSignals(True)
         self._node_combo.clear()
         for i, _node in enumerate(self._state.nodes):
@@ -1178,6 +1204,9 @@ class TrackGraphWidget:
                 label = f" ({self._state.node_labels[i]})"
             start_marker = " [START]" if i == self._state.start_node else ""
             self._node_combo.addItem(f"Node {i}{label}{start_marker}")
+        self._node_combo.setCurrentIndex(
+            min(max(selected_node, 0), len(self._state.nodes) - 1)
+        )
         self._node_combo.blockSignals(False)
 
         # Update edge list (block signals to prevent mode changes)
@@ -1246,6 +1275,18 @@ class TrackGraphWidget:
                 self._widget,
                 "Validation Failed",
                 "Cannot save:\n• " + "\n• ".join(errors),
+            )
+            return False
+
+        from neurospatial.annotation._track_helpers import (
+            prepare_track_graph_result,
+        )
+
+        try:
+            prepare_track_graph_result(self._state, self._calibration)
+        except (ValueError, IndexError) as error:
+            QMessageBox.warning(
+                self._widget, "Validation Failed", f"Cannot save: {error}"
             )
             return False
 

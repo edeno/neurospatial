@@ -80,6 +80,11 @@ When the napari viewer opens:
 
 6. **Press `Escape` or click "Save and Close"** to return results
 
+Saving validates the complete result before closing the viewer. If a boundary,
+region, wall or landmark is invalid, the viewer stays open and explains what
+to correct. Incomplete shapes are kept for correction as well. Edit the affected
+vertices, then save again.
+
 ### Step 3: Use the Results
 
 <!-- docs-test: run setup=docs_video_annotation_use_results -->
@@ -108,9 +113,32 @@ bin_indices = env.bin_sequence(times, positions)
 | `Delete` | Remove selected shape |
 | `Escape` | Save and close viewer |
 
+## Track Graph Annotation
+
+Use `annotate_track_graph()` to place nodes and connect them into a track.
+Native edge deletion and node renaming participate in undo and redo. To change
+an edge's geometry, move its endpoint nodes.
+
+Preview 1D uses the same node coordinates, edge order and gaps as the returned
+`TrackGraphResult`. Gaps are in centimeters with calibration and pixels without
+it; the spacing control displays the unit. Automatic gaps follow the selected
+edge order, and disconnected components are included in the result. Adding a
+node keeps a manual edge order and gaps; adding or deleting edges, or deleting
+nodes, returns to the automatic layout.
+
+Saving or closing either editor validates the draft before the editor closes.
+If it cannot be saved, a dialog says why: choose "Keep Editing" to fix it, or
+"Discard and Close" to close without a result, which raises a `RuntimeError`.
+Warnings about the result, such as an ignored boundary, print after the editor
+closes.
+
 ## Adding Calibration
 
 Convert pixel coordinates to real-world units (e.g., centimeters):
+
+The resulting environment records `units="cm"` when calibration is supplied,
+or `units="pixels"` otherwise. `bin_size` and `simplify_tolerance` use those
+same units.
 
 ### Using Scale Bar
 
@@ -183,6 +211,9 @@ result = annotate_video(
 
 Higher values produce smoother polygons but may lose detail.
 
+Simplification does not repair self-intersections. Correct intersecting edges
+in the viewer before saving so that the intended area is unambiguous.
+
 ## Annotation Modes
 
 Control what to annotate with the `mode` parameter:
@@ -230,6 +261,16 @@ result = annotate_video(
 
 Provide existing regions to edit them:
 
+Interior holes are retained when reopening either regions or an initial
+environment boundary. Each hole remains associated with its original polygon;
+a hole in a region does not remove that area from the environment.
+
+Edit these rings directly, or draw new shapes for additional regions. A pasted
+copy of a polygon keeps its own holes and is independent of the original. A hole
+pasted without its polygon becomes a separate polygon. Polygons that are not
+valid, such as a self-intersecting outline from a LabelMe file, open for repair;
+saving reports the problem until it is fixed.
+
 ```python
 from neurospatial.regions import Regions, Region
 from shapely.geometry import Polygon
@@ -250,6 +291,10 @@ result = annotate_video(
 ## Importing from External Tools
 
 Import annotations created in other tools:
+
+Both import adapters retain coordinate units in each region's
+`metadata["coord_system"]`: `"cm"` with calibration and `"pixels"` without it.
+This metadata is preserved when constructing an environment from the boundary.
 
 ### LabelMe
 
@@ -326,7 +371,8 @@ Check that:
 
 ### Viewer closes unexpectedly
 
-The viewer blocks until closed. If it closes without saving, check for Python errors in the console.
+The viewer blocks until closed, including in IPython with `%gui qt`. If it
+closes without saving, check for Python errors in the console.
 
 ## See Also
 

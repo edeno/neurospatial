@@ -25,6 +25,11 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.ops.transforms import VideoCalibration
 
+from neurospatial.annotation._track_layout import (
+    resolve_track_layout,
+    validate_edge_coverage,
+    validate_edge_spacing,
+)
 from neurospatial.annotation._track_state import TrackBuilderState
 
 
@@ -64,7 +69,7 @@ def transform_nodes_to_output(
         return []
 
     if calibration is None:
-        return nodes_px
+        return list(nodes_px)
 
     # Convert to numpy array for transform
     nodes_array = np.array(nodes_px, dtype=np.float64)
@@ -153,15 +158,21 @@ class TrackGraphResult(NamedTuple):
     edges : list of tuple
         Edge connections as (node_i, node_j) tuples.
     edge_order : list of tuple
-        Ordered edge list for linearization (from infer_edge_layout).
+        Effective oriented edge order for linearization, using the manual override
+        or a complete automatic traversal.
     edge_spacing : NDArray[np.float64]
-        Spacing between consecutive edges (from infer_edge_layout).
+        Gaps between consecutive edges in output units (cm if calibrated,
+        otherwise pixels). Automatic gaps follow the effective edge order;
+        manual gaps already use these units.
     node_labels : list of str
         Labels for each node (e.g., "start", "goal", "junction").
     start_node : int or None
         Designated start node for linearization.
     pixel_positions : list of tuple
         Original node coordinates in pixels (before calibration transform).
+    units : str or None
+        Coordinate units: "cm" when calibrated, "pixels" otherwise. None
+        denotes unspecified units for results constructed manually.
 
     Examples
     --------
@@ -190,6 +201,7 @@ class TrackGraphResult(NamedTuple):
     node_labels: list[str]
     start_node: int | None
     pixel_positions: list[tuple[float, float]]
+    units: str | None = None
 
     def to_environment(
         self,
@@ -204,7 +216,8 @@ class TrackGraphResult(NamedTuple):
         bin_size : float
             Bin size for discretization along the track.
         edge_spacing : float or array-like, optional
-            Override inferred edge_spacing. If None, uses self.edge_spacing.
+            Override gaps in the result's output units. If None, uses
+            self.edge_spacing.
         name : str, optional
             Name for the environment.
 
@@ -245,8 +258,14 @@ class TrackGraphResult(NamedTuple):
                 "Ensure at least 2 nodes and 1 edge were created.",
             )
 
+        graph_edges = list(self.track_graph.edges)
+        validate_edge_coverage(self.edges, graph_edges, name="edges")
+        validate_edge_coverage(self.edge_order, graph_edges, name="edge_order")
+
         # Use provided edge_spacing or fall back to inferred spacing
         spacing = edge_spacing if edge_spacing is not None else self.edge_spacing
+
+        validate_edge_spacing(spacing, len(self.edge_order))
 
         # Convert numpy array to list for type compatibility with from_graph
         if isinstance(spacing, np.ndarray):
@@ -262,7 +281,39 @@ class TrackGraphResult(NamedTuple):
             edge_spacing=spacing_arg,
             bin_size=bin_size,
             name=name,
+            units=self.units,
         )
+
+
+def prepare_track_graph_result(
+    state: TrackBuilderState,
+    calibration: VideoCalibration | None,
+) -> TrackGraphResult:
+    """Validate an interactive draft and build the result it would save.
+
+    Parameters
+    ----------
+    state : TrackBuilderState
+        The draft being edited.
+    calibration : VideoCalibration or None
+        Pixel-to-centimeter transform, or None to keep pixels.
+
+    Returns
+    -------
+    TrackGraphResult
+        The result for the current draft. An empty draft gives an empty result.
+
+    Raises
+    ------
+    ValueError
+        If a nonempty draft is not a complete, valid track graph.
+
+    """
+    if state.nodes or state.edges:
+        valid, errors, _ = state.is_valid_for_save()
+        if not valid:
+            raise ValueError("Cannot save track graph: " + "; ".join(errors))
+    return build_track_graph_result(state, calibration)
 
 
 def build_track_graph_result(
@@ -324,6 +375,22 @@ def build_track_graph_result(
     # Copy edges from state
     edges = list(state.edges)
 
+    # Validate output geometry before constructing an exportable graph.
+    positions = np.asarray(node_positions, dtype=np.float64)
+    if node_positions and (
+        positions.shape != (len(node_positions), 2)
+        or not np.all(np.isfinite(positions))
+    ):
+        raise ValueError("Track nodes must have finite two-dimensional coordinates.")
+    for first, second in edges:
+        if not (0 <= first < len(node_positions) and 0 <= second < len(node_positions)):
+            raise ValueError("Track edges must reference existing nodes.")
+        length = float(np.linalg.norm(positions[second] - positions[first]))
+        if not np.isfinite(length) or length <= 0:
+            raise ValueError(
+                "Track edges must have finite, strictly positive lengths in output units."
+            )
+
     # Copy node labels
     node_labels = list(state.node_labels)
 
@@ -333,35 +400,14 @@ def build_track_graph_result(
     # Build track graph and infer edge layout if we have enough data
     if len(state.nodes) >= 2 and len(state.edges) >= 1:
         track_graph = build_track_graph_from_positions(node_positions, edges)
-
-        # Use manual overrides if set, otherwise auto-infer
-        if state.edge_order_override is not None:
-            edge_order = list(state.edge_order_override)
-        else:
-            try:
-                from track_linearization import infer_edge_layout
-
-                edge_order, _spacing = infer_edge_layout(
-                    track_graph,
-                    start_node=start_node,
-                )
-            except ImportError:
-                # Fallback: use edges in creation order
-                edge_order = edges
-
-        if state.edge_spacing_override is not None:
-            edge_spacing = np.array(state.edge_spacing_override, dtype=np.float64)
-        else:
-            try:
-                from track_linearization import infer_edge_layout
-
-                _order, edge_spacing = infer_edge_layout(
-                    track_graph,
-                    start_node=start_node,
-                )
-            except ImportError:
-                # Fallback: zero spacing
-                edge_spacing = np.zeros(max(0, len(edges) - 1), dtype=np.float64)
+        # The graph merges repeated edges; the layout validates its own output.
+        validate_edge_coverage(edges, list(track_graph.edges), name="edges")
+        edge_order, edge_spacing = resolve_track_layout(
+            track_graph,
+            start_node=start_node,
+            edge_order=state.edge_order_override,
+            edge_spacing=state.edge_spacing_override,
+        )
     else:
         track_graph = None
         edge_order = []
@@ -376,4 +422,5 @@ def build_track_graph_result(
         node_labels=node_labels,
         start_node=start_node,
         pixel_positions=pixel_positions,
+        units="cm" if calibration is not None else "pixels",
     )

@@ -4,6 +4,10 @@
 
 ### Breaking
 
+- `annotation.TrackGraphResult` has a trailing `units` field. Existing manual
+  constructors still work because it defaults to `None`, but positional tuple
+  unpacking must now include this ninth item. Prefer named attributes such as
+  `result.node_positions` and `result.units`.
 - `heading_direction_labels`, `instantaneous_goal_alignment`, `goal_bias` and
   `compute_goal_directed_metrics` use the movement rule of
   `heading_from_velocity`: a direction exists only where the smoothed speed
@@ -2508,6 +2512,45 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- Annotation editing preserves surviving track edges, node labels and start
+  nodes when deleting points in napari. Native additions, deletions and moves
+  participate in undo/redo without state-to-view feedback corrupting the graph.
+- Edge edits and node deletions invalidate manual linearization overrides,
+  while adding a node keeps them, and result conversion rejects edge orders
+  that omit, repeat or invent graph edges.
+- Reopening polygon annotations preserves interior rings and their parent
+  polygons. Invalid initial polygons open for repair, and invalid boundary and
+  region polygons are rejected before the viewer closes, keeping the draft
+  available for correction instead of failing after editing.
+  Simplification no longer implicitly repairs self-intersections.
+  A pasted polygon gets its own identity with its own interior rings, so
+  deleting the original removes only the original's rings; an interior ring
+  pasted alone becomes a separate polygon. A paste is named at once (`zone`
+  becomes `zone_2`), so **Done** exports it without waiting for another
+  drawing. Annotation counts and auto-names
+  count an environment's interior rings as holes and a region's as part of it.
+- Annotation environments retain `"cm"` units when calibrated and `"pixels"`
+  otherwise; track results carry the same units through `to_environment()`.
+- Native track-edge deletion and node renaming now use the same undoable state
+  commands as other graph edits. Temporary edge previews do not modify the
+  saved graph, and unsupported direct edge reshaping restores the graph view.
+- Polygon and track annotation validate their complete results before closing
+  the editor. Invalid landmarks, walls and incomplete polygons remain editable
+  instead of being dropped during interactive saving; a dialog offers to keep
+  editing or to discard the draft, which raises `RuntimeError`. Result warnings
+  print to the console after the editor closes, and the editors also wait for
+  the user under IPython's `%gui qt`. A hole that splits the environment into
+  separate areas raises an error that names the problem. Standalone converters
+  retain their documented permissive behavior.
+- Deleting polygon annotations keeps drawing bookkeeping synchronized, so the
+  next shape receives its own name and role, including after deleting a polygon
+  with interior rings.
+- Track preview and export resolve edge order and gaps together. Automatic gaps
+  follow the selected order, all disconnected components are retained, and
+  preview coordinates and manual gaps use the same output units as the result.
+- LabelMe and CVAT annotation imports preserve their known `"cm"` or `"pixels"`
+  coordinate metadata through subsequent environment construction.
 
 - The warning that a triangular mesh is too skewed for an exact smoothing
   bandwidth appears when you smooth on that mesh (rate maps, `smooth`,

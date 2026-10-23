@@ -1552,3 +1552,77 @@ class TestPreviewButtonClickBehavior:
         assert widget.preview_button.is_enabled()
 
         viewer.close()
+
+
+def test_preview_uses_export_layout_and_calibrated_gap_units(monkeypatch):
+    """Preview and exported graph have identical geometry, order, and gaps."""
+    import track_linearization
+
+    from neurospatial.annotation._track_helpers import build_track_graph_result
+    from neurospatial.annotation._track_state import TrackBuilderState
+    from neurospatial.annotation._track_widget import _show_1d_preview
+    from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
+
+    state = TrackBuilderState()
+    for x in (0.0, 20.0, 40.0):
+        state.add_node(x, 40.0)
+    state.add_edge(0, 1)
+    state.add_edge(1, 2)
+    state.set_edge_order([(2, 1), (1, 0)])
+    state.set_edge_spacing([7.0])
+    calibration = VideoCalibration(
+        transform_px_to_cm=calibrate_from_scale_bar(
+            p1_px=(0.0, 0.0),
+            p2_px=(20.0, 0.0),
+            known_length_cm=10.0,
+            frame_size_px=(50, 50),
+        ),
+        frame_size_px=(50, 50),
+    )
+    expected = build_track_graph_result(state, calibration)
+    captured = {}
+
+    def plot(graph, **kwargs):
+        captured.update(graph=graph, **kwargs)
+        return "axes"
+
+    monkeypatch.setattr(track_linearization, "plot_graph_as_1D", plot)
+    assert _show_1d_preview(state, show=False, calibration=calibration) == "axes"
+    assert captured["edge_order"] == expected.edge_order
+    np.testing.assert_array_equal(captured["edge_spacing"], [7.0])
+    for node in expected.track_graph:
+        np.testing.assert_array_equal(
+            captured["graph"].nodes[node]["pos"],
+            expected.track_graph.nodes[node]["pos"],
+        )
+
+
+@pytest.mark.gui
+def test_invalid_preview_reports_error_and_keeps_draft(monkeypatch):
+    """A coincident-node preview reports how to fix it without losing edits."""
+    napari = pytest.importorskip("napari")
+    from neurospatial.annotation._track_state import TrackBuilderState
+    from neurospatial.annotation._track_widget import (
+        create_track_widget,
+        setup_track_layers,
+    )
+
+    viewer = napari.Viewer(show=False)
+    errors = []
+    try:
+        edges, nodes = setup_track_layers(viewer)
+        state = TrackBuilderState()
+        state.add_node(5.0, 5.0)
+        state.add_node(5.0, 5.0)
+        state.add_edge(0, 1)
+        widget = create_track_widget(viewer, edges, nodes, state)
+        before = state._snapshot()
+        monkeypatch.setattr("napari.utils.notifications.show_error", errors.append)
+        widget._on_preview()
+        assert state._snapshot() == before
+        assert len(viewer.layers) == 2
+        assert len(errors) == 1
+        assert "Cannot preview" in errors[0]
+        assert "Correct the nodes" in errors[0]
+    finally:
+        viewer.close()

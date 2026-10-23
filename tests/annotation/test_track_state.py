@@ -810,3 +810,45 @@ class TestModeHandling:
         state.edge_start_node = None
 
         assert state.edge_start_node is None
+
+
+def test_edge_addition_invalidates_layout_and_undo_restores():
+    """Adding an edge cannot retain a manual layout for an older graph."""
+    from neurospatial.annotation._track_state import TrackBuilderState
+
+    state = TrackBuilderState()
+    for x in range(3):
+        state.add_node(x, 0)
+    state.add_edge(0, 1)
+    state.set_edge_order([(0, 1)])
+    state.set_edge_spacing([])
+    state.add_edge(1, 2)
+    assert state.edge_order_override is None
+    assert state.edge_spacing_override is None
+    state.undo()
+    assert state.edge_order_override == [(0, 1)]
+    assert state.edge_spacing_override == []
+
+
+@pytest.mark.parametrize("route", ["add_node", "native_add"])
+def test_node_addition_keeps_manual_layout(route):
+    """A new node has no edges, so the manual linearization stays as set."""
+    from neurospatial.annotation._track_helpers import build_track_graph_result
+    from neurospatial.annotation._track_state import TrackBuilderState
+
+    state = TrackBuilderState()
+    for x in (0, 10, 20):
+        state.add_node(x, 0)
+    state.add_edge(0, 1)
+    state.add_edge(1, 2)
+    state.set_edge_order([(1, 2), (0, 1)])
+    state.set_edge_spacing([4.0])
+    if route == "add_node":
+        state.add_node(30, 0)
+    else:
+        state._apply_node_edit([*state.nodes, (30.0, 0.0)])
+    assert state.edge_order_override == [(1, 2), (0, 1)]
+    assert state.edge_spacing_override == [4.0]
+    result = build_track_graph_result(state, None)
+    assert result.edge_order == [(1, 2), (0, 1)]
+    assert list(result.edge_spacing) == [4.0]

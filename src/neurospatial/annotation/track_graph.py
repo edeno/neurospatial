@@ -23,6 +23,7 @@ Examples
 from __future__ import annotations
 
 import warnings
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,7 +32,7 @@ import numpy as np
 # Re-export TrackGraphResult from helpers module for public API
 from neurospatial.annotation._track_helpers import (
     TrackGraphResult,
-    build_track_graph_result,
+    prepare_track_graph_result,
 )
 from neurospatial.annotation._track_state import TrackBuilderState
 from neurospatial.annotation._track_widget import (
@@ -40,10 +41,12 @@ from neurospatial.annotation._track_widget import (
     _handle_key,
     _sync_layers_from_state,
     create_track_widget,
+    edge_paths,
     setup_track_layers,
 )
 
 if TYPE_CHECKING:
+    from napari.utils.events import Event
     from numpy.typing import NDArray
 
     from neurospatial.ops.transforms import VideoCalibration
@@ -82,6 +85,19 @@ def _apply_initial_edges(
                 UserWarning,
                 stacklevel=2,
             )
+
+
+def _same_paths(actual: list[NDArray], reference: list[NDArray]) -> bool:
+    """Whether layer paths equal the reference paths at layer precision.
+
+    Shapes stores coordinates in its display dtype (currently float32).
+    Comparing the exact representable endpoints still detects a one-ULP
+    geometry edit without rejecting ordinary rounding.
+    """
+    return len(actual) == len(reference) and all(
+        np.array_equal(path, np.asarray(ref, dtype=path.dtype))
+        for path, ref in zip(actual, reference, strict=True)
+    )
 
 
 def annotate_track_graph(
@@ -144,6 +160,10 @@ def annotate_track_graph(
         If napari is not installed.
     FileNotFoundError
         If video_path does not exist.
+    RuntimeError
+        If the drawn graph cannot be saved, for example a single node, and the
+        user discards it. The editor shows the problem first and lets the user
+        keep editing.
 
     Examples
     --------
@@ -247,7 +267,9 @@ def annotate_track_graph(
 
     # 7. Add control widget
     # TrackGraphWidget is a wrapper class; pass the internal QWidget to napari
-    widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+    widget = create_track_widget(
+        viewer, edges_layer, nodes_layer, state, calibration=calibration
+    )
     viewer.window.add_dock_widget(
         widget._widget,
         name="Track Graph Builder",
@@ -258,49 +280,114 @@ def annotate_track_graph(
     # When using napari's default "2" add mode, points are added directly to layer.data
     # We need to sync these back to our state so they persist.
 
+    pending_removal: tuple[int, ...] = ()
+
     def _sync_layer_to_state(event=None):
-        """Sync napari layer data back to TrackBuilderState."""
-        # Get current layer data
-        layer_data = nodes_layer.data
-
-        # Convert napari (row, col) back to state (x, y)
-        # napari stores as (y, x), we need (x, y)
-        new_nodes = [(float(col), float(row)) for row, col in layer_data]
-        n_layer = len(new_nodes)
-        n_state = len(state.nodes)
-
-        if n_layer > n_state:
-            # New nodes added - add them to state
-            for i in range(n_state, n_layer):
-                x, y = new_nodes[i]
-                state.add_node(x, y)
-            widget.sync_from_state()
-        elif n_layer < n_state:
-            # Nodes deleted - rebuild state from layer
-            # Clear state and re-add all nodes from layer
-            state.nodes.clear()
-            state.node_labels.clear()
-            state.edges.clear()  # Edges reference deleted nodes
-            state.start_node = None
-            state.edge_start_node = None
-            for x, y in new_nodes:
-                state.add_node(x, y)
-            widget.sync_from_state()
-        elif n_layer == n_state and n_layer > 0:
-            # Same count - check if positions changed (node moved)
-            positions_changed = False
-            for i, (x, y) in enumerate(new_nodes):
-                old_x, old_y = state.nodes[i]
-                if abs(x - old_x) > 0.01 or abs(y - old_y) > 0.01:
-                    state.nodes[i] = (x, y)
-                    positions_changed = True
-            if positions_changed:
-                # Don't call widget.sync_from_state() to avoid feedback loop
-                # Just update edges layer to reflect new positions
-                _sync_layers_from_state(state, nodes_layer, edges_layer)
+        """Apply completed native napari edits; ignore before-action events."""
+        nonlocal pending_removal
+        action = str(getattr(event, "action", ""))
+        if action in {"adding", "changing", "removing"}:
+            if action == "removing":
+                pending_removal = tuple(getattr(event, "data_indices", ()))
+            return
+        new_nodes = [(float(col), float(row)) for row, col in nodes_layer.data]
+        removed: tuple[int, ...] = ()
+        if len(new_nodes) < len(state.nodes):
+            indices = tuple(getattr(event, "data_indices", ()))
+            # Native remove events identify the old rows. A data assignment
+            # reports all remaining rows instead, so use the ordered survivors.
+            if (
+                action == "removed"
+                and not pending_removal
+                and len(indices) == len(state.nodes) - len(new_nodes)
+            ):
+                removed = indices
+            elif pending_removal and len(pending_removal) == len(state.nodes) - len(
+                new_nodes
+            ):
+                removed = pending_removal
+            else:
+                # Coordinate-only assignments carry no identities. Accept only
+                # a unique ordered subsequence of the authoritative node list.
+                earliest = []
+                cursor = 0
+                for node in new_nodes:
+                    while cursor < len(state.nodes) and state.nodes[cursor] != node:
+                        cursor += 1
+                    if cursor == len(state.nodes):
+                        break
+                    earliest.append(cursor)
+                    cursor += 1
+                latest = []
+                cursor = len(state.nodes) - 1
+                for node in reversed(new_nodes):
+                    while cursor >= 0 and state.nodes[cursor] != node:
+                        cursor -= 1
+                    if cursor < 0:
+                        break
+                    latest.append(cursor)
+                    cursor -= 1
+                if len(earliest) != len(new_nodes) or earliest != latest[::-1]:
+                    pending_removal = ()
+                    widget.sync_from_state()
+                    raise ValueError(
+                        "Cannot identify surviving nodes in this data assignment. "
+                        "Select nodes and use remove_selected() for deletion, or "
+                        "move and delete nodes in separate edits."
+                    )
+                surviving = set(earliest)
+                removed = tuple(
+                    i for i in range(len(state.nodes)) if i not in surviving
+                )
+        pending_removal = ()
+        state._apply_node_edit(new_nodes, removed_indices=removed)
+        widget.sync_from_state()
 
     # Connect to layer data change events
     nodes_layer.events.data.connect(_sync_layer_to_state)
+
+    pending_edge_removal: tuple[int, ...] = ()
+
+    def _sync_edges_to_state(event: Event | None = None) -> None:
+        """Accept native deletion; restore edits that cannot represent graph edges."""
+        nonlocal pending_edge_removal
+        action = str(getattr(event, "action", ""))
+        if action in {"adding", "changing", "removing"}:
+            if action == "removing":
+                pending_edge_removal = tuple(getattr(event, "data_indices", ()))
+            return
+        expected = edge_paths(state)
+        removed = pending_edge_removal
+        pending_edge_removal = ()
+        if action == "removed" and not removed:
+            removed = tuple(getattr(event, "data_indices", ()))
+        # Preview paths carry no graph identity and never enter command history.
+        deleted = tuple(index for index in removed if index < len(expected))
+        survivors = [
+            path for index, path in enumerate(expected) if index not in deleted
+        ]
+        preview_index = edges_layer.metadata.get("_track_preview_index")
+        # Shape indices in a removal event refer to the old rows.
+        if preview_index is not None and preview_index not in removed:
+            preview_index -= sum(index < preview_index for index in removed)
+        actual = [
+            path
+            for index, path in enumerate(edges_layer.data)
+            if index != preview_index
+        ]
+        if deleted and action == "removed" and _same_paths(actual, survivors):
+            state._delete_edges(deleted)
+        elif not _same_paths(actual, expected):
+            message = (
+                "Track edges must connect node positions. Move nodes to change "
+                "edge geometry, or use E to connect two nodes. The edge edit "
+                "was restored."
+            )
+            viewer.status = message
+            warnings.warn(message, UserWarning, stacklevel=2)
+        widget.sync_from_state()
+
+    edges_layer.events.data.connect(_sync_edges_to_state)
 
     # Sync napari layer mode changes back to state
     def _sync_mode_to_state(event=None):
@@ -413,8 +500,9 @@ def annotate_track_graph(
     widget.sync_from_state()
     viewer.status = "Mode: Add - click to place nodes (press E to connect them)"
 
-    # 11. Run napari (blocking until viewer closes)
-    napari.run()
+    # Validate the complete result before the window closes.
+    from neurospatial.annotation._session import run_annotation_session
 
-    # 12. Extract and transform results
-    return build_track_graph_result(state, calibration)
+    return run_annotation_session(
+        viewer, partial(prepare_track_graph_result, state, calibration)
+    )

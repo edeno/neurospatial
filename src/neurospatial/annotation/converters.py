@@ -15,8 +15,9 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
+    from neurospatial.annotation._draft import PolygonDraft
     from neurospatial.environment import Environment
-    from neurospatial.landmarks import Landmarks
+    from neurospatial.landmarks import Landmark, Landmarks
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Region, Regions
 
@@ -31,6 +32,23 @@ def _to_world(
     """Napari (row, col) vertices as (x, y), in cm with a calibration."""
     pts_px = vertices_rc[:, ::-1].astype(np.float64)
     return pts_px if calibration is None else calibration.transform_px_to_cm(pts_px)
+
+
+def _landmark_from_shape(
+    name: str, shape_type: str, points: NDArray[np.float64]
+) -> Landmark:
+    """Build a landmark whose kind follows from its napari shape type.
+
+    An ellipse marks a point at its center, a path or line marks a line, and
+    any other shape marks a polygon.
+    """
+    from neurospatial.landmarks import Landmark
+
+    if shape_type == "ellipse":
+        return Landmark(name, "point", points.mean(axis=0))
+    if shape_type in _LINE_SHAPES:
+        return Landmark(name, "line", points)
+    return Landmark(name, "polygon", points)
 
 
 def shapes_to_walls_and_landmarks(
@@ -78,7 +96,7 @@ def shapes_to_walls_and_landmarks(
     """
     import warnings
 
-    from neurospatial.landmarks import Landmark, Landmarks
+    from neurospatial.landmarks import Landmarks
 
     walls: dict[str, shp.LineString] = {}
     landmarks: list[Landmark] = []
@@ -102,12 +120,7 @@ def shapes_to_walls_and_landmarks(
             walls[str(name)] = shp.LineString(points)
             continue
         try:
-            if shape_type == "ellipse":
-                landmark = Landmark(str(name), "point", points.mean(axis=0))
-            elif shape_type in _LINE_SHAPES:
-                landmark = Landmark(str(name), "line", points)
-            else:
-                landmark = Landmark(str(name), "polygon", points)
+            landmark = _landmark_from_shape(str(name), shape_type, points)
         except ValueError as error:
             warnings.warn(
                 f"Skipping landmark '{name}': {error}",
@@ -155,8 +168,9 @@ def shapes_to_regions(
         - "first": Use the first drawn boundary. A warning is emitted.
         - "error": Raise ValueError if multiple boundaries are drawn.
     validate : bool, default=True
-        Whether to validate polygon geometry and emit warnings for issues
-        like self-intersecting polygons or very small areas.
+        Whether to emit advisory warnings about small areas, overlap and
+        regions outside the boundary. Invalid polygon geometry always raises,
+        including when this is False; simplification does not repair it.
     min_area : float, default=1e-6
         Minimum polygon area threshold for validation. Polygons with area
         below this trigger a warning (if validate=True).
@@ -173,8 +187,9 @@ def shapes_to_regions(
     Raises
     ------
     ValueError
-        If ``multiple_boundaries="error"`` and multiple environment boundaries
-        are drawn.
+        If polygon geometry is invalid, or if ``multiple_boundaries="error"``
+        and multiple environment boundaries are drawn. Invalid geometry is
+        rejected even when ``validate=False``; it is never repaired implicitly.
 
     Notes
     -----
@@ -185,6 +200,32 @@ def shapes_to_regions(
     used to create excluded areas within the environment.
 
     """
+    from neurospatial.annotation._draft import PolygonDraft
+
+    drafts = [
+        PolygonDraft(vertices, name, role, [], {})
+        for vertices, name, role in zip(shapes_data, names, region_types, strict=True)
+    ]
+    return _drafts_to_regions(
+        drafts,
+        calibration=calibration,
+        simplify_tolerance=simplify_tolerance,
+        multiple_boundaries=multiple_boundaries,
+        validate=validate,
+        min_area=min_area,
+    )
+
+
+def _drafts_to_regions(
+    drafts: list[PolygonDraft],
+    *,
+    calibration: VideoCalibration | None = None,
+    simplify_tolerance: float | None = None,
+    multiple_boundaries: MultipleBoundaryStrategy = "last",
+    validate: bool = True,
+    min_area: float = 1e-6,
+) -> tuple[Regions, Region | None, list[Region]]:
+    """Convert explicitly grouped polygon drafts without losing interior rings."""
     import warnings
 
     from neurospatial.regions import Region, Regions
@@ -194,12 +235,8 @@ def shapes_to_regions(
     env_boundaries: list[Region] = []
 
     coord_system = "pixels" if calibration is None else "cm"
-    for poly_rc, name, region_type in zip(
-        shapes_data,
-        names,
-        region_types,
-        strict=True,
-    ):
+    for draft in drafts:
+        poly_rc, name, region_type = draft.vertices, draft.name, draft.role
         pts_world = _to_world(poly_rc, calibration)
 
         # Skip degenerate polygons (need ≥3 vertices to form an area), but warn
@@ -213,7 +250,16 @@ def shapes_to_regions(
             )
             continue
 
-        poly = shp.Polygon(pts_world)
+        poly = shp.Polygon(
+            pts_world, [_to_world(ring, calibration) for ring in draft.interiors]
+        )
+        if not poly.is_valid:
+            from shapely.validation import explain_validity
+
+            raise ValueError(
+                f"Polygon '{name}' is invalid: {explain_validity(poly)}. "
+                "Edit its vertices or interior rings before saving."
+            )
 
         # Validate polygon geometry before simplification
         if validate:
@@ -226,9 +272,12 @@ def shapes_to_regions(
             poly = poly.simplify(tolerance=simplify_tolerance, preserve_topology=True)
             # Ensure polygon is still valid after simplification
             if not poly.is_valid:
-                poly = poly.buffer(0)  # Standard fix for self-intersections
+                raise ValueError(
+                    f"Simplified polygon '{name}' is invalid; edit its vertices."
+                )
 
         metadata = {
+            **draft.metadata,
             "source": "napari_annotation",
             "coord_system": coord_system,
             "role": region_type,  # Keep 'role' key for backward compat in metadata
@@ -344,7 +393,16 @@ def subtract_holes_from_boundary(
 
     # Ensure result is valid
     if not result_poly.is_valid:
-        result_poly = result_poly.buffer(0)
+        raise ValueError(
+            "Subtracting environment holes produced invalid geometry; edit the boundary or holes before saving."
+        )
+    if result_poly.geom_type != "Polygon":
+        raise ValueError(
+            f"Subtracting environment holes split the boundary into "
+            f"{len(getattr(result_poly, 'geoms', ()))} separate areas. The "
+            "environment must be one connected area: shrink or delete the hole "
+            "that crosses it."
+        )
 
     # Create new region with updated polygon
     metadata = dict(boundary.metadata)
@@ -421,6 +479,8 @@ def env_from_boundary_region(
         from_polygon_kwargs["arena"] = OpenArena(
             polygon, walls=segments, wall_names=wall_names
         )
+    if boundary.metadata.get("coord_system") in ("cm", "pixels"):
+        from_polygon_kwargs.setdefault("units", boundary.metadata["coord_system"])
     return Environment.from_polygon(
         polygon=polygon,
         bin_size=bin_size,
@@ -458,3 +518,40 @@ def _clipped_walls(
         segments.extend(pieces)
         wall_names.extend([name] * len(pieces))
     return segments, wall_names
+
+
+def _validate_drawn_shapes(
+    shapes_data: list[NDArray[np.float64]],
+    names: list[str],
+    region_types: list[RegionType],
+    shape_types: list[str],
+    calibration: VideoCalibration | None,
+) -> None:
+    """Require every interactive drawing to survive conversion without repair."""
+    for vertices, name, role, shape_type in zip(
+        shapes_data, names, region_types, shape_types, strict=True
+    ):
+        points = _to_world(vertices, calibration)
+        try:
+            if not np.isfinite(points).all():
+                raise ValueError("coordinates must be finite")
+            if shape_type in _AREA_SHAPES or role not in ("wall", "landmark"):
+                polygon = shp.Polygon(points)
+                if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
+                    raise ValueError(
+                        "invalid polygon: draw an area with positive area and no crossing edges"
+                    )
+            if role == "wall":
+                if shape_type == "ellipse" or len(points) < 2:
+                    raise ValueError("draw a wall as a path, line, or polygon")
+                line = shp.LineString(points)
+                if not line.is_valid or line.length <= 0:
+                    raise ValueError(
+                        "draw a wall with distinct vertices and positive length"
+                    )
+            elif role == "landmark":
+                _landmark_from_shape(str(name), shape_type, points)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Cannot save {role} '{name}': {exc}. Edit or delete this shape and try again."
+            ) from exc

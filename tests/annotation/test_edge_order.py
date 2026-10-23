@@ -544,17 +544,20 @@ class TestUseDefaultSpacingCheckbox:
         state = TrackBuilderState()
         state.add_node(0.0, 0.0)
         state.add_node(10.0, 0.0)
+        state.add_node(20.0, 0.0)
         state.add_edge(0, 1)
+        state.add_edge(1, 2)
         state.set_edge_spacing([5.0])
 
         widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
 
-        # If widget has use_default_checkbox, test it
-        if hasattr(widget, "use_default_spacing_checkbox"):
-            widget.use_default_spacing_checkbox.setChecked(True)
+        try:
+            assert state.edge_spacing_override == [5.0]
+            widget.reset_to_auto_button.click()
             assert state.edge_spacing_override is None
-        # Otherwise, the Reset to Auto button serves this purpose
-        viewer.close()
+            np.testing.assert_array_equal(state.compute_edge_spacing(), [0.0])
+        finally:
+            viewer.close()
 
 
 @pytest.mark.gui
