@@ -32,7 +32,6 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.environment._cache import CELL_POLYGONS
-from neurospatial.environment._lookup import center_tree
 from neurospatial.geometry import cell_polygons
 from neurospatial.layout import _cell_shape
 
@@ -305,14 +304,20 @@ def cell_mesh(env: Environment) -> Cells | None:
 
 
 def bin_spacing(env: Environment) -> float:
-    """Typical distance between neighboring bin centers, for point sizes."""
-    centers = env.bin_centers
-    if len(centers) < 2:
-        return 1.0
-    sample = centers[:: max(1, len(centers) // 1000)]
-    distances, _ = center_tree(env._cache, env._binning).query(sample, k=2)
-    spacing = float(np.median(distances[:, 1]))
-    return spacing if spacing > 0 else 1.0
+    """Typical distance between neighboring bins, for point sizes.
+
+    The package's typical bin spacing; 1 for a single bin, which has no
+    neighbor.
+    """
+    from neurospatial.ops import _typical_bin_spacing
+
+    spacing = _typical_bin_spacing(
+        env.bin_centers,
+        env.bin_sizes,
+        is_linearized_track=env.is_linearized_track,
+        tree=env.bin_center_tree(),
+    )
+    return spacing if np.isfinite(spacing) and spacing > 0 else 1.0
 
 
 def add_bins(subplot: Any, env: Environment, cells: Cells | None, **style: Any) -> Any:
