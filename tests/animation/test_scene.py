@@ -183,13 +183,16 @@ def test_track_cells_keep_gap_and_break_support():
     scene = Animation(env, {"posterior": field})
     assert scene.render_frame(0.15, dpi=30).shape[-1] == 3
     track_ax = scene._renderer.figure.axes[-1]
-    collection = track_ax.collections[0]
-    paths = collection.get_paths()
-    assert len(paths) == 2 * env.n_bins
-    # No heatmap polygon extends into the declared recording break.
-    for path in paths:
-        left, right = np.min(path.vertices[:, 0]), np.max(path.vertices[:, 0])
-        assert right <= 0.1 or left >= 0.2
+    window = scene._renderer.prepared.track_window(field, 0.15)
+    mesh = track_ax.images[0]
+    np.testing.assert_array_equal(mesh.get_array().filled(np.nan), window.values)
+    # Only the two supported intervals hold cells: none extends into the
+    # declared recording break.
+    observed = np.isfinite(window.values).any(axis=0)
+    left, right = window.time_edges[:-1], window.time_edges[1:]
+    assert observed.sum() == 2
+    assert np.all((right[observed] <= 0.1) | (left[observed] >= 0.2))
+    assert np.isfinite(window.values[:, observed]).all()
     scene.close()
     with pytest.raises(RuntimeError, match="closed"):
         scene.sample_fields(0.1)
@@ -393,7 +396,7 @@ def test_projected_track_uses_its_own_stable_scale(scene_env):
         for ax in scene._renderer.figure.axes
         if ax.get_title() == "posterior along track"
     )
-    mesh = projected_ax.collections[0]
+    mesh = projected_ax.images[0]
     assert np.max(mesh.get_array()) > 1
     assert mesh.norm.vmax >= np.max(mesh.get_array())
     scale = scene._renderer.prepared.field_scales["posterior"]

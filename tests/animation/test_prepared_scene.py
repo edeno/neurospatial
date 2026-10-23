@@ -24,6 +24,7 @@ from neurospatial.animation._capabilities import require_scene_view
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._sampling import sample_at_times
 from neurospatial.animation._scene_rendering import SceneRenderer
+from neurospatial.animation._tracks import track_extents
 from neurospatial.animation.overlays import VideoData
 
 
@@ -177,11 +178,11 @@ def test_prepared_panels_keep_native_support_and_half_open_field_endpoints():
     assert not hasattr(prepared, "figure")
     assert prepared.scene.fields["posterior"].values is field.values
     window = prepared.track_window(scene.fields["posterior"], 0.1)
-    assert not np.any(
-        (window.polygons[:, :, 0].min(axis=1) < 0.2)
-        & (window.polygons[:, :, 0].max(axis=1) > 0.1)
-    )
+    # The unsupported (0.1, 0.2) interval and the row at 0.1 hold no cells.
+    left, right = window.time_edges[:-1], window.time_edges[1:]
+    assert np.isnan(window.values[:, (left < 0.2) & (right > 0.1)]).all()
     assert not np.any(window.values == 100)
+    np.testing.assert_array_equal(window.values[:, left == 0.0], [[1], [np.nan]])
     np.testing.assert_array_equal(scene.sample_fields(0.075)["posterior"], [2, 3])
     assert np.isnan(scene.sample_fields(0.1)["posterior"]).all()
     signal = scene._overlay_data.timeseries[0]
@@ -191,8 +192,8 @@ def test_prepared_panels_keep_native_support_and_half_open_field_endpoints():
     try:
         renderer = SceneRenderer(scene, dpi=25)
         renderer.render(0.1)
-        collection = renderer.figure.axes[1].collections[0]
-        np.testing.assert_array_equal(collection.get_array(), window.values)
+        mesh = renderer.figure.axes[1].images[0]
+        np.testing.assert_array_equal(mesh.get_array().filled(np.nan), window.values)
         signal_ax = renderer.figure.axes[2]
         np.testing.assert_array_equal(signal_ax.lines[0].get_ydata(), values)
         raster_ax = renderer.figure.axes[3]
@@ -247,7 +248,7 @@ def test_fresh_napari_preparation_imports_no_canvas_or_renderer():
         assert not hasattr(_napari_scene, 'SceneRenderer')
         assert 'matplotlib.backends.backend_agg' not in sys.modules
         assert 'matplotlib.pyplot' not in sys.modules
-        assert len(prepared.track_window(scene.fields['field'], .05).values) == 2
+        assert prepared.track_window(scene.fields['field'], .05).values.shape == (2, 1)
         scene.close()
     """)
     result = subprocess.run(
@@ -598,3 +599,25 @@ def test_parts_sampled_together_equal_each_part_sampled_alone(interp):
             )
         ]
         np.testing.assert_array_equal(together, alone)
+
+
+def test_track_mesh_rows_follow_the_track_and_leave_segment_spacing_empty():
+    track = Environment.linear_track(
+        node_positions=[[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]],
+        bin_size=1.0,
+        edge_spacing=1.5,
+    )
+    values = np.arange(3 * track.n_bins, dtype=float).reshape(3, -1)
+    scene = Animation(
+        track, AnimationField(values, [0.0, 0.1, 0.2]), window_seconds=1.0
+    )
+    window = PreparedScene(scene).track_window(scene.fields["field"], 0.15)
+    starts, stops = track_extents(track)
+    # Four bins and the spacing between the two segments, bottom to top.
+    np.testing.assert_allclose(window.track_edges, [0, 1, 2, 3.5, 4.5, 5.5])
+    np.testing.assert_allclose(window.time_edges, [0.0, 0.1, 0.2])
+    np.testing.assert_array_equal(window.values[2], [np.nan, np.nan])
+    np.testing.assert_array_equal(window.values[[0, 1, 3, 4]], values[:2].T)
+    np.testing.assert_allclose(starts, window.track_edges[[0, 1, 3, 4]])
+    np.testing.assert_allclose(stops, window.track_edges[[1, 2, 4, 5]])
+    scene.close()

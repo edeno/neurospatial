@@ -203,16 +203,13 @@ def test_track_paths_do_not_draw_rejected_samples(case):
     with Animation(
         env, np.ones((4, env.n_bins)), frame_times=CLOCK, overlays=[Adapter(source)]
     ) as scene:
-        paths = (
-            PreparedScene(scene)
-            .track_window(scene.fields["field"], CLOCK[-1])
-            .positions
-        )
+        window = PreparedScene(scene).track_window(scene.fields["field"], CLOCK[-1])
         expected_times = [
             CLOCK[i : i + 2] for i, keep in enumerate(expected_intervals) if keep
         ]
-        assert len(paths) == len(expected_times)
-        for (segment, _), expected in zip(paths, expected_times, strict=True):
+        assert len(window.paths) == len(expected_times)
+        assert window.path_colors == ["red"] * len(expected_times)
+        for segment, expected in zip(window.paths, expected_times, strict=True):
             np.testing.assert_array_equal(segment[:, 0], expected)
 
 

@@ -80,11 +80,53 @@ class _PoseStreams(NamedTuple):
 
 
 class TrackWindow(NamedTuple):
-    """Finite supported cells and observed position segments in one time window."""
+    """A field along the track in one time window, and the observed path.
 
-    polygons: np.ndarray
-    values: np.ndarray
-    positions: list[tuple[np.ndarray, str]]
+    The field is a mesh of cells, one row per track interval and one column
+    per time interval.
+
+    Attributes
+    ----------
+    time_edges : ndarray of float64, shape (n_columns + 1,)
+        Column edges, in seconds, clipped to the window.
+    track_edges : ndarray of float64, shape (n_rows + 1,)
+        Row edges, in position along the track.
+    values : ndarray of float64, shape (n_rows, n_columns)
+        Each cell's value: the field's held sample across a supported
+        interval. NaN where nothing was observed: an unsupported interval,
+        a missing bin, or the spacing between track segments.
+    paths : ndarray of float64, shape (n_segments, 2, 2)
+        ``(time, position along the track)`` segments joining consecutive
+        supported position samples.
+    path_colors : list of str
+        Each segment's position-overlay color.
+    """
+
+    time_edges: NDArray[np.float64]
+    track_edges: NDArray[np.float64]
+    values: NDArray[np.float64]
+    paths: NDArray[np.float64]
+    path_colors: list[str]
+
+
+def _track_rows(
+    starts: NDArray[np.float64], stops: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """Mesh rows for track bins: their edges, and each bin's row.
+
+    Bins are ordered by position along the track; the spacing between two
+    segments is an empty row of its own.
+    """
+    order = np.argsort(starts, kind="stable")
+    low, high = starts[order], stops[order]
+    gap = low[1:] > high[:-1]
+    rows = np.arange(len(low)) + np.r_[0, np.cumsum(gap)]
+    edges = np.empty(len(low) + int(gap.sum()) + 1)
+    edges[rows] = low
+    edges[rows + 1] = high
+    bin_rows = np.empty(len(order), dtype=np.intp)
+    bin_rows[order] = rows
+    return edges, bin_rows
 
 
 def _ordered_clock_chunks(clock: np.ndarray) -> Iterator[np.ndarray]:
@@ -304,6 +346,9 @@ class PreparedScene:
         self.signal_groups = signal_groups(data.timeseries)
         self.track_env = scene.env if scene.track is None else scene.track
         self.track_extents = track_extents(self.track_env)
+        self._track_rows = (
+            None if self.track_extents is None else _track_rows(*self.track_extents)
+        )
         self.projection = (
             None if scene.track is None else _projection(scene.env, scene.track)
         )
@@ -641,9 +686,13 @@ class PreparedScene:
         return ticks
 
     def track_window(self, field: AnimationField, time: float) -> TrackWindow:
-        """Derive cells only for authoritative supported native field intervals."""
-        assert self.track_extents is not None
-        starts, stops = self.track_extents
+        """The field along the track and the observed path, in the window.
+
+        Only the field's supported intervals hold its samples; a projected
+        2-D field shows its rows summed into track bins.
+        """
+        assert self._track_rows is not None
+        track_edges, bin_rows = self._track_rows
         left, right = self.bounds(time)
         first = max(int(np.searchsorted(field.times, left, side="right")) - 1, 0)
         stop = min(
@@ -653,37 +702,40 @@ class PreparedScene:
         selected = selected[
             field.interval_valid[selected] & field.sample_valid[selected]
         ]
-        polygons, colors = [], []
-        for index in selected:
-            values = self._field_row(
-                field, int(index), projected=self.projection is not None
+        # A skipped interval between two shown ones is an empty column.
+        skipped = selected[1:] != selected[:-1] + 1
+        columns = (
+            np.arange(len(selected)) + np.r_[0, np.cumsum(skipped)][: len(selected)]
+        )
+        time_edges = np.empty(len(selected) + int(skipped.sum()) + 1)
+        time_edges[columns] = np.maximum(left, field.times[selected])
+        time_edges[columns + 1] = np.minimum(right, field.times[selected + 1])
+        values = np.full((len(track_edges) - 1, len(time_edges) - 1), np.nan)
+        if len(selected):
+            projected = self.projection is not None
+            rows = np.stack(
+                [self._field_row(field, int(i), projected=projected) for i in selected]
             )
-            lo, hi = max(left, field.times[index]), min(right, field.times[index + 1])
-            finite = np.isfinite(values)
-            bottom, top = starts[finite], stops[finite]
-            cells = np.empty((len(bottom), 4, 2))
-            cells[:, :, 0] = [lo, hi, hi, lo]
-            cells[:, :, 1] = np.column_stack([bottom, bottom, top, top])
-            polygons.append(cells)
-            colors.append(values[finite])
-        paths = []
+            values[bin_rows[:, None], columns[None, :]] = rows.T
+        paths, colors = [np.empty((0, 2, 2))], []
         for position in self.scene._overlay_data.positions:
             times = position.times
             start = int(np.searchsorted(times, left, side="left"))
             stop = int(np.searchsorted(times, right, side="right"))
-            distances = track_position(self.track_env, position.data[start:stop])
-            for index in range(start, stop - 1):
-                if position.interval_valid[index]:
-                    segment = np.column_stack(
-                        [
-                            times[index : index + 2],
-                            distances[index - start : index - start + 2],
-                        ]
-                    )
-                    if np.isfinite(segment).all():
-                        paths.append((segment, position.color))
+            along = track_position(self.track_env, position.data[start:stop])
+            # A valid interval joins two supported samples on the track.
+            joined = np.flatnonzero(
+                position.interval_valid[start : max(start, stop - 1)]
+                & np.isfinite(along[:-1])
+                & np.isfinite(along[1:])
+            )
+            segments = np.empty((len(joined), 2, 2))
+            segments[:, :, 0] = np.column_stack(
+                [times[start + joined], times[start + joined + 1]]
+            )
+            segments[:, :, 1] = np.column_stack([along[joined], along[joined + 1]])
+            paths.append(segments)
+            colors += [position.color] * len(joined)
         return TrackWindow(
-            np.concatenate(polygons) if polygons else np.empty((0, 4, 2)),
-            np.concatenate(colors) if colors else np.empty(0),
-            paths,
+            time_edges, track_edges, values, np.concatenate(paths), colors
         )

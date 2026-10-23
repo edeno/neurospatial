@@ -872,16 +872,26 @@ def track_panel(
     *,
     colorbar: bool = True,
 ) -> Panel:
-    """A field along the track against time, with the observed positions."""
+    """A field along the track against time, with the observed positions.
+
+    The field is one mesh image of (time interval, track bin) cells, so a
+    frame costs one image however many samples the window holds.
+    """
     from matplotlib import rcParams
-    from matplotlib.collections import LineCollection, PolyCollection
+    from matplotlib.collections import LineCollection
     from matplotlib.colors import Normalize
+    from matplotlib.image import PcolorImage
 
     scale = prepared.track_scales[name]
-    cells = PolyCollection([], cmap=scale.cmap, norm=Normalize(scale.vmin, scale.vmax))
-    cells.set_edgecolor("none")
-    cells.set_array(np.empty(0))
-    ax.add_collection(cells)
+    # Clipped to the axes, the mesh takes no part in the layout.
+    cells = PcolorImage(
+        ax,
+        cmap=scale.cmap,
+        norm=Normalize(scale.vmin, scale.vmax),
+        visible=False,
+        in_layout=False,
+    )
+    ax.add_image(cells)
     if prepared.projection is not None and colorbar:
         _colorbar(ax, scale)
     assert prepared.track_extents is not None
@@ -902,11 +912,17 @@ def track_panel(
     time_axis = _time_axis(ax, prepared)
 
     def apply(time: float, window: TrackWindow) -> None:
-        # Matplotlib's stubs omit the (n, 4, 2) array input it accepts.
-        cells.set_verts(cast("Any", window.polygons))
-        cells.set_array(window.values)
-        positions.set_segments([segment for segment, _ in window.positions])
-        positions.set_color([color for _, color in window.positions])
+        # Missing cells are masked: transparent over the panel's background.
+        cells.set_visible(window.values.shape[1] > 0)
+        if window.values.shape[1]:
+            cells.set_data(
+                window.time_edges,
+                window.track_edges,
+                np.ma.masked_invalid(window.values),
+            )
+        # Matplotlib's stubs omit the (n, 2, 2) array input it accepts.
+        positions.set_segments(cast("Any", window.paths))
+        positions.set_color(window.path_colors)
         time_axis(time)
 
     return Panel(lambda time: prepared.track_window(field, time), apply)
