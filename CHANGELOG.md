@@ -144,7 +144,9 @@
   self-contained `.html` players. Video takes `codec` (`"h264"`, `"h265"`,
   `"vp9"`, `"mpeg4"`), `crf` (default 18), `preset` and `bitrate`; HTML takes
   `image_format`, `max_html_frames`, `embed` and `frames_dir`. An option the
-  chosen file type does not use raises `TypeError`. Exports to filesystems
+  chosen file type does not use raises `TypeError`. Without imageio-ffmpeg
+  (the `video` extra), a video export raises `ImportError` saying what to
+  install before anything is rendered. Exports to filesystems
   without hard links (exFAT, FAT32, some network drives) still refuse to
   replace a file created during encoding, and files get the usual permissions.
 - `Animation.export(n_workers=...)` renders frames in worker processes, with
