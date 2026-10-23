@@ -19,10 +19,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     import napari
     from napari.layers import Points, Shapes
+    from numpy.typing import NDArray
 
     from neurospatial.annotation._track_state import TrackBuilderState
     from neurospatial.ops.transforms import VideoCalibration
@@ -170,6 +171,14 @@ def _hex_to_rgba(hex_color: str) -> np.ndarray:
 # =============================================================================
 
 
+def edge_paths(state: TrackBuilderState) -> list[NDArray[np.float64]]:
+    """Return each edge as a napari ``(row, col)`` path between its two nodes."""
+    return [
+        np.array([state.nodes[a][::-1], state.nodes[b][::-1]], dtype=np.float64)
+        for a, b in state.edges
+    ]
+
+
 def _sync_layers_from_state(
     state: TrackBuilderState,
     nodes_layer: Points,
@@ -250,22 +259,15 @@ def _sync_layers_from_state(
 
         # Convert edges to paths for shapes layer
         if state.edges and state.nodes:
-            paths = []
-            edge_labels = []
-            for i, (n1, n2) in enumerate(state.edges):
-                if n1 < len(state.nodes) and n2 < len(state.nodes):
-                    x1, y1 = state.nodes[n1]
-                    x2, y2 = state.nodes[n2]
-                    # Convert to napari (row, col) = (y, x)
-                    path = np.array([[y1, x1], [y2, x2]], dtype=np.float64)
-                    paths.append(path)
-                    edge_labels.append(f"Edge {i}: {n1} → {n2}")
+            paths = edge_paths(state)
+            edge_labels = [
+                f"Edge {i}: {n1} → {n2}" for i, (n1, n2) in enumerate(state.edges)
+            ]
 
             if paths:
                 # Clear and re-add all paths
                 edges_layer.data = []
-                for path in paths:
-                    edges_layer.add_paths([path])
+                edges_layer.add_paths(paths)
 
                 # Set features for hover info (shown in status bar)
                 edges_layer.features = {"label": edge_labels}
@@ -610,6 +612,8 @@ def create_track_widget(
     edges_layer: Shapes,
     nodes_layer: Points,
     state: TrackBuilderState,
+    *,
+    calibration: VideoCalibration | None = None,
 ) -> TrackGraphWidget:
     """Create the track graph builder control widget.
 
@@ -635,6 +639,9 @@ def create_track_widget(
         The Points layer for track nodes.
     state : TrackBuilderState
         The shared state object (modified in place by handlers).
+    calibration : VideoCalibration, optional
+        Pixel-to-centimeter transform for the result, preview and gap units.
+        None keeps pixel coordinates.
 
     Returns
     -------
@@ -651,7 +658,9 @@ def create_track_widget(
     >>> viewer.window.add_dock_widget(widget)  # doctest: +SKIP
 
     """
-    return TrackGraphWidget(viewer, edges_layer, nodes_layer, state)
+    return TrackGraphWidget(
+        viewer, edges_layer, nodes_layer, state, calibration=calibration
+    )
 
 
 class TrackGraphWidget:
@@ -670,6 +679,9 @@ class TrackGraphWidget:
         The Points layer for track nodes.
     state : TrackBuilderState
         The shared state object.
+    calibration : VideoCalibration, optional
+        Pixel-to-centimeter transform for the result, preview and gap units.
+        None keeps pixel coordinates.
 
     """
 
@@ -679,6 +691,8 @@ class TrackGraphWidget:
         edges_layer: Shapes,
         nodes_layer: Points,
         state: TrackBuilderState,
+        *,
+        calibration: VideoCalibration | None = None,
     ) -> None:
         from qtpy.QtWidgets import (
             QComboBox,
@@ -698,12 +712,7 @@ class TrackGraphWidget:
         self._nodes_layer = nodes_layer
         self._state = state
         self._saved = False
-        self._calibration: VideoCalibration | None = None
-        from neurospatial.annotation._track_helpers import build_track_graph_result
-
-        self._prepare_result: Callable[[], Any] = lambda: build_track_graph_result(
-            state, self._calibration
-        )
+        self._calibration = calibration
 
         # Create main widget
         self._widget = QWidget()
@@ -1269,8 +1278,12 @@ class TrackGraphWidget:
             )
             return False
 
+        from neurospatial.annotation._track_helpers import (
+            prepare_track_graph_result,
+        )
+
         try:
-            self._prepare_result()
+            prepare_track_graph_result(self._state, self._calibration)
         except (ValueError, IndexError) as error:
             QMessageBox.warning(
                 self._widget, "Validation Failed", f"Cannot save: {error}"

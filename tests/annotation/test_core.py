@@ -667,7 +667,7 @@ class TestAnnotationWidgetIntegration:
     def test_role_colors_applied_correctly(self):
         """Each role type should get the correct face color."""
         napari = pytest.importorskip("napari")
-        from neurospatial.annotation._napari_widget import (
+        from neurospatial.annotation._helpers import (
             rebuild_features,
             sync_colors_from_features,
         )

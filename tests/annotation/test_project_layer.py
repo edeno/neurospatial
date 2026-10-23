@@ -18,7 +18,7 @@ from neurospatial.annotation.project import AnnotationProject, AnnotationShape
 def test_resumed_donut_wall_and_landmark_export_preserves_scientific_geometry(tmp_path):
     import napari
 
-    from neurospatial.annotation._draft import add_polygon
+    from neurospatial.annotation._draft import add_polygons
     from neurospatial.annotation._napari_widget import setup_shapes_layer_for_annotation
     from neurospatial.annotation.core import _process_annotation_results
     from neurospatial.ops.transforms import Affine2D, VideoCalibration
@@ -32,14 +32,17 @@ def test_resumed_donut_wall_and_landmark_export_preserves_scientific_geometry(tm
             [(1, -1), (20, -1), (20, -20), (1, -20)],
             [[(3, -3), (7, -3), (7, -7), (3, -7)]],
         )
-        add_polygon(
-            layer, polygon, "donut", "region", calibration, {"cue": {"trials": [1, 2]}}
-        )
-        add_polygon(
+        add_polygons(
             layer,
-            Polygon([(0, 0), (25, 0), (25, -25), (0, -25)]),
-            "arena",
-            "environment",
+            [
+                (polygon, "donut", "region", {"cue": {"trials": [1, 2]}}),
+                (
+                    Polygon([(0, 0), (25, 0), (25, -25), (0, -25)]),
+                    "arena",
+                    "environment",
+                    None,
+                ),
+            ],
             calibration,
         )
         initial = list(capture_shapes(layer))

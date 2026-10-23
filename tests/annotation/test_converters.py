@@ -301,6 +301,23 @@ class TestSubtractHolesFromBoundary:
         # Result polygon should have an interior ring (the hole)
         assert len(result.data.interiors) == 1
 
+    def test_hole_splitting_the_boundary_is_actionable(self):
+        """A hole crossing the arena leaves two areas, not one environment."""
+        from neurospatial.annotation.converters import subtract_holes_from_boundary
+
+        boundary = Region(
+            name="arena",
+            kind="polygon",
+            data=shp.Polygon([(0, 0), (100, 0), (100, 100), (0, 100)]),
+        )
+        hole = Region(
+            name="divider",
+            kind="polygon",
+            data=shp.Polygon([(40, -10), (60, -10), (60, 110), (40, 110)]),
+        )
+        with pytest.raises(ValueError, match="split the boundary into 2 separate"):
+            subtract_holes_from_boundary(boundary, [hole])
+
     def test_multiple_holes_subtraction(self):
         """Subtract multiple holes from boundary."""
         from neurospatial.annotation.converters import subtract_holes_from_boundary

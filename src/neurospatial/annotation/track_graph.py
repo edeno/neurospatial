@@ -23,6 +23,7 @@ Examples
 from __future__ import annotations
 
 import warnings
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,7 +32,7 @@ import numpy as np
 # Re-export TrackGraphResult from helpers module for public API
 from neurospatial.annotation._track_helpers import (
     TrackGraphResult,
-    build_track_graph_result,
+    prepare_track_graph_result,
 )
 from neurospatial.annotation._track_state import TrackBuilderState
 from neurospatial.annotation._track_widget import (
@@ -40,6 +41,7 @@ from neurospatial.annotation._track_widget import (
     _handle_key,
     _sync_layers_from_state,
     create_track_widget,
+    edge_paths,
     setup_track_layers,
 )
 
@@ -83,6 +85,19 @@ def _apply_initial_edges(
                 UserWarning,
                 stacklevel=2,
             )
+
+
+def _same_paths(actual: list[NDArray], reference: list[NDArray]) -> bool:
+    """Whether layer paths equal the reference paths at layer precision.
+
+    Shapes stores coordinates in its display dtype (currently float32).
+    Comparing the exact representable endpoints still detects a one-ULP
+    geometry edit without rejecting ordinary rounding.
+    """
+    return len(actual) == len(reference) and all(
+        np.array_equal(path, np.asarray(ref, dtype=path.dtype))
+        for path, ref in zip(actual, reference, strict=True)
+    )
 
 
 def annotate_track_graph(
@@ -145,6 +160,10 @@ def annotate_track_graph(
         If napari is not installed.
     FileNotFoundError
         If video_path does not exist.
+    RuntimeError
+        If the drawn graph cannot be saved, for example a single node, and the
+        user discards it. The editor shows the problem first and lets the user
+        keep editing.
 
     Examples
     --------
@@ -248,8 +267,9 @@ def annotate_track_graph(
 
     # 7. Add control widget
     # TrackGraphWidget is a wrapper class; pass the internal QWidget to napari
-    widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
-    widget._calibration = calibration
+    widget = create_track_widget(
+        viewer, edges_layer, nodes_layer, state, calibration=calibration
+    )
     viewer.window.add_dock_widget(
         widget._widget,
         name="Track Graph Builder",
@@ -336,15 +356,7 @@ def annotate_track_graph(
             if action == "removing":
                 pending_edge_removal = tuple(getattr(event, "data_indices", ()))
             return
-        expected = [
-            np.asarray(
-                [
-                    (state.nodes[a][1], state.nodes[a][0]),
-                    (state.nodes[b][1], state.nodes[b][0]),
-                ]
-            )
-            for a, b in state.edges
-        ]
+        expected = edge_paths(state)
         removed = pending_edge_removal
         pending_edge_removal = ()
         if action == "removed" and not removed:
@@ -363,22 +375,9 @@ def annotate_track_graph(
             for index, path in enumerate(edges_layer.data)
             if index != preview_index
         ]
-        # Shapes stores coordinates in its display dtype (currently float32).
-        # Compare the exact representable endpoints, preserving detection of
-        # even a one-ULP geometry edit without rejecting ordinary rounding.
-        matches = len(actual) == len(survivors) and all(
-            np.array_equal(path, np.asarray(reference, dtype=path.dtype))
-            for path, reference in zip(actual, survivors, strict=True)
-        )
-        if deleted and action == "removed" and matches:
+        if deleted and action == "removed" and _same_paths(actual, survivors):
             state._delete_edges(deleted)
-        elif not (
-            len(actual) == len(expected)
-            and all(
-                np.array_equal(path, np.asarray(reference, dtype=path.dtype))
-                for path, reference in zip(actual, expected, strict=True)
-            )
-        ):
+        elif not _same_paths(actual, expected):
             message = (
                 "Track edges must connect node positions. Move nodes to change "
                 "edge geometry, or use E to connect two nodes. The edge edit "
@@ -501,24 +500,9 @@ def annotate_track_graph(
     widget.sync_from_state()
     viewer.status = "Mode: Add - click to place nodes (press E to connect them)"
 
-    # Validate and cache the complete result before either save or window close.
+    # Validate the complete result before the window closes.
     from neurospatial.annotation._session import run_annotation_session
 
-    prepared_snapshot = None
-    prepared_result: TrackGraphResult | None = None
-
-    def prepare_result() -> TrackGraphResult:
-        nonlocal prepared_snapshot, prepared_result
-        if state.nodes or state.edges:
-            valid, errors, _ = state.is_valid_for_save()
-            if not valid:
-                raise ValueError("Cannot save track graph: " + "; ".join(errors))
-        snapshot = state._snapshot()
-        if prepared_result is None or snapshot != prepared_snapshot:
-            result = build_track_graph_result(state, calibration)
-            prepared_snapshot = snapshot
-            prepared_result = result
-        return prepared_result
-
-    widget._prepare_result = prepare_result
-    return run_annotation_session(viewer, prepare_result)
+    return run_annotation_session(
+        viewer, partial(prepare_track_graph_result, state, calibration)
+    )

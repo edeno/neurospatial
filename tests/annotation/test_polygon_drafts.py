@@ -94,7 +94,7 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
     napari = pytest.importorskip("napari")
     from qtpy.QtWidgets import QPushButton
 
-    from neurospatial.annotation import core
+    from neurospatial.annotation import _session, core
 
     viewers = []
     setup = core._setup_annotation_viewer
@@ -142,7 +142,9 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
     )
     monkeypatch.setattr(core, "_setup_annotation_viewer", capture_setup)
     monkeypatch.setattr(core, "_process_annotation_results", capture_process)
-    monkeypatch.setattr("napari.utils.notifications.show_error", errors.append)
+    monkeypatch.setattr(
+        _session, "_keep_editing", lambda parent, error: not errors.append(str(error))
+    )
     monkeypatch.setattr(napari, "run", run_session)
     result = core.annotate_video(
         "unused.mp4",
@@ -227,8 +229,9 @@ def test_selected_interior_and_native_paste_keep_polygon_associations(paste):
         assert result.regions["donut"].data.equals(donut)
         assert result.regions["new"].data.area == 100.0
         if paste:
-            # A pasted hole ring without its exterior becomes its own shape.
-            assert result.regions["donut interior 1_2"].data.area == 16.0
+            # An interior ring pasted without its exterior is its own polygon.
+            (copy,) = set(result.regions) - {"donut", "new"}
+            assert result.regions[copy].data.equals(Polygon(donut.interiors[0]))
         else:
             assert len(result.regions) == 2
     finally:
@@ -436,11 +439,9 @@ def test_native_delete_does_not_hide_pending_addition():
         shapes.remove_selected()
         widget.flush_pending()
         assert list(shapes.features["role"]) == ["region"]
-        # Restored annotations count toward the next generated name, even when
-        # an old row is deleted while the new row's bookkeeping is pending.
-        assert list(shapes.features["name"]) == ["region_2"]
+        assert list(shapes.features["name"]) == ["region_1"]
         result = _process_annotation_results(shapes, "regions", 1.0, None, None, "last")
-        assert list(result.regions) == ["region_2"]
+        assert list(result.regions) == ["region_1"]
     finally:
         viewer.close()
 
@@ -501,5 +502,183 @@ def test_rejected_boundary_then_pending_region_keeps_fresh_features(monkeypatch)
         result = _process_annotation_results(shapes, "both", 1.0, None, None, "last")
         assert result.environment.n_bins == 100
         assert list(result.regions) == ["region_1"]
+    finally:
+        viewer.close()
+
+
+def _donut_regions():
+    return Regions(
+        [
+            Region(
+                "donut",
+                "polygon",
+                Polygon(
+                    [(0, 0), (20, 0), (20, 20), (0, 20)],
+                    [[(3, 3), (7, 3), (7, 7), (3, 7)]],
+                ),
+            )
+        ]
+    )
+
+
+@pytest.mark.gui
+def test_deleting_original_after_paste_removes_only_its_own_rings():
+    napari = pytest.importorskip("napari")
+
+    from neurospatial.annotation._napari_widget import (
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
+
+    viewer = napari.Viewer(show=False)
+    try:
+        shapes = setup_shapes_layer_for_annotation(viewer, "region")
+        _add_initial_regions(shapes, _donut_regions(), None)
+        widget = create_annotation_widget(viewer, initial_mode="region")
+        original = shapes.features.loc[0, "_polygon_id"]
+        shapes.mode = "select"
+        shapes.selected_data = {0, 1}
+        shapes._copy_data()
+        shapes._paste_data()
+        ids = list(shapes.features["_polygon_id"])
+        assert len(set(ids)) == 4
+        assert shapes.features.loc[3, "_parent_id"] == ids[2]
+        shapes.selected_data = {0}
+        shapes.remove_selected()
+        widget.flush_pending()
+        assert list(shapes.features["_polygon_id"]) == ids[2:]
+        assert original not in set(shapes.features["_parent_id"])
+        result = _process_annotation_results(shapes, "regions", 1.0, None, None, "last")
+        assert result.regions["donut"].data.equals(_donut_regions()["donut"].data)
+    finally:
+        viewer.close()
+
+
+@pytest.mark.gui
+def test_interior_rings_count_as_holes_or_as_part_of_their_region():
+    napari = pytest.importorskip("napari")
+
+    from neurospatial.annotation._napari_widget import (
+        add_initial_boundary_to_shapes,
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
+
+    viewer = napari.Viewer(show=False)
+    try:
+        shapes = setup_shapes_layer_for_annotation(viewer, "region")
+        _add_initial_regions(shapes, _donut_regions(), None)
+        arena = Polygon(
+            [(0, 0), (50, 0), (50, 50), (0, 50)],
+            [[(30, 30), (32, 30), (32, 32), (30, 32)], [(40, 40), (42, 40), (42, 42)]],
+        )
+        add_initial_boundary_to_shapes(shapes, arena)
+        widget = create_annotation_widget(viewer, initial_mode="region")
+        statuses = [w.value for w in widget if str(w.value).startswith("Annotations:")]
+        assert statuses == [
+            "Annotations: 1 environment, 2 holes, 1 regions, 0 walls, 0 landmarks"
+        ]
+        shapes.add(
+            np.array([[30.0, 0.0], [40.0, 0.0], [40.0, 10.0], [30.0, 10.0]]),
+            shape_type="polygon",
+        )
+        widget.flush_pending()
+        assert shapes.features["name"].iloc[-1] == "region_2"
+    finally:
+        viewer.close()
+
+
+@pytest.mark.gui
+def test_delete_that_resolves_to_nothing_still_resets_identity_defaults():
+    napari = pytest.importorskip("napari")
+
+    from neurospatial.annotation._controller import ShapesLayerController
+    from neurospatial.annotation._napari_widget import (
+        setup_shapes_layer_for_annotation,
+    )
+    from neurospatial.annotation._state import AnnotationModeState
+
+    viewer = napari.Viewer(show=False)
+    try:
+        shapes = setup_shapes_layer_for_annotation(viewer, "region")
+        _add_initial_regions(shapes, _donut_regions(), None)
+
+        def remove_targets():
+            # A pending decision removes the requested shape first.
+            shapes.features = shapes.features.copy()
+            shapes.selected_data = set()
+
+        controller = ShapesLayerController(
+            shapes,
+            AnnotationModeState(region_type="region"),
+            before_mutation=lambda: None,
+        )
+        controller._before_mutation = remove_targets
+        assert controller.delete_shapes_by_indices({5}) == 0
+        assert shapes.feature_defaults["_polygon_id"].iloc[0] == ""
+        assert shapes.feature_defaults["_parent_id"].iloc[0] == ""
+    finally:
+        viewer.close()
+
+
+@pytest.mark.gui
+def test_invalid_initial_region_loads_for_repair():
+    napari = pytest.importorskip("napari")
+
+    from neurospatial.annotation._napari_widget import (
+        setup_shapes_layer_for_annotation,
+    )
+
+    viewer = napari.Viewer(show=False)
+    try:
+        shapes = setup_shapes_layer_for_annotation(viewer, "region")
+        bowtie = Polygon([(0, 0), (10, 10), (0, 10), (10, 0)])
+        _add_initial_regions(
+            shapes, Regions([Region("bowtie", "polygon", bowtie)]), None
+        )
+        assert list(shapes.features["name"]) == ["bowtie"]
+        with pytest.raises(ValueError, match="Cannot save region 'bowtie'"):
+            _process_annotation_results(shapes, "regions", None, None, None, "last")
+        shapes.data = [np.array([[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0]])]
+        result = _process_annotation_results(
+            shapes, "regions", None, None, None, "last"
+        )
+        assert result.regions["bowtie"].data.area == 100.0
+    finally:
+        viewer.close()
+
+
+@pytest.mark.gui
+def test_copied_interior_pasted_before_its_exterior_stays_linked():
+    napari = pytest.importorskip("napari")
+
+    from neurospatial.annotation._draft import polygon_drafts
+    from neurospatial.annotation._napari_widget import (
+        get_annotation_data,
+        setup_shapes_layer_for_annotation,
+    )
+
+    viewer = napari.Viewer(show=False)
+    try:
+        shapes = setup_shapes_layer_for_annotation(viewer, "region")
+        squares = [
+            Region(f"r{i}", "polygon", Polygon([(i, 30), (i + 1, 30), (i + 1, 31)]))
+            for i in range(7)
+        ]
+        _add_initial_regions(
+            shapes, Regions([*squares, *_donut_regions().values()]), None
+        )
+        shapes.mode = "select"
+        # Napari copies in set order, so rows {7, 8} paste as [8, 7].
+        shapes.selected_data = {7, 8}
+        assert list(shapes.selected_data) == [8, 7]
+        shapes._copy_data()
+        shapes._paste_data()
+        data, names, roles, _ = get_annotation_data(shapes)
+        drafts = polygon_drafts(shapes, data, names, roles)
+        assert [len(draft.interiors) for draft in drafts if draft.name == "donut"] == [
+            1,
+            1,
+        ]
     finally:
         viewer.close()

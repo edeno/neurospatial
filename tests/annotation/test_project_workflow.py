@@ -119,10 +119,12 @@ def test_initial_region_with_missing_metadata_value_starts_saves_and_has_no_hist
 ):
     from shapely.geometry import box
 
-    from neurospatial.annotation._draft import add_polygon
+    from neurospatial.annotation._draft import add_polygons
 
     def populate(shapes):
-        add_polygon(shapes, box(1, 1, 8, 8), "zone", "region", None, {"depth": np.nan})
+        add_polygons(
+            shapes, [(box(1, 1, 8, 8), "zone", "region", {"depth": np.nan})], None
+        )
 
     session, _viewer, _shapes, _controls = session_factory(populate=populate)
     # NaN never equals itself; unchanged metadata must not look like an edit.
@@ -139,13 +141,13 @@ def test_pasted_polygon_with_hole_gets_its_own_identities_and_saves(
 ):
     from shapely.geometry import Polygon
 
-    from neurospatial.annotation._draft import add_polygon
+    from neurospatial.annotation._draft import add_polygons
 
     def populate(shapes):
         ring = Polygon(
             [(1, 1), (10, 1), (10, 10), (1, 10)], [[(4, 4), (6, 4), (6, 6), (4, 6)]]
         )
-        add_polygon(shapes, ring, "zone", "region", None, {"source": "import"})
+        add_polygons(shapes, [(ring, "zone", "region", {"source": "import"})], None)
 
     session, _viewer, shapes, _controls = session_factory(populate=populate)
     shapes.selected_data = {0, 1}
@@ -427,7 +429,7 @@ def test_environment_replacement_cancel_then_confirm_preserves_holes_on_undo(
     from qtpy.QtWidgets import QMessageBox
     from shapely.geometry import Polygon
 
-    from neurospatial.annotation._draft import add_polygon
+    from neurospatial.annotation._draft import add_polygons
     from neurospatial.annotation.core import _process_annotation_results
 
     session, _viewer, shapes, controls = session_factory(initial_mode="environment")
@@ -437,8 +439,14 @@ def test_environment_replacement_cancel_then_confirm_preserves_holes_on_undo(
     )
     roi = Polygon([(8, 8), (10, 8), (10, 10), (8, 10)])
     with shapes.events.blocker_all():
-        add_polygon(shapes, original_boundary, "original", "environment", None)
-        add_polygon(shapes, roi, "reward", "region", None, metadata={"task": "reward"})
+        add_polygons(
+            shapes,
+            [
+                (original_boundary, "original", "environment", None),
+                (roi, "reward", "region", {"task": "reward"}),
+            ],
+            None,
+        )
     controls.sync_from_layer()
     session.checkpoint()
     original_geometry = [ring.copy() for ring in shapes.data]

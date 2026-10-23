@@ -27,12 +27,8 @@ if TYPE_CHECKING:
 
 from neurospatial.annotation._track_layout import (
     resolve_track_layout,
-)
-from neurospatial.annotation._track_layout import (
-    validate_edge_coverage as _validate_edge_coverage,
-)
-from neurospatial.annotation._track_layout import (
-    validate_edge_spacing as _validate_edge_spacing,
+    validate_edge_coverage,
+    validate_edge_spacing,
 )
 from neurospatial.annotation._track_state import TrackBuilderState
 
@@ -178,11 +174,6 @@ class TrackGraphResult(NamedTuple):
         Coordinate units: "cm" when calibrated, "pixels" otherwise. None
         denotes unspecified units for results constructed manually.
 
-    Notes
-    -----
-    The trailing ``units`` field defaults to None for older manual constructors.
-    Results now contain nine tuple items; positional unpacking must include units.
-
     Examples
     --------
     >>> from neurospatial.annotation._track_state import TrackBuilderState
@@ -268,13 +259,13 @@ class TrackGraphResult(NamedTuple):
             )
 
         graph_edges = list(self.track_graph.edges)
-        _validate_edge_coverage(self.edges, graph_edges, name="edges")
-        _validate_edge_coverage(self.edge_order, graph_edges, name="edge_order")
+        validate_edge_coverage(self.edges, graph_edges, name="edges")
+        validate_edge_coverage(self.edge_order, graph_edges, name="edge_order")
 
         # Use provided edge_spacing or fall back to inferred spacing
         spacing = edge_spacing if edge_spacing is not None else self.edge_spacing
 
-        _validate_edge_spacing(spacing, len(self.edge_order))
+        validate_edge_spacing(spacing, len(self.edge_order))
 
         # Convert numpy array to list for type compatibility with from_graph
         if isinstance(spacing, np.ndarray):
@@ -292,6 +283,37 @@ class TrackGraphResult(NamedTuple):
             name=name,
             units=self.units,
         )
+
+
+def prepare_track_graph_result(
+    state: TrackBuilderState,
+    calibration: VideoCalibration | None,
+) -> TrackGraphResult:
+    """Validate an interactive draft and build the result it would save.
+
+    Parameters
+    ----------
+    state : TrackBuilderState
+        The draft being edited.
+    calibration : VideoCalibration or None
+        Pixel-to-centimeter transform, or None to keep pixels.
+
+    Returns
+    -------
+    TrackGraphResult
+        The result for the current draft. An empty draft gives an empty result.
+
+    Raises
+    ------
+    ValueError
+        If a nonempty draft is not a complete, valid track graph.
+
+    """
+    if state.nodes or state.edges:
+        valid, errors, _ = state.is_valid_for_save()
+        if not valid:
+            raise ValueError("Cannot save track graph: " + "; ".join(errors))
+    return build_track_graph_result(state, calibration)
 
 
 def build_track_graph_result(
@@ -378,7 +400,8 @@ def build_track_graph_result(
     # Build track graph and infer edge layout if we have enough data
     if len(state.nodes) >= 2 and len(state.edges) >= 1:
         track_graph = build_track_graph_from_positions(node_positions, edges)
-
+        # The graph merges repeated edges; the layout validates its own output.
+        validate_edge_coverage(edges, list(track_graph.edges), name="edges")
         edge_order, edge_spacing = resolve_track_layout(
             track_graph,
             start_node=start_node,
@@ -389,11 +412,6 @@ def build_track_graph_result(
         track_graph = None
         edge_order = []
         edge_spacing = np.array([], dtype=np.float64)
-
-    if track_graph is not None:
-        _validate_edge_coverage(edges, list(track_graph.edges), name="edges")
-        _validate_edge_coverage(edge_order, list(track_graph.edges), name="edge_order")
-        _validate_edge_spacing(edge_spacing, len(edge_order))
 
     return TrackGraphResult(
         track_graph=track_graph,

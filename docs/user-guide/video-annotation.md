@@ -451,8 +451,15 @@ an edge's geometry, move its endpoint nodes.
 Preview 1D uses the same node coordinates, edge order and gaps as the returned
 `TrackGraphResult`. Gaps are in centimeters with calibration and pixels without
 it; the spacing control displays the unit. Automatic gaps follow the selected
-edge order, and disconnected components are included in the result. Saving or
-closing validates the draft before the editor closes.
+edge order, and disconnected components are included in the result. Adding a
+node keeps a manual edge order and gaps; adding or deleting edges, or deleting
+nodes, returns to the automatic layout.
+
+Saving or closing either editor validates the draft before the editor closes.
+If it cannot be saved, a dialog says why: choose "Keep Editing" to fix it, or
+"Discard and Close" to close without a result, which raises a `RuntimeError`.
+Warnings about the result, such as an ignored boundary, print after the editor
+closes.
 
 ## Adding Calibration
 
@@ -600,9 +607,11 @@ Interior holes are retained when reopening either regions or an initial
 environment boundary. Each hole remains associated with its original polygon;
 a hole in a region does not remove that area from the environment.
 
-Edit these rings directly, or draw new shapes for additional regions.
-Copy/paste of reopened polygon rings is rejected because their parent
-associations would otherwise be ambiguous.
+Edit these rings directly, or draw new shapes for additional regions. A pasted
+copy of a polygon keeps its own holes and is independent of the original. A hole
+pasted without its polygon becomes a separate polygon. Polygons that are not
+valid, such as a self-intersecting outline from a LabelMe file, open for repair;
+saving reports the problem until it is fixed.
 
 ```python
 from neurospatial.regions import Regions, Region
@@ -709,7 +718,8 @@ Check that:
 
 ### Viewer closes unexpectedly
 
-The viewer blocks until closed. If it closes without saving, check for Python errors in the console.
+The viewer blocks until closed, including in IPython with `%gui qt`. If it
+closes without saving, check for Python errors in the console.
 
 ## See Also
 

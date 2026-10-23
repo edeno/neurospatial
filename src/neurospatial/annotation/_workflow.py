@@ -24,7 +24,7 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
 )
 
 from neurospatial.annotation._assist_widget import AnnotationAssistWidget
-from neurospatial.annotation._draft import add_polygon
+from neurospatial.annotation._draft import add_polygons, annotation_roles
 from neurospatial.annotation._polygon_outline import PolygonOutline, polygon_outline
 from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
 from neurospatial.annotation._state import make_unique_name
@@ -365,29 +365,19 @@ class AnnotationProjectSession:
         try:
             if len(existing) != len(before.shapes):
                 restore_shapes(existing, self.layer)
+            # Number unnamed outlines after the annotations with this role, as
+            # the annotation controls count them.
+            count = annotation_roles(self.layer.features).count(role)
+            batch = []
+            for number, polygon in enumerate(polygons, start=count + 1):
+                base = requested_name or (
+                    "arena" if role == "environment" else f"{role}_{number}"
+                )
+                name = make_unique_name(base, names)
+                names.append(name)
+                batch.append((polygon, name, role, metadata))
             with self.layer.events.blocker_all():
-                for polygon in polygons:
-                    # Number unnamed outlines after the existing top-level
-                    # shapes with this role; interior rings are not counted.
-                    features = self.layer.features
-                    count = int(
-                        (
-                            (features["role"] == role) & (features["_parent_id"] == "")
-                        ).sum()
-                    )
-                    base = requested_name or (
-                        "arena" if role == "environment" else f"{role}_{count + 1}"
-                    )
-                    name = make_unique_name(base, names)
-                    names.append(name)
-                    add_polygon(
-                        self.layer,
-                        polygon,
-                        name,
-                        role,
-                        None,
-                        metadata=metadata,
-                    )
+                add_polygons(self.layer, batch, None)
             self.controls.sync_from_layer()
         except Exception:
             self._restore(before)

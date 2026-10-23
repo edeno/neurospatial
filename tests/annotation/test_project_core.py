@@ -267,7 +267,7 @@ def test_public_resume_keeps_invalid_close_editable_and_saves_live_calibration(
 ):
     import napari
 
-    from neurospatial.annotation import _workflow
+    from neurospatial.annotation import _session, _workflow
 
     vertices = np.array([[1, 1], [11, 1], [11, 11], [1, 11]], dtype=float)
     draft = AnnotationProject(
@@ -308,7 +308,9 @@ def test_public_resume_keeps_invalid_close_editable_and_saves_live_calibration(
         assert session.viewer.window._qt_window.close()
 
     monkeypatch.setattr(_workflow, "AnnotationProjectSession", CaptureSession)
-    monkeypatch.setattr("napari.utils.notifications.show_error", errors.append)
+    monkeypatch.setattr(
+        _session, "_keep_editing", lambda parent, error: not errors.append(str(error))
+    )
     monkeypatch.setattr(napari, "run", edit_and_close)
     monkeypatch.setattr(
         core,
