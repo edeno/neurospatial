@@ -610,11 +610,12 @@ def heading_from_body_orientation(
     call = "heading_from_body_orientation"
     n_times = np.shape(times)[0] if np.ndim(times) else None
     for name, keypoint in (("nose", nose), ("tail", tail)):
-        if np.ndim(keypoint) and n_times is not None and len(keypoint) != n_times:
+        n_rows = np.shape(keypoint)[0] if np.ndim(keypoint) else None
+        if n_rows is not None and n_times is not None and n_rows != n_times:
             raise ValueError(
                 _format_error(
                     f"{call}() needs one {name} row per timestamp; times has "
-                    f"{n_times} samples but {name} has {len(keypoint)}.",
+                    f"{n_times} samples but {name} has {n_rows}.",
                     why=(
                         "Why: the heading at each frame is the direction of that "
                         "frame's tail-to-nose vector, so both keypoints need a "
