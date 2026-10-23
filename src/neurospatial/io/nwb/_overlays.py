@@ -47,12 +47,19 @@ def position_overlay_from_nwb(
     trail_length : int, default 0
         Number of previous positions to show as trail.
     **kwargs
-        Additional arguments passed to PositionOverlay.
+        Additional arguments passed to PositionOverlay. ``units`` and ``frame``
+        may supply undeclared coordinate metadata; known NWB declarations
+        cannot be erased or overridden with conflicting declarations.
 
     Returns
     -------
     PositionOverlay
         Overlay with position data and timestamps from NWB.
+
+    Raises
+    ------
+    ValueError
+        If a keyword coordinate declaration conflicts with NWB metadata.
 
     Examples
     --------
@@ -67,6 +74,7 @@ def position_overlay_from_nwb(
     ... )  # doctest: +SKIP
     """
     from neurospatial.animation.overlays import PositionOverlay
+    from neurospatial.io.nwb._adapters import merge_overlay_coordinate_metadata
     from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
@@ -77,11 +85,20 @@ def position_overlay_from_nwb(
     )
     positions = position_data.positions
     timestamps = position_data.times
+    declarations = merge_overlay_coordinate_metadata(
+        position_data.units,
+        position_data.frame,
+        kwargs,
+        context="PositionOverlay",
+        source="position",
+    )
 
     # Create and return PositionOverlay
     return PositionOverlay(
         positions=positions,
         times=timestamps,
+        units=declarations["units"],
+        frame=declarations["frame"],
         color=color,
         size=size,
         trail_length=trail_length,
@@ -113,6 +130,9 @@ def bodypart_overlay_from_nwb(
 
         - interp : {"linear", "nearest"}, optional
             Interpolation method for temporal alignment. Default is "linear".
+        - units, frame : str, optional
+            Coordinate declarations when absent from NWB. Known NWB metadata
+            cannot be overridden with conflicting declarations.
 
     Returns
     -------
@@ -123,6 +143,9 @@ def bodypart_overlay_from_nwb(
     ------
     KeyError
         If no PoseEstimation container found, or if specified name not found.
+    ValueError
+        If bodypart clocks or known coordinate declarations disagree, or a
+        keyword declaration conflicts with the NWB metadata.
     ImportError
         If ndx-pose is not installed.
 
@@ -146,12 +169,17 @@ def bodypart_overlay_from_nwb(
     ... )
     """
     from neurospatial.animation.overlays import BodypartOverlay
-    from neurospatial.io.nwb._pose import read_pose
+    from neurospatial.io.nwb._adapters import merge_overlay_coordinate_metadata
+    from neurospatial.io.nwb._pose import _read_pose_with_metadata
 
     # Read pose data from NWB
-    bodyparts, timestamps, skeleton = read_pose(
+    bodyparts, timestamps, skeleton, units, frame = _read_pose_with_metadata(
         nwbfile,
         pose_estimation_name=pose_estimation_name,
+    )
+
+    declarations = merge_overlay_coordinate_metadata(
+        units, frame, kwargs, context="BodypartOverlay", source="pose"
     )
 
     # Create and return BodypartOverlay
@@ -160,6 +188,8 @@ def bodypart_overlay_from_nwb(
         times=timestamps,
         skeleton=skeleton,  # Auto-extracted from PoseEstimation.skeleton
         colors=colors,
+        units=declarations["units"],
+        frame=declarations["frame"],
         **kwargs,
     )
 

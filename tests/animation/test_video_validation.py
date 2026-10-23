@@ -16,7 +16,7 @@ Run with:
 
 from __future__ import annotations
 
-import shutil
+import importlib.util
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,7 +32,8 @@ if TYPE_CHECKING:
     from neurospatial.ops.transforms import VideoCalibration
 
 # Check for optional dependencies
-HAS_FFMPEG = shutil.which("ffmpeg") is not None
+# Video export encodes with the ffmpeg that imageio-ffmpeg bundles.
+HAS_FFMPEG = importlib.util.find_spec("imageio_ffmpeg") is not None
 
 
 # =============================================================================
@@ -64,7 +65,7 @@ class TestEnvironmentValidation:
         _validate_video_env(polygon_env)
 
 
-@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
+@pytest.mark.skipif(not HAS_FFMPEG, reason="imageio-ffmpeg not installed")
 class TestNonGridEnvironmentSupport:
     """Test that non-grid 2D environments work with dimension_ranges fallback."""
 
@@ -148,7 +149,7 @@ class TestNonGridEnvironmentSupport:
 # =============================================================================
 
 
-@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
+@pytest.mark.skipif(not HAS_FFMPEG, reason="imageio-ffmpeg not installed")
 class TestNapariFreeOperation:
     """Test that video overlay works without napari installed."""
 

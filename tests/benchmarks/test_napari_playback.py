@@ -584,7 +584,6 @@ class TestNapariPlaybackIndividualOverlays:
                 times=ts_times.copy(),
                 label="LFP (mV)",
                 color="cyan",
-                window_seconds=2.0,
             )
             viewer = benchmark_env.animate_fields(
                 benchmark_fields,
@@ -790,7 +789,6 @@ class TestNapariPlaybackCombinedOverlays:
                     times=ts_times.copy(),
                     label="LFP (mV)",
                     color="cyan",
-                    window_seconds=2.0,
                 ),
                 VideoOverlay(
                     source=video_rgb.copy(),

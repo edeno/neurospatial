@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import (
     data_from_series,
+    position_frame_from_series,
     position_units_from_series,
     require_unscaled_for_lazy,
     timestamps_from_series,
@@ -74,7 +75,9 @@ def read_position(
         in the declared physical ``units`` after conversion and offset, and
         ``units=None`` when no unit is declared. Recognized unit aliases are
         normalized to m/cm/mm/px without rescaling values. Arrays are eager
-        float64 by default; lazy handles remain inside the holder.
+        float64 by default; lazy handles remain inside the holder. ``frame``
+        preserves a nonempty SpatialSeries ``reference_frame`` verbatim,
+        or is None when undeclared. No coordinate transform is inferred.
 
     Raises
     ------
@@ -165,7 +168,10 @@ def read_position(
             }
         )
         return NWBPosition(
-            timestamps_handle, data_handle, position_units_from_series(spatial_series)
+            timestamps_handle,
+            data_handle,
+            position_units_from_series(spatial_series),
+            frame=position_frame_from_series(spatial_series),
         )
 
     # Extract position data and timestamps
@@ -176,7 +182,10 @@ def read_position(
 
     validate_lengths({"positions": positions, "timestamps": timestamps})
     return NWBPosition(
-        timestamps, positions, position_units_from_series(spatial_series)
+        timestamps,
+        positions,
+        position_units_from_series(spatial_series),
+        frame=position_frame_from_series(spatial_series),
     )
 
 

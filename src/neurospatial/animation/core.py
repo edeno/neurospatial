@@ -1,15 +1,16 @@
 """Core animation orchestration.
 
-This module provides the main dispatcher for multi-backend animation and utilities
-for working with large-scale time series data.
+This module routes ``Environment.animate_fields`` onto an :class:`Animation`
+scene and provides utilities for working with large-scale time series data.
 """
 
 from __future__ import annotations
 
+import copy
+import importlib.util
 import logging
 import warnings
-from collections.abc import Sequence
-from dataclasses import replace
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -21,119 +22,69 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._region_names import shown_region_names
 
 if TYPE_CHECKING:
+    from neurospatial.animation._view import AnimationView
     from neurospatial.animation.overlays import OverlayProtocol
+    from neurospatial.animation.scene import AnimationField
     from neurospatial.environment import Environment
 
 # Playback speed limits
 MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
-MIN_PLAYBACK_FPS: int = 1  # Minimum usable playback
 DEFAULT_SPEED: float = 1.0  # Real-time by default
 
-# The caller options each backend uses. A name in no backend's set is refused;
+# Options that build the scene's fields and panels; every backend uses them.
+_SCENE_OPTIONS = frozenset(
+    {"cmap", "vmin", "vmax", "colorbar_label", "layer_names", "title", "track"}
+    | {"window_seconds"}
+)
+
+# The further caller options each backend uses. A name in no set is refused;
 # one that only other backends use is ignored with a warning. None means the
 # caller did not pass the option.
 _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
-    "napari": frozenset(
-        {
-            "cmap",
-            "vmin",
-            "vmax",
-            "frame_labels",
-            "title",
-            "cache_size",
-            "chunk_size",
-            "max_chunks",
-            "layout",
-            "layer_names",
-            "show_regions",
-            "region_alpha",
-            "scale_bar",
-            "dry_run",
-        }
-    ),
+    "napari": frozenset({"viewer", "show", "ndisplay", "layout"}),
     "video": frozenset(
         {
             "save_path",
             "overwrite",
-            "cmap",
-            "vmin",
-            "vmax",
-            "frame_labels",
             "dpi",
+            "figsize",
             "codec",
             "crf",
             "preset",
             "bitrate",
             "n_workers",
-            "show_regions",
-            "region_alpha",
-            "scale_bar",
-            "dry_run",
         }
     ),
     "html": frozenset(
         {
             "save_path",
             "overwrite",
-            "cmap",
-            "vmin",
-            "vmax",
-            "frame_labels",
             "dpi",
+            "figsize",
+            "n_workers",
             "image_format",
             "max_html_frames",
-            "title",
             "embed",
             "frames_dir",
-            "n_workers",
-            "show_regions",
-            "region_alpha",
-            "scale_bar",
-            "dry_run",
         }
     ),
-    "widget": frozenset(
-        {
-            "cmap",
-            "vmin",
-            "vmax",
-            "frame_labels",
-            "dpi",
-            "image_format",
-            "initial_cache_size",
-            "cache_limit",
-            "show_regions",
-            "region_alpha",
-            "dry_run",
-        }
-    ),
+    "widget": frozenset({"dpi", "figsize"}),
     "fastplotlib": frozenset(
-        {
-            "cmap",
-            "vmin",
-            "vmax",
-            "frame_labels",
-            "title",
-            "show_regions",
-            "region_alpha",
-            "window_seconds",
-            "layout",
-            "layer_names",
-            "colorbar_label",
-            "track",
-            "dry_run",
-        }
+        {"layout", "frame_labels", "field_rendering", "volume_threshold"}
+        | {"slice_plane"}
     ),
 }
 
-# animate_fields parameters every backend uses: they set the frame timing and
-# the overlays rather than how one backend draws.
+# animate_fields parameters every backend uses: they set the frame timing,
+# the overlays and what the scene shows rather than how one backend draws.
 _SHARED_OPTIONS = frozenset(
-    {"backend", "overlays", "frame_times", "speed", "max_playback_fps"}
+    {"backend", "overlays", "frame_times", "speed", "max_playback_fps", "max_gap"}
+    | {"show_regions", "region_alpha", "scale_bar"}
+    | _SCENE_OPTIONS
 )
 
+_VIDEO_SUFFIXES = (".mp4", ".webm", ".mov", ".avi", ".gif")
 
-# A call that selects each backend, for advice; video always needs a file.
 _BACKEND_CALLS: dict[str, str] = {
     "napari": "backend='napari'",
     "video": "backend='video', save_path='animation.mp4'",
@@ -143,7 +94,7 @@ _BACKEND_CALLS: dict[str, str] = {
 }
 
 
-def _auto_reason(backend: str, n_frames: int, save_path: str | None) -> str:
+def _auto_reason(backend: str, n_frames: int, save_path: str | Path | None) -> str:
     """Why ``backend="auto"`` picked ``backend`` for these inputs."""
     if backend in ("video", "html"):
         return f"save_path ends in {Path(str(save_path)).suffix!r}"
@@ -270,474 +221,274 @@ def _unknown_option_error(
     )
 
 
-def _compute_playback_fps(
+def _field_streams(
+    fields: Any,
     frame_times: NDArray[np.float64],
-    speed: float,
-    max_fps: int = MAX_PLAYBACK_FPS,
-) -> tuple[int, float]:
-    """Compute playback fps from frame timestamps and speed multiplier.
+    *,
+    layer_names: Sequence[str] | None,
+    max_gap: float | None,
+    field_options: dict[str, Any],
+) -> dict[str, AnimationField]:
+    """Name each field stream and put it on the frame clock.
 
-    Parameters
-    ----------
-    frame_times : NDArray[np.float64]
-        Timestamps for each frame in seconds. Shape: (n_frames,).
-    speed : float
-        Playback speed multiplier (1.0 = real-time).
-    max_fps : int, default=MAX_PLAYBACK_FPS
-        Maximum allowed playback fps.
-
-    Returns
-    -------
-    playback_fps : int
-        Computed playback fps, clamped to [MIN_PLAYBACK_FPS, max_fps].
-    actual_speed : float
-        Actual speed after clamping (may differ from requested if capped).
-
-    Notes
-    -----
-    The function handles edge cases gracefully:
-    - Single frame: returns (max_fps, speed)
-    - Zero duration: returns (max_fps, speed)
-    - Very slow speed: clamps to MIN_PLAYBACK_FPS
-    - Very fast speed: clamps to max_fps
+    A 2-D array or a list of 1-D frames is one field. A mapping, or a list
+    whose items are themselves sequences of frames, holds several fields.
     """
-    # Edge case: single frame or fewer
-    if len(frame_times) < 2:
-        return max_fps, speed
+    from neurospatial.animation.scene import AnimationField
 
-    # Compute duration
-    duration = float(frame_times[-1] - frame_times[0])
+    if isinstance(fields, Mapping):
+        streams: dict[str, Any] = dict(fields)
+    elif _is_field_list(fields):
+        names = (
+            list(layer_names)
+            if layer_names is not None
+            else [f"field {i + 1}" for i in range(len(fields))]
+        )
+        if len(names) != len(fields):
+            raise ValueError(
+                f"layer_names has {len(names)} names for {len(fields)} fields. "
+                "Pass one name per field."
+            )
+        streams = dict(zip(names, fields, strict=True))
+    else:
+        # Arrays, lazy readers (memmap, h5py) and lists of frames are one
+        # field, read by row.
+        streams = {"field": fields}
+    if not streams or any(len(values) == 0 for values in streams.values()):
+        raise _empty_fields_error()
+    for name, values in streams.items():
+        if not isinstance(values, AnimationField) and len(values) != len(frame_times):
+            raise ValueError(
+                _format_error(
+                    f"Field {name!r} has {len(values)} frames, but frame_times "
+                    f"has {len(frame_times)} times",
+                    fix="pass one row per entry of frame_times for every field, "
+                    "or an AnimationField with its own times",
+                    why="Why: each field row is shown from its time in frame_times.",
+                )
+            )
+    label = field_options.pop("colorbar_label", None)
+    built = {
+        name: values
+        if isinstance(values, AnimationField)
+        else AnimationField(
+            values, frame_times, max_gap=max_gap, label=label, **field_options
+        )
+        for name, values in streams.items()
+    }
+    plain = [name for name, values in streams.items() if values is not built[name]]
+    vmin, vmax = field_options.get("vmin"), field_options.get("vmax")
+    if len(plain) > 1 and (vmin is None or vmax is None):
+        # Fields shown side by side share one cmap and colorbar label, so they
+        # share one color scale: the same color is the same value in each.
+        # Each field caches the rows it read, so its scale reads them once.
+        from neurospatial.animation._field_stats import robust_limits
 
-    # Edge case: zero or negative duration
-    if duration <= 0:
-        return max_fps, speed
-
-    # Compute sample rate from timestamps
-    sample_rate_hz = (len(frame_times) - 1) / duration
-
-    # Compute requested fps
-    requested_fps = sample_rate_hz * speed
-
-    # Clamp to valid range [MIN_PLAYBACK_FPS, max_fps]
-    playback_fps = int(min(max(requested_fps, MIN_PLAYBACK_FPS), max_fps))
-
-    # Compute actual speed after clamping
-    actual_speed = playback_fps / sample_rate_hz
-
-    return playback_fps, actual_speed
+        extremes = [built[name]._scale_extremes() for name in plain]
+        low, high = robust_limits(
+            np.concatenate([lows for lows, _ in extremes]),
+            np.concatenate([highs for _, highs in extremes]),
+        )
+        vmin = low if vmin is None else vmin
+        vmax = high if vmax is None else vmax
+        if vmin > vmax:
+            raise ValueError("vmin must be less than or equal to vmax.")
+        for name in plain:
+            shared = copy.copy(built[name])
+            object.__setattr__(shared, "vmin", vmin)
+            object.__setattr__(shared, "vmax", vmax)
+            built[name] = shared
+    return built
 
 
-def _validate_env_pickleable(env: Environment) -> None:
-    """Validate that environment can be pickled for parallel processing.
+def _is_field_list(fields: Any) -> bool:
+    """Whether a list holds several fields rather than one field's frames.
 
-    Parameters
-    ----------
-    env : Environment
-        Environment to validate
+    Each item of a field list is itself a sequence of frames: a list, a
+    tuple or a 2-D array.
+    """
+    return (
+        isinstance(fields, (list, tuple))
+        and bool(fields)
+        and (
+            isinstance(fields[0], (list, tuple))
+            or (isinstance(fields[0], np.ndarray) and fields[0].ndim == 2)
+        )
+    )
+
+
+def _empty_fields_error() -> ValueError:
+    return ValueError(
+        _format_error(
+            "fields cannot be empty (got 0 frames)",
+            fix="pass at least one field and a matching frame_times array",
+            why="Why: an animation cannot render zero frames.",
+        )
+    )
+
+
+def _n_frames(fields: Any) -> int:
+    """Frames in the first field, before its streams are built.
 
     Raises
     ------
     ValueError
-        If environment cannot be pickled, with helpful error message
-
-    Notes
-    -----
-    This helper provides a single source of truth for pickle validation
-    with user-friendly error messages and solutions.
+        If an array of fields is not 2-D, or there are no frames.
     """
-    import pickle
-
-    try:
-        pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception as e:
-        from neurospatial.animation._utils import _pickling_guidance
-
-        raise ValueError(
-            f"WHAT: Environment is not pickle-able, preventing parallel video "
-            f"rendering.\n"
-            f"  Pickling failed with: {type(e).__name__}: {e}\n\n"
-            f"WHY: Video backend with parallel rendering (n_workers > 1) requires "
-            f"pickling the Environment to pass it to worker processes. Something "
-            f"attached to it cannot be pickled, such as a lambda, a local function "
-            f"or an open file. Cached analyses are never pickled, so they are not "
-            f"the cause.\n\n"
-            f"{_pickling_guidance('environment')}"
-        ) from e
+    if not isinstance(fields, Mapping) and not (
+        hasattr(fields, "__getitem__") and hasattr(fields, "__len__")
+    ):
+        raise TypeError(
+            "fields must be an array or an indexable sequence of rows "
+            "(n_frames, n_bins), a list of such fields, or a mapping from name "
+            f"to field; got {type(fields).__name__}. Fix: pass np.asarray(rows) "
+            "or a memory-mapped array instead of an iterator."
+        )
+    if isinstance(fields, Mapping):
+        fields = next(iter(fields.values()), [])
+    elif isinstance(fields, np.ndarray):
+        if fields.ndim != 2:
+            raise ValueError(
+                _format_error(
+                    f"fields must have shape (n_frames, n_bins), got {fields.shape}",
+                    fix="pass fields with shape (n_frames, n_bins), e.g. field[None, :]",
+                    why="Why: each animation frame needs one value per environment bin.",
+                )
+            )
+    elif _is_field_list(fields):
+        fields = fields[0]
+    if len(fields) == 0:
+        raise _empty_fields_error()
+    return len(fields)
 
 
 def animate_fields(
     env: Environment,
-    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64] | Mapping[str, Any],
     *,
     backend: Literal[
         "auto", "napari", "video", "html", "widget", "fastplotlib"
     ] = "auto",
-    save_path: str | None = None,
+    save_path: str | Path | None = None,
     overwrite: bool | None = None,
     overlays: list[OverlayProtocol] | None = None,
     frame_times: NDArray[np.float64],
     speed: float = DEFAULT_SPEED,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
+    max_gap: float | None = 0.5,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = None,  # bool | ScaleBarConfig
     **kwargs: Any,
-) -> Any:
-    """Main animation dispatcher.
+) -> AnimationView | Path:
+    """Animate spatial fields on their recording clock in one call.
 
-    This function validates inputs and routes to the appropriate backend.
-
-    Backend parity
-    --------------
-    The ``video``, ``html``, and ``widget`` backends share the same
-    field-to-color rendering (matplotlib), so they apply ``cmap``, ``vmin``,
-    and ``vmax`` identically: the HTML frame is pixel-identical to the shared
-    renderer, the widget frame differs only by its frame label, and the video
-    frame matches within H.264 compression. The ``napari`` backend renders the
-    same field on the GPU using the same colormap and contrast limits, but at a
-    different resolution. Cross-backend consistency is verified in
-    ``tests/animation/test_backend_consistency.py``.
+    Builds an :class:`~neurospatial.animation.Animation` from ``fields`` and
+    ``overlays``, then opens a view of it or exports it to ``save_path``. Use
+    ``Animation`` directly to inspect events, open several views of one
+    scene, or export selected time windows.
 
     Parameters
     ----------
     env : Environment
         Environment defining spatial structure.
-    fields : ndarray of shape (n_frames, n_bins) or list of ndarray of shape (n_bins,)
-        Fields to animate, dtype float64. If ndarray, first dimension is time.
-        If list of arrays, each array represents one frame.
-        Values typically represent probabilities, firing rates, or other spatial
-        quantities. Each field length must match env.n_bins.
-
-        **Multi-field mode** (napari backend only): ``fields`` can also be a
-        list of field sequences for side-by-side comparison. Each sequence
-        contains frames for one field (e.g., one neuron's place field over time)::
-
-            # Single field per frame (standard mode)
-            fields = [field_frame0, field_frame1, ...]
-
-            # Multiple field sequences (napari only)
-            # Each sequence is a list of frames for that field
-            posterior_seq = [posterior_t0, posterior_t1, ...]  # N frames
-            likelihood_seq = [likelihood_t0, likelihood_t1, ...]  # N frames
-            fields = [posterior_seq, likelihood_seq]  # 2 sequences of N frames
-    backend : {"auto", "napari", "video", "html", "widget", "fastplotlib"}, default="auto"
-        Animation backend to use. ``"fastplotlib"`` draws on the GPU, in
-        Jupyter (also from a remote server) or a desktop window; ``"auto"``
-        never chooses it.
-    save_path : str, optional
-        Output path for video/HTML backends.
+    fields : ndarray, shape (n_frames, n_bins), or sequence or mapping
+        Spatial values, one row per entry of ``frame_times``. A list of
+        ``(n_bins,)`` arrays is one field. Several fields shown side by side
+        are a mapping from name to field, or a list of fields named by
+        ``layer_names``. Rows are read lazily, so memory-mapped arrays stay
+        on disk.
+    backend : {"auto", "napari", "video", "html", "widget", "fastplotlib"}
+        ``"video"`` and ``"html"`` write ``save_path``; the others open an
+        interactive view. ``"auto"`` exports when ``save_path`` is a video
+        or ``.html`` file, uses the notebook widget in Jupyter, and napari
+        otherwise.
+    save_path : str or Path, optional
+        Output file: ``.mp4``, ``.webm``, ``.mov``, ``.avi``, ``.gif`` or
+        ``.html``.
     overwrite : bool, default=False
-        Allow replacing existing video/HTML files and nonempty HTML frames
-        directories. By default, an existing target raises before rendering.
-    overlays : list of PositionOverlay, BodypartOverlay, HeadDirectionOverlay, or VideoOverlay, optional
-        Dynamic overlays to render on top of spatial fields. Supports position
-        trajectories, multi-animal pose tracking, head direction visualization,
-        and video background/overlay. Multiple overlays can be provided for
-        multi-animal tracking. Default is None (no overlays).
-    frame_times : ndarray of shape (n_frames,)
-        Timestamps for each frame in seconds, dtype float64. **Required** -
-        provides the temporal structure of your data. Use timestamps from
-        your data source (e.g., position timestamps, decoding time bins).
-        Must be monotonically increasing.
+        Allow replacing an existing output file.
+    overlays : list of overlays, optional
+        Positions, pose, head direction, video, events, signals, spike
+        rasters, epochs and object vectors drawn on each field.
+    frame_times : ndarray, shape (n_frames,)
+        Strictly increasing time of each field row, in seconds.
     speed : float, default=1.0
-        Playback speed relative to real-time:
-        - 1.0: Real-time playback (1 second of data = 1 second viewing)
-        - 0.1: 10% speed (slow motion, good for replay analysis)
-        - 2.0: 2x speed (fast forward)
-
-        The actual playback fps is computed as:
-        ``playback_fps = sample_rate_hz * speed``
-
-        where sample_rate_hz is inferred from frame_times.
-        Playback is capped at max_playback_fps for display compatibility.
+        Playback speed relative to real time.
     max_playback_fps : int, default=60
-        Maximum allowed playback frame rate. If the computed fps
-        (sample_rate * speed) exceeds this value, it will be capped.
-        Use higher values (e.g., 120) for high-refresh displays.
+        Highest frame rate shown or written. Output frames advance
+        ``speed / fps`` recording seconds, where ``fps`` is the sampling rate
+        of ``frame_times`` times ``speed``, capped at this value. A capped
+        export keeps ``speed`` and skips the rows between output frames.
+    max_gap : float or None, default=0.5
+        Longest interval in seconds over which a field row is held until the
+        next one. Across longer gaps the field shows as missing. Pass None to
+        hold every row until the next.
     show_regions : bool or list of str, default=False
-        Whether to render region overlays. If True, all regions defined in env.regions
-        are rendered. If list of strings, only those region names are rendered;
-        a name not in env.regions raises RegionNotFoundError with the closest
-        name. Regions rendered as semi-transparent polygons. Default is False.
+        Draw all environment regions, or the named ones.
     region_alpha : float, default=0.3
-        Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
-        fully transparent and 1.0 is fully opaque. Only used when show_regions
-        is True or a list. Default is 0.3.
-    **kwargs : dict
-        Additional backend-specific parameters.
+        Region opacity, between 0 and 1.
+    scale_bar : bool or ScaleBarConfig, optional
+        Draw a scale bar in the environment's units.
+    **kwargs
+        Scene options for every backend: ``cmap``, ``vmin``, ``vmax``,
+        ``colorbar_label``, ``layer_names``, ``title``, ``window_seconds``,
+        ``track``. File options: ``dpi``, ``figsize``, ``n_workers`` and,
+        for video, ``codec``, ``crf``, ``preset``, ``bitrate``; for HTML,
+        ``image_format``, ``max_html_frames``, ``embed``, ``frames_dir``.
+        View options: ``dpi`` and ``figsize`` (widget); ``viewer``, ``show``,
+        ``ndisplay``, ``layout`` (napari); ``layout``, ``frame_labels``,
+        ``field_rendering``, ``volume_threshold``, ``slice_plane``
+        (fastplotlib). An option no backend uses raises ``TypeError``; one
+        that only another backend uses warns.
 
     Returns
     -------
-    result : Any
-        Backend-specific return value:
-        - Napari: napari.Viewer instance
-        - Video/HTML: Path to saved file
-        - Widget: None (displays in-place, no return value)
+    AnimationView or Path
+        The open view, whose ``native`` attribute is the viewer, or the
+        written file. Closing the view releases the readers it acquired.
 
     Raises
     ------
     FileExistsError
-        If an output already exists and overwrite is False.
+        If the output exists and ``overwrite`` is False.
+    TypeError
+        If an option is not an option of any backend.
     ValueError
-        If fields is empty, field shapes don't match, or backend is invalid
-    RuntimeError
-        If required dependencies are missing
+        If the fields, times or backend are invalid.
+
+    See Also
+    --------
+    neurospatial.animation.Animation : Reusable scenes for views and exports.
 
     Examples
     --------
-    Basic animation:
-
-    >>> positions = np.random.randn(100, 2) * 50  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-    >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]  # doctest: +SKIP
-    >>> frame_times = np.arange(len(fields), dtype=float) / 30.0  # doctest: +SKIP
     >>> env.animate_fields(
-    ...     fields, frame_times=frame_times, backend="napari"
-    ... )  # doctest: +SKIP
-
-    Mixed-rate temporal alignment (e.g., 120 Hz tracking → 10 Hz fields):
-
-    >>> # Position tracked at 120 Hz, fields computed at 10 Hz
-    >>> from neurospatial import PositionOverlay  # doctest: +SKIP
-    >>> position_overlay = PositionOverlay(
-    ...     positions=trajectory_120hz,  # (n_samples_120hz, 2)
-    ...     times=timestamps_120hz,  # Overlay timestamps
-    ...     color="red",
-    ...     trail_length=15,
+    ...     fields, frame_times=times, backend="napari"
     ... )  # doctest: +SKIP
     >>> env.animate_fields(
-    ...     fields_10hz,
-    ...     overlays=[position_overlay],
-    ...     frame_times=timestamps_10hz,  # Field timestamps
-    ...     backend="napari",
+    ...     fields, frame_times=times, save_path="replay.mp4"
     ... )  # doctest: +SKIP
-
-    Notes
-    -----
-    **Backend Selection Guide:**
-
-    +---------+------------+------------------+----------------------------------+
-    | Backend | Best For   | Frame Count      | Features                         |
-    +=========+============+==================+==================================+
-    | napari  | Exploration| 100K+            | Interactive, O(1) seek, zoom     |
-    +---------+------------+------------------+----------------------------------+
-    | video   | Export     | Any (parallel)   | MP4 for publications, n_workers  |
-    +---------+------------+------------------+----------------------------------+
-    | widget  | Notebooks  | <5K              | Inline display, simple scrubbing |
-    +---------+------------+------------------+----------------------------------+
-    | html    | Sharing    | <500             | Standalone file, no dependencies |
-    +---------+------------+------------------+----------------------------------+
-
-    **Auto-selection criteria** (``backend="auto"``):
-
-    - If ``save_path`` ends with ``.mp4``: video
-    - If ``save_path`` ends with ``.html``: html
-    - If in Jupyter notebook: widget
-    - Otherwise: napari
-
-    **Large-dataset recommendations:**
-
-    - **100K+ frames**: Use ``backend="napari"`` for interactive exploration.
-      Napari has O(1) frame seek time regardless of dataset size.
-    - **Export to video**: Use ``backend="video"`` with ``n_workers=4`` for
-      parallel rendering.
-    - **Subsampling**: For high-frequency data (e.g., 250 Hz), subsample to
-      30-60 fps with ``subsample_frames(fields, source_fps=250, target_fps=30)``
-      from ``neurospatial.animation``.
-
-    **Parallel video rendering:**
-
-    With ``n_workers > 1`` the environment and overlays are pickled and sent
-    to worker processes. Cached analyses are never pickled. If something you
-    attached (a lambda, a local function, an open file) cannot be pickled,
-    the call raises ``ValueError`` before rendering; use ``n_workers=1`` or
-    replace that object with plain data.
     """
+    from neurospatial.animation.scene import Animation
+
     # A misspelled region name fails here, before any frame is rendered.
     shown_region_names(env, show_regions)
-
-    # Detect if input is a 2D+ numpy array (potential memmap)
-    # This must happen before any conversion to preserve array format for napari
-    fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
-
-    # Validate array dimensions if array input
-    if isinstance(fields, np.ndarray) and fields.ndim < 2:
-        raise ValueError(
-            _format_error(
-                f"fields must be at least 2D (n_frames, n_bins), got shape {fields.shape}",
-                fix="pass fields with shape (n_frames, n_bins), e.g. field[None, :]",
-                why="Why: each animation frame needs one value per environment bin.",
-            )
-        )
-
-    # Compute n_frames from appropriate source
-    if fields_is_array:
-        # Type assertion: fields_is_array means fields is a 2D+ ndarray
-        assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
-        n_frames = fields.shape[0]
-        if n_frames == 0:
-            raise ValueError(
-                _format_error(
-                    "fields cannot be empty (got 0 frames)",
-                    fix="pass at least one field and a matching frame_times array",
-                    why="Why: an animation cannot render zero frames.",
-                )
-            )
-    else:
-        # Convert to list for non-array inputs
-        fields = list(fields)
-        if len(fields) == 0:
-            raise ValueError(
-                _format_error(
-                    "fields cannot be empty (got 0 frames)",
-                    fix="pass at least one field and a matching frame_times array",
-                    why="Why: an animation cannot render zero frames.",
-                )
-            )
-        n_frames = len(fields)
-
-    # Detect multi-field format (napari-specific feature)
-    # Multi-field: list of sequences (e.g., [[field1, field2], [field3, field4]])
-    # Note: Arrays are never multi-field (they're always single-field with shape (n_frames, n_bins))
-    is_multi_field = (
-        not fields_is_array and len(fields) > 0 and isinstance(fields[0], (list, tuple))
+    from neurospatial.animation._capabilities import (
+        checked_max_playback_fps,
+        checked_speed,
     )
 
-    # Validate field shapes (skip for multi-field - backend will validate)
-    if not is_multi_field:
-        if fields_is_array:
-            # Type assertion: fields_is_array means fields is a 2D+ ndarray
-            assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
-            # For arrays, validate second dimension matches n_bins
-            if fields.shape[1] != env.n_bins:
-                raise ValueError(
-                    f"Fields array has shape {fields.shape} but expected "
-                    f"({n_frames}, {env.n_bins}). Second dimension must match env.n_bins."
-                )
-        else:
-            # For lists, validate each element
-            for i, field in enumerate(fields):
-                if len(field) != env.n_bins:
-                    raise ValueError(
-                        f"Field {i} has {len(field)} values but environment has {env.n_bins} bins. "
-                        f"Expected shape: ({env.n_bins},)"
-                    )
-
-    # Update n_frames for multi-field case
-    if is_multi_field:
-        n_frames = len(fields[0])
-
-    # Validate frame_times (required parameter)
+    checked_speed(speed)
+    checked_max_playback_fps(max_playback_fps)
     from neurospatial.animation.overlays import _validate_frame_times
 
-    frame_times = _validate_frame_times(frame_times, n_frames)
+    frame_times = _validate_frame_times(frame_times, _n_frames(fields))
 
-    # Compute sample_rate_hz for backends and warning logic
-    duration = float(frame_times[-1] - frame_times[0])
-    if duration > 0 and len(frame_times) > 1:
-        sample_rate_hz = (len(frame_times) - 1) / duration
-    else:
-        sample_rate_hz = 30.0  # Fallback for edge cases
-
-    # Auto-select backend, before anything that depends on the backend
     auto_reason = None
     if backend == "auto":
-        backend = _select_backend(n_frames, save_path)
-        auto_reason = _auto_reason(backend, n_frames, save_path)
-
-    # Compute playback fps from frame_times and speed
-    playback_fps, actual_speed = _compute_playback_fps(
-        frame_times, speed, max_fps=max_playback_fps
-    )
-
-    # Emit warning only if fps was actually capped by max/min limits
-    # (not just due to integer truncation rounding)
-    requested_fps = sample_rate_hz * speed
-    was_capped_at_max = requested_fps > max_playback_fps
-    was_capped_at_min = requested_fps < MIN_PLAYBACK_FPS
-    # fastplotlib steps by time and warns of its own limit.
-    if (was_capped_at_max or was_capped_at_min) and backend != "fastplotlib":
-        cap_description = (
-            f"Capped to {max_playback_fps} fps"
-            if was_capped_at_max
-            else f"Capped to {MIN_PLAYBACK_FPS} fps"
-        )
-        warnings.warn(
-            f"Requested speed={speed:.2f}x would require {requested_fps:.0f} fps. "
-            f"{cap_description} (effective speed={actual_speed:.2f}x).",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    # Convert overlays to internal OverlayData if provided
-    overlay_data = None
-    if overlays is not None:
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
-        # frame_times is guaranteed to be set by _build_frame_times above
-        assert frame_times is not None, "frame_times should be built before conversion"
-        overlay_data = _convert_overlays_to_data(
-            overlays=overlays,
-            frame_times=frame_times,
-            n_frames=n_frames,
-            env=env,
-            # fastplotlib shows each overlay at its own rate.
-            own_samples=backend == "fastplotlib",
-        )
-
-        # Validate pickle-ability for parallel rendering (applies to video backend)
-        # Check n_workers from kwargs to determine if parallel rendering will be used
-        n_workers = kwargs.get("n_workers")
-        if n_workers and n_workers > 1:
-            from neurospatial.animation.overlays import _validate_pickle_ability
-
-            _validate_pickle_ability(overlay_data, n_workers=n_workers)
-
-    if overlay_data and backend != "fastplotlib":
-        # Overlays only the fastplotlib backend draws: skipped, with a warning.
-        skipped = [
-            name
-            for name, items in (
-                ("SpikeRasterOverlay", overlay_data.spike_rasters),
-                ("EpochOverlay", overlay_data.epochs),
-            )
-            if items
-        ]
-        if skipped:
-            warnings.warn(
-                f"The {backend} backend does not draw {' or '.join(skipped)}, "
-                "so it is skipped; the other overlays are drawn. Use "
-                "backend='fastplotlib' to show it.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-            overlay_data = replace(overlay_data, spike_rasters=[], epochs=[])
-
-    # Convert arrays to list for non-napari backends
-    # Napari backend can handle arrays directly (enables memmap efficiency)
-    # Other backends expect list semantics for per-frame iteration
-    if fields_is_array and backend not in ("napari", "fastplotlib"):
-        # Type assertion: fields_is_array means fields is a 2D+ ndarray
-        assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
-        fields = [fields[i] for i in range(fields.shape[0])]
-
-    # Multi-field inputs are only supported by the napari and fastplotlib backends
-    if is_multi_field and backend not in ("napari", "fastplotlib"):
-        raise ValueError(
-            "Multi-field input (list of sequences) is only supported by the "
-            "'napari' and 'fastplotlib' backends.\n\n"
-            "WHAT: Detected list-of-sequences input for 'fields', which encodes "
-            "multiple spatial fields per frame (multi-field mode).\n\n"
-            "WHY: Video, HTML, and widget backends currently expect a single "
-            "field array per frame and cannot render multi-field layouts.\n\n"
-            "Fix: Either:\n"
-            "  - Use backend='napari' or 'fastplotlib' (or backend='auto' "
-            "without save_path) to explore multi-field data interactively, or\n"
-            "  - Convert your multi-field input into a single field per frame "
-            "(e.g., by stacking or selecting one field) before calling "
-            "animate_fields()."
-        )
-
+        backend = _select_backend(len(frame_times), save_path)
+        auto_reason = _auto_reason(backend, len(frame_times), save_path)
     if backend not in _BACKEND_OPTIONS:
         raise ValueError(
             _format_error(
@@ -747,236 +498,146 @@ def animate_fields(
                 why="Why: only the advertised rendering backends are supported.",
             )
         )
-    # Refuse unknown options and warn about ignored ones before rendering.
-    # None means not passed: each backend then applies its own default.
-    passed = {
-        "save_path": save_path,
-        "overwrite": overwrite,
-        "show_regions": show_regions,
-        "region_alpha": region_alpha,
-        "scale_bar": scale_bar,
-        **kwargs,
+    scene_options = {
+        name: kwargs.pop(name) for name in _SCENE_OPTIONS if name in kwargs
     }
+    # overwrite=False is the default, not a request a view should warn about.
+    passed = {"save_path": save_path, "overwrite": overwrite or None, **kwargs}
     options = _backend_options(
         backend,
         {name: value for name, value in passed.items() if value is not None},
         auto_reason=auto_reason,
     )
+    if backend in ("video", "html"):
+        _check_save_path(backend, options.get("save_path"))
 
-    # Route to backend with early validation
-    if backend == "napari":
-        from neurospatial.animation.backends.napari_backend import render_napari
+    # Output frames advance speed / fps recording seconds: one per row at the
+    # sampling rate of frame_times, unless that exceeds max_playback_fps.
+    duration = float(frame_times[-1] - frame_times[0])
+    rate = (len(frame_times) - 1) / duration if duration > 0 else None
+    fps = (
+        float(max_playback_fps)
+        if rate is None
+        else min(rate * speed, float(max_playback_fps))
+    )
 
-        return render_napari(
-            env,
-            fields,
-            overlay_data=overlay_data,
-            # Forward frame_times explicitly: it is a named animate_fields
-            # parameter (not in **kwargs), so the PlaybackController gets the
-            # user's timestamps even when there are no overlays.
-            frame_times=frame_times,
-            fps=playback_fps,
-            sample_rate_hz=sample_rate_hz,
-            speed=speed,
-            max_playback_fps=max_playback_fps,
-            **options,
-        )
-
-    elif backend == "video":
-        from neurospatial.animation.backends.video_backend import (
-            check_ffmpeg_available,
-            render_video,
-        )
-
-        # Early validation: fail fast before expensive setup if ffmpeg missing
-        if not check_ffmpeg_available():
-            raise RuntimeError(
-                "WHAT: ffmpeg is not installed or not found in PATH.\n\n"
-                "WHY: Video export requires ffmpeg for encoding frames into video.\n\n"
-                "Fix: Install ffmpeg:\n"
-                "  macOS:   brew install ffmpeg\n"
-                "  Ubuntu:  sudo apt install ffmpeg\n"
-                "  Windows: Download from https://ffmpeg.org/download.html\n\n"
-                "Or use a different backend:\n"
-                "  backend='napari' - Interactive viewer (no dependencies)\n"
-                "  backend='html'   - Standalone HTML file (no dependencies)\n"
-                "  backend='widget' - Jupyter notebook widget"
-            )
-
-        video_path = options.pop("save_path", None)
-        if video_path is None:
-            raise ValueError(
-                _format_error(
-                    "save_path required for video backend, got None",
-                    fix="pass save_path='out.mp4' when backend='video'",
-                    why="Why: the video backend writes to an output file.",
-                )
-            )
-
-        if "crf" in options and "bitrate" in options:
+    field_options = {
+        name: scene_options.pop(name)
+        for name in ("cmap", "vmin", "vmax", "colorbar_label")
+        if name in scene_options
+    }
+    streams = _field_streams(
+        fields,
+        frame_times,
+        layer_names=scene_options.pop("layer_names", None),
+        max_gap=max_gap,
+        field_options=field_options,
+    )
+    scene = Animation(
+        env,
+        streams,
+        frame_times=frame_times,
+        overlays=overlays,
+        show_regions=show_regions,
+        region_alpha=region_alpha,
+        scale_bar=scale_bar,
+        **scene_options,
+    )
+    if backend in ("video", "html"):
+        if rate is not None and rate * speed > max_playback_fps:
             warnings.warn(
-                f"bitrate={options['bitrate']!r} and crf={options['crf']!r} were "
-                "both passed; the video is encoded at the constant bitrate, so "
-                "crf is ignored. Pass only crf= for constant quality, or only "
-                "bitrate= for a fixed bitrate.",
+                f"speed={speed:g} would need {rate * speed:.0f} fps; the file is "
+                f"written at max_playback_fps={max_playback_fps}, so it skips "
+                "rows between output frames. Raise max_playback_fps or lower "
+                "speed to keep every row.",
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
+        with scene:
+            return scene.export(
+                options.pop("save_path"),
+                fps=fps,
+                speed=speed,
+                overwrite=bool(options.pop("overwrite", False)),
+                **options,
+            )
+    options.pop("overwrite", None)
+    try:
+        if backend == "napari":
+            view = scene.show(backend="napari", fps=fps, speed=speed, **options)
+        else:
+            view = scene.show(
+                backend=backend,
+                speed=speed,
+                max_playback_fps=max_playback_fps,
+                **options,
+            )
+        # The scene was made for this view; closing the view releases it.
+        view._add_close_callback(scene.close)
+    except BaseException as error:
+        # Report the failure itself; a cleanup failure is noted on it.
+        scene.__exit__(type(error), error, error.__traceback__)
+        raise
+    return view
 
-        # Validate environment pickle-ability for parallel rendering
-        n_workers = options.get("n_workers")
-        if n_workers and n_workers > 1:
-            _validate_env_pickleable(env)
 
-        return render_video(
-            env,
-            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            video_path,
-            overlay_data=overlay_data,
-            frame_times=frame_times,
-            fps=playback_fps,
-            **options,
-        )
-
-    elif backend == "html":
-        from neurospatial.animation.backends.html_backend import render_html
-
-        return render_html(
-            env,
-            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            options.pop("save_path", None),
-            overlay_data=overlay_data,
-            fps=playback_fps,
-            **options,
-        )
-
-    elif backend == "fastplotlib":
-        from neurospatial.animation.backends.fastplotlib_backend import (
-            render_fastplotlib,
-        )
-
-        return render_fastplotlib(
-            env,
-            fields,
-            overlay_data=overlay_data,
-            frame_times=frame_times,
-            speed=speed,
-            max_playback_fps=max_playback_fps,
-            **options,
-        )
-
-    else:
-        from neurospatial.animation.backends.widget_backend import render_widget
-
-        return render_widget(
-            env,
-            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            overlay_data=overlay_data,
-            frame_times=frame_times,
-            fps=playback_fps,
-            **options,
+def _check_save_path(backend: str, save_path: Any) -> None:
+    """Refuse a missing output or one whose suffix the backend cannot write."""
+    suffixes = (".html",) if backend == "html" else _VIDEO_SUFFIXES
+    if save_path is None or Path(save_path).suffix.lower() not in suffixes:
+        example = "animation.html" if backend == "html" else "animation.mp4"
+        raise ValueError(
+            _format_error(
+                f"The {backend} backend writes a {' or '.join(suffixes)} file; "
+                f"got save_path={save_path!r}",
+                fix=f"pass save_path='{example}'",
+                why=f"Why: the {backend} backend writes to an output file.",
+            )
         )
 
 
 def _select_backend(
-    n_frames: int, save_path: str | None
+    n_frames: int, save_path: str | Path | None
 ) -> Literal["napari", "video", "html", "widget"]:
-    """Auto-select appropriate backend with transparent logging.
-
-    Logs selection rationale at INFO level for user transparency.
-
-    Parameters
-    ----------
-    n_frames : int
-        Number of frames to animate
-    save_path : str, optional
-        Output path (if specified)
-
-    Returns
-    -------
-    backend : {"napari", "video", "html", "widget"}
-        Selected backend
+    """Choose a backend for ``backend="auto"``, logging why at INFO level.
 
     Raises
     ------
     RuntimeError
-        If no suitable backend is available
+        If the chosen interactive viewer is not installed.
     """
     logger = logging.getLogger(__name__)
-
-    # Check if in Jupyter
+    if save_path:
+        suffix = Path(save_path).suffix.lower()
+        if suffix in _VIDEO_SUFFIXES:
+            logger.info("Auto-selected 'video' backend (save_path suffix %s)", suffix)
+            return "video"
+        if suffix == ".html":
+            logger.info("Auto-selected 'html' backend (save_path suffix .html)")
+            return "html"
     try:
         from IPython import get_ipython  # type: ignore[attr-defined]
 
         in_jupyter = get_ipython() is not None
     except ImportError:
         in_jupyter = False
-
-    # Video export requested (file extension determines format)
-    if save_path:
-        ext = Path(save_path).suffix
-        if ext in (".mp4", ".webm", ".avi", ".mov"):
-            logger.info(f"Auto-selected 'video' backend (save_path extension: {ext})")
-            return "video"
-        elif ext == ".html":
-            logger.info(f"Auto-selected 'html' backend (save_path extension: {ext})")
-            return "html"
-
-    # Large dataset - requires GPU acceleration
-    if n_frames > 10_000:
-        from neurospatial.animation.backends.napari_backend import NAPARI_AVAILABLE
-
-        if NAPARI_AVAILABLE:
-            logger.info(
-                f"Auto-selected 'napari' backend for {n_frames:,} frames "
-                f"(threshold: 10,000). Napari provides GPU-accelerated rendering "
-                f"and memory-efficient streaming."
-            )
-            return "napari"
-        else:
-            raise RuntimeError(
-                f"Dataset has {n_frames:,} frames - requires GPU acceleration.\n"
-                f"\n"
-                f"Auto-selection attempted Napari (threshold: 10,000 frames),\n"
-                f"but napari is not installed.\n"
-                f"\n"
-                f"Options:\n"
-                f"  1. Install Napari:\n"
-                f"     pip install napari[all]\n"
-                f"\n"
-                f"  2. Export subsampled video:\n"
-                f"     subsample = fields[::100]  # Every 100th frame\n"
-                f"     sub_times = frame_times[::100]\n"
-                f"     env.animate_fields(subsample, frame_times=sub_times, backend='video', save_path='out.mp4')\n"
-                f"\n"
-                f"  3. Use HTML (WARNING: {n_frames * 0.1:.0f} MB file):\n"
-                f"     env.animate_fields(fields[:500], frame_times=frame_times[:500], backend='html')  # First 500 frames\n"
-            )
-
-    # Jupyter notebook - use widget
-    if in_jupyter:
+    if in_jupyter and n_frames <= 10_000:
         logger.info("Auto-selected 'widget' backend (running in Jupyter)")
         return "widget"
-
-    # Default to napari for interactive
-    from neurospatial.animation.backends.napari_backend import NAPARI_AVAILABLE
-
-    if NAPARI_AVAILABLE:
-        logger.info("Auto-selected 'napari' backend (default for interactive viewing)")
-        return "napari"
-
-    # No suitable backend available
-    raise RuntimeError(
-        "No suitable animation backend available.\n"
-        "\n"
-        "Install one of:\n"
-        "  - napari:     pip install napari[all]     (interactive viewing)\n"
-        "  - ipywidgets: pip install ipywidgets      (Jupyter support)\n"
-        "\n"
-        "Or specify save_path to export:\n"
-        "  - save_path='output.mp4'   (requires ffmpeg)\n"
-        "  - save_path='output.html'  (no dependencies)\n"
-    )
+    if importlib.util.find_spec("napari") is None:
+        raise RuntimeError(
+            _format_error(
+                "backend='auto' chose napari for an interactive view, but napari "
+                "is not installed",
+                fix="install napari (pip install 'napari[all]'), pass "
+                "backend='widget' or 'fastplotlib', or pass save_path='out.mp4' "
+                "or 'out.html' to export",
+                why="Why: outside Jupyter, and for more than 10,000 frames, "
+                "napari is the interactive viewer.",
+            )
+        )
+    logger.info("Auto-selected 'napari' backend for %s frames", f"{n_frames:,}")
+    return "napari"
 
 
 def _subsample_indices(n: int, source_fps: int, target_fps: int) -> NDArray[np.int_]:
@@ -1164,7 +825,7 @@ def estimate_colormap_range_from_subset(
         # Sample without replacement
         indices = rng.choice(n_frames, size=n_samples, replace=False)
 
-    from neurospatial.animation.rendering import frame_extremes, robust_limits
+    from neurospatial.animation._field_stats import frame_extremes, robust_limits
 
     # Sorted, so a memory-mapped array is read forward.
     indices = np.sort(indices)
@@ -1174,86 +835,3 @@ def estimate_colormap_range_from_subset(
         else [fields[i] for i in indices]
     )
     return robust_limits(*frame_extremes(sampled), percentile)
-
-
-def large_session_napari_config(
-    n_frames: int,
-) -> dict[str, Any]:
-    """Get recommended napari animation settings for large datasets.
-
-    Returns a dictionary of keyword arguments suitable for passing to
-    `animate_fields()` when working with large-scale neural recordings.
-
-    Parameters
-    ----------
-    n_frames : int
-        Total number of frames in the dataset.
-
-    Returns
-    -------
-    config : dict
-        Dictionary containing recommended memory/cache settings:
-        - ``chunk_size``: Number of frames to pre-render per chunk
-        - ``max_chunks``: Maximum chunks to keep in memory
-
-    Examples
-    --------
-    >>> config = large_session_napari_config(n_frames=500_000)
-    >>> env.animate_fields(
-    ...     fields, frame_times=frame_times, backend="napari", **config
-    ... )  # doctest: +SKIP
-
-    >>> # Or combine with estimated colormap range
-    >>> vmin, vmax = estimate_colormap_range_from_subset(fields)  # doctest: +SKIP
-    >>> config = large_session_napari_config(n_frames=len(fields))  # doctest: +SKIP
-    >>> env.animate_fields(  # doctest: +SKIP
-    ...     fields,
-    ...     frame_times=frame_times,
-    ...     vmin=vmin,
-    ...     vmax=vmax,
-    ...     backend="napari",
-    ...     **config,
-    ... )  # doctest: +SKIP
-
-    Notes
-    -----
-    Recommendations are based on empirical testing with napari animation:
-
-    - **Small datasets** (<50K frames): Default settings work well
-    - **Medium datasets** (50K-200K): Larger chunks improve scrubbing
-    - **Large datasets** (200K-1M): Maximum chunk/cache sizes for smooth playback
-    - **Very large datasets** (>1M): Same as large, plus explicit vmin/vmax recommended
-
-    The returned config can be unpacked directly into `animate_fields()`:
-
-    >>> config = large_session_napari_config(1_000_000)
-    >>> env.animate_fields(fields, frame_times=frame_times, **config)  # doctest: +SKIP
-
-    No ``fps`` key is returned. ``animate_fields()`` sets the playback frame
-    rate from ``frame_times`` and ``speed`` (``kwargs["fps"] = playback_fps``).
-    Returning an ``fps`` here would collide with that value and make the result
-    order-dependent on how the config and explicit kwargs are merged.
-    """
-    # Scale chunk_size based on dataset size
-    # Larger datasets benefit from larger chunks for efficient I/O
-    if n_frames < 50_000:
-        # Small dataset: default chunk size
-        chunk_size = 100
-        max_chunks = 10
-    elif n_frames < 200_000:
-        # Medium dataset: larger chunks
-        chunk_size = 500
-        max_chunks = 20
-    elif n_frames < 1_000_000:
-        # Large dataset: maximum chunk sizes
-        chunk_size = 1000
-        max_chunks = 50
-    else:
-        # Very large dataset (1M+): same as large
-        chunk_size = 1000
-        max_chunks = 100
-
-    return {
-        "chunk_size": chunk_size,
-        "max_chunks": max_chunks,
-    }

@@ -1,35 +1,32 @@
-"""End-to-end integration tests for animation with different layout types.
+"""End-to-end animation of environments with different layouts.
 
-These tests verify that the full rendering pipeline works across different
-layout types (hexagonal, 1D graph, triangular, masked grid). Earlier tests only
-verified delegation; these verify actual rendering output.
+Exports write one frame per output time, and napari places each bin's value
+at that bin's position, whatever the grid's extent or orientation.
 """
 
 from __future__ import annotations
 
-import os
+import base64
+import io
+import json
+import re
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
 from neurospatial.layout import create_layout
+from neurospatial.ops.transforms import AffineND
 
-# Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
 
-# ============================================================================
-# Hexagonal Layout Tests
-# ============================================================================
+# Ten rows at 9 Hz: the export of [0, 1] s holds one frame per row.
+N_ROWS = 10
+FRAME_TIMES = np.linspace(0.0, 1.0, N_ROWS)
 
 
-def test_hexagonal_layout_with_video_backend(tmp_path):
-    """Test full rendering pipeline with hexagonal layout and video backend."""
-    # Skip if ffmpeg not available
-    if os.system("ffmpeg -version > /dev/null 2>&1") != 0:
-        pytest.skip("ffmpeg not installed")
-
-    # Create hexagonal environment
+def test_hexagonal_layout_exports_every_frame_at_the_sampling_rate(tmp_path):
+    imageio_ffmpeg = pytest.importorskip("imageio_ffmpeg")
     env = Environment.from_layout(
         create_layout(
             "hexagonal",
@@ -38,233 +35,98 @@ def test_hexagonal_layout_with_video_backend(tmp_path):
         ),
         name="hexagonal_test",
     )
-
-    # Generate random fields (10 frames for speed)
-    rng = np.random.default_rng(42)
-    n_frames = 10
-    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
-
-    output_path = tmp_path / "test_hexagonal.mp4"
-
-    # Create frame_times (required parameter)
-    frame_times = np.linspace(0, 1.0, n_frames)
-
-    # Render to MP4 with video backend
-    env.animate_fields(
+    # The field brightens over time, so successive frames must differ.
+    fields = np.linspace(0.0, 1.0, N_ROWS)[:, None] * np.ones(env.n_bins)
+    path = env.animate_fields(
         fields,
-        frame_times=frame_times,
-        backend="video",
-        save_path=str(output_path),
-        speed=1.0,  # Real-time playback
-        n_workers=1,  # Single worker for test stability
+        frame_times=FRAME_TIMES,
+        save_path=tmp_path / "hexagonal.mp4",
+        vmin=0.0,
+        vmax=1.0,
+        dpi=40,
     )
-
-    # Verify video file created
-    assert output_path.exists()
-    assert output_path.stat().st_size > 0
-
-    # Verify video metadata (duration) - skip frame count due to ffprobe inconsistencies
-    # Using ffprobe to check video duration
-    import subprocess
-
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            str(output_path),
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    # Parse duration
-    duration_str = result.stdout.strip()
-    if duration_str:
-        duration = float(duration_str)
-        # Compute expected playback fps from frame_times and speed
-        # sample_rate = (n_frames - 1) / (frame_times[-1] - frame_times[0]) = 9 Hz
-        # playback_fps = min(sample_rate * speed, 60) = 9 fps
-        sample_rate = (n_frames - 1) / (frame_times[-1] - frame_times[0])
-        speed = 1.0
-        playback_fps = min(sample_rate * speed, 60)
-        expected_duration = n_frames / playback_fps
-        # Allow ±15% tolerance for encoding (relaxed from 10% due to fps computation variance)
-        assert abs(duration - expected_duration) / expected_duration < 0.15
+    assert path == tmp_path / "hexagonal.mp4"
+    reader = imageio_ffmpeg.read_frames(str(path))
+    meta = next(reader)
+    frames = [np.frombuffer(frame, dtype=np.uint8) for frame in reader]
+    assert meta["fps"] == pytest.approx(9.0, rel=0.01)
+    assert len(frames) == N_ROWS
+    assert not np.array_equal(frames[0], frames[-1])
+    assert [item.name for item in tmp_path.iterdir()] == ["hexagonal.mp4"]
 
 
-# ============================================================================
-# 1D Graph Layout Tests
-# ============================================================================
-
-
-def test_1d_graph_layout_with_html_backend(tmp_path):
-    """Test full rendering pipeline with 1D graph layout and HTML backend."""
+def test_1d_track_exports_an_html_player(tmp_path):
     pytest.importorskip("track_linearization")
-
-    # Create simple 1D track graph (linear track)
     import networkx as nx
+    from PIL import Image
 
-    # Create linear track: 0 -- 1 -- 2 -- 3 -- 4
     graph = nx.Graph()
-    n_nodes = 5
-    for i in range(n_nodes):
-        graph.add_node(i, pos=(float(i * 10), 0.0))  # Evenly spaced along x-axis
-
-    for i in range(n_nodes - 1):
-        # Add edge with required distance attribute
+    for i in range(5):
+        graph.add_node(i, pos=(float(i * 10), 0.0))
+    for i in range(4):
         graph.add_edge(i, i + 1, distance=10.0)
-
-    # Create 1D track environment
-    # Define edge order (sequential traversal)
-    edge_order = [(i, i + 1) for i in range(n_nodes - 1)]
-
     env = Environment.from_graph(
         graph,
-        edge_order=edge_order,
-        edge_spacing=10.0,  # 10 units between nodes
-        bin_size=2.0,  # 2 units per bin
+        edge_order=[(i, i + 1) for i in range(4)],
+        edge_spacing=10.0,
+        bin_size=2.0,
         name="linear_track_test",
     )
-
-    # Generate random fields (10 frames for manageable HTML size)
-    rng = np.random.default_rng(42)
-    n_frames = 10
-    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
-
-    output_path = tmp_path / "test_1d_track.html"
-
-    # Create frame_times (required parameter)
-    frame_times = np.linspace(0, 1.0, n_frames)
-
-    # Render to HTML with HTML backend
-    env.animate_fields(
-        fields,
-        frame_times=frame_times,
-        backend="html",
-        save_path=str(output_path),
+    fields = np.random.default_rng(42).random((N_ROWS, env.n_bins))
+    path = env.animate_fields(
+        fields, frame_times=FRAME_TIMES, save_path=tmp_path / "track.html", dpi=40
     )
-
-    # Verify HTML file created
-    assert output_path.exists()
-    assert output_path.stat().st_size > 0
-
-    # Verify HTML contains expected structure
-    html_content = output_path.read_text(encoding="utf-8")
-    assert "const frames = [" in html_content  # JavaScript frames array
-    assert "data:image/png;base64" in html_content  # Base64 encoded frames
-
-    # Verify 1D plot structure (should use line plot, not patches)
-    # The HTML should contain the rendered field visualization
-    assert len(fields) == n_frames  # Verify frame count
+    text = path.read_text(encoding="utf-8")
+    frames = json.loads(re.search(r"const frames = (\[.*?\]);", text).group(1))
+    assert len(frames) == N_ROWS
+    image = Image.open(io.BytesIO(base64.b64decode(frames[0])))
+    assert image.size[0] > 0 and image.size[1] > 0
 
 
-# ============================================================================
-# Triangular Mesh Layout Tests
-# ============================================================================
+def _grid_subset():
+    # 5 x 4 cells of 2 x 3 units; keep only the left two columns.
+    grid = Environment.from_grid_mask(
+        np.ones((5, 4), dtype=bool),
+        grid_edges=(np.arange(0.0, 11.0, 2.0), np.arange(0.0, 13.0, 3.0)),
+    )
+    return grid.subset(mask=grid.bin_centers[:, 0] < 4.0)
 
 
-@pytest.fixture
-def close_viewer(request):
-    """Close real napari viewers created by a test."""
-
-    def register(viewer):
-        request.addfinalizer(viewer.close)
-        return viewer
-
-    return register
+def _rotated_grid():
+    grid = Environment.from_grid_mask(
+        np.ones((3, 4), dtype=bool),
+        grid_edges=(np.arange(0.0, 7.0, 2.0), np.arange(0.0, 13.0, 3.0)),
+    )
+    angle = np.deg2rad(30.0)
+    matrix = np.eye(3)
+    matrix[:2, :2] = [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    matrix[:2, 2] = [100.0, -50.0]
+    return grid.apply_transform(AffineND(matrix))
 
 
 @pytest.mark.napari
 @pytest.mark.xdist_group(name="napari_gui")
-def test_triangular_mesh_layout_with_napari_backend(tmp_path, close_viewer):
-    """Test full rendering pipeline with triangular mesh layout."""
+@pytest.mark.parametrize(
+    "make_env", [_grid_subset, _rotated_grid], ids=["subset", "rotated"]
+)
+def test_napari_shows_each_bin_value_at_its_bin_center(make_env):
     pytest.importorskip("napari")
-
-    from shapely.geometry import Polygon
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    # Create triangular mesh environment with rectangular boundary
-    boundary = Polygon([(-50, -50), (50, -50), (50, 50), (-50, 50)])
-    env = Environment.from_layout(
-        create_layout("TriangularMesh", boundary_polygon=boundary, point_spacing=15.0),
-        name="triangular_test",
+    env = make_env()
+    values = np.arange(env.n_bins, dtype=float)
+    view = env.animate_fields(
+        np.array([values, values]),
+        frame_times=np.array([0.0, 0.1]),
+        backend="napari",
+        show=False,
     )
-
-    # Generate random fields (10 frames)
-    rng = np.random.default_rng(42)
-    n_frames = 10
-    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
-
-    # Render with napari backend (render_napari doesn't take frame_times)
-    viewer = close_viewer(render_napari(env, fields, vmin=0, vmax=1, fps=10))
-
-    # Verify viewer created
-    assert viewer is not None
-    assert hasattr(viewer, "layers")
-    assert len(viewer.layers) > 0
-
-    # Verify triangular patches render properly
-    # (viewer should have image layer with triangular bin structure)
-
-
-# ============================================================================
-# Masked Grid Layout Tests
-# ============================================================================
-
-
-@pytest.mark.napari
-@pytest.mark.xdist_group(name="napari_gui")
-def test_masked_grid_layout_with_napari_backend(close_viewer):
-    """Test full rendering pipeline with masked grid (boundary handling)."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    # Create masked grid with infer_active_bins=True
-    # Generate sparse data points (circular region)
-    rng = np.random.default_rng(42)
-    n_samples = 200
-    theta = rng.random(n_samples) * 2 * np.pi
-    r = rng.random(n_samples) * 30  # Radius up to 30
-    positions = np.column_stack([r * np.cos(theta), r * np.sin(theta)])
-
-    # Create environment with active bin inference (circular mask)
-    env = Environment.from_samples(
-        positions,
-        bin_size=5.0,
-        infer_active_bins=True,
-        bin_count_threshold=1,
-        name="masked_grid_test",
-    )
-
-    # Verify only active bins are present (should be < full grid)
-    full_grid_bins = (
-        int(np.ceil(60 / 5.0))  # Range is ~(-30, 30) → 60 units
-        ** 2
-    )  # 2D grid
-    assert env.n_bins < full_grid_bins  # Masked grid has fewer bins
-
-    # Generate random fields (only for active bins)
-    rng = np.random.default_rng(42)
-    n_frames = 10
-    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
-
-    # Render with napari backend (GPU acceleration, render_napari doesn't take frame_times)
-    viewer = close_viewer(render_napari(env, fields, vmin=0, vmax=1, fps=10))
-
-    # Verify viewer created
-    assert viewer is not None
-    assert hasattr(viewer, "layers")
-    assert len(viewer.layers) > 0
-
-    # Verify only active bins render (inactive bins should not appear)
-    # This is verified by the fact that env.n_bins < full_grid_bins
+    try:
+        layer = view.native.layers["field"]
+        # napari world coordinates are (y, x); data indices are pixels.
+        pixels = np.array(
+            [layer.world_to_data(center[::-1]) for center in env.bin_centers]
+        )
+        indices = np.rint(pixels).astype(int)
+        np.testing.assert_allclose(pixels, indices, atol=1e-9)  # pixel centers
+        np.testing.assert_array_equal(layer.data[tuple(indices.T)], values)
+    finally:
+        view.close()

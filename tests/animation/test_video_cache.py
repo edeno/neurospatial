@@ -228,7 +228,7 @@ class TestVideoReaderCachePerformance:
 
     def test_small_cache_evicts_frames(self, tiny_video_path: Path):
         """Test that small cache size causes frame eviction."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         # Create reader with cache size of 3
         reader = _VideoReader(tiny_video_path, cache_size=3)
@@ -257,7 +257,7 @@ class TestVideoReaderCachePerformance:
 
     def test_large_cache_retains_frames(self, tiny_video_path: Path):
         """Test that large cache size retains all accessed frames."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         # Create reader with cache size of 100 (more than 20 frames)
         reader = _VideoReader(tiny_video_path, cache_size=100)
@@ -305,21 +305,21 @@ class TestVideoPrefetching:
 
     def test_prefetch_ahead_default_disabled(self, video_path_30_frames: Path):
         """Test that prefetch_ahead defaults to 0 (disabled)."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         reader = _VideoReader(video_path_30_frames)
         assert reader.prefetch_ahead == 0
 
     def test_prefetch_ahead_can_be_set(self, video_path_30_frames: Path):
         """Test that prefetch_ahead can be set to a positive value."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         reader = _VideoReader(video_path_30_frames, prefetch_ahead=5)
         assert reader.prefetch_ahead == 5
 
     def test_prefetch_ahead_negative_raises_error(self, video_path_30_frames: Path):
         """Test that negative prefetch_ahead raises ValueError."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         with pytest.raises(ValueError) as exc_info:
             _VideoReader(video_path_30_frames, prefetch_ahead=-1)
@@ -330,7 +330,7 @@ class TestVideoPrefetching:
         self, video_path_30_frames: Path
     ):
         """Test that accessing frame N pre-loads frames N+1 to N+prefetch_ahead."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         # Create reader with prefetch_ahead=5 and large cache
         reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=5)
@@ -358,7 +358,7 @@ class TestVideoPrefetching:
 
     def test_prefetch_stops_at_end_of_video(self, video_path_30_frames: Path):
         """Test that prefetch doesn't try to load frames past the end."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         # Video has 30 frames (0-29)
         reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=10)
@@ -376,7 +376,7 @@ class TestVideoPrefetching:
 
     def test_prefetch_disabled_when_zero(self, video_path_30_frames: Path):
         """Test that prefetch_ahead=0 disables prefetching."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=0)
 
@@ -394,7 +394,7 @@ class TestVideoPrefetching:
         """Test that concurrent access with prefetching is thread-safe."""
         from concurrent.futures import ThreadPoolExecutor
 
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=3)
 
@@ -413,7 +413,7 @@ class TestVideoPrefetching:
 
     def test_prefetch_shutdown_on_deletion(self, video_path_30_frames: Path):
         """Test that prefetch thread is properly shut down when reader is deleted."""
-        from neurospatial.animation._video_io import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         reader = _VideoReader(video_path_30_frames, prefetch_ahead=5)
 

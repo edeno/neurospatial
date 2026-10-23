@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 
 @dataclass(frozen=True)
 class NWBPosition:
-    """Position samples and declared physical units from an NWB file.
+    """Position samples and coordinate declarations from an NWB file.
 
     Attributes
     ----------
@@ -24,6 +24,9 @@ class NWBPosition:
     units : str | None
         Declared physical unit, normalized to m/cm/mm/px when recognized.
         Other nonempty declarations are preserved; None means undeclared.
+    frame : str | None, default None
+        Nonempty SpatialSeries reference-frame description, preserved verbatim.
+        None means undeclared; no coordinate transform is inferred.
 
     Examples
     --------
@@ -36,6 +39,7 @@ class NWBPosition:
     times: NDArray[np.float64] | Any
     positions: NDArray[np.float64] | Any
     units: str | None
+    frame: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)

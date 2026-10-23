@@ -7,12 +7,14 @@ frame access with LRU caching for efficient memory usage.
 from __future__ import annotations
 
 import pickle
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from neurospatial.animation._video_io import _VideoReader
+from neurospatial._video_io import _VideoReader
 
 # Check for optional dependencies
 try:
@@ -322,3 +324,53 @@ class TestVideoReaderErrorHandling:
 
         with pytest.raises(ValueError):
             _VideoReader(larger_video_path, downsample=-1)
+
+
+def test_reader_pickle_starts_fresh_process_without_animation(
+    larger_video_path, tmp_path
+):
+    """A worker restores settings/cache and reads frames without importing animation."""
+    with _VideoReader(
+        larger_video_path,
+        cache_size=7,
+        downsample=2,
+        crop=(2, 4, 20, 16),
+        prefetch_ahead=2,
+    ) as reader:
+        expected = reader[3].copy()
+        assert reader.cache_info().currsize > 0
+        payload = tmp_path / "reader.pkl"
+        payload.write_bytes(pickle.dumps(reader))
+    expected_path = tmp_path / "frame.npy"
+    np.save(expected_path, expected)
+    script = """
+import importlib.abc
+import pickle
+import sys
+import numpy as np
+
+class BlockAnimation(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "neurospatial.animation" or fullname.startswith("neurospatial.animation."):
+            raise AssertionError("A video reader worker imported animation")
+
+sys.meta_path.insert(0, BlockAnimation())
+with open(sys.argv[1], "rb") as stream:
+    reader = pickle.load(stream)
+with reader:
+    assert reader.frame_size_px == (10, 8)
+    assert reader.crop_offset_px == (2, 4)
+    assert reader.cache_info().maxsize == 7
+    assert reader.cache_info().currsize == 0
+    assert reader.prefetch_ahead == 2
+    assert reader._prefetch_executor is not None
+    np.testing.assert_array_equal(reader[3], np.load(sys.argv[2]))
+assert reader._prefetch_executor is None
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(payload), str(expected_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

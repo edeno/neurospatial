@@ -54,14 +54,17 @@ changes toward this goal.
 
 ### Field Animation
 
-- **Multi-Backend Animation**: Visualize spatial fields over time with 4 specialized backends
-  - **Napari**: GPU-accelerated interactive viewer with lazy loading (100K+ frames)
-  - **Video**: Parallel MP4/WebM export with ffmpeg (unlimited frames)
-  - **HTML**: Standalone player with instant scrubbing (up to 500 frames)
-  - **Jupyter Widget**: Notebook integration with play/pause controls
-- **Auto-Selection**: Intelligent backend selection based on file extension, dataset size, and environment
-- **Large-Scale Support**: Memory-mapped arrays, LRU caching, frame subsampling for hour-long sessions
-- **Trajectory Overlays**: Overlay animal trajectories on animated fields (Napari backend)
+- **Fields on the recording clock**: Play a decoded posterior or other
+  time-varying field with the animal's position, pose, head direction, events,
+  LFP, spike rasters, epochs and calibrated video, each on its own clock
+- **Viewers**: napari desktop viewer, Jupyter notebook widget, and a
+  fastplotlib GPU viewer that also works from a remote server
+- **Exports**: MP4, WebM, MOV, AVI, GIF and self-contained HTML players, with
+  parallel rendering for long clips
+- **Side-by-side fields**: Compare a posterior with its likelihood, or early
+  with late laps, on one clock
+- **Long recordings**: Memory-mapped fields are read only when shown; review
+  identified replay events and export selected windows
 
 ## Installation
 
@@ -121,27 +124,14 @@ Python versions plus dedicated optional-dependency jobs.
 For animation features, install optional dependencies:
 
 ```bash
-# Napari backend (GPU-accelerated interactive viewer)
-pip install "napari[all]>=0.5,<0.10"
-
-# Jupyter widget backend (notebook integration)
-pip install "ipywidgets>=8.0,<9.0"
-
-# Video backend (requires system ffmpeg installation)
-# macOS
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt-get install ffmpeg
-
-# Windows (via chocolatey)
-choco install ffmpeg
-
-# Conda
-conda install -c conda-forge ffmpeg
+pip install "neurospatial[animation]"    # napari viewer and notebook widget
+pip install "neurospatial[video]"        # MP4, WebM, MOV, AVI and GIF export
+pip install "neurospatial[fastplotlib]"  # GPU viewer (Python 3.11 or newer)
 ```
 
-**Note**: HTML backend requires no additional dependencies. Video backend performance scales with CPU cores (use `n_workers` parameter for parallel rendering).
+HTML players need no extra packages. Video export uses the ffmpeg binary that
+the `video` extra installs (through `imageio-ffmpeg`); no system ffmpeg is
+needed.
 
 ## Quickstart
 
@@ -550,82 +540,57 @@ simulation models and customization.
 
 ## Animation
 
-Visualize how spatial fields evolve over time with multi-backend animation support.
+Watch how a spatial field changes over time on the recording clock: a decoded
+posterior beside the animal's position, a field across laps, or a replay
+event at a tenth of its speed.
 
 ### Quick Example
 
-<!-- docs-test: skip Animation snippet requires napari + GPU/X11 + ffmpeg; not appropriate for a CI smoke test. Animation behavior is exercised by notebooks 16-18 and the dedicated animation tests. -->
+<!-- docs-test: skip Opens a napari window and writes video files; the animation guide's examples run in tests/docs. -->
 ```python
-import numpy as np
+from neurospatial.animation import PositionOverlay
+from neurospatial.decoding import decode_session
 
-from neurospatial import Environment
-from neurospatial.animation import subsample_frames
-from neurospatial import compute_spatial_rates
+# Assumes you already have positions (n_samples, 2) in cm, times (n_samples,)
+# in seconds, and spike_times (one array per unit), as in the place-field
+# example above.
+env = Environment.from_samples(positions, bin_size=2.5, units="cm")
+result = decode_session(env, spike_times, times, positions, dt=0.025)
 
-# Assumes you already have:
-#   positions:   shape (n_samples, 2) animal trajectory
-#   times:       shape (n_samples,)   timestamps in seconds
-#   spike_times: list of length 30, each entry is a 1-D array of spike
-#                times for one cell (see "Your First Place Field" above
-#                for an end-to-end simulation that produces these arrays)
-env = Environment.from_samples(positions, bin_size=2.5)
-# Batch-encode all 30 cells at once: fields has shape (30, n_bins)
-fields = compute_spatial_rates(env, spike_times, times, positions).firing_rates
+# One row per 25 ms decoding bin; the animal's position on its own clock
+animal = PositionOverlay(positions, times=times, color="magenta")
 
-# frame_times is required: one timestamp per field (seconds)
-frame_times = np.arange(len(fields)) / 30.0  # 30 Hz
-
-# Interactive Napari viewer (best for exploration)
-env.animate_fields(fields, frame_times=frame_times, backend="napari")
-
-# Video export with parallel rendering (best for presentations)
-env.animate_fields(
-    fields, frame_times=frame_times,
-    save_path="animation.mp4", n_workers=4,
+# Explore interactively (returns a view; view.native is the napari viewer)
+view = env.animate_fields(
+    result.posterior, frame_times=result.times, overlays=[animal],
+    backend="napari",
 )
 
-# HTML standalone player (best for sharing)
-env.animate_fields(fields, frame_times=frame_times, save_path="animation.html")
-
-# Jupyter widget (best for notebooks)
-env.animate_fields(fields, frame_times=frame_times, backend="widget")
+# Share a clip at half speed (returns the file path)
+env.animate_fields(
+    result.posterior, frame_times=result.times, overlays=[animal],
+    save_path="decoding.mp4", speed=0.5,
+)
 ```
 
-### Backend Selection Guide
-
-| Backend | Best For | Max Frames | Output |
-|---------|----------|-----------|--------|
-| **Napari** | Large datasets (100K+), interactive exploration | Unlimited* | Live viewer |
-| **Video** | Presentations, publications | Unlimited | .mp4, .webm |
-| **HTML** | Sharing, web embedding | 500 | .html |
-| **Widget** | Jupyter notebooks | ~1000 | Interactive widget |
-
-\* Limited only by disk space (lazy loading with LRU cache)
+A field row is held until the next one, up to `max_gap=0.5` s; across longer
+gaps in the recording it is shown as missing rather than frozen. The
+`backend` can be `"napari"`, `"widget"` (Jupyter), `"fastplotlib"` (GPU), or
+a file: `.mp4`, `.webm`, `.mov`, `.avi`, `.gif` or `.html`. Without
+`backend=`, a video or `.html` `save_path` writes that file; otherwise
+Jupyter opens the notebook widget and other sessions open napari.
 
 ### Large-Scale Datasets
 
-For sessions with 100K+ frames (e.g., 1-hour recording at 250 Hz):
+Keep a long posterior on disk as a memory-mapped array; rows are read only
+when a frame needs them:
 
-<!-- docs-test: skip Same as readme_animation_napari_block: requires napari/ffmpeg. -->
+<!-- docs-test: skip Requires a saved posterior file and a display. -->
 ```python
 import numpy as np
-from neurospatial.animation import subsample_frames
 
-# Use memory-mapped arrays (doesn't load into RAM)
-fields = np.memmap('fields.dat', dtype='float32', mode='w+',
-                   shape=(900_000, env.n_bins))
-
-# Napari lazy-loads from disk (no data loading); frame_times is required
-frame_times = np.arange(len(fields)) / 250.0  # 250 Hz acquisition
-env.animate_fields(fields, frame_times=frame_times, backend="napari")
-
-# Or subsample for video export (250 Hz → 30 fps)
-subsampled = subsample_frames(fields, source_fps=250, target_fps=30)
-sub_times = np.arange(len(subsampled)) / 30.0
-env.animate_fields(
-    subsampled, frame_times=sub_times,
-    save_path="replay.mp4", n_workers=4,
-)
+posterior = np.load("posterior.npy", mmap_mode="r")  # (n_bins_time, env.n_bins)
+env.animate_fields(posterior, frame_times=decode_times, backend="napari")
 ```
 
 ### Learn More
@@ -659,7 +624,7 @@ src/neurospatial/
 ├── stats/          # Circular statistics, shuffles, and surrogate data
 ├── simulation/     # Mazes, trajectories, neural models, spikes, and validation
 ├── io/             # Environment files plus NWB and pynapple interoperability
-├── animation/      # Napari, video, HTML, and Jupyter animation backends
+├── animation/      # Field animation: viewers, overlays, and video/HTML export
 ├── annotation/     # Interactive video and track-graph annotation
 ├── ops/            # Graph-aware distance, smoothing, transforms, and visibility
 ├── regions/        # Standalone region containers, operations, I/O, and plotting

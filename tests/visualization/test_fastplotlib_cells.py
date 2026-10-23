@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgba
 from shapely.geometry import Polygon, box
 
 from neurospatial import Environment
-from neurospatial.animation.backends.fastplotlib_backend import heading_segment
+from neurospatial.animation._style import _heading_displacement
 from neurospatial.environment._fastplotlib import ColorScale, cell_mesh, volume_opacity
 from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D
@@ -161,7 +161,7 @@ def test_equal_limits_do_not_divide_by_zero():
 def test_volume_opacity_follows_the_value_and_skips_missing_bins_on_request():
     values = np.array([0.0, 1.0, np.nan])
     shown = volume_opacity(ColorScale("viridis", 0.0, 1.0, "lightgray"), values)
-    np.testing.assert_allclose(shown, [0.03, 1.0, 0.05])
+    np.testing.assert_allclose(shown, [0.03, 1.0, 0.0])
     skipped = volume_opacity(ColorScale("viridis", 0.0, 1.0, None), values)
     assert skipped[2] == 0.0  # nan_color=None: missing bins do not blend
 
@@ -176,9 +176,9 @@ def test_volume_opacity_follows_the_value_and_skips_missing_bins_on_request():
     ],
 )
 def test_a_heading_line_keeps_every_coordinate(origin, heading, end):
-    segment = heading_segment(np.array(origin), heading, 2.0)
-    np.testing.assert_allclose(segment, [origin, end], atol=1e-12)
+    direction = _heading_displacement(heading, 2.0, n_dims=len(origin))
+    np.testing.assert_allclose(np.add(origin, direction), end, atol=1e-12)
 
 
 def test_a_missing_heading_draws_nothing():
-    assert np.isnan(heading_segment(np.zeros(3), np.full(3, np.nan), 2.0)).all()
+    assert _heading_displacement(np.full(3, np.nan), 2.0, n_dims=3) is None

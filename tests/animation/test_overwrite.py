@@ -1,8 +1,5 @@
 """Animation and environment exports protect existing targets by default."""
 
-import shutil
-import subprocess
-
 import numpy as np
 import pytest
 
@@ -32,17 +29,17 @@ def _export(data, path, backend, **kwargs):
     )
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
 def test_video_refuses_existing_file(animation_data, tmp_path):
+    pytest.importorskip("imageio_ffmpeg")
     path = tmp_path / "out.mp4"
     path.write_bytes(b"keep")
-    for options in ({}, {"dry_run": True}):
-        with pytest.raises(FileExistsError, match="overwrite=True"):
-            _export(animation_data, path, "video", **options)
-        assert path.read_bytes() == b"keep"
+    with pytest.raises(FileExistsError, match="overwrite=True"):
+        _export(animation_data, path, "video")
+    assert path.read_bytes() == b"keep"
     _export(animation_data, path, "video", overwrite=True)
     assert path.read_bytes() != b"keep"
     assert b"ftyp" in path.read_bytes()[:32]
+    assert [item.name for item in tmp_path.iterdir()] == ["out.mp4"]
 
 
 def test_html_refuses_existing_file_and_frames_dir(animation_data, tmp_path):
@@ -72,27 +69,14 @@ def test_html_refuses_existing_file_and_frames_dir(animation_data, tmp_path):
     assert "data:image/png;base64," in path.read_text(encoding="utf-8")
 
 
-def test_empty_frames_directory_is_writable(animation_data, tmp_path):
-    frames = tmp_path / "frames"
-    frames.mkdir()
-    path = tmp_path / "out.html"
-    _export(animation_data, path, "html", embed=False, frames_dir=frames)
-    assert path.exists()
-    assert len(list(frames.glob("*.png"))) == 5
-
-
 @pytest.mark.parametrize("backend", ["video", "html"])
 def test_check_happens_before_rendering(animation_data, tmp_path, monkeypatch, backend):
+    from neurospatial.animation import _scene_rendering
+
     def unexpected_render(*args, **kwargs):
         raise AssertionError("An existing target must be refused before rendering")
 
-    monkeypatch.setattr(
-        "neurospatial.animation._parallel.parallel_render_frames", unexpected_render
-    )
-    monkeypatch.setattr(
-        "neurospatial.animation.rendering.render_field_to_image_bytes",
-        unexpected_render,
-    )
+    monkeypatch.setattr(_scene_rendering, "SceneRenderer", unexpected_render)
     path = tmp_path / ("out.mp4" if backend == "video" else "out.html")
     path.write_bytes(b"keep")
     with pytest.raises(FileExistsError, match="overwrite=True"):
@@ -116,51 +100,22 @@ def test_env_to_file_wording_shared(animation_data, tmp_path):
         assert path.with_suffix(suffix).read_bytes() == content
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
-@pytest.mark.parametrize("overwrite", [False, True])
-def test_ffmpeg_never_overwrites_without_opt_in(
-    animation_data, tmp_path, monkeypatch, overwrite
-):
-    commands = []
-    run = subprocess.run
-
-    def record(command, *args, **kwargs):
-        if command[0] == "ffmpeg" and "-version" not in command:
-            commands.append(command)
-        return run(command, *args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "run", record)
-    _export(animation_data, tmp_path / "out.mp4", "video", overwrite=overwrite)
-    assert len(commands) == 1
-    assert ("-y" if overwrite else "-n") in commands[0]
-    assert ("-n" if overwrite else "-y") not in commands[0]
-
-
-def test_default_html_path_is_protected(animation_data, tmp_path, monkeypatch):
+def test_html_without_save_path_writes_nothing(animation_data, tmp_path, monkeypatch):
+    """No default output file exists that a forgotten save_path could replace."""
     monkeypatch.chdir(tmp_path)
-    path = tmp_path / "animation.html"
-    path.write_bytes(b"keep")
     env, fields, times = animation_data
-    with pytest.raises(FileExistsError, match="overwrite=True"):
+    with pytest.raises(ValueError, match=r"save_path='animation\.html'"):
         env.animate_fields(fields, frame_times=times, backend="html", dpi=30)
-    assert path.read_bytes() == b"keep"
+    assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize("backend", ["napari", "widget"])
-def test_overwrite_is_ignored_with_a_warning_by_interactive_backends(
-    animation_data, monkeypatch, backend
-):
-    """Interactive backends write no file; overwrite=True warns and is dropped."""
-    received = []
-
-    def interactive(env, fields, **kwargs):
-        received.append(kwargs)
-
-    monkeypatch.setattr(
-        f"neurospatial.animation.backends.{backend}_backend.render_{backend}",
-        interactive,
-    )
+def test_overwrite_is_ignored_with_a_warning_by_interactive_backends(animation_data):
+    """Interactive views write no file; overwrite=True warns and is dropped."""
+    pytest.importorskip("ipywidgets")
     env, fields, times = animation_data
     with pytest.warns(UserWarning, match="overwrite is used by the video and html"):
-        env.animate_fields(fields, frame_times=times, backend=backend, overwrite=True)
-    assert "overwrite" not in received[0]
+        view = env.animate_fields(
+            fields, frame_times=times, backend="widget", overwrite=True, dpi=30
+        )
+    with view:
+        assert view.time == times[0]
