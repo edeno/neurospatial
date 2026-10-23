@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
+from matplotlib.colors import to_rgba
 
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import (
@@ -444,20 +445,27 @@ class SceneRenderer:
                     events.decay_frames,
                 )
                 visible &= event_times <= time
-                for point, alpha in zip(
-                    positions[visible], alphas[visible], strict=True
-                ):
-                    if np.isfinite(point).all():
-                        ax.scatter(
-                            *xy(point),
-                            color=events.colors[name],
-                            marker=events.markers[name],
-                            s=_marker_area(events.size, dpi=self.figure.dpi),
-                            alpha=float(alpha) * events.opacity,
-                            linewidths=events.border_width,
-                            edgecolors=events.border_color,
-                            zorder=104,
-                        )
+                visible &= np.isfinite(positions).all(axis=1)
+                if not visible.any():
+                    continue
+                # One collection per event type; each marker keeps its own
+                # fade, applied to its face and border alike.
+                opacity = alphas[visible] * events.opacity
+                face = np.tile(to_rgba(events.colors[name]), (len(opacity), 1))
+                edge = np.tile(to_rgba(events.border_color), (len(opacity), 1))
+                face[:, 3] = edge[:, 3] = opacity
+                points = positions[visible]
+                ax.scatter(
+                    points[:, 0],
+                    points[:, 1] if points.shape[1] > 1 else np.zeros(len(points)),
+                    *([points[:, 2]] if points.shape[1] > 2 else []),
+                    c=face,
+                    marker=events.markers[name],
+                    s=_marker_area(events.size, dpi=self.figure.dpi),
+                    linewidths=events.border_width,
+                    edgecolors=edge,
+                    zorder=104,
+                )
 
 
 def draw_track_panel(

@@ -241,11 +241,28 @@ def test_events_start_at_actual_time_and_keep_cumulative_and_fading_modes(scene_
         scene_env, np.ones((5, scene_env.n_bins)), frame_times=times, overlays=[event]
     )
     fading.render_frame(0.15, dpi=30)
-    newest = fading._renderer.figure.axes[0].collections[-1].get_alpha()
+    newest = fading._renderer.figure.axes[0].collections[-1].get_facecolor()[0, 3]
     fading.render_frame(0.25, dpi=30)
-    older = fading._renderer.figure.axes[0].collections[-1].get_alpha()
+    older = fading._renderer.figure.axes[0].collections[-1].get_facecolor()[0, 3]
     assert 0 < older < newest
     fading.close()
+
+
+
+def test_visible_events_of_one_type_draw_as_one_collection(scene_env):
+    # Per-event artists made long sessions with persistent events render in
+    # time proportional to the event count.
+    times = np.arange(5) * 0.1
+    event_times = np.linspace(0.0, 0.3, 50)
+    positions = np.column_stack([np.linspace(1, 3, 50), np.linspace(1, 3, 50)])
+    event = EventOverlay.from_fixed_positions(event_times, positions)
+    with Animation(
+        scene_env, np.ones((5, scene_env.n_bins)), frame_times=times, overlays=[event]
+    ) as scene:
+        scene.render_frame(0.4, dpi=30)
+        markers = scene._renderer.figure.axes[0].collections[-1]
+        assert len(scene._renderer.figure.axes[0].collections) == 2
+        assert len(markers.get_offsets()) == 50
 
 
 def test_video_below_field_is_visible_through_zero_values(scene_env):
