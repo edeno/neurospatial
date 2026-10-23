@@ -222,7 +222,6 @@ REQUIRED_DATA_ARGUMENTS = {
     # Sizes of the data the function describes.
     ("field_density_map", "n_bins"),
     ("geodesic_distance_matrix", "n_states"),
-    ("large_session_napari_config", "n_frames"),
     ("marchenko_pastur_threshold", "n_neurons"),
     ("marchenko_pastur_threshold", "n_time_bins"),
 }

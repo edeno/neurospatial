@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from neurospatial.animation._video_io import _VideoReader
+from neurospatial._video_io import _VideoReader
 
 # Check for optional dependencies
 try:

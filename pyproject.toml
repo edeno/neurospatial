@@ -421,12 +421,6 @@ module = "neurospatial.*"
 warn_return_any = true
 warn_unused_ignores = true
 
-# napari_backend: Disable warn_unused_ignores due to qtpy stubs inconsistency
-# Pre-commit mypy doesn't have qtpy stubs, local mypy does
-[[tool.mypy.overrides]]
-module = "neurospatial.animation.backends.napari_backend"
-warn_unused_ignores = false
-
 # annotation widget: Disable warn_unused_ignores due to magicgui stubs inconsistency
 # between Python versions (3.11 vs 3.13 have different type hints for RadioButtons)
 [[tool.mypy.overrides]]

@@ -42,7 +42,6 @@ subsample_frames, estimate_colormap_range_from_subset : function
     Frame selection and colormap estimation for large sessions.
 """
 
-from neurospatial.animation._video_io import _VideoReader as _VideoReader
 from neurospatial.animation._view import AnimationView
 from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
 from neurospatial.animation.calibration import calibrate_video
@@ -71,8 +70,6 @@ from neurospatial.animation.skeleton import (
     Skeleton,
 )
 
-# The ``_`` names imported here are internal helpers shared with other
-# neurospatial packages; they are not public API.
 __all__: list[str] = [
     "MOUSE_SKELETON",
     "RAT_SKELETON",

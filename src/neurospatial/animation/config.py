@@ -223,9 +223,9 @@ def configure_napari_scale_bar(
     use but means ``ScaleBarConfig.length`` has no effect in napari.
 
     **Layer scale**: For napari's scale bar to show correct units, the
-    image layer must have the correct ``scale`` attribute set. This is
-    typically set via ``EnvScale`` in ``animation/transforms.py``. If scale
-    is (1, 1), the scale bar shows pixels regardless of ``unit`` setting.
+    image layer must be placed in physical units; the napari scene does this
+    through each field layer's affine. A layer in pixel units makes the
+    scale bar show pixels regardless of the ``unit`` setting.
 
     Supported config attributes:
 

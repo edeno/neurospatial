@@ -82,17 +82,3 @@ __file__ = sys.executable
         [sys.executable, "-c", script], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_legacy_reader_names_and_pickles_resolve_canonical_classes():
-    """Old private imports and pickle globals still resolve after the move."""
-    import pickle
-
-    from neurospatial import _video_io
-    from neurospatial.animation import _video_io as legacy
-
-    for name in ("_VideoReader", "CacheInfo", "VideoReaderProtocol"):
-        canonical = getattr(_video_io, name)
-        assert getattr(legacy, name) is canonical
-        old_pickle = f"cneurospatial.animation._video_io\n{name}\n.".encode()
-        assert pickle.loads(old_pickle) is canonical
