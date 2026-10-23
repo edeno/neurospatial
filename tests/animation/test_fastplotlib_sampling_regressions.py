@@ -127,21 +127,6 @@ def test_bodyparts_and_object_vectors_sample_each_observed_time():
     np.testing.assert_allclose(drawn.lines.colors[3], 0.55)
 
 
-def test_named_field_sources_keep_lazy_identity_without_reading():
-    class Lazy:
-        def __len__(self):
-            return 3
-
-        def __getitem__(self, index):
-            raise AssertionError("Field data must not be read during organization")
-
-    sources = {"posterior": Lazy(), "rate": Lazy()}
-    stacks, names = backend._field_stacks(sources, None)
-    assert names == list(sources)
-    assert stacks[0] is sources["posterior"]
-    assert stacks[1] is sources["rate"]
-
-
 def test_native_read_uses_absolute_time_callback_and_seek_uses_recording_time():
     animation = object.__new__(backend.FastplotlibAnimation)
     from threading import RLock
@@ -162,7 +147,7 @@ def test_native_read_uses_absolute_time_callback_and_seek_uses_recording_time():
         animation.seek(np.nan)
 
 
-def test_native_close_releases_graphics_canvas_and_owned_readers_once():
+def test_native_close_releases_graphics_and_canvas_once():
     animation = object.__new__(backend.FastplotlibAnimation)
     from threading import RLock
 
@@ -176,17 +161,12 @@ def test_native_close_releases_graphics_canvas_and_owned_readers_once():
     )
     animation.figure = SimpleNamespace(renderer=Mock())
     canvas = animation._canvas = Mock()
-    reader = Mock()
-    from neurospatial.animation._resources import _OwnedReaders
-
-    animation._reader_owner = _OwnedReaders([reader, reader])
     animation.close()
     animation.close()
     animation._frames.close.assert_called_once()
     other.slicer.close.assert_called_once()
     animation.widget.close.assert_called_once()
     canvas.close.assert_called_once()
-    reader.close.assert_called_once()
 
 
 def test_native_video_uses_nearest_frame_without_extrapolating():
@@ -203,7 +183,7 @@ def test_custom_native_graphic_closes_both_worker_executors():
     graphic = backend._frames_graphic(
         SimpleNamespace(),
         {"time": 0.0},
-        np.zeros((2, 3)),
+        (2, 3),
         lambda time: int(time),
         lambda time: np.zeros(3),
         lambda time, data: None,
@@ -231,7 +211,7 @@ def test_capture_synchronization_discards_an_in_flight_worker_read():
     graphic = backend._frames_graphic(
         SimpleNamespace(),
         {"time": 0.0},
-        np.zeros((2, 3)),
+        (2, 3),
         lambda time: int(time),
         read,
         show,
@@ -329,16 +309,14 @@ def test_worker_payload_owns_each_source_row_and_video_frame():
     """Sources may reuse the same buffer across fields and later worker reads."""
     from threading import RLock
 
-    scratch = np.empty(2)
+    scratch = [np.empty(2), np.empty(2)]
     pixels = np.empty((2, 2, 3), dtype=np.uint8)
 
-    class Source:
-        def __init__(self, base):
-            self.base = base
-
-        def __getitem__(self, index):
-            scratch[:] = self.base + index
-            return scratch
+    def sample_fields(time):
+        # Like a lazy reader, each field reuses its row buffer on the next read.
+        for buffer, base in zip(scratch, (1, 10), strict=True):
+            buffer[:] = base + time
+        return scratch
 
     def read_video(index):
         pixels[:] = index + 20
@@ -348,9 +326,7 @@ def test_worker_payload_owns_each_source_row_and_video_frame():
     animation._source_lock = RLock()
     animation._clock = np.array([0.0, 1.0])
     animation._start = 0.0
-    animation._field_at_time = None
-    animation._field_streams = None
-    animation._stacks = [Source(1), Source(10)]
+    animation._field_at_time = sample_fields
     animation._tracks = []
     animation._videos = [
         SimpleNamespace(

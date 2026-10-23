@@ -1,13 +1,12 @@
 """Native setup must serialize lazy reads before allocating GUI resources."""
 
-from contextlib import contextmanager
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.animation import AnimationField
+from neurospatial.animation import Animation, AnimationField
 from neurospatial.animation.backends import fastplotlib_backend as backend
 
 
@@ -19,14 +18,16 @@ def test_native_field_statistics_sample_inside_shared_lock(monkeypatch):
     reading = False
     reads = []
 
-    @contextmanager
-    def source_lock():
-        nonlocal reading
-        assert not reading
-        reading = True
-        try:
-            yield
-        finally:
+    class SourceLock:
+        """Fails if a read is not serialized, or the lock is taken twice."""
+
+        def __enter__(self):
+            nonlocal reading
+            assert not reading
+            reading = True
+
+        def __exit__(self, *exc):
+            nonlocal reading
             reading = False
 
     class Source:
@@ -53,13 +54,9 @@ def test_native_field_statistics_sample_inside_shared_lock(monkeypatch):
         lambda: SimpleNamespace(NDWidget=allocate_widget),
     )
     monkeypatch.setattr(backend, "require_animation_support", lambda _: None)
-    field = AnimationField(Source(), times)
+    scene = Animation(env, {"field": AnimationField(Source(), times)})
+    scene._source_lock = SourceLock()
     with pytest.raises(BeforeAllocationError):
-        backend.FastplotlibAnimation(
-            env,
-            {"field": np.ones((len(times), env.n_bins))},
-            frame_times=times,
-            _field_streams=(field,),
-            _source_lock=source_lock(),
-        )
+        scene.show(backend="fastplotlib")
+    # The color scale's bounded sample is read once, before allocation.
     assert reads == [0, 1, 2]

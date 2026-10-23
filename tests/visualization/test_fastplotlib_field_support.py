@@ -20,9 +20,6 @@ if _ADAPTER is None:
 
 from neurospatial import Environment  # noqa: E402
 from neurospatial.animation import Animation, AnimationField  # noqa: E402
-from neurospatial.animation.backends.fastplotlib_backend import (  # noqa: E402
-    FastplotlibAnimation,
-)
 
 
 class LazyRows:
@@ -90,15 +87,14 @@ def test_track_windows_use_independent_sources_and_reuse_only_overlap(env):
         AnimationField(sources[0], 100 + np.arange(1000) * 0.01, max_gap=None),
         AnimationField(sources[1], 100 + np.arange(400) * 0.025, max_gap=None),
     ]
-    native = FastplotlibAnimation(
+    scene = Animation(
         env,
-        {"first": np.zeros((2, 2)), "second": np.zeros((2, 2))},
-        frame_times=np.array([100.0, 109.9]),
+        {"first": fields[0], "second": fields[1]},
+        frame_times=[100.0, 109.9],
         track=track,
-        _field_streams=fields,
-        _field_at_time=lambda time: [field.sample(time) for field in fields],
         window_seconds=0.2,
     )
+    native = scene.show(backend="fastplotlib").native
     try:
         assert len(native._tracks[0].clock) == 1000
         assert len(native._tracks[1].clock) == 400
@@ -125,14 +121,7 @@ def test_track_windows_use_independent_sources_and_reuse_only_overlap(env):
 def test_isolated_field_samples_have_no_positive_duration_cells(env):
     track = Environment.linear_track(endpoints=[[0.0, 5], [20.0, 5]], bin_size=10)
     field = AnimationField(np.ones((3, 2)), [0.0, 0.1, 0.2], max_gap=0.05)
-    native = FastplotlibAnimation(
-        env,
-        np.ones((3, 2)),
-        frame_times=field.times,
-        track=track,
-        _field_streams=[field],
-        _field_at_time=lambda time: [field.sample(time)],
-    )
+    native = Animation(env, field, track=track).show(backend="fastplotlib").native
     try:
         panel = native._tracks[0]
         np.testing.assert_array_equal(panel.ends, panel.clock)

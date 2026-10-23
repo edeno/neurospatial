@@ -23,7 +23,6 @@ from contextlib import contextmanager
 from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from itertools import pairwise
-from threading import RLock
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
@@ -83,7 +82,6 @@ from neurospatial.environment._fastplotlib_volume import resolve_field_rendering
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
 
-    from neurospatial.animation._resources import _OwnedReaders
     from neurospatial.animation.overlays import (
         BodypartData,
         EpochData,
@@ -674,12 +672,10 @@ class _Room:
 class _PositionTime:
     """A track's fields over time: a column per frame, a row per bin.
 
-    A scene field supplies its own sample clock and interval support; an
-    isolated sample has no positive-duration column. Legacy fields hold until
-    the next frame or one typical interval across a gap (``held_until``).
-    Rows span each bin along the track. Positions are drawn as lines,
-    every sample of
-    their own, broken where the samples change segment of a maze or leave a
+    Each field supplies its own sample clock and interval support; an
+    isolated sample has no positive-duration column. Rows span each bin
+    along the track. Positions are drawn as lines, every sample of their
+    own, broken where the samples change segment of a maze or leave a
     gap in time, so no line crosses space or time that was not seen.
     """
 
@@ -695,19 +691,15 @@ class _PositionTime:
         epochs: Sequence[EpochData],
         move_to: Callable[[float], None],
         *,
-        interval_valid: NDArray[np.bool_] | None = None,
-        frame_clock: NDArray[np.float64] | None = None,
+        interval_valid: NDArray[np.bool_],
+        frame_clock: NDArray[np.float64],
     ) -> None:
         self.subplot, self.scale, self.clock = subplot, scale, clock
-        self.frame_clock = clock if frame_clock is None else frame_clock
-        self._native_support = interval_valid is not None
+        self.frame_clock = frame_clock
         self.lower, self.upper = extents
-        self.typical = _typical_interval(clock, 1.0)
-        self.ends = held_until(clock, self.typical)
-        if interval_valid is not None:
-            # Exact isolated/final samples have no positive-duration cell.
-            self.ends = clock.copy()
-            self.ends[:-1] = np.where(interval_valid, clock[1:], clock[:-1])
+        # Exact isolated/final samples have no positive-duration cell.
+        self.ends = clock.copy()
+        self.ends[:-1] = np.where(interval_valid, clock[1:], clock[:-1])
         labels = env._plot_labels()
         self.axis = "position along track" + (
             f" ({labels.units})" if labels.units else ""
@@ -758,13 +750,9 @@ class _PositionTime:
         for graphic in [self.mesh, *self.lines]:
             if graphic is not None:
                 self.subplot.delete_graphic(graphic)
-        # Columns a window can hold: frames starting less than one hold
-        # (at most _GAP times the typical interval) before it, up to its end.
-        self.n_columns = (
-            min(len(self.clock), _most_within(self.clock, window) + 1)
-            if self._native_support
-            else _most_within(self.clock, window + _GAP * self.typical)
-        )
+        # Columns a window can hold: the samples within it and the one held
+        # into it from before its start.
+        self.n_columns = min(len(self.clock), _most_within(self.clock, window) + 1)
         # Each cell's corners, counterclockwise from its start at its bin's
         # lower edge: the bins are fixed, and each frame moves the times.
         n_bins = len(self.lower)
@@ -1097,45 +1085,6 @@ def _segment_joints(
         subplot.add_inf_line(joints, axis=axis, colors=_SEGMENT_COLOR, thickness=1.0)
 
 
-def _field_stacks(
-    fields: Sequence[Any] | NDArray[np.float64] | Mapping[str, Any],
-    names: Sequence[str] | None,
-) -> tuple[list[Any], list[str]]:
-    """The fields to show, one stack of frames each, and their names.
-
-    Several are a list of lists or tuples of frames, as napari takes them.
-    """
-    if isinstance(fields, Mapping):
-        stacks = list(fields.values())
-        if names is None:
-            names = list(fields)
-    else:
-        several = (
-            isinstance(fields, (list, tuple))
-            and len(fields) > 0
-            and (isinstance(fields[0], (list, tuple)) or np.ndim(fields[0]) == 2)
-        )
-        stacks = list(fields) if several else [fields]
-        stacks = [
-            np.asarray(stack) if isinstance(stack, (list, tuple)) else stack
-            for stack in stacks
-        ]
-    lengths = sorted({len(stack) for stack in stacks})
-    if len(lengths) > 1:
-        raise ValueError(
-            f"Each field needs the same number of frames, got {lengths}. Why: "
-            "the fields share one clock. Fix: pass the same frames of each."
-        )
-    if names is None:
-        names = [f"Field {i + 1}" for i in range(len(stacks))]
-    elif len(names) != len(stacks):
-        raise ValueError(
-            f"layer_names has {len(names)} names for {len(stacks)} fields; "
-            "pass one name per field."
-        )
-    return stacks, list(names)
-
-
 def _panel_names(kind: str, n: int) -> list[str]:
     """Names of the ``n`` panels of a kind: "field", or "field 0", "field 1"."""
     return [f"{kind} {i}" for i in range(n)] if n > 1 else [kind]
@@ -1275,11 +1224,9 @@ def _playback(
     return played / steps_per_second, steps_per_second
 
 
-def _finest_interval(overlay_data: OverlayData | None) -> float:
+def _finest_interval(overlay_data: OverlayData) -> float:
     """The typical sampling interval of the fastest overlay with its own
     samples, in seconds; infinite without one."""
-    if overlay_data is None:
-        return np.inf
     lists = (
         getattr(overlay_data, field.name) for field in dataclass_fields(overlay_data)
     )
@@ -1371,17 +1318,18 @@ class FastplotlibAnimation:
 
     The ``native`` viewer of the view that
     ``env.animate_fields(..., backend="fastplotlib")`` and
-    ``Animation.show(backend="fastplotlib")`` return. It is a
+    ``Animation.show(backend="fastplotlib")`` return; create it through
+    them, not directly. It is a
     fastplotlib ``NDWidget``: a slider in seconds, play, step and loop
     buttons, and a frame rate box. Time series and spike rasters are drawn
     beside the field on the same clock, each showing its window around the
     current time, with event times marked. On a track (a linearized track or
     a 1-D environment) the fields are also drawn over time, position along
     the track against time, with the positions as lines over them: a decoded
-    posterior beside the animal's position, say. Several fields can be shown
-    side by side on one color scale. Hovering over a bin shows its value. In
-    Jupyter it displays itself; elsewhere call :meth:`show` (in a script,
-    then ``fastplotlib.loop.run()``).
+    posterior beside the animal's position, say. Several fields are shown
+    side by side, each with its own color scale and colorbar. Hovering over
+    a bin shows its value. In Jupyter it displays itself; elsewhere call
+    :meth:`show` (in a script, then ``fastplotlib.loop.run()``).
 
     A line above the panels gives the time and the epochs it is in (see
     ``status``). Every time shown (the slider, the time axes, that line and
@@ -1401,18 +1349,12 @@ class FastplotlibAnimation:
     - Up and Down arrows: the unit one row up or down in a spike raster
       with rate maps; Escape: no unit.
 
-    Parameters
-    ----------
-    env : Environment
-        The bins the fields are defined on.
-    fields : ndarray (n_frames, n_bins), sequence of ndarray (n_bins,), or a list of those
-        One field per frame. An array, including a memory map, is read one
-        frame at a time. A list of several lists or tuples of frames, such
-        as ``[list(posterior), list(likelihood)]``, is shown side by side,
-        all with the same frames.
-    frame_times : ndarray of shape (n_frames,)
-        Time of each frame, in seconds. A frame is shown from its time until
-        the next frame's.
+    The options of ``Animation.show(backend="fastplotlib")`` and
+    ``env.animate_fields(..., backend="fastplotlib")`` that set up this
+    viewer, besides the scene's fields, clock and overlays, follow.
+
+    Options
+    -------
     speed : float, default=1.0
         Playback speed, in seconds of recording a second. Play visits every
         frame; overlays with their own times are sampled as finely as the
@@ -1421,16 +1363,14 @@ class FastplotlibAnimation:
         The most steps a second Play takes (fastplotlib allows 100). When
         visiting every frame at ``speed`` needs more, it plays slower and
         warns.
-    cmap, vmin, vmax
-        Colormap and its limits, shared by every field; limits default to
-        the 1st percentile of the frames' minima and the 99th of their
-        maxima, estimated from a sample of a very long recording.
+    cmap, vmin, vmax, colorbar_label
+        Override each field's colormap, limits and colorbar label. A field's
+        own limits default to the 1st percentile of its sampled frames'
+        minima and the 99th of their maxima.
     frame_labels : sequence of str, optional
         A label per frame; the frame times by default.
     title : str, optional
         Plot title; the environment's name and units by default.
-    overlay_data : OverlayData, optional
-        Overlays aligned to the frames, drawn on every field.
     show_regions : bool or sequence of str, default=False
         Draw all regions, or the named ones.
     region_alpha : float, default=0.3
@@ -1442,10 +1382,7 @@ class FastplotlibAnimation:
         How several fields are arranged; side by side for up to three, a
         grid for more.
     layer_names : sequence of str, optional
-        A name for each of several fields; "Field 1", "Field 2", ... by
-        default.
-    colorbar_label : str, optional
-        What the colors measure, such as "probability" or "rate (Hz)".
+        A name for each field; the scene's field names by default.
     track : Environment, optional
         A linearized track of the same maze (``from_graph``,
         ``linear_track``), to draw a 2-D environment's fields against
@@ -1453,7 +1390,6 @@ class FastplotlibAnimation:
         added to the track bin nearest its center (as ``map_probabilities``
         does), so the fields should be probabilities, such as a decoded
         posterior; a track bin no 2-D bin maps to is missing.
-
     field_rendering : {"auto", "points", "mip", "iso", "slice"}, default="auto"
         Uniform 3D grids use a native maximum intensity volume in auto mode;
         other environments use bin cells or points. Affine transformed grids
@@ -1488,47 +1424,38 @@ class FastplotlibAnimation:
     Raises
     ------
     ValueError
-        If ``window_seconds`` is not positive, several fields have different
-        numbers of frames, or ``layer_names`` or ``layout`` do not fit them.
+        If ``window_seconds`` is not positive, or ``layer_names`` or
+        ``frame_labels`` do not fit the fields and frames.
     """
 
     def __init__(
         self,
         env: Environment,
-        fields: Sequence[Any] | NDArray[np.float64] | Mapping[str, Any],
+        fields: Mapping[str, AnimationField],
         *,
         frame_times: NDArray[np.float64],
+        overlay_data: OverlayData,
+        _field_styles: Sequence[Mapping[str, Any]],
+        _field_at_time: Callable[[float], list[NDArray[np.float64]]],
+        _source_lock: Any,
         speed: float = 1.0,
         max_playback_fps: int = 60,
-        cmap: str | Colormap = "viridis",
-        vmin: float | None = None,
-        vmax: float | None = None,
         frame_labels: Sequence[str] | None = None,
         title: str | None = None,
-        overlay_data: OverlayData | None = None,
         show_regions: bool | Sequence[str] = False,
         region_alpha: float = 0.3,
         window_seconds: float = 2.0,
         layout: str | None = None,
         layer_names: Sequence[str] | None = None,
-        colorbar_label: str = "",
         track: Environment | None = None,
         field_rendering: str = "auto",
         volume_threshold: float | None = None,
         slice_plane: tuple[float, float, float, float] | None = None,
-        _field_at_time: Callable[[float], list[NDArray[np.float64]]] | None = None,
-        _field_styles: Sequence[Mapping[str, Any]] | None = None,
-        _field_streams: Sequence[AnimationField] | None = None,
-        _reader_owner: _OwnedReaders | None = None,
-        _source_lock: Any = None,
     ) -> None:
-        from neurospatial.animation._field_stats import (
-            animation_colormap_range,
-            frame_extremes,
-            robust_limits,
-            typical_peak,
+        from neurospatial.animation._prepared import (
+            projected_field_limits,
+            signal_groups,
         )
-        from neurospatial.animation._prepared import signal_groups
 
         rendering = resolve_field_rendering(
             env,
@@ -1542,37 +1469,25 @@ class FastplotlibAnimation:
         self._closed = False
         self._close_notification = _CloseNotification()
         self._key_registered = False
-        self._source_lock = RLock() if _source_lock is None else _source_lock
+        self._source_lock = _source_lock
         self._field_at_time = _field_at_time
-        from neurospatial.animation._resources import _OwnedReaders
-
-        self._reader_owner = (
-            _OwnedReaders.from_overlay_data(overlay_data)
-            if _reader_owner is None
-            else _reader_owner
-        )
         try:
-
-            def source_rows(source: Any, index: Any) -> NDArray[np.float64]:
-                with self._source_lock:
-                    return np.array(source[index], dtype=float, copy=True)
-
-            stacks, names = _field_stacks(fields, layer_names)
-            if _field_styles is not None and len(_field_styles) != len(stacks):
-                raise ValueError("_field_styles must contain one style per field.")
-            if _field_streams is not None and len(_field_streams) != len(stacks):
-                raise ValueError("_field_streams must contain one stream per field.")
-            self._field_streams = _field_streams
-            self._stacks = stacks
+            streams = list(fields.values())
+            names = list(fields) if layer_names is None else list(layer_names)
+            if len(names) != len(streams):
+                raise ValueError(
+                    f"layer_names has {len(names)} names for {len(streams)} "
+                    "fields; pass one name per field."
+                )
+            self._field_streams = streams
             self._field_bins = env.n_bins
-            self.n_frames = len(stacks[0])
             frame_times = np.asarray(frame_times, dtype=np.float64)
+            self.n_frames = len(frame_times)
             # The widget's clock: seconds from the first frame. Every overlay is
             # put on it once, so nothing drawn handles session timestamps.
             self._start = float(frame_times[0])
             self._clock = frame_times - self._start
-            if overlay_data is not None:
-                overlay_data = _on_clock(overlay_data, self._start)
+            overlay_data = _on_clock(overlay_data, self._start)
             self._labels = None if frame_labels is None else list(frame_labels)
             if self._labels is not None and len(self._labels) != self.n_frames:
                 raise ValueError(
@@ -1585,9 +1500,7 @@ class FastplotlibAnimation:
                     f"window_seconds must be positive, got {window_seconds}. It is "
                     "the seconds of fields shown in a track's position-by-time panel."
                 )
-            groups = list(
-                signal_groups(overlay_data.timeseries if overlay_data else []).values()
-            )
+            groups = list(signal_groups(overlay_data.timeseries).values())
             step, steps_per_second = _playback(
                 playback_step(frame_times),
                 _finest_interval(overlay_data),
@@ -1601,20 +1514,20 @@ class FastplotlibAnimation:
             track_env = env if track is None else _checked_track(env, track)
             self._projection = None if track is None else _projection(env, track)
             extents_along_track = track_extents(track_env)
-            several = len(stacks) > 1
+            several = len(streams) > 1
             # On a 1-D environment the track panel shows all a field panel would,
             # at a size to read: no field panel.
             with_fields = not (env.n_dims == 1 and extents_along_track is not None)
-            field_names = _panel_names("field", len(stacks)) if with_fields else []
+            field_names = _panel_names("field", len(streams)) if with_fields else []
             track_names = (
-                _panel_names("track", len(stacks))
+                _panel_names("track", len(streams))
                 if extents_along_track is not None
                 else []
             )
             # Panels on the clock fill the right, stacked top to bottom: each
             # field over time on a track, the rasters, then the time series; the
             # fields narrow when the right holds more than time series.
-            rasters = overlay_data.spike_rasters if overlay_data else []
+            rasters = overlay_data.spike_rasters
             # Heights: a track's fields over time most, then rasters, then series.
             panels = [(name, 3.0) for name in track_names]
             panels += [(f"raster {i}", 2.0) for i in range(len(rasters))]
@@ -1652,105 +1565,34 @@ class FastplotlibAnimation:
             # posterior over the camera's view of the animal. A bin is opaque
             # from the typical frame's peak (the median of the frames' maxima),
             # so a spread-out posterior still shows; colors keep the scale.
-            below = overlay_data is not None and any(
-                item.z_order == "below" for item in overlay_data.videos
-            )
-            # Legacy calls compare fields on one shared scale. Scene fields carry
-            # their own units and therefore get their own scales and colorbars.
-            styles = (
-                list(_field_styles)
-                if _field_styles is not None
-                else [
-                    {"cmap": cmap, "vmin": vmin, "vmax": vmax, "label": colorbar_label}
-                ]
-            )
-            scale_groups = (
-                [[stack] for stack in stacks] if _field_styles is not None else [stacks]
-            )
-            scales, labels, extensions, track_scales = [], [], [], []
-            for group_index, (group, style) in enumerate(
-                zip(scale_groups, styles, strict=True)
-            ):
-                streams = (
-                    None
-                    if _field_streams is None
-                    else _field_streams
-                    if _field_styles is None
-                    else (_field_streams[group_index],)
-                )
-                low, high = style.get("vmin", vmin), style.get("vmax", vmax)
-                lows, highs = np.empty(0), np.empty(0)
-                if (
-                    low is None
-                    or high is None
-                    or (below and "opaque_from" not in style)
-                ):
-                    # Sampling the stream is itself a source read. Acquire the
-                    # shared lock before evaluating _scale_rows(), not merely
-                    # while reducing the resulting owned snapshots.
-                    with self._source_lock:
-                        extremes = (
-                            [frame_extremes(stack) for stack in group]
-                            if streams is None
-                            else [
-                                frame_extremes(field._scale_rows()) for field in streams
-                            ]
-                        )
-                    lows = np.concatenate([item[0] for item in extremes])
-                    highs = np.concatenate([item[1] for item in extremes])
-                limits = robust_limits(lows, highs)
-                floor = limits[0] if low is None else low
-                ceiling = limits[1] if high is None else high
-                colormap = style.get("cmap", cmap)
-                opaque = (
-                    style.get("opaque_from", typical_peak(highs)) if below else None
-                )
-                scale = ColorScale(
-                    colormap,
-                    floor,
-                    ceiling,
+            below = any(item.z_order == "below" for item in overlay_data.videos)
+            # Each field carries its own units, so it gets its own scale and
+            # colorbar.
+            styles = list(_field_styles)
+            scales = [
+                ColorScale(
+                    style["cmap"],
+                    style["vmin"],
+                    style["vmax"],
                     None if env.n_dims == 3 else "lightgray",
-                    opaque_from=opaque,
+                    opaque_from=style["opaque_from"] if below else None,
                 )
-                scales.append(scale)
-                labels.append(style.get("label", colorbar_label))
-                extensions.append((low is None and floor != 0.0, high is None))
-                track_scale = scale
-                if self._projection is not None:
-                    # Projection sums bins, so its units keep the field's label
-                    # but need limits derived from that field's projected values.
-                    if streams is None:
-                        sample = np.unique(
-                            np.linspace(0, self.n_frames - 1, 2_000).astype(int)
+                for style in styles
+            ]
+            labels = [style["label"] for style in styles]
+            track_scales = scales
+            if self._projection is not None:
+                # Projection sums bins, so its units keep the field's label
+                # but need limits derived from that field's projected values.
+                with self._source_lock:
+                    track_scales = [
+                        ColorScale(
+                            style["cmap"],
+                            *projected_field_limits((field,), self._projection),
+                            "lightgray",
                         )
-                        projected = np.concatenate(
-                            [
-                                _project(
-                                    np.stack([source_rows(stack, i) for i in sample]),
-                                    self._projection,
-                                )
-                                for stack in group
-                            ]
-                        )
-                        projected_limits = animation_colormap_range(
-                            projected, None, None
-                        )
-                    else:
-                        from neurospatial.animation._prepared import (
-                            projected_field_limits,
-                        )
-
-                        with self._source_lock:
-                            projected_limits = projected_field_limits(
-                                streams, self._projection
-                            )
-                    track_scale = ColorScale(colormap, *projected_limits, "lightgray")
-                track_scales.append(track_scale)
-            if _field_styles is None:
-                scales *= len(stacks)
-                track_scales *= len(stacks)
-                labels *= len(stacks)
-                extensions *= len(stacks)
+                        for field, style in zip(streams, styles, strict=True)
+                    ]
             self._field_scales = scales
             self._track_scales = track_scales
 
@@ -1787,8 +1629,8 @@ class FastplotlibAnimation:
 
             # An unnamed environment is not titled by its layout's class name.
             self._title = title or (plot_title(env) if env._plot_labels().name else "")
-            events = overlay_data.events if overlay_data else []
-            epochs = overlay_data.epochs if overlay_data else []
+            events = overlay_data.events
+            epochs = overlay_data.epochs
             self._epochs = epochs
             # Where N and Shift+N jump: epoch starts and event times, on the clock.
             marks = [item.intervals[:, 0] for item in epochs] + [
@@ -1798,28 +1640,29 @@ class FastplotlibAnimation:
             self._field_graphics: list[FieldGraphic] = []
             self._videos: list[_Video] = []
             self._layers: list[Any] = []
-            positions = [
-                (item, clock(item.times))
-                for item in (overlay_data.positions if overlay_data else [])
-            ]
-            if not with_fields and overlay_data is not None:
+            positions = [(item, clock(item.times)) for item in overlay_data.positions]
+            if not with_fields:
                 _warn_undrawn_on_a_line(overlay_data)
+            with self._source_lock:
+                first_values = self._field_at_time(self._start)
             # No field panels on a 1-D environment.
-            for i, (plot, stack) in enumerate(zip(self._plots, stacks, strict=False)):
+            for i, (plot, values) in enumerate(
+                zip(self._plots, first_values, strict=False)
+            ):
                 plot.camera.maintain_aspect = (
                     env._plot_labels().coordinates.equal_aspect
                 )
                 field = FieldGraphic(
                     plot,
                     env,
-                    source_rows(stack, 0),
+                    np.array(values, dtype=np.float64, copy=True),
                     scales[i],
                     field_rendering=rendering,
                     volume_threshold=volume_threshold,
                     slice_plane=slice_plane,
                 )
                 self._field_graphics.append(field)
-                if overlay_data is not None and overlay_data.videos:
+                if overlay_data.videos:
                     # Depth orders the field, the videos and everything else (at
                     # 0). Fractional, so that fastplotlib does not restack them.
                     field.graphic.offset = (0.0, 0.0, -1.5)
@@ -1840,14 +1683,10 @@ class FastplotlibAnimation:
                     show_regions=show_regions,
                     region_alpha=region_alpha,
                 )
-                if i == 0 or _field_styles is not None:
-                    draw_colorbar(plot, scales[i], labels[i], beyond=extensions[i])
-                else:  # the same room, so the fields are drawn the same size
-                    plot.docks["right"].size = COLORBAR_WIDTH
-                if overlay_data is not None:
-                    self._layers += _spatial_overlays(
-                        plot, overlay_data, clock, env, self._frame_of, self._clock
-                    )
+                draw_colorbar(plot, scales[i], labels[i])
+                self._layers += _spatial_overlays(
+                    plot, overlay_data, clock, env, self._frame_of, self._clock
+                )
             # Each field its name; the time and epochs go above the panels, which
             # a field's title is too narrow for.
             for plot, name in zip(
@@ -1863,16 +1702,12 @@ class FastplotlibAnimation:
                         track_env,
                         extents_along_track,
                         track_scales[i],
-                        self._clock
-                        if _field_streams is None
-                        else _field_streams[i].times - self._start,
+                        streams[i].times - self._start,
                         window_seconds,
                         positions,
                         epochs,
                         self._move_to,
-                        interval_valid=None
-                        if _field_streams is None
-                        else _field_streams[i].interval_valid,
+                        interval_valid=streams[i].interval_valid,
                         frame_clock=self._clock,
                     )
                     if several:
@@ -1890,18 +1725,16 @@ class FastplotlibAnimation:
             elif not with_fields:
                 # Independent units need a labeled scale on every track panel.
                 for i, name in enumerate(track_names):
-                    if i == 0 or _field_styles is not None:
-                        draw_colorbar(
-                            self.figure[name],
-                            scales[i],
-                            labels[i],
-                            beyond=extensions[i],
-                        )
+                    draw_colorbar(self.figure[name], scales[i], labels[i])
             if self._projection is not None or not with_fields:
                 # Every time panel keeps a colorbar's room, so their axes line up.
                 for name in time_panels:
                     self.figure[name].docks["right"].size = COLORBAR_WIDTH
-            unit = _UnitRates(self.figure["unit"], env, cmap) if with_rates else None
+            unit = (
+                _UnitRates(self.figure["unit"], env, styles[0]["cmap"])
+                if with_rates
+                else None
+            )
             self._unit = unit
             self._rasters = [
                 _Raster(
@@ -1916,7 +1749,7 @@ class FastplotlibAnimation:
             frames = _frames_graphic(
                 self.widget[self._plot],
                 self.widget.indices,
-                stacks[0],
+                (self.n_frames, env.n_bins),
                 self._frame_of,
                 self._read,
                 self._show,
@@ -2078,22 +1911,10 @@ class FastplotlibAnimation:
     def _read_locked(self, time: float) -> _Frame:
         """Read source windows while the scene's source lock is held."""
         frame = self._frame_of(time)
-        values = (
-            [
-                np.array(row, dtype=np.float64, copy=True)
-                for row in self._field_at_time(time + self._start)
-            ]
-            if self._field_at_time is not None
-            else [
-                np.array(field.sample(time + self._start), copy=True)
-                for field in self._field_streams
-            ]
-            if self._field_streams is not None
-            else [
-                np.array(stack[frame], dtype=np.float64, copy=True)
-                for stack in self._stacks
-            ]
-        )
+        values = [
+            np.array(row, dtype=np.float64, copy=True)
+            for row in self._field_at_time(time + self._start)
+        ]
         images = []
         for video in self._videos:
             image = video.data.get_frame(video.clock.nearest(time))
@@ -2114,21 +1935,14 @@ class FastplotlibAnimation:
         if not keep:
             keep = range(window.stop, window.stop)
         parts = (slice(window.start, keep.start), slice(keep.stop, window.stop))
-        stack = (
-            self._stacks[index]
-            if self._field_streams is None
-            else self._field_streams[index]
-        )
+        field = self._field_streams[index]
         n_bins = self._field_bins
 
         def read(part: slice) -> NDArray[np.float64]:
-            rows = np.array(stack[part], dtype=np.float64, copy=True).reshape(
+            rows = np.array(field[part], dtype=np.float64, copy=True).reshape(
                 -1, n_bins
             )
-            if self._field_streams is not None:
-                rows = np.where(
-                    self._field_streams[index].sample_valid[part, None], rows, np.nan
-                )
+            rows = np.where(field.sample_valid[part, None], rows, np.nan)
             return self._along_track(rows)
 
         head, tail = (read(part) for part in parts)
@@ -2284,7 +2098,7 @@ class FastplotlibAnimation:
             return capture(time)
 
     def _canvas_closed(self, event: Any) -> None:
-        """Closing the native canvas also ends workers and reader ownership."""
+        """Closing the native canvas also stops the workers and the view."""
         self.close()
 
     def _add_close_callback(self, callback: Callable[[], None]) -> None:
@@ -2302,7 +2116,8 @@ class FastplotlibAnimation:
         for dimension in playing:
             playing[dimension] = False
         # Continue cleanup after native-window errors so all workers drain
-        # before owned readers are released; report every failure afterward.
+        # before the scene may release its readers; report every failure
+        # afterward.
         from neurospatial.animation._resources import _raise_cleanup_errors
 
         failures: list[BaseException] = []
@@ -2333,7 +2148,6 @@ class FastplotlibAnimation:
             if canvas is not figure_output(figure):
                 release(canvas.close)
             self._canvas = None
-        release(self._reader_owner.close)
         release(self._close_notification.notify)
         _raise_cleanup_errors("Failed to close native animation resources.", failures)
 
@@ -2502,19 +2316,20 @@ def _shade_epochs(
 
 def render_fastplotlib(
     env: Environment,
-    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64] | Mapping[str, Any],
+    fields: Mapping[str, AnimationField],
     **options: Any,
 ) -> FastplotlibAnimation:
-    """Animate ``fields`` with fastplotlib; see :class:`FastplotlibAnimation`.
+    """Open the native viewer of ``Animation.show(backend="fastplotlib")``.
 
     Parameters
     ----------
     env : Environment
         The bins the fields are defined on.
-    fields : sequence of ndarray, or ndarray (n_frames, n_bins)
-        One field per frame.
+    fields : mapping of str to AnimationField
+        The scene's named field streams.
     **options
-        The options of :class:`FastplotlibAnimation`.
+        The scene's clock, overlays, per-field styles and sampling callback,
+        and the options listed on :class:`FastplotlibAnimation`.
 
     Returns
     -------

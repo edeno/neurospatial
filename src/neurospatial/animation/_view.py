@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 from neurospatial.animation._resources import _add_cleanup_note
 
 if TYPE_CHECKING:
-    from neurospatial.animation.scene import Animation, AnimationField
+    from neurospatial.animation.scene import Animation
 
 from neurospatial.animation._backend_view import (
     CaptureSession as _CaptureSession,
@@ -248,27 +248,6 @@ class AnimationView:
         display(self.native)
 
 
-class _FieldFrames:
-    """Lazy sampling of one field on a viewer's shared clock."""
-
-    def __init__(self, field: AnimationField, times: NDArray[np.float64]) -> None:
-        self.field, self.times = field, times
-        self.shape = (len(times), field.n_bins)
-        self.ndim = 2
-        self.dtype = np.dtype(np.float64)
-
-    def __len__(self) -> int:
-        return len(self.times)
-
-    def __getitem__(self, key: Any) -> NDArray[np.float64]:
-        times = self.times[key]
-        if np.ndim(times) == 0:
-            return self.field.sample(float(times))
-        if not len(times):
-            return np.empty((0, self.shape[1]))
-        return np.stack([self.field.sample(float(time)) for time in times])
-
-
 def _png(frame: NDArray[np.uint8]) -> bytes:
     from PIL import Image
 
@@ -430,11 +409,12 @@ def show_animation(
         return AnimationView._from_backend(
             animation, _NativeBackendView(handle.viewer, handle)
         )
-    fields = list(animation.fields.values())
-    first = fields[0]
-    sources = {
-        name: _FieldFrames(field, animation.frame_times)
-        for name, field in animation.fields.items()
+    # Each field gets its own scale; cmap, vmin, vmax and colorbar_label
+    # override every field's own.
+    overrides = {
+        name: kwargs.pop(name)
+        for name in ("cmap", "vmin", "vmax", "colorbar_label")
+        if name in kwargs
     }
     # View construction shares lazy sources with existing views and exports.
     # Snapshot source-derived settings before entering native GUI code, which
@@ -445,36 +425,32 @@ def show_animation(
         field_styles = []
         for name, field in animation.fields.items():
             low, high = field.color_limits()
+            vmin, vmax = overrides.get("vmin"), overrides.get("vmax")
             field_styles.append(
                 {
-                    "cmap": kwargs.get("cmap", field.cmap),
-                    "vmin": kwargs.get("vmin", low),
-                    "vmax": kwargs.get("vmax", high),
-                    "label": kwargs.get("colorbar_label", field.label or name),
+                    "cmap": overrides.get("cmap", field.cmap),
+                    "vmin": low if vmin is None else vmin,
+                    "vmax": high if vmax is None else vmax,
+                    "label": overrides.get("colorbar_label", field.label or name),
                     "opaque_from": field._typical_peak(),
                 }
             )
-        options = {
-            "cmap": first.cmap,
-            "vmin": field_styles[0]["vmin"],
-            "vmax": field_styles[0]["vmax"],
-            "title": animation.title,
-            "show_regions": animation.show_regions,
-            "region_alpha": animation.region_alpha,
-            **kwargs,
-        }
     from neurospatial.animation.backends.fastplotlib_backend import render_fastplotlib
 
-    options.setdefault("window_seconds", animation.window_seconds)
-    options.setdefault("track", animation.track)
-    options.setdefault("colorbar_label", first.label or "")
+    options = {
+        "title": animation.title,
+        "show_regions": animation.show_regions,
+        "region_alpha": animation.region_alpha,
+        "window_seconds": animation.window_seconds,
+        "track": animation.track,
+        **kwargs,
+    }
     native = render_fastplotlib(
         animation.env,
-        sources,
+        animation.fields,
         frame_times=animation.frame_times,
         overlay_data=data,
         _source_lock=animation._source_lock,
-        _field_streams=tuple(animation.fields.values()),
         _field_at_time=lambda time: list(animation.sample_fields(time).values()),
         _field_styles=field_styles,
         **options,

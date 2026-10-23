@@ -185,15 +185,14 @@ def test_object_vector_consumers_share_full_recording_finite_peak(env, monkeypat
     assert len(calls) == 1  # Seeking and sampling windows do not rescan the recording.
 
 
-def test_native_close_drains_workers_and_owner_after_window_failure():
+def test_native_close_drains_workers_and_notifies_after_window_failure():
     from unittest.mock import Mock
-
-    from neurospatial.animation._resources import _OwnedReaders
 
     calls = []
     animation = gpu.FastplotlibAnimation.__new__(gpu.FastplotlibAnimation)
     animation._closed = False
     animation._close_notification = _CloseNotification()
+    animation._close_notification.add(lambda: calls.append("view"))
     animation._frames = Mock()
     animation._frames.close.side_effect = lambda: calls.append("field worker")
     other = SimpleNamespace(slicer=Mock())
@@ -204,15 +203,13 @@ def test_native_close_drains_workers_and_owner_after_window_failure():
     )
     animation.figure = SimpleNamespace(renderer=Mock())
     animation._canvas = Mock()
-    reader = Mock()
-    reader.close.side_effect = lambda: calls.append("reader")
-    animation._reader_owner = _OwnedReaders([reader])
     with pytest.raises(Exception) as error:
         animation.close()
     assert "window already destroyed" in str(error.value.exceptions[0])
-    assert calls == ["field worker", "signal worker", "reader"]
+    # Workers drain before the view, and so the scene's readers, are released.
+    assert calls == ["field worker", "signal worker", "view"]
     animation.close()
-    reader.close.assert_called_once()
+    assert calls == ["field worker", "signal worker", "view"]
 
 
 def test_native_capture_does_not_restore_or_resume_a_closed_controller():
@@ -241,7 +238,6 @@ def test_native_capture_does_not_restore_or_resume_a_closed_controller():
     camera = Mock()
     animation.figure.__iter__.return_value = [SimpleNamespace(camera=camera)]
     animation._canvas = Mock()
-    animation._reader_owner = Mock()
     animation._read = Mock(side_effect=AssertionError("Closed scenes cannot be read"))
     with animation.capture_session():
         animation.close()

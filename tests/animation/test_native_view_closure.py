@@ -44,7 +44,6 @@ def native_controller(*, fail_cleanup=False):
     )
     native.figure = SimpleNamespace(renderer=Mock())
     native._canvas = Mock()
-    native._reader_owner = Mock()
     return native
 
 
@@ -68,7 +67,6 @@ def test_fastplotlib_native_close_unregisters_and_notifies_once(scene, fail_clea
     called.assert_called_once_with()
     native._frames.close.assert_called_once_with()
     native.widget.close.assert_called_once_with()
-    native._reader_owner.close.assert_called_once_with()
     # Native notification cannot reenter cleanup or close the canvas twice.
     native._canvas_closed(None)
     view.close()

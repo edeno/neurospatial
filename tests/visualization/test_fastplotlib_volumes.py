@@ -8,11 +8,18 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.animation import Animation, AnimationField
 from neurospatial.environment._fastplotlib import ColorScale, FieldGraphic
 from neurospatial.environment._fastplotlib_volume import (
     resolve_field_rendering,
     volume_grid,
 )
+
+
+def native_view(env, values, *, frame_times, vmin=None, vmax=None, **options):
+    """The native viewer of a one-field scene; closing it closes its view."""
+    field = AnimationField(values, frame_times, vmin=vmin, vmax=vmax, max_gap=None)
+    return Animation(env, field).show(backend="fastplotlib", **options).native
 
 
 @pytest.fixture
@@ -109,13 +116,9 @@ def test_explicit_volume_validation_precedes_import_and_allocation(monkeypatch):
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
+    scene = Animation(env, np.ones((2, env.n_bins)), frame_times=[0.0, 1.0])
     with pytest.raises(ValueError, match="uniform regular 3D"):
-        backend.FastplotlibAnimation(
-            env,
-            np.ones((2, env.n_bins)),
-            frame_times=np.array([0.0, 1.0]),
-            field_rendering="mip",
-        )
+        scene.show(backend="fastplotlib", field_rendering="mip")
 
 
 @pytest.mark.parametrize("mode", ["mip", "iso", "slice"])
@@ -215,15 +218,13 @@ def native_fastplotlib():
 def test_native_iso_threshold_uses_data_units_beyond_color_limits(
     native_fastplotlib, vmin, vmax, threshold
 ):
-    from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
-
     env = Environment.from_grid_mask(
         np.ones((5, 5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 3
     )
     values = np.zeros((2, env.n_bins))
     values[0, np.all(np.abs(env.bin_centers - 2.5) <= 1, axis=1)] = 4.0
     values[1] = np.nan
-    native = FastplotlibAnimation(
+    native = native_view(
         env,
         values,
         frame_times=np.array([0.0, 1.0]),
@@ -271,12 +272,10 @@ def test_native_iso_threshold_uses_data_units_beyond_color_limits(
 def test_native_volume_material_gamma_and_opacity_still_change_colors(
     native_fastplotlib, mode
 ):
-    from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
-
     env = Environment.from_grid_mask(
         np.ones((3, 3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 3
     )
-    native = FastplotlibAnimation(
+    native = native_view(
         env,
         np.full((2, env.n_bins), 0.5),
         frame_times=np.array([0.0, 1.0]),
@@ -328,13 +327,11 @@ def test_native_volume_material_gamma_and_opacity_still_change_colors(
 def test_native_mip_depth_uses_raw_maximum_despite_saturated_color(
     native_fastplotlib, front, back, vmin, vmax
 ):
-    from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
-
     env = Environment.from_grid_mask(
         np.ones((5, 5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 3
     )
     values = np.where(env.bin_centers[:, 2] > 2.5, front, back)
-    native = FastplotlibAnimation(
+    native = native_view(
         env,
         np.stack([values, np.full(env.n_bins, np.nan)]),
         frame_times=np.array([0.0, 1.0]),
@@ -398,8 +395,6 @@ def test_native_mip_depth_uses_raw_maximum_despite_saturated_color(
 def test_native_captures_missing_holes_negative_zero_and_lazy_updates(
     native_fastplotlib, mode, transformed
 ):
-    from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
-
     mask = np.ones((5, 3, 3), dtype=bool)
     mask[2] = False
     env = Environment.from_grid_mask(
@@ -446,7 +441,7 @@ def test_native_captures_missing_holes_negative_zero_and_lazy_updates(
         if mode == "slice"
         else {}
     )
-    native = FastplotlibAnimation(
+    native = native_view(
         env,
         source,
         frame_times=np.arange(1000.0),
@@ -455,6 +450,7 @@ def test_native_captures_missing_holes_negative_zero_and_lazy_updates(
         field_rendering=mode,
         **options,
     )
+    source.reads.clear()  # the color scale's bounded sample of rows
     try:
         native.show()
         plot = native.figure["field"]
@@ -495,7 +491,6 @@ def test_native_captures_missing_holes_negative_zero_and_lazy_updates(
 def test_native_iso_depth_occludes_background_and_preserves_foreground(
     native_fastplotlib, transformed
 ):
-    from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
     from neurospatial.ops.transforms import AffineND
 
     env = Environment.from_grid_mask(
@@ -507,7 +502,7 @@ def test_native_iso_depth_occludes_background_and_preserves_foreground(
         matrix[:3, :3] = np.diag([2.0, 3.0, 4.0])
         matrix[:3, 3] = [100.0, -20.0, 300.0]
         env = env.apply_transform(AffineND(matrix))
-    native = FastplotlibAnimation(
+    native = native_view(
         env,
         np.ones((2, env.n_bins)),
         frame_times=np.array([0.0, 1.0]),
@@ -606,10 +601,6 @@ def test_volume_compatibility_failure_precedes_widget_allocation(
         "_iso_material_type" if mode == "iso" else "_scalar_material_type",
         unavailable,
     )
+    scene = Animation(grid_env, np.ones((2, grid_env.n_bins)), frame_times=[0.0, 1.0])
     with pytest.raises(ImportError, match="Cannot verify"):
-        backend.FastplotlibAnimation(
-            grid_env,
-            np.ones((2, grid_env.n_bins)),
-            frame_times=np.array([0.0, 1.0]),
-            field_rendering=mode,
-        )
+        scene.show(backend="fastplotlib", field_rendering=mode)

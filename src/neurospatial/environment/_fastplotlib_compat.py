@@ -109,7 +109,7 @@ def prepare_figure_close(figure: Any) -> None:
 def _frames_graphic(
     nd_subplot: Any,
     indices: Any,
-    fields: Any,
+    shape: tuple[int, int],
     frame_of: Callable[[float], int],
     read: Callable[[float], Any],
     show: Callable[[float, Any], None],
@@ -117,12 +117,13 @@ def _frames_graphic(
 ) -> Any:
     """The field and every frame-aligned panel, as one ``NDGraphic``.
 
-    The widget's slider is in seconds; ``frame_of`` maps it to the frame
-    shown, which is held until the next frame starts. ``read`` loads the
-    data for a time (field values, video images) on a worker thread, so disk
-    reads do not stall the controls; ``show`` then draws all of it together,
-    so the overlays never show another frame than the field. Built in a
-    function because fastplotlib is optional.
+    ``shape`` is ``(n_frames, n_bins)``. The widget's slider is in seconds;
+    ``frame_of`` maps it to the frame shown, which is held until the next
+    frame starts. ``read`` loads the data for a time (field values, video
+    images) on a worker thread, so disk reads do not stall the controls;
+    ``show`` then draws all of it together, so the overlays never show
+    another frame than the field. Built in a function because fastplotlib
+    is optional.
     """
     from concurrent.futures import ThreadPoolExecutor
 
@@ -136,7 +137,7 @@ def _frames_graphic(
             # NDSlicer needs array metadata only: our read callback owns all
             # source reads. A scalar broadcast stores O(1) bytes and avoids
             # imposing fastplotlib's stricter ArrayProtocol on lazy sources.
-            metadata = np.broadcast_to(np.zeros(()), fields.shape)
+            metadata = np.broadcast_to(np.zeros(()), shape)
             self._slicer = NDSlicer(
                 metadata, ("time", "bin"), ("bin",), slider_maps={"time": frame_of}
             )

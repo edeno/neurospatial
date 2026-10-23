@@ -54,20 +54,40 @@ def labels(plot):
     }
 
 
+def probability_and_rate(posterior, rate, *, rate_vmax):
+    """Two frames, 1 s apart, of fields in different units."""
+    times = [100.0, 101.0]
+    return {
+        "posterior": AnimationField(
+            posterior,
+            times,
+            cmap="viridis",
+            vmin=0.0,
+            vmax=1.0,
+            label="probability",
+            max_gap=None,
+        ),
+        "rate": AnimationField(
+            rate,
+            times,
+            cmap="magma",
+            vmin=0.0,
+            vmax=rate_vmax,
+            label="Hz",
+            max_gap=None,
+        ),
+    }
+
+
 def test_fields_keep_independent_scales_labels_and_rendered_colors(env):
-    animation = FastplotlibAnimation(
-        env,
-        {
-            "posterior": np.full((2, env.n_bins), 0.5),
-            "rate": np.full((2, env.n_bins), 10.0),
-        },
-        frame_times=np.array([100.0, 101.0]),
-        _field_styles=[
-            {"cmap": "viridis", "vmin": 0.0, "vmax": 1.0, "label": "probability"},
-            {"cmap": "magma", "vmin": 0.0, "vmax": 20.0, "label": "Hz"},
-        ],
+    fields = probability_and_rate(
+        np.full((2, env.n_bins), 0.5), np.full((2, env.n_bins), 10.0), rate_vmax=20.0
     )
-    try:
+    with (
+        Animation(env, fields) as scene,
+        scene.show(backend="fastplotlib") as view,
+    ):
+        animation = view.native
         image = animation.capture_frame(100.5)
         for i, (colormap, label) in enumerate(
             [(colormaps["viridis"], "probability"), (colormaps["magma"], "Hz")]
@@ -78,29 +98,23 @@ def test_fields_keep_independent_scales_labels_and_rendered_colors(env):
                 pixel(animation, image, plot, (5, 5)), colormap(0.5)[:3], atol=2 / 255
             )
         assert [scale.vmax for scale in animation._field_scales] == [1.0, 20.0]
-    finally:
-        animation.close()
 
 
 def test_projected_track_limits_are_derived_for_each_field(env):
     track = Environment.linear_track(
         node_positions=[[0.0, 5.0], [20.0, 5.0]], bin_size=10.0
     )
-    animation = FastplotlibAnimation(
-        env,
-        {
-            "posterior": np.array([[0.25, 0.5], [0.5, 0.25]]),
-            "rate": np.array([[25.0, 50.0], [50.0, 25.0]]),
-        },
-        frame_times=np.array([0.0, 1.0]),
-        track=track,
-        _field_styles=[
-            {"cmap": "viridis", "vmin": 0.0, "vmax": 1.0, "label": "probability"},
-            {"cmap": "magma", "vmin": 0.0, "vmax": 100.0, "label": "Hz"},
-        ],
+    fields = probability_and_rate(
+        np.array([[0.25, 0.5], [0.5, 0.25]]),
+        np.array([[25.0, 50.0], [50.0, 25.0]]),
+        rate_vmax=100.0,
     )
-    try:
-        animation.capture_frame(0.5)
+    with (
+        Animation(env, fields, track=track) as scene,
+        scene.show(backend="fastplotlib") as view,
+    ):
+        animation = view.native
+        animation.capture_frame(100.5)
         first, second = animation._track_scales
         assert second.vmax == pytest.approx(100 * first.vmax)
         assert second.vmax != animation._field_scales[1].vmax
@@ -108,44 +122,36 @@ def test_projected_track_limits_are_derived_for_each_field(env):
         assert animation._tracks[1].scale is second
         assert "probability" in labels(animation.figure["track 0"])
         assert "Hz" in labels(animation.figure["track 1"])
-    finally:
-        animation.close()
 
 
 def test_one_dimensional_track_panels_each_label_their_own_scale():
     env = Environment.from_grid_mask(
         np.ones(2, dtype=bool), grid_edges=(np.array([0.0, 10.0, 20.0]),)
     )
-    animation = FastplotlibAnimation(
-        env,
-        {"posterior": np.ones((2, env.n_bins)), "rate": np.full((2, env.n_bins), 20.0)},
-        frame_times=np.array([0.0, 1.0]),
-        _field_styles=[
-            {"cmap": "viridis", "vmin": 0.0, "vmax": 1.0, "label": "probability"},
-            {"cmap": "magma", "vmin": 0.0, "vmax": 20.0, "label": "Hz"},
-        ],
+    fields = probability_and_rate(
+        np.ones((2, env.n_bins)), np.full((2, env.n_bins), 20.0), rate_vmax=20.0
     )
-    try:
-        animation.capture_frame(0.5)
+    with (
+        Animation(env, fields) as scene,
+        scene.show(backend="fastplotlib") as view,
+    ):
+        animation = view.native
+        animation.capture_frame(100.5)
         assert not animation._plots
         assert [panel.scale.vmax for panel in animation._tracks] == [1.0, 20.0]
         assert "probability" in labels(animation.figure["track 0"])
         assert "Hz" in labels(animation.figure["track 1"])
-    finally:
-        animation.close()
 
 
 def test_native_capture_uses_exact_time_and_preserves_camera_custom_graphics(env):
-    animation = FastplotlibAnimation(
-        env,
-        np.zeros((2, env.n_bins)),
-        frame_times=np.array([100.0, 101.0]),
-        vmin=0.0,
-        vmax=1.0,
-        _field_at_time=lambda time: [np.full(env.n_bins, time - 100.0)],
-    )
-    try:
-        animation.show()
+    # Each frame's value is its time from the first, every 0.125 s.
+    times = 100.0 + np.arange(9) * 0.125
+    values = np.repeat((times - 100.0)[:, None], env.n_bins, axis=1)
+    with (
+        Animation(env, AnimationField(values, times, vmin=0.0, vmax=1.0)) as scene,
+        scene.show(backend="fastplotlib") as view,
+    ):
+        animation = view.native
         plot = animation.figure["field"]
         custom = plot.add_scatter(
             np.array([[15.0, 5.0, 1.0]], dtype=np.float32), colors="cyan", sizes=35
@@ -177,8 +183,6 @@ def test_native_capture_uses_exact_time_and_preserves_camera_custom_graphics(env
             np.testing.assert_array_equal(plot.camera.get_state()[name], value)
         assert custom in plot.graphics
         np.testing.assert_allclose(animation._field_graphics[0].values, 0.125)
-    finally:
-        animation.close()
 
 
 def test_capture_failure_restores_time_playback_and_selected_unit(env):
@@ -298,36 +302,24 @@ def test_scene_view_exports_native_3d_camera_and_independent_streams(tmp_path):
         assert "probability" in labels(native.figure["field 1"])
 
 
-def test_native_canvas_close_drains_workers_and_releases_owner(env):
-    from unittest.mock import Mock
-
-    from neurospatial.animation._resources import _OwnedReaders
-
-    reader = Mock()
-    native = FastplotlibAnimation(
-        env,
-        np.ones((2, env.n_bins)),
-        frame_times=np.array([0.0, 0.1]),
-        _reader_owner=_OwnedReaders([reader]),
-    )
-    native.show()
-    native.figure.canvas.close()
-    assert native._closed
-    assert not any(native.widget.ui_sliders._playing.values())
-    reader.close.assert_called_once()
-    with pytest.raises(RuntimeError, match="shutdown"):
-        native._frames._reader.submit(lambda: None)
-    native.close()
-    reader.close.assert_called_once()
+def test_native_canvas_close_drains_workers_and_closes_only_the_view(env):
+    with Animation(env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.1]) as scene:
+        view = scene.show(backend="fastplotlib")
+        native = view.native
+        native.figure.canvas.close()
+        assert native._closed
+        assert view._closed
+        assert not any(native.widget.ui_sliders._playing.values())
+        with pytest.raises(RuntimeError, match="shutdown"):
+            native._frames._reader.submit(lambda: None)
+        native.close()
+        # The scene owns its sources and stays available for other views.
+        assert not scene._closed
+        assert not scene._views
 
 
-def test_native_constructor_failure_drains_allocated_workers_before_owner(
-    env, monkeypatch
-):
+def test_native_constructor_failure_drains_allocated_workers(env, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
-    from unittest.mock import Mock
-
-    from neurospatial.animation._resources import _OwnedReaders
 
     allocated = []
     cleanup_order = []
@@ -353,22 +345,17 @@ def test_native_constructor_failure_drains_allocated_workers_before_owner(
         raise RuntimeError("Initial source read failed")
 
     monkeypatch.setattr(FastplotlibAnimation, "_show", fail_initial_show)
-    reader = Mock()
-    reader.close.side_effect = lambda: cleanup_order.append("reader")
+    scene = Animation(env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.1])
     with pytest.raises(RuntimeError, match="Initial source read failed"):
-        FastplotlibAnimation(
-            env,
-            np.ones((2, env.n_bins)),
-            frame_times=np.array([0.0, 0.1]),
-            _reader_owner=_OwnedReaders([reader]),
-        )
+        scene.show(backend="fastplotlib")
     native = allocated[0]
     assert native._closed
-    assert cleanup_order == ["workers", "canvas", "reader"]
+    assert cleanup_order == ["workers", "canvas"]
+    assert not scene._closed and not scene._views
     assert native.figure.canvas.get_closed()
     assert isinstance(native._frames._reader, ThreadPoolExecutor)
     with pytest.raises(RuntimeError, match="shutdown"):
         native._frames._reader.submit(lambda: None)
     with pytest.raises(RuntimeError, match="shutdown"):
         native._frames.slicer._executor.submit(lambda: None)
-    reader.close.assert_called_once()
+    scene.close()
