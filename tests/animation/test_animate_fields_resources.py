@@ -157,11 +157,22 @@ def test_completed_export_releases_owned_readers(env, file_video, backend, tmp_p
     assert opened[0].close_count == 1
 
 
-def test_worker_pickle_failure_releases_owned_reader(env, file_video, tmp_path):
+def test_worker_pickle_failure_releases_owned_reader(
+    env, file_video, tmp_path, monkeypatch
+):
     """A scene that cannot go to workers is refused, and its readers released."""
+    import neurospatial._video_io as video_io
+
     overlay, opened = file_video()
-    overlay.unpicklable = lambda: None
-    with pytest.raises(ValueError, match="cannot be pickled"):
+    open_reader = video_io._VideoReader
+
+    def unpicklable_reader(*args, **kwargs):
+        reader = open_reader(*args, **kwargs)
+        reader.callback = lambda: None  # workers would receive this reader
+        return reader
+
+    monkeypatch.setattr(video_io, "_VideoReader", unpicklable_reader)
+    with pytest.raises(ValueError, match="Video overlay 0 cannot be pickled"):
         run(env, overlay, backend="html", save_path=tmp_path / "out.html", n_workers=2)
     assert opened[0].close_count == 1
     assert list(tmp_path.iterdir()) == []

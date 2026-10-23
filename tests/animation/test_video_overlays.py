@@ -113,16 +113,16 @@ def test_regions_are_drawn_only_when_requested_and_where_they_are(arena, tmp_pat
     assert np.nonzero(goal)[1].size < np.nonzero(both)[1].size
 
 
-def test_unpicklable_overlay_is_named_before_parallel_export(arena, tmp_path):
+def test_an_unpicklable_overlay_class_exports_in_parallel(arena, tmp_path):
     class LocalPositions(PositionOverlay):
-        """Defined in a function, so worker processes cannot unpickle it."""
+        """Defined in a function, so worker processes could not unpickle it."""
 
+    # Workers receive the scene's prepared observations, not the overlay.
     overlay = LocalPositions(np.full((len(TIMES), 2), 50.0), TIMES)
-    with pytest.raises(
-        ValueError, match=r"overlay 0 \(LocalPositions\) cannot be pickled.*n_workers=1"
-    ):
-        _export(arena, tmp_path / "parallel.html", overlays=[overlay], n_workers=2)
-    assert not list(tmp_path.iterdir())
-    # Rendering in this process needs no pickling.
+    parallel = _export(
+        arena, tmp_path / "parallel.html", overlays=[overlay], n_workers=2
+    )
     serial = _export(arena, tmp_path / "serial.html", overlays=[overlay], n_workers=1)
     assert len(_frames(serial)) == len(TIMES)
+    for frame, reference in zip(_frames(parallel), _frames(serial), strict=True):
+        np.testing.assert_array_equal(frame, reference)

@@ -868,16 +868,17 @@ trajectory_cm = trajectory_meters * 100
 **Error:**
 ```text
 ValueError: Parallel export (n_workers=4) sends the scene to worker processes,
-but overlay 0 (PositionOverlay) cannot be pickled (...). Pass n_workers=1 to
+but Video overlay 0 cannot be pickled (...). Pass n_workers=1 to
 render in this process, or replace what cannot be pickled with plain data:
 NumPy arrays, numbers, strings, and file paths instead of open readers, locks,
 lambdas or local functions.
 ```
 
 With `n_workers` above 1, each worker process rebuilds the scene from the
-environment, fields and overlays, so they must be picklable. Only objects you
-supplied can fail: a lambda or local function, an open file or video reader,
-a lock. The environment's cached analyses are never sent, and memory-mapped
+environment, the fields and the overlay observations the scene prepared, so
+these must be picklable; the overlay objects themselves are not sent. Only
+objects you supplied can fail: a field source or custom video reader holding a
+lambda, an open file or a lock. The environment's cached analyses are never sent, and memory-mapped
 fields are reopened from their files rather than copied.
 
 **Solution:**

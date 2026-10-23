@@ -547,8 +547,9 @@ class Animation:
             Video containers only.
         n_workers : int or None, default=1
             Processes that render frames; None uses every CPU. Workers rebuild
-            this scene, so its environment, fields and overlays must be
-            picklable. Memory-mapped fields are reopened from their files
+            this scene from its environment, fields and prepared overlay
+            observations, so those must be picklable; the overlay objects are
+            not sent. Memory-mapped fields are reopened from their files
             rather than copied. Frames are identical to ``n_workers=1``.
             Scripts that use workers need an ``if __name__ == "__main__":``
             guard on macOS and Windows.

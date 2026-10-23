@@ -1252,8 +1252,10 @@ class TestValidateSkeletonConsistency:
         _validate_skeleton_consistency(skeleton, bodypart_names, name="test_skeleton")
 
 
-def test_parallel_export_names_an_overlay_it_cannot_pickle(tmp_path):
-    """Worker processes need picklable overlays; one process does not."""
+def test_parallel_export_does_not_pickle_the_overlay_itself(tmp_path):
+    """Workers receive prepared observations, so overlays need not pickle."""
+    import imageio.v3 as iio
+
     from neurospatial import Environment
     from neurospatial.animation import Animation
 
@@ -1266,13 +1268,11 @@ def test_parallel_export_names_an_overlay_it_cannot_pickle(tmp_path):
     with Animation(
         env, np.zeros((3, env.n_bins)), frame_times=times, overlays=[overlay]
     ) as scene:
-        with pytest.raises(
-            ValueError, match=r"overlay 0 \(PositionOverlay\) cannot be pickled"
-        ) as caught:
-            scene.export(tmp_path / "parallel.gif", fps=10, dpi=20, n_workers=2)
-        assert "n_workers=1" in str(caught.value)
-        assert not list(tmp_path.iterdir())
-        assert scene.export(tmp_path / "serial.gif", fps=10, dpi=20).exists()
+        parallel = scene.export(tmp_path / "parallel.gif", fps=10, dpi=20, n_workers=2)
+        serial = scene.export(tmp_path / "serial.gif", fps=10, dpi=20)
+    np.testing.assert_array_equal(
+        iio.imread(parallel, index=None), iio.imread(serial, index=None)
+    )
 
 
 # =============================================================================

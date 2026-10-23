@@ -867,10 +867,12 @@ refused.
 **The file already exists.** Pass `overwrite=True`, or choose another
 `save_path`.
 
-**A parallel export cannot send the scene to workers.** The error names the
-environment, field or overlay that cannot be pickled. Pass `n_workers=1`, or
-replace the open reader, lambda or lock with plain data such as arrays and
-file paths.
+**A parallel export cannot send the scene to workers.** Workers receive the
+environment, the fields and the overlay observations the scene prepared, not
+the overlay objects. The error names the environment, field or prepared
+overlay (for example a custom video reader) that cannot be pickled. Pass
+`n_workers=1`, or replace the open reader, lambda or lock with plain data such
+as arrays and file paths.
 
 **The embedded HTML player has too many frames.** Export a shorter window
 with `Animation.export(time_range=...)`, lower the frame rate, pass
