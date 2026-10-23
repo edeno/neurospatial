@@ -9,12 +9,12 @@ from __future__ import annotations
 import copy
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 from matplotlib.colors import to_rgba
 
-from neurospatial.animation._prepared import PreparedScene
+from neurospatial.animation._prepared import PreparedScene, TrackWindow
 from neurospatial.animation._style import (
     _head_direction_color,
     _marker_area,
@@ -219,21 +219,31 @@ class SceneRenderer:
             ax.set_title(name)
             updates.extend(self._spatial(ax))
         row = 1
+        panels: list[Panel] = []
         if self.track_extents is not None:
             for column, (name, field) in enumerate(scene.fields.items()):
                 ax = self.figure.add_subplot(grid[row, column])
-                updates.append(track_panel(ax, self.prepared, name, field))
+                panels.append(track_panel(ax, self.prepared, name, field))
             row += 1
         for signals in self.signal_groups.values():
-            updates.append(
-                self._signals(self.figure.add_subplot(grid[row, :]), signals)
+            panels.append(
+                signal_panel(
+                    self.figure.add_subplot(grid[row, :]), self.prepared, signals
+                )
             )
             row += 1
         for raster in scene._overlay_data.spike_rasters:
-            updates.append(self._raster(self.figure.add_subplot(grid[row, :]), raster))
+            panels.append(
+                raster_panel(
+                    self.figure.add_subplot(grid[row, :]), self.prepared, raster
+                )
+            )
             row += 1
         if scene._overlay_data.epochs:
-            updates.append(self._epochs(self.figure.add_subplot(grid[row, :])))
+            panels.append(
+                epoch_panel(self.figure.add_subplot(grid[row, :]), self.prepared)
+            )
+        updates += [panel.update for panel in panels]
         prefix = "" if scene.title is None else f"{scene.title} — "
         title = self.figure.suptitle("")
         updates.append(lambda time: title.set_text(f"{prefix}t = {time:.3f} s"))
@@ -447,88 +457,6 @@ class SceneRenderer:
         ):
             setter(f"{letter} ({env.units or 'units'})")
         return cells, 6 if grid is not None else 1
-
-    def _time_axis(
-        self, ax: Any, *, cursor_visible: bool = True, cursor_color: Any = "red"
-    ) -> Update:
-        """Style a time panel; its update centers the window and cursor."""
-        ax.set_facecolor("#20252b")
-        cursor = ax.axvline(
-            0.0, color=cursor_color, linewidth=1, visible=cursor_visible
-        )
-        ax.set_xlabel("Time (s)")
-
-        def update(time: float) -> None:
-            ax.set_xlim(*self.prepared.bounds(time))
-            cursor.set_xdata([time, time])
-
-        return update
-
-    def _signals(self, ax: Any, signals: list[Any]) -> Update:
-        lines = [
-            ax.plot(
-                [],
-                [],
-                color=signal.color,
-                linewidth=signal.linewidth,
-                alpha=signal.alpha,
-                label=signal.label,
-            )[0]
-            for signal in signals
-        ]
-        if any(signal.label for signal in signals):
-            ax.legend(loc="upper right", fontsize="small")
-        ax.set_ylim(*self.prepared.signal_limits(signals))
-        # A panel's signals share one cursor, styled by its first signal.
-        time_axis = self._time_axis(
-            ax,
-            cursor_visible=signals[0].show_cursor,
-            cursor_color=signals[0].cursor_color,
-        )
-
-        def update(time: float) -> None:
-            for line, signal in zip(lines, signals, strict=True):
-                line.set_data(*self.prepared.signal_window(signal, time))
-            time_axis(time)
-
-        return update
-
-    def _raster(self, ax: Any, raster: Any) -> Update:
-        from matplotlib.collections import LineCollection
-
-        units = range(len(raster.spike_times))
-        # One collection for every unit: the ticks share their style.
-        ticks = ax.add_collection(
-            LineCollection([], colors=raster.color, linewidths=raster.linewidth),
-            autolim=False,
-        )
-        # Fixed rows: the limits Matplotlib fits when every unit has a spike
-        # in view, so rows stay put while units fall silent.
-        ax.update_datalim([(0.0, -0.4), (0.0, len(units) - 0.6)])
-        ax.autoscale_view(scalex=False)
-        ax.set_ylim(ax.get_ylim())
-        ax.set_yticks(units, [str(unit) for unit in raster.unit_ids])
-        ax.set_ylabel("Unit")
-        time_axis = self._time_axis(ax)
-
-        def update(time: float) -> None:
-            ticks.set_segments(self.prepared.raster_ticks(raster, time))
-            time_axis(time)
-
-        return update
-
-    def _epochs(self, ax: Any) -> Update:
-        epochs = self.scene._overlay_data.epochs
-        for number, epoch in enumerate(epochs):
-            for start, stop in epoch.intervals:
-                ax.broken_barh(
-                    [(start, stop - start)],
-                    (number - 0.35, 0.7),
-                    facecolors=epoch.color,
-                    alpha=epoch.alpha,
-                )
-        ax.set_yticks(range(len(epochs)), [e.label for e in epochs])
-        return self._time_axis(ax)
 
     def _spatial(self, ax: Any) -> list[Update]:
         """Create the spatial overlays in drawing order, each with its update."""
@@ -824,6 +752,118 @@ def _render_regions_matplotlib(
             )
 
 
+class Panel(NamedTuple):
+    """A scientific panel against time, built once and updated per time.
+
+    ``prepare`` reads the panel's data at a time without touching artists,
+    so a native view can run it on a worker thread; ``apply`` sets the
+    panel's artists to that data.
+    """
+
+    prepare: Callable[[float], Any]
+    apply: Callable[[float, Any], None]
+
+    def update(self, time: float) -> None:
+        """Prepare and apply one time."""
+        self.apply(time, self.prepare(time))
+
+
+def _time_axis(
+    ax: Any,
+    prepared: PreparedScene,
+    *,
+    cursor_visible: bool = True,
+    cursor_color: Any = "red",
+) -> Update:
+    """Style a time panel; its update centers the window and cursor."""
+    ax.set_facecolor("#20252b")
+    cursor = ax.axvline(0.0, color=cursor_color, linewidth=1, visible=cursor_visible)
+    ax.set_xlabel("Time (s)")
+
+    def update(time: float) -> None:
+        ax.set_xlim(*prepared.bounds(time))
+        cursor.set_xdata([time, time])
+
+    return update
+
+
+def signal_panel(ax: Any, prepared: PreparedScene, signals: list[Any]) -> Panel:
+    """Signals sharing a panel, each a line through its samples in the window."""
+    lines = [
+        ax.plot(
+            [],
+            [],
+            color=signal.color,
+            linewidth=signal.linewidth,
+            alpha=signal.alpha,
+            label=signal.label,
+        )[0]
+        for signal in signals
+    ]
+    if any(signal.label for signal in signals):
+        ax.legend(loc="upper right", fontsize="small")
+    ax.set_ylim(*prepared.signal_limits(signals))
+    # A panel's signals share one cursor, styled by its first signal.
+    time_axis = _time_axis(
+        ax,
+        prepared,
+        cursor_visible=signals[0].show_cursor,
+        cursor_color=signals[0].cursor_color,
+    )
+
+    def prepare(time: float) -> list[tuple[np.ndarray, np.ndarray]]:
+        return [prepared.signal_window(signal, time) for signal in signals]
+
+    def apply(time: float, windows: list[tuple[np.ndarray, np.ndarray]]) -> None:
+        for line, window in zip(lines, windows, strict=True):
+            line.set_data(*window)
+        time_axis(time)
+
+    return Panel(prepare, apply)
+
+
+def raster_panel(ax: Any, prepared: PreparedScene, raster: Any) -> Panel:
+    """A spike raster: one row of ticks per unit, labeled by unit id."""
+    from matplotlib.collections import LineCollection
+
+    units = range(len(raster.spike_times))
+    # One collection for every unit: the ticks share their style.
+    ticks = ax.add_collection(
+        LineCollection([], colors=raster.color, linewidths=raster.linewidth),
+        autolim=False,
+    )
+    # Fixed rows: the limits Matplotlib fits when every unit has a spike
+    # in view, so rows stay put while units fall silent.
+    ax.update_datalim([(0.0, -0.4), (0.0, len(units) - 0.6)])
+    ax.autoscale_view(scalex=False)
+    ax.set_ylim(ax.get_ylim())
+    ax.set_yticks(units, [str(unit) for unit in raster.unit_ids])
+    ax.set_ylabel("Unit")
+    time_axis = _time_axis(ax, prepared)
+
+    def apply(time: float, segments: np.ndarray) -> None:
+        ticks.set_segments(segments)
+        time_axis(time)
+
+    return Panel(lambda time: prepared.raster_ticks(raster, time), apply)
+
+
+def epoch_panel(ax: Any, prepared: PreparedScene) -> Panel:
+    """Every epoch overlay as shaded intervals, one row each."""
+    epochs = prepared.scene._overlay_data.epochs
+    for number, epoch in enumerate(epochs):
+        for start, stop in epoch.intervals:
+            ax.broken_barh(
+                [(start, stop - start)],
+                (number - 0.35, 0.7),
+                facecolors=epoch.color,
+                alpha=epoch.alpha,
+            )
+    ax.set_yticks(range(len(epochs)), [e.label for e in epochs])
+    time_axis = _time_axis(ax, prepared)
+    return Panel(lambda time: None, lambda time, _: time_axis(time))
+
+
 def track_panel(
     ax: Any,
     prepared: PreparedScene,
@@ -831,11 +871,8 @@ def track_panel(
     field: Any,
     *,
     colorbar: bool = True,
-) -> Update:
-    """Create a field-along-track panel; the returned update draws one time.
-
-    Usable by Agg and native scientific docks.
-    """
+) -> Panel:
+    """A field along the track against time, with the observed positions."""
     from matplotlib import rcParams
     from matplotlib.collections import LineCollection, PolyCollection
     from matplotlib.colors import Normalize
@@ -861,21 +898,18 @@ def track_panel(
         zorder=3,
     )
     ax.add_collection(positions, autolim=False)
-    ax.set_facecolor("#20252b")
-    cursor = ax.axvline(0.0, color="red", linewidth=1)
-    ax.set_xlabel("Time (s)")
 
-    def update(time: float) -> None:
-        window = prepared.track_window(field, time)
+    time_axis = _time_axis(ax, prepared)
+
+    def apply(time: float, window: TrackWindow) -> None:
         # Matplotlib's stubs omit the (n, 4, 2) array input it accepts.
         cells.set_verts(cast("Any", window.polygons))
         cells.set_array(window.values)
         positions.set_segments([segment for segment, _ in window.positions])
         positions.set_color([color for _, color in window.positions])
-        ax.set_xlim(*prepared.bounds(time))
-        cursor.set_xdata([time, time])
+        time_axis(time)
 
-    return update
+    return Panel(lambda time: prepared.track_window(field, time), apply)
 
 
 def export_scene(

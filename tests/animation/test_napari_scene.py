@@ -260,6 +260,41 @@ def test_scientific_dock_capture_preserves_annotations_and_panel_artists():
 
 
 @pytest.mark.napari
+def test_scientific_dock_draws_the_scene_renderers_panels():
+    from neurospatial.animation.backends._napari_scene import NapariScene
+    from neurospatial.animation.overlays import SpikeRasterOverlay, TimeSeriesOverlay
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    times = np.linspace(10.0, 11.0, 11)
+    scene = Animation(
+        env,
+        np.ones((11, env.n_bins)),
+        frame_times=times,
+        overlays=[
+            TimeSeriesOverlay(1e-6 + times - 10, times, label="Speed"),
+            SpikeRasterOverlay([np.array([10.1, 10.3]), np.array([10.5])]),
+        ],
+    )
+    handle = NapariScene(scene, show=False)
+    try:
+        handle.seek(10.4)
+        scene.render_frame(10.4, dpi=30)
+        rendered = [
+            ax for ax in scene._renderer.figure.axes if ax.get_xlabel() == "Time (s)"
+        ]
+        docked = handle._panels.axes
+        assert [ax.get_ylim() for ax in docked] == [ax.get_ylim() for ax in rendered]
+        assert [ax.get_xlim() for ax in docked] == [ax.get_xlim() for ax in rendered]
+        ticks = [ax.collections[0].get_segments() for ax in (docked[1], rendered[1])]
+        np.testing.assert_array_equal(*ticks)
+    finally:
+        handle.close()
+        scene.close()
+
+
+@pytest.mark.napari
 def test_native_window_close_stops_playback_and_releases_helper():
     from qtpy.QtWidgets import QApplication
 

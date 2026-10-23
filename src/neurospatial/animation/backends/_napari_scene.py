@@ -103,161 +103,63 @@ class _PanelLayers:
 
 
 class _ScientificPanels:
-    """Persistent Matplotlib artists, so native annotations survive seeking."""
+    """Persistent Matplotlib artists, so native annotations survive seeking.
+
+    The panels are the scene renderer's; this dock stacks them in one column.
+    """
 
     def __init__(self, scene: Any, helper: PreparedScene) -> None:
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
         from matplotlib.figure import Figure
 
-        self.scene, self.helper = scene, helper
+        from neurospatial.animation._scene_rendering import (
+            Panel,
+            epoch_panel,
+            raster_panel,
+            signal_panel,
+            track_panel,
+        )
+
+        # One track panel per stream.
         count = helper.panel_count + (
             len(scene.fields) - 1 if helper.track_extents is not None else 0
         )
         self.figure = Figure(figsize=(8, max(1.5, 1.5 * count)), dpi=100)
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.axes: list[Any] = []
-        self.signals: list[tuple[Any, Any]] = []
-        self.rasters: list[tuple[Any, Any, int]] = []
-        self.tracks: list[tuple[Any, Any, Any]] = []
-        self.cursors: list[Any] = []
-        # A panel's signals share one cursor, styled by its first signal.
-        cursor_styles = [
-            (signals[0].show_cursor, signals[0].cursor_color)
+
+        def axis() -> Any:
+            self.axes.append(self.figure.add_subplot(count, 1, len(self.axes) + 1))
+            return self.axes[-1]
+
+        self.panels: list[Panel] = [
+            signal_panel(axis(), helper, signals)
             for signals in helper.signal_groups.values()
         ]
-        for signals in helper.signal_groups.values():
-            ax = self.figure.add_subplot(count, 1, len(self.axes) + 1)
-            self.axes.append(ax)
-            for signal in signals:
-                (line,) = ax.plot(
-                    [],
-                    [],
-                    color=signal.color,
-                    linewidth=signal.linewidth,
-                    alpha=signal.alpha,
-                    label=signal.label,
-                )
-                self.signals.append((line, signal))
-            if any(s.label for s in signals):
-                ax.legend(loc="upper right", fontsize="small")
-            ax.set_ylim(*helper.signal_limits(signals))
-        for raster in scene._overlay_data.spike_rasters:
-            ax = self.figure.add_subplot(count, 1, len(self.axes) + 1)
-            self.axes.append(ax)
-            for row in range(len(raster.unit_ids)):
-                collection = ax.vlines(
-                    [], [], [], color=raster.color, linewidth=raster.linewidth
-                )
-                self.rasters.append((collection, raster, row))
-            ax.set_yticks(
-                range(len(raster.unit_ids)), [str(u) for u in raster.unit_ids]
-            )
-            ax.set_ylim(-0.5, max(0.5, len(raster.unit_ids) - 0.5))
-            ax.set_ylabel("Unit")
+        self.panels += [
+            raster_panel(axis(), helper, raster)
+            for raster in scene._overlay_data.spike_rasters
+        ]
         if scene._overlay_data.epochs:
-            ax = self.figure.add_subplot(count, 1, len(self.axes) + 1)
-            self.axes.append(ax)
-            for row, epoch in enumerate(scene._overlay_data.epochs):
-                ax.broken_barh(
-                    [(a, b - a) for a, b in epoch.intervals],
-                    (row - 0.35, 0.7),
-                    facecolors=epoch.color,
-                    alpha=epoch.alpha,
-                )
-            ax.set_yticks(
-                range(len(scene._overlay_data.epochs)),
-                [e.label for e in scene._overlay_data.epochs],
-            )
-        # Track images need interval polygons. Retain their axes and replace only
-        # the managed cell collection, preserving annotations and other artists.
+            self.panels.append(epoch_panel(axis(), helper))
         if helper.track_extents is not None:
-            for name, field in scene.fields.items():
-                # One shared track panel per stream; resize the grid once.
-                ax = self.figure.add_subplot(count, 1, len(self.axes) + 1)
-                self.axes.append(ax)
-                self.tracks.append((ax, name, field))
-                if helper.projection is not None:
-                    from neurospatial.animation._scene_rendering import _colorbar
-
-                    _colorbar(ax, helper.track_scales[name])
-        cursor_styles += [(True, "red")] * (len(self.axes) - len(cursor_styles))
-        for ax, (visible, color) in zip(self.axes, cursor_styles, strict=True):
-            ax.set_facecolor("#20252b")
-            ax.set_xlabel("Time (s)")
-            self.cursors.append(
-                ax.axvline(
-                    scene.frame_times[0], color=color, linewidth=1, visible=visible
-                )
-            )
-        from matplotlib.collections import LineCollection, PolyCollection
-        from matplotlib.colors import Normalize
-
-        self._track_artists = []
-        for ax, name, _field in self.tracks:
-            scale = helper.track_scales[name]
-            cells = PolyCollection(
-                [],
-                cmap=scale.cmap,
-                norm=Normalize(scale.vmin, scale.vmax),
-                edgecolors="none",
-            )
-            positions = LineCollection([], linewidths=1, zorder=3)
-            ax.add_collection(cells)
-            ax.add_collection(positions)
-            assert helper.track_extents is not None
-            starts, stops = helper.track_extents
-            ax.set_ylim(float(np.min(starts)), float(np.max(stops)))
-            ax.set_ylabel(f"Position ({helper.track_env.units or 'units'})")
-            ax.set_title(f"{name} along track")
-            self._track_artists.append((cells, positions))
+            self.panels += [
+                track_panel(axis(), helper, name, field)
+                for name, field in scene.fields.items()
+            ]
         # Layout is stable across ticks. Repeated tight_layout measures every
         # artist and can dominate playback even when no source I/O is needed.
         self.figure.subplots_adjust(
             left=0.12, right=0.93, bottom=0.1, top=0.94, hspace=0.75
         )
 
-    def prepare(self, time: float) -> dict[str, Any]:
-        """Build bounded scientific windows without touching Qt or artists."""
-        return {
-            "signals": [
-                self.helper.signal_window(signal, time) for _, signal in self.signals
-            ],
-            "rasters": [
-                self.helper.raster_window(raster, row, time)
-                for _, raster, row in self.rasters
-            ],
-            "tracks": [
-                self.helper.track_window(field, time) for _, _, field in self.tracks
-            ],
-        }
+    def prepare(self, time: float) -> list[Any]:
+        """Read each panel's data at ``time`` without touching Qt or artists."""
+        return [panel.prepare(time) for panel in self.panels]
 
-    def update(self, time: float, prepared: Any = None) -> None:
-        prepared = self.prepare(time) if prepared is None else prepared
-        left, right = (
-            time - self.scene.window_seconds / 2,
-            time + self.scene.window_seconds / 2,
-        )
-        for (line, _), (times, values) in zip(
-            self.signals, prepared["signals"], strict=True
-        ):
-            line.set_data(times, values)
-        for (artist, _, row), spikes in zip(
-            self.rasters, prepared["rasters"], strict=True
-        ):
-            segments = np.empty((len(spikes), 2, 2))
-            segments[:, :, 0] = spikes[:, None]
-            segments[:, :, 1] = [row - 0.4, row + 0.4]
-            artist.set_segments(segments)
-        for (cells, positions), window in zip(
-            self._track_artists, prepared["tracks"], strict=True
-        ):
-            cells.set_verts(window.polygons)
-            cells.set_array(window.values)
-            positions.set_segments([segment for segment, _ in window.positions])
-            positions.set_color([color for _, color in window.positions])
-        for ax, cursor in zip(self.axes, self.cursors, strict=True):
-            ax.set_xlim(left, right)
-            cursor.set_xdata([time, time])
+    def update(self, time: float, prepared: list[Any]) -> None:
+        for panel, data in zip(self.panels, prepared, strict=True):
+            panel.apply(time, data)
         self.canvas.draw_idle()
 
     def capture(self) -> np.ndarray:
