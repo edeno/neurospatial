@@ -6,14 +6,13 @@ borrowed and stay open.
 """
 
 import warnings
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 
 from neurospatial import Environment
-from neurospatial.animation._resources import _bind_cleanup, _OwnedReaders
+from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation.core import animate_fields
 from neurospatial.animation.overlays import (
     PositionData,
@@ -210,22 +209,6 @@ def test_owner_deduplicates_and_completes_cleanup_after_one_reader_fails():
     assert first.close_count == second.close_count == 1
     owner.close()
     assert first.close_count == second.close_count == 1
-
-
-def test_native_cleanup_wrapper_releases_resources_when_native_close_fails():
-    reader = Reader()
-
-    def fail():
-        raise ValueError("native close failed")
-
-    handle = SimpleNamespace(close=fail)
-    _bind_cleanup(handle, _OwnedReaders([reader]).close)
-    with pytest.raises(BaseException) as caught:
-        handle.close()
-    assert "native close failed" in str(caught.value.exceptions[0])
-    assert reader.close_count == 1
-    handle.close()
-    assert reader.close_count == 1
 
 
 def test_constant_normalization_preserves_missing_observations_in_consumers(env):

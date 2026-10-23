@@ -384,16 +384,13 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
                 finally:
                     play.playing = playing
 
-    view = AnimationView._from_backend(
+    view = AnimationView._from_callbacks(
         animation,
-        _CallbackBackendView(
-            container,
-            initial_time=start,
-            seek=seek,
-            close=close,
-            read_time=lambda: float(slider.value),
-            capture_session=capture_session,
-        ),
+        container,
+        seek=seek,
+        close=close,
+        read_time=lambda: float(slider.value),
+        capture_session=capture_session,
     )
     container.close = view.close
     slider.observe(changed, names="value")

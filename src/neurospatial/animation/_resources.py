@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import builtins
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any, cast
 
 
@@ -73,33 +73,3 @@ class _OwnedReaders:
             raise _cleanup_error(
                 "Failed to close owned animation video readers.", failures
             )
-
-
-def _bind_cleanup(handle: Any, cleanup: Callable[[], None]) -> Any:
-    """Close a returned native handle before its separately owned resources."""
-    original_close = handle.close
-    closed = False
-
-    def close(*args: Any, **kwargs: Any) -> Any:
-        nonlocal closed
-        if closed:
-            return None
-        closed = True
-        result = None
-        failures = []
-        try:
-            result = original_close(*args, **kwargs)
-        except BaseException as exc:
-            failures.append(exc)
-        try:
-            cleanup()
-        except BaseException as exc:
-            failures.append(exc)
-        if failures:
-            raise _cleanup_error(
-                "Failed to close the animation and its resources.", failures
-            )
-        return result
-
-    object.__setattr__(handle, "close", close)
-    return handle
