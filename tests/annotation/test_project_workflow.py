@@ -252,6 +252,22 @@ def test_accepted_components_and_hole_are_one_undoable_annotation_edit(session_f
     assert shapes.features.equals(saved_features)
 
 
+def test_redo_survives_the_delayed_checkpoint_after_undo(session_factory):
+    from qtpy.QtTest import QTest
+
+    session, _viewer, shapes, controls = session_factory()
+    _draw_region(shapes, controls, [[1, 1], [1, 10], [10, 10], [10, 1]])
+    session.checkpoint()
+    session.undo()
+    assert len(shapes.data) == 0
+    # Any change the session made while restoring triggers only a checkpoint
+    # that finds nothing new; it must not discard the redo step.
+    QTest.qWait(300)
+    assert session.redo_button.isEnabled()
+    session.redo()
+    assert len(shapes.data) == 1
+
+
 def test_calibration_and_explicit_bin_size_share_history_without_moving_shapes(
     session_factory,
 ):

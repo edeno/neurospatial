@@ -112,8 +112,6 @@ class AnnotationProjectSession:
         self.bin_size = project.bin_size
         self.project_path = None if project_path is None else Path(project_path)
         self._disposed = False
-        self._restoring = False
-        self._checkpointing = False
         self._undo: list[_EditingState] = []
         self._redo: list[_EditingState] = []
         self._current = self._capture()
@@ -209,24 +207,22 @@ class AnnotationProjectSession:
         return _EditingState(capture_shapes(self.layer), calibration, self.bin_size)
 
     def _changed(self, event: Any = None) -> None:
-        if not self._disposed and not self._restoring and not self._checkpointing:
+        # A change made by the session itself only leads to a checkpoint that
+        # finds nothing new.
+        if not self._disposed:
             self._checkpoint_timer.start()
 
     def checkpoint(self) -> None:
         """Flush pending shape edits and record one coherent history step."""
         self._checkpoint_timer.stop()
-        self._checkpointing = True
-        try:
-            state = self._capture()
-            if not _same(state, self._current):
-                self._undo.append(self._current)
-                del self._undo[:-50]
-                self._current = state
-                self._redo.clear()
-                self.status.setText("Unsaved changes")
-            self._update_history_buttons()
-        finally:
-            self._checkpointing = False
+        state = self._capture()
+        if not _same(state, self._current):
+            self._undo.append(self._current)
+            del self._undo[:-50]
+            self._current = state
+            self._redo.clear()
+            self.status.setText("Unsaved changes")
+        self._update_history_buttons()
 
     def _checkpoint_safely(self) -> None:
         self._run(self.checkpoint)
@@ -236,22 +232,18 @@ class AnnotationProjectSession:
         self.redo_button.setEnabled(bool(self._redo))
 
     def _restore(self, state: _EditingState) -> None:
-        self._restoring = True
         self._checkpoint_timer.stop()
-        try:
-            restore_shapes(state.shapes, self.layer)
-            self.calibration = state.calibration
-            self.bin_size = state.bin_size
-            self.controls.sync_from_layer()
-            self.assist.sync_calibration(self.calibration)
-            if self.bin_size is not None:
-                self.assist.sync_bin_size(self.bin_size)
-            self.viewer.layers.selection.active = self.layer
-            self._current = state
-            self.status.setText("Unsaved changes")
-            self._update_history_buttons()
-        finally:
-            self._restoring = False
+        restore_shapes(state.shapes, self.layer)
+        self.calibration = state.calibration
+        self.bin_size = state.bin_size
+        self.controls.sync_from_layer()
+        self.assist.sync_calibration(self.calibration)
+        if self.bin_size is not None:
+            self.assist.sync_bin_size(self.bin_size)
+        self.viewer.layers.selection.active = self.layer
+        self._current = state
+        self.status.setText("Unsaved changes")
+        self._update_history_buttons()
 
     def undo(self) -> None:
         """Undo committed drawing edits, calibration, or an accepted proposal."""
@@ -349,7 +341,6 @@ class AnnotationProjectSession:
                 )
             existing = [s for s in existing if s.role != "environment"]
         names = [s.name for s in existing]
-        self._restoring = True
         try:
             if len(existing) != len(before.shapes):
                 restore_shapes(existing, self.layer)
@@ -372,8 +363,6 @@ class AnnotationProjectSession:
         except Exception:
             self._restore(before)
             raise
-        finally:
-            self._restoring = False
         self.viewer.layers.selection.active = self.layer
         self.checkpoint()
 
