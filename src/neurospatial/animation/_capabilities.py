@@ -196,11 +196,6 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
         region_names = shown_region_names(scene.env, show_regions)
     if backend == "napari" and options.get("ndisplay", scene.env.n_dims) not in (2, 3):
         raise ValueError("ndisplay must be 2 or 3 for a napari scene view.")
-    if backend == "napari" and layout is not None and (scene.overlays or show_regions):
-        raise ValueError(
-            "Napari grid layout separates overlay and region layers from the "
-            "spatial fields. Omit layout to keep overlays and regions registered."
-        )
     if backend == "fastplotlib":
         from neurospatial.environment._fastplotlib_volume import resolve_field_rendering
 

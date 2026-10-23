@@ -88,6 +88,24 @@ def _rgba(color: Any) -> Any:
     return np.asarray(to_rgba(color))
 
 
+class _PanelLayers:
+    """One overlay's copies in every field panel, assigned together.
+
+    Overlays are sampled once per time; each assignment is applied to every
+    panel's copy so all panels show the same observation.
+    """
+
+    __slots__ = ("layers",)
+    layers: tuple[Any, ...]
+
+    def __init__(self, layers: list[Any]) -> None:
+        object.__setattr__(self, "layers", tuple(layers))
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        for layer in self.layers:
+            setattr(layer, name, value)
+
+
 class _ScientificPanels:
     """Persistent Matplotlib artists, so native annotations survive seeking."""
 
@@ -320,8 +338,15 @@ class NapariScene:
                     self.viewer.title = options["title"]
                 if "ndisplay" in options:
                     self.viewer.dims.ndisplay = options["ndisplay"]
-            self._build_fields()
+            # Each stream retains a separate layer, scale and colormap. A layout
+            # gives every field its own panel holding copies of the overlays.
+            layout = options.get("layout")
+            if layout not in (None, "horizontal", "vertical", "grid"):
+                raise ValueError("layout must be 'horizontal', 'vertical' or 'grid'.")
+            self._build_fields(split=layout is not None)
             self._build_overlays()
+            if layout is not None:
+                self._arrange_panels(layout)
             if scene.scale_bar:
                 from neurospatial.animation.config import (
                     ScaleBarConfig,
@@ -335,24 +360,6 @@ class NapariScene:
                     if isinstance(scene.scale_bar, ScaleBarConfig)
                     else None,
                 )
-            # Each stream retains a separate layer, scale and colormap. Native
-            # grid mode can separate spatial fields when explicitly requested.
-            layout = options.get("layout")
-            if layout is not None:
-                if layout not in ("horizontal", "vertical", "grid"):
-                    raise ValueError(
-                        "layout must be 'horizontal', 'vertical' or 'grid'."
-                    )
-                if self.scene.overlays:
-                    raise ValueError(
-                        "Napari grid layout separates individual overlay layers; omit layout to keep overlays registered to every field."
-                    )
-                canvas_grid(self.viewer).enabled = True
-                canvas_grid(self.viewer).shape = {
-                    "horizontal": (1, len(scene.fields)),
-                    "vertical": (len(scene.fields), 1),
-                    "grid": (-1, -1),
-                }[layout]
             self.viewer.dims.axis_labels = tuple(reversed("xyz"[: scene.env.n_dims]))
             controls = self._controls = QWidget()
             row = QHBoxLayout(controls)
@@ -446,7 +453,42 @@ class NapariScene:
         set_spatial_units(layer, self.scene.env.units, self.scene.env.n_dims)
         return layer
 
-    def _build_fields(self) -> None:
+    def _add_overlay(
+        self, kind: str, data: Any, *, name: str, **kwargs: Any
+    ) -> _PanelLayers:
+        """Add one overlay layer to every panel; updates fan out to each copy."""
+        copies = []
+        for panel, stack in self._panel_stacks.items():
+            label = name if panel is None else f"{panel}: {name}"
+            layer = self._add(kind, data, name=label, **kwargs)
+            stack.append(layer)
+            copies.append(layer)
+        return _PanelLayers(copies)
+
+    def _arrange_panels(self, layout: str) -> None:
+        """Group each field with its overlay copies in one native grid panel.
+
+        Napari places ``stride`` consecutive layers in each grid panel, so the
+        panels' layers lead the layer list in field order and keep their
+        single-panel stacking (video below or above the field, overlays and
+        regions on top). Layers added later occupy panels after the fields.
+        """
+        layers = self.viewer.layers
+        stacks = list(self._panel_stacks.values())
+        order = [layer for stack in stacks for layer in sorted(stack, key=layers.index)]
+        for index, layer in enumerate(order):
+            layers.move(layers.index(layer), index)
+        grid = canvas_grid(self.viewer)
+        grid.stride = len(stacks[0])
+        grid.shape = {
+            "horizontal": (1, len(stacks)),
+            "vertical": (len(stacks), 1),
+            "grid": (-1, -1),
+        }[layout]
+        grid.enabled = True
+        self.viewer.reset_view()
+
+    def _build_fields(self, *, split: bool = False) -> None:
         from matplotlib import colormaps
         from napari.utils.colormaps import Colormap
 
@@ -532,6 +574,12 @@ class NapariScene:
 
                 self._updates.append(update)
             self.field_layers[name] = layer
+        # Without a layout, all fields share one panel and one overlay stack.
+        self._panel_stacks: dict[str | None, list[Any]] = (
+            {name: [layer] for name, layer in self.field_layers.items()}
+            if split
+            else {None: list(self.field_layers.values())}
+        )
 
     def _build_overlays(self) -> None:
         from matplotlib import colormaps
@@ -555,7 +603,7 @@ class NapariScene:
             ]
 
         for i, position in enumerate(data.positions):
-            layer = self._add(
+            layer = self._add_overlay(
                 "points",
                 empty,
                 ndim=dims,
@@ -564,7 +612,7 @@ class NapariScene:
                 face_color=_rgba(position.color),
             )
             trail = (
-                self._add(
+                self._add_overlay(
                     "shapes",
                     [],
                     ndim=dims,
@@ -602,7 +650,7 @@ class NapariScene:
         for i, body in enumerate(data.bodypart_sets):
             names = list(body.bodyparts)
             layers = {
-                name: self._add(
+                name: self._add_overlay(
                     "points",
                     empty,
                     ndim=dims,
@@ -622,7 +670,7 @@ class NapariScene:
                 for name in names
             }
             skeleton = (
-                self._add(
+                self._add_overlay(
                     "shapes",
                     [],
                     ndim=dims,
@@ -661,7 +709,7 @@ class NapariScene:
             self._updates.append(update_body)
         for i, heading in enumerate(data.head_directions):
             color = "white" if heading.color in colormaps else _rgba(heading.color)
-            layer = self._add(
+            layer = self._add_overlay(
                 "vectors",
                 np.empty((0, 2, dims)),
                 ndim=dims,
@@ -692,7 +740,7 @@ class NapariScene:
 
             self._updates.append(update_heading)
         for i, vector in enumerate(data.object_vectors):
-            layer = self._add(
+            layer = self._add_overlay(
                 "vectors",
                 np.empty((0, 2, dims)),
                 ndim=dims,
@@ -702,7 +750,7 @@ class NapariScene:
                 length=1,
             )
             objects = (
-                self._add(
+                self._add_overlay(
                     "points",
                     empty,
                     ndim=dims,
@@ -746,7 +794,7 @@ class NapariScene:
             self._updates.append(update_vectors)
         for i, events in enumerate(data.events):
             for name, positions in events.event_positions.items():
-                layer = self._add(
+                layer = self._add_overlay(
                     "points",
                     empty,
                     ndim=dims,
@@ -819,7 +867,7 @@ class NapariScene:
                     ]
                 )
             order = [1, 0, 2]
-            layer = self._add(
+            layer = self._add_overlay(
                 "image",
                 image,
                 rgb=True,
@@ -828,15 +876,17 @@ class NapariScene:
                 affine=matrix[np.ix_(order, order)],
                 blending="translucent",
             )
-            field_indices = [
-                self.viewer.layers.index(field) for field in self.field_layers.values()
-            ]
-            destination = (
-                min(field_indices)
-                if video.z_order == "below"
-                else max(field_indices) + 1
-            )
-            self.viewer.layers.move(self.viewer.layers.index(layer), destination)
+            for copy in layer.layers:
+                field_indices = [
+                    self.viewer.layers.index(field)
+                    for field in self.field_layers.values()
+                ]
+                destination = (
+                    min(field_indices)
+                    if video.z_order == "below"
+                    else max(field_indices) + 1
+                )
+                self.viewer.layers.move(self.viewer.layers.index(copy), destination)
 
             def update_video(
                 time: float,
@@ -858,7 +908,7 @@ class NapariScene:
         ):
             region = scene.env.regions[name]
             if region.kind == "point":
-                self._add(
+                self._add_overlay(
                     "points",
                     np.asarray(region.data).reshape(1, dims)[:, ::-1],
                     name=f"Region: {name}",
@@ -871,7 +921,7 @@ class NapariScene:
                     raise ValueError(
                         "Napari region polygons with holes require a raster mask; omit show_regions or use backend='widget'."
                     )
-                self._add(
+                self._add_overlay(
                     "shapes",
                     [np.asarray(region.data.exterior.coords)[:, ::-1]],
                     shape_type="polygon",

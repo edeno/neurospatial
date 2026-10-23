@@ -691,3 +691,157 @@ def test_freeform_environment_unit_labels_do_not_break_native_layers():
     assert env.units == "arena units"
     assert np.isfinite(handle.field_layers["field"].data).all()
     scene.close()
+
+
+def _layout_scene():
+    from shapely.geometry import Polygon
+
+    from neurospatial.regions import Regions
+
+    env = Environment.from_grid_mask(
+        np.ones((4, 6), dtype=bool),
+        (np.linspace(0.0, 40.0, 5), np.linspace(0.0, 60.0, 7)),
+        units="cm",
+    )
+    regions = Regions()
+    regions.add("reward", point=(35.0, 55.0))
+    regions.add("start", polygon=Polygon([(0, 0), (10, 0), (10, 10), (0, 10)]))
+    env = env.with_regions(regions)
+    times = np.array([0.0, 0.5, 1.0, 1.5])
+    positions = np.array([[5.0, 5.0], [20.0, 30.0], [np.nan, np.nan], [30.0, 50.0]])
+    ones = np.ones((4, env.n_bins))
+    return Animation(
+        env,
+        {
+            "cellA": AnimationField(ones, times, vmin=0, vmax=1, cmap="Reds"),
+            "cellB": AnimationField(ones, times, vmin=0, vmax=1, cmap="Greens"),
+        },
+        overlays=[
+            PositionOverlay(positions, times, trail_length=2, color="blue", size=14),
+            EventOverlay.from_fixed_positions(
+                np.array([0.5]), np.array([[30.0, 10.0]])
+            ),
+        ],
+        show_regions=True,
+    )
+
+
+@pytest.mark.napari
+def test_layout_draws_overlays_and_regions_in_every_field_panel():
+    from neurospatial.animation.backends._napari_compat import canvas_grid
+    from neurospatial.animation.backends._napari_scene import build_napari_scene
+
+    scene = _layout_scene()
+    # The single-panel view defines the environment-to-napari transform.
+    reference = model_handle(scene)
+    overlay_names = [
+        layer.name
+        for layer in reference.viewer.layers
+        if layer not in reference.field_layers.values()
+    ]
+    handle = build_napari_scene(scene, layout="horizontal", show=True)
+    try:
+        layers = list(handle.viewer.layers)
+        grid = canvas_grid(handle.viewer)
+        stride = len(overlay_names) + 1
+        assert grid.enabled and grid.shape == (1, 2) and grid.stride == stride
+        assert len(layers) == 2 * stride
+        panels = {}
+        for index, name in enumerate(scene.fields):
+            # Napari places each run of ``stride`` layers in one panel.
+            panel = {layer.name: layer for layer in layers[index * stride :][:stride]}
+            assert layers[index * stride] is handle.field_layers[name]
+            assert set(panel) - {handle.field_layers[name].name} == {
+                f"{name}: {overlay}" for overlay in overlay_names
+            }
+            panels[name] = {
+                overlay: panel[f"{name}: {overlay}"] for overlay in overlay_names
+            }
+
+        def assert_panels_match_reference(time):
+            handle.seek(time)
+            reference.seek(time)
+            expected = {layer.name: layer.data for layer in reference.viewer.layers}
+            for panel in panels.values():
+                for overlay in overlay_names:
+                    actual = panel[overlay].data
+                    if isinstance(actual, list):  # shapes: one array per shape
+                        assert len(actual) == len(expected[overlay])
+                        for a, e in zip(actual, expected[overlay], strict=True):
+                            np.testing.assert_allclose(a, e)
+                    else:
+                        np.testing.assert_allclose(actual, expected[overlay])
+
+        assert_panels_match_reference(0.5)
+        for panel in panels.values():
+            # Environment (x, y) is napari (row, column) = (y, x).
+            np.testing.assert_allclose(panel["Position 1"].data, [[30.0, 20.0]])
+            np.testing.assert_allclose(panel["Events 1: event"].data, [[10.0, 30.0]])
+            np.testing.assert_allclose(panel["Region: reward"].data, [[55.0, 35.0]])
+            assert len(panel["Position trail 1"].data) == 1
+        assert_panels_match_reference(1.0)
+        for panel in panels.values():
+            assert len(panel["Position 1"].data) == 0  # missing stays missing
+            assert len(panel["Position trail 1"].data) == 0
+        assert_panels_match_reference(1.5)
+        for panel in panels.values():
+            np.testing.assert_allclose(panel["Position 1"].data, [[50.0, 30.0]])
+
+        with handle.capture_session() as capture:
+            frame = capture(0.5).astype(int)
+        assert handle.time == 1.5
+        red, green, blue = frame[..., 0], frame[..., 1], frame[..., 2]
+        reds = (red > 50) & (red > 3 * green) & (red > 3 * blue)
+        greens = (green > 30) & (green > 2 * red) & (green > blue)
+        markers = (blue > 150) & (red < 80) & (green < 80)
+        half = frame.shape[1] // 2
+        assert reds[:, :half].any() and not reds[:, half:].any()
+        assert greens[:, half:].any() and not greens[:, :half].any()
+        assert markers[:, :half].any() and markers[:, half:].any()
+    finally:
+        handle.close()
+        scene.close()
+
+
+@pytest.mark.napari
+def test_vertical_layout_keeps_video_below_each_panel_field():
+    from neurospatial.animation.backends._napari_compat import canvas_grid
+    from neurospatial.animation.backends._napari_scene import build_napari_scene
+    from neurospatial.animation.overlays import VideoData
+
+    class Video:
+        times = None
+        interp = "nearest"
+
+        def convert_to_data(self, frame_times, n_frames, env):
+            frames = np.zeros((n_frames, 2, 2, 3), dtype=np.uint8)
+            return VideoData(
+                np.arange(n_frames), frames, None, (0, 40, 0, 60), 1, "below"
+            )
+
+    env = Environment.from_grid_mask(
+        np.ones((4, 6), dtype=bool),
+        (np.linspace(0.0, 40.0, 5), np.linspace(0.0, 60.0, 7)),
+    )
+    times = np.array([0.0, 0.5])
+    scene = Animation(
+        env,
+        {"first": np.ones((2, env.n_bins)), "second": np.zeros((2, env.n_bins))},
+        frame_times=times,
+        overlays=[Video(), PositionOverlay(np.full((2, 2), 20.0), times)],
+    )
+    handle = build_napari_scene(scene, layout="vertical", show=True)
+    try:
+        grid = canvas_grid(handle.viewer)
+        assert grid.shape == (2, 1) and grid.stride == 3
+        assert [layer.name for layer in handle.viewer.layers] == [
+            "first: Video 1",
+            "first",
+            "first: Position 1",
+            "second: Video 1",
+            "second",
+            "second: Position 1",
+        ]
+    finally:
+        handle.close()
+        scene.close()

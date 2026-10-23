@@ -16,6 +16,7 @@ from neurospatial.animation.overlays import (
     BodypartOverlay,
     HeadDirectionOverlay,
     ObjectVectorOverlay,
+    PositionOverlay,
     SpikeRasterOverlay,
     VideoData,
 )
@@ -233,9 +234,7 @@ def test_fast_1d_rejects_omitted_overlay_before_backend_allocation(
 
 
 @pytest.mark.parametrize("option", [{"layout": "grid"}, {"layout": "horizontal"}])
-def test_napari_grid_with_regions_rejected_before_viewer_allocation(
-    env, option, monkeypatch
-):
+def test_napari_layout_accepts_overlays_and_regions(env, option, monkeypatch):
     from neurospatial.animation.backends import _napari_scene
 
     regions = Regions()
@@ -243,14 +242,16 @@ def test_napari_grid_with_regions_rejected_before_viewer_allocation(
     env = env.with_regions(regions)
     build = Mock()
     monkeypatch.setattr(_napari_scene, "build_napari_scene", build)
-    with (
-        Animation(
-            env, np.ones((2, env.n_bins)), frame_times=[0, 0.1], show_regions=True
-        ) as scene,
-        pytest.raises(ValueError, match=r"grid layout.*region"),
-    ):
+    times = np.array([0, 0.1])
+    with Animation(
+        env,
+        {"a": np.ones((2, env.n_bins)), "b": np.zeros((2, env.n_bins))},
+        frame_times=times,
+        overlays=[PositionOverlay(np.ones((2, 2)), times)],
+        show_regions=True,
+    ) as scene:
         scene.show(backend="napari", **option)
-    build.assert_not_called()
+        build.assert_called_once_with(scene, **option)
 
 
 def test_napari_holes_rejected_before_viewer_allocation(env, monkeypatch):

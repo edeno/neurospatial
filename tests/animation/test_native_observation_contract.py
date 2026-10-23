@@ -148,6 +148,7 @@ def test_object_vector_consumers_share_full_recording_finite_peak(env, monkeypat
         native_napari.scene = scene
         native_napari._helper = PreparedScene(scene)
         native_napari._updates, native_napari._layers = [], []
+        native_napari._panel_stacks = {None: []}
         native_napari.viewer = SimpleNamespace(
             add_vectors=lambda points, **kwargs: SimpleNamespace(data=points, **kwargs),
             add_points=lambda points, **kwargs: SimpleNamespace(data=points, **kwargs),

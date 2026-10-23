@@ -31,6 +31,7 @@ def napari_heading(scene):
     """Capture native vector geometry without a Qt viewer or graphics adapter."""
     handle = NapariScene.__new__(NapariScene)
     handle.scene, handle._helper, handle._updates = scene, PreparedScene(scene), []
+    handle._panel_stacks = {None: []}
     layers = []
 
     def add(kind, values, **options):
