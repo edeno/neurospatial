@@ -643,7 +643,7 @@ class MeshLocator(ReadOnlyState):
             if self.boundary is not None:
                 xcoords = pts2d[valid_mask, 0]
                 ycoords = pts2d[valid_mask, 1]
-                on_or_inside = shapely.contains_xy(self.boundary, xcoords, ycoords)
+                on_or_inside = shapely.intersects_xy(self.boundary, xcoords, ycoords)
                 active_triangle_idxs[np.flatnonzero(valid_mask)[~on_or_inside]] = -1
         return active_triangle_idxs.astype(np.intp, copy=False)
 

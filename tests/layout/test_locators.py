@@ -48,7 +48,8 @@ def _assert_mesh_membership(locator, points, actual):
             assert index == -1
             continue
         point = Point(coordinates)
-        if locator.boundary is not None and not locator.boundary.contains(point):
+        # The outline is part of the arena, as Arena.contains has it.
+        if locator.boundary is not None and not locator.boundary.covers(point):
             assert index == -1
             continue
         if index == -1:
