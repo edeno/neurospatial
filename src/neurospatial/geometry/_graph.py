@@ -9,7 +9,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._arrays import get_centers
+from neurospatial.geometry._arrays import active_order, get_centers
 from neurospatial.geometry._binning import Binning, TrackLinearization
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._locators import (
@@ -42,25 +42,16 @@ def _source_grid(locator: Locator) -> tuple[tuple[int, ...], NDArray[np.intp]] |
             source = (n_parent,), np.arange(n_parent, dtype=np.intp)
         shape, indices = source
         if isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             indices = indices[selected]
         return shape, indices
     if isinstance(locator, RectilinearLocator):
         return locator.shape, np.flatnonzero(locator.active_mask).astype(np.intp)
-    elif isinstance(locator, HexLocator):
-        shape = locator.centers_shape
-        mapping = locator.flat_to_active
-        active = np.flatnonzero(mapping >= 0)
-    elif isinstance(locator, MeshLocator):
-        shape = (len(locator.simplices),)
-        mapping = locator.simplex_to_active
-        active = np.flatnonzero(mapping >= 0)
-    else:
-        return None
-    if mapping is not None:
-        active = active[np.argsort(mapping[active])]
-    return shape, active.astype(np.intp, copy=False)
+    if isinstance(locator, HexLocator):
+        return locator.centers_shape, active_order(locator.flat_to_active)
+    if isinstance(locator, MeshLocator):
+        return (len(locator.simplices),), active_order(locator.simplex_to_active)
+    return None
 
 
 def _track_cell_segments(track: TrackLinearization) -> NDArray[np.intp] | None:

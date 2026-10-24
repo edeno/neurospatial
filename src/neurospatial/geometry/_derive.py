@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from shapely.affinity import affine_transform
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import per_dimension
+from neurospatial.geometry._arrays import active_order, per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
@@ -236,8 +236,7 @@ def _combined_extent(
     """
     mapping = np.flatnonzero(keep)
     while isinstance(locator, SubsetLocator):
-        selected = np.flatnonzero(locator.parent_to_child >= 0)
-        selected = selected[np.argsort(locator.parent_to_child[selected])]
+        selected = active_order(locator.parent_to_child)
         mapping = selected[mapping]
         locator = locator.base
     if not isinstance(locator, CombinedLocator):

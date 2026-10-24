@@ -15,7 +15,7 @@ from scipy.spatial import cKDTree
 from shapely.affinity import affine_transform
 from shapely.geometry import MultiPolygon, Polygon
 
-from neurospatial.geometry._arrays import get_centers, per_dimension
+from neurospatial.geometry._arrays import active_order, get_centers, per_dimension
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
@@ -71,16 +71,6 @@ def _equal(actual: Any, expected: Any, name: str) -> None:
     """Name the first inconsistent stored field."""
     if not np.array_equal(actual, expected):
         raise ValueError(f"{name} does not match the binning geometry.")
-
-
-def _active_order(mapping: NDArray[np.intp]) -> NDArray[np.intp]:
-    """Full-cell IDs of the active bins, in bin order.
-
-    The locators that store ``mapping`` check when they are built that it
-    numbers the active bins exactly once from zero.
-    """
-    active = np.flatnonzero(mapping >= 0).astype(np.intp, copy=False)
-    return active[np.argsort(mapping[active])]
 
 
 def _gap(points: NDArray[np.float64]) -> float:
@@ -370,7 +360,7 @@ def _primitive_geometry(
     if isinstance(locator, RectilinearLocator):
         return _rectilinear_geometry(locator, coordinate_kind)
     if isinstance(locator, HexLocator):
-        active = _active_order(locator.flat_to_active)
+        active = active_order(locator.flat_to_active)
         rows, columns = np.unravel_index(active, locator.centers_shape)
         x = columns.astype(np.float64)
         x[rows % 2 == 1] += 0.5
@@ -404,7 +394,7 @@ def _primitive_geometry(
             raise ValueError(
                 "mesh locator simplex_to_active shape does not match simplices."
             )
-        active = _active_order(locator.simplex_to_active)
+        active = active_order(locator.simplex_to_active)
         triangles = locator.simplices[active]
         vertices = locator.points[triangles]
         centers = vertices.mean(axis=1)
@@ -472,7 +462,7 @@ def _locator_geometry(
             raise ValueError(
                 "subset parent_to_child length does not match parent locator bins."
             )
-        active = _active_order(mapping)
+        active = active_order(mapping)
         geometry.centers = geometry.centers[active]
         geometry.center_error = geometry.center_error[active]
         geometry.measures = [
@@ -1433,8 +1423,7 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
             return None
         parent, computed = result
         mapping = locator.parent_to_child
-        selected = np.flatnonzero(mapping >= 0)
-        selected = selected[np.argsort(mapping[selected])]
+        selected = active_order(mapping)
         bins = SpatialBins.from_arrays(
             parent.bins.centers[selected],
             parent.bins.sizes[selected],

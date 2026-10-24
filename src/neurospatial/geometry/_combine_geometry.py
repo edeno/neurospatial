@@ -26,6 +26,7 @@ from neurospatial.geometry._arena import (
     _segment_distance,
     _TransformedArena,
 )
+from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
@@ -61,8 +62,7 @@ def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
         return [box for child in locator.children for box in cell_boxes(child.locator)]
     if isinstance(locator, SubsetLocator):
         boxes = cell_boxes(locator.base)
-        selected = np.flatnonzero(locator.parent_to_child >= 0)
-        selected = selected[np.argsort(locator.parent_to_child[selected])]
+        selected = active_order(locator.parent_to_child)
         return [boxes[index] for index in selected]
     if isinstance(locator, TransformedLocator):
         matrix = np.linalg.inv(locator.inverse)

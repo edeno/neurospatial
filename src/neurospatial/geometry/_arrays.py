@@ -199,6 +199,26 @@ def mask_active_map(mask: NDArray[np.bool_]) -> NDArray[np.intp]:
     return mapping
 
 
+def active_order(mapping: NDArray[np.intp]) -> NDArray[np.intp]:
+    """Source cell of each active bin, in active-bin order.
+
+    Parameters
+    ----------
+    mapping : ndarray of intp, shape (n_cells,)
+        Active-bin index of each source cell, or -1. It numbers the active
+        bins exactly once from zero, as :func:`owned_active_map` checks.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_active,)
+        ``order[i]`` is the cell whose active-bin index is ``i``.
+    """
+    active = np.flatnonzero(mapping >= 0)
+    order = np.empty(len(active), dtype=np.intp)
+    order[mapping[active]] = active
+    return order
+
+
 def boolean_selection(keep: ArrayLike, n_items: int) -> NDArray[np.bool_]:
     """Return ``keep`` as a boolean mask with one entry per item.
 

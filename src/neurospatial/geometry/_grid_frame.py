@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, active_order
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._locators import (
     RectilinearLocator,
@@ -293,8 +293,7 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
     if isinstance(locator, SubsetLocator):
         base, error = frame_from_locator(locator.base)
         indices = np.flatnonzero(base.source.active_mask)
-        selected = np.flatnonzero(locator.parent_to_child >= 0)
-        selected = selected[np.argsort(locator.parent_to_child[selected])]
+        selected = active_order(locator.parent_to_child)
         indices = indices[selected]
         if np.any(np.diff(indices) <= 0):
             raise ValueError("FramedGrid requires row-major bin ordering.")

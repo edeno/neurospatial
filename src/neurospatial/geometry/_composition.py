@@ -11,7 +11,7 @@ from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
 from neurospatial.geometry._arena import Arena, contains_with_error
-from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
+from neurospatial.geometry._arrays import ReadOnlyState, active_order, per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
@@ -325,8 +325,7 @@ def triangle_skew_messages(binning: Binning) -> tuple[str, ...]:
                 if retained is None or np.any(retained):
                     visit(child, retained, (*path, key))
         elif isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             retained = np.zeros(len(locator.parent_to_child), dtype=np.bool_)
             retained[selected if active is None else selected[active]] = True
             walk(locator.base, retained, path)
@@ -386,8 +385,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                 [child.bins.measure_dims for child in locator.children]
             )
         if isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             retained = np.zeros(len(locator.parent_to_child), dtype=np.bool_)
             retained[selected if active is None else selected[active]] = True
             result = weights(locator.base, retained)
@@ -468,8 +466,7 @@ def composition_view(
             return None
         root, indices, scale = result
         if isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             indices = indices[selected]
         elif isinstance(locator, ClippedLocator):
             indices = indices[locator.mapping.parent_bin_indices]

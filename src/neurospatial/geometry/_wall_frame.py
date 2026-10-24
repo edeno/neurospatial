@@ -10,6 +10,7 @@ from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arena import _TransformedArena
+from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 from neurospatial.geometry._polygon import cells_from_locator
 from neurospatial.geometry._polygon_cells import (
@@ -99,8 +100,7 @@ def wall_source_frame(
         if inner is not None:
             cells, walls, original, inverse, frames, errors = inner
             if isinstance(locator, SubsetLocator):
-                selected = np.flatnonzero(locator.parent_to_child >= 0)
-                selected = selected[np.argsort(locator.parent_to_child[selected])]
+                selected = active_order(locator.parent_to_child)
                 return (
                     tuple(cells[index] for index in selected),
                     walls,
