@@ -8,17 +8,19 @@ that its boundary is a measured physical wall.
 from __future__ import annotations
 
 import itertools
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import cached_property
 from typing import Any, ClassVar, Literal, Protocol, cast, runtime_checkable
 
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import AffineMap, linear_scale
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
 __all__ = [
@@ -97,13 +99,15 @@ def _error(what: str, fix: str) -> ValueError:
     return ValueError(_format_error(what, fix=fix))
 
 
-def _real_array(value: Any, name: str) -> NDArray[np.float64]:
+def _real_array(value: Any, name: str, *, copy: bool = True) -> NDArray[np.float64]:
     raw = np.asarray(value)
     if raw.dtype.kind not in "iuf":
         raise _error(
             f"{name} must contain real numeric values.", "pass real-valued arrays"
         )
-    return np.array(raw, dtype=np.float64, copy=True)
+    if copy:
+        return np.array(raw, dtype=np.float64, copy=True)
+    return np.asarray(raw, dtype=np.float64)
 
 
 def _boolean(value: Any, name: str) -> bool:
@@ -115,7 +119,8 @@ def _boolean(value: Any, name: str) -> bool:
 def _query(
     positions: Any, n_dims: int
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
-    query = np.atleast_2d(_real_array(positions, "positions"))
+    # Read-only: containment never writes the positions, so they are not copied.
+    query = np.atleast_2d(_real_array(positions, "positions", copy=False))
     if query.ndim != 2 or query.shape[1] != n_dims:
         raise _error(
             f"Expected positions of shape (n_positions, {n_dims}), got {query.shape}.",
@@ -190,7 +195,7 @@ def _mapped(
         )
     if not np.all(np.isfinite(result)):
         raise _error(
-            "Transformed arena coordinates exceed floating-point range.",
+            "Transformed coordinates exceed floating-point range.",
             "rescale the coordinate units before transforming",
         )
     return result
@@ -211,12 +216,60 @@ def _mapped_vertices(
     return _mapped(unique, matrix)[indices.ravel()].reshape(points.shape)
 
 
+def affine_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
+    """Map planar geometry with shapely's affine transform of a (3, 3) matrix.
+
+    Use :func:`mapped_geometry` where the result must share rounded vertices
+    with transformed cells.
+    """
+    return affine_transform(geometry, [*matrix[:2, :2].ravel(), *matrix[:2, 2]])
+
+
 def mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
     # Cell vertices use this same array arithmetic. A different affine
     # implementation can round their common vertices differently, inventing
     # slivers where a transformed arena boundary meets its cells.
     coordinates = shapely.get_coordinates(geometry)
     return shapely.set_coordinates(geometry, _mapped_vertices(coordinates, matrix))
+
+
+class _CappedContainment:
+    """Containment of points known only to within a rounding bound.
+
+    A point outside the arena whose bound reaches its boundary is inside, but
+    the reach is capped at a quarter of the arena's smallest feature, so a
+    rounding bound never bridges a gap or crosses a wall.
+    """
+
+    def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
+        raise NotImplementedError
+
+    @cached_property
+    def _allowance_cap(self) -> NDArray[np.float64]:
+        """Largest allowance on each axis, read-only, shape (n_dims,)."""
+        cap = self._feature_size()
+        cap.setflags(write=False)
+        return cap
+
+    def _feature_size(self) -> NDArray[np.float64]:
+        raise NotImplementedError
+
+    def _near(
+        self, query: NDArray[np.float64], allowance: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        """Whether outside points are within ``allowance`` of the arena."""
+        raise NotImplementedError
+
+    def _contains_within(
+        self, query: NDArray[np.float64], error: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        inside = self.contains(query)
+        rows = np.flatnonzero(~inside)
+        if len(rows):
+            inside[rows] = self._near(
+                query[rows], np.minimum(error[rows], self._allowance_cap)
+            )
+        return inside
 
 
 @dataclass(frozen=True, eq=False)
@@ -286,7 +339,7 @@ class UnknownArena:
 
 
 @dataclass(frozen=True, eq=False, init=False)
-class OpenArena:
+class OpenArena(_CappedContainment, ReadOnlyState):
     """A known planar polygonal domain with separately asserted internal walls.
 
     Parameters
@@ -364,6 +417,8 @@ class OpenArena:
 
     def __post_init__(self) -> None:
         _polygon(self.polygon)
+        # Indexes the polygon for the point tests of every lookup.
+        shapely.prepare(self.polygon)
         walls = self.walls
         for index, wall in enumerate(walls):
             if (
@@ -391,6 +446,11 @@ class OpenArena:
             _boolean(self.physical_footprint_known, "physical_footprint_known"),
         )
 
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        # Pickling keeps the polygon but not its index.
+        shapely.prepare(self.polygon)
+
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test closed polygon support, excluding hole interiors."""
         query, finite = _query(positions, 2)
@@ -410,13 +470,22 @@ class OpenArena:
         """Return the immutable stored polygonal domain."""
         return self.polygon
 
+    def _feature_size(self) -> NDArray[np.float64]:
+        return np.full(2, self.polygon.minimum_clearance / (4 * np.sqrt(2)))
+
+    def _near(
+        self, query: NDArray[np.float64], allowance: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        distance = shapely.distance(self.polygon, shapely.points(query))
+        return np.asarray(distance <= np.hypot.reduce(allowance, axis=1))
+
     def domain_bounds(self) -> NDArray[np.float64]:
         """Bound the stored polygon."""
         return _polygon_bounds(self.polygon)
 
 
 @dataclass(frozen=True, eq=False)
-class MaskArena(ReadOnlyState):
+class MaskArena(_CappedContainment, ReadOnlyState):
     """Closed union of active Cartesian cells, without inferred physical walls.
 
     Parameters
@@ -493,6 +562,26 @@ class MaskArena(ReadOnlyState):
         inside[finite] = accepted
         return inside
 
+    def _feature_size(self) -> NDArray[np.float64]:
+        return np.array([np.min(np.diff(edge)) / 4 for edge in self.edges])
+
+    def _near(
+        self, query: NDArray[np.float64], allowance: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        snapped = query.copy()
+        for axis, edge in enumerate(self.edges):
+            right = np.clip(np.searchsorted(edge, snapped[:, axis]), 0, len(edge) - 1)
+            left = np.maximum(right - 1, 0)
+            nearest = np.where(
+                np.abs(snapped[:, axis] - edge[left])
+                < np.abs(snapped[:, axis] - edge[right]),
+                left,
+                right,
+            )
+            close = np.abs(snapped[:, axis] - edge[nearest]) <= allowance[:, axis]
+            snapped[close, axis] = edge[nearest[close]]
+        return self.contains(snapped)
+
     def as_track(self) -> TrackArena | None:
         """None: this arena is not a track."""
         return None
@@ -561,20 +650,13 @@ def _similarity_scale(matrix: NDArray[np.float64]) -> float:
         If the map is not a similarity, which a track's centerline and width
         need: any other map changes lengths differently in each direction.
     """
-    linear = matrix[:-1, :-1]
-    n_dims = len(linear)
-    with np.errstate(under="ignore"):
-        _, logdet = np.linalg.slogdet(linear)
-    scale = math.exp(float(logdet) / n_dims)
-    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-        normalized = linear / scale
-        residual = np.max(np.abs(normalized @ normalized.T - np.eye(n_dims)))
-    if residual > 1e-12 or not np.isfinite(residual):
+    measured = linear_scale(matrix[:-1, :-1])
+    if not measured.is_similarity():
         raise _error(
             "TrackArena transforms must be a similarity.",
             "use translation, rotation, reflection and uniform scale, or rebuild the measured footprint",
         )
-    return scale
+    return measured.scale
 
 
 def _holds_track(arena: Arena) -> bool:
@@ -589,7 +671,7 @@ def _holds_track(arena: Arena) -> bool:
 
 
 @dataclass(frozen=True, eq=False)
-class TrackArena(ReadOnlyState):
+class TrackArena(_CappedContainment, ReadOnlyState):
     """Union of exact constant-width capsules around centerline segments.
 
     Parameters
@@ -704,6 +786,44 @@ class TrackArena(ReadOnlyState):
     def polygonal_domain(self) -> None:
         """Do not approximate round caps with a polygonal buffer."""
         return None
+
+    def _feature_size(self) -> NDArray[np.float64]:
+        if self.width is not None:
+            lengths = np.hypot.reduce(self.segments[:, 1] - self.segments[:, 0], axis=1)
+            feature = min(self.width / 2, float(np.min(lengths)))
+            # Separate capsule components can leave a narrower meaningful gap.
+            for index, segment in enumerate(self.segments):
+                for other in self.segments[index + 1 :]:
+                    gap = _segment_distance(segment, other) - self.width
+                    if gap > 0:
+                        feature = min(feature, gap)
+            return np.full(self.n_dims, feature / (4 * np.sqrt(self.n_dims)))
+        if self.n_dims == 1:
+            # The features are the segments' intervals and the gaps between them.
+            bounds = np.sort(self.segments[:, :, 0], axis=1)
+            bounds = bounds[np.argsort(bounds[:, 0])]
+            gaps = bounds[1:, 0] - np.maximum.accumulate(bounds[:-1, 1])
+            feature = float(
+                np.min(np.concatenate([np.diff(bounds, axis=1)[:, 0], gaps[gaps > 0]]))
+            )
+            return np.array([feature / 4])
+        return np.zeros(self.n_dims)
+
+    def _near(
+        self, query: NDArray[np.float64], allowance: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        if self.width is not None:
+            return np.asarray(
+                _track_distances(self, query)
+                <= self.width / 2 + np.hypot.reduce(allowance, axis=1)
+            )
+        # A widthless track reaches here only in one dimension, where it
+        # holds the closed intervals of its segments.
+        low = self.segments[:, :, 0].min(axis=1)
+        high = self.segments[:, :, 0].max(axis=1)
+        values = query[:, :1]
+        gap = np.maximum(np.maximum(low - values, values - high), 0.0)
+        return np.asarray(np.any(gap <= allowance[:, :1], axis=1))
 
     def domain_bounds(self) -> NDArray[np.float64] | None:
         """Bound the capsules of a track with a known width, or a 1-D track."""
@@ -871,8 +991,7 @@ class _TransformedArena(ReadOnlyState):
 
     base: Arena
     forward: NDArray[np.float64]
-    inverse: NDArray[np.float64] = field(init=False, repr=False)
-    _inverse_sensitivity: NDArray[np.float64] = field(init=False, repr=False)
+    affine: AffineMap = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.base.coordinate_kind != "cartesian":
@@ -886,39 +1005,19 @@ class _TransformedArena(ReadOnlyState):
             _similarity_scale(forward)
         if isinstance(self.base, OpenArena):
             _mapped(shapely.get_coordinates(self.base.polygon), forward)
-        with np.errstate(under="ignore"):
-            inverse = np.asarray(np.linalg.inv(forward), dtype=np.float64)
-        if not np.all(np.isfinite(inverse)):
-            raise _error(
-                "The affine inverse exceeds floating-point range.",
-                "rescale coordinates before transforming",
-            )
-        linear, inverse_linear = forward[:-1, :-1], inverse[:-1, :-1]
-        # A componentwise Neumann bound accounts for the numerical inverse.
-        # The factor two leaves a margin for rounding in the small bound solve.
-        eps = np.finfo(np.float64).eps
-        gamma = (self.n_dims + 2) * eps / (1 - (self.n_dims + 2) * eps)
-        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            residual = np.abs(np.eye(self.n_dims) - inverse_linear @ linear)
-            residual += 2 * gamma * (np.abs(inverse_linear) @ np.abs(linear))
-        if not np.all(np.isfinite(residual)) or np.max(residual.sum(axis=1)) >= 0.5:
+        affine = AffineMap(forward)
+        if affine.sensitivity is None:
             raise _error(
                 "The affine inverse has no useful floating-point error bound.",
                 "rescale coordinates or use a better-conditioned affine map",
             )
-        sensitivity = 2 * np.linalg.solve(
-            np.eye(self.n_dims) - residual, np.abs(inverse_linear)
-        )
-        if not np.all(np.isfinite(sensitivity)):
-            raise _error(
-                "The affine inverse sensitivity exceeds floating-point range.",
-                "rescale the coordinate units before transforming",
-            )
-        for array in (forward, inverse, sensitivity):
-            array.setflags(write=False)
-        object.__setattr__(self, "forward", forward)
-        object.__setattr__(self, "inverse", inverse)
-        object.__setattr__(self, "_inverse_sensitivity", sensitivity)
+        object.__setattr__(self, "forward", affine.forward)
+        object.__setattr__(self, "affine", affine)
+
+    @property
+    def inverse(self) -> NDArray[np.float64]:
+        """Homogeneous map from current to stored coordinates."""
+        return self.affine.inverse
 
     @property
     def n_dims(self) -> int:
@@ -947,7 +1046,7 @@ class _TransformedArena(ReadOnlyState):
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         query, finite = _query(positions, self.n_dims)
         inside = np.zeros(len(query), dtype=np.bool_)
-        original, error = self._project(query[finite])
+        original, error = self.affine.project(query[finite])
         representable = np.all(np.isfinite(original), axis=1)
         selected = np.zeros(len(original), dtype=np.bool_)
         selected[representable] = contains_with_error(
@@ -956,34 +1055,11 @@ class _TransformedArena(ReadOnlyState):
         inside[finite] = selected
         return inside
 
-    def _project(
-        self, query: NDArray[np.float64], incoming: NDArray[np.float64] | None = None
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Bound inverse projection through a forward residual in target units."""
-        eps = np.finfo(np.float64).eps
-        gamma = (self.n_dims + 4) * eps / (1 - (self.n_dims + 4) * eps)
-        linear, shift = self.forward[:-1, :-1], self.forward[:-1, -1]
-        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            original = (query - shift) @ self.inverse[:-1, :-1].T
-            remapped = original @ linear.T + shift
-            difference = np.abs(query - remapped)
-            # Translation is one rounded addition, not a dot product of
-            # origin-sized terms. Half-ULPs bound that addition and the
-            # caller's forward-mapped query without growing an origin buffer.
-            residual = (
-                difference
-                + 0.5
-                * (
-                    np.spacing(difference)
-                    + np.spacing(np.abs(remapped))
-                    + np.spacing(np.abs(query))
-                )
-                + 2 * gamma * (np.abs(original) @ np.abs(linear).T)
-            )
-            if incoming is not None:
-                residual += incoming
-            error = residual @ self._inverse_sensitivity.T
-        return original, error
+    def _contains_within(
+        self, query: NDArray[np.float64], error: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        original, propagated = self.affine.project(query, error)
+        return contains_with_error(self.base, original, propagated)
 
     def as_track(self) -> TrackArena | None:
         """The base track mapped into the current coordinates, or None.
@@ -1041,36 +1117,13 @@ def _track_distances(
 
 
 def _feature_cap(arena: Arena) -> NDArray[np.float64]:
-    """Keep arithmetic allowances below a quarter of local domain features."""
-    if isinstance(arena, _CombinedArena):
-        return np.asarray(
-            np.min([_feature_cap(child) for child in arena.children], axis=0),
-            dtype=np.float64,
-        )
-    if isinstance(arena, MaskArena):
-        return np.array([np.min(np.diff(edge)) / 4 for edge in arena.edges])
-    if isinstance(arena, OpenArena):
-        return np.full(2, arena.polygon.minimum_clearance / (4 * np.sqrt(2)))
-    if isinstance(arena, TrackArena) and arena.width is not None:
-        lengths = np.hypot.reduce(arena.segments[:, 1] - arena.segments[:, 0], axis=1)
-        feature = min(arena.width / 2, float(np.min(lengths)))
-        # Separate capsule components can leave a narrower meaningful gap.
-        for index, segment in enumerate(arena.segments):
-            for other in arena.segments[index + 1 :]:
-                gap = _segment_distance(segment, other) - arena.width
-                if gap > 0:
-                    feature = min(feature, gap)
-        return np.full(arena.n_dims, feature / (4 * np.sqrt(arena.n_dims)))
-    if isinstance(arena, TrackArena) and arena.n_dims == 1:
-        # The features are the segments' intervals and the gaps between them.
-        bounds = np.sort(arena.segments[:, :, 0], axis=1)
-        bounds = bounds[np.argsort(bounds[:, 0])]
-        gaps = bounds[1:, 0] - np.maximum.accumulate(bounds[:-1, 1])
-        feature = float(
-            np.min(np.concatenate([np.diff(bounds, axis=1)[:, 0], gaps[gaps > 0]]))
-        )
-        return np.array([feature / 4])
-    return np.zeros(arena.n_dims)
+    """Keep arithmetic allowances below a quarter of local domain features.
+
+    Arenas without an allowance of their own (unknown and polar domains, and
+    installed arena types) give none, shape (n_dims,).
+    """
+    cap = getattr(arena, "_allowance_cap", None)
+    return np.zeros(arena.n_dims) if cap is None else cap
 
 
 def _segment_distance(first: NDArray[np.float64], second: NDArray[np.float64]) -> float:
@@ -1101,50 +1154,14 @@ def _segment_distance(first: NDArray[np.float64], second: NDArray[np.float64]) -
 def contains_with_error(
     arena: Arena, query: NDArray[np.float64], error: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
-    if isinstance(arena, _CombinedArena):
-        return np.asarray(
-            np.logical_or.reduce(
-                [contains_with_error(child, query, error) for child in arena.children]
-            ),
-            dtype=np.bool_,
-        )
-    if isinstance(arena, _TransformedArena):
-        original, propagated = arena._project(query, error)
-        return contains_with_error(arena.base, original, propagated)
-    inside = arena.contains(query)
-    rows = np.flatnonzero(~inside)
-    if not len(rows):
-        return inside
-    allowance = np.minimum(error[rows], _feature_cap(arena))
-    if isinstance(arena, OpenArena):
-        distance = shapely.distance(arena.polygon, shapely.points(query[rows]))
-        inside[rows] = distance <= np.hypot.reduce(allowance, axis=1)
-    elif isinstance(arena, MaskArena):
-        snapped = query[rows].copy()
-        for axis, edge in enumerate(arena.edges):
-            right = np.clip(np.searchsorted(edge, snapped[:, axis]), 0, len(edge) - 1)
-            left = np.maximum(right - 1, 0)
-            nearest = np.where(
-                np.abs(snapped[:, axis] - edge[left])
-                < np.abs(snapped[:, axis] - edge[right]),
-                left,
-                right,
-            )
-            close = np.abs(snapped[:, axis] - edge[nearest]) <= allowance[:, axis]
-            snapped[close, axis] = edge[nearest[close]]
-        inside[rows] = arena.contains(snapped)
-    elif isinstance(arena, TrackArena) and arena.width is not None:
-        inside[rows] = _track_distances(
-            arena, query[rows]
-        ) <= arena.width / 2 + np.hypot.reduce(allowance, axis=1)
-    elif isinstance(arena, TrackArena) and arena.n_dims == 1:
-        # A widthless 1-D track holds the closed intervals of its segments.
-        low = arena.segments[:, :, 0].min(axis=1)
-        high = arena.segments[:, :, 0].max(axis=1)
-        values = query[rows, :1]
-        gap = np.maximum(np.maximum(low - values, values - high), 0.0)
-        inside[rows] = np.any(gap <= allowance[:, :1], axis=1)
-    return inside
+    """Test ``(n_points, n_dims)`` points known only to within ``error``.
+
+    A point whose error bound reaches the arena is inside (see
+    :class:`_CappedContainment`); arenas without that rule test the point
+    itself.
+    """
+    within = getattr(arena, "_contains_within", None)
+    return arena.contains(query) if within is None else within(query, error)
 
 
 @dataclass(frozen=True, eq=False)
@@ -1188,6 +1205,23 @@ class _CombinedArena:
         return np.asarray(
             finite
             & np.logical_or.reduce([child.contains(query) for child in self.children]),
+            dtype=np.bool_,
+        )
+
+    @property
+    def _allowance_cap(self) -> NDArray[np.float64]:
+        return np.asarray(
+            np.min([_feature_cap(child) for child in self.children], axis=0),
+            dtype=np.float64,
+        )
+
+    def _contains_within(
+        self, query: NDArray[np.float64], error: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        return np.asarray(
+            np.logical_or.reduce(
+                [contains_with_error(child, query, error) for child in self.children]
+            ),
             dtype=np.bool_,
         )
 

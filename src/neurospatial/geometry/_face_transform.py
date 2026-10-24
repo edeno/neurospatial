@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._arrays import get_centers
 from neurospatial.geometry._binning import KnownFaces, MissingFaces
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._diffusion import FaceGeometry
@@ -37,12 +36,9 @@ def transform_normals(
         vectors, scales[:, None], out=np.zeros_like(vectors), where=scales[:, None] > 0
     )
     lengths = np.hypot.reduce(scaled, axis=1)
-    unit = np.divide(
-        scaled, lengths[:, None], out=np.zeros_like(scaled), where=lengths[:, None] > 0
-    )
     logs = np.zeros(len(vectors))
     logs[active] = np.log(scales[active]) + np.log(lengths[active])
-    return FaceNormals(unit), logs
+    return FaceNormals(_unit_rows(scaled)), logs
 
 
 def _center_vectors(binning: Binning) -> NDArray[np.float64]:
@@ -59,14 +55,7 @@ def _center_vectors(binning: Binning) -> NDArray[np.float64]:
                 )
             return vectors
         return bins.centers[pairs[:, 1]] - bins.centers[pairs[:, 0]]
-    source = frame.source
-    indices = np.unravel_index(np.flatnonzero(source.active_mask), source.shape)
-    centers = np.column_stack(
-        [
-            get_centers(edge)[index]
-            for edge, index in zip(source.edges, indices, strict=True)
-        ]
-    )
+    centers = frame._source_locator().active_centers()
     return np.asarray(
         (centers[pairs[:, 1]] - centers[pairs[:, 0]]) @ frame.forward[:-1, :-1].T,
         dtype=np.float64,

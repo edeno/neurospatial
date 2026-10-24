@@ -73,7 +73,7 @@ def wall_source_frame(
     """
 
     if isinstance(locator, TransformedLocator) and isinstance(arena, _TransformedArena):
-        if np.array_equal(locator.inverse, arena.inverse):
+        if locator.affine.same_as(arena.affine):
             original = (centers - arena.forward[:-1, -1]) @ arena.inverse[:-1, :-1].T
             inner = wall_source_frame(locator.base, arena.base, original)
             if inner is None:
@@ -120,7 +120,7 @@ def wall_source_frame(
                 mapped = unique
                 projection_errors = np.zeros_like(unique)
                 for frame in frames:
-                    mapped, projection_errors = frame._project(
+                    mapped, projection_errors = frame.affine.project(
                         mapped, projection_errors
                     )
                 current_parents = cells_from_locator(locator.base)
@@ -178,17 +178,20 @@ def wall_source_frame(
                             np.linalg.norm(source_errors[parent])
                         )
                         clipped_errors[child] += error
+                        # The projected cell's boundary is known only to
+                        # within ``error``, on either side, so a wall inside
+                        # the parent cell is unresolved when it comes within
+                        # ``error`` of that boundary without reaching deeper
+                        # than ``error`` into the cell.
+                        core = polygon.buffer(-error)
                         for number, wall in enumerate(walls):
                             interior = wall.intersection(cells[parent]).difference(
                                 cells[parent].boundary
                             )
                             if (
                                 interior.length > 0
-                                and interior.intersection(retained)
-                                .difference(retained.boundary)
-                                .length
-                                == 0
-                                and interior.distance(retained) <= error
+                                and interior.intersection(core).length == 0
+                                and interior.distance(polygon.boundary) <= error
                             ):
                                 raise ValueError(
                                     _clearance_message(

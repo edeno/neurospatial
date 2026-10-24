@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
+from neurospatial.geometry._affine import linear_scale
 from neurospatial.geometry._arena import Arena, contains_with_error
 from neurospatial.geometry._arrays import ReadOnlyState, active_order, per_dimension
 from neurospatial.geometry._binning import (
@@ -31,7 +33,7 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
     locate_within,
 )
-from neurospatial.geometry._polygon_cells import ClippedLocator
+from neurospatial.geometry._polygon_cells import WRAPPER_LOCATORS, ClippedLocator
 
 if TYPE_CHECKING:
     from neurospatial.geometry._locators import Locator
@@ -438,12 +440,9 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             if result is None:
                 return None
             matrix, dims = result
-            linear = locator.forward[:-1, :-1]
-            scale = float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
-            normalized = linear / scale
-            if not np.allclose(
-                normalized @ normalized.T, np.eye(len(linear)), rtol=0, atol=1e-12
-            ):
+            measured = linear_scale(locator.forward[:-1, :-1])
+            scale = measured.scale
+            if not measured.is_similarity():
                 raise MissingCellGeometryError(
                     "Combined scalar diffusion requires a similarity transform; use the original coordinates."
                 )
@@ -500,7 +499,7 @@ def composition_view(
 
     if isinstance(locator, CombinedLocator):
         return locator, np.arange(locator.offsets[-1], dtype=np.intp), 1.0
-    if isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
+    if isinstance(locator, WRAPPER_LOCATORS):
         result = composition_view(locator.base)
         if result is None:
             return None
@@ -511,10 +510,72 @@ def composition_view(
         elif isinstance(locator, ClippedLocator):
             indices = indices[locator.mapping.parent_bin_indices]
         else:
-            linear = locator.forward[:-1, :-1]
-            scale *= float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
+            scale *= linear_scale(locator.forward[:-1, :-1]).scale
         return root, indices, scale
     return None
+
+
+class ComponentSelection(NamedTuple):
+    """The bins one component of a combined binning keeps.
+
+    Attributes
+    ----------
+    binning : Binning
+        The component.
+    keep : ndarray of bool, shape (n_component_bins,)
+        Which of its bins are kept.
+    rows : ndarray of intp, shape (n_kept,)
+        The current bin of each kept component bin, in the component's order.
+    """
+
+    binning: Binning
+    keep: NDArray[np.bool_]
+    rows: NDArray[np.intp]
+
+
+def component_selections(
+    root: CombinedLocator, indices: NDArray[np.intp]
+) -> list[ComponentSelection]:
+    """Split current bins among the components of the binning they come from.
+
+    Parameters
+    ----------
+    root : CombinedLocator
+        The combined binning, as :func:`composition_view` finds it.
+    indices : ndarray of intp, shape (n_bins,)
+        For each current bin, the root bin it comes from.
+
+    Returns
+    -------
+    list of ComponentSelection
+        One entry per component that keeps a bin, in component order.
+    """
+    selections = []
+    for child, start, stop in zip(
+        root.children, root.offsets[:-1], root.offsets[1:], strict=True
+    ):
+        rows = np.flatnonzero((indices >= start) & (indices < stop))
+        if len(rows) == 0:
+            continue
+        current = np.full(child.bins.n_bins, -1, dtype=np.intp)
+        current[indices[rows] - start] = rows
+        keep = current >= 0
+        selections.append(ComponentSelection(child, keep, current[keep]))
+    return selections
+
+
+def iter_locators(locator: object) -> Iterator[object]:
+    """Yield ``locator`` and every locator below it, outermost first.
+
+    Below a wrapper is its ``base``; below a combined locator, each
+    component's locator in component order.
+    """
+    yield locator
+    if isinstance(locator, CombinedLocator):
+        for child in locator.children:
+            yield from iter_locators(child.locator)
+    elif isinstance(locator, WRAPPER_LOCATORS):
+        yield from iter_locators(locator.base)
 
 
 def bridge_values(binning: Binning) -> dict[frozenset[int], float]:

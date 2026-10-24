@@ -14,6 +14,8 @@ from shapely.ops import polygonize, unary_union
 from shapely.strtree import STRtree
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import _check_homogeneous
+from neurospatial.geometry._arena import mapped_geometry
 from neurospatial.geometry._arrays import (
     ReadOnlyState,
     active_order,
@@ -25,7 +27,6 @@ from neurospatial.geometry._locators import (
     LookupIndexes,
     SubsetLocator,
     TransformedLocator,
-    _check_homogeneous,
     _lookup_index,
     locate_within,
 )
@@ -241,6 +242,10 @@ class ClippedLocator:
         return result
 
 
+# Locators that wrap one ``base`` locator: they select, move or clip its bins.
+WRAPPER_LOCATORS = (SubsetLocator, TransformedLocator, ClippedLocator)
+
+
 def clip_mapping_of(locator: Locator) -> ClipMapping | None:
     """The latest clip's mapping in the current bin order, or None before clipping.
 
@@ -327,16 +332,7 @@ def transform_polygon_cells(
             "rescale coordinates or provide resolvable polygon geometry",
         )
     geometries = np.asarray([noded[i] for i in range(len(noded))], dtype=object)
-    coordinates = shapely.get_coordinates(geometries)
-    unique, inverse = np.unique(coordinates, axis=0, return_inverse=True)
-    with np.errstate(over="ignore", invalid="ignore"):
-        mapped = unique @ matrix[:2, :2].T + matrix[:2, 2]
-    if not np.all(np.isfinite(mapped)):
-        raise _error(
-            "Transformed polygon vertices exceed floating-point range.",
-            "rescale the coordinate units before transforming",
-        )
-    return PolygonCells(tuple(shapely.set_coordinates(geometries, mapped[inverse])))
+    return PolygonCells(tuple(mapped_geometry(geometries, matrix)))
 
 
 def _polygon_coordinate_errors(polygon: Polygon | MultiPolygon) -> NDArray[np.float64]:

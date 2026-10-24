@@ -77,8 +77,13 @@
   `TransformedLocator(base, forward)` stores the forward map (`inverse` is
   computed). Saved environments use Binning codec 6, rectilinear and
   transformed locator codec 2, nearest locator codec 2 and pickle state
-  format 5; older records are refused, so rebuild them from their source
+  format 6; older records are refused, so rebuild them from their source
   data.
+- A physical wall closer to a bin clipped after a transform than that bin's
+  rounding bound is refused whichever way the transform rounds. Before, the
+  same wall was refused or silently counted inside the bin depending on the
+  last bits of the map. Transformed bins, arenas and rotated grids now map
+  points back through one shared inverse with one rounding bound.
 - Coordinates too far from the origin to resolve the bins now always get the
   "recenter or rescale coordinates" advice. A decoder's own `TypeError` is no
   longer reported as a corrupt file. Hexagon lookup treats infinite
@@ -2807,6 +2812,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- Position lookup in a polygon arena (`from_polygon`) or a masked triangular
+  mesh tests points against a prepared polygon: containment of a million
+  points in a 257-vertex arena takes 0.045 s instead of 0.30 s, with
+  identical results. Clipping to a polygon no longer rescans every piece for
+  each source cell, and `linear_to_nd` gathers segment ends by index instead
+  of one Python lookup per position.
 - Reading an environment's cell polygons, which clipping, re-binning, border
   scores, decoded-probability remapping and arena fitting all do, builds and
   validates the cells in vectorized calls, and skips the overlap test for

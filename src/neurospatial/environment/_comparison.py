@@ -28,9 +28,9 @@ from neurospatial.geometry import (
     SubsetLocator,
     TriangleShapes,
     encode,
-    encode_arena,
     materialize_cells,
 )
+from neurospatial.geometry._codecs import same_encoded_arena
 
 if TYPE_CHECKING:
     from scipy import sparse
@@ -719,15 +719,6 @@ def _same_arena(first: Arena, second: Arena) -> bool:
             and unary_union(first.walls).equals(unary_union(second.walls))
         )
     try:
-        first_meta, first_arrays = encode_arena(first)
-        second_meta, second_arrays = encode_arena(second)
+        return same_encoded_arena(first, second)
     except ValueError:
         return False
-    return (
-        first_meta == second_meta
-        and first_arrays.keys() == second_arrays.keys()
-        and all(
-            np.array_equal(value, second_arrays[key])
-            for key, value in first_arrays.items()
-        )
-    )

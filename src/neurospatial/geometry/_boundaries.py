@@ -11,13 +11,14 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 from neurospatial._exceptions import CartesianOnlyError, _format_error
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.geometry._arena import (
     _CombinedArena,
     _feature_cap,
     _TransformedArena,
     mapped_geometry,
 )
-from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._composition import CombinedLocator, iter_locators
 from neurospatial.geometry._locators import (
     CallIndexes,
     RectilinearLocator,
@@ -99,11 +100,39 @@ def _analysis_boundary(binning: Binning, arena: Arena) -> shapely.Geometry:
                 "boundary_source='physical'",
             )
         ) from exc
+    return _cells_boundary(cells, arena)
+
+
+def _cells_boundary(
+    cells: Sequence[shapely.Geometry], arena: Arena
+) -> shapely.Geometry:
+    """Edges of the union of ``cells`` within the arena domain, plus its walls."""
     domain = unary_union(cells)
     restriction = arena.polygonal_domain() if arena.domain_known else None
     if restriction is not None:
         domain = domain.intersection(restriction)
     return unary_union([domain.boundary, *arena.walls])
+
+
+def _snap_onto_walls(
+    query: NDArray[np.float64],
+    error: NDArray[np.float64],
+    walls: shapely.Geometry,
+    arena: Arena,
+) -> None:
+    """Move finite ``query`` rows within their bounded error of ``walls`` onto them.
+
+    ``query`` and ``error`` have shape ``(n_points, 2)``; ``query`` is
+    updated in place.
+    """
+    finite = np.all(np.isfinite(query), axis=1)
+    points = shapely.points(query[finite])
+    allowance = np.hypot.reduce(np.minimum(error[finite], _feature_cap(arena)), axis=1)
+    close = shapely.distance(points, walls) <= allowance
+    nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
+    query[np.flatnonzero(finite)[close]] = np.column_stack(
+        (shapely.get_x(nearest), shapely.get_y(nearest))
+    )
 
 
 def _resolve_wall_contacts(
@@ -154,11 +183,10 @@ def _resolve_wall_contacts(
     # Distance to the hit, not an overlay of cells with the wall: near-
     # coincident clipped edges intersect a curved wall only in scattered
     # rounded fragments, which can lie far from the hit.
+    cap = _feature_cap(arena)
     budgets = np.array(
         [
-            np.hypot.reduce(
-                np.minimum(_polygon_coordinate_errors(cell), _feature_cap(arena))
-            )
+            np.hypot.reduce(np.minimum(_polygon_coordinate_errors(cell), cap))
             for cell in cells
         ]
     )
@@ -212,10 +240,10 @@ def wall_hit_bins(
         locator: Locator, arena: Arena, centers: NDArray[np.float64]
     ) -> Locator:
         if isinstance(locator, TransformedLocator):
-            if isinstance(arena, _TransformedArena) and np.array_equal(
-                locator.inverse, arena.inverse
+            if isinstance(arena, _TransformedArena) and locator.affine.same_as(
+                arena.affine
             ):
-                original, _error = arena._project(centers)
+                original, _error = arena.affine.project(centers)
                 return source_locator(locator.base, arena.base, original)
             if source == "physical":
                 raise NotImplementedError(
@@ -233,19 +261,17 @@ def wall_hit_bins(
                     PolygonCells(local[0]),
                     locator.mapping,
                 )
-        if isinstance(locator, CombinedLocator) and source == "physical":
-            # A child with its own affine frame has no one shared owner frame.
-            pending = [child.locator for child in locator.children]
-            while pending:
-                child = pending.pop()
-                if isinstance(child, TransformedLocator):
-                    raise NotImplementedError(
-                        "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
-                    )
-                if isinstance(child, (SubsetLocator, ClippedLocator)):
-                    pending.append(child.base)
-                elif isinstance(child, CombinedLocator):
-                    pending.extend(part.locator for part in child.children)
+        # A child with its own affine frame has no one shared owner frame.
+        if (
+            isinstance(locator, CombinedLocator)
+            and source == "physical"
+            and any(
+                isinstance(part, TransformedLocator) for part in iter_locators(locator)
+            )
+        ):
+            raise NotImplementedError(
+                "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
+            )
         return locator
 
     locator = source_locator(binning.locator, arena, binning.bins.centers)
@@ -270,26 +296,13 @@ def wall_hit_bins(
     query = np.vstack((hits, origins))
     error = None
     for arena in frames:
-        query, error = arena._project(query, error)
+        query, error = arena.affine.project(query, error)
     base = frames[-1].base
-    if source == "physical":
-        walls = physical_walls(base)
-    else:
-        domain = unary_union(cells)
-        restriction = base.polygonal_domain() if base.domain_known else None
-        if restriction is not None:
-            domain = domain.intersection(restriction)
-        walls = unary_union([domain.boundary, *base.walls])
+    walls = (
+        physical_walls(base) if source == "physical" else _cells_boundary(cells, base)
+    )
     assert error is not None
-    points = shapely.points(query[: len(hits)])
-    allowance = np.hypot.reduce(
-        np.minimum(error[: len(hits)], _feature_cap(base)), axis=1
-    )
-    close = shapely.distance(points, walls) <= allowance
-    nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
-    query[np.flatnonzero(close)] = np.column_stack(
-        (shapely.get_x(nearest), shapely.get_y(nearest))
-    )
+    _snap_onto_walls(query[: len(hits)], error[: len(hits)], walls, base)
     inside = np.nextafter(query[: len(hits)], query[len(hits) :])
     bins = locator.locate(inside, indexes)
     if base.domain_known:
@@ -306,40 +319,34 @@ def wall_hit_bins(
     )
 
 
-def _physical_evidence(
-    arena: Arena,
-) -> tuple[list[shapely.Geometry], list[shapely.Geometry]]:
-    """Explicit wall lines and asserted footprint polygons in the arena frame."""
+def _physical_footprints(arena: Arena) -> list[shapely.Geometry]:
+    """Asserted footprint polygons in the arena frame, component by component.
 
+    A combined arena gives each component's asserted footprint, even when
+    other components assert none.
+    """
     if isinstance(arena, _CombinedArena):
-        lines: list[shapely.Geometry] = []
-        footprints: list[shapely.Geometry] = []
-        for child in arena.children:
-            child_lines, child_footprints = _physical_evidence(child)
-            lines += child_lines
-            footprints += child_footprints
-        return lines, footprints
+        return [
+            part for child in arena.children for part in _physical_footprints(child)
+        ]
     if isinstance(arena, _TransformedArena):
-        lines, footprints = _physical_evidence(arena.base)
-        return (
-            [mapped_geometry(part, arena.forward) for part in lines],
-            [mapped_geometry(part, arena.forward) for part in footprints],
+        return [
+            mapped_geometry(part, arena.forward)
+            for part in _physical_footprints(arena.base)
+        ]
+    if not arena.physical_footprint_known:
+        return []
+    domain = arena.polygonal_domain()
+    if domain is None:
+        raise NotImplementedError(
+            "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
         )
-    lines = list(arena.walls)
-    footprints = []
-    if arena.physical_footprint_known:
-        domain = arena.polygonal_domain()
-        if domain is None:
-            raise NotImplementedError(
-                "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
-            )
-        footprints.append(domain)
-    return lines, footprints
+    return [domain]
 
 
 def physical_footprint_interior(arena: Arena) -> Interior | None:
     """Closed asserted footprints, or None when only wall lines are known."""
-    footprints = _physical_evidence(arena)[1]
+    footprints = _physical_footprints(arena)
     if not footprints:
         return None
     footprint = unary_union(footprints)
@@ -363,8 +370,12 @@ def analysis_interior(
 
 def physical_walls(arena: Arena) -> shapely.Geometry:
     """Read asserted planar wall evidence independently of analysis bins."""
-    lines, footprints = _physical_evidence(arena)
-    parts = lines + [footprint.boundary for footprint in footprints]
+    # A transformed or combined arena's walls are its components' walls,
+    # mapped, in order.
+    parts = [
+        *arena.walls,
+        *(footprint.boundary for footprint in _physical_footprints(arena)),
+    ]
     if not parts:
         raise NotImplementedError(
             "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. "
@@ -401,13 +412,7 @@ def _ray_segments(
     origins: NDArray[np.float64], angles: NDArray[np.float64], max_distance: float
 ) -> tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.float64]]:
     """Validate rays and return only finite starts and finite search endpoints."""
-    if (
-        isinstance(max_distance, (bool, np.bool_))
-        or not isinstance(max_distance, (int, float, np.integer, np.floating))
-        or not np.isfinite(max_distance)
-        or max_distance <= 0
-    ):
-        raise ValueError("max_distance must be finite and positive.")
+    validate_finite_scalar(max_distance, name="max_distance", positive=True)
     if origins.ndim != 2 or origins.shape[1] != 2 or angles.shape != (len(origins),):
         raise ValueError(
             "Ray positions must have shape (n_time, 2) and directions (n_time,)."
@@ -568,21 +573,10 @@ def _wall_frame(
     error = None
     while isinstance(arena, _TransformedArena):
         frames.append(arena)
-        query, error = arena._project(query, error)
+        query, error = arena.affine.project(query, error)
         arena = arena.base
     if error is not None:
-        walls = physical_walls(arena)
-        finite = np.all(np.isfinite(query), axis=1)
-        points = shapely.points(query[finite])
-        allowance = np.hypot.reduce(
-            np.minimum(error[finite], _feature_cap(arena)), axis=1
-        )
-        close = shapely.distance(points, walls) <= allowance
-        nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
-        selected = np.flatnonzero(finite)[close]
-        query[selected] = np.column_stack(
-            (shapely.get_x(nearest), shapely.get_y(nearest))
-        )
+        _snap_onto_walls(query, error, physical_walls(arena), arena)
     return arena, query, frames
 
 

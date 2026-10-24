@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -12,6 +13,7 @@ from neurospatial.geometry._binning import Binning, TrackLinearization
 from neurospatial.geometry._locators import (
     HexLocator,
     MeshLocator,
+    RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
 )
@@ -69,39 +71,65 @@ def grid_index(binning: Binning) -> GridIndex:
     track = binning.linearization
     if isinstance(track, TrackLinearization):
         return GridIndex(track.grid_edges, track.active_mask.shape, track.active_mask)
-    lattice = _lattice(binning.locator)
-    if lattice is not None:
-        shape, mapping = lattice
-        mask = (mapping >= 0).reshape(shape)
+    lattice = cell_lattice(binning.locator)
+    if lattice is not None and lattice.kind != "grid":
+        mask = (lattice.flat_to_active >= 0).reshape(lattice.shape)
         mask.setflags(write=False)
-        return GridIndex((), shape, mask)
+        return GridIndex((), lattice.shape, mask)
     flat_mask = np.ones(binning.bins.n_bins, dtype=bool)
     flat_mask.setflags(write=False)
     return GridIndex((), (binning.bins.n_bins,), flat_mask)
 
 
-def _lattice(locator: object) -> tuple[tuple[int, ...], NDArray[np.intp]] | None:
-    """Hexagon or triangle lattice of a locator, through maps and subsets.
+class CellLattice(NamedTuple):
+    """The logical cell lattice a locator's bins come from.
+
+    Attributes
+    ----------
+    kind : {"grid", "hex", "triangle"}
+        Rectangular cells with orthogonal neighbors, hexagons with six
+        neighbors, or the triangles of a mesh.
+    shape : tuple of int
+        Logical lattice shape; ``(n_triangles,)`` for a mesh.
+    flat_to_active : ndarray of intp, shape (prod(shape),)
+        Current bin index of each lattice cell in row-major order, or -1.
+    """
+
+    kind: Literal["grid", "hex", "triangle"]
+    shape: tuple[int, ...]
+    flat_to_active: NDArray[np.intp]
+
+
+def cell_lattice(locator: object) -> CellLattice | None:
+    """The cell lattice of a locator's bins, through affine maps and subsets.
+
+    An affine map keeps each cell's place in the lattice and a subset keeps
+    some cells, so both keep the lattice. Clipping makes new cells, so a
+    clipped locator has none.
 
     Returns
     -------
-    tuple or None
-        The lattice shape and, for each lattice cell in row-major order, its
-        current bin index or -1; None when the bins have no such lattice.
+    CellLattice or None
+        A writable lattice of the current bins; None when they have none.
     """
+    if isinstance(locator, RectilinearLocator):
+        return CellLattice("grid", locator.shape, locator.flat_to_active.copy())
     if isinstance(locator, HexLocator):
-        return tuple(locator.centers_shape), locator.flat_to_active
+        return CellLattice(
+            "hex", tuple(locator.centers_shape), locator.flat_to_active.copy()
+        )
     if isinstance(locator, MeshLocator):
-        return (len(locator.simplices),), locator.simplex_to_active
+        return CellLattice(
+            "triangle", (len(locator.simplices),), locator.simplex_to_active.copy()
+        )
     if isinstance(locator, TransformedLocator):
-        return _lattice(locator.base)
+        return cell_lattice(locator.base)
     if isinstance(locator, SubsetLocator):
-        parent = _lattice(locator.base)
-        if parent is None:
-            return None
-        shape, mapping = parent
-        child = np.full(mapping.shape, -1, dtype=np.intp)
-        inside = mapping >= 0
-        child[inside] = locator.parent_to_child[mapping[inside]]
-        return shape, child
+        lattice = cell_lattice(locator.base)
+        if lattice is not None:
+            # Compose the subset map without indexing the -1 sentinel.
+            mapping = lattice.flat_to_active
+            inside = mapping >= 0
+            mapping[inside] = locator.parent_to_child[mapping[inside]]
+        return lattice
     return None

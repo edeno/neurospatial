@@ -65,6 +65,7 @@ from neurospatial.geometry._locators import (
 )
 from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon_cells import (
+    WRAPPER_LOCATORS,
     ClipMapping,
     ClippedLocator,
     PolygonCells,
@@ -220,6 +221,22 @@ def _arrays(prefix: str, **values: NDArray[Any]) -> dict[str, NDArray[Any]]:
     }
 
 
+def _nested(arrays: Mapping[str, NDArray[Any]], prefix: str) -> dict[str, NDArray[Any]]:
+    """Store a nested record's arrays under ``prefix/``."""
+    return {f"{prefix}/{key}": value for key, value in arrays.items()}
+
+
+def _unnested(
+    arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> dict[str, NDArray[Any]]:
+    """Read back the arrays a nested record stored under ``prefix/``."""
+    return {
+        key.removeprefix(f"{prefix}/"): value
+        for key, value in arrays.items()
+        if key.startswith(f"{prefix}/")
+    }
+
+
 def _array(
     arrays: Mapping[str, NDArray[Any]], prefix: str, name: str, dtype: Any
 ) -> NDArray[Any]:
@@ -356,12 +373,20 @@ def _decode_missing(
     return MissingFaces(meta["reason"])
 
 
-def _encode_grid(obj: RectilinearGrid, prefix: str) -> Payload:
+def _cell_arrays(
+    edges: Sequence[NDArray[np.float64]], active_mask: NDArray[np.bool_]
+) -> dict[str, NDArray[Any]]:
     values: dict[str, NDArray[Any]] = {
-        f"edges_{axis}": edge for axis, edge in enumerate(obj.edges)
+        f"edges_{axis}": edge for axis, edge in enumerate(edges)
     }
-    values["active_mask"] = obj.active_mask
-    return {"shape": list(obj.shape)}, _arrays(prefix, **values)
+    values["active_mask"] = active_mask
+    return values
+
+
+def _encode_grid(obj: RectilinearGrid | RectilinearLocator, prefix: str) -> Payload:
+    return {"shape": list(obj.shape)}, _arrays(
+        prefix, **_cell_arrays(obj.edges, obj.active_mask)
+    )
 
 
 def _decode_grid(
@@ -394,10 +419,7 @@ def _refuse_json_attributes(graph: nx.Graph) -> None:
 
 def _encode_track(obj: TrackLinearization, prefix: str) -> Payload:
     _refuse_json_attributes(obj.graph)
-    values: dict[str, NDArray[Any]] = {
-        f"edges_{axis}": edge for axis, edge in enumerate(obj.grid_edges)
-    }
-    values["active_mask"] = obj.active_mask
+    values = _cell_arrays(obj.grid_edges, obj.active_mask)
     return {
         "graph": graph_to_node_link(obj.graph),
         "edge_order": obj.edge_order,
@@ -601,14 +623,6 @@ def _decode_outline(
     return Outline(geometry)
 
 
-def _encode_rectilinear_locator(obj: RectilinearLocator, prefix: str) -> Payload:
-    values: dict[str, NDArray[Any]] = {
-        f"edges_{axis}": edge for axis, edge in enumerate(obj.edges)
-    }
-    values["active_mask"] = obj.active_mask
-    return {"shape": list(obj.shape)}, _arrays(prefix, **values)
-
-
 def _decode_rectilinear_locator(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> RectilinearLocator:
@@ -736,7 +750,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         reference(obj.shapes)
 
     def locator_payload(locator: object, path: str) -> Payload:
-        if not isinstance(locator, (ClippedLocator, SubsetLocator, TransformedLocator)):
+        if not isinstance(locator, WRAPPER_LOCATORS):
             return encode(locator, path)
         base, nested = locator_payload(locator.base, f"{path}/base")
         local: dict[str, Any] = {
@@ -1047,9 +1061,7 @@ def _encode_combined(obj: CombinedLocator, prefix: str) -> Payload:
         arena_meta, arena_arrays = encode_arena(arena)
         entries.append({"binning": child_meta, "arena": arena_meta})
         arrays.update(child_arrays)
-        arrays.update(
-            {f"{path}/arena/{key}": value for key, value in arena_arrays.items()}
-        )
+        arrays.update(_nested(arena_arrays, f"{path}/arena"))
     return {"keys": list(obj.keys), "children": entries}, arrays
 
 
@@ -1067,16 +1079,7 @@ def _decode_combined(
         if not isinstance(child, Binning):
             raise ValueError("Combined child must be a binning snapshot.")
         children.append(child)
-        arenas.append(
-            decode_arena(
-                entry["arena"],
-                {
-                    key.removeprefix(f"{path}/arena/"): value
-                    for key, value in arrays.items()
-                    if key.startswith(f"{path}/arena/")
-                },
-            )
-        )
+        arenas.append(decode_arena(entry["arena"], _unnested(arrays, f"{path}/arena")))
     return CombinedLocator(
         tuple(meta["keys"]),
         tuple(children),
@@ -1161,7 +1164,7 @@ _CODECS: dict[str, Codec] = {
     ),
     "RectilinearLocator": Codec(
         RectilinearLocator,
-        _encode_rectilinear_locator,
+        _encode_grid,
         _decode_rectilinear_locator,
         version=2,
     ),
@@ -1218,9 +1221,7 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
         for index, child in enumerate(arena.children):
             entry, values = encode_arena(child)
             entries.append(entry)
-            arrays.update(
-                {f"children/{index}/{key}": value for key, value in values.items()}
-            )
+            arrays.update(_nested(values, f"children/{index}"))
         meta["children"] = entries
     elif type(arena) is UnknownArena:
         meta.update(n_dims=arena.n_dims, coordinate_kind=arena.coordinate_kind)
@@ -1255,13 +1256,33 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
         base_meta, base_arrays = encode_arena(arena.base)
         meta["base"] = base_meta
         arrays["forward"] = arena.forward.copy()
-        arrays.update({f"base/{key}": value for key, value in base_arrays.items()})
+        arrays.update(_nested(base_arrays, "base"))
     else:
         raise _error(
             f"Cannot encode unregistered arena type {type(arena).__name__!r}.",
             "use a built-in arena type with a supported codec",
         )
     return meta, arrays
+
+
+def same_encoded_arena(first: Arena, second: Arena) -> bool:
+    """Whether two arenas encode to the same record.
+
+    Raises
+    ------
+    ValueError
+        If either arena has no codec.
+    """
+    first_meta, first_arrays = encode_arena(first)
+    second_meta, second_arrays = encode_arena(second)
+    return (
+        first_meta == second_meta
+        and first_arrays.keys() == second_arrays.keys()
+        and all(
+            np.array_equal(value, second_arrays[key])
+            for key, value in first_arrays.items()
+        )
+    )
 
 
 def _count(meta: Mapping[str, Any], name: str, *, minimum: int = 0) -> int:
@@ -1331,15 +1352,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
     _check_arena_nesting(meta)
     try:
         kind = meta.get("codec")
-        if isinstance(kind, str) and kind not in {
-            "UnknownArena",
-            "OpenArena",
-            "MaskArena",
-            "TrackArena",
-            "EgocentricSurround",
-            "_TransformedArena",
-            "_CombinedArena",
-        }:
+        if isinstance(kind, str) and kind not in _ARENA_NAMES:
             snapshot = _decode_snapshot(meta, arrays, "")
             if not isinstance(snapshot, Arena):
                 raise ValueError("The installed adapter must decode an arena snapshot.")
@@ -1353,14 +1366,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
         if kind == "_CombinedArena":
             return _CombinedArena(
                 tuple(
-                    decode_arena(
-                        entry,
-                        {
-                            key.removeprefix(f"children/{index}/"): value
-                            for key, value in arrays.items()
-                            if key.startswith(f"children/{index}/")
-                        },
-                    )
+                    decode_arena(entry, _unnested(arrays, f"children/{index}"))
                     for index, entry in enumerate(meta["children"])
                 )
             )
@@ -1401,13 +1407,8 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
                 _boolean(meta["circular"], "circular"),
             )
         if kind == "_TransformedArena":
-            base_arrays = {
-                key.removeprefix("base/"): value
-                for key, value in arrays.items()
-                if key.startswith("base/")
-            }
             return _TransformedArena(
-                decode_arena(meta["base"], base_arrays), arrays["forward"]
+                decode_arena(meta["base"], _unnested(arrays, "base")), arrays["forward"]
             )
         raise _error(
             f"Unknown arena codec {kind!r}.",
@@ -1419,23 +1420,23 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
         ) from exc
 
 
-def _arena_types() -> tuple[type[Any], ...]:
-    return (
-        UnknownArena,
-        OpenArena,
-        MaskArena,
-        TrackArena,
-        EgocentricSurround,
-        _TransformedArena,
-        _CombinedArena,
-    )
+_ARENA_TYPES: tuple[type[Arena], ...] = (
+    UnknownArena,
+    OpenArena,
+    MaskArena,
+    TrackArena,
+    EgocentricSurround,
+    _TransformedArena,
+    _CombinedArena,
+)
+_ARENA_NAMES = frozenset(kind.__name__ for kind in _ARENA_TYPES)
 
 
 @lru_cache(maxsize=1)
 def _snapshot_adapters() -> tuple[SnapshotAdapter, ...]:
     """Discover installed objects once, rejecting ambiguous declarations."""
 
-    reserved = set(_CODECS) | {kind.__name__ for kind in _arena_types()}
+    reserved = set(_CODECS) | _ARENA_NAMES
     adapters: list[SnapshotAdapter] = []
     names: set[str] = set()
     providers: set[tuple[type[Any], str]] = set()
@@ -1479,7 +1480,7 @@ def _snapshot_adapters() -> tuple[SnapshotAdapter, ...]:
 def _normalize_snapshot(value: object, role: _SnapshotRole) -> object:
     """Validate an adapter result and rebuild owned canonical data records."""
     if role == "arena":
-        if type(value) not in _arena_types():
+        if type(value) not in _ARENA_TYPES:
             raise ValueError("snapshot adapters must return a built-in arena record.")
         meta, arrays = encode_arena(cast("Arena", value))
         return decode_arena(meta, arrays)

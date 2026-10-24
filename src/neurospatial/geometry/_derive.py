@@ -7,9 +7,10 @@ from dataclasses import replace
 
 import numpy as np
 from numpy.typing import NDArray
-from shapely.affinity import affine_transform
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import _check_homogeneous, linear_scale
+from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import (
     active_order,
     mask_active_map,
@@ -27,7 +28,11 @@ from neurospatial.geometry._capabilities import (
     RectilinearGrid,
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
-from neurospatial.geometry._composition import CombinedLocator, bridge_values
+from neurospatial.geometry._composition import (
+    CombinedLocator,
+    bridge_values,
+    component_selections,
+)
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._explicit import cell_extent, union_extent
 from neurospatial.geometry._face_normals import FaceNormals
@@ -42,7 +47,6 @@ from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
-    _check_homogeneous,
 )
 from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import materialize_cells
@@ -278,16 +282,12 @@ def _combined_extent(
         locator = locator.base
     if not isinstance(locator, CombinedLocator):
         return None
-    parts = []
-    for child, start, stop in zip(
-        locator.children, locator.offsets[:-1], locator.offsets[1:], strict=True
-    ):
-        local = mapping[(mapping >= start) & (mapping < stop)] - start
-        if len(local):
-            child_keep = np.zeros(child.bins.n_bins, dtype=bool)
-            child_keep[local] = True
-            parts.append(select_bins(child, child_keep).dimension_ranges)
-    return union_extent(parts)
+    return union_extent(
+        [
+            select_bins(selection.binning, selection.keep).dimension_ranges
+            for selection in component_selections(locator, mapping)
+        ]
+    )
 
 
 def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:
@@ -309,20 +309,16 @@ def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:
 
 def _classification(linear: NDArray[np.float64]) -> tuple[str, float, float]:
     """Classify with exact axes and a scale-independent Gram residual."""
-    n_dims = len(linear)
-    if np.array_equal(linear, np.eye(n_dims)):
+    if np.array_equal(linear, np.eye(len(linear))):
         return "translation", 1.0, 0.0
-    _, logdet = np.linalg.slogdet(linear)
-    scale = math.exp(float(logdet) / n_dims)
-    normalized = linear / scale
-    # Strong anisotropy can overflow the Gram product without being singular.
-    with np.errstate(over="ignore", invalid="ignore"):
-        residual = np.max(np.abs(normalized @ normalized.T - np.eye(n_dims)))
-    if residual <= 1e-12:
-        return "similarity", scale, float(logdet)
-    if np.array_equal(linear, np.diag(np.diag(linear))):
-        return "axis-aligned scaling", scale, float(logdet)
-    return "general affine transform", scale, float(logdet)
+    measured = linear_scale(linear)
+    if measured.is_similarity():
+        kind = "similarity"
+    elif np.array_equal(linear, np.diag(np.diag(linear))):
+        kind = "axis-aligned scaling"
+    else:
+        kind = "general affine transform"
+    return kind, measured.scale, measured.logdet
 
 
 def _mapped(
@@ -605,19 +601,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "the stored outline is a planar polygon",
                 "use a two-dimensional transform for this environment",
             )
-        outline = Outline(
-            affine_transform(
-                outline.geometry,
-                [
-                    linear[0, 0],
-                    linear[0, 1],
-                    linear[1, 0],
-                    linear[1, 1],
-                    matrix[0, -1],
-                    matrix[1, -1],
-                ],
-            )
-        )
+        outline = Outline(affine_geometry(outline.geometry, matrix))
     track = binning.linearization
     if track is not None:
         if isinstance(track, TrackLinearization):

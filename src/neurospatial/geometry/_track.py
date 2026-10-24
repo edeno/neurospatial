@@ -168,17 +168,13 @@ def project_1d_to_2d(
         dtype=float,
     )
 
-    if isinstance(edge_spacing, (int, float, np.number)):
-        gaps = np.full(max(0, n_edges - 1), float(edge_spacing))
-    else:
-        gaps = np.asarray(edge_spacing, dtype=float)
-        if gaps.size != max(0, n_edges - 1):
-            raise ValueError("edge_spacing length must be len(edge_order)-1")
+    if not isinstance(edge_spacing, (int, float, np.number)) and np.size(
+        edge_spacing
+    ) != max(0, n_edges - 1):
+        raise ValueError("edge_spacing length must be len(edge_order)-1")
 
-    # cumulative start position of each edge
-    cumulative_edge_start_position = np.concatenate(
-        [[0.0], np.cumsum(edge_lengths[:-1] + gaps)],
-    )  # shape (n_edges,)
+    # cumulative start position of each edge, shape (n_edges,)
+    cumulative_edge_start_position = _segment_starts(graph, edge_order, edge_spacing)
 
     # The last edge starting at or before each position; positions before the
     # first edge start on edge 0 and are rejected below.
@@ -214,12 +210,12 @@ def project_1d_to_2d(
 
     # gather endpoint coordinates
     node_position_2d = nx.get_node_attributes(graph, "pos")
-    start_node_position_2d = np.array(
-        [node_position_2d[edge_order[int(i)][0]] for i in edge_ind],
-    )
-    end_node_position_2d = np.array(
-        [node_position_2d[edge_order[int(i)][1]] for i in edge_ind],
-    )
+    start_node_position_2d = np.array([node_position_2d[u] for u, _ in edge_order])[
+        edge_ind
+    ]
+    end_node_position_2d = np.array([node_position_2d[v] for _, v in edge_order])[
+        edge_ind
+    ]
 
     # Linear interpolation between endpoints
     position_2d = (
@@ -268,11 +264,7 @@ def track_cell_ends(
     """
     order = list(edge_order)
     lengths = np.array([graph.edges[e]["distance"] for e in order], dtype=float)
-    if isinstance(edge_spacing, (int, float, np.number)):
-        gaps = np.full(max(0, len(order) - 1), float(edge_spacing))
-    else:
-        gaps = np.asarray(edge_spacing, dtype=float)
-    starts = np.concatenate([[0.0], np.cumsum(lengths[:-1] + gaps)])
+    starts = _segment_starts(graph, order, edge_spacing)
     low = np.asarray(linear_edges[:-1], dtype=float)[active_mask]
     high = np.asarray(linear_edges[1:], dtype=float)[active_mask]
     segment = np.clip(

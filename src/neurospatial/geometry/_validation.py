@@ -12,10 +12,11 @@ import numpy as np
 import shapely
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
-from shapely.affinity import affine_transform
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import linear_scale
+from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import active_order, get_centers, per_dimension
 from neurospatial.geometry._binning import (
     Binning,
@@ -265,11 +266,6 @@ def _uniform_grid_widths(
     )
 
 
-def _stored_cells(locator: Locator) -> tuple[Polygon, ...]:
-    """Recover parent cell bounds to validate a clipped locator's containment."""
-    return cells_from_locator(locator)
-
-
 def _rectilinear_geometry(
     locator: RectilinearLocator,
     coordinate_kind: Literal["cartesian", "polar"],
@@ -367,7 +363,7 @@ def _primitive_geometry(
             raise ValueError(
                 "clipped mapping parent count disagrees with its base locator."
             )
-        source = _stored_cells(locator.base)
+        source = cells_from_locator(locator.base)
         polygons = locator.cells.polygons
         parent_clearances = [polygon.minimum_clearance for polygon in source]
         clearances = [polygon.minimum_clearance for polygon in polygons]
@@ -541,13 +537,11 @@ def _locator_geometry(
     arithmetic = rounding + float(
         np.sum(np.abs(locator.inverse[:-1, :-1].T) * linear_error)
     )
-    sign, logdet = np.linalg.slogdet(linear)
-    scale = math.exp(float(logdet) / n_dims)
+    measured = linear_scale(linear)
+    sign, logdet, scale = measured.sign, measured.logdet, measured.scale
     normalized = linear / scale
     normalized_error = float(np.max(linear_error)) / scale
-    similarity = np.max(np.abs(normalized @ normalized.T - np.eye(n_dims))) <= (
-        1e-12 + 8 * normalized_error
-    )
+    similarity = measured.is_similarity(slack=8 * normalized_error)
     cell_dims = geometry.measure_dims
     lowest = (
         int(cell_dims.min())
@@ -628,17 +622,7 @@ def _locator_geometry(
             shift_error,
         )
         geometry.boundary_error = float(np.max(errors))
-        geometry.boundary = affine_transform(
-            geometry.boundary,
-            [
-                linear[0, 0],
-                linear[0, 1],
-                linear[1, 0],
-                linear[1, 1],
-                matrix[0, -1],
-                matrix[1, -1],
-            ],
-        )
+        geometry.boundary = affine_geometry(geometry.boundary, matrix)
     if geometry.radius > 0:
         geometry.shapes_supported &= bool(similarity and sign > 0)
         geometry.radius *= scale
@@ -1086,20 +1070,18 @@ def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> Non
         _validate_rectilinear_faces(binning, geometry)
         _validate_cell_faces(binning, geometry)
     if grid is not None:
-        if isinstance(locator, RectilinearLocator):
-            grid_locator = locator
-        else:
+        if not isinstance(locator, RectilinearLocator):
             raise ValueError(
                 "rectilinear geometry needs a matching rectilinear locator."
             )
-        _equal(grid.shape, grid_locator.shape, "rectilinear shape")
-        if len(grid.edges) != len(grid_locator.edges):
+        _equal(grid.shape, locator.shape, "rectilinear shape")
+        if len(grid.edges) != len(locator.edges):
             raise ValueError("rectilinear edges do not match locator edges.")
         for axis, (actual, expected) in enumerate(
-            zip(grid.edges, grid_locator.edges, strict=True)
+            zip(grid.edges, locator.edges, strict=True)
         ):
             _equal(actual, expected, f"rectilinear edges[{axis}]")
-        _equal(grid.active_mask, grid_locator.active_mask, "rectilinear active_mask")
+        _equal(grid.active_mask, locator.active_mask, "rectilinear active_mask")
     if (
         shapes is not None
         and not geometry.shapes_supported
