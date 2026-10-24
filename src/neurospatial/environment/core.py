@@ -5341,6 +5341,18 @@ class Environment(Generic[_C]):
             bins, or a polygon region is used in an environment that is not
             2-D.
 
+        Notes
+        -----
+        On an egocentric polar environment, a polygon region is read in the
+        environment's own ``(distance, angle)`` coordinates, as ``bin_at``
+        reads positions: x is distance and y is angle in radians, so a box is
+        a wedge of a distance band. The polygon is not wrapped around the
+        circle. It is tested against bin-center angles inside
+        ``angle_range``, so a wedge across the ±π seam of a full circle must
+        be two regions, one at each end of the range (``region_mask`` of the
+        pair gives their union). A point region is located like any position,
+        with its angle wrapped into ``angle_range``.
+
         Examples
         --------
         >>> import numpy as np
@@ -5427,6 +5439,17 @@ class Environment(Generic[_C]):
         **Region Types**:
         - Polygon regions: bins whose centers lie inside (covers/contains).
         - Point regions: the one bin that contains the point.
+
+        **Polar Environments**:
+        On an egocentric polar environment, a polygon region is read in the
+        environment's own ``(distance, angle)`` coordinates, as ``bin_at``
+        reads positions: x is distance and y is angle in radians, so a box is
+        a wedge of a distance band. The polygon is not wrapped around the
+        circle. It is tested against bin-center angles inside
+        ``angle_range``, so a wedge across the ±π seam of a full circle must
+        be two regions, one at each end of the range (``region_mask`` of the
+        pair gives their union). A point region is located like any position,
+        with its angle wrapped into ``angle_range``.
 
         This is the same rule as :meth:`bins_in_region`, :meth:`region_mask`
         and ``distance_to(region=...)``.
@@ -5539,6 +5562,16 @@ class Environment(Generic[_C]):
         A list of regions gives their union. For an intersection or a
         difference, combine separate masks with ``&`` and ``~`` (see the last
         example).
+
+        On an egocentric polar environment, a polygon region is read in the
+        environment's own ``(distance, angle)`` coordinates, as ``bin_at``
+        reads positions: x is distance and y is angle in radians, so a box is
+        a wedge of a distance band. The polygon is not wrapped around the
+        circle. It is tested against bin-center angles inside
+        ``angle_range``, so a wedge across the ±π seam of a full circle must
+        be two regions, one at each end of the range (``region_mask`` of the
+        pair gives their union). A point region is located like any position,
+        with its angle wrapped into ``angle_range``.
 
         Examples
         --------

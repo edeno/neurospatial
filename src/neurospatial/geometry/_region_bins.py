@@ -32,7 +32,10 @@ def polygon_bin_mask(
     Parameters
     ----------
     polygon : shapely geometry
-        Area in the same 2-D coordinates as ``centers``.
+        Area in the same 2-D coordinates as ``centers``. For polar
+        ``(distance, angle)`` centers it is a shape in those coordinates and
+        is not wrapped around the circle: a wedge across the angle range's
+        seam selects only the centers on the side it covers.
     centers : ndarray of float64, shape (n_bins, 2)
         Bin centers.
     include_boundary : bool, default=True
@@ -90,6 +93,12 @@ def region_bin_mask(
     point is outside the environment). A polygon region covers the bins whose
     centers lie inside it; ``include_boundary`` decides a center exactly on
     the edge. Every region query of an environment uses this rule.
+
+    Both are read in the bins' own coordinates. For polar
+    ``(distance, angle)`` bins, a point's angle is wrapped into the angle
+    range as for any position, but a polygon is not wrapped: it is tested
+    against bin-center angles inside the range, so a wedge across the seam
+    of a full circle needs two regions, one at each end.
 
     Parameters
     ----------
