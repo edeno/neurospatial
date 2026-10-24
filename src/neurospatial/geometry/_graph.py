@@ -139,20 +139,43 @@ def graph_from_binning(
 ) -> _G:
     """Build navigation attributes without changing bin or neighbor-pair order.
 
-    Graph vectors follow graph edge orientation, from the lower to the higher
-    bin ID. They are physical displacements between the bin centers placed by
-    ``coordinates.cartesian_embedding``: the centers themselves for Cartesian
-    bins, and the animal's egocentric plane (x ahead, y left) for
-    ``(distance, angle)`` bins, so the angle seam needs no wrapping. Edge IDs identify the original pair-array rows; source-grid IDs
-    preserve logical indexing when available. Track bins also carry their
-    linear position (``pos_1D``) and track-graph edge (``source_edge_id``).
-    Derivations preserving existing graph metadata keep that separate from
-    this projection of newly constructed bin data.
+    Parameters
+    ----------
+    binning : Binning
+        Bins and neighbor pairs to project.
+    coordinates : CoordinateSystem, default=CartesianSystem()
+        Coordinate system of the bin centers. Its ``cartesian_embedding``
+        places the centers for edge vectors: the centers themselves for
+        Cartesian bins, and the animal's egocentric plane (x ahead, y left)
+        for ``(distance, angle)`` bins, so the angle seam needs no wrapping.
+    graph_class : type of networkx.Graph, default=networkx.Graph
+        Empty-constructible graph type to fill.
+    attributes : callable, default=dict
+        Makes each node's and edge's attribute mapping from keyword
+        arguments, once; an undirected edge shares one mapping in both
+        directions, as ``networkx`` stores it.
 
-    ``graph_class`` is the (empty-constructible) graph type to fill, and
-    ``attributes`` makes each node's and edge's attribute mapping from keyword
-    arguments, once; an undirected edge shares one mapping in both directions,
-    as ``networkx`` stores it.
+    Returns
+    -------
+    graph : networkx.Graph
+        One node per bin, in bin order, and one edge per row of
+        ``binning.connections.pairs``. Every node has ``pos`` (its center,
+        length ``n_dims``), ``source_grid_flat_index`` and
+        ``original_grid_nd_index`` (the bin's cell in its source grid when
+        the locator records one, else the bin index). Track bins also carry
+        their linear position ``pos_1D`` and track-graph edge
+        ``source_edge_id`` (-1 in a gap cell), but only when every active
+        linear cell is a bin and the cell edges follow the track's segments;
+        otherwise those two attributes are absent.
+
+        Every edge has ``distance`` (the stored pair distance), ``vector``
+        (the embedded displacement from the lower to the higher bin index)
+        and ``edge_id`` (the edge's row in ``binning.connections.pairs``,
+        which lists each neighbor pair once). Edges of 2-D bins also carry
+        ``angle_2d``, ``arctan2`` of ``vector`` in radians: an allocentric
+        direction (0 = East, +π/2 = North) for Cartesian bins, and an
+        egocentric one (0 = ahead, +π/2 = left) for ``(distance, angle)``
+        bins.
     """
     bins = binning.bins
     centers = bins.centers

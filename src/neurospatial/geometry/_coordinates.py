@@ -53,7 +53,12 @@ class CoordinateSystem(Protocol):
         ...
 
     def squared_distances(self, centers: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Squared physical distances between every pair of points, ``(n, n)``."""
+        """Squared physical distances between every pair of points, ``(n, n)``.
+
+        The distance is the straight line between the places, except that a
+        path never crosses an open angular seam (see
+        :meth:`EgocentricPolarSystem.squared_distances`).
+        """
         ...
 
     def length_ranges(
@@ -153,7 +158,7 @@ class EgocentricPolarSystem:
 
         The places lie in the animal's plane (see :meth:`cartesian_embedding`)
         and the distance is the straight line between them, the chord
-        ``r1² + r2² - 2 r1 r2 cos(Δθ)``, so ``bandwidth`` is one physical
+        whose square is ``r1² + r2² - 2 r1 r2 cos(Δθ)``, so ``bandwidth`` is one physical
         length. An open angular axis cuts the plane along its seam (the
         angles outside the range), and smoothing must not cross a cut the
         caller left open: when the straight line between two places would

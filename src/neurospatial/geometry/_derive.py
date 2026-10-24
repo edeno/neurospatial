@@ -465,8 +465,9 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "rescale the coordinate units before applying the transform",
             )
     else:
-        # Keep the existing center-based calculation, including its rounding,
-        # for native Euclidean connectivity.
+        # Euclidean connectivity distances are the separations of the mapped
+        # centers, computed as a fresh build would, so the record agrees with
+        # its own centers to the last bit.
         distances = np.linalg.norm(
             centers[all_pairs[:, 1]] - centers[all_pairs[:, 0]], axis=1
         )

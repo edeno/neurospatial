@@ -473,9 +473,10 @@ class TransformedLocator(ReadOnlyState):
 
     In a binning with a ``grid_frame`` (a rotated or sheared grid), the
     binning gives this locator its frame. Points are then assigned by the
-    frame's half-open source cells, with points on a cell face within the
-    map's roundoff snapped onto it, the rule linear time allocation uses, so
-    a point on a face shared by two cells belongs to the cell above it.
+    frame's source cells, with points on a cell face within the map's
+    roundoff snapped onto it, the rule linear time allocation uses: a point
+    on a face shared by two cells belongs to the cell above it, and a point
+    on the outline of the active cells belongs to the cell it bounds.
     Without a frame, the parent locator owns the inverse-mapped point.
 
     Parameters

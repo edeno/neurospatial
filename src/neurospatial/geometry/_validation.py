@@ -124,8 +124,9 @@ def _polygon_area_allowance(
     -------
     float
         Boundary variation times directional coordinate uncertainty, including
-        second-order corner terms. The budget is capped by the actual area and
-        by the containing reference's smallest feature.
+        second-order corner terms. The budget is capped at ``1e-4`` of the
+        polygon's area and at ``reference_clearance**2 / 16``, a quarter of
+        the containing reference's smallest feature squared.
 
     Raises
     ------
@@ -224,7 +225,13 @@ def _grid_width_errors(
 def _uniform_grid_widths(
     edges: tuple[NDArray[np.float64], ...], widths: list[NDArray[np.float64]]
 ) -> bool:
-    """Use the existing saved-grid uniformity condition for quantized edges."""
+    """Whether each axis has equal cell widths, up to rounding of its edges.
+
+    A uniform grid's builder measures every cell with the axis's first
+    width, which differs from the per-cell edge differences by rounding. The
+    tolerance is ``1e-7`` of the first width plus four ULPs of the largest
+    edge, because edges far from the origin quantize their differences.
+    """
     return all(
         np.max(np.abs(axis - axis[0]))
         <= 1e-7 * axis[0] + 4 * np.spacing(np.max(np.abs(edge)))
@@ -284,8 +291,8 @@ def _rectilinear_geometry(
             [axis[index] for axis, index in zip(width_errors, coordinates, strict=True)]
         ),
     )
-    # Native grids use first spacings. Preserve that candidate only under
-    # their existing uniformity rule, including quantized large-offset edges.
+    # A uniform grid's builder measures every cell with the first width of
+    # each axis, so accept that measure too when the widths are uniform.
     uniform = _uniform_grid_widths(edges, widths)
     if uniform:
         add_measure(

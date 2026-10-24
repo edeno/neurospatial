@@ -599,7 +599,8 @@ class TrackArena(ReadOnlyState):
     width : float or None
         Positive full physical width. None preserves an unknown footprint,
         except on a one-dimensional track: positions there have no off-track
-        direction, so the footprint is the centerline itself, ends included.
+        direction, so its domain is the centerline itself, ends included
+        (``domain_known``), though no physical footprint is recorded.
         End caps are round and junctions are unions of segment capsules.
     """
 
@@ -739,8 +740,8 @@ class EgocentricSurround:
     ------
     ValueError
         If a limit is not finite, the limits are not increasing, a distance
-        is negative, the angles span more than one turn, or ``circular`` is
-        True for less than one turn.
+        is negative, the angles span more than one turn, ``circular`` is not
+        a boolean, or ``circular`` is True for less than one turn.
     """
 
     distance_range: tuple[float, float]
@@ -815,10 +816,22 @@ class EgocentricSurround:
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test native ``(distance, angle)`` positions against the closed window.
 
-        The window includes its edges, while the bins are half-open: a row
-        exactly at the outer distance limit, or at the upper angle of a
-        partial window, is inside the window but in no bin, so
-        ``Environment.bin_at`` gives it ``-1``.
+        The window includes its edges, and so do the edge bins: a row exactly
+        at the outer distance limit, or at the upper angle of a partial
+        window, lands in the last bin along that axis. On a full circle the
+        upper angle names the same direction as the lower one, so it lands
+        in the first angle bin.
+
+        Parameters
+        ----------
+        positions : ndarray, shape (n_positions, 2)
+            ``(distance, angle)`` rows, angles in radians.
+
+        Returns
+        -------
+        ndarray of bool, shape (n_positions,)
+            True for finite rows inside the window. NaN or infinite rows are
+            False.
         """
         query, finite = _query(positions, 2)
         selected = self.wrap_angles(query[finite])

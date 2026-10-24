@@ -13,7 +13,18 @@ from neurospatial.geometry._arrays import ReadOnlyState, axis_ranges, boolean_se
 
 @dataclass(frozen=True, eq=False)
 class HexagonShapes(ReadOnlyState):
-    """Regular hexagons with centers ``(n_bins, 2)``, radius and orientation."""
+    """Regular hexagons with centers ``(n_bins, 2)``, radius and orientation.
+
+    Parameters
+    ----------
+    centers : ndarray, shape (n_bins, 2)
+        Hexagon centers.
+    radius : float
+        Distance from a center to each corner, in length units.
+    orientation : float
+        Rotation in radians, counterclockwise. At 0 the hexagons are
+        pointy-top: one corner points straight along +y.
+    """
 
     centers: NDArray[np.float64]
     radius: float
@@ -45,7 +56,7 @@ class HexagonShapes(ReadOnlyState):
     def corner_offsets(self) -> NDArray[np.float64]:
         """Corners relative to a hexagon's center, counterclockwise, shape (6, 2).
 
-        The first corner points along ``orientation`` + 90 degrees, as
+        The first corner points along ``orientation + π/2`` radians, as
         Matplotlib's ``RegularPolygon`` draws it.
         """
         angles = np.arange(6) * np.pi / 3 + np.pi / 2 + self.orientation

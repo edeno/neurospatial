@@ -164,10 +164,13 @@ def certify_transformed_faces(
     *,
     kind: str,
 ) -> KnownFaces | MissingFaces:
-    """Enable new transforms only with an orthogonal, located source metric.
+    """Certify faces after a general affine map from stored face normals.
 
-    Known similarities and native diagonal scaling keep their existing path.
-    A prior MissingFaces record can never be recertified by normals alone.
+    Faces stay certified only when each mapped center link remains
+    orthogonal to its mapped face, as the source links were. Similarities
+    and axis-aligned scaling of a rectilinear grid do not come here: their
+    faces scale in closed form. A prior MissingFaces record can never be
+    recertified by normals alone.
     """
     source_normals = binning.face_normals
     assert source_normals is not None

@@ -270,11 +270,41 @@ def certify_faces(
     path_only: NDArray[np.bool_] | None = None,
     center_errors: NDArray[np.float64] | None = None,
 ) -> KnownFaces | MissingFaces:
-    """Certify two-point fluxes, optionally bounding recovered-center roundoff.
+    """Certify two-point fluxes between convex polygon cells.
 
-    ``center_errors`` is used when validating geometry recovered from stored
-    affine locators. It propagates source arithmetic through cancelled shifts;
-    native/clipping certification keeps its existing current-coordinate bound.
+    A pair is certified when the two cells share one straight opening (their
+    common boundary minus any wall), the link between their representative
+    points crosses that opening's interior, and the link is orthogonal to the
+    opening within rounding. The orthogonality bound counts rounding in the
+    current coordinates only, unless ``center_errors`` widens it.
+
+    Parameters
+    ----------
+    cells : PolygonCells
+        One convex polygon per bin.
+    centers : ndarray, shape (n_bins, 2)
+        Representative point of each cell; each must lie strictly inside its
+        cell.
+    pairs : ndarray of int, shape (n_pairs, 2)
+        Open neighbor pairs of bin indices.
+    walls : sequence of shapely geometry, optional
+        Walls removed from each shared boundary before it counts as an
+        opening.
+    path_only : ndarray of bool, shape (n_pairs,), optional
+        True for pairs joined only for navigation (for example cells touching
+        at one corner); they get zero face area and are not checked.
+    center_errors : ndarray, shape (n_bins, 2), optional
+        Per-axis error bound of each center, in length units. Pass it when
+        the centers were recomputed through a stored affine map, whose
+        rounding the current coordinates alone do not show.
+
+    Returns
+    -------
+    KnownFaces or MissingFaces
+        The certified face areas, center distances and cell areas, or a
+        MissingFaces record naming the first cell or pair that fails. It
+        returns rather than raises, so callers can fall back to scalar
+        diffusion.
     """
     polygons = cells.polygons
     for index, polygon in enumerate(polygons):

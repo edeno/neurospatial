@@ -60,7 +60,8 @@ def cell_extent(
     if isinstance(binning.locator, CombinedLocator):
         # Components such as a track and an open field share no cell shapes;
         # the combined cells span the union of the components' extents.
-        # A component without cells contributes its declared ranges.
+        # A component without cells contributes its declared ranges
+        # (shapeless="none") or its centers' bounds (shapeless="centers").
         extent = union_extent(
             [
                 binning_ranges(child)
@@ -217,18 +218,21 @@ def prepare_bins(binning: object) -> Binning:
     Parameters
     ----------
     binning : Binning
-        Supported data records with explicit lookup and KnownFaces or
-        MissingFaces. Neighbor pair order and orientation remain authoritative.
+        Supported data records with explicit lookup and KnownFaces,
+        MissingFaces or NativeFaces (the face recipe ``env.binning``
+        carries). Neighbor pair order and orientation remain authoritative.
 
     Returns
     -------
     Binning
-        The bins, with ``KnownFaces`` or ``MissingFaces``.
+        The bins, with ``KnownFaces`` or ``MissingFaces``; a NativeFaces
+        recipe is built into ``KnownFaces``.
 
     Raises
     ------
     TypeError
-        If a runtime provider or an implicit face source was supplied.
+        If ``binning`` is not a Binning and no installed adapter converts
+        it, or its faces are not KnownFaces, MissingFaces or NativeFaces.
     ValueError
         If records or their shared geometry disagree.
     """

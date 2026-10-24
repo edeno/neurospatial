@@ -66,8 +66,10 @@ def owned_grid(
     Raises
     ------
     ValueError
-        If there is no axis, an axis has no cells, or the edges, cell counts
-        and mask disagree.
+        If there is no axis, an edge array is not real and one-dimensional,
+        an axis has no cells, edges are not finite and strictly increasing,
+        the mask is not boolean, or the edges, cell counts and mask disagree
+        in shape.
     """
     fix = (
         "give each axis finite, strictly increasing edges with one more entry "

@@ -726,8 +726,9 @@ def certify_components(
                 continue
             try:
                 left, right = _pieces(first, arenas[i]), _pieces(second, arenas[j])
-                # Pairs are tested in the same order as a full scan, so the
-                # first overlap or uncertain contact reported is unchanged.
+                # Candidate pairs keep full-scan order, so the overlap or
+                # uncertain contact reported is the first one a full scan of
+                # every piece pair would find.
                 if any(
                     _overlap(left[a], right[b])
                     for a, b in zip(*_bound_candidates(left, right), strict=True)
@@ -790,7 +791,10 @@ def combine_binnings(
     keys : tuple of str
         Component keys, in output bin order.
     binnings : tuple of Binning
-        Component binnings with matching coordinate and measure dimensions.
+        Cartesian component binnings with the same number of coordinate
+        dimensions. Their bins may be measured differently (for example a
+        track's length bins next to an arena's area bins); a bridge between
+        such bins is then navigation-only.
     arenas : tuple of Arena
         Each component's arena.
     auto_bridge : bool
@@ -812,9 +816,15 @@ def combine_binnings(
 
     Raises
     ------
+    TypeError
+        If ``auto_bridge`` is not a bool.
     ValueError
-        If components overlap, support cannot be certified, or a bridge
-        option is invalid.
+        If components overlap, support cannot be certified, a bridge option
+        is invalid, or a bridge with positive conductance joins bins measured
+        in different dimensions.
+    NotImplementedError
+        If ``auto_bridge`` is True outside 2-D while an arena has walls,
+        because a bridge's wall crossings cannot be certified there.
     """
     if type(auto_bridge) is not bool:
         raise TypeError("auto_bridge must be boolean.")
