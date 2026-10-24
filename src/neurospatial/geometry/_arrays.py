@@ -130,15 +130,17 @@ def owned_grid(
     return owned, cells, mask
 
 
-def owned_active_map(mapping: ArrayLike, size: int, *, name: str) -> NDArray[np.intp]:
+def owned_active_map(
+    mapping: ArrayLike, size: int | None, *, name: str
+) -> NDArray[np.intp]:
     """Validate and own a map from full-lattice cells to active-bin indices.
 
     Parameters
     ----------
     mapping : array-like of int, shape (size,)
         Active-bin index of each cell, or -1 for an inactive cell.
-    size : int
-        Number of cells in the full lattice.
+    size : int or None
+        Number of cells in the full lattice; None accepts any length.
     name : str
         The field being checked, named in error messages.
 
@@ -150,18 +152,21 @@ def owned_active_map(mapping: ArrayLike, size: int, *, name: str) -> NDArray[np.
     Raises
     ------
     ValueError
-        If the map is not integer, has the wrong shape, holds an index below
-        -1, or does not number the active bins exactly once from zero.
+        If the map is not a one-dimensional integer array of ``size``
+        entries, holds an index below -1, or does not number the active bins
+        exactly once from zero.
     """
     raw = np.asarray(mapping)
+    expected = (len(raw) if raw.ndim == 1 else -1,) if size is None else (size,)
     if (
-        raw.shape != (size,)
+        raw.shape != expected
         or (raw.size and raw.dtype.kind not in "iu")
         or np.any(raw < -1)
     ):
+        cells = "cell" if size is None else f"of the {size} cells"
         raise ValueError(
-            f"{name} must hold one integer index >= -1 for each of the {size} "
-            f"cells, got {raw.dtype} with shape {raw.shape}."
+            f"{name} must hold one integer index >= -1 for each {cells}, got "
+            f"{raw.dtype} with shape {raw.shape}."
         )
     active = raw[raw >= 0]
     if not np.array_equal(np.sort(active), np.arange(len(active))):

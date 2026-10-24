@@ -18,10 +18,12 @@ from neurospatial.binning import (
     HexagonShapes,
     HexLocator,
     KnownFaces,
+    MeshLocator,
     MissingFaces,
     RectilinearGrid,
     RectilinearLocator,
     SpatialBins,
+    SubsetLocator,
     TrackLinearization,
     TriangleShapes,
 )
@@ -350,3 +352,28 @@ def test_seam_pairs_exist_exactly_when_the_arena_angle_wraps():
             replace(unwrapped.binning, faces=wrapped.binning.faces),
             unwrapped.arena,
         )
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: MeshLocator(
+            np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
+            np.array([[0, 1, 2]]),
+            np.array([0, 1]),
+            None,
+        ),
+        lambda: SubsetLocator(
+            RectilinearLocator((np.arange(4.0),), (3,), np.ones(3, bool)),
+            np.array([0, 0, -1]),
+        ),
+        lambda: SubsetLocator(
+            RectilinearLocator((np.arange(4.0),), (3,), np.ones(3, bool)),
+            np.array([[0, 1, -1]]),
+        ),
+    ],
+    ids=["mesh-size", "subset-duplicate", "subset-2d"],
+)
+def test_locator_bin_maps_number_bins_once(build):
+    with pytest.raises(ValueError, match=r"simplex_to_active|parent_to_child"):
+        build()

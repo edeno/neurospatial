@@ -73,14 +73,13 @@ def _equal(actual: Any, expected: Any, name: str) -> None:
         raise ValueError(f"{name} does not match the binning geometry.")
 
 
-def _active_indices(
-    mapping: NDArray[np.intp], count: int, name: str
-) -> NDArray[np.intp]:
-    """Validate a bijection and return active full-cell IDs in bin order."""
-    if mapping.ndim != 1 or np.any(mapping < -1):
-        raise ValueError(f"{name} must be a one-dimensional active-bin mapping.")
+def _active_order(mapping: NDArray[np.intp]) -> NDArray[np.intp]:
+    """Full-cell IDs of the active bins, in bin order.
+
+    The locators that store ``mapping`` check when they are built that it
+    numbers the active bins exactly once from zero.
+    """
     active = np.flatnonzero(mapping >= 0).astype(np.intp, copy=False)
-    _equal(np.sort(mapping[active]), np.arange(count, dtype=np.intp), name)
     return active[np.argsort(mapping[active])]
 
 
@@ -364,11 +363,7 @@ def _primitive_geometry(
     if isinstance(locator, RectilinearLocator):
         return _rectilinear_geometry(locator, coordinate_kind)
     if isinstance(locator, HexLocator):
-        active = _active_indices(
-            locator.flat_to_active,
-            int(np.count_nonzero(locator.flat_to_active >= 0)),
-            "hex locator flat_to_active ordering",
-        )
+        active = _active_order(locator.flat_to_active)
         rows, columns = np.unravel_index(active, locator.centers_shape)
         x = columns.astype(np.float64)
         x[rows % 2 == 1] += 0.5
@@ -402,11 +397,7 @@ def _primitive_geometry(
             raise ValueError(
                 "mesh locator simplex_to_active shape does not match simplices."
             )
-        active = _active_indices(
-            locator.simplex_to_active,
-            int(np.count_nonzero(locator.simplex_to_active >= 0)),
-            "mesh locator simplex_to_active ordering",
-        )
+        active = _active_order(locator.simplex_to_active)
         triangles = locator.simplices[active]
         vertices = locator.points[triangles]
         centers = vertices.mean(axis=1)
@@ -427,11 +418,12 @@ def _primitive_geometry(
                 "nearest locator centers must be finite and two dimensional."
             )
         assert locator.bin_indices is not None
-        order = _active_indices(
-            locator.bin_indices,
-            len(locator.centers),
+        _equal(
+            np.sort(locator.bin_indices),
+            np.arange(len(locator.centers)),
             "nearest locator bin_indices ordering",
         )
+        order = np.argsort(locator.bin_indices)
         centers = locator.centers[order]
         return _LocatorGeometry(locator, centers, np.zeros_like(centers), [])
     raise ValueError("locator needs supported stored geometry for consistency checks.")
@@ -473,11 +465,7 @@ def _locator_geometry(
             raise ValueError(
                 "subset parent_to_child length does not match parent locator bins."
             )
-        active = _active_indices(
-            mapping,
-            int(np.count_nonzero(mapping >= 0)),
-            "subset parent_to_child ordering",
-        )
+        active = _active_order(mapping)
         geometry.centers = geometry.centers[active]
         geometry.center_error = geometry.center_error[active]
         geometry.measures = [

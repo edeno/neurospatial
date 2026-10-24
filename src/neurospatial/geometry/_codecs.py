@@ -285,16 +285,6 @@ def _grid_edges(
     return edges, shape
 
 
-def _active_map(mapping: NDArray[Any], size: int, name: str) -> None:
-    if mapping.shape != (size,) or np.any(mapping < -1):
-        raise ValueError(f"{name} must have shape ({size},) and indices >= -1.")
-    active = mapping[mapping >= 0]
-    if not np.array_equal(np.sort(active), np.arange(len(active))):
-        raise ValueError(
-            f"{name} active indices must number bins exactly once from zero."
-        )
-
-
 def _encode_bins(obj: SpatialBins, prefix: str) -> Payload:
     return {}, _arrays(
         prefix, centers=obj.centers, sizes=obj.sizes, measure_dims=obj.measure_dims
@@ -669,7 +659,6 @@ def _decode_mesh_locator(
 ) -> MeshLocator:
     points, simplices = _mesh_arrays(arrays, prefix, "simplices")
     mapping = _array(arrays, prefix, "simplex_to_active", np.intp)
-    _active_map(mapping, len(simplices), "simplex_to_active")
     boundary = None
     if meta["boundary"] is not None:
         component = decode(meta["boundary"], arrays, f"{prefix}/boundary")

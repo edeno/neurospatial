@@ -435,17 +435,11 @@ class SubsetLocator(ReadOnlyState):
     parent_to_child: NDArray[np.intp]
 
     def __post_init__(self) -> None:
-        raw = np.asarray(self.parent_to_child)
-        if raw.ndim != 1 or raw.dtype.kind not in "iu" or np.any(raw < -1):
-            raise ValueError(
-                "parent_to_child must be one-dimensional integer indices >= -1."
-            )
-        selected = raw[raw >= 0]
-        if not np.array_equal(np.sort(selected), np.arange(len(selected))):
-            raise ValueError(
-                "parent_to_child must number child bins exactly once from zero."
-            )
-        object.__setattr__(self, "parent_to_child", _owned_array(raw, np.intp))
+        object.__setattr__(
+            self,
+            "parent_to_child",
+            owned_active_map(self.parent_to_child, None, name="parent_to_child"),
+        )
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
@@ -979,10 +973,15 @@ class MeshLocator(ReadOnlyState):
     boundary: Polygon | None
 
     def __post_init__(self) -> None:
+        simplices = _owned_array(self.simplices, np.intp)
         object.__setattr__(self, "points", _owned_array(self.points, np.float64))
-        object.__setattr__(self, "simplices", _owned_array(self.simplices, np.intp))
+        object.__setattr__(self, "simplices", simplices)
         object.__setattr__(
-            self, "simplex_to_active", _owned_array(self.simplex_to_active, np.intp)
+            self,
+            "simplex_to_active",
+            owned_active_map(
+                self.simplex_to_active, len(simplices), name="simplex_to_active"
+            ),
         )
 
     def _find_triangles(
