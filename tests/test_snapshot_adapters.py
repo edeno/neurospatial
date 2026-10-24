@@ -126,6 +126,34 @@ def test_saved_custom_codec_uses_installed_decoder_without_mutating_payload(_reg
     np.testing.assert_array_equal(restored.centers, [[0.0, 0.0], [2.0, 0.0]])
 
 
+@pytest.mark.parametrize(
+    "decode_result",
+    [
+        # The payload lacks the array the decoder reads.
+        "missing_array",
+        # The decoder returns a built-in record the built-in rules refuse.
+        "invalid_record",
+    ],
+)
+def test_failing_custom_decoder_is_reported_as_an_invalid_payload(
+    _registry, decode_result
+):
+    def adapter_decode(meta, arrays, prefix):
+        if decode_result == "missing_array":
+            return NearestBinLocator(arrays[f"{prefix}/missing"])
+        return NearestBinLocator(arrays[f"{prefix}/centers"], -1.0)
+
+    _registry.append(_EntryPoint("lookup", _adapter(decode=adapter_decode)))
+    with pytest.raises(
+        ValueError, match=r"invalid laboratory\.lookup snapshot payload at old"
+    ):
+        decode(
+            {"codec": "laboratory.lookup", "codec_version": 1},
+            {"old/centers": np.array([[0.0, 0.0], [2.0, 0.0]])},
+            "old",
+        )
+
+
 def test_custom_payload_version_two_is_routed_before_builtin_version_checks(_registry):
     _registry.append(_EntryPoint("lookup", _adapter(version=2)))
     result = decode(
