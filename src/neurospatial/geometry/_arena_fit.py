@@ -296,23 +296,35 @@ def fit_walls(
     )
 
 
+def _wall_end_slack(polygon: Polygon | MultiPolygon) -> float:
+    """How far :func:`wall_inside` may pull a wall end in from ``polygon``'s edge.
+
+    A millionth of the polygon's size.
+    """
+    x0, y0, x1, y1 = polygon.bounds
+    return 1e-6 * float(max(x1 - x0, y1 - y0))
+
+
 def wall_inside(piece: LineString, polygon: Polygon) -> LineString | None:
     """``piece``, shortened at its ends if needed so that ``polygon`` covers it.
 
     A wall clipped at a slanted edge ends at a computed intersection point that
     can fall a rounding error outside the polygon, which ``OpenArena`` then
-    refuses. Pull the ends in along the wall, by at most a millionth of the
-    polygon's size, until the arena's own containment test accepts the piece;
-    None if it never does (a piece lying along a slanted edge).
+    refuses. Pull each end that lies outside in along the wall, by at most
+    :func:`_wall_end_slack`, until the arena's own containment test accepts the
+    piece; an end already inside stays where it is. None if the piece is never
+    accepted (a piece lying along a slanted edge).
     """
     if polygon.covers(piece):
         return piece
-    x0, y0, x1, y1 = polygon.bounds
-    scale = max(x1 - x0, y1 - y0)
-    for step in scale * np.array([1e-12, 1e-10, 1e-8, 1e-6]):
-        if piece.length <= 2 * step:
+    ends = shapely.points(np.asarray(piece.coords)[[0, -1]])
+    outside = ~shapely.covers(polygon, ends)
+    slack = _wall_end_slack(polygon)
+    for step in slack * np.array([1e-6, 1e-4, 1e-2, 1.0]):
+        start, stop = step * outside
+        if piece.length <= start + stop:
             break
-        shorter = shapely.ops.substring(piece, step, piece.length - step)
+        shorter = shapely.ops.substring(piece, start, piece.length - stop)
         if isinstance(shorter, LineString) and polygon.covers(shorter):
             return shorter
     return None
@@ -411,9 +423,10 @@ def _wall_geometry(
     Sequence[Polygon | MultiPolygon],
     Sequence[LineString],
     NDArray[np.float64],
+    Polygon | MultiPolygon | None,
     NDArray[np.float64] | None,
 ]:
-    """Cells, wall segments and centers in the frame walls are checked in.
+    """Cells, wall segments, centers and arena domain in the frame walls are checked in.
 
     The last value is None for the published cells and walls. For a stored
     source frame recovered through transforms, it bounds how far each cell's
@@ -421,11 +434,18 @@ def _wall_geometry(
     """
     frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
     if frame is None:
-        return materialize_cells(binning), arena.walls, binning.bins.centers, None
+        return (
+            materialize_cells(binning),
+            arena.walls,
+            binning.bins.centers,
+            arena.polygonal_domain(),
+            None,
+        )
     # Shared snapshots avoid independently rounded collinear vertices.
     # Retained source-frame cells preserve current clipping and ownership.
-    cells, segments, centers, _, _, errors = frame
-    return cells, segments, centers, errors
+    cells, segments, centers, _, frames, errors = frame
+    # The innermost transformed arena wraps the arena the walls belong to.
+    return cells, segments, centers, frames[-1].base.polygonal_domain(), errors
 
 
 def _face_band(
@@ -572,6 +592,28 @@ def _uncertain_face(
     return "by_contact"
 
 
+def _open_length(
+    face: shapely.Geometry,
+    walls: shapely.Geometry,
+    domain: Polygon | MultiPolygon | None,
+) -> float:
+    """Length of ``face`` that no wall covers.
+
+    A gap no longer than :func:`_wall_end_slack` against the arena's edge is
+    where :func:`wall_inside` pulled a clipped wall end in to keep it inside
+    the arena; it counts as covered.
+    """
+    gaps = shapely.get_parts(face.difference(walls))
+    gaps = gaps[shapely.length(gaps) > 0]
+    if domain is not None and len(gaps):
+        slack = _wall_end_slack(domain)
+        rounding = (shapely.length(gaps) <= slack) & (
+            shapely.distance(gaps, domain.boundary) <= slack
+        )
+        gaps = gaps[~rounding]
+    return float(np.sum(shapely.length(gaps)))
+
+
 def _closing_walls(
     connections: BinConnections,
     cells: Sequence[Polygon | MultiPolygon],
@@ -595,11 +637,12 @@ def _closing_walls(
 
 
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
-    """Close the neighbor pairs whose shared edge a wall blocks completely.
+    """Close the neighbor pairs whose shared edge walls block completely.
 
-    A closed pair stays listed in ``binning.connections`` but leaves paths and
-    finite-volume faces. A partly covered edge stays open with the open share
-    of its face. Pairs already closed stay closed, and every closed pair
+    Only the part of a shared edge inside the arena counts: a bin at a slanted
+    outline sticks out past it, where no wall can be. A closed pair stays
+    listed in ``binning.connections`` but leaves paths and finite-volume
+    faces. A partly covered edge stays open with the open share of its face. Pairs already closed stay closed, and every closed pair
     records the wall that closes it (``connections.closed_by``).
     """
     if _composition_arena(binning.locator) is not None:
@@ -615,7 +658,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         unattributed = np.full(len(links.closed_by), -1, dtype=np.intp)
         return replace(binning, connections=replace(links, closed_by=unattributed))
 
-    cells, wall_segments, centers, errors = _wall_geometry(binning, arena)
+    cells, wall_segments, centers, domain, errors = _wall_geometry(binning, arena)
     walls = unary_union(wall_segments)
     if errors is not None:
         # Cells whose uncertain boundary can reach a wall.
@@ -669,8 +712,12 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
                 continue
         blocked = contact.intersection(walls)
         if contact.length > 0 and blocked.length > 0:
-            if blocked.length < contact.length:
-                open_share[index] = 1.0 - blocked.length / contact.length
+            # Only the part of the edge inside the arena is a face an animal
+            # can cross: a bin at a slanted outline sticks out past it.
+            face = contact if domain is None else contact.intersection(domain)
+            opening = _open_length(face, walls, domain)
+            if opening > 0:
+                open_share[index] = opening / face.length
             else:
                 keep[index] = False
         elif contact.length == 0:
