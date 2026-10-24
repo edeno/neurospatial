@@ -2807,6 +2807,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- Position lookup in a polygon arena (`from_polygon`) or a masked triangular
+  mesh tests points against a prepared polygon: containment of a million
+  points in a 257-vertex arena takes 0.045 s instead of 0.30 s, with
+  identical results. Clipping to a polygon no longer rescans every piece for
+  each source cell, and `linear_to_nd` gathers segment ends by index instead
+  of one Python lookup per position.
 - Reading an environment's cell polygons, which clipping, re-binning, border
   scores, decoded-probability remapping and arena fitting all do, builds and
   validates the cells in vectorized calls, and skips the overlap test for
