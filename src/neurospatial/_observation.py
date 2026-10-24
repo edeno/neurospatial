@@ -18,7 +18,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import observed_interval_mask, run_sample_bounds
+from neurospatial._intervals import (
+    observed_interval_mask,
+    run_sample_bounds,
+    validate_max_gap,
+)
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import (
     times_positions_problems,
@@ -93,16 +97,6 @@ def validate_break_before(
         )
     owned: NDArray[np.bool_] = flags.copy()
     return owned
-
-
-def validate_max_gap(max_gap: float | None) -> float | None:
-    """Return ``max_gap`` unchanged if None or a positive finite number."""
-    if max_gap is not None and (not np.isfinite(max_gap) or max_gap <= 0):
-        raise ValueError(
-            "max_gap must be a positive finite number of seconds or None "
-            f"(None keeps every interval, however long); got {max_gap!r}."
-        )
-    return max_gap
 
 
 def _support_from_gates(

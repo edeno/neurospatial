@@ -14,11 +14,11 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import validate_max_gap
 from neurospatial._observation import (
     ObservationSupport,
     resolve_sample_support,
     validate_break_before,
-    validate_max_gap,
 )
 
 

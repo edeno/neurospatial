@@ -26,12 +26,15 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals, observed_interval_mask
+from neurospatial._intervals import (
+    as_intervals,
+    observed_interval_mask,
+    validate_max_gap,
+)
 from neurospatial._observation import (
     ObservationSupport,
     empty_samples_error,
     validate_break_before,
-    validate_max_gap,
     validated_observations,
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin

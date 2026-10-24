@@ -19,6 +19,18 @@
   dict of unit id to spike train is a labelled group, and a DataFrame is
   refused with how to convert it.
 
+- `max_gap` is checked wherever it is used. Encoding accepted `max_gap=-1`,
+  NaN or infinity, excluded every interval and recorded the bad value in
+  `analysis_settings`; every analysis now refuses a `max_gap` that is not a
+  positive finite number of seconds (or `None`), including strings and
+  booleans. A speed gate (`min_speed`) without `speed` now raises instead of
+  being skipped.
+- With `max_gap` equal to the sampling interval, float rounding of the
+  timestamps makes a quarter to a half of the intervals count as gaps. The
+  mask is unchanged, but the warning now names this case and suggests a
+  `max_gap` above the sampling interval, instead of saying (at 1 kHz) that
+  `times` are probably not in seconds or (at 30 Hz) saying nothing.
+
 ### Spatial geometry review
 
 - Walls that end on a slanted or curved arena outline now separate the bins

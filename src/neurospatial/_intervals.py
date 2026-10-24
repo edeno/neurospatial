@@ -12,6 +12,8 @@ keeping spike counts and occupancy on the same observed time support.
 
 from __future__ import annotations
 
+import math
+import numbers
 import warnings
 from dataclasses import dataclass
 from typing import Any, Protocol, overload
@@ -19,6 +21,7 @@ from typing import Any, Protocol, overload
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 
 
@@ -101,6 +104,30 @@ class TimeSupport:
                 None if self.break_times is None else self.break_times.tolist()
             ),
         }
+
+
+def validate_max_gap(max_gap: Any) -> float | None:
+    """Return ``max_gap`` as a float, or None; refuse any other value."""
+    if max_gap is None:
+        return None
+    if (
+        isinstance(max_gap, bool)
+        or not isinstance(max_gap, numbers.Real)
+        or not math.isfinite(max_gap)
+        or max_gap <= 0
+    ):
+        raise ValueError(
+            _format_error(
+                "max_gap must be a positive finite number of seconds or None "
+                f"(None keeps every interval, however long); got {max_gap!r}.",
+                why="Why: sampling intervals longer than max_gap are excluded "
+                "as recording gaps, so a zero, negative or NaN max_gap would "
+                "exclude every interval.",
+                fix="pass a number of seconds above the sampling interval, "
+                "e.g. max_gap=0.5, or max_gap=None.",
+            )
+        )
+    return float(max_gap)
 
 
 def recording_index(break_before: NDArray[np.bool_]) -> NDArray[np.intp]:
@@ -435,8 +462,14 @@ def interval_valid_mask(
         \\neg\\,\\text{break\\_before}_{k+1}
 
     where ``start_bin = env.bin_at(positions)`` and ``\\Delta t = diff(times)``.
-    Bounds are checked only when ``start_bin`` or ``env`` is supplied; speed
-    is checked only when ``speed`` is supplied. Window gates apply when given.
+    Bounds are checked only when ``start_bin`` or ``env`` is supplied. Window
+    gates apply when given.
+
+    ``max_gap`` must sit above the sampling interval. Timestamps such as
+    ``np.arange(n) / 30`` are not exact, so with ``max_gap`` equal to the
+    sampling interval about a quarter to a half of the intervals exceed it by
+    float rounding and are dropped. :func:`warn_excluded_intervals` names this
+    case; use e.g. ``max_gap = 1.5 / sampling_rate`` or the default 0.5 s.
 
     Parameters
     ----------
@@ -450,23 +483,20 @@ def interval_valid_mask(
         The spatial environment; ``env.bin_at`` maps each start sample to its
         bin (``-1`` outside the active mask).
     speed : ndarray, shape (n_samples,), or None
-        Per-sample speed. Only consulted when ``min_speed`` is set; the gate
-        uses ``speed[:-1] >= min_speed`` (the speed of each interval's start
+        Per-sample speed, required with ``min_speed``; the gate uses
+        ``speed[:-1] >= min_speed`` (the speed of each interval's start
         sample). Consumed as-is; never re-derived here.
     min_speed : float or None
         Minimum speed threshold. When ``None`` (default) no speed gating.
     max_gap : float or None
-        Maximum time gap in seconds. Intervals with ``dt > max_gap`` are
-        dropped. Default 0.5; ``None`` disables gap gating on BOTH sides
-        (spikes and occupancy) so they stay aligned.
+        Maximum time gap in seconds, positive and finite. Intervals with
+        ``dt > max_gap`` are dropped. Default 0.5; ``None`` disables gap
+        gating on BOTH sides (spikes and occupancy) so they stay aligned.
     start_bin : ndarray of intp, shape (n_samples,), or None
-        Optional precomputed ``env.bin_at(positions)`` result. When provided,
-        it is used directly for the out-of-bounds-start gate instead of
-        recomputing ``env.bin_at`` internally — letting callers that have
-        already mapped ``positions`` to bins (e.g. ``env.occupancy``) avoid a
-        redundant second ``bin_at`` pass. When ``None`` (default), ``bin_at``
-        is computed here as before. Behaviour is identical either way; the
-        passed array must be the ``bin_at`` of the SAME ``positions``.
+        Precomputed ``env.bin_at(positions)`` for the out-of-bounds-start
+        gate, so callers that already binned ``positions`` skip a second
+        ``bin_at``. It must come from the same ``positions``. When ``None``,
+        it is computed from ``env`` if given.
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Already normalized, sorted and merged half-open windows in seconds.
         Each kept interval must lie wholly inside one row of each supplied
@@ -480,22 +510,37 @@ def interval_valid_mask(
     ndarray of bool, shape (n_samples - 1,)
         ``True`` for each valid interval. Empty (length 0) when fewer than
         two samples are provided.
+
+    Raises
+    ------
+    ValueError
+        If ``max_gap`` is not None or a positive finite number, or if
+        ``min_speed`` is given without ``speed``.
     """
+    validate_max_gap(max_gap)
+    if min_speed is not None and speed is None:
+        raise ValueError(
+            _format_error(
+                f"min_speed={min_speed} was given without speed.",
+                why="Why: the speed gate compares each interval's start-sample "
+                "speed with min_speed.",
+                fix="pass speed= (one value per sample), or min_speed=None.",
+            )
+        )
     times = np.asarray(times, dtype=np.float64)
 
     n_samples = len(times)
     if n_samples < 2:
-        return np.zeros(max(n_samples - 1, 0), dtype=bool)
+        return np.zeros(0, dtype=bool)
 
     dt = np.diff(times)
     valid_mask = np.ones(len(dt), dtype=bool)
 
-    # Filter by max_gap.
     if max_gap is not None:
         valid_mask &= dt <= max_gap
 
     # Filter by min_speed (speed of each interval's starting sample).
-    if min_speed is not None and speed is not None:
+    if min_speed is not None:
         speed = np.asarray(speed, dtype=np.float64)
         valid_mask &= speed[:-1] >= min_speed
 
@@ -544,12 +589,22 @@ def start_allocated_occupancy(
     Returns
     -------
     ndarray, shape (n_bins,)
+
+    Raises
+    ------
+    ValueError
+        If a retained interval starts in a bin ``>= n_bins``.
     """
     bins = start_bin[:-1][interval_mask]
+    if bins.size and int(bins.max()) >= n_bins:
+        raise ValueError(
+            f"A retained interval starts in bin {int(bins.max())}, but there "
+            f"are only {n_bins} bins: start_bin does not come from this "
+            "environment. Fix: compute start_bin with env.bin_at on the same "
+            "environment."
+        )
     weights = dt[interval_mask] if return_seconds else None
-    return np.bincount(bins, weights=weights, minlength=n_bins)[:n_bins].astype(
-        np.float64
-    )
+    return np.bincount(bins, weights=weights, minlength=n_bins).astype(np.float64)
 
 
 def observed_interval_mask(
@@ -602,16 +657,19 @@ def warn_excluded_intervals(
 ) -> None:
     """Warn when the interval gates leave no data or ``times`` look wrong.
 
-    Every analysis that applies the shared ``max_gap`` gate calls this with its
-    final interval mask, so they all warn alike. It emits at most one
-    ``UserWarning``, and nothing for fewer than two samples:
+    Analyses call this with their final interval mask, so an empty or
+    gap-dominated selection warns the same way everywhere. It emits at most
+    one ``UserWarning``, and nothing for fewer than two samples:
 
     - When every interval is excluded, the message names the active gates and
       how to fix each one, so an empty result is not mistaken for a
       measurement.
-    - Otherwise, when the median sampling interval exceeds ``max_gap``, most
-      intervals count as recording gaps. That usually means ``times`` are not
-      in seconds (for example milliseconds), and the message says so.
+    - Otherwise, when most sampling intervals exceed ``max_gap``, they count
+      as recording gaps. That usually means ``times`` are not in seconds (for
+      example milliseconds), and the message says so.
+    - Otherwise, when some intervals exceed ``max_gap`` only by float
+      rounding, ``max_gap`` equals the sampling interval, and the message
+      says to set it above the sampling interval.
 
     Parameters
     ----------
@@ -637,27 +695,49 @@ def warn_excluded_intervals(
     """
     if interval_mask.size == 0:
         return
-    dt = np.diff(np.asarray(times, dtype=np.float64))
+    times = np.asarray(times, dtype=np.float64)
+    dt = np.diff(times)
     median_dt = float(np.median(dt))
-    slow_clock = max_gap is not None and median_dt > max_gap
+    n_long = n_rounded = 0
+    slow_clock = False
+    if max_gap is not None:
+        # Each difference is exact to a few ulp of the timestamps' magnitude;
+        # an excess within that is rounding, not a gap.
+        rounding = 8.0 * np.spacing(np.maximum(np.abs(times[:-1]), np.abs(times[1:])))
+        excess = dt - max_gap
+        n_long = int(np.count_nonzero(excess > rounding))
+        n_rounded = int(np.count_nonzero((excess > 0) & (excess <= rounding)))
+        slow_clock = float(np.median(excess - rounding)) > 0
     clock = (
         f"the median sampling interval is {median_dt:.4g} s, longer than "
         f"max_gap={max_gap} s, so `times` are probably not in seconds"
     )
+    rounded = (
+        f"{n_rounded} of {dt.size} sampling intervals exceed max_gap={max_gap} s "
+        "only by float rounding of the timestamps, so max_gap equals the "
+        "sampling interval"
+    )
+    rounded_fix = (
+        f"set max_gap above the sampling interval, e.g. max_gap={1.5 * median_dt:.3g}"
+    )
     if interval_mask.any():
         if slow_clock:
-            n_gaps = int(np.count_nonzero(dt > max_gap))
             message = (
-                f"{n_gaps} of {dt.size} sampling intervals are longer than "
+                f"{n_long} of {dt.size} sampling intervals are longer than "
                 f"max_gap={max_gap} s and are excluded as recording gaps: {clock}. "
                 f"Fix: convert times to seconds (divide milliseconds by 1000); "
                 f"if the sampling really is this coarse, raise max_gap above "
                 f"{median_dt:.4g} or pass max_gap=None to disable gap gating. "
                 f"{suppress_hint}"
             )
-            warnings.warn(
-                message.rstrip(), UserWarning, stacklevel=_external_stacklevel()
+        elif n_rounded:
+            message = (
+                f"{rounded}; they are excluded as recording gaps. "
+                f"Fix: {rounded_fix}. {suppress_hint}"
             )
+        else:
+            return
+        warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
         return
 
     gates = [f"max_gap={max_gap}"] if max_gap is not None else []
@@ -667,7 +747,9 @@ def warn_excluded_intervals(
             f"{clock}: convert times to seconds, raise max_gap above "
             f"{median_dt:.4g}, or pass max_gap=None to disable gap gating"
         )
-    elif max_gap is not None and np.any(dt > max_gap):
+    elif n_rounded:
+        fixes.append(f"{rounded}: {rounded_fix}")
+    elif n_long:
         fixes.append("pass max_gap=None to disable gap gating")
     if min_speed is not None:
         gates.append(f"min_speed={min_speed}")
@@ -694,10 +776,12 @@ def warn_excluded_intervals(
     if start_bin_gate:
         gates.append("samples out of bounds or at NaN positions")
         fixes.append("check that positions use the environment's coordinates")
+    if not fixes:
+        fixes.append("check that the samples are finite, observed values")
+    active = f" (active gate(s) {', '.join(gates)})" if gates else ""
     message = (
-        f"Interval filtering excluded ALL trajectory intervals (active gate(s) "
-        f"{', '.join(gates)}), so {result}. Fix: {'; '.join(fixes)}. "
-        f"{suppress_hint}"
+        f"Interval filtering excluded ALL trajectory intervals{active}, so "
+        f"{result}. Fix: {'; '.join(fixes)}. {suppress_hint}"
     )
     warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
 

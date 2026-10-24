@@ -1365,9 +1365,10 @@ def visibility_occupancy(
     from neurospatial._intervals import (
         as_intervals,
         interval_valid_mask,
+        validate_max_gap,
         warn_excluded_intervals,
     )
-    from neurospatial._observation import validate_break_before, validate_max_gap
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(

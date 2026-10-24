@@ -47,14 +47,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals, intervals_contain
+from neurospatial._intervals import as_intervals, intervals_contain, validate_max_gap
 from neurospatial._observation import (
     _validated_signal_times,
     label_codes,
     label_runs,
     resolve_sample_support,
     validate_break_before,
-    validate_max_gap,
 )
 from neurospatial._results import (
     ReadOnlyArraysMixin,

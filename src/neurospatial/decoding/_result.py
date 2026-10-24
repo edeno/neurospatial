@@ -99,9 +99,9 @@ def _align_true_positions(
         )
     if np.any(np.isinf(true_positions)):
         raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
-    if max_gap is not None and (not np.isfinite(max_gap) or max_gap <= 0):
-        raise ValueError("max_gap must be a finite positive number of seconds or None.")
-    from neurospatial._intervals import interval_valid_mask
+    from neurospatial._intervals import interval_valid_mask, validate_max_gap
+
+    validate_max_gap(max_gap)
     from neurospatial._observation import validate_break_before
 
     breaks = validate_break_before(break_before, true_times.size, call=call)

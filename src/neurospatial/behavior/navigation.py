@@ -1040,8 +1040,8 @@ def distance_to_reward(
     distance_to_region : Distance to a target bin or region
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
-    from neurospatial._intervals import as_intervals
-    from neurospatial._observation import validate_break_before, validate_max_gap
+    from neurospatial._intervals import as_intervals, validate_max_gap
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_finite
     from neurospatial.ops.distance import distance_field
 

@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial import behavior
+from neurospatial._intervals import validate_max_gap
 from neurospatial._observation import (
     ObservationSupport,
     label_codes,
@@ -13,7 +14,6 @@ from neurospatial._observation import (
     resolve_observation_support,
     resolve_sample_support,
     validate_break_before,
-    validate_max_gap,
     validated_observations,
     validated_signals,
 )
@@ -97,7 +97,7 @@ def test_max_gap_none_keeps_long_interval():
         assert not _support([0, 10]).interval_mask.any()
 
 
-@pytest.mark.parametrize("bad", [0, -1, np.nan, np.inf])
+@pytest.mark.parametrize("bad", [0, -1, np.nan, np.inf, "0.5", True])
 def test_invalid_max_gap_raises(bad):
     with pytest.raises(ValueError, match="max_gap must be a positive finite"):
         validate_max_gap(bad)

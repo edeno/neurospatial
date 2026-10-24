@@ -14,7 +14,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import as_intervals, interval_valid_mask, intervals_contain
+from neurospatial._intervals import (
+    as_intervals,
+    interval_valid_mask,
+    intervals_contain,
+    validate_max_gap,
+)
 from neurospatial._observation import validate_break_before
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -203,8 +208,7 @@ def detect_region_visits(
         )
     if not np.isfinite(clock).all() or np.any(np.diff(clock) <= 0):
         raise ValueError("times must be finite and strictly increasing, in seconds.")
-    if max_gap is not None and (not np.isfinite(max_gap) or max_gap <= 0):
-        raise ValueError("max_gap must be a positive finite number of seconds or None.")
+    validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
     if isinstance(region_names, str):
         raise TypeError(

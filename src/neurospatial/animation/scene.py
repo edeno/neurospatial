@@ -13,12 +13,16 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from neurospatial._intervals import as_intervals, intersect_intervals, intervals_contain
+from neurospatial._intervals import (
+    as_intervals,
+    intersect_intervals,
+    intervals_contain,
+    validate_max_gap,
+)
 from neurospatial._observation import (
     _validated_signal_times,
     resolve_sample_support,
     validate_break_before,
-    validate_max_gap,
 )
 
 if TYPE_CHECKING:
