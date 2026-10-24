@@ -659,6 +659,76 @@ def test_removed_missing_geometry_no_longer_blocks_certified_subset():
     )
 
 
+def _walled_grid(shift=0.0, walls=()):
+    """Two cells, [shift, shift + 1] and [shift + 1, shift + 2], with walls."""
+    from neurospatial.arena import OpenArena
+
+    return Environment.from_grid_mask(
+        np.ones((2, 1), dtype=bool),
+        grid_edges=(np.arange(3.0) + shift, np.arange(2.0)),
+        units="cm",
+        frame="lab",
+        arena=OpenArena(box(shift, 0, shift + 2, 1), walls=list(walls)),
+    )
+
+
+def _with_child_arena(data, source, child=0):
+    """Saved ``data`` with child ``child``'s arena records taken from ``source``."""
+    data = copy.deepcopy(data)
+    prefixes = (
+        f"arena/children/{child}/",
+        f"binning/locator/children/{child}/arena/",
+    )
+    for key in [key for key in data["arrays"] if key.startswith(prefixes)]:
+        del data["arrays"][key]
+        data["array_specs"].pop(key, None)
+    for key, value in source["arrays"].items():
+        if key.startswith(prefixes):
+            data["arrays"][key] = value
+            if key in source["array_specs"]:
+                data["array_specs"][key] = source["array_specs"][key]
+    data["arena"]["children"][child] = source["arena"]["children"][child]
+    data["binning"]["locator"]["children"][child]["arena"] = source["binning"][
+        "locator"
+    ]["children"][child]["arena"]
+    return data
+
+
+@pytest.mark.parametrize(
+    "wall,message",
+    [
+        # On child a's outer edge: it closes no pair of a, but the bridge from
+        # a's bin at (1.5, 0.5) to b's bin at (4.5, 0.5) crosses it.
+        (
+            (2.0, 0.0, 2.0, 1.0),
+            "A stored navigation bridge crosses a known physical wall.",
+        ),
+        # Between child a's two cells, whose saved pair stays open.
+        (
+            (1.0, 0.0, 1.0, 1.0),
+            "Component connectivity crosses its declared physical walls.",
+        ),
+    ],
+)
+def test_saved_composition_rejects_links_across_child_walls(wall, message):
+    import re
+
+    from shapely.geometry import LineString
+
+    saved = Environment.combine({"a": _walled_grid(), "b": _walled_grid(4.0)})
+    assert saved.get_bridge_attributes()["source"].tolist() == [1]
+    walled = Environment.combine(
+        {
+            "a": _walled_grid(walls=[LineString([wall[:2], wall[2:]])]),
+            "b": _walled_grid(4.0),
+        },
+        auto_bridge=False,
+    )
+    data = _with_child_arena(saved.to_dict(), walled.to_dict())
+    with pytest.raises(ValueError, match=re.escape(message)):
+        Environment.from_dict(data)
+
+
 @pytest.mark.parametrize("corruption", ["faces", "bridge_distance", "arena"])
 def test_saved_composition_rejects_inconsistent_geometry(corruption):
     env = Environment.combine(
