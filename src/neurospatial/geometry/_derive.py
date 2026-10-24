@@ -512,20 +512,13 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     pairs = connections.pairs
     if locator is None:
         locator = TransformedLocator(binning.locator, matrix)
-    grid = binning.rectilinear
-    if grid is not None:
-        diagonal = np.diag(linear)
-        if np.array_equal(linear, np.diag(diagonal)) and np.all(diagonal > 0):
-            grid = RectilinearGrid(
-                tuple(
-                    diagonal[axis] * edge + matrix[axis, -1]
-                    for axis, edge in enumerate(grid.edges)
-                ),
-                grid.shape,
-                grid.active_mask,
-            )
-        else:
-            grid = None
+    # A stored grid matches its locator, so it keeps the locator's mapped
+    # cells when a positive diagonal scale and shift leave them a grid.
+    grid = (
+        RectilinearGrid(locator.edges, locator.shape, locator.active_mask)
+        if binning.rectilinear is not None and isinstance(locator, RectilinearLocator)
+        else None
+    )
     frame = binning.grid_frame
     if frame is not None:
         frame = FramedGrid(frame.source, matrix @ frame.forward)
