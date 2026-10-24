@@ -1074,3 +1074,151 @@ def test_transformed_combination_arena_shares_the_bins_inverse(angle):
     np.testing.assert_array_equal(arena.forward, locator.forward)
     np.testing.assert_array_equal(arena.inverse, locator.inverse)
     validate_arena(arena, moved.binning, CartesianSystem())
+
+
+def _maps_into_own_blocks(combined, children):
+    """Each child's bin centers land in that child's block of combined bins."""
+    offset = 0
+    for child in children:
+        np.testing.assert_array_equal(
+            combined.bin_at(child.bin_centers), offset + np.arange(child.n_bins)
+        )
+        offset += child.n_bins
+
+
+def _round_component(kind, center, radius):
+    """One nearest-bin site (a ball) or one straight track (a capsule)."""
+    import networkx as nx
+
+    if kind == "ball":
+        return nearest(center, radius=radius)
+    # A track whose capsule ends in a round cap of ``radius`` at ``center``.
+    graph = nx.Graph()
+    graph.add_node(0, pos=tuple(center))
+    graph.add_node(1, pos=(center[0] + 4.0, center[1]))
+    graph.add_edge(0, 1, distance=4.0)
+    return Environment.from_graph(
+        graph,
+        [(0, 1)],
+        edge_spacing=0.0,
+        bin_size=1.0,
+        track_width=2 * radius,
+        units="cm",
+        frame="lab",
+    )
+
+
+# The grid's cells are [0, 1] x [0, 1] and [1, 2] x [0, 1]. Every placement
+# has bounds that intersect the grid's, so the exact shape test decides.
+_ROUND_PLACEMENTS = {
+    # The round piece covers part of a cell.
+    "interior": ((1.6, 0.5), 0.3),
+    # Its bounds reach past the cell corner (2, 1), but it stays 0.71 away.
+    "outside": ((2.5, 1.5), 0.6),
+    # It touches the corner (2, 1) at exactly its radius: 0.75² + 1² = 1.25².
+    "tangent": ((2.75, 2.0), 1.25),
+}
+
+
+@pytest.mark.parametrize("kind", ["ball", "capsule"])
+@pytest.mark.parametrize("placement", sorted(_ROUND_PLACEMENTS))
+@pytest.mark.parametrize("grid_first", [True, False])
+def test_round_support_against_polygon_cells_is_refused_only_on_overlap(
+    kind, placement, grid_first
+):
+    center, radius = _ROUND_PLACEMENTS[placement]
+    round_part = _round_component(kind, center, radius)
+    components = (
+        {"grid": grid(), "round": round_part}
+        if grid_first
+        else {"round": round_part, "grid": grid()}
+    )
+    if placement == "interior":
+        with pytest.raises(ValueError, match=r"[Oo]verlap"):
+            Environment.combine(components, auto_bridge=False)
+        return
+    combined = Environment.combine(components, auto_bridge=False)
+    _maps_into_own_blocks(combined, list(components.values()))
+
+
+def _unbounded_site_in(arena, center):
+    """One nearest-bin site with no lookup radius, bounded by ``arena``."""
+    centers = np.array([center], dtype=float)
+    n_dims = centers.shape[1]
+    return Environment.from_bins(
+        Binning(
+            "sites",
+            SpatialBins.from_arrays(centers, [1.0], n_dims),
+            BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), []),
+            NearestBinLocator(centers),
+            MissingFaces("Sites lack faces."),
+        ),
+        units="cm",
+        frame="lab",
+        arena=arena,
+    )
+
+
+@pytest.mark.parametrize(
+    "center,overlaps",
+    # A unit square turned 45 degrees is a diamond reaching 0.71 from its
+    # center. At (2.6, 1.3) its bounds meet the cell [1, 2] x [0, 1], but its
+    # lower-left edge, x + y = 3.19, passes outside the cell corner (2, 1).
+    [((2.3, 1.0), True), ((2.6, 1.3), False)],
+)
+def test_rotated_polygon_arena_of_a_site_is_checked_against_grid_cells(
+    center, overlaps
+):
+    from neurospatial.arena import OpenArena
+    from neurospatial.ops.transforms import Affine2D
+
+    site = _unbounded_site_in(OpenArena(box(-0.5, -0.5, 0.5, 0.5)), [0.0, 0.0])
+    angle = np.pi / 4
+    matrix = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), center[0]],
+            [np.sin(angle), np.cos(angle), center[1]],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    turned = site.apply_transform(Affine2D(matrix)).with_metadata(frame="lab")
+    components = {"grid": grid(), "site": turned}
+    if overlaps:
+        with pytest.raises(ValueError, match=r"[Oo]verlap"):
+            Environment.combine(components, auto_bridge=False)
+        return
+    combined = Environment.combine(components, auto_bridge=False)
+    _maps_into_own_blocks(combined, list(components.values()))
+
+
+@pytest.mark.parametrize(
+    "center,overlaps",
+    # A unit cube turned 45 degrees about z reaches 0.71 from its center in
+    # x and y. At (2.6, 1.3, 0.5) its bounds meet the cell [1, 2] x [0, 1] x
+    # [0, 1], but its face x + y = 3.19 passes outside the cell edge at
+    # (2, 1).
+    [((2.3, 1.0, 0.5), True), ((2.6, 1.3, 0.5), False)],
+)
+def test_rotated_3d_mask_arena_of_a_site_is_checked_against_grid_cells(
+    center, overlaps
+):
+    from neurospatial.arena import MaskArena
+    from neurospatial.ops.transforms import AffineND
+
+    unit = np.array([-0.5, 0.5])
+    site = _unbounded_site_in(
+        MaskArena((unit, unit, unit), np.ones((1, 1, 1), dtype=bool)),
+        [0.0, 0.0, 0.0],
+    )
+    angle = np.pi / 4
+    matrix = np.eye(4)
+    matrix[:2, :2] = [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    matrix[:3, 3] = center
+    turned = site.apply_transform(AffineND(matrix)).with_metadata(frame="lab")
+    components = {"grid": grid(dims=3), "site": turned}
+    if overlaps:
+        with pytest.raises(ValueError, match=r"[Oo]verlap"):
+            Environment.combine(components, auto_bridge=False)
+        return
+    combined = Environment.combine(components, auto_bridge=False)
+    _maps_into_own_blocks(combined, list(components.values()))
