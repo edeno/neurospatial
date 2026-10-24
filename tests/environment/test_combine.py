@@ -1292,3 +1292,53 @@ def test_rotated_3d_mask_arena_of_a_site_is_checked_against_grid_cells(
         return
     combined = Environment.combine(components, auto_bridge=False)
     _maps_into_own_blocks(combined, list(components.values()))
+
+
+def _bridged_cubes(conductance):
+    """Two unit cubes joined by one bridge with the given conductance."""
+    cubes = {
+        key: Environment.from_grid_mask(
+            np.ones((1, 1, 1), dtype=bool),
+            grid_edges=(np.array([0.0, 1.0]) + shift, *[np.array([0.0, 1.0])] * 2),
+        )
+        for key, shift in (("a", 0.0), ("b", 2.0))
+    }
+    return Environment.combine(
+        cubes, bridge_conductances={(("a", 0), ("b", 0)): conductance}
+    )
+
+
+@pytest.mark.parametrize("conductance,scale", [(1e-300, 1e-30), (1e300, 1e30)])
+def test_scaling_refuses_a_bridge_conductance_it_cannot_represent(conductance, scale):
+    """A volume bridge's conductance scales with length; 0 or inf is refused.
+
+    Rounding the conductance to zero would silently decouple the components,
+    and an infinite one would join them without resistance.
+    """
+    from neurospatial.ops.transforms import scale_3d
+
+    env = _bridged_cubes(conductance)
+    with pytest.raises(
+        ValueError, match="Transformed bridge conductance exceeds floating-point range"
+    ):
+        env.apply_transform(scale_3d(scale), units=env.units)
+
+
+def test_scaling_keeps_a_small_representable_bridge_conductance():
+    from neurospatial.ops.transforms import scale_3d
+
+    env = _bridged_cubes(1e-300)
+    scaled = env.apply_transform(scale_3d(1e-10), units=env.units)
+    np.testing.assert_allclose(
+        scaled.get_bridge_attributes()["conductance"], [1e-310], rtol=1e-6
+    )
+
+
+def test_scaling_refuses_bin_volumes_past_floating_point_range():
+    from neurospatial.ops.transforms import scale_3d
+
+    env = _bridged_cubes(1.0)
+    with pytest.raises(
+        ValueError, match="Transformed bin measures exceed floating-point range"
+    ):
+        env.apply_transform(scale_3d(1e110), units=env.units)
