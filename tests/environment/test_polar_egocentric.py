@@ -1639,3 +1639,22 @@ def test_layout_plot_names_axes_by_coordinate_meaning(coordinate_kind, labels, a
         assert ax.get_aspect() == aspect
     finally:
         plt.close(fig)
+
+
+@pytest.mark.parametrize("scale", [1e-12, 1e6])
+def test_polar_face_arcs_do_not_depend_on_distance_units(scale):
+    """Ring-to-ring faces are arcs at any distance unit, however small."""
+
+    def faces(unit):
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 3.0 * unit),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=unit,
+            angle_bin_size=np.pi / 4,
+            connect_diagonal_neighbors=False,
+        )
+        return env._binning.build_faces()
+
+    reference, scaled = faces(1.0), faces(scale)
+    np.testing.assert_array_equal(scaled.edges, reference.edges)
+    np.testing.assert_allclose(scaled.A, reference.A * scale, rtol=1e-12)
