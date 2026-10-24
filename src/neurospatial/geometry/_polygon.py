@@ -69,17 +69,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
                 "Cell materialization requires a Cartesian 2-D locator.",
                 "retain planar area-measured geometry",
             )
-        mask = (
-            np.ones(locator.shape, dtype=bool)
-            if locator.active_mask is None
-            else locator.active_mask
-        )
-        mapping = locator.flat_to_active
-        if mapping is None:
-            mapping = np.full(mask.size, -1, dtype=np.intp)
-            mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        flat = np.flatnonzero(mapping >= 0)
-        i, j = np.unravel_index(flat[np.argsort(mapping[flat])], locator.shape)
+        i, j = np.unravel_index(np.flatnonzero(locator.active_mask), locator.shape)
         return _boxes(locator.edges, i, j)
     if isinstance(locator, MeshLocator):
         order = np.flatnonzero(locator.simplex_to_active >= 0)
@@ -496,7 +486,7 @@ def _pieces_binning(
     by_parent: dict[int, list[int]] = defaultdict(list)
     for child, parent in enumerate(mapping.parent_bin_indices):
         by_parent[int(parent)].append(child)
-    old_faces = binning.faces.build() if binning.faces.available else None
+    old_faces = binning.build_faces() if binning.faces.available else None
     wall = unary_union(walls)
     divider = wall if dividers is None else unary_union(dividers)
 
@@ -637,7 +627,7 @@ def _pieces_binning(
         geometric_normals(locator, bins.centers, pairs) if faces.available else None
     )
     if normal_values is not None:
-        normal_values[faces.build().A == 0] = 0
+        normal_values[faces.build(bins, connections).A == 0] = 0
     return Binning(
         binning.kind,
         bins,

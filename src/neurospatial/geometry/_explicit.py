@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import itertools
 from dataclasses import replace
 from typing import Literal
@@ -12,11 +11,9 @@ import numpy as np
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import axis_ranges
 from neurospatial.geometry._binning import (
-    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
-    SpatialBins,
     TrackLinearization,
 )
 from neurospatial.geometry._capabilities import RectilinearGrid
@@ -29,7 +26,6 @@ from neurospatial.geometry._components import (
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._native_faces import NativeFaces
-from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
 from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.geometry._track import track_cell_ends
 
@@ -212,7 +208,11 @@ def binning_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
 
 
 def prepare_bins(binning: object) -> Binning:
-    """Own and validate explicit Cartesian bins, with no layout builder.
+    """Prepare explicit Cartesian bins for publication, with no layout builder.
+
+    Publication owns the records and checks them against each other; this
+    converts an adapter's provider, refuses face sources ``from_bins`` cannot
+    check, and builds a native face recipe into known faces.
 
     Parameters
     ----------
@@ -223,7 +223,7 @@ def prepare_bins(binning: object) -> Binning:
     Returns
     -------
     Binning
-        Validated, independently owned bins.
+        The bins, with ``KnownFaces`` or ``MissingFaces``.
 
     Raises
     ------
@@ -235,7 +235,6 @@ def prepare_bins(binning: object) -> Binning:
     if type(binning) is not Binning:
         binning = snapshot_provider(binning, "binning")
     assert isinstance(binning, Binning)
-    binning = _snapshot_binning(binning)
     if type(binning.faces) not in (KnownFaces, MissingFaces, NativeFaces):
         raise TypeError(
             _format_error(
@@ -247,30 +246,9 @@ def prepare_bins(binning: object) -> Binning:
                 "env.binning carries",
             )
         )
-    _check_binning(binning)
     if isinstance(binning.faces, NativeFaces):
         # A native recipe, as env.binning carries, is a closed formula over
         # its own owned arrays. Build it here; publication then checks the
         # faces against the supplied bins like any explicit faces.
-        binning = replace(binning, faces=KnownFaces(binning.faces.build()))
-    if not isinstance(binning.kind, str):
-        raise TypeError("Binning.kind must be a descriptive string.")
-    if isinstance(binning.faces, MissingFaces) and not isinstance(
-        binning.faces.reason, str
-    ):
-        raise TypeError("MissingFaces.reason must be a string.")
-    snapshot = copy.deepcopy(binning)
-    raw, links = snapshot.bins, snapshot.connections
-    # Standalone records have writable NumPy headers; revalidate at ingress
-    # rather than assuming they remain identical to their constructor inputs.
-    bins = SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dims)
-    connections = BinConnections.from_arrays(
-        links.all_pairs, links.all_distances, links.is_open, links.closed_by
-    )
-    faces = (
-        KnownFaces(snapshot.faces.faces)
-        if isinstance(snapshot.faces, KnownFaces)
-        else snapshot.faces
-    )
-    snapshot = replace(snapshot, bins=bins, connections=connections, faces=faces)
-    return snapshot
+        binning = replace(binning, faces=KnownFaces(binning.build_faces()))
+    return binning

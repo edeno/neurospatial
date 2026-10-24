@@ -85,9 +85,9 @@ def test_all_diffusion_consumers_share_provider_snapshot(face_env, monkeypatch):
     builds = []
     build = KnownFaces.build
 
-    def counting_build(provider):
+    def counting_build(provider, bins, connections):
         builds.append(provider)
-        return build(provider)
+        return build(provider, bins, connections)
 
     monkeypatch.setattr(KnownFaces, "build", counting_build)
     mass = np.diag([1.0, 2.0, 4.0])
@@ -456,9 +456,9 @@ def test_native_faces_remain_independent_of_later_builder_graph_changes():
         connect_diagonal_neighbors=False,
     )
     binning = layout.binning()
-    expected = binning.faces.build()
+    expected = binning.build_faces()
     layout.connectivity.clear()
-    actual = binning.faces.build()
+    actual = binning.build_faces()
     for first, second in zip(actual, expected, strict=True):
         np.testing.assert_array_equal(first, second)
 

@@ -102,7 +102,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry import require_cartesian
+from neurospatial.geometry import MissingFaces, require_cartesian
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -772,7 +772,7 @@ def heat_kernel_wavelet_basis(
 
     # Name this analysis, not "smoothing", if the layout has no cell faces.
     faces = env.binning.faces
-    if not faces.available:
+    if isinstance(faces, MissingFaces):
         raise faces.missing_error("heat_kernel_wavelet_basis")
     # Bin spacing is a physical length: on a polar environment it comes from
     # the centers' Cartesian embedding, not from (distance, angle) rows.

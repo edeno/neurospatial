@@ -171,7 +171,7 @@ def face_graph(binning):
     neighbor-pair order; this is the input ``DiffusionGeometry.from_graph``
     and ``compute_diffusion_kernels`` take.
     """
-    faces = binning.faces.build()
+    faces = binning.build_faces()
     graph = nx.Graph()
     graph.add_nodes_from(range(binning.bins.n_bins))
     graph.add_edges_from(
@@ -271,7 +271,7 @@ def _renumbered(env, order, kind, locator, missing_faces, distances=None, **extr
     connections = binning.connections
     pairs = np.argsort(order)[connections.pairs]
     if binning.faces.available:
-        faces = binning.faces.build()
+        faces = binning.build_faces()
         new_faces = KnownFaces(
             FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
         )

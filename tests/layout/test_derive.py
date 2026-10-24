@@ -72,8 +72,8 @@ def test_subset_binning_restricts_arrays_and_pair_order(built_environment):
     )
     assert child.bins.measure_dim == parent.bins.measure_dim
     assert isinstance(child.faces, KnownFaces)
-    expected_faces = parent.faces.build()
-    actual_faces = child.faces.build()
+    expected_faces = parent.build_faces()
+    actual_faces = child.build_faces()
     np.testing.assert_array_equal(actual_faces.edges, child.connections.pairs)
     np.testing.assert_array_equal(actual_faces.A, expected_faces.A[paired])
     np.testing.assert_array_equal(
@@ -212,6 +212,6 @@ def test_reflection_uses_inverse_locator_and_preserves_face_geometry():
     assert isinstance(child.locator, TransformedLocator)
     assert child.rectilinear is None
     for actual, expected in zip(
-        child.faces.build(), face_geometry(parent._cache, parent._binning), strict=True
+        child.build_faces(), face_geometry(parent._cache, parent._binning), strict=True
     ):
         np.testing.assert_array_equal(actual, expected)

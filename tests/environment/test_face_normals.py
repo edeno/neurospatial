@@ -165,7 +165,7 @@ def test_standalone_normal_ownership(restore):
     ],
 )
 def test_invalid_normal_records_refused(invalid):
-    with pytest.raises(ValueError, match="face normals"):
+    with pytest.raises(ValueError, match=r"face.normals"):
         FaceNormals(invalid)
 
 
@@ -197,7 +197,7 @@ def test_explicit_bins_reject_inconsistent_normals(corruption):
     normals = FaceNormals(values)
     if corruption == "header":
         normals.values.shape = (values.size, 1)
-    with pytest.raises(ValueError, match="face normals"):
+    with pytest.raises(ValueError, match=r"face.normals"):
         Environment.from_bins(replace(binning, face_normals=normals))
 
 
@@ -222,10 +222,10 @@ def test_environment_round_trip_keeps_normal_ownership(environment_round_trip):
 def test_current_binning_requires_normal_field_and_other_codecs_stay_version_one():
     env = _grid()
     meta, arrays = encode(env._binning, "binning")
-    assert meta["codec_version"] == 5
+    assert meta["codec_version"] == 6
     assert meta["face_normals"]["codec_version"] == 1
     del meta["face_normals"]
-    with pytest.raises(ValueError, match="face_normals"):
+    with pytest.raises(ValueError, match=r"face.normals"):
         decode(meta, arrays, "binning")
     meta, arrays = encode(env._binning.face_normals, "normals")
     meta["codec_version"] = 2
@@ -339,7 +339,7 @@ def test_storage_refuses_boolean_normal_arrays():
     env = _grid()
     meta, arrays = encode(env._binning.face_normals, "normals")
     arrays["normals/values"] = arrays["normals/values"].astype(bool)
-    with pytest.raises(ValueError, match="face normals"):
+    with pytest.raises(ValueError, match=r"face.normals"):
         decode(meta, arrays, "normals")
 
 

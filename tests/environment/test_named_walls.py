@@ -102,7 +102,7 @@ def test_snapped_walls_stay_inside_a_slanted_arena():
 
 def test_a_wall_through_a_saved_binning_is_named_in_the_error():
     source = _grid(None).binning
-    source = replace(source, faces=KnownFaces(source.faces.build()))
+    source = replace(source, faces=KnownFaces(source.build_faces()))
     arena = OpenArena(
         box(0, 0, 4, 4), walls={"divider": LineString([(1.5, 0), (1.5, 4)])}
     )

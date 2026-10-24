@@ -14,6 +14,7 @@ from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -23,7 +24,11 @@ from neurospatial.geometry._binning import (
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._components import Outline, TriangleShapes
 from neurospatial.geometry._diffusion import FaceGeometry
-from neurospatial.geometry._locators import MeshLocator, NearestBinLocator
+from neurospatial.geometry._locators import (
+    MeshLocator,
+    NearestBinLocator,
+    RectilinearLocator,
+)
 from neurospatial.layout import create_layout
 
 
@@ -54,7 +59,7 @@ def codec_part(request):
         grid_edges=(np.arange(3.0),) * 2,
     )
     binning = env._binning
-    faces = binning.faces.build()
+    faces = binning.build_faces()
     triangle = Polygon([(0, 0), (2, 0), (0, 2)])
     second = Polygon([(4, 0), (6, 0), (4, 2)])
     if request.param == "bins":
@@ -134,9 +139,10 @@ def test_codec_round_trip(codec_part):
     meta, arrays = encoded
     assert json.loads(json.dumps(meta)) == meta
     assert meta["codec_version"] == {
-        Binning: 5,
+        Binning: 6,
         SpatialBins: 2,
         NearestBinLocator: 2,
+        RectilinearLocator: 2,
     }.get(type(codec_part), 1)
     assert isinstance(meta["codec"], str)
     assert all(name.startswith("part/") for name in arrays)
@@ -179,8 +185,16 @@ def test_missing_faces_preserves_actionable_reason():
     meta, arrays = encode(MissingFaces(reason), "faces")
     restored = decode(meta, arrays, "faces")
     assert not restored.available
+    bins = SpatialBins.from_arrays(np.zeros((1, 2)), np.ones(1), 2)
+    binning = Binning(
+        "point",
+        bins,
+        BinConnections.from_arrays(np.empty((0, 2), int), []),
+        NearestBinLocator(bins.centers),
+        restored,
+    )
     with pytest.raises(NotImplementedError) as caught:
-        restored.build()
+        binning.build_faces()
     assert reason in str(caught.value)
     assert "Fix:" in str(caught.value)
     assert "smooth" in str(restored.missing_error("smooth"))
@@ -254,11 +268,8 @@ def test_saved_pairs_must_name_existing_bins():
         "complex",
         "fractional_pairs",
         "overflow_pairs",
-        "duplicate_map",
-        "fractional_map",
         "mask_dtype",
         "nonmonotonic_edges",
-        "presence_flag",
         "invalid_wkb",
     ],
 )
@@ -287,22 +298,12 @@ def test_decode_refuses_malformed_geometry_payload(corruption):
         array[0, 0] = 0.5 if corruption == "fractional_pairs" else 2.0**63
         arrays["part/all_pairs"] = array
         pattern = "pairs"
-    elif corruption == "duplicate_map":
-        arrays["part/flat_to_active"] = np.zeros(4, dtype=np.intp)
-        pattern = "flat_to_active"
-    elif corruption == "fractional_map":
-        arrays["part/flat_to_active"] = arrays["part/flat_to_active"].astype(float)
-        arrays["part/flat_to_active"][0] = 0.5
-        pattern = "flat_to_active"
     elif corruption == "mask_dtype":
         arrays["part/active_mask"] = arrays["part/active_mask"].astype(int)
         pattern = "active_mask"
     elif corruption == "nonmonotonic_edges":
         arrays["part/edges_0"][1] = arrays["part/edges_0"][0]
-        pattern = "edges_0"
-    elif corruption == "presence_flag":
-        meta["has_active_mask"] = "false"
-        pattern = "has_active_mask"
+        pattern = r"edges\[0\]"
     else:
         arrays["part/wkb"] = np.arange(7, dtype=np.uint8)
         pattern = "wkb|WKB|geometry"
@@ -315,7 +316,7 @@ def test_face_decode_rejects_invalid_arrays(field):
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    meta, arrays = encode(env._binning.faces.build(), "faces")
+    meta, arrays = encode(env._binning.build_faces(), "faces")
     arrays[f"faces/{field}"] = arrays[f"faces/{field}"].copy()
     if field == "edges":
         arrays[f"faces/{field}"][0, 0] = env.n_bins

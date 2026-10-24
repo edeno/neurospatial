@@ -158,7 +158,6 @@ def test_decoder_rejects_different_inherited_bin_boundary_ownership():
         (np.array([-2.0, -1.0, 0.0]), np.array([0.0, 1.0])),
         (2, 1),
         np.ones((2, 1), bool),
-        np.array([0, 1]),
     )
     alternate = SubsetLocator(
         TransformedLocator(reversed_grid, np.diag([-1.0, 1.0, 1.0])), np.array([1, 0])

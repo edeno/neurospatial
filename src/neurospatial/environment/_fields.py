@@ -36,6 +36,7 @@ from neurospatial.geometry import (
     EgocentricPolarSystem,
     FaceGeometry,
     KnownFaces,
+    MissingFaces,
     combined_diffusion,
     get_centers,
     locate,
@@ -322,7 +323,7 @@ def _interpolate_linear(
 
 def face_geometry(cache: AnalysisCache, binning: Binning) -> FaceGeometry:
     """Validated cell faces, built once per published geometry."""
-    return cache.get(FACE_GEOMETRY, binning.faces.build)
+    return cache.get(FACE_GEOMETRY, binning.build_faces)
 
 
 def with_cached_faces(cache: AnalysisCache, binning: Binning) -> Binning:
@@ -340,7 +341,7 @@ def require_face_geometry(
     cache: AnalysisCache, binning: Binning, operation: str
 ) -> FaceGeometry:
     """Cached cell faces, or an actionable error naming ``operation``."""
-    if not binning.faces.available:
+    if isinstance(binning.faces, MissingFaces):
         raise binning.faces.missing_error(operation)
     return face_geometry(cache, binning)
 

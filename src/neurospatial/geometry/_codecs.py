@@ -63,6 +63,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     ClippedLocator,
@@ -262,16 +263,15 @@ def _shape(meta: dict[str, Any], name: str = "shape") -> tuple[int, ...]:
     return tuple(raw)
 
 
-def _finite(value: Any, name: str, *, positive: bool = False) -> float:
+def _finite(value: Any, name: str) -> float:
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{name} must be a finite numeric value, not a boolean.")
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be a finite numeric value.") from exc
-    if not np.isfinite(result) or (positive and result <= 0):
-        condition = "finite and positive" if positive else "finite"
-        raise ValueError(f"{name} must be {condition}.")
+    if not np.isfinite(result):
+        raise ValueError(f"{name} must be finite.")
     return result
 
 
@@ -282,27 +282,7 @@ def _grid_edges(
     edges = tuple(
         _array(arrays, prefix, f"edges_{i}", np.float64) for i in range(len(shape))
     )
-    for axis, edge in enumerate(edges):
-        if (
-            edge.shape != (shape[axis] + 1,)
-            or np.any(~np.isfinite(edge))
-            or np.any(np.diff(edge) <= 0)
-        ):
-            raise ValueError(
-                f"edges_{axis} must have shape ({shape[axis] + 1},) "
-                "and be finite and strictly increasing."
-            )
     return edges, shape
-
-
-def _active_map(mapping: NDArray[Any], size: int, name: str) -> None:
-    if mapping.shape != (size,) or np.any(mapping < -1):
-        raise ValueError(f"{name} must have shape ({size},) and indices >= -1.")
-    active = mapping[mapping >= 0]
-    if not np.array_equal(np.sort(active), np.arange(len(active))):
-        raise ValueError(
-            f"{name} active indices must number bins exactly once from zero."
-        )
 
 
 def _encode_bins(obj: SpatialBins, prefix: str) -> Payload:
@@ -373,8 +353,6 @@ def _encode_missing(obj: MissingFaces, prefix: str) -> Payload:
 def _decode_missing(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> MissingFaces:
-    if not isinstance(meta["reason"], str):
-        raise ValueError("reason must be a string explaining unavailable faces.")
     return MissingFaces(meta["reason"])
 
 
@@ -390,10 +368,9 @@ def _decode_grid(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> RectilinearGrid:
     edges, shape = _grid_edges(meta, arrays, prefix)
-    mask = _array(arrays, prefix, "active_mask", np.bool_)
-    if mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
-    return RectilinearGrid(edges, shape, mask)
+    return RectilinearGrid(
+        edges, shape, _array(arrays, prefix, "active_mask", np.bool_)
+    )
 
 
 def _refuse_json_attributes(graph: nx.Graph) -> None:
@@ -547,26 +524,17 @@ def graph_from_node_link(data: dict[str, Any]) -> nx.Graph:
 def _decode_track(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> TrackLinearization:
-    edges, shape = _grid_edges(meta, arrays, prefix)
-    if len(shape) != 1:
-        raise ValueError("track grid edges must describe one linear coordinate.")
-    mask = _array(arrays, prefix, "active_mask", np.bool_)
-    if mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
-    graph = graph_from_node_link(meta["graph"])
-    if graph.is_directed() or graph.is_multigraph():
-        raise ValueError("track graph must be an undirected simple graph.")
+    edges, _ = _grid_edges(meta, arrays, prefix)
     edge_order = tuple(
         tuple(_node_id(node) for node in edge) for edge in meta["edge_order"]
     )
-    if any(len(edge) != 2 or not graph.has_edge(*edge) for edge in edge_order):
-        raise ValueError("edge_order must contain pairs from the stored track graph.")
-    spacing = meta["edge_spacing"]
-    if isinstance(spacing, (list, tuple)):
-        spacing = tuple(_finite(value, "edge_spacing") for value in spacing)
-    else:
-        spacing = _finite(spacing, "edge_spacing")
-    return TrackLinearization(graph, edge_order, spacing, edges, mask)
+    return TrackLinearization(
+        graph_from_node_link(meta["graph"]),
+        edge_order,
+        meta["edge_spacing"],
+        edges,
+        _array(arrays, prefix, "active_mask", np.bool_),
+    )
 
 
 def _encode_hex_shapes(obj: HexagonShapes, prefix: str) -> Payload:
@@ -578,12 +546,9 @@ def _encode_hex_shapes(obj: HexagonShapes, prefix: str) -> Payload:
 def _decode_hex_shapes(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> HexagonShapes:
-    centers = _array(arrays, prefix, "centers", np.float64)
-    if centers.ndim != 2 or centers.shape[1] != 2 or np.any(~np.isfinite(centers)):
-        raise ValueError("centers must be finite with shape (n_bins, 2).")
     return HexagonShapes(
-        centers,
-        _finite(meta["radius"], "radius", positive=True),
+        _array(arrays, prefix, "centers", np.float64),
+        _finite(meta["radius"], "radius"),
         _finite(meta["orientation"], "orientation"),
     )
 
@@ -609,7 +574,10 @@ def _mesh_arrays(
 def _decode_triangle_shapes(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> TriangleShapes:
-    return TriangleShapes(*_mesh_arrays(arrays, prefix, "triangles"))
+    return TriangleShapes(
+        _array(arrays, prefix, "points", np.float64),
+        _array(arrays, prefix, "triangles", np.intp),
+    )
 
 
 def _encode_outline(obj: Outline, prefix: str) -> Payload:
@@ -637,41 +605,17 @@ def _encode_rectilinear_locator(obj: RectilinearLocator, prefix: str) -> Payload
     values: dict[str, NDArray[Any]] = {
         f"edges_{axis}": edge for axis, edge in enumerate(obj.edges)
     }
-    if obj.active_mask is not None:
-        values["active_mask"] = obj.active_mask
-    if obj.flat_to_active is not None:
-        values["flat_to_active"] = obj.flat_to_active
-    return {
-        "shape": list(obj.shape),
-        "has_active_mask": obj.active_mask is not None,
-        "has_flat_to_active": obj.flat_to_active is not None,
-    }, _arrays(prefix, **values)
+    values["active_mask"] = obj.active_mask
+    return {"shape": list(obj.shape)}, _arrays(prefix, **values)
 
 
 def _decode_rectilinear_locator(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> RectilinearLocator:
     edges, shape = _grid_edges(meta, arrays, prefix)
-    mask = (
-        _array(arrays, prefix, "active_mask", np.bool_)
-        if _flag(meta, "has_active_mask")
-        else None
+    return RectilinearLocator(
+        edges, shape, _array(arrays, prefix, "active_mask", np.bool_)
     )
-    mapping = (
-        _array(arrays, prefix, "flat_to_active", np.intp)
-        if _flag(meta, "has_flat_to_active")
-        else None
-    )
-    if mask is not None and mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
-    if mapping is not None:
-        _active_map(mapping, math.prod(shape), "flat_to_active")
-        if mask is not None:
-            expected = np.full(mask.size, -1, dtype=np.intp)
-            expected[mask.ravel()] = np.arange(np.count_nonzero(mask))
-            if not np.array_equal(mapping, expected):
-                raise ValueError("flat_to_active does not match active_mask ordering.")
-    return RectilinearLocator(edges, shape, mask, mapping)
 
 
 def _encode_hex_locator(obj: HexLocator, prefix: str) -> Payload:
@@ -687,16 +631,12 @@ def _decode_hex_locator(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> HexLocator:
     shape = _shape(meta, "centers_shape")
-    if len(shape) != 2:
-        raise ValueError("centers_shape must describe two hexagonal lattice axes.")
-    mapping = _array(arrays, prefix, "flat_to_active", np.intp)
-    _active_map(mapping, math.prod(shape), "flat_to_active")
     return HexLocator(
         _finite(meta["offset_x"], "offset_x"),
         _finite(meta["offset_y"], "offset_y"),
-        _finite(meta["radius"], "radius", positive=True),
-        (shape[0], shape[1]),
-        mapping,
+        _finite(meta["radius"], "radius"),
+        cast("tuple[int, int]", shape),
+        _array(arrays, prefix, "flat_to_active", np.intp),
     )
 
 
@@ -719,7 +659,6 @@ def _decode_mesh_locator(
 ) -> MeshLocator:
     points, simplices = _mesh_arrays(arrays, prefix, "simplices")
     mapping = _array(arrays, prefix, "simplex_to_active", np.intp)
-    _active_map(mapping, len(simplices), "simplex_to_active")
     boundary = None
     if meta["boundary"] is not None:
         component = decode(meta["boundary"], arrays, f"{prefix}/boundary")
@@ -821,21 +760,16 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "bins",
         "connections",
         "faces",
-        "rectilinear",
+        "grid",
         "linearization",
         "shapes",
         "outline",
         "grid_spec",
         "face_normals",
-        "grid_frame",
     ):
         part = getattr(obj, name)
-        if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
-            part = (
-                KnownFaces(part.build())
-                if part.available
-                else MissingFaces(str(part.missing_error("this operation")))
-            )
+        if name == "faces" and isinstance(part, NativeFaces):
+            part = KnownFaces(obj.build_faces())
         if part is None:
             meta[name] = None
         elif isinstance(part, (PolygonCells, ClipMapping)):
@@ -1048,13 +982,12 @@ def _decode_binning(
         "connections": BinConnections,
         "locator": _LOCATOR_TYPES,
         "faces": (KnownFaces, MissingFaces),
-        "rectilinear": RectilinearGrid,
+        "grid": (RectilinearGrid, FramedGrid),
         "linearization": TrackLinearization,
         "shapes": (HexagonShapes, TriangleShapes, PolygonCells),
         "outline": Outline,
         "grid_spec": GridBinningSpec,
         "face_normals": FaceNormals,
-        "grid_frame": FramedGrid,
     }
     part: object | None
     for name, kind in expected.items():
@@ -1080,9 +1013,6 @@ def _decode_binning(
         if part is not None and not isinstance(part, kind):
             raise ValueError(f"{name} has the wrong geometry codec kind.")
         parts[name] = part
-    if not isinstance(meta["kind"], str):
-        raise ValueError("kind must be a descriptive string.")
-    parts["connections"].check_bins(parts["bins"].n_bins)
     ranges = meta["dimension_ranges"]
     if ranges is not None and (
         not isinstance(ranges, list)
@@ -1230,7 +1160,10 @@ _CODECS: dict[str, Codec] = {
         ClippedLocator, _encode_clipped_locator, _decode_clipped_locator
     ),
     "RectilinearLocator": Codec(
-        RectilinearLocator, _encode_rectilinear_locator, _decode_rectilinear_locator
+        RectilinearLocator,
+        _encode_rectilinear_locator,
+        _decode_rectilinear_locator,
+        version=2,
     ),
     "HexLocator": Codec(HexLocator, _encode_hex_locator, _decode_hex_locator),
     "MeshLocator": Codec(MeshLocator, _encode_mesh_locator, _decode_mesh_locator),
@@ -1246,7 +1179,7 @@ _CODECS: dict[str, Codec] = {
         _decode_transformed_locator,
         version=2,
     ),
-    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=5),
+    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=6),
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
     "FramedGrid": Codec(FramedGrid, _encode_grid_frame, _decode_grid_frame),
 }

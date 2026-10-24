@@ -50,26 +50,8 @@ class FramedGrid(ReadOnlyState):
         if type(self.source) is not RectilinearGrid:
             raise TypeError("FramedGrid.source must be a RectilinearGrid.")
         grid = self.source
-        if (
-            len(grid.shape) not in (2, 3)
-            or len(grid.edges) != len(grid.shape)
-            or grid.active_mask.shape != grid.shape
-            or any(
-                not isinstance(n, (int, np.integer))
-                or isinstance(n, (bool, np.bool_))
-                or n <= 0
-                for n in grid.shape
-            )
-            or any(
-                edge.shape != (n + 1,)
-                or not np.all(np.isfinite(edge))
-                or np.any(np.diff(edge) <= 0)
-                for edge, n in zip(grid.edges, grid.shape, strict=True)
-            )
-        ):
-            raise ValueError(
-                "FramedGrid needs finite increasing 2-D/3-D grid axes and a matching mask."
-            )
+        if len(grid.shape) not in (2, 3):
+            raise ValueError("FramedGrid needs a 2-D or 3-D source grid.")
         if np.asarray(self.forward).dtype.kind not in "iuf":
             raise ValueError("FramedGrid.forward must be real numeric data.")
         matrix = np.array(self.forward, dtype=np.float64, copy=True)
@@ -84,24 +66,13 @@ class FramedGrid(ReadOnlyState):
             )
         matrix.setflags(write=False)
         inverse.setflags(write=False)
-        object.__setattr__(
-            self,
-            "source",
-            RectilinearGrid(
-                grid.edges, tuple(int(n) for n in grid.shape), grid.active_mask
-            ),
-        )
         object.__setattr__(self, "forward", matrix)
         object.__setattr__(self, "inverse", inverse)
         source = self.source
-        mapping = np.full(source.active_mask.size, -1, dtype=np.intp)
-        mapping[source.active_mask.ravel()] = np.arange(
-            np.count_nonzero(source.active_mask)
-        )
         object.__setattr__(
             self,
             "_cells",
-            RectilinearLocator(source.edges, source.shape, source.active_mask, mapping),
+            RectilinearLocator(source.edges, source.shape, source.active_mask),
         )
         linear, inverse_linear = matrix[:-1, :-1], inverse[:-1, :-1]
         dims = len(linear)
@@ -325,24 +296,16 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
         ), error
     if not isinstance(locator, RectilinearLocator):
         raise ValueError("FramedGrid requires a matching rectangular locator.")
-    mask = (
-        np.ones(locator.shape, dtype=bool)
-        if locator.active_mask is None
-        else locator.active_mask
-    )
-    if locator.flat_to_active is not None and not np.array_equal(
-        locator.flat_to_active[mask.ravel()], np.arange(np.count_nonzero(mask))
-    ):
-        raise ValueError("FramedGrid requires row-major locator bin ordering.")
     return FramedGrid(
-        RectilinearGrid(locator.edges, locator.shape, mask),
+        RectilinearGrid(locator.edges, locator.shape, locator.active_mask),
         np.eye(len(locator.shape) + 1),
     ), np.zeros((len(locator.shape) + 1,) * 2)
 
 
-def _same_frame(left: FramedGrid | None, right: FramedGrid) -> bool:
+def _same_frame(left: FramedGrid | None, right: FramedGrid | None) -> bool:
     return left is right or (
         left is not None
+        and right is not None
         and np.array_equal(left.forward, right.forward)
         and np.array_equal(left.source.active_mask, right.source.active_mask)
         and all(
@@ -352,37 +315,41 @@ def _same_frame(left: FramedGrid | None, right: FramedGrid) -> bool:
     )
 
 
-def framed_locator(locator: Locator, frame: FramedGrid) -> Locator:
-    """Give the affine step of a framed grid's locator the binning's frame.
+def framed_locator(locator: Locator, frame: FramedGrid | None) -> Locator:
+    """Give the affine step of a binning's locator the binning's frame.
 
-    The outermost :class:`TransformedLocator` then assigns points by the
-    frame's half-open source cells. Below a :class:`SubsetLocator`, it gets
-    the same map over the parent's active cells. Other locators are
-    returned unchanged; publication validates that they match the frame.
+    A binning's ``grid_frame`` is the one record of its frame: the locator's
+    copy is always set from it here, and removed when it is None. The
+    outermost :class:`TransformedLocator` then assigns points by the frame's
+    half-open source cells. Below a :class:`SubsetLocator`, it gets the same
+    map over the parent's active cells. Other locators are returned
+    unchanged; publication validates that they match the frame.
 
     Parameters
     ----------
     locator : Locator
         The binning's locator.
-    frame : FramedGrid
+    frame : FramedGrid or None
         The binning's ``grid_frame``.
 
     Returns
     -------
     Locator
-        ``locator`` itself when it already carries this frame, or a copy
-        that does.
+        ``locator`` itself when it already carries this frame (or, for None,
+        no frame), or a copy that does.
     """
     if isinstance(locator, TransformedLocator):
         if _same_frame(locator.frame, frame):
             return locator
-        return TransformedLocator(locator.base, locator.forward, frame)
+        return locator._framed(frame)
     if isinstance(locator, SubsetLocator):
-        parent_mask = frame_from_locator(locator.base)[0].source.active_mask
-        parent = FramedGrid(
-            RectilinearGrid(frame.source.edges, frame.source.shape, parent_mask),
-            frame.forward,
-        )
+        parent = None
+        if frame is not None:
+            parent_mask = frame_from_locator(locator.base)[0].source.active_mask
+            parent = FramedGrid(
+                RectilinearGrid(frame.source.edges, frame.source.shape, parent_mask),
+                frame.forward,
+            )
         base = framed_locator(locator.base, parent)
         if base is locator.base:
             return locator

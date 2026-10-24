@@ -12,7 +12,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.binning import FramedGrid, RectilinearGrid
+from neurospatial.binning import FramedGrid, RectilinearGrid, TransformedLocator
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import PolygonCells
@@ -171,7 +171,7 @@ def test_frame_round_trip_owns_all_arrays(
         .reshape(n_dims, -1)
         .T
     )
-    locator = RectilinearLocator(edges, shape, None, None)
+    locator = RectilinearLocator(edges, shape, np.ones(shape, bool))
     bins = SpatialBins(centers, np.ones(len(centers)), n_dims)
     native = Environment.from_bins(
         Binning(
@@ -180,7 +180,7 @@ def test_frame_round_trip_owns_all_arrays(
             BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), np.empty(0)),
             locator,
             MissingFaces("No edges."),
-            rectilinear=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
+            grid=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
         )
     )
     env = moved(native, oblique(n_dims, 0.123, 0.3, 13.7))
@@ -235,9 +235,7 @@ def test_frame_round_trip_owns_all_arrays(
     )
 
 
-@pytest.mark.parametrize(
-    "corruption", ["shift", "mask", "edges", "duplicate", "inverse"]
-)
+@pytest.mark.parametrize("corruption", ["shift", "mask", "edges"])
 def test_publication_rejects_inconsistent_frame(corruption):
     env = moved(grid(), matrix())
     binning = env._binning
@@ -254,12 +252,7 @@ def test_publication_rejects_inconsistent_frame(corruption):
         edges = tuple(edge + 0.1 for edge in source.edges)
         source = RectilinearGrid(edges, source.shape, source.active_mask)
     frame = FramedGrid(source, forward)
-    if corruption == "inverse":
-        frame.inverse.setflags(write=True)
-        frame.inverse[0, -1] += 0.1
-    candidate = replace(binning, grid_frame=frame)
-    if corruption == "duplicate":
-        candidate = replace(candidate, rectilinear=source)
+    candidate = replace(binning, grid=frame)
     with pytest.raises(ValueError, match=r"[Ff]rame"):
         Environment.from_bins(candidate)
 
@@ -296,8 +289,9 @@ def test_hexagon_conversion_retains_exact_vertices(kind):
 
 def test_binning_and_frame_codec_versions():
     meta, _ = encode(moved(grid(), matrix())._binning, "binning")
-    assert meta["codec_version"] == 5
-    assert meta["grid_frame"]["codec_version"] == 1
+    assert meta["codec_version"] == 6
+    assert meta["grid"]["codec"] == "FramedGrid"
+    assert meta["grid"]["codec_version"] == 1
 
 
 @pytest.mark.parametrize("kind", ["grid", "hexagonal"])
@@ -348,7 +342,7 @@ def test_similarity_inverse_after_cancelling_translations_keeps_lookup_and_stora
             Environment.from_bins(
                 replace(
                     child._binning,
-                    grid_frame=FramedGrid(child._binning.grid_frame.source, bad),
+                    grid=FramedGrid(child._binning.grid_frame.source, bad),
                 ),
                 arena=child.arena,
             )
@@ -393,12 +387,24 @@ def test_hole_ring_order_does_not_change_polygon_identity_after_inverse(angle, r
         )
 
 
-def test_a_replaced_framed_locator_keeps_its_frame():
+def test_the_binning_grid_is_the_one_record_of_the_locator_frame():
     env = Environment.from_grid_mask(
         np.ones((4, 4), bool), grid_edges=(np.arange(5.0),) * 2
     ).apply_transform(
         AffineND(np.array([[0.6, -0.8, 1.0], [0.8, 0.6, 2.0], [0, 0, 1]]))
     )
-    locator = env._binning.locator
-    assert locator.frame is not None
-    assert replace(locator).frame is locator.frame
+    binning = env._binning
+    locator = binning.locator
+    assert locator.frame is binning.grid_frame
+    # A locator copied back into the binning gets the binning's frame again.
+    assert replace(binning, locator=replace(locator)).locator.frame is (
+        binning.grid_frame
+    )
+    # The frame is not a constructor argument, and a binning without a framed
+    # grid keeps no frame on its locator.
+    with pytest.raises(TypeError):
+        TransformedLocator(locator.base, locator.forward, binning.grid_frame)
+    unframed = replace(binning, grid=None)
+    assert unframed.locator.frame is None
+    points = env.bin_centers + np.array([0.3, -0.2])
+    np.testing.assert_array_equal(unframed.locator.locate(points), env.bin_at(points))

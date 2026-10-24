@@ -202,8 +202,9 @@ class _GridMixin(_NeighborPairsMixin):
         self._locator = RectilinearLocator(
             self.grid_edges,
             self.grid_shape,
-            self.active_mask,
-            self.active_mask_inverse_map,
+            np.ones(self.grid_shape, dtype=bool)
+            if self.active_mask is None
+            else self.active_mask,
         )
 
         if connect_diagonal is not None:

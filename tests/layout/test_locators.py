@@ -269,9 +269,7 @@ def test_rectilinear_locator_matches_brute_force(case):
     """Arbitrary masks and unequal cell widths keep half-open ownership inside
     the active cells and close their outline."""
     edges, shape, active, points = case
-    mapping = np.full(active.size, -1, dtype=np.intp)
-    mapping[active.ravel()] = np.arange(np.count_nonzero(active))
-    locator = RectilinearLocator(edges, shape, active, mapping)
+    locator = RectilinearLocator(edges, shape, active)
     np.testing.assert_array_equal(
         locator.locate(points), _brute_force_boxes(edges, shape, active, points)
     )
@@ -383,13 +381,7 @@ def locator_and_inputs(request):
     if request.param == "rectilinear":
         edges = (np.arange(6.0)[::2], np.arange(6.0)[::2])
         mask = np.array([[True, False], [True, True]])
-        mapping = np.array([0, -1, 1, 2])
-        inputs = {
-            "edges": edges,
-            "shape": (2, 2),
-            "active_mask": mask,
-            "flat_to_active": mapping,
-        }
+        inputs = {"edges": edges, "shape": (2, 2), "active_mask": mask}
         return RectilinearLocator(**inputs), inputs, np.array([[1.0, 1.0], [3.0, 3.0]])
     if request.param == "hex":
         inputs = {

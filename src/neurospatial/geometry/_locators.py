@@ -22,7 +22,12 @@ from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import ReadOnlyState, get_centers
+from neurospatial.geometry._arrays import (
+    ReadOnlyState,
+    get_centers,
+    owned_active_map,
+    owned_grid,
+)
 from neurospatial.geometry._hex_lookup import (
     axial_to_offset_bin_indices,
     cartesian_to_fractional_cube,
@@ -275,32 +280,32 @@ class RectilinearLocator(ReadOnlyState):
     Parameters
     ----------
     edges : tuple of ndarray
-        Increasing cell edges along each coordinate axis.
+        Finite, strictly increasing cell edges along each coordinate axis;
+        ``edges[d]`` has shape ``(shape[d] + 1,)``.
     shape : tuple of int
         Number of full-grid cells along each coordinate axis.
-    active_mask : ndarray of bool, shape ``shape``, or None
-        Active cells. None treats the entire grid as active.
-    flat_to_active : ndarray of intp, shape (prod(shape),), or None
-        Active-bin index of each full-grid cell, or -1 when inactive.
+    active_mask : ndarray of bool, shape ``shape``
+        Active cells. Active bins are numbered in row-major order of the
+        mask.
     """
 
     edges: tuple[NDArray[np.float64], ...]
     shape: tuple[int, ...]
-    active_mask: NDArray[np.bool_] | None
-    flat_to_active: NDArray[np.intp] | None
+    active_mask: NDArray[np.bool_]
+    # Active-bin index of each full-grid cell, or -1, from the mask's order.
+    _flat_to_active: NDArray[np.intp] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "edges", tuple(_owned_array(edge, np.float64) for edge in self.edges)
+        edges, shape, mask = owned_grid(
+            self.edges, self.shape, self.active_mask, name="RectilinearLocator"
         )
-        if self.active_mask is not None:
-            object.__setattr__(
-                self, "active_mask", _owned_array(self.active_mask, np.bool_)
-            )
-        if self.flat_to_active is not None:
-            object.__setattr__(
-                self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)
-            )
+        mapping = np.full(mask.size, -1, dtype=np.intp)
+        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask), dtype=np.intp)
+        mapping.setflags(write=False)
+        object.__setattr__(self, "edges", edges)
+        object.__setattr__(self, "shape", shape)
+        object.__setattr__(self, "active_mask", mask)
+        object.__setattr__(self, "_flat_to_active", mapping)
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
@@ -362,7 +367,7 @@ class RectilinearLocator(ReadOnlyState):
             grid_edges=self.edges,
             grid_shape=self.shape,
             active_mask=self.active_mask,
-            inverse_map=self.flat_to_active,
+            inverse_map=self._flat_to_active,
         ).astype(np.intp, copy=False)
 
     def _outline_owner(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
@@ -375,15 +380,7 @@ class RectilinearLocator(ReadOnlyState):
 
     def _active_index(self, flat: NDArray[np.intp]) -> NDArray[np.intp]:
         """Active-bin index of full-grid cells, or -1 for inactive cells."""
-        if self.flat_to_active is not None:
-            return self.flat_to_active[flat]
-        if self.active_mask is None:
-            return flat
-        mapping = np.full(self.active_mask.size, -1, dtype=np.intp)
-        mapping[self.active_mask.ravel()] = np.arange(
-            np.count_nonzero(self.active_mask)
-        )
-        return mapping[flat]
+        return self._flat_to_active[flat]
 
     def active_centers(self) -> NDArray[np.float64]:
         """Midpoints of the active cells, in active-bin (row-major) order.
@@ -395,12 +392,7 @@ class RectilinearLocator(ReadOnlyState):
             rectilinear binning are these values, so centers and edges cannot
             disagree.
         """
-        mask = (
-            np.ones(self.shape, dtype=bool)
-            if self.active_mask is None
-            else self.active_mask
-        )
-        coordinates = np.unravel_index(np.flatnonzero(mask), self.shape)
+        coordinates = np.unravel_index(np.flatnonzero(self.active_mask), self.shape)
         return np.column_stack(
             [
                 get_centers(edge)[index]
@@ -410,19 +402,13 @@ class RectilinearLocator(ReadOnlyState):
 
     def subset(self, keep: NDArray[np.bool_]) -> RectilinearLocator:
         """Keep whole active cells in their original row-major order."""
-        mask = (
-            np.ones(self.shape, dtype=bool)
-            if self.active_mask is None
-            else self.active_mask.copy()
-        )
+        mask = self.active_mask.copy()
         keep = np.asarray(keep)
         active = np.flatnonzero(mask)
         if keep.dtype.kind != "b" or keep.shape != (len(active),):
             raise ValueError(f"keep must be a boolean array of shape ({len(active)},).")
         mask.ravel()[active] = keep
-        mapping = np.full(mask.size, -1, dtype=np.intp)
-        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        return RectilinearLocator(self.edges, self.shape, mask, mapping)
+        return RectilinearLocator(self.edges, self.shape, mask)
 
     def transformed(self, transform: AffineMatrix) -> RectilinearLocator | None:
         """Map positive diagonal scales and translations without changing owners."""
@@ -438,9 +424,7 @@ class RectilinearLocator(ReadOnlyState):
             diagonal[axis] * edge + matrix[axis, -1]
             for axis, edge in enumerate(self.edges)
         )
-        return RectilinearLocator(
-            edges, self.shape, self.active_mask, self.flat_to_active
-        )
+        return RectilinearLocator(edges, self.shape, self.active_mask)
 
 
 @dataclass(frozen=True, eq=False)
@@ -451,17 +435,11 @@ class SubsetLocator(ReadOnlyState):
     parent_to_child: NDArray[np.intp]
 
     def __post_init__(self) -> None:
-        raw = np.asarray(self.parent_to_child)
-        if raw.ndim != 1 or raw.dtype.kind not in "iu" or np.any(raw < -1):
-            raise ValueError(
-                "parent_to_child must be one-dimensional integer indices >= -1."
-            )
-        selected = raw[raw >= 0]
-        if not np.array_equal(np.sort(selected), np.arange(len(selected))):
-            raise ValueError(
-                "parent_to_child must number child bins exactly once from zero."
-            )
-        object.__setattr__(self, "parent_to_child", _owned_array(raw, np.intp))
+        object.__setattr__(
+            self,
+            "parent_to_child",
+            owned_active_map(self.parent_to_child, None, name="parent_to_child"),
+        )
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
@@ -508,19 +486,21 @@ class TransformedLocator(ReadOnlyState):
         Homogeneous map from source to current coordinates: the transform
         that moved the bins. Its inverse is computed once, as an arena's is,
         so a locator and an arena moved by one map share one inverse.
-    frame : FramedGrid or None, optional
-        The grid frame of the binning this locator belongs to; a ``Binning``
-        with a ``grid_frame`` sets it, so it is rarely passed directly.
 
     Attributes
     ----------
     inverse : ndarray of float64, shape (n_dims + 1, n_dims + 1)
         Homogeneous map from current to source coordinates.
+    frame : FramedGrid or None
+        The ``grid_frame`` of the binning that holds this locator. It is not
+        a constructor argument: a ``Binning`` sets it from its own grid, and
+        clears it when that grid is not framed, so the binning's grid is the
+        one record of the frame. A copy made outside a binning has none.
     """
 
     base: Locator
     forward: NDArray[np.float64]
-    frame: FramedGrid | None = field(default=None, repr=False)
+    frame: FramedGrid | None = field(default=None, init=False, repr=False)
     inverse: NDArray[np.float64] = field(init=False, repr=False)
 
     # Fixed by the matrix, so built once: the sensitivity of source
@@ -557,6 +537,13 @@ class TransformedLocator(ReadOnlyState):
         object.__setattr__(self, "forward", forward)
         object.__setattr__(self, "inverse", inverse)
         object.__setattr__(self, "_sensitivity", sensitivity)
+
+    def _framed(self, frame: FramedGrid | None) -> TransformedLocator:
+        """A copy that assigns points by ``frame`` (a binning's grid), or by
+        the inverse map when ``frame`` is None."""
+        copy = TransformedLocator(self.base, self.forward)
+        object.__setattr__(copy, "frame", frame)
+        return copy
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
@@ -671,7 +658,8 @@ class HexLocator(ReadOnlyState):
     centers_shape : tuple of int
         Number of hexagon rows and columns in the conceptual lattice.
     flat_to_active : ndarray of intp, shape (prod(centers_shape),)
-        Active-bin index of each full-grid cell, or -1 when inactive.
+        Active-bin index of each full-grid cell, or -1 when inactive; the
+        active bins are numbered exactly once from zero.
     """
 
     offset_x: float
@@ -681,8 +669,39 @@ class HexLocator(ReadOnlyState):
     flat_to_active: NDArray[np.intp]
 
     def __post_init__(self) -> None:
+        offset_x, offset_y, radius = (
+            float(self.offset_x),
+            float(self.offset_y),
+            float(self.radius),
+        )
+        if not np.all(np.isfinite([offset_x, offset_y, radius])) or radius <= 0:
+            raise ValueError(
+                "HexLocator offsets must be finite and its radius finite and "
+                f"positive, got offset=({self.offset_x!r}, {self.offset_y!r}), "
+                f"radius={self.radius!r}."
+            )
+        shape = tuple(self.centers_shape)
+        if len(shape) != 2 or any(
+            not isinstance(count, (int, np.integer))
+            or isinstance(count, (bool, np.bool_))
+            or count < 1
+            for count in shape
+        ):
+            raise ValueError(
+                "HexLocator centers_shape must be two positive row and column "
+                f"counts, got {self.centers_shape!r}."
+            )
+        rows, columns = int(shape[0]), int(shape[1])
+        object.__setattr__(self, "offset_x", offset_x)
+        object.__setattr__(self, "offset_y", offset_y)
+        object.__setattr__(self, "radius", radius)
+        object.__setattr__(self, "centers_shape", (rows, columns))
         object.__setattr__(
-            self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)
+            self,
+            "flat_to_active",
+            owned_active_map(
+                self.flat_to_active, rows * columns, name="HexLocator flat_to_active"
+            ),
         )
 
     def locate(
@@ -954,10 +973,15 @@ class MeshLocator(ReadOnlyState):
     boundary: Polygon | None
 
     def __post_init__(self) -> None:
+        simplices = _owned_array(self.simplices, np.intp)
         object.__setattr__(self, "points", _owned_array(self.points, np.float64))
-        object.__setattr__(self, "simplices", _owned_array(self.simplices, np.intp))
+        object.__setattr__(self, "simplices", simplices)
         object.__setattr__(
-            self, "simplex_to_active", _owned_array(self.simplex_to_active, np.intp)
+            self,
+            "simplex_to_active",
+            owned_active_map(
+                self.simplex_to_active, len(simplices), name="simplex_to_active"
+            ),
         )
 
     def _find_triangles(

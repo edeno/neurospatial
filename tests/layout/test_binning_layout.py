@@ -28,7 +28,7 @@ from neurospatial.geometry._locators import HexLocator, MeshLocator, Rectilinear
 def _facade(env, *, binning=None):
     source = env._binning if binning is None else binning
     if not isinstance(source.faces, (KnownFaces, MissingFaces)):
-        source = replace(source, faces=KnownFaces(source.faces.build()))
+        source = replace(source, faces=KnownFaces(source.build_faces()))
     return publish_binning(
         source,
         dimension_ranges=env.dimension_ranges,
@@ -96,7 +96,6 @@ def grid_env():
         "active_count",
         "grid_edges",
         "grid_shape",
-        "locator_order",
         "locator_edges",
     ],
 )
@@ -104,14 +103,18 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
     env = grid_env
     binning = env._binning
     if mismatch.startswith("face_"):
-        faces = binning.faces.build()
+        faces = binning.build_faces()
         if mismatch == "face_edges":
             faces = faces._replace(edges=faces.edges[::-1])
             pattern = "faces.*edges|face.*pairs"
         else:
             faces = faces._replace(volumes=faces.volumes * 2.0)
             pattern = "volumes|sizes"
-        binning = replace(binning, faces=KnownFaces(faces))
+        # The binning record itself refuses faces that do not follow its
+        # pairs and bin sizes.
+        with pytest.raises(ValueError, match=pattern):
+            replace(binning, faces=KnownFaces(faces))
+        return
     elif mismatch in {"active_count", "grid_edges", "grid_shape"}:
         grid = binning.rectilinear
         if mismatch == "active_count":
@@ -120,20 +123,16 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
             grid = replace(grid, active_mask=mask)
             pattern = "active_mask|active.*count"
         elif mismatch == "grid_shape":
-            grid = replace(grid, shape=(1, 4))
-            pattern = "shape|edges"
+            # The grid record itself refuses a shape its edges contradict.
+            with pytest.raises(ValueError, match="edges"):
+                replace(grid, shape=(1, 4))
+            return
         else:
             edges = [edge.copy() for edge in grid.edges]
             edges[0][1] = 0.95
             grid = replace(grid, edges=tuple(edges))
             pattern = "edges|centers|geometry"
-        binning = replace(binning, rectilinear=grid)
-    elif mismatch == "locator_order":
-        mapping = np.arange(env.n_bins, dtype=np.intp)[::-1]
-        binning = replace(
-            binning, locator=replace(binning.locator, flat_to_active=mapping)
-        )
-        pattern = "flat_to_active|locator|bin.*order"
+        binning = replace(binning, grid=grid)
     else:
         edges = [edge.copy() for edge in binning.locator.edges]
         edges[0][1] = 0.95
@@ -240,7 +239,7 @@ def test_facade_accepts_coherent_geometric_bin_permutation(built_environment):
         shapes = replace(shapes, centers=shapes.centers[permutation])
     else:
         shapes = replace(shapes, triangles=shapes.triangles[permutation])
-    faces = original.faces.build()
+    faces = original.build_faces()
     faces = KnownFaces(
         faces._replace(edges=inverse[faces.edges], volumes=faces.volumes[permutation])
     )
@@ -292,7 +291,7 @@ def test_facade_rejects_symmetric_cell_widening_without_measure_change():
     binning = replace(
         original,
         locator=replace(original.locator, edges=edges),
-        rectilinear=replace(original.rectilinear, edges=edges),
+        grid=replace(original.rectilinear, edges=edges),
         faces=KnownFaces(face_geometry(env._cache, env._binning)),
     )
     with pytest.raises(ValueError, match=r"sizes|volumes|measures|area"):
@@ -333,9 +332,9 @@ def test_facade_validates_genuinely_nonuniform_cartesian_cells(corrupt):
         "MaskedGrid",
         SpatialBins(centers, sizes, 2),
         BinConnections.from_arrays(pairs, distances),
-        RectilinearLocator(edges, (2, 1), mask, np.arange(2)),
+        RectilinearLocator(edges, (2, 1), mask),
         KnownFaces(FaceGeometry(pairs, np.array([1.0]), distances, sizes)),
-        rectilinear=RectilinearGrid(edges, (2, 1), mask),
+        grid=RectilinearGrid(edges, (2, 1), mask),
     )
     graph = nx.Graph()
     for index, center in enumerate(centers):

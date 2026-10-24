@@ -56,7 +56,7 @@ def _grid_without_arena() -> Environment:
     connections = BinConnections.from_arrays(
         [[0, 1], [0, 2], [1, 3], [2, 3]], np.ones(4)
     )
-    locator = RectilinearLocator((np.arange(3.0),) * 2, (2, 2), None, None)
+    locator = RectilinearLocator((np.arange(3.0),) * 2, (2, 2), np.ones((2, 2), bool))
     return Environment.from_bins(
         Binning("explicit_grid", bins, connections, locator, MissingFaces("No faces."))
     )

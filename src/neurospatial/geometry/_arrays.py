@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+from neurospatial._exceptions import _format_error
 
 
 def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -25,6 +27,153 @@ def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
 
     """
     return bin_edges[:-1] + np.diff(bin_edges) / 2
+
+
+def owned_grid(
+    edges: Sequence[ArrayLike],
+    shape: Sequence[Any] | None,
+    active_mask: ArrayLike,
+    *,
+    name: str,
+) -> tuple[tuple[NDArray[np.float64], ...], tuple[int, ...], NDArray[np.bool_]]:
+    """Validate and own a rectangular grid's edges, cell counts and active mask.
+
+    Every record that stores rectangular cells (grids, grid locators, grid
+    frames, mask arenas and track linear axes) checks them here.
+
+    Parameters
+    ----------
+    edges : sequence of array-like
+        Cell edges along each axis. ``edges[d]`` must be one-dimensional,
+        finite and strictly increasing, with shape ``(shape[d] + 1,)``.
+    shape : sequence of int, or None
+        Positive number of cells along each axis, one per edge array. None
+        reads it from ``edges``.
+    active_mask : array-like of bool, shape ``shape``
+        Which cells are bins.
+    name : str
+        The record being built, named in error messages.
+
+    Returns
+    -------
+    edges : tuple of ndarray of float64
+        Read-only copies of the edges.
+    shape : tuple of int
+        The cell counts as Python integers.
+    active_mask : ndarray of bool, shape ``shape``
+        A read-only copy of the mask.
+
+    Raises
+    ------
+    ValueError
+        If there is no axis, an axis has no cells, or the edges, cell counts
+        and mask disagree.
+    """
+    fix = (
+        "give each axis finite, strictly increasing edges with one more entry "
+        "than it has cells, and a boolean active_mask with one entry per cell"
+    )
+    raw_edges = tuple(np.asarray(edge) for edge in edges)
+    if not raw_edges or any(
+        edge.ndim != 1 or edge.dtype.kind not in "iuf" for edge in raw_edges
+    ):
+        raise ValueError(
+            _format_error(
+                f"{name} needs one 1-D real array of edges per axis, got "
+                f"{[edge.shape for edge in raw_edges]}.",
+                fix=fix,
+            )
+        )
+    counts = (
+        tuple(len(edge) - 1 for edge in raw_edges) if shape is None else tuple(shape)
+    )
+    if len(counts) != len(raw_edges) or any(
+        not isinstance(count, (int, np.integer))
+        or isinstance(count, (bool, np.bool_))
+        or count < 1
+        for count in counts
+    ):
+        raise ValueError(
+            _format_error(
+                f"{name} shape {counts!r} must give a positive cell count for "
+                f"each of its {len(raw_edges)} edge axes.",
+                fix=fix,
+            )
+        )
+    owned = tuple(np.array(edge, dtype=np.float64, copy=True) for edge in raw_edges)
+    for axis, (edge, count) in enumerate(zip(owned, counts, strict=True)):
+        if (
+            edge.shape != (count + 1,)
+            or not np.all(np.isfinite(edge))
+            or np.any(np.diff(edge) <= 0)
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{name} edges[{axis}] must be finite and strictly "
+                    f"increasing with shape ({count + 1},), got shape {edge.shape}.",
+                    fix=fix,
+                )
+            )
+    raw_mask = np.asarray(active_mask)
+    cells = tuple(int(count) for count in counts)
+    if raw_mask.dtype.kind != "b" or raw_mask.shape != cells:
+        raise ValueError(
+            _format_error(
+                f"{name} active_mask must be boolean with shape {cells}, got "
+                f"{raw_mask.dtype} with shape {raw_mask.shape}.",
+                fix=fix,
+            )
+        )
+    mask = np.array(raw_mask, dtype=np.bool_, copy=True)
+    for array in (*owned, mask):
+        array.setflags(write=False)
+    return owned, cells, mask
+
+
+def owned_active_map(
+    mapping: ArrayLike, size: int | None, *, name: str
+) -> NDArray[np.intp]:
+    """Validate and own a map from full-lattice cells to active-bin indices.
+
+    Parameters
+    ----------
+    mapping : array-like of int, shape (size,)
+        Active-bin index of each cell, or -1 for an inactive cell.
+    size : int or None
+        Number of cells in the full lattice; None accepts any length.
+    name : str
+        The field being checked, named in error messages.
+
+    Returns
+    -------
+    ndarray of intp, shape (size,)
+        A read-only copy.
+
+    Raises
+    ------
+    ValueError
+        If the map is not a one-dimensional integer array of ``size``
+        entries, holds an index below -1, or does not number the active bins
+        exactly once from zero.
+    """
+    raw = np.asarray(mapping)
+    expected = (len(raw) if raw.ndim == 1 else -1,) if size is None else (size,)
+    if (
+        raw.shape != expected
+        or (raw.size and raw.dtype.kind not in "iu")
+        or np.any(raw < -1)
+    ):
+        cells = "cell" if size is None else f"of the {size} cells"
+        raise ValueError(
+            f"{name} must hold one integer index >= -1 for each {cells}, got "
+            f"{raw.dtype} with shape {raw.shape}."
+        )
+    active = raw[raw >= 0]
+    if not np.array_equal(np.sort(active), np.arange(len(active))):
+        raise ValueError(f"{name} must number the active bins exactly once from zero.")
+    owned = np.array(raw, dtype=np.intp, copy=True)
+    owned.setflags(write=False)
+    return owned
 
 
 def boolean_selection(keep: ArrayLike, n_items: int) -> NDArray[np.bool_]:

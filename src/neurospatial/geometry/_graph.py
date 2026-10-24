@@ -47,14 +47,7 @@ def _source_grid(locator: Locator) -> tuple[tuple[int, ...], NDArray[np.intp]] |
             indices = indices[selected]
         return shape, indices
     if isinstance(locator, RectilinearLocator):
-        shape = locator.shape
-        mask = locator.active_mask
-        active = (
-            np.arange(np.prod(shape), dtype=np.intp)
-            if mask is None
-            else np.flatnonzero(mask.ravel())
-        )
-        mapping = locator.flat_to_active
+        return locator.shape, np.flatnonzero(locator.active_mask).astype(np.intp)
     elif isinstance(locator, HexLocator):
         shape = locator.centers_shape
         mapping = locator.flat_to_active

@@ -44,7 +44,7 @@ def test_file_round_trip_identical(environment_round_trip):
     np.testing.assert_array_equal(loaded.dimension_ranges, original.dimension_ranges)
 
     expected = replace(
-        original._binning, faces=KnownFaces(original._binning.faces.build())
+        original._binning, faces=KnownFaces(original._binning.build_faces())
     )
     expected_meta, expected_arrays = encode(expected, "binning")
     actual_meta, actual_arrays = encode(loaded._binning, "binning")
@@ -222,7 +222,7 @@ def test_saved_format_stores_binning(simple_saved_grid, tmp_path, transport):
     assert payload["schema_version"] == "Environment-v3"
     assert payload["layout_type"] == simple_saved_grid.layout_type
     assert payload["derivations"] == list(simple_saved_grid.derivations)
-    assert payload["binning"]["codec_version"] == 5
+    assert payload["binning"]["codec_version"] == 6
 
 
 @pytest.mark.parametrize("transport", ["file", "dict"])

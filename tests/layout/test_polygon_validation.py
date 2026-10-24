@@ -37,8 +37,7 @@ def _binning(polygons, *, pairs=(), known=False):
     parent = RectilinearLocator(
         tuple(np.array([lo, hi]) for lo, hi in zip(lower, upper, strict=True)),
         (1, 1),
-        None,
-        None,
+        np.ones((1, 1), bool),
     )
     mapping = ClipMapping(np.zeros(len(polygons), dtype=int), 1)
     centers = np.array([_representative(polygon) for polygon in polygons])

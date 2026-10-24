@@ -33,7 +33,9 @@ NO_CONNECTIONS = BinConnections.from_arrays(np.empty((0, 2), int), [])
 def clipped_binning():
     cells = PolygonCells((box(0, 0, 1, 4), box(3, 0, 4, 4)))
     mapping = ClipMapping(np.array([0, 0]), 1)
-    base = RectilinearLocator((np.array([0.0, 4.0]),) * 2, (1, 1), None, None)
+    base = RectilinearLocator(
+        (np.array([0.0, 4.0]),) * 2, (1, 1), np.ones((1, 1), bool)
+    )
     locator = ClippedLocator(base, cells, mapping)
     bins = SpatialBins.from_arrays([[0.5, 2.0], [3.5, 2.0]], [4.0, 4.0], 2)
     return Binning(

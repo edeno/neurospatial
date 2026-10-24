@@ -832,7 +832,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         return replace(binning, connections=connections)
     faces = binning.faces
     if faces.available:
-        source = faces.build()
+        source = binning.build_faces()
         area = source.A.copy()
         partial = np.flatnonzero(open_share < 1.0)
         if len(partial):

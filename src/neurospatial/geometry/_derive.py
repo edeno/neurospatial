@@ -14,7 +14,6 @@ from neurospatial.geometry._arrays import per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
-    FacesSource,
     KnownFaces,
     MissingFaces,
     SpatialBins,
@@ -41,6 +40,7 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
     _check_homogeneous,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import (
     PolygonCells,
@@ -97,9 +97,9 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     )
     # pair_kept selects the open pairs that survive, for arrays aligned with them.
     connections, pair_kept = binning.connections.select(child_of)
-    faces: FacesSource = binning.faces
+    faces: KnownFaces | NativeFaces | MissingFaces = binning.faces
     if faces.available:
-        old_faces = faces.build()
+        old_faces = binning.build_faces()
         faces = KnownFaces(
             FaceGeometry(
                 connections.pairs,
@@ -109,11 +109,18 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
             )
         )
     locator = _subset_locator(binning.locator, keep, child_of)
-    grid = binning.rectilinear
-    if grid is not None:
-        grid = RectilinearGrid(
-            grid.edges, grid.shape, _restricted_mask(grid.active_mask, keep)
+    grid: RectilinearGrid | FramedGrid | None = None
+    if binning.grid is not None:
+        source = (
+            binning.grid.source
+            if isinstance(binning.grid, FramedGrid)
+            else binning.grid
         )
+        grid = RectilinearGrid(
+            source.edges, source.shape, _restricted_mask(source.active_mask, keep)
+        )
+        if isinstance(binning.grid, FramedGrid):
+            grid = FramedGrid(grid, binning.grid.forward)
     shapes = None if binning.shapes is None else binning.shapes.subset(keep)
     track = binning.linearization
     if track is not None:
@@ -135,23 +142,11 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         connections,
         locator,
         faces,
-        rectilinear=grid,
+        grid=grid,
         linearization=track,
         shapes=shapes,
         outline=None,
         grid_spec=binning.grid_spec,
-        grid_frame=(
-            FramedGrid(
-                RectilinearGrid(
-                    binning.grid_frame.source.edges,
-                    binning.grid_frame.source.shape,
-                    _restricted_mask(binning.grid_frame.source.active_mask, keep),
-                ),
-                binning.grid_frame.forward,
-            )
-            if binning.grid_frame is not None
-            else None
-        ),
         face_normals=(
             FaceNormals(binning.face_normals.values[pair_kept])
             if binning.face_normals is not None
@@ -504,9 +499,9 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         if binning.face_normals is not None
         else None
     )
-    faces: FacesSource = binning.faces
+    faces: KnownFaces | NativeFaces | MissingFaces = binning.faces
     if faces.available:
-        old = faces.build()
+        old = binning.build_faces()
         if similarity:
             faces = KnownFaces(
                 FaceGeometry(
@@ -607,11 +602,10 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         connections,
         locator,
         faces,
-        rectilinear=grid,
+        grid=frame if frame is not None else grid,
         linearization=track,
         shapes=shapes,
         outline=outline,
-        grid_frame=frame,
         face_normals=normal_data[0] if normal_data is not None else None,
         grid_spec=(
             type(binning.grid_spec)(
