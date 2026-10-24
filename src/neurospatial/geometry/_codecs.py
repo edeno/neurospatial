@@ -169,7 +169,7 @@ def decode(
         )
     try:
         return codec.decode(meta, arrays, prefix)
-    except (KeyError, TypeError, ValueError, IndexError, OverflowError) as exc:
+    except (KeyError, ValueError, IndexError, OverflowError) as exc:
         raise ValueError(f"invalid {name} payload at {prefix}: {exc}") from exc
 
 
@@ -1556,7 +1556,7 @@ def _decode_snapshot(
         try:
             value = adapter.decode(detached_meta, detached_arrays, prefix)
             return _normalize_snapshot(value, adapter.role)
-        except (KeyError, TypeError, ValueError, IndexError, OverflowError) as exc:
+        except (KeyError, ValueError, IndexError, OverflowError) as exc:
             raise ValueError(
                 f"invalid {name} snapshot payload at {prefix}: {exc}"
             ) from exc

@@ -424,3 +424,21 @@ def test_arena_nesting_is_limited_to_32_levels():
     assert isinstance(decode_arena(nested(32), {}), _CombinedArena)
     with pytest.raises(ValueError, match="nesting exceeds 32 levels"):
         decode_arena(nested(33), {})
+
+
+def test_invalid_payload_is_reported_but_a_decoder_type_error_is_not(monkeypatch):
+    import neurospatial.geometry._codecs as codecs
+
+    bins = SpatialBins.from_arrays(np.zeros((2, 2)), [1.0, 1.0], 2)
+    meta, arrays = encode(bins, "bins")
+    del arrays["bins/sizes"]
+    with pytest.raises(ValueError, match=r"invalid SpatialBins payload at bins"):
+        decode(meta, arrays, "bins")
+
+    def broken(meta, arrays, prefix):
+        return len(None)
+
+    codec = codecs._CODECS["SpatialBins"]
+    monkeypatch.setitem(codecs._CODECS, "SpatialBins", replace(codec, decode=broken))
+    with pytest.raises(TypeError, match="NoneType"):
+        decode(*encode(bins, "bins"), "bins")
