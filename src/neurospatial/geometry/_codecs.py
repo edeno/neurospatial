@@ -7,6 +7,7 @@ data is normalized back through these built-in codecs.
 from __future__ import annotations
 
 import copy
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -361,8 +362,6 @@ def _encode_missing(obj: MissingFaces, prefix: str) -> Payload:
 def _decode_missing(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> MissingFaces:
-    if not isinstance(meta["reason"], str):
-        raise ValueError("reason must be a string explaining unavailable faces.")
     return MissingFaces(meta["reason"])
 
 
@@ -771,13 +770,12 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "bins",
         "connections",
         "faces",
-        "rectilinear",
+        "grid",
         "linearization",
         "shapes",
         "outline",
         "grid_spec",
         "face_normals",
-        "grid_frame",
     ):
         part = getattr(obj, name)
         if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
@@ -998,13 +996,12 @@ def _decode_binning(
         "connections": BinConnections,
         "locator": _LOCATOR_TYPES,
         "faces": (KnownFaces, MissingFaces),
-        "rectilinear": RectilinearGrid,
+        "grid": (RectilinearGrid, FramedGrid),
         "linearization": TrackLinearization,
         "shapes": (HexagonShapes, TriangleShapes, PolygonCells),
         "outline": Outline,
         "grid_spec": GridBinningSpec,
         "face_normals": FaceNormals,
-        "grid_frame": FramedGrid,
     }
     part: object | None
     for name, kind in expected.items():
@@ -1030,9 +1027,6 @@ def _decode_binning(
         if part is not None and not isinstance(part, kind):
             raise ValueError(f"{name} has the wrong geometry codec kind.")
         parts[name] = part
-    if not isinstance(meta["kind"], str):
-        raise ValueError("kind must be a descriptive string.")
-    parts["connections"].check_bins(parts["bins"].n_bins)
     ranges = meta["dimension_ranges"]
     if ranges is not None and (
         not isinstance(ranges, list)
@@ -1199,7 +1193,7 @@ _CODECS: dict[str, Codec] = {
         _decode_transformed_locator,
         version=2,
     ),
-    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=5),
+    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=6),
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
     "FramedGrid": Codec(FramedGrid, _encode_grid_frame, _decode_grid_frame),
 }

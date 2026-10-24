@@ -138,7 +138,7 @@ def test_codec_round_trip(codec_part):
     meta, arrays = encoded
     assert json.loads(json.dumps(meta)) == meta
     assert meta["codec_version"] == {
-        Binning: 5,
+        Binning: 6,
         SpatialBins: 2,
         NearestBinLocator: 2,
         RectilinearLocator: 2,

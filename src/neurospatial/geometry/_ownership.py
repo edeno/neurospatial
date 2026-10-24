@@ -95,13 +95,12 @@ def _check_binning(binning: Binning) -> None:
     if type(faces) not in (KnownFaces, MissingFaces, NativeFaces):
         _migration(faces)
     for component, allowed in (
-        (binning.rectilinear, (RectilinearGrid,)),
+        (binning.grid, (RectilinearGrid, FramedGrid)),
         (binning.linearization, (TrackLinearization,)),
         (binning.shapes, (HexagonShapes, TriangleShapes, PolygonCells)),
         (binning.outline, (Outline,)),
         (binning.grid_spec, (GridBinningSpec,)),
         (binning.face_normals, (FaceNormals,)),
-        (binning.grid_frame, (FramedGrid,)),
     ):
         if component is not None and type(component) not in allowed:
             _migration(component)

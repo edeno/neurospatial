@@ -128,25 +128,11 @@ def test_publication_rejects_stale_parent_geometry():
 
 
 def test_nested_child_faces_cannot_disagree_with_child_measures():
-    from neurospatial.binning import Binning, MissingFaces
-
-    source = snapshot()
-    child = source.children[0]
+    child = snapshot().children[0]
     bad_faces = child.faces.build()._replace(volumes=np.array([2.0]))
-    bad = replace(
-        source,
-        children=(replace(child, faces=KnownFaces(bad_faces)), source.children[1]),
-    )
+    # The child binning itself refuses faces whose volumes are not its sizes.
     with pytest.raises(ValueError, match=r"faces\.volumes"):
-        Environment.from_bins(
-            Binning(
-                "combined",
-                bad.spatial_bins(),
-                bad.bin_connections(),
-                bad,
-                MissingFaces("bridge"),
-            )
-        )
+        replace(child, faces=KnownFaces(bad_faces))
 
 
 def test_nested_arena_depth_is_bounded():

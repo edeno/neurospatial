@@ -72,7 +72,7 @@ def test_rate_result_rejects_different_environment(
             bins=bins,
             locator=NearestBinLocator(bins.centers),
             faces=KnownFaces(faces),
-            rectilinear=None,
+            grid=None,
         )
         layout = publish_binning(
             binning,

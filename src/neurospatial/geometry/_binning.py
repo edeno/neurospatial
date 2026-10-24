@@ -509,9 +509,22 @@ class MissingCellGeometryError(NotImplementedError):
 
 @dataclass(frozen=True, eq=False)
 class MissingFaces:
-    """The reason finite-volume operations cannot use a binning."""
+    """The reason finite-volume operations cannot use a binning.
+
+    Raises
+    ------
+    TypeError
+        If ``reason`` is not a string.
+    """
 
     reason: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.reason, str):
+            raise TypeError(
+                "MissingFaces.reason must be a string explaining why the faces "
+                f"are missing, got {self.reason!r}."
+            )
 
     @property
     def available(self) -> bool:
@@ -782,9 +795,26 @@ class Binning:
     without cells keep a declared value (or None). An environment's
     binning carries the environment's ``dimension_ranges``.
 
-    A ``grid_frame`` is handed to the affine step of ``locator`` (a
+    ``grid`` holds the bins' rectangular cells, when they have them: a
+    :class:`RectilinearGrid` whose cells are axis-aligned in the bins'
+    coordinates, or a :class:`FramedGrid` whose source cells an affine map
+    (a rotation or shear) carries into them. ``rectilinear`` and
+    ``grid_frame`` read it as one or the other, so a binning cannot claim
+    both. A framed grid is handed to the affine step of ``locator`` (a
     :class:`TransformedLocator`), so ``locator.locate`` assigns points by the
     frame's half-open source cells, as linear time allocation does.
+
+    Construction checks what the records alone determine: ``kind`` is a
+    string, every neighbor pair names a bin, known faces follow the open
+    pairs with one volume per bin, and face normals have one row per open
+    pair. Publication checks the geometry the records must share.
+
+    Raises
+    ------
+    TypeError
+        If ``kind`` is not a string.
+    ValueError
+        If the records disagree in shape as described above.
     """
 
     kind: str
@@ -792,16 +822,51 @@ class Binning:
     connections: BinConnections
     locator: Locator
     faces: FacesSource
-    rectilinear: RectilinearGrid | None = None
+    grid: RectilinearGrid | FramedGrid | None = None
     linearization: TrackLinearization | None = None
     shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None
     outline: Outline | None = None
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
-    grid_frame: FramedGrid | None = None
     dimension_ranges: tuple[tuple[float, float], ...] | None = None
 
+    @property
+    def rectilinear(self) -> RectilinearGrid | None:
+        """The axis-aligned rectangular cells, or None."""
+        return self.grid if isinstance(self.grid, RectilinearGrid) else None
+
+    @property
+    def grid_frame(self) -> FramedGrid | None:
+        """The rectangular cells mapped by a rotation or shear, or None."""
+        return self.grid if isinstance(self.grid, FramedGrid) else None
+
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, str):
+            raise TypeError(
+                f"Binning.kind must be a descriptive string, got {self.kind!r}."
+            )
+        self.connections.check_bins(self.bins.n_bins)
+        pairs = self.connections.pairs
+        if isinstance(self.faces, KnownFaces):
+            faces = self.faces.faces
+            if not np.array_equal(faces.edges, pairs):
+                raise ValueError(
+                    "Binning faces.edges must be the open neighbor pairs, "
+                    "connections.pairs, in the same order and orientation."
+                )
+            if not np.array_equal(faces.volumes, self.bins.sizes):
+                raise ValueError(
+                    "Binning faces.volumes must equal bins.sizes, one per bin."
+                )
+        if self.face_normals is not None and self.face_normals.values.shape != (
+            len(pairs),
+            self.bins.n_dims,
+        ):
+            raise ValueError(
+                "Binning face_normals must have one row per open pair and one "
+                f"column per axis, shape ({len(pairs)}, {self.bins.n_dims}), got "
+                f"{self.face_normals.values.shape}."
+            )
         if self.grid_frame is not None:
             # Lookup and linear allocation share the frame's cell rule.
             object.__setattr__(
@@ -836,8 +901,8 @@ def require_rectilinear(
     NotImplementedError
         If the binning has no axis-aligned rectangular cells.
     """
-    if binning.rectilinear is not None:
-        return binning.rectilinear
+    if isinstance(binning.grid, RectilinearGrid):
+        return binning.grid
     raise NotImplementedError(
         _format_error(
             f"{operation} needs a grid of axis-aligned rectangular cells; this "
@@ -856,6 +921,6 @@ def require_grid_context(
     binning: Binning, operation: str, *, fix: str
 ) -> tuple[RectilinearGrid, FramedGrid | None]:
     """Read source axes and their optional world frame without copying grids."""
-    if binning.grid_frame is not None:
-        return binning.grid_frame.source, binning.grid_frame
+    if isinstance(binning.grid, FramedGrid):
+        return binning.grid.source, binning.grid
     return require_rectilinear(binning, operation, fix=fix), None

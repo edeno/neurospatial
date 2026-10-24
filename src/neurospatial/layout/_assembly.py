@@ -110,7 +110,7 @@ def assemble_binning(
         connections=connections,
         locator=locator,
         faces=NativeFaces(bins, connections, faces, face_arrays, n_angle, circular),
-        rectilinear=rectilinear,
+        grid=rectilinear,
         linearization=linearization,
         grid_spec=grid_spec,
         face_normals=FaceNormals(normals) if normals is not None else None,

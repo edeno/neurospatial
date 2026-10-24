@@ -180,7 +180,7 @@ def test_frame_round_trip_owns_all_arrays(
             BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), np.empty(0)),
             locator,
             MissingFaces("No edges."),
-            rectilinear=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
+            grid=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
         )
     )
     env = moved(native, oblique(n_dims, 0.123, 0.3, 13.7))
@@ -235,9 +235,7 @@ def test_frame_round_trip_owns_all_arrays(
     )
 
 
-@pytest.mark.parametrize(
-    "corruption", ["shift", "mask", "edges", "duplicate", "inverse"]
-)
+@pytest.mark.parametrize("corruption", ["shift", "mask", "edges", "inverse"])
 def test_publication_rejects_inconsistent_frame(corruption):
     env = moved(grid(), matrix())
     binning = env._binning
@@ -257,9 +255,7 @@ def test_publication_rejects_inconsistent_frame(corruption):
     if corruption == "inverse":
         frame.inverse.setflags(write=True)
         frame.inverse[0, -1] += 0.1
-    candidate = replace(binning, grid_frame=frame)
-    if corruption == "duplicate":
-        candidate = replace(candidate, rectilinear=source)
+    candidate = replace(binning, grid=frame)
     with pytest.raises(ValueError, match=r"[Ff]rame"):
         Environment.from_bins(candidate)
 
@@ -296,8 +292,9 @@ def test_hexagon_conversion_retains_exact_vertices(kind):
 
 def test_binning_and_frame_codec_versions():
     meta, _ = encode(moved(grid(), matrix())._binning, "binning")
-    assert meta["codec_version"] == 5
-    assert meta["grid_frame"]["codec_version"] == 1
+    assert meta["codec_version"] == 6
+    assert meta["grid"]["codec"] == "FramedGrid"
+    assert meta["grid"]["codec_version"] == 1
 
 
 @pytest.mark.parametrize("kind", ["grid", "hexagonal"])
@@ -348,7 +345,7 @@ def test_similarity_inverse_after_cancelling_translations_keeps_lookup_and_stora
             Environment.from_bins(
                 replace(
                     child._binning,
-                    grid_frame=FramedGrid(child._binning.grid_frame.source, bad),
+                    grid=FramedGrid(child._binning.grid_frame.source, bad),
                 ),
                 arena=child.arena,
             )

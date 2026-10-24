@@ -60,7 +60,7 @@ def _rectilinear():
         BinConnections.from_arrays(pairs, [2.0, 3.0, 4.0]),
         RectilinearLocator(edges, (2, 2), mask),
         KnownFaces(FaceGeometry(pairs, np.ones(3), np.ones(3), np.ones(4))),
-        rectilinear=RectilinearGrid(edges, (2, 2), mask),
+        grid=RectilinearGrid(edges, (2, 2), mask),
     )
 
 
@@ -427,7 +427,7 @@ def test_shared_geometry_mismatch_is_not_hidden_by_public_ingress():
     bad_edges = (np.array([0.0, 0.95, 2.0]), np.arange(3.0))
     changed = replace(
         source,
-        rectilinear=RectilinearGrid(bad_edges, (2, 2), np.ones((2, 2), dtype=bool)),
+        grid=RectilinearGrid(bad_edges, (2, 2), np.ones((2, 2), dtype=bool)),
     )
     with pytest.raises(ValueError, match=r"rectilinear edges"):
         Environment.from_bins(changed)
@@ -450,7 +450,7 @@ def test_nonuniform_cells_are_supported_without_regular_grid_rebinning():
         BinConnections.from_arrays([[0, 1]], [1.5]),
         RectilinearLocator(edges, (2, 1), mask),
         MissingFaces("No finite-volume faces supplied."),
-        rectilinear=RectilinearGrid(edges, (2, 1), mask),
+        grid=RectilinearGrid(edges, (2, 1), mask),
     )
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env.bin_sizes, [1, 2])
@@ -470,7 +470,7 @@ def test_nearly_uniform_variable_measures_are_not_reinterpreted_as_native_cells(
         BinConnections.from_arrays([[0, 1]], [centers[1, 0] - centers[0, 0]]),
         RectilinearLocator(edges, (2, 1), mask),
         MissingFaces("No finite-volume faces supplied."),
-        rectilinear=RectilinearGrid(edges, (2, 1), mask),
+        grid=RectilinearGrid(edges, (2, 1), mask),
     )
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env.bin_sizes, np.diff(edges[0]))
@@ -798,7 +798,7 @@ def _variable_grid_faces(n_dims):
         BinConnections.from_arrays(pairs, distances * 3 + 1),
         RectilinearLocator(edges, mask.shape, mask),
         KnownFaces(FaceGeometry(pairs, np.array(areas), distances, sizes)),
-        rectilinear=RectilinearGrid(edges, mask.shape, mask),
+        grid=RectilinearGrid(edges, mask.shape, mask),
     )
 
 
@@ -964,7 +964,7 @@ def test_three_dimensional_affine_grid_faces_follow_physical_planes():
         connections=BinConnections.from_arrays(pairs, distances),
         locator=TransformedLocator(source.locator, matrix),
         faces=KnownFaces(faces),
-        rectilinear=None,
+        grid=None,
     )
     env = Environment.from_bins(transformed)
     np.testing.assert_allclose(
@@ -989,7 +989,7 @@ def test_grid_face_validation_preserves_finite_extreme_coordinate_scales(scale):
         BinConnections.from_arrays(pairs, [scale]),
         RectilinearLocator(edges, (2,), mask),
         KnownFaces(FaceGeometry(pairs, np.ones(1), np.array([scale]), sizes)),
-        rectilinear=RectilinearGrid(edges, (2,), mask),
+        grid=RectilinearGrid(edges, (2,), mask),
     )
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(
@@ -1229,14 +1229,14 @@ def _cell_descriptions():
     "base,component,source",
     [
         ("grid", "linearization", "track"),
-        ("track", "rectilinear", "grid"),
-        ("hexagons", "rectilinear", "grid"),
+        ("track", "grid", "grid"),
+        ("hexagons", "grid", "grid"),
         ("grid", "shapes", "hexagons"),
         ("grid", "shapes", "polygons"),
-        ("polygons", "rectilinear", "grid"),
+        ("polygons", "grid", "grid"),
         ("framed", "shapes", "hexagons"),
         ("track", "shapes", "hexagons"),
-        ("polygons", "grid_frame", "framed"),
+        ("polygons", "grid", "framed"),
     ],
 )
 def test_bins_carry_one_cell_description(base, component, source):

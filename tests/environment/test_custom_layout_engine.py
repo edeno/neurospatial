@@ -63,7 +63,7 @@ class _RecordedGrid:
                     np.full(len(centers), bin_size**2),
                 )
             ),
-            rectilinear=RectilinearGrid(edges, shape, mask),
+            grid=RectilinearGrid(edges, shape, mask),
         )
 
     def binning(self) -> Binning:

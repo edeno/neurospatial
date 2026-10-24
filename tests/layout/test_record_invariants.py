@@ -6,11 +6,18 @@ import pytest
 
 from neurospatial.arena import MaskArena, TrackArena
 from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    FaceGeometry,
+    FaceNormals,
     FramedGrid,
     HexagonShapes,
     HexLocator,
+    KnownFaces,
+    MissingFaces,
     RectilinearGrid,
     RectilinearLocator,
+    SpatialBins,
     TrackLinearization,
     TriangleShapes,
 )
@@ -199,3 +206,82 @@ def test_rectilinear_locator_codec_refuses_the_old_record_format():
     assert set(arrays) == {"part/edges_0", "part/active_mask"}
     with pytest.raises(ValueError, match="codec_version 1"):
         decode({**meta, "codec_version": 1}, arrays, "part")
+
+
+def _two_bins(**changes):
+    edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0]))
+    parts = {
+        "kind": "pair",
+        "bins": SpatialBins.from_arrays([[0.5, 0.5], [1.5, 0.5]], [1.0, 1.0], 2),
+        "connections": BinConnections.from_arrays([[0, 1]], [1.0]),
+        "locator": RectilinearLocator(edges, (2, 1), np.ones((2, 1), bool)),
+        "faces": KnownFaces(
+            FaceGeometry(np.array([[0, 1]]), np.ones(1), np.ones(1), np.ones(2))
+        ),
+        "grid": RectilinearGrid(edges, (2, 1), np.ones((2, 1), bool)),
+    }
+    return Binning(**(parts | changes))
+
+
+@pytest.mark.parametrize(
+    ("changes", "error", "pattern"),
+    [
+        ({"kind": 5}, TypeError, "kind"),
+        (
+            {"connections": BinConnections.from_arrays([[0, 7]], [1.0])},
+            ValueError,
+            r"pairs\(0, 1\) must be in \[0, 2\)",
+        ),
+        (
+            {
+                "faces": KnownFaces(
+                    FaceGeometry(np.array([[0, 1]]), np.ones(1), np.ones(1), np.ones(3))
+                )
+            },
+            ValueError,
+            r"faces\.volumes",
+        ),
+        (
+            {
+                "faces": KnownFaces(
+                    FaceGeometry(np.array([[1, 0]]), np.ones(1), np.ones(1), np.ones(2))
+                )
+            },
+            ValueError,
+            r"faces\.edges",
+        ),
+        (
+            {"face_normals": FaceNormals(np.array([[1.0, 0.0, 0.0]]))},
+            ValueError,
+            "face_normals",
+        ),
+    ],
+    ids=["kind", "pair-bin", "volumes", "edges", "normals"],
+)
+def test_binning_refuses_records_that_disagree_in_shape(changes, error, pattern):
+    _two_bins()  # the unchanged records are consistent
+    with pytest.raises(error, match=pattern):
+        _two_bins(**changes)
+
+
+def test_binning_holds_one_grid_description():
+    """A binning's grid is axis-aligned or framed, never both."""
+    binning = _two_bins()
+    assert binning.rectilinear is binning.grid and binning.grid_frame is None
+    with pytest.raises(TypeError):
+        _two_bins(rectilinear=binning.grid)
+    with pytest.raises(TypeError):
+        _two_bins(grid_frame=None)
+
+
+def test_binning_codec_refuses_the_two_grid_field_format():
+    meta, arrays = encode(_two_bins(), "binning")
+    assert meta["codec_version"] == 6 and meta["grid"]["codec"] == "RectilinearGrid"
+    assert "rectilinear" not in meta and "grid_frame" not in meta
+    with pytest.raises(ValueError, match="codec_version 5"):
+        decode({**meta, "codec_version": 5}, arrays, "binning")
+
+
+def test_missing_faces_reason_is_a_string():
+    with pytest.raises(TypeError, match="reason"):
+        MissingFaces(42)

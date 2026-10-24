@@ -110,7 +110,11 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
         else:
             faces = faces._replace(volumes=faces.volumes * 2.0)
             pattern = "volumes|sizes"
-        binning = replace(binning, faces=KnownFaces(faces))
+        # The binning record itself refuses faces that do not follow its
+        # pairs and bin sizes.
+        with pytest.raises(ValueError, match=pattern):
+            replace(binning, faces=KnownFaces(faces))
+        return
     elif mismatch in {"active_count", "grid_edges", "grid_shape"}:
         grid = binning.rectilinear
         if mismatch == "active_count":
@@ -128,7 +132,7 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
             edges[0][1] = 0.95
             grid = replace(grid, edges=tuple(edges))
             pattern = "edges|centers|geometry"
-        binning = replace(binning, rectilinear=grid)
+        binning = replace(binning, grid=grid)
     else:
         edges = [edge.copy() for edge in binning.locator.edges]
         edges[0][1] = 0.95
@@ -287,7 +291,7 @@ def test_facade_rejects_symmetric_cell_widening_without_measure_change():
     binning = replace(
         original,
         locator=replace(original.locator, edges=edges),
-        rectilinear=replace(original.rectilinear, edges=edges),
+        grid=replace(original.rectilinear, edges=edges),
         faces=KnownFaces(face_geometry(env._cache, env._binning)),
     )
     with pytest.raises(ValueError, match=r"sizes|volumes|measures|area"):
@@ -330,7 +334,7 @@ def test_facade_validates_genuinely_nonuniform_cartesian_cells(corrupt):
         BinConnections.from_arrays(pairs, distances),
         RectilinearLocator(edges, (2, 1), mask),
         KnownFaces(FaceGeometry(pairs, np.array([1.0]), distances, sizes)),
-        rectilinear=RectilinearGrid(edges, (2, 1), mask),
+        grid=RectilinearGrid(edges, (2, 1), mask),
     )
     graph = nx.Graph()
     for index, center in enumerate(centers):

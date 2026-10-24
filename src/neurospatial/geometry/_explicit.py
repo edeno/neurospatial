@@ -253,12 +253,6 @@ def prepare_bins(binning: object) -> Binning:
         # its own owned arrays. Build it here; publication then checks the
         # faces against the supplied bins like any explicit faces.
         binning = replace(binning, faces=KnownFaces(binning.faces.build()))
-    if not isinstance(binning.kind, str):
-        raise TypeError("Binning.kind must be a descriptive string.")
-    if isinstance(binning.faces, MissingFaces) and not isinstance(
-        binning.faces.reason, str
-    ):
-        raise TypeError("MissingFaces.reason must be a string.")
     snapshot = copy.deepcopy(binning)
     raw, links = snapshot.bins, snapshot.connections
     # Standalone records have writable NumPy headers; revalidate at ingress

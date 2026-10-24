@@ -846,7 +846,6 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     """Compare shared arrays exactly and recursively check computed geometry."""
     coordinate_kind = coordinates.kind
     bins, links, locator = binning.bins, binning.connections, binning.locator
-    links.check_bins(bins.n_bins)
     if binning.grid_spec is not None:
         spec = binning.grid_spec
         if type(spec) is not GridBinningSpec:
@@ -857,8 +856,6 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
                 "Grid specification must match Cartesian coordinate dimensions."
             )
     if isinstance(binning.faces, KnownFaces):
-        _equal(binning.faces.faces.edges, links.pairs, "faces.edges")
-        _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")
         faces = binning.faces.faces
         refuse_mixed_measure_conductance(
             bins.measure_dims,
@@ -918,10 +915,8 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     gap = min(_gap(geometry.centers), geometry.cell_gap)
     if binning.grid_frame is not None:
         frame = binning.grid_frame
-        if coordinate_kind != "cartesian" or binning.rectilinear is not None:
-            raise ValueError(
-                "FramedGrid requires Cartesian cells without a duplicate world-axis grid."
-            )
+        if coordinate_kind != "cartesian":
+            raise ValueError("FramedGrid requires Cartesian cells.")
         checked = FramedGrid(frame.source, frame.forward)
         _equal(frame.inverse, checked.inverse, "grid_frame.inverse")
         expected_frame, error = frame_from_locator(locator)
