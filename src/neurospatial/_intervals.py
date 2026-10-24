@@ -297,7 +297,8 @@ def as_intervals(value: Any, *, name: str) -> NDArray[np.float64] | None:
     ------
     ValueError
         On a wrong shape, zero rows, non-finite values or ``stop <= start``.
-        Every problem is listed in one message.
+        Non-finite and inverted rows are all listed in one message; a value
+        that is unreadable or wrongly shaped is reported on its own.
     """
     if value is None:
         return None
@@ -369,6 +370,12 @@ def intersect_intervals(
 ) -> NDArray[np.float64]:
     """Intersect two sorted, merged interval sets (vectorized).
 
+    Parameters
+    ----------
+    a, b : ndarray, shape (n_a, 2) and (n_b, 2)
+        Sorted, disjoint half-open rows in seconds (:func:`as_intervals`
+        output).
+
     Returns
     -------
     ndarray, shape (n, 2)
@@ -411,7 +418,7 @@ def run_sample_bounds(interval_mask: NDArray[np.bool_]) -> NDArray[np.intp]:
 def run_time_bounds(
     times: NDArray[np.float64], interval_mask: NDArray[np.bool_]
 ) -> NDArray[np.float64]:
-    """Return ``[times[first], times[last]]`` for every maximal valid run.
+    """Return ``(times[first], times[last])`` for every maximal valid run.
 
     Returns
     -------
@@ -622,7 +629,7 @@ def observed_interval_mask(
     ``epochs`` is the raw user argument; it is normalized here with
     ``as_intervals(epochs, name="epochs")``. ``break_before`` is already
     validated (``validate_break_before``). ``result`` names what an empty
-    selection produces in the warning, as in `warn_excluded_intervals`.
+    selection produces in the warning, as in :func:`warn_excluded_intervals`.
 
     Returns
     -------

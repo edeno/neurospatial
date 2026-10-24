@@ -42,7 +42,7 @@ def as_label_array(labels: Any) -> NDArray[Any]:
     ``"1"`` (and ``[1, 2.5]`` would turn ``1`` into ``1.0``), changing the
     label a unit is reported, looked up and seeded under. Labels of more than
     one kind are kept in an object array; homogeneous labels keep their
-    natural dtype.
+    natural dtype. An ``ndarray`` is returned as given, without a copy.
     """
     if isinstance(labels, np.ndarray):
         return labels
@@ -117,7 +117,7 @@ _ResultT = TypeVar("_ResultT")
 
 
 def _copy_analysis_settings(cls: type[_ResultT]) -> type[_ResultT]:
-    """Give a result dataclass independently owned settings on every read.
+    """Give a result dataclass independently owned settings on every read and write.
 
     Apply after ``@dataclass`` so its constructor and field metadata stay intact.
 
@@ -145,6 +145,8 @@ class ReadOnlyArraysMixin:
     Editing an array the result was built from then cannot change it, and
     editing an array read from it raises. Copy with ``np.array(...)`` to
     modify values. JAX arrays are immutable already and are kept as given.
+    Only direct array attributes are copied; a subclass owns arrays it keeps
+    inside containers.
     """
 
     def _own_arrays(self) -> None:
@@ -479,7 +481,7 @@ def software_version() -> str:
     Returns
     -------
     str
-        The installed version (e.g. ``"0.6.0"``), or ``"unknown"``.
+        The installed version (e.g. ``"1.2.3"``), or ``"unknown"``.
     """
     from importlib.metadata import PackageNotFoundError, version
 
@@ -520,10 +522,9 @@ def units_attr(env: Any) -> dict[str, str]:
 def env_fingerprint(env: Any) -> str:
     """Return a stable, human-readable identifier for an environment.
 
-    There is no dedicated environment hash in the codebase, so this returns a
-    compact ``repr``-style identifier (name, dimensionality, bin count, layout)
-    suitable for stamping into xarray ``attrs`` for provenance. It is *not* a
-    content hash and must not be relied on for equality checks.
+    Returns a compact ``repr``-style identifier (name, dimensionality, bin
+    count, layout) suitable for stamping into xarray ``attrs`` for provenance.
+    It is *not* a content hash and must not be relied on for equality checks.
 
     Parameters
     ----------
@@ -670,8 +671,9 @@ def build_population_dataset(
         Per-unit identity labels. **Must be unique** (label-based
         ``.sel(unit_id=...)`` requires uniqueness).
     env : Any, optional
-        Environment supplying ``bin_center_*`` coords. Mutually used with
-        ``bin_centers``; pass at most one. ``None`` omits Cartesian coords.
+        Environment supplying ``bin_center_*`` coords (Cartesian or polar).
+        Pass either ``env`` or ``bin_centers``, not both. ``None`` adds no
+        environment coords.
     bin_centers : ndarray, optional
         Explicit angular bin centers (radians) for results without an ``env``
         (directional). When given, a ``bin_center_angle`` coord is attached.
@@ -690,7 +692,8 @@ def build_population_dataset(
     Raises
     ------
     ValueError
-        If ``unit_ids`` contains duplicate labels, if ``occupancy`` is
+        If both ``env`` and ``bin_centers`` are given, if ``unit_ids``
+        contains duplicate labels, if ``occupancy`` is
         provided but its length does not equal ``n_bins``, or if
         ``bin_centers`` is provided but is not 1-D of length ``n_bins``.
         (Absent ``occupancy``/``bin_centers`` are simply omitted; only a
@@ -707,7 +710,17 @@ def build_population_dataset(
             "'pip install neurospatial[xarray]' or 'pip install xarray'."
         ) from exc
 
-    # Copies: the Dataset is the caller's to edit, and results are read-only.
+    if env is not None and bin_centers is not None:
+        raise ValueError(
+            _format_error(
+                "build_population_dataset got both env and bin_centers.",
+                why="both would set the bin-center coordinates.",
+                fix="pass env for spatial results or bin_centers for "
+                "directional results.",
+            )
+        )
+    # Copy the rates: the Dataset is the caller's to edit, and results are
+    # read-only.
     rates = np.array(firing_rates, dtype=np.float64)
     n_bins = rates.shape[1]
     ids = np.asarray(unit_ids)

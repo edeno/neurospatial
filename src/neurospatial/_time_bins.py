@@ -19,7 +19,34 @@ def _time_bin_rounding(
     width_name: str = "dt",
     clock_fix: str | None = None,
 ) -> NDArray[np.float64]:
-    """Return edge rounding allowance, refusing unrepresentable bin widths."""
+    """Return each window's edge rounding allowance in seconds.
+
+    Parameters
+    ----------
+    windows : ndarray, shape (n_windows, 2)
+        ``[start, stop)`` windows in seconds.
+    dt : float
+        Bin width in seconds.
+    context, width_name, clock_fix : str
+        Wording of the error message.
+
+    Returns
+    -------
+    ndarray, shape (n_windows,)
+        A few ulp of each window's largest timestamp magnitude.
+
+    Raises
+    ------
+    ValueError
+        If a window bound is not finite, or if the rounding exceeds 1% of
+        ``dt``, so bins of that width cannot be represented there.
+    """
+    if not np.isfinite(windows).all():
+        w = int(np.flatnonzero(~np.isfinite(windows).all(axis=1))[0])
+        raise ValueError(
+            f"{context}: window {w} is {windows[w].tolist()}; its bounds must "
+            "be finite seconds.\nFix: pass finite start and stop times."
+        )
     start, stop = windows[:, 0], windows[:, 1]
     rounding: NDArray[np.float64] = 4.0 * np.spacing(
         np.maximum(np.abs(start), np.abs(stop))
@@ -49,7 +76,8 @@ def _time_bins_in_windows(
     dropped, because every bin must have the same width ``dt`` for counts from
     different bins (decoding likelihoods, peri-event histograms) to be
     comparable. A window that is a whole number of bins up to float rounding
-    keeps its last bin, whose right edge is clamped to exactly ``stop``.
+    keeps its last bin, whose right edge is clamped to exactly ``stop``; that
+    bin can be short only by the rounding allowance, at most 1% of ``dt``.
 
     Parameters
     ----------
@@ -91,7 +119,8 @@ def _count_spikes_in_time_bins(
 ) -> NDArray[np.int64]:
     """Count spikes per half-open bin ``[left[i], right[i])``.
 
-    Spikes that fall between bins (outside every window) are not counted.
+    Spikes outside every bin are not counted: those between windows and those
+    in the dropped remainder, shorter than one bin, at the end of a window.
 
     Returns
     -------
