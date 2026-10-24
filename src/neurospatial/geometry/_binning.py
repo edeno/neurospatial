@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.geometry._diffusion import (
@@ -659,10 +659,9 @@ class TrackLinearization(ReadOnlyState):
             if isinstance(spacing, (int, float, np.number))
             else tuple(float(x) for x in spacing),
         )
-        edges = tuple(np.array(e, dtype=np.float64, copy=True) for e in self.grid_edges)
-        mask = np.array(self.active_mask, dtype=bool, copy=True)
-        for array in (*edges, mask):
-            array.setflags(write=False)
+        edges, _, mask = owned_grid(
+            self.grid_edges, None, self.active_mask, name="TrackLinearization"
+        )
         object.__setattr__(self, "grid_edges", edges)
         object.__setattr__(self, "active_mask", mask)
 

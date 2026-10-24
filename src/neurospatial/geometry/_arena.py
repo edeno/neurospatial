@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
 __all__ = [
     "Arena",
@@ -438,33 +438,14 @@ class MaskArena(ReadOnlyState):
     wall_names: ClassVar[tuple[str, ...]] = ()
 
     def __post_init__(self) -> None:
-        edges = tuple(
-            _real_array(edge, f"edges[{axis}]") for axis, edge in enumerate(self.edges)
+        edges, _, mask = owned_grid(
+            self.edges, None, self.active_mask, name="MaskArena"
         )
-        mask = np.asarray(self.active_mask)
-        if not edges or any(
-            edge.ndim != 1
-            or len(edge) < 2
-            or not np.all(np.isfinite(edge))
-            or np.any(edge[1:] <= edge[:-1])
-            for edge in edges
-        ):
+        if not np.any(mask):
             raise _error(
-                "edges must be finite strictly increasing 1-D arrays.",
-                "supply at least two edges per coordinate axis",
-            )
-        if (
-            mask.dtype.kind != "b"
-            or mask.shape != tuple(len(edge) - 1 for edge in edges)
-            or not np.any(mask)
-        ):
-            raise _error(
-                "active_mask must be boolean, nonempty, and match the edges.",
+                "MaskArena active_mask has no active cell.",
                 "pass a boolean cell mask with at least one active cell",
             )
-        mask = np.array(mask, dtype=np.bool_, copy=True)
-        for array in (*edges, mask):
-            array.setflags(write=False)
         object.__setattr__(self, "edges", edges)
         object.__setattr__(self, "active_mask", mask)
         object.__setattr__(

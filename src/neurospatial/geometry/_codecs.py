@@ -282,16 +282,6 @@ def _grid_edges(
     edges = tuple(
         _array(arrays, prefix, f"edges_{i}", np.float64) for i in range(len(shape))
     )
-    for axis, edge in enumerate(edges):
-        if (
-            edge.shape != (shape[axis] + 1,)
-            or np.any(~np.isfinite(edge))
-            or np.any(np.diff(edge) <= 0)
-        ):
-            raise ValueError(
-                f"edges_{axis} must have shape ({shape[axis] + 1},) "
-                "and be finite and strictly increasing."
-            )
     return edges, shape
 
 
@@ -390,10 +380,9 @@ def _decode_grid(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> RectilinearGrid:
     edges, shape = _grid_edges(meta, arrays, prefix)
-    mask = _array(arrays, prefix, "active_mask", np.bool_)
-    if mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
-    return RectilinearGrid(edges, shape, mask)
+    return RectilinearGrid(
+        edges, shape, _array(arrays, prefix, "active_mask", np.bool_)
+    )
 
 
 def _refuse_json_attributes(graph: nx.Graph) -> None:
@@ -551,8 +540,6 @@ def _decode_track(
     if len(shape) != 1:
         raise ValueError("track grid edges must describe one linear coordinate.")
     mask = _array(arrays, prefix, "active_mask", np.bool_)
-    if mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
     graph = graph_from_node_link(meta["graph"])
     if graph.is_directed() or graph.is_multigraph():
         raise ValueError("track graph must be an undirected simple graph.")
@@ -662,8 +649,6 @@ def _decode_rectilinear_locator(
         if _flag(meta, "has_flat_to_active")
         else None
     )
-    if mask is not None and mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
     if mapping is not None:
         _active_map(mapping, math.prod(shape), "flat_to_active")
         if mask is not None:

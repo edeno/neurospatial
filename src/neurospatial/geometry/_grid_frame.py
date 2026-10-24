@@ -50,26 +50,8 @@ class FramedGrid(ReadOnlyState):
         if type(self.source) is not RectilinearGrid:
             raise TypeError("FramedGrid.source must be a RectilinearGrid.")
         grid = self.source
-        if (
-            len(grid.shape) not in (2, 3)
-            or len(grid.edges) != len(grid.shape)
-            or grid.active_mask.shape != grid.shape
-            or any(
-                not isinstance(n, (int, np.integer))
-                or isinstance(n, (bool, np.bool_))
-                or n <= 0
-                for n in grid.shape
-            )
-            or any(
-                edge.shape != (n + 1,)
-                or not np.all(np.isfinite(edge))
-                or np.any(np.diff(edge) <= 0)
-                for edge, n in zip(grid.edges, grid.shape, strict=True)
-            )
-        ):
-            raise ValueError(
-                "FramedGrid needs finite increasing 2-D/3-D grid axes and a matching mask."
-            )
+        if len(grid.shape) not in (2, 3):
+            raise ValueError("FramedGrid needs a 2-D or 3-D source grid.")
         if np.asarray(self.forward).dtype.kind not in "iuf":
             raise ValueError("FramedGrid.forward must be real numeric data.")
         matrix = np.array(self.forward, dtype=np.float64, copy=True)
@@ -84,13 +66,6 @@ class FramedGrid(ReadOnlyState):
             )
         matrix.setflags(write=False)
         inverse.setflags(write=False)
-        object.__setattr__(
-            self,
-            "source",
-            RectilinearGrid(
-                grid.edges, tuple(int(n) for n in grid.shape), grid.active_mask
-            ),
-        )
         object.__setattr__(self, "forward", matrix)
         object.__setattr__(self, "inverse", inverse)
         source = self.source

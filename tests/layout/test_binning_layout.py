@@ -120,8 +120,10 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
             grid = replace(grid, active_mask=mask)
             pattern = "active_mask|active.*count"
         elif mismatch == "grid_shape":
-            grid = replace(grid, shape=(1, 4))
-            pattern = "shape|edges"
+            # The grid record itself refuses a shape its edges contradict.
+            with pytest.raises(ValueError, match="edges"):
+                replace(grid, shape=(1, 4))
+            return
         else:
             edges = [edge.copy() for edge in grid.edges]
             edges[0][1] = 0.95

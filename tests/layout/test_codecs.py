@@ -299,7 +299,7 @@ def test_decode_refuses_malformed_geometry_payload(corruption):
         pattern = "active_mask"
     elif corruption == "nonmonotonic_edges":
         arrays["part/edges_0"][1] = arrays["part/edges_0"][0]
-        pattern = "edges_0"
+        pattern = r"edges\[0\]"
     elif corruption == "presence_flag":
         meta["has_active_mask"] = "false"
         pattern = "has_active_mask"

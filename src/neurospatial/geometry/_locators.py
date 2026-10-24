@@ -22,7 +22,7 @@ from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import ReadOnlyState, get_centers
+from neurospatial.geometry._arrays import ReadOnlyState, get_centers, owned_grid
 from neurospatial.geometry._hex_lookup import (
     axial_to_offset_bin_indices,
     cartesian_to_fractional_cube,
@@ -290,13 +290,18 @@ class RectilinearLocator(ReadOnlyState):
     flat_to_active: NDArray[np.intp] | None
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "edges", tuple(_owned_array(edge, np.float64) for edge in self.edges)
+        edges, shape, mask = owned_grid(
+            self.edges,
+            self.shape,
+            np.ones(tuple(self.shape), dtype=bool)
+            if self.active_mask is None
+            else self.active_mask,
+            name="RectilinearLocator",
         )
+        object.__setattr__(self, "edges", edges)
+        object.__setattr__(self, "shape", shape)
         if self.active_mask is not None:
-            object.__setattr__(
-                self, "active_mask", _owned_array(self.active_mask, np.bool_)
-            )
+            object.__setattr__(self, "active_mask", mask)
         if self.flat_to_active is not None:
             object.__setattr__(
                 self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)

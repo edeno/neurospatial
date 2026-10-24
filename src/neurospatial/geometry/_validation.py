@@ -244,31 +244,11 @@ def _rectilinear_geometry(
     coordinate_kind: Literal["cartesian", "polar"],
 ) -> _LocatorGeometry:
     shape, edges = locator.shape, locator.edges
-    if (
-        len(edges) != len(shape)
-        or not shape
-        or any(
-            not isinstance(size, (int, np.integer))
-            or isinstance(size, (bool, np.bool_))
-            or size < 1
-            for size in shape
-        )
-    ):
-        raise ValueError("locator shape must match the bin coordinate dimensions.")
-    for axis, (edge, size) in enumerate(zip(edges, shape, strict=True)):
-        if (
-            edge.shape != (size + 1,)
-            or not np.all(np.isfinite(edge))
-            or np.any(np.diff(edge) <= 0)
-        ):
-            raise ValueError(f"locator edges[{axis}] must increase and match shape.")
     mask = (
         np.ones(shape, dtype=bool)
         if locator.active_mask is None
         else locator.active_mask
     )
-    if mask.shape != shape:
-        raise ValueError("locator active_mask shape does not match locator shape.")
     active = np.flatnonzero(mask)
     if locator.flat_to_active is not None:
         mapping = np.full(mask.size, -1, dtype=np.intp)
@@ -1303,14 +1283,6 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
         if len(track.grid_edges) != 1:
             raise ValueError("linearization grid_edges must contain one linear axis.")
         edges = track.grid_edges[0]
-        if (
-            edges.ndim != 1
-            or len(edges) < 2
-            or not np.all(np.isfinite(edges))
-            or np.any(np.diff(edges) <= 0)
-            or track.active_mask.shape != (len(edges) - 1,)
-        ):
-            raise ValueError("linearization edges and active_mask shape do not agree.")
         if np.count_nonzero(track.active_mask) != bins.n_bins:
             raise ValueError("linearization active_mask count does not match n_bins.")
         projected = track.linear_to_nd(get_centers(edges)[track.active_mask])
