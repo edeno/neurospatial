@@ -278,7 +278,7 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
     """Recover stored axes/frame and propagated matrix roundoff; no builder."""
     if isinstance(locator, TransformedLocator):
         base, parent_error = frame_from_locator(locator.base)
-        matrix = np.linalg.inv(locator.inverse)
+        matrix = locator.forward
         rounding = 16 * len(matrix) * np.finfo(float).eps
         inverse_error = rounding * (
             np.abs(matrix) @ np.abs(locator.inverse) @ np.abs(matrix)

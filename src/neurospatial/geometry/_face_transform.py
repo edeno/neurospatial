@@ -100,7 +100,7 @@ def _combined_vectors(
         if base is None:
             return None
         pairs, vectors = base
-        return pairs, vectors @ np.linalg.inv(locator.inverse)[:-1, :-1].T
+        return pairs, vectors @ locator.forward[:-1, :-1].T
     return None
 
 

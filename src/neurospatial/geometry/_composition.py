@@ -438,7 +438,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             if result is None:
                 return None
             matrix, dims = result
-            linear = np.linalg.inv(locator.inverse)[:-1, :-1]
+            linear = locator.forward[:-1, :-1]
             scale = float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
             normalized = linear / scale
             if not np.allclose(
@@ -511,7 +511,7 @@ def composition_view(
         elif isinstance(locator, ClippedLocator):
             indices = indices[locator.mapping.parent_bin_indices]
         else:
-            linear = np.linalg.inv(locator.inverse)[:-1, :-1]
+            linear = locator.forward[:-1, :-1]
             scale *= float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
         return root, indices, scale
     return None

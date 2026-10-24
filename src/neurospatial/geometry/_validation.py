@@ -468,9 +468,9 @@ def mapped_geometry(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     linear, shift = matrix[:-1, :-1], matrix[:-1, -1]
     mapped = points @ linear.T + shift
-    # Recovering a forward map from its stored inverse and applying it costs
-    # O(n) floating operations. Include input uncertainty and inverse error;
-    # the final comparison separately caps this bound by the active-bin gap.
+    # Applying a forward map costs O(n) floating operations. Include input
+    # uncertainty and the matrix's error bound; the final comparison
+    # separately caps this bound by the active-bin gap.
     magnitude = np.abs(points) @ np.abs(linear).T + np.abs(shift)
     bound = (
         error @ (np.abs(linear) + linear_error).T
@@ -520,11 +520,14 @@ def _locator_geometry(
         raise ValueError(
             "transformed locator inverse dimensions do not match parent geometry."
         )
-    matrix = np.asarray(np.linalg.inv(locator.inverse), dtype=np.float64)
+    matrix = locator.forward
     linear = matrix[:-1, :-1]
-    # Componentwise inverse sensitivity avoids inflating independent diagonal
-    # axes by their normwise condition number. The homogeneous product also
-    # includes cancellation in t = -A @ inverse_t across coordinate axes.
+    # The forward map is stored exactly. Its error bound is still the
+    # componentwise sensitivity of inverting ``inverse``, a conservative
+    # allowance that keeps the similarity test below as tolerant as the
+    # derivation's. Componentwise sensitivity avoids inflating independent
+    # diagonal axes by their normwise condition number. The homogeneous
+    # product also includes cancellation in t = -A @ inverse_t across axes.
     rounding = 16 * (n_dims + 1) * np.finfo(np.float64).eps
     matrix_error = rounding * (
         np.abs(matrix) @ np.abs(locator.inverse) @ np.abs(matrix)
@@ -592,8 +595,8 @@ def _locator_geometry(
         # parent's exact cells mapped forward; map the same cells here.
         geometry.polygons = cells_from_locator(locator.base)
     if geometry.polygons is not None:
-        # Vertices carry the arithmetic error of recovering and applying this
-        # forward map, like centers; bound it at the cells' largest coordinates.
+        # Vertices carry the arithmetic error of applying this forward map,
+        # like centers; bound it at the cells' largest coordinates.
         extent = np.max(
             np.abs(shapely.get_coordinates(geometry.polygons)), axis=0, keepdims=True
         )
@@ -1426,7 +1429,5 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
         if result is None:
             return None
         parent, _computed = result
-        return transform_binning(
-            parent, SimpleNamespace(A=np.linalg.inv(locator.inverse))
-        ), True
+        return transform_binning(parent, SimpleNamespace(A=locator.forward)), True
     return None

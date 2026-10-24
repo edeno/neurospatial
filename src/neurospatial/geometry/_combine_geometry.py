@@ -67,7 +67,7 @@ def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
         selected = active_order(locator.parent_to_child)
         return [boxes[index] for index in selected]
     if isinstance(locator, TransformedLocator):
-        matrix = np.linalg.inv(locator.inverse)
+        matrix = locator.forward
         return [
             vertices @ matrix[:-1, :-1].T + matrix[:-1, -1]
             for vertices in cell_boxes(locator.base)
@@ -89,22 +89,32 @@ def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
 
 def _nearest_partition(
     locator: Locator,
-) -> tuple[NearestBinLocator, NDArray[np.intp], NDArray[np.float64]] | None:
-    """Identify retained cells of a common nearest query, including wrappers."""
+) -> (
+    tuple[NearestBinLocator, NDArray[np.intp], NDArray[np.float64], NDArray[np.float64]]
+    | None
+):
+    """Identify retained cells of a common nearest query, including wrappers.
+
+    Returns the nearest query, the bin each of its sites maps to (or -1),
+    and the maps from current coordinates to the query's (inverse) and back
+    (forward).
+    """
     if isinstance(locator, NearestBinLocator):
         assert locator.bin_indices is not None
-        return locator, locator.bin_indices.copy(), np.eye(locator.centers.shape[1] + 1)
+        identity = np.eye(locator.centers.shape[1] + 1)
+        return locator, locator.bin_indices.copy(), identity, identity
     if isinstance(locator, (SubsetLocator, TransformedLocator)):
         value = _nearest_partition(locator.base)
         if value is None:
             return None
-        base, mapping, inverse = value
+        base, mapping, inverse, forward = value
         if isinstance(locator, SubsetLocator):
             active = mapping >= 0
             mapping[active] = locator.parent_to_child[mapping[active]]
         else:
             inverse = inverse @ locator.inverse
-        return base, mapping, inverse
+            forward = locator.forward @ forward
+        return base, mapping, inverse, forward
     return None
 
 
@@ -112,8 +122,8 @@ def _partitioned(first: Binning, second: Binning) -> bool:
     a, b = _nearest_partition(first.locator), _nearest_partition(second.locator)
     if a is None or b is None:
         return False
-    left, lm, li = a
-    right, rm, ri = b
+    left, lm, li, _ = a
+    right, rm, ri, _ = b
     return bool(
         left.max_distance == right.max_distance
         and np.array_equal(left.centers, right.centers)
@@ -231,9 +241,8 @@ def _pieces(binning: Binning, arena: Arena) -> list[_Piece]:
         ]
     nearest = _nearest_partition(binning.locator)
     if nearest is not None:
-        base, mapping, inverse = nearest
+        base, mapping, _, forward = nearest
         if base.max_distance is not None and np.isfinite(base.max_distance):
-            forward = np.linalg.inv(inverse)
             linear = forward[:-1, :-1]
             # A transformed ball is enclosed by this sphere. Separation proves
             # disjointness; overlap of outer bounds is only inconclusive.
@@ -360,7 +369,7 @@ def _grid_segment_intervals(
     if isinstance(locator, TransformedLocator):
         projector = _TransformedArena(
             UnknownArena(segment.shape[1]),
-            np.asarray(np.linalg.inv(locator.inverse), dtype=np.float64),
+            locator.forward,
         )
         local, propagated = projector._project(segment, error)
         if not np.all(np.isfinite(local)) or not np.all(np.isfinite(propagated)):
@@ -506,7 +515,7 @@ def _nearest_segment_intervals(
     partition = _nearest_partition(locator)
     if partition is None:
         return None
-    base, mapping, inverse = partition
+    base, mapping, inverse, _ = partition
     local = segment @ inverse[:-1, :-1].T + inverse[:-1, -1]
     if not np.all(np.isfinite(local)) or np.array_equal(local[0], local[1]):
         raise ValueError(
