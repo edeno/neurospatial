@@ -49,6 +49,12 @@
 - Result and record classes that hold arrays compare by identity. Comparing
   two equal-valued copies with `==` raised "truth value of an array is
   ambiguous"; it now returns `False`, and compare their arrays to test values.
+- Results without a `to_dataframe()` or `plot()` no longer inherit a stub
+  that raises `NotImplementedError`; the method is absent
+  (`AttributeError`), as the API contract says for results such as
+  `ResampledPathResult` and `ContinuousEventResult`. A result's repr names an
+  error raised by its `summary()` instead of showing `ClassName(...)`, and
+  rounds NumPy `float32` metrics like other floats.
 
 ### Spatial geometry review
 

@@ -441,8 +441,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
     def to_dataframe(self) -> pd.DataFrame:
         """Dense tidy table of per-bin firing rate and occupancy.
 
-        Specializes :meth:`neurospatial._results.ResultMixin.to_dataframe` as
-        the **dense** terminal verb: one row per ``(unit, bin)`` (single-unit
+        The **dense** terminal verb: one row per ``(unit, bin)`` (single-unit
         results: one row per ``bin``), **always** carrying a ``unit_id``
         column. This is the frame for plotting / detailed per-bin inspection.
         For the per-unit scalar summary (peak location, spatial info, cell

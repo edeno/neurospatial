@@ -288,9 +288,9 @@ def test_exports_work_without_xarray(monkeypatch):
         repr(result)
 
 
-def test_to_dataframe_is_not_implemented():
-    with pytest.raises(NotImplementedError):
-        _mixed_result().to_dataframe()
+def test_to_dataframe_is_not_offered():
+    # The domain table is aligned_table(); to_dataframe() means (unit, bin) rows.
+    assert not hasattr(_mixed_result(), "to_dataframe")
 
 
 def test_summary_scalars_and_repr():

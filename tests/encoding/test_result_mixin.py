@@ -168,17 +168,33 @@ def test_existing_accessors_preserved(spatial_result: object) -> None:
     assert isinstance(ax, plt.Axes)
 
 
-def test_result_mixin_base_raises_for_unimplemented() -> None:
+def test_result_mixin_requires_summary_and_offers_no_other_verb_stubs() -> None:
     class Empty(ResultMixin):
         pass
 
     empty = Empty()
     with pytest.raises(NotImplementedError):
-        empty.to_dataframe()
-    with pytest.raises(NotImplementedError):
         empty.summary()
-    with pytest.raises(NotImplementedError):
-        empty.plot()
+    assert not hasattr(empty, "to_dataframe")
+    assert not hasattr(empty, "plot")
+    assert repr(empty) == "Empty(...)"
+
+
+def test_repr_names_a_failing_summary_instead_of_hiding_it() -> None:
+    class Broken(ResultMixin):
+        def summary(self) -> dict:
+            raise IndexError("bin 7")
+
+    assert repr(Broken()) == "Broken(<summary() failed: IndexError: bin 7>)"
+    assert "IndexError" in Broken()._repr_html_()
+
+
+def test_repr_rounds_every_numpy_float() -> None:
+    class Rates(ResultMixin):
+        def summary(self) -> dict:
+            return {"peak": np.float32(1.23456789), "mean": 2.3456789}
+
+    assert repr(Rates()) == "Rates(peak=1.235, mean=2.346)"
 
 
 class TestResultRepr:
