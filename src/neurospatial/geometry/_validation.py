@@ -19,7 +19,6 @@ from neurospatial.geometry._arrays import active_order, get_centers, per_dimensi
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    SpatialBins,
     TrackLinearization,
     refuse_mixed_measure_conductance,
 )
@@ -31,10 +30,8 @@ from neurospatial.geometry._composition import (
     combined_normals,
 )
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
-from neurospatial.geometry._derive import transform_binning
-from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._derive import selected_records, transform_binning
 from neurospatial.geometry._face_normals import (
-    FaceNormals,
     _unit_rows,
     geometric_normals,
 )
@@ -1413,27 +1410,8 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
         if result is None:
             return None
         parent, computed = result
-        mapping = locator.parent_to_child
-        selected = active_order(mapping)
-        bins = SpatialBins.from_arrays(
-            parent.bins.centers[selected],
-            parent.bins.sizes[selected],
-            parent.bins.measure_dims[selected],
-        )
-        connections, kept = parent.connections.select(mapping)
-        subset_faces = parent.faces
-        if subset_faces.available:
-            old = parent.build_faces()
-            subset_faces = KnownFaces(
-                FaceGeometry(
-                    connections.pairs, old.A[kept], old.distance[kept], bins.sizes
-                )
-            )
-
-        normals = (
-            FaceNormals(parent.face_normals.values[kept])
-            if parent.face_normals is not None
-            else None
+        bins, connections, subset_faces, normals = selected_records(
+            parent, locator.parent_to_child
         )
         return Binning(
             "combined_subset",
