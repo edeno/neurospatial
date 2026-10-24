@@ -123,7 +123,10 @@ def _subset_mask(
                 )
 
             mask = polygon_bin_mask(
-                polygon, binning.bins.centers, include_boundary=include_boundary
+                polygon,
+                binning.bins.centers,
+                coordinate_kind=arena.coordinate_kind,
+                include_boundary=include_boundary,
             )
 
         except (AttributeError, TypeError, ValueError) as e:

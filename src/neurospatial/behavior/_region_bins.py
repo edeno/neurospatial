@@ -15,9 +15,8 @@ def region_representative_bin(env: Environment, region_name: str) -> int | None:
 
     The representative is the region bin whose center is closest to the
     centroid of the region's bin centers, both measured where distance is
-    physical: on an egocentric polar environment, in the animal's plane, so
-    a region across the angular seam averages its angles correctly. It
-    always lies inside the region,
+    physical (``coordinate_system.cartesian_embedding``). It always lies
+    inside the region,
     also for non-convex regions whose geometric centroid falls outside. When
     several region bins are equally close to the centroid, as in a symmetric
     box on a grid, the lowest bin index among them is chosen.

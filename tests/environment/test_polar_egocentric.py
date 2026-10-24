@@ -947,6 +947,32 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         )
         assert caught.value.operation == operation
 
+    @pytest.mark.parametrize(
+        "select",
+        [
+            lambda env: env.bins_in_region("box"),
+            lambda env: env.region_mask("box"),
+            lambda env: env.region_membership(),
+        ],
+    )
+    def test_polygon_regions_are_refused(self, select):
+        """A polygon's vertices are (x, y); read as (distance, angle) it is a ring."""
+        from shapely.geometry import box
+
+        env = Environment.from_polar_egocentric(
+            distance_range=(0, 50),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10,
+            angle_bin_size=np.pi / 4,
+            circular_angle=True,
+        )
+        regions = Regions()
+        regions.add("box", polygon=box(10, -5, 30, 5))
+        env = env.with_regions(regions)
+        with pytest.raises(CartesianOnlyError, match="egocentric") as caught:
+            select(env)
+        assert "does not work on a polar environment" in str(caught.value)
+
     def test_points_and_point_regions_use_distance_and_angle(self, polar_env):
         """Polar points and point regions are read in bin-center coordinates."""
         region_builder = Regions(polar_env.regions.values())
@@ -1380,7 +1406,7 @@ _POLAR_INHERITED_MEMBERS = {
         "maze",
         "open_field",
     },
-    "regions, evaluated in (distance, angle) coordinates without angle wrap": {
+    "regions: points in (distance, angle) without angle wrap; polygons refused": {
         "bins_in_region",
         "region_mask",
         "region_membership",
