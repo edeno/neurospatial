@@ -230,9 +230,10 @@ class BinConnections(ReadOnlyState):
     closed_by : ndarray of intp, shape (n_all_pairs,)
         Index into the arena's ``walls`` of the wall that closes each pair:
         the one covering most of the edge the pair's cells share, or for
-        cells that meet only at a corner, the first wall the link between
-        their centers crosses. -1 for open pairs and for closed pairs no wall
-        of the arena closes. Publication records it when it applies walls.
+        cells that meet only at a corner, the first wall that corner touches,
+        else the first wall the link between their centers crosses. -1 for
+        open pairs and for closed pairs no wall of the arena closes.
+        Publication records it when it applies walls.
     pairs : ndarray of intp, shape (n_pairs, 2)
         The open pairs, in the order of ``all_pairs``.
     pair_distances : ndarray of float64, shape (n_pairs,)

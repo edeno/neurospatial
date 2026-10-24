@@ -688,17 +688,31 @@ def _closing_walls(
     cells: Sequence[Polygon | MultiPolygon],
     segments: Sequence[LineString],
     centers: NDArray[np.float64],
+    errors: NDArray[np.float64] | None,
 ) -> NDArray[np.intp]:
-    """Index of the wall closing each closed pair; see ``BinConnections.closed_by``."""
+    """Index of the wall closing each closed pair; see ``BinConnections.closed_by``.
+
+    Follows the rules :func:`apply_walls` closes pairs by: the wall covering
+    most of the edge the cells share; for cells that meet only at a corner,
+    the first wall the corner touches, else the first wall the line between
+    their centers crosses; and for cells known only to within ``errors``,
+    the wall running furthest along the strip where their face can lie.
+    """
+    walls = np.asarray(segments, dtype=object)
     closed_by = np.full(len(connections.all_pairs), -1, dtype=np.intp)
     for row in np.flatnonzero(~connections.is_open):
         u, v = connections.all_pairs[row]
         contact = cells[u].boundary.intersection(cells[v].boundary)
         if contact.length > 0:
-            cover = [contact.intersection(wall).length for wall in segments]
+            cover = shapely.length(shapely.intersection(contact, walls))
         else:
             link = LineString(centers[[u, v]])
-            cover = [float(link.intersects(wall)) for wall in segments]
+            cover = 2.0 * shapely.intersects(contact, walls) + shapely.crosses(
+                link, walls
+            )
+        if not np.any(cover > 0) and errors is not None and errors[u] + errors[v] > 0:
+            band = _face_band(cells[u], cells[v], errors[u], errors[v])
+            cover = shapely.length(shapely.intersection(walls, band))
         best = int(np.argmax(cover))
         if cover[best] > 0:
             closed_by[row] = best
@@ -709,10 +723,13 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     """Close the neighbor pairs whose shared edge walls block completely.
 
     Only the part of a shared edge inside the arena counts: a bin at a slanted
-    outline sticks out past it, where no wall can be. A closed pair stays
-    listed in ``binning.connections`` but leaves paths and finite-volume
-    faces. A partly covered edge stays open with the open share of its face. Pairs already closed stay closed, and every closed pair
-    records the wall that closes it (``connections.closed_by``).
+    outline sticks out past it, where no wall can be. Cells that meet only at
+    a corner close when the corner touches a wall or the line between their
+    centers crosses one. A closed pair stays listed in ``binning.connections``
+    but leaves paths and finite-volume faces. A partly covered edge stays open
+    with the open share of its face. Pairs already closed stay closed. Every
+    closed pair a wall of ``arena`` would close records that wall in
+    ``connections.closed_by``; a pair closed for another reason records -1.
     """
     if _composition_arena(binning.locator) is not None:
         # Each owned child already carries its certified wall geometry. Rechecking
@@ -808,7 +825,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     connections = links.closed(keep)
     connections = replace(
         connections,
-        closed_by=_closing_walls(connections, cells, wall_segments, centers),
+        closed_by=_closing_walls(connections, cells, wall_segments, centers, errors),
     )
     if np.all(keep) and np.all(open_share == 1.0):
         return replace(binning, connections=connections)
