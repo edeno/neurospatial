@@ -264,7 +264,9 @@ class BinConnections(ReadOnlyState):
                     index = tuple(int(i) for i in np.argwhere(invalid)[0])
                     raise ValueError(f"pairs{index} must contain integer bin indices.")
             else:
-                raise ValueError("pairs(0, 0) must contain integer bin indices.")
+                raise ValueError(
+                    f"pairs must contain integer bin indices, got {raw_pairs.dtype}."
+                )
         invalid = raw_pairs < 0
         if np.any(invalid):
             index = tuple(int(i) for i in np.argwhere(invalid)[0])

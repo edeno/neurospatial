@@ -1513,8 +1513,8 @@ def snapshot_provider(provider: object, role: _SnapshotRole) -> object:
         raise TypeError(
             _format_error(
                 f"arena= takes an arena from neurospatial.arena (OpenArena, "
-                f"MaskArena, TrackArena or UnknownArena, not a subclass), got "
-                f"{name}.",
+                f"MaskArena, TrackArena, EgocentricSurround or UnknownArena, not "
+                f"a subclass), got {name}.",
                 why="Why: the environment stores its arena as data it can "
                 "save, transform and use to test containment, and no installed "
                 f"converter turns a {name} into that data.",

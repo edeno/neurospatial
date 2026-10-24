@@ -51,9 +51,10 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 def _migration(provider: object) -> NoReturn:
     raise TypeError(
         f"{type(provider).__name__} cannot be published as an owned immutable "
-        "snapshot. Migrate custom providers to supported owned binning/domain "
-        "data before constructing an environment; retaining delegated mutable "
-        "geometry is no longer supported."
+        "snapshot: an environment holds only the geometry records of "
+        "neurospatial.binning and neurospatial.arena. Convert it to those "
+        "records, or install a snapshot adapter for it, before constructing "
+        "the environment."
     )
 
 

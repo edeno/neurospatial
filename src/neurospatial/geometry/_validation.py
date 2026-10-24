@@ -751,8 +751,7 @@ def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) ->
         raise ValueError(
             "grid faces.A does not match shared cell-face measures. Supply physical "
             "shared-face areas, using zero only for pairs without a face, or rebuild "
-            "the environment from its source geometry. Older tiny-grid records with "
-            "incorrect zero-area faces must be regenerated."
+            "the environment from its source geometry."
         )
     _validate_face_distances(binning, geometry, "grid faces.distance")
 

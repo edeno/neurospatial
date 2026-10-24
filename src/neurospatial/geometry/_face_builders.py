@@ -120,8 +120,9 @@ def triangle_skew_message(
         f"({100.0 * n_skewed / n_interior:.1f}%) of interior edges exceed "
         f"{_MESH_SKEW_ANGLE_DEG:.0f} degrees of non-orthogonality "
         f"(threshold {100.0 * _MESH_SKEW_FRACTION:.0f}%). The diffusion "
-        f"bandwidth (sigma) is only approximate on this mesh; refine toward "
-        f"well-shaped (near-equilateral) triangles for an exact physical sigma."
+        f"bandwidth is only approximate on this mesh; refine toward "
+        f"well-shaped (near-equilateral) triangles for an exact physical "
+        f"bandwidth."
     )
 
 

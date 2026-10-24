@@ -352,7 +352,7 @@ def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
 ):
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"No installed snapshot adapter|owned immutable snapshot",
     ):
         publish_environment(
             "custom", _CustomHexLayout(built_environment), "CustomHex", {}
