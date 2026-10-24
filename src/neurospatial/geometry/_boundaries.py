@@ -18,7 +18,7 @@ from neurospatial.geometry._arena import (
     _TransformedArena,
     mapped_geometry,
 )
-from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._composition import CombinedLocator, iter_locators
 from neurospatial.geometry._locators import (
     CallIndexes,
     RectilinearLocator,
@@ -261,19 +261,17 @@ def wall_hit_bins(
                     PolygonCells(local[0]),
                     locator.mapping,
                 )
-        if isinstance(locator, CombinedLocator) and source == "physical":
-            # A child with its own affine frame has no one shared owner frame.
-            pending = [child.locator for child in locator.children]
-            while pending:
-                child = pending.pop()
-                if isinstance(child, TransformedLocator):
-                    raise NotImplementedError(
-                        "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
-                    )
-                if isinstance(child, (SubsetLocator, ClippedLocator)):
-                    pending.append(child.base)
-                elif isinstance(child, CombinedLocator):
-                    pending.extend(part.locator for part in child.children)
+        # A child with its own affine frame has no one shared owner frame.
+        if (
+            isinstance(locator, CombinedLocator)
+            and source == "physical"
+            and any(
+                isinstance(part, TransformedLocator) for part in iter_locators(locator)
+            )
+        ):
+            raise NotImplementedError(
+                "Physical wall-bin assignment needs a shared source frame for combined components. Combine before a shared transform, or explicitly choose boundary_source='analysis'."
+            )
         return locator
 
     locator = source_locator(binning.locator, arena, binning.bins.centers)

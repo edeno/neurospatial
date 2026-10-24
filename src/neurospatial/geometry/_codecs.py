@@ -65,6 +65,7 @@ from neurospatial.geometry._locators import (
 )
 from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon_cells import (
+    WRAPPER_LOCATORS,
     ClipMapping,
     ClippedLocator,
     PolygonCells,
@@ -749,7 +750,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         reference(obj.shapes)
 
     def locator_payload(locator: object, path: str) -> Payload:
-        if not isinstance(locator, (ClippedLocator, SubsetLocator, TransformedLocator)):
+        if not isinstance(locator, WRAPPER_LOCATORS):
             return encode(locator, path)
         base, nested = locator_payload(locator.base, f"{path}/base")
         local: dict[str, Any] = {

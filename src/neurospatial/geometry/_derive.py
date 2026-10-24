@@ -28,7 +28,11 @@ from neurospatial.geometry._capabilities import (
     RectilinearGrid,
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
-from neurospatial.geometry._composition import CombinedLocator, bridge_values
+from neurospatial.geometry._composition import (
+    CombinedLocator,
+    bridge_values,
+    component_selections,
+)
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._explicit import cell_extent, union_extent
 from neurospatial.geometry._face_normals import FaceNormals
@@ -278,16 +282,12 @@ def _combined_extent(
         locator = locator.base
     if not isinstance(locator, CombinedLocator):
         return None
-    parts = []
-    for child, start, stop in zip(
-        locator.children, locator.offsets[:-1], locator.offsets[1:], strict=True
-    ):
-        local = mapping[(mapping >= start) & (mapping < stop)] - start
-        if len(local):
-            child_keep = np.zeros(child.bins.n_bins, dtype=bool)
-            child_keep[local] = True
-            parts.append(select_bins(child, child_keep).dimension_ranges)
-    return union_extent(parts)
+    return union_extent(
+        [
+            select_bins(selection.binning, selection.keep).dimension_ranges
+            for selection in component_selections(locator, mapping)
+        ]
+    )
 
 
 def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:

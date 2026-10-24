@@ -21,7 +21,11 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._composition import CombinedLocator, composition_view
+from neurospatial.geometry._composition import (
+    CombinedLocator,
+    component_selections,
+    composition_view,
+)
 from neurospatial.geometry._context import cell_lattice
 from neurospatial.geometry._derive import select_bins
 from neurospatial.geometry._hex_lookup import get_hex_grid_neighbor_deltas
@@ -100,20 +104,10 @@ def _combined_boundary_bins(
         new ones.
     """
     parts = []
-    for child, start, stop in zip(
-        root.children, root.offsets[:-1], root.offsets[1:], strict=True
-    ):
-        rows = np.flatnonzero((indices >= start) & (indices < stop))
-        if len(rows) == 0:
-            continue
-        keep = np.zeros(child.bins.n_bins, dtype=bool)
-        keep[indices[rows] - start] = True
-        current = np.full(child.bins.n_bins, -1, dtype=np.intp)
-        current[indices[rows] - start] = rows
+    for selection in component_selections(root, indices):
+        child, keep, rows = selection
         kept = child if np.all(keep) else select_bins(child, keep)
-        parts.append(
-            current[np.flatnonzero(keep)[boundary_bins(kept, periodic_axes=())]]
-        )
+        parts.append(rows[boundary_bins(kept, periodic_axes=())])
     return np.sort(np.concatenate(parts)).astype(np.intp, copy=False)
 
 

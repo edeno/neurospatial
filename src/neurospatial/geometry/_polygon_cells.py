@@ -242,6 +242,10 @@ class ClippedLocator:
         return result
 
 
+# Locators that wrap one ``base`` locator: they select, move or clip its bins.
+WRAPPER_LOCATORS = (SubsetLocator, TransformedLocator, ClippedLocator)
+
+
 def clip_mapping_of(locator: Locator) -> ClipMapping | None:
     """The latest clip's mapping in the current bin order, or None before clipping.
 

@@ -23,17 +23,16 @@ from neurospatial.geometry._arena import (
     TrackArena,
     UnknownArena,
     _CombinedArena,
-    _TransformedArena,
 )
 from neurospatial.geometry._binning import BinConnections, KnownFaces
 from neurospatial.geometry._codecs import same_encoded_arena
-from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._composition import CombinedLocator, composition_view
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals
-from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
+from neurospatial.geometry._locators import TransformedLocator
 from neurospatial.geometry._polygon import materialize_cells
-from neurospatial.geometry._polygon_cells import ClippedLocator, PolygonCells
+from neurospatial.geometry._polygon_cells import WRAPPER_LOCATORS, PolygonCells
 from neurospatial.geometry._validation import _polygon_area_allowance
 from neurospatial.geometry._wall_frame import wall_source_frame
 
@@ -89,7 +88,7 @@ def infer_arena(binning: Binning) -> Arena:
 def _composition_arena(locator: object) -> Arena | None:
     if isinstance(locator, CombinedLocator):
         return _CombinedArena(locator.arenas)
-    if isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
+    if isinstance(locator, WRAPPER_LOCATORS):
         arena = _composition_arena(locator.base)
         if arena is not None and isinstance(locator, TransformedLocator):
             arena = arena.transformed(locator.forward)
@@ -97,51 +96,40 @@ def _composition_arena(locator: object) -> Arena | None:
     return None
 
 
+def _validate_components(root: CombinedLocator) -> None:
+    """Check each component against its own arena, and bridges against walls."""
+    for child, child_arena in zip(root.children, root.arenas, strict=True):
+        validate_arena(child_arena, child, CartesianSystem())
+        if child_arena.walls:
+            checked = apply_walls(child, child_arena)
+            if not np.array_equal(checked.connections.pairs, child.connections.pairs):
+                raise ValueError(
+                    "Component connectivity crosses its declared physical walls."
+                )
+    if root.children[0].bins.n_dims == 2:
+        centers = root.spatial_bins().centers
+        for pair in root.bridge_pairs:
+            link = LineString(centers[pair])
+            if any(
+                link.intersects(wall) for domain in root.arenas for wall in domain.walls
+            ):
+                raise ValueError(
+                    "A stored navigation bridge crosses a known physical wall."
+                )
+
+
 def validate_arena(
     arena: Arena, binning: Binning, coordinates: CoordinateSystem
 ) -> None:
     """Reject a domain whose coordinate semantics disagree with its bins."""
-    combined_arena = _composition_arena(binning.locator)
-    if combined_arena is not None:
-
-        def matches(locator: object, candidate: Arena) -> bool:
-            if isinstance(locator, (SubsetLocator, ClippedLocator)):
-                return matches(locator.base, candidate)
-            if isinstance(locator, TransformedLocator):
-                return (
-                    isinstance(candidate, _TransformedArena)
-                    and locator.affine.same_as(candidate.affine)
-                    and matches(locator.base, candidate.base)
-                )
-            if not isinstance(locator, CombinedLocator):
-                return False
-            for child, child_arena in zip(
-                locator.children, locator.arenas, strict=True
-            ):
-                validate_arena(child_arena, child, CartesianSystem())
-                if child_arena.walls:
-                    checked = apply_walls(child, child_arena)
-                    if not np.array_equal(
-                        checked.connections.pairs, child.connections.pairs
-                    ):
-                        raise ValueError(
-                            "Component connectivity crosses its declared physical walls."
-                        )
-            if locator.children[0].bins.n_dims == 2:
-                centers = locator.spatial_bins().centers
-                for pair in locator.bridge_pairs:
-                    link = LineString(centers[pair])
-                    if any(
-                        link.intersects(wall)
-                        for domain in locator.arenas
-                        for wall in domain.walls
-                    ):
-                        raise ValueError(
-                            "A stored navigation bridge crosses a known physical wall."
-                        )
-            return same_encoded_arena(candidate, _CombinedArena(locator.arenas))
-
-        if not matches(binning.locator, arena):
+    expected = _composition_arena(binning.locator)
+    if expected is not None:
+        view = composition_view(binning.locator)
+        assert view is not None
+        _validate_components(view[0])
+        # The arena a combined environment's own transforms produce is its
+        # components' union moved by every map on the way.
+        if not same_encoded_arena(arena, expected):
             raise ValueError("Combined arena disagrees with stored component domains.")
     if arena.n_dims != binning.bins.n_dims:
         raise ValueError("Arena coordinate dimensions must match the binning.")
@@ -154,7 +142,7 @@ def validate_arena(
             "Arena excludes a bin center; select bins by center before constructing the environment."
         )
 
-    if isinstance(binning.shapes, PolygonCells) and combined_arena is None:
+    if isinstance(binning.shapes, PolygonCells) and expected is None:
         domain = arena.polygonal_domain()
         if domain is not None:
             domain_clearance = domain.minimum_clearance

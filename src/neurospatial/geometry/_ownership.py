@@ -41,6 +41,7 @@ from neurospatial.geometry._locators import (
 )
 from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon_cells import (
+    WRAPPER_LOCATORS,
     ClipMapping,
     ClippedLocator,
     PolygonCells,
@@ -65,9 +66,7 @@ def _check_locator(locator: Locator) -> None:
         for arena in locator.arenas:
             _snapshot_arena(arena)
         return
-    if isinstance(
-        locator, (SubsetLocator, TransformedLocator, ClippedLocator)
-    ) and type(locator) in (SubsetLocator, TransformedLocator, ClippedLocator):
+    if isinstance(locator, WRAPPER_LOCATORS) and type(locator) in WRAPPER_LOCATORS:
         if isinstance(locator, ClippedLocator):
             if type(locator.cells) is not PolygonCells:
                 _migration(locator.cells)
