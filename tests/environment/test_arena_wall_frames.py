@@ -163,8 +163,11 @@ def _touching_clipped_grid(wall):
         _mapped(box(0.25, 0.25, 3.75, 3.75), matrix)
     )
     arena = OpenArena(box(0, 0, 4, 4), walls=(wall,)).transformed(matrix)
+    # The source cells do not depend on the wall, which may be unresolved.
     cells = wall_source_frame(
-        child._binning.locator, arena, child._binning.bins.centers
+        child._binning.locator,
+        OpenArena(box(0, 0, 4, 4)).transformed(matrix),
+        child._binning.bins.centers,
     )[0]
     assert cells[4].boundary.intersection(cells[8].boundary).length > 0
     return child, arena
@@ -340,11 +343,21 @@ def _rotated_clipped_grid(wall_x, y_range):
 
 @pytest.mark.parametrize(
     ("wall_x", "y_range"),
-    [(1e-12, (1.49, 1.51)), (4 - 1e-12, (0.29, 0.31)), (4 - 1e-12, (1.49, 1.51))],
+    [
+        (1e-12, (0.29, 0.31)),
+        (1e-12, (1.49, 1.51)),
+        (4 - 1e-12, (0.29, 0.31)),
+        (4 - 1e-12, (1.49, 1.51)),
+    ],
 )
 def test_unresolved_exterior_projection_gap_refuses_source_interior_wall(
     wall_x, y_range
 ):
+    """A wall closer to a clipped bin's edge than its error bound is refused.
+
+    The edge is known only to within the bound, on either side of the wall,
+    so the refusal does not depend on which way the projection rounds.
+    """
     child, arena = _rotated_clipped_grid(wall_x, y_range)
     with pytest.raises(ValueError, match=r"wall.*(?:cuts|clearance|unresolved)"):
         _publish(child, arena)
@@ -364,7 +377,7 @@ def test_unresolved_wall_clearance_names_the_wall_and_the_fix():
 
 def test_a_resolved_wall_stub_inside_a_bin_leaves_its_paths():
     """A wall that ends inside a bin does not divide it, so no path changes."""
-    child, arena = _rotated_clipped_grid(1e-12, (0.29, 0.31))
+    child, arena = _rotated_clipped_grid(0.5, (0.29, 0.31))
 
     published = _publish(child, arena)
 

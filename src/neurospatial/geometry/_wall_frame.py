@@ -178,17 +178,20 @@ def wall_source_frame(
                             np.linalg.norm(source_errors[parent])
                         )
                         clipped_errors[child] += error
+                        # The projected cell's boundary is known only to
+                        # within ``error``, on either side, so a wall inside
+                        # the parent cell is unresolved when it comes within
+                        # ``error`` of that boundary without reaching deeper
+                        # than ``error`` into the cell.
+                        core = polygon.buffer(-error)
                         for number, wall in enumerate(walls):
                             interior = wall.intersection(cells[parent]).difference(
                                 cells[parent].boundary
                             )
                             if (
                                 interior.length > 0
-                                and interior.intersection(retained)
-                                .difference(retained.boundary)
-                                .length
-                                == 0
-                                and interior.distance(retained) <= error
+                                and interior.intersection(core).length == 0
+                                and interior.distance(polygon.boundary) <= error
                             ):
                                 raise ValueError(
                                     _clearance_message(

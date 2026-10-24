@@ -61,7 +61,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
     if isinstance(locator, TransformedLocator):
         return transform_polygon_cells(
             PolygonCells(cells_from_locator(locator.base)),
-            np.asarray(np.linalg.inv(locator.inverse), dtype=np.float64),
+            locator.forward,
         ).polygons
     if isinstance(locator, RectilinearLocator):
         if len(locator.shape) != 2:
