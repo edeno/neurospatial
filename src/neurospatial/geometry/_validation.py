@@ -54,6 +54,7 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
     _coordinate_roundoff,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import (
     _representative,
     cells_from_locator,
@@ -867,6 +868,8 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
         )
     if binning.face_normals is not None and coordinate_kind != "cartesian":
         raise ValueError("Physical face normals require Cartesian coordinates.")
+    if coordinate_kind == "polar":
+        _validate_polar_seam(binning, coordinates.circular)
     validate_normals(binning)
     if isinstance(locator, CombinedLocator):
         if binning.face_normals is not None:
@@ -1273,6 +1276,73 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
         if not bins.has_measure_dim(1):
             raise ValueError("linearization bins.measure_dim must be 1.")
     _validate_center_lookup(binning)
+
+
+def _validate_polar_seam(binning: Binning, circular: bool) -> None:
+    """Check that pairs join the two ends of the angle range exactly when it wraps.
+
+    The arena's ``circular`` flag is the one record of whether the angle
+    wraps; the neighbor pairs and a native face recipe must agree with it.
+
+    Parameters
+    ----------
+    binning : Binning
+        Polar bins over a (distance, angle) grid.
+    circular : bool
+        Whether the angle wraps, from the coordinate descriptor.
+
+    Raises
+    ------
+    ValueError
+        If a pair crosses the seam of a non-wrapping angle, a wrapping angle
+        lacks a seam pair between two active end bins of one distance ring,
+        or a native face recipe disagrees about the wrap.
+    """
+    faces = binning.faces
+    if (
+        isinstance(faces, NativeFaces)
+        and faces.family == "polar"
+        and faces.circular != circular
+    ):
+        raise ValueError(
+            f"The polar face recipe says circular={faces.circular}, but the "
+            f"arena says circular={circular}; rebuild the environment with "
+            "Environment.from_polar_egocentric."
+        )
+    grid = binning.rectilinear
+    if grid is None or len(grid.shape) != 2 or grid.shape[1] < 3:
+        # With one or two angle bins, the seam pairs are the ordinary ones.
+        return
+    n_angle = grid.shape[1]
+    rows, angles = np.unravel_index(np.flatnonzero(grid.active_mask), grid.shape)
+    pairs = binning.connections.all_pairs
+    across = np.abs(angles[pairs[:, 0]] - angles[pairs[:, 1]]) == n_angle - 1
+    if not circular and np.any(across):
+        u, v = pairs[np.flatnonzero(across)[0]]
+        raise ValueError(
+            f"Bins {u} and {v} are paired across the angular seam, but the "
+            "arena's angle does not wrap (circular=False); remove the seam "
+            "pairs or use an arena with circular=True over a full turn."
+        )
+    if circular:
+        ends = grid.active_mask[:, 0] & grid.active_mask[:, -1]
+        bin_of = np.full(grid.active_mask.size, -1, dtype=np.intp)
+        bin_of[grid.active_mask.ravel()] = np.arange(len(rows))
+        ring = np.flatnonzero(ends)
+        first, last = bin_of[ring * n_angle], bin_of[ring * n_angle + n_angle - 1]
+        present = {frozenset((int(u), int(v))) for u, v in pairs[across]}
+        missing = [
+            (int(u), int(v))
+            for u, v in zip(first, last, strict=True)
+            if frozenset((int(u), int(v))) not in present
+        ]
+        if missing:
+            raise ValueError(
+                f"The arena's angle wraps (circular=True), but bins {missing[0]} "
+                "at the two ends of one distance ring are not paired across "
+                "the seam; add the seam pairs or use an arena with "
+                "circular=False."
+            )
 
 
 def _validate_center_lookup(binning: Binning) -> None:

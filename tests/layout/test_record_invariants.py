@@ -5,9 +5,10 @@ from dataclasses import fields, replace
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import publish_binning
 
 from neurospatial import Environment
-from neurospatial.arena import MaskArena, TrackArena
+from neurospatial.arena import EgocentricSurround, MaskArena, TrackArena
 from neurospatial.binning import (
     BinConnections,
     Binning,
@@ -308,3 +309,44 @@ def test_native_faces_follow_the_pairs_of_the_binning_that_holds_them():
     np.testing.assert_array_equal(faces.volumes, closed.bins.sizes)
     published = Environment.from_bins(closed, arena=env.arena)
     np.testing.assert_array_equal(published.edge_pairs, closed.connections.pairs)
+
+
+def test_a_partial_angle_window_cannot_wrap():
+    with pytest.raises(ValueError, match="less than a full turn"):
+        EgocentricSurround((0.0, 10.0), (0.0, 0.1), True)
+    assert EgocentricSurround((0.0, 10.0), (-np.pi, np.pi), True).circular
+
+
+def _polar(circular_angle=None):
+    return Environment.from_polar_egocentric(
+        distance_range=(0, 10),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5,
+        angle_bin_size=np.pi / 2,
+        circular_angle=circular_angle,
+    )
+
+
+def _publish_polar(binning, arena):
+    return publish_binning(binning, coordinate_kind="polar", arena=arena)
+
+
+def test_seam_pairs_exist_exactly_when_the_arena_angle_wraps():
+    wrapped, unwrapped = _polar(), _polar(circular_angle=False)
+    assert wrapped.arena.circular and not unwrapped.arena.circular
+    _publish_polar(wrapped.binning, wrapped.arena)  # consistent records publish
+    with pytest.raises(ValueError, match="across the angular seam"):
+        _publish_polar(
+            replace(wrapped.binning, faces=MissingFaces("seam check only")),
+            unwrapped.arena,
+        )
+    with pytest.raises(ValueError, match="not paired across the seam"):
+        _publish_polar(
+            replace(unwrapped.binning, faces=MissingFaces("seam check only")),
+            wrapped.arena,
+        )
+    with pytest.raises(ValueError, match="polar face recipe"):
+        _publish_polar(
+            replace(unwrapped.binning, faces=wrapped.binning.faces),
+            unwrapped.arena,
+        )

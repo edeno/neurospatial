@@ -729,10 +729,18 @@ class EgocentricSurround:
         Finite increasing angular limits in radians.
     circular : bool
         Whether the angular axis wraps across the seam, so the bins at the
-        two ends of the angle range are neighbors. Containment does not
-        depend on it: an angle names a direction, so every window compares
-        angles modulo two pi (see :meth:`wrap_angles`), and a partial window
-        keeps its configured angular exclusions.
+        two ends of the angle range are neighbors. Only a full turn (2π) can
+        wrap. Containment does not depend on it: an angle names a direction,
+        so every window compares angles modulo two pi (see
+        :meth:`wrap_angles`), and a partial window keeps its configured
+        angular exclusions.
+
+    Raises
+    ------
+    ValueError
+        If a limit is not finite, the limits are not increasing, a distance
+        is negative, the angles span more than one turn, or ``circular`` is
+        True for less than one turn.
     """
 
     distance_range: tuple[float, float]
@@ -760,14 +768,24 @@ class EgocentricSurround:
                 )
             object.__setattr__(self, name, (float(values[0]), float(values[1])))
         low, high = self.angle_range
-        if high - low > 2 * np.pi and not np.isclose(
-            high - low, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0
-        ):
+        full_turn = bool(
+            np.isclose(high - low, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0)
+        )
+        if high - low > 2 * np.pi and not full_turn:
             raise _error(
                 "angle_range spans more than one full turn (2π).",
                 "pass at most one turn; angles a whole turn apart name one direction",
             )
-        object.__setattr__(self, "circular", _boolean(self.circular, "circular"))
+        circular = _boolean(self.circular, "circular")
+        if circular and not full_turn:
+            raise _error(
+                f"angle_range={self.angle_range!r} spans {high - low:.6g} rad, "
+                "less than a full turn (2π), so its angle cannot wrap "
+                "(circular=True).",
+                "pass circular=False for a partial angular window, or an "
+                "angle_range one full turn wide",
+            )
+        object.__setattr__(self, "circular", circular)
 
     def wrap_angles(self, positions: NDArray[np.float64]) -> NDArray[np.float64]:
         """Express each angle in ``[low, low + 2π)`` of the angle range.
