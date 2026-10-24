@@ -5346,12 +5346,11 @@ class Environment(Generic[_C]):
         On an egocentric polar environment, a polygon region is read in the
         environment's own ``(distance, angle)`` coordinates, as ``bin_at``
         reads positions: x is distance and y is angle in radians, so a box is
-        a wedge of a distance band. The polygon is not wrapped around the
-        circle. It is tested against bin-center angles inside
-        ``angle_range``, so a wedge across the ±π seam of a full circle must
-        be two regions, one at each end of the range (``region_mask`` of the
-        pair gives their union). A point region is located like any position,
-        with its angle wrapped into ``angle_range``.
+        a wedge of a distance band. Angles are compared modulo a full turn,
+        as for positions: a bin is covered when its center angle plus any
+        whole number of turns lies inside the polygon, so a wedge across the
+        ±π seam, such as angles 3π/4 to 5π/4 behind the animal, is one
+        polygon.
 
         Examples
         --------
@@ -5444,12 +5443,11 @@ class Environment(Generic[_C]):
         On an egocentric polar environment, a polygon region is read in the
         environment's own ``(distance, angle)`` coordinates, as ``bin_at``
         reads positions: x is distance and y is angle in radians, so a box is
-        a wedge of a distance band. The polygon is not wrapped around the
-        circle. It is tested against bin-center angles inside
-        ``angle_range``, so a wedge across the ±π seam of a full circle must
-        be two regions, one at each end of the range (``region_mask`` of the
-        pair gives their union). A point region is located like any position,
-        with its angle wrapped into ``angle_range``.
+        a wedge of a distance band. Angles are compared modulo a full turn,
+        as for positions: a bin is covered when its center angle plus any
+        whole number of turns lies inside the polygon, so a wedge across the
+        ±π seam, such as angles 3π/4 to 5π/4 behind the animal, is one
+        polygon.
 
         This is the same rule as :meth:`bins_in_region`, :meth:`region_mask`
         and ``distance_to(region=...)``.
@@ -5566,12 +5564,11 @@ class Environment(Generic[_C]):
         On an egocentric polar environment, a polygon region is read in the
         environment's own ``(distance, angle)`` coordinates, as ``bin_at``
         reads positions: x is distance and y is angle in radians, so a box is
-        a wedge of a distance band. The polygon is not wrapped around the
-        circle. It is tested against bin-center angles inside
-        ``angle_range``, so a wedge across the ±π seam of a full circle must
-        be two regions, one at each end of the range (``region_mask`` of the
-        pair gives their union). A point region is located like any position,
-        with its angle wrapped into ``angle_range``.
+        a wedge of a distance band. Angles are compared modulo a full turn,
+        as for positions: a bin is covered when its center angle plus any
+        whole number of turns lies inside the polygon, so a wedge across the
+        ±π seam, such as angles 3π/4 to 5π/4 behind the animal, is one
+        polygon.
 
         Examples
         --------
