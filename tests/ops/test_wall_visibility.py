@@ -851,3 +851,39 @@ def test_point_occluder_does_not_borrow_perpendicular_axis_precision(swap):
             target[:, ::-1],
         )
     assert not clear_segments(LineString(endpoints), observer, target)[0]
+
+
+def test_mirrored_mask_arena_keeps_wall_view_bins():
+    """A grid with a measured mask arena, mirrored, views the same bins:
+    the arena keeps the reflection as the bins do, so walls and cells stay
+    in one frame."""
+    from neurospatial.arena import MaskArena
+    from neurospatial.encoding.view import compute_view_rate
+    from neurospatial.ops.transforms import AffineND
+
+    edges = (np.arange(11.0),) * 2
+    mask = np.ones((10, 10), dtype=bool)
+    env = Environment.from_grid_mask(
+        mask, edges, arena=MaskArena(edges, mask, physical_footprint_known=True)
+    )
+    mirror = np.array([[1.0, 0.0, 0.0], [0.0, -1.0, 10.0], [0.0, 0.0, 1.0]])
+    mirrored = env.apply_transform(AffineND(mirror))
+
+    def viewed(e, position, heading):
+        return compute_view_rate(
+            e,
+            np.array([0.25, 1.25]),
+            np.array([0.0, 1.0, 2.0]),
+            np.tile(position, (3, 1)),
+            np.full(3, heading),
+            gaze_model="ray_cast",
+            method="binned",
+            bandwidth=0.0,
+            max_gap=None,
+        ).occupancy
+
+    # Looking up at the top wall, and down at the mirrored bottom wall.
+    before = viewed(env, [5.5, 6.5], np.pi / 2)
+    after = viewed(mirrored, [5.5, 3.5], -np.pi / 2)
+    assert before.sum() == 2.0
+    np.testing.assert_array_equal(after, before)

@@ -517,22 +517,21 @@ class MaskArena(ReadOnlyState):
         return None
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
-        """Retain axis-aligned masks, or store an inverse coordinate map."""
+        """Retain masks under positive axis scaling, or store the affine map.
+
+        A reflection keeps the map, as a grid's bins do (``FramedGrid``), so
+        the arena and its cells stay in one source frame.
+        """
         matrix = _affine(matrix, self.n_dims)
         diagonal = np.diag(matrix[:-1, :-1])
-        if np.array_equal(matrix[:-1, :-1], np.diag(diagonal)):
+        if np.array_equal(matrix[:-1, :-1], np.diag(diagonal)) and np.all(diagonal > 0):
             edges = []
-            mask = self.active_mask
             for axis, edge in enumerate(self.edges):
                 with np.errstate(over="ignore", invalid="ignore"):
-                    mapped = edge * diagonal[axis] + matrix[axis, -1]
-                if diagonal[axis] < 0:
-                    mapped = mapped[::-1]
-                    mask = np.flip(mask, axis=axis)
-                edges.append(mapped)
+                    edges.append(edge * diagonal[axis] + matrix[axis, -1])
             return MaskArena(
                 tuple(edges),
-                mask,
+                self.active_mask,
                 physical_footprint_known=self.physical_footprint_known,
             )
         return _TransformedArena(self, matrix)
