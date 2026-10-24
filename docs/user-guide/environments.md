@@ -724,7 +724,10 @@ footprint yields NaN. An observer tracked exactly on a wall sees the next wall
 when it faces into the room; facing out through the wall, or exactly along it,
 gives a zero-distance contact at the observer. On an internal wall, the
 observer sees the side it faces. A cue at the first contact is visible; a cue
-behind it is occluded. Stored affine frames
+behind it is occluded. A lost tracking frame is not an occluded view:
+`visible_cues()` and `compute_view_field()` refuse a NaN or infinite position
+or heading, and `compute_viewshed_trajectory()` keeps such frames missing,
+with an `occlusion_map` of NaN. Stored affine frames
 use locally bounded projection errors for boundary contact. Physical mode only
 uses supplied wall evidence; inferred domains do not add unasserted outer walls.
 

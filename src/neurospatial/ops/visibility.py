@@ -87,6 +87,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
     CallIndexes,
@@ -401,7 +402,9 @@ class ViewshedResult(ReadOnlyArraysMixin):
     cue_bearings : NDArray[np.float64]
         Egocentric bearings to visible cues.
     occlusion_map : NDArray[np.float64]
-        Per-bin occlusion score [0, 1] where 1 means fully visible.
+        Per-bin occlusion score [0, 1] where 1 means fully visible. NaN in
+        every bin for a missing observation (a NaN or infinite position or
+        heading), whose visible bins and cues are then empty.
     _total_bins : int, optional
         Total number of bins in the environment (for computing fractions).
 
@@ -443,10 +446,13 @@ class ViewshedResult(ReadOnlyArraysMixin):
         Returns
         -------
         float
-            Fraction in [0, 1]. Returns 0 if _total_bins not set.
+            Fraction in [0, 1]. Returns 0 if _total_bins not set, and NaN
+            for a missing observation (``occlusion_map`` all NaN).
         """
         if self._total_bins == 0:
             return 0.0
+        if self.occlusion_map.size and np.all(np.isnan(self.occlusion_map)):
+            return float("nan")
         return self.n_visible_bins / self._total_bins
 
     @property
@@ -631,7 +637,7 @@ def _ray_cast_to_boundary(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray.
 
     Returns
     -------
@@ -684,12 +690,16 @@ def compute_viewshed(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray.
 
     Returns
     -------
     ViewshedResult
         Viewshed analysis result with visible bins, boundaries, and cues.
+        For a NaN or infinite ``position`` or ``heading`` (a missing
+        observation) its ``occlusion_map`` is NaN in every bin. An observer
+        outside the region the boundary source covers sees nothing: no
+        visible bins or cues and a zero ``occlusion_map``.
 
     Examples
     --------
@@ -805,18 +815,20 @@ def _viewshed(
     walls = boundary_geometry(binning, arena, boundary_source)
     if position.shape != (2,):
         raise ValueError("position must have shape (2,).")
+    observed = bool(np.all(np.isfinite(position)) and np.isfinite(heading))
     if (
-        not np.isfinite(heading)
+        not observed
         or not valid_observers(
             binning, arena, position.reshape(1, 2), boundary_source, indexes
         )[0]
     ):
+        # A missing observation is missing, not a view of nothing.
         return ViewshedResult(
             np.empty(0, dtype=np.intp),
             np.empty(0, dtype=np.intp),
             np.empty(0),
             np.empty(0),
-            np.zeros(n_bins),
+            np.zeros(n_bins) if observed else np.full(n_bins, np.nan),
             _total_bins=n_bins,
         )
     # Enclose both known walls and retained bin centers; no fixed 200-unit cap.
@@ -954,6 +966,40 @@ def _viewshed(
     )
 
 
+def _require_observation(
+    call: str, position: NDArray[np.float64], heading: float
+) -> None:
+    """Refuse a missing (non-finite) observer position or heading.
+
+    Parameters
+    ----------
+    call : str
+        The public function, named in the message.
+    position : ndarray of float64, shape (2,)
+        Observer position.
+    heading : float
+        Observer heading in radians.
+
+    Raises
+    ------
+    ValueError
+        If ``position`` or ``heading`` is NaN or infinite.
+    """
+    if np.all(np.isfinite(position)) and np.isfinite(heading):
+        return
+    raise ValueError(
+        _format_error(
+            f"{call}() needs an observed position and heading; got position "
+            f"{np.asarray(position).tolist()} and heading {heading}.",
+            why="Why: a NaN or infinite value is a missing observation (a lost "
+            "tracking frame), and reporting nothing visible from it would read "
+            "missing data as occlusion.",
+            fix="call it only for observed frames, or use "
+            "compute_viewshed_trajectory, which keeps missing frames missing",
+        )
+    )
+
+
 def compute_view_field(
     env: BinningConsumer,
     position: NDArray[np.float64],
@@ -981,12 +1027,19 @@ def compute_view_field(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray.
 
     Returns
     -------
     NDArray[np.bool_], shape (n_bins,)
         True for visible bins, False otherwise.
+
+    Raises
+    ------
+    ValueError
+        If ``position`` or ``heading`` is not finite: a missing observation
+        has no view field, and an all-False mask would read it as nothing
+        visible. ``compute_viewshed_trajectory`` keeps missing frames missing.
 
     Examples
     --------
@@ -1002,6 +1055,7 @@ def compute_view_field(
     >>> mask.dtype == bool
     True
     """
+    _require_observation("compute_view_field", position, heading)
     result = compute_viewshed(
         env, position, heading, fov=fov, n_rays=n_rays, boundary_source=boundary_source
     )
@@ -1037,16 +1091,25 @@ def visible_cues(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray.
 
     Returns
     -------
     visible : NDArray[np.bool_], shape (n_cues,)
-        True for visible cues.
+        True for cues inside the field of view with a clear line of sight.
+        All False when the observer is outside the region the boundary
+        source covers.
     distances : NDArray[np.float64], shape (n_cues,)
         Distances to all cues (NaN for not visible).
     bearings : NDArray[np.float64], shape (n_cues,)
         Egocentric bearings to all cues (NaN for not visible).
+
+    Raises
+    ------
+    ValueError
+        If ``position``, ``heading`` or a cue position is not finite. A
+        missing observation is not evidence that the cues were hidden; check
+        only observed frames and keep the others missing.
 
     Examples
     --------
@@ -1072,6 +1135,17 @@ def visible_cues(
     position = np.asarray(position, dtype=np.float64)
     cue_positions = np.asarray(cue_positions, dtype=np.float64)
     n_cues = len(cue_positions)
+    _require_observation("visible_cues", position, heading)
+    if n_cues and not np.all(np.isfinite(cue_positions)):
+        raise ValueError(
+            _format_error(
+                "visible_cues() needs finite cue_positions; row "
+                f"{int(np.flatnonzero(~np.isfinite(cue_positions).all(axis=1))[0])} "
+                "is NaN or infinite.",
+                fix="pass the measured position of every cue, or drop the cues "
+                "whose position is unknown",
+            )
+        )
 
     if n_cues == 0:
         return (
@@ -1151,12 +1225,15 @@ def compute_viewshed_trajectory(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray.
 
     Returns
     -------
     list of ViewshedResult
-        Viewshed result at each trajectory point.
+        Viewshed result at each trajectory point. A frame with a NaN or
+        infinite position or heading is a missing observation: its
+        ``occlusion_map`` is NaN and its ``visibility_fraction`` is NaN, so
+        it is not mistaken for a frame from which nothing was visible.
     """
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
@@ -1220,7 +1297,7 @@ def visibility_occupancy(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) add no
@@ -1285,7 +1362,6 @@ def visibility_occupancy(
     >>> round(float(seen.max()), 6)  # 0.2 s before the pause + 0.1 s after
     0.3
     """
-    from neurospatial._exceptions import _format_error
     from neurospatial._intervals import (
         as_intervals,
         interval_valid_mask,
