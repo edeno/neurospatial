@@ -19,7 +19,6 @@ from neurospatial.geometry._arrays import active_order, get_centers, per_dimensi
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    MissingFaces,
     SpatialBins,
     TrackLinearization,
     refuse_mixed_measure_conductance,
@@ -28,6 +27,7 @@ from neurospatial.geometry._combine_geometry import certify_locator
 from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._composition import (
     CombinedLocator,
+    combined_faces,
     combined_normals,
 )
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
@@ -900,44 +900,6 @@ def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> Non
     if coordinate_kind == "polar":
         _validate_polar_seam(binning, coordinates.circular)
     validate_normals(binning)
-    if isinstance(locator, CombinedLocator):
-        if binning.face_normals is not None:
-            expected_normals = combined_normals(locator)
-            if expected_normals is None:
-                raise ValueError(
-                    "Combined normals require authoritative child normals."
-                )
-            _equal(
-                binning.face_normals.values,
-                expected_normals.values,
-                "combined face normals",
-            )
-        expected_links = locator.bin_connections()
-        _equal(links.all_pairs, expected_links.all_pairs, "combined neighbor pairs")
-        _equal(links.is_open, expected_links.is_open, "combined open pairs")
-        _equal(links.closed_by, expected_links.closed_by, "combined closing walls")
-        _equal(
-            links.all_distances,
-            expected_links.all_distances,
-            "combined path distances",
-        )
-        if locator.bridge_pairs.size and binning.faces.available:
-            raise ValueError(
-                "Navigation bridges cannot be published as physical faces."
-            )
-    if isinstance(locator, CombinedLocator) and isinstance(binning.faces, KnownFaces):
-        if not all(child.faces.available for child in locator.children):
-            raise ValueError(
-                "Combined faces require certified geometry in every child."
-            )
-        for name in ("A", "distance"):
-            _equal(
-                getattr(binning.faces.faces, name),
-                np.concatenate(
-                    [getattr(child.build_faces(), name) for child in locator.children]
-                ),
-                f"combined faces.{name}",
-            )
     grid, shapes, track = binning.rectilinear, binning.shapes, binning.linearization
     geometry = _locator_geometry(
         locator,
@@ -987,78 +949,76 @@ def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> Non
             "grid_frame.forward projected cells and locator frame",
             gap=gap,
         )
-    if not isinstance(locator, CombinedLocator):
-        composition = expected_composition_binning(locator)
-        if composition is not None:
-            expected_binning, computed = composition
-            if binning.face_normals is not None:
-                expected_normals = expected_binning.face_normals
-                if expected_normals is None:
-                    raise ValueError(
-                        "Derived combined normals require authoritative child normals."
-                    )
-                actual_normals = binning.face_normals.values
-                if computed:
-                    if not np.allclose(
-                        actual_normals, expected_normals.values, rtol=0, atol=1e-12
-                    ):
-                        raise ValueError(
-                            "Derived combined face normals disagree with child geometry."
-                        )
-                else:
-                    _equal(
-                        actual_normals,
-                        expected_normals.values,
-                        "derived combined face normals",
-                    )
-            expected_links = expected_binning.connections
-            _equal(
-                links.all_pairs,
-                expected_links.all_pairs,
-                "derived combined neighbor pairs",
-            )
-            _equal(links.is_open, expected_links.is_open, "derived combined open pairs")
-            _equal(
-                links.closed_by,
-                expected_links.closed_by,
-                "derived combined closing walls",
-            )
+    composition = expected_composition_binning(locator)
+    if composition is not None:
+        expected_binning, computed = composition
+        # A combined binning and one derived from it (by subsets and affine
+        # maps) store copies of what their components define.
+        label = (
+            "combined" if isinstance(locator, CombinedLocator) else "derived combined"
+        )
+        if binning.face_normals is not None:
+            expected_normals = expected_binning.face_normals
+            if expected_normals is None:
+                raise ValueError(
+                    f"{label.capitalize()} normals require authoritative child normals."
+                )
+            actual_normals = binning.face_normals.values
             if computed:
-                u, v = links.all_pairs.T
-                error = np.linalg.norm(
-                    geometry.center_error[u] + geometry.center_error[v], axis=1
-                )
-                error += 64 * np.finfo(float).eps * np.abs(expected_links.all_distances)
-                _computed_equal(
-                    links.all_distances,
-                    expected_links.all_distances,
-                    error,
-                    "derived combined path distances",
-                    gap=gap,
-                )
-            else:
-                _equal(
-                    links.all_distances,
-                    expected_links.all_distances,
-                    "derived combined path distances",
-                )
-            if isinstance(binning.faces, KnownFaces):
-                if not expected_binning.faces.available:
+                if not np.allclose(
+                    actual_normals, expected_normals.values, rtol=0, atol=1e-12
+                ):
                     raise ValueError(
-                        "Combined physical faces cannot be inferred from navigation bridges or missing child faces."
+                        f"{label.capitalize()} face normals disagree with child "
+                        "geometry."
                     )
-                for name in ("A", "distance"):
-                    actual = getattr(binning.faces.faces, name)
-                    reference = getattr(expected_binning.build_faces(), name)
-                    if computed:
-                        _computed_equal(
-                            actual,
-                            reference,
-                            64 * np.finfo(float).eps * np.abs(reference),
-                            f"derived combined faces.{name}",
-                        )
-                    else:
-                        _equal(actual, reference, f"derived combined faces.{name}")
+            else:
+                _equal(actual_normals, expected_normals.values, f"{label} face normals")
+        expected_links = expected_binning.connections
+        _equal(links.all_pairs, expected_links.all_pairs, f"{label} neighbor pairs")
+        _equal(links.is_open, expected_links.is_open, f"{label} open pairs")
+        _equal(links.closed_by, expected_links.closed_by, f"{label} closing walls")
+        if computed:
+            u, v = links.all_pairs.T
+            error = np.linalg.norm(
+                geometry.center_error[u] + geometry.center_error[v], axis=1
+            )
+            error += 64 * np.finfo(float).eps * np.abs(expected_links.all_distances)
+            _computed_equal(
+                links.all_distances,
+                expected_links.all_distances,
+                error,
+                f"{label} path distances",
+                gap=gap,
+            )
+        else:
+            _equal(
+                links.all_distances,
+                expected_links.all_distances,
+                f"{label} path distances",
+            )
+        if binning.faces.available:
+            if not expected_binning.faces.available:
+                raise ValueError(
+                    "Combined physical faces cannot be inferred from navigation "
+                    "bridges or missing child faces."
+                )
+            stored, expected_faces = (
+                binning.build_faces(),
+                expected_binning.build_faces(),
+            )
+            for name in ("A", "distance"):
+                actual = getattr(stored, name)
+                reference = getattr(expected_faces, name)
+                if computed:
+                    _computed_equal(
+                        actual,
+                        reference,
+                        64 * np.finfo(float).eps * np.abs(reference),
+                        f"{label} faces.{name}",
+                    )
+                else:
+                    _equal(actual, reference, f"{label} faces.{name}")
     _computed_equal(
         bins.centers,
         geometry.centers,
@@ -1440,24 +1400,13 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
     if isinstance(locator, CombinedLocator):
         bins = locator.spatial_bins()
         connections = locator.bin_connections()
-        faces: KnownFaces | MissingFaces = MissingFaces(
-            "Navigation bridges have no physical faces."
-        )
-        if not len(locator.bridge_pairs) and all(
-            child.faces.available for child in locator.children
-        ):
-            parts = [child.build_faces() for child in locator.children]
-            faces = KnownFaces(
-                FaceGeometry(
-                    connections.pairs,
-                    np.concatenate([part.A for part in parts]),
-                    np.concatenate([part.distance for part in parts]),
-                    bins.sizes,
-                )
-            )
-        normals = combined_normals(locator)
         return Binning(
-            "combined", bins, connections, locator, faces, face_normals=normals
+            "combined",
+            bins,
+            connections,
+            locator,
+            combined_faces(locator, connections, bins.sizes),
+            face_normals=combined_normals(locator),
         ), False
     if isinstance(locator, SubsetLocator):
         result = expected_composition_binning(locator.base)

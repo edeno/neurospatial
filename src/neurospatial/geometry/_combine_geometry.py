@@ -30,11 +30,13 @@ from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    MissingFaces,
     TrackLinearization,
 )
-from neurospatial.geometry._composition import CombinedLocator, combined_normals
-from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._composition import (
+    CombinedLocator,
+    combined_faces,
+    combined_normals,
+)
 from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._locators import (
     Locator,
@@ -960,21 +962,7 @@ def combine_binnings(
     object.__setattr__(locator, _CERTIFIED, True)
     bins = locator.spatial_bins()
     connections = locator.bin_connections()
-    faces: KnownFaces | MissingFaces
-    if not len(pairs) and all(child.faces.available for child in children):
-        child_faces = [child.build_faces() for child in children]
-        faces = KnownFaces(
-            FaceGeometry(
-                connections.pairs,
-                np.concatenate([part.A for part in child_faces]),
-                np.concatenate([part.distance for part in child_faces]),
-                bins.sizes,
-            )
-        )
-    else:
-        faces = MissingFaces(
-            "Combined navigation bridges have no physical face geometry; use scalar diffusion when child geometry is certified."
-        )
+    faces = combined_faces(locator, connections, bins.sizes)
     shapes = None
     if n_dims == 2 and bins.has_measure_dim(2):
         with suppress(ValueError):

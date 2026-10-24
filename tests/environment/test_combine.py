@@ -808,6 +808,16 @@ def test_derived_saved_authority_cannot_disagree(derive, with_bridge):
         Environment.from_dict(data)
 
 
+def test_saved_combined_faces_cannot_disagree_with_components():
+    env = Environment.combine({"a": grid(), "b": grid(4)}, auto_bridge=False)
+    data = env.to_dict()
+    data["arrays"]["binning/faces/A"] = (
+        2 * np.asarray(data["arrays"]["binning/faces/A"])
+    ).tolist()
+    with pytest.raises(ValueError, match=r": combined faces\.A"):
+        Environment.from_dict(data)
+
+
 def test_nwb_preserves_composition_after_reader_closes(tmp_path):
     from datetime import datetime, timezone
 
