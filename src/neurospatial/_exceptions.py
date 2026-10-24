@@ -65,8 +65,15 @@ def _rebuild_error(
 
 
 def _format_error(what: str, *, fix: str, why: str | None = None) -> str:
-    """Return ``what``, an optional ``why``, and a final ``Fix:`` line."""
-    lines = [what.strip()] + ([why.strip()] if why else []) + [f"Fix: {fix.strip()}"]
+    """Return ``what``, an optional ``Why:`` line, and a final ``Fix:`` line.
+
+    ``why`` may start with ``"Why: "`` or not; the label is added when missing.
+    """
+    lines = [what.strip()]
+    if why:
+        reason = why.strip()
+        lines.append(reason if reason.startswith("Why:") else f"Why: {reason}")
+    lines.append(f"Fix: {fix.strip()}")
     return "\n".join(lines)
 
 

@@ -606,24 +606,27 @@ def _bin_center_coords(
     # optional-coord situation. Raise loudly rather than silently dropping it.
     if bin_centers.ndim != 2:
         raise ValueError(
-            "Environment bin_centers must be 2-D (n_bins, n_dims) to build "
-            f"xarray bin-center coords, but env produced an array with "
-            f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).\n"
-            "  WHY: each bin needs an (x, y, ...) center for the 'bin' "
-            "coordinate.\n"
-            "  Fix: pass an Environment, whose bin_centers have shape "
-            "(n_bins, n_dims)."
+            _format_error(
+                "Environment bin_centers must be 2-D (n_bins, n_dims) to build "
+                "xarray bin-center coords, but env produced an array with "
+                f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).",
+                why="each bin needs an (x, y, ...) center for the 'bin' coordinate.",
+                fix="pass an Environment, whose bin_centers have shape "
+                "(n_bins, n_dims).",
+            )
         )
     if bin_centers.shape[0] != n_bins:
         raise ValueError(
-            "bin_centers length does not match the result's bin count: env "
-            f"bin_centers has {bin_centers.shape[0]} row(s) but the result "
-            f"has {n_bins} bin(s).\n"
-            "  WHY: the 'bin' coordinate must have one center per bin; a "
-            "mismatch would silently produce a structurally-incomplete or "
-            "misaligned Dataset.\n"
-            "  Fix: pass the same environment used to compute the result, or "
-            "recompute the result against this environment."
+            _format_error(
+                "bin_centers length does not match the result's bin count: env "
+                f"bin_centers has {bin_centers.shape[0]} row(s) but the result "
+                f"has {n_bins} bin(s).",
+                why="the 'bin' coordinate must have one center per bin; a "
+                "mismatch would silently produce a structurally-incomplete or "
+                "misaligned Dataset.",
+                fix="pass the same environment used to compute the result, or "
+                "recompute the result against this environment.",
+            )
         )
 
     if getattr(env, "coordinate_kind", "cartesian") == "polar":
@@ -734,12 +737,14 @@ def build_population_dataset(
         bc = np.array(bin_centers, dtype=np.float64)
         if bc.ndim != 1 or bc.shape[0] != n_bins:
             raise ValueError(
-                "bin_centers length does not match the firing-rate bin "
-                f"count: bin_centers has shape {bc.shape} but there are "
-                f"{n_bins} bin(s) (firing_rates.shape[1]).\n"
-                "  WHY: the 'bin' coordinate must have one center per bin; a "
-                "mismatch would silently produce a misaligned Dataset.\n"
-                "  Fix: pass a 1-D bin_centers array of length n_bins."
+                _format_error(
+                    "bin_centers length does not match the firing-rate bin "
+                    f"count: bin_centers has shape {bc.shape} but there are "
+                    f"{n_bins} bin(s) (firing_rates.shape[1]).",
+                    why="the 'bin' coordinate must have one center per bin; a "
+                    "mismatch would silently produce a misaligned Dataset.",
+                    fix="pass a 1-D bin_centers array of length n_bins.",
+                )
             )
         coords["bin_center_angle"] = ("bin", bc)
 
@@ -752,14 +757,16 @@ def build_population_dataset(
         occ = np.array(occupancy, dtype=np.float64)
         if occ.ndim != 1 or occ.shape[0] != n_bins:
             raise ValueError(
-                "occupancy length does not match the firing-rate bin count: "
-                f"occupancy has shape {occ.shape} but there are {n_bins} "
-                "bin(s) (firing_rates.shape[1]).\n"
-                "  WHY: the 'occupancy' data var is indexed by bin; a length "
-                "mismatch would silently produce a structurally-incomplete "
-                "Dataset.\n"
-                "  Fix: pass a 1-D occupancy array of length n_bins, or omit "
-                "it entirely if unavailable."
+                _format_error(
+                    "occupancy length does not match the firing-rate bin count: "
+                    f"occupancy has shape {occ.shape} but there are {n_bins} "
+                    "bin(s) (firing_rates.shape[1]).",
+                    why="the 'occupancy' data var is indexed by bin; a length "
+                    "mismatch would silently produce a structurally-incomplete "
+                    "Dataset.",
+                    fix="pass a 1-D occupancy array of length n_bins, or omit "
+                    "it entirely if unavailable.",
+                )
             )
         data_vars["occupancy"] = (("bin",), occ)
 

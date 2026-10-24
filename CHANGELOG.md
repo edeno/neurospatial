@@ -58,6 +58,8 @@
 - A `missing_label` that matches no label but differs from one only in case or
   spaces (`"Rest"` for `"rest"`) warns, since that label would otherwise be
   kept as a real condition or direction.
+- Every error message built from what/why/fix now labels its reason
+  `Why:`; 80+ messages printed the reason as a bare sentence.
 
 ### Spatial geometry review
 
