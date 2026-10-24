@@ -24,7 +24,11 @@ def _check_homogeneous(matrix: NDArray[np.float64]) -> None:
         raise ValueError(
             "inverse/affine matrix must be finite, square and homogeneous."
         )
-    if np.linalg.slogdet(matrix[:-1, :-1])[0] == 0:
+    # Only the sign is read; a near-identity map can underflow harmlessly in
+    # the factorization, which some LAPACK builds report.
+    with np.errstate(under="ignore"):
+        sign = np.linalg.slogdet(matrix[:-1, :-1])[0]
+    if sign == 0:
         raise ValueError("inverse/affine matrix must be invertible.")
 
 
