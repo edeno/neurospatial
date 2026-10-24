@@ -14,7 +14,6 @@ from neurospatial.geometry._arrays import per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
-    FacesSource,
     KnownFaces,
     MissingFaces,
     SpatialBins,
@@ -41,6 +40,7 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
     _check_homogeneous,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import (
     PolygonCells,
@@ -97,7 +97,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     )
     # pair_kept selects the open pairs that survive, for arrays aligned with them.
     connections, pair_kept = binning.connections.select(child_of)
-    faces: FacesSource = binning.faces
+    faces: KnownFaces | NativeFaces | MissingFaces = binning.faces
     if faces.available:
         old_faces = binning.build_faces()
         faces = KnownFaces(
@@ -499,7 +499,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         if binning.face_normals is not None
         else None
     )
-    faces: FacesSource = binning.faces
+    faces: KnownFaces | NativeFaces | MissingFaces = binning.faces
     if faces.available:
         old = binning.build_faces()
         if similarity:

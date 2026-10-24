@@ -6,7 +6,7 @@ import copy
 import pickle
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import networkx as nx
 import numpy as np
@@ -26,6 +26,7 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 from neurospatial.geometry._track import project_1d_to_2d
 
 if TYPE_CHECKING:
+    from neurospatial.geometry._native_faces import NativeFaces
     from neurospatial.geometry._polygon_cells import PolygonCells
 
 
@@ -428,28 +429,6 @@ class BinConnections(ReadOnlyState):
             raise ValueError(f"pairs{index} must be in [0, {n_bins}).")
 
 
-class FacesSource(Protocol):
-    """Source of an environment's finite-volume cell faces."""
-
-    @property
-    def available(self) -> bool:
-        """Whether validated finite-volume faces can be built."""
-        ...
-
-    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
-        """Build validated faces for ``bins`` in open-pair order, without caching."""
-        ...
-
-    def missing_error(self, operation: str) -> Exception:
-        """Return an actionable error when the named operation needs faces.
-
-        A source that is not ``available`` returns a
-        ``MissingCellGeometryError``, the error that marks bins which cannot
-        smooth.
-        """
-        ...
-
-
 @dataclass(frozen=True, eq=False)
 class KnownFaces(ReadOnlyState):
     """Owned finite-volume faces that no longer need their originating layout."""
@@ -497,10 +476,6 @@ class KnownFaces(ReadOnlyState):
     def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
         """Return the stored faces, which a binning checks against its pairs."""
         return self.faces
-
-    def missing_error(self, operation: str) -> NotImplementedError:
-        """Return an error only relevant to unavailable face sources."""
-        return NotImplementedError(f"{operation}: stored faces are available.")
 
 
 class MissingCellGeometryError(NotImplementedError):
@@ -821,7 +796,7 @@ class Binning:
     bins: SpatialBins
     connections: BinConnections
     locator: Locator
-    faces: FacesSource
+    faces: KnownFaces | NativeFaces | MissingFaces
     grid: RectilinearGrid | FramedGrid | None = None
     linearization: TrackLinearization | None = None
     shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None

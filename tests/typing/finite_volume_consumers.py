@@ -11,11 +11,18 @@ if TYPE_CHECKING:
     from typing_extensions import assert_type
 
     from neurospatial import Environment
-    from neurospatial.binning import DiffusionGeometry
+    from neurospatial.binning import (
+        Binning,
+        DiffusionGeometry,
+        FaceGeometry,
+        KnownFaces,
+        MissingFaces,
+    )
     from neurospatial.environment import (
         CartesianSystem,
         EgocentricPolarSystem,
     )
+    from neurospatial.geometry import MissingCellGeometryError, NativeFaces
     from neurospatial.ops import MRFBasis
     from neurospatial.ops._protocols import (
         DiffusionGeometryConsumer,
@@ -46,3 +53,14 @@ if TYPE_CHECKING:
         assert_type(env.get_mrf_basis(np.ones(env.n_bins)), MRFBasis)
         assert_type(env.compute_gaussian_kernel(bandwidth=1.0), NDArray[np.float64])
         assert_type(env.diffusion_accuracy(bandwidth=1.0), float)
+
+    def check_faces(binning: Binning) -> None:
+        """A binning's faces are one of the three built-in face records."""
+        faces = binning.faces
+        assert_type(binning.build_faces(), FaceGeometry)
+        if isinstance(faces, MissingFaces):
+            assert_type(faces.missing_error("smoothing"), MissingCellGeometryError)
+        elif isinstance(faces, KnownFaces):
+            assert_type(faces.faces, FaceGeometry)
+        else:
+            assert_type(faces, NativeFaces)

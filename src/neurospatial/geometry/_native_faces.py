@@ -114,7 +114,3 @@ class NativeFaces(ReadOnlyState):
         areas.setflags(write=False)
         distances.setflags(write=False)
         return FaceGeometry(pairs, areas, distances, faces.volumes)
-
-    def missing_error(self, operation: str) -> NotImplementedError:
-        """Return the faces-source protocol's unused available-source error."""
-        return NotImplementedError(f"{operation}: native faces are available.")

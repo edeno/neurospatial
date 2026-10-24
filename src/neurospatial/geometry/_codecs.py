@@ -63,6 +63,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     ClippedLocator,
@@ -778,12 +779,8 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "face_normals",
     ):
         part = getattr(obj, name)
-        if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
-            part = (
-                KnownFaces(obj.build_faces())
-                if part.available
-                else MissingFaces(str(part.missing_error("this operation")))
-            )
+        if name == "faces" and isinstance(part, NativeFaces):
+            part = KnownFaces(obj.build_faces())
         if part is None:
             meta[name] = None
         elif isinstance(part, (PolygonCells, ClipMapping)):
