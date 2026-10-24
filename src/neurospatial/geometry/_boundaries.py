@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 from neurospatial._exceptions import CartesianOnlyError, _format_error
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.geometry._arena import (
     _CombinedArena,
     _feature_cap,
@@ -99,11 +100,39 @@ def _analysis_boundary(binning: Binning, arena: Arena) -> shapely.Geometry:
                 "boundary_source='physical'",
             )
         ) from exc
+    return _cells_boundary(cells, arena)
+
+
+def _cells_boundary(
+    cells: Sequence[shapely.Geometry], arena: Arena
+) -> shapely.Geometry:
+    """Edges of the union of ``cells`` within the arena domain, plus its walls."""
     domain = unary_union(cells)
     restriction = arena.polygonal_domain() if arena.domain_known else None
     if restriction is not None:
         domain = domain.intersection(restriction)
     return unary_union([domain.boundary, *arena.walls])
+
+
+def _snap_onto_walls(
+    query: NDArray[np.float64],
+    error: NDArray[np.float64],
+    walls: shapely.Geometry,
+    arena: Arena,
+) -> None:
+    """Move finite ``query`` rows within their bounded error of ``walls`` onto them.
+
+    ``query`` and ``error`` have shape ``(n_points, 2)``; ``query`` is
+    updated in place.
+    """
+    finite = np.all(np.isfinite(query), axis=1)
+    points = shapely.points(query[finite])
+    allowance = np.hypot.reduce(np.minimum(error[finite], _feature_cap(arena)), axis=1)
+    close = shapely.distance(points, walls) <= allowance
+    nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
+    query[np.flatnonzero(finite)[close]] = np.column_stack(
+        (shapely.get_x(nearest), shapely.get_y(nearest))
+    )
 
 
 def _resolve_wall_contacts(
@@ -154,11 +183,10 @@ def _resolve_wall_contacts(
     # Distance to the hit, not an overlay of cells with the wall: near-
     # coincident clipped edges intersect a curved wall only in scattered
     # rounded fragments, which can lie far from the hit.
+    cap = _feature_cap(arena)
     budgets = np.array(
         [
-            np.hypot.reduce(
-                np.minimum(_polygon_coordinate_errors(cell), _feature_cap(arena))
-            )
+            np.hypot.reduce(np.minimum(_polygon_coordinate_errors(cell), cap))
             for cell in cells
         ]
     )
@@ -272,24 +300,11 @@ def wall_hit_bins(
     for arena in frames:
         query, error = arena._project(query, error)
     base = frames[-1].base
-    if source == "physical":
-        walls = physical_walls(base)
-    else:
-        domain = unary_union(cells)
-        restriction = base.polygonal_domain() if base.domain_known else None
-        if restriction is not None:
-            domain = domain.intersection(restriction)
-        walls = unary_union([domain.boundary, *base.walls])
+    walls = (
+        physical_walls(base) if source == "physical" else _cells_boundary(cells, base)
+    )
     assert error is not None
-    points = shapely.points(query[: len(hits)])
-    allowance = np.hypot.reduce(
-        np.minimum(error[: len(hits)], _feature_cap(base)), axis=1
-    )
-    close = shapely.distance(points, walls) <= allowance
-    nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
-    query[np.flatnonzero(close)] = np.column_stack(
-        (shapely.get_x(nearest), shapely.get_y(nearest))
-    )
+    _snap_onto_walls(query[: len(hits)], error[: len(hits)], walls, base)
     inside = np.nextafter(query[: len(hits)], query[len(hits) :])
     bins = locator.locate(inside, indexes)
     if base.domain_known:
@@ -401,13 +416,7 @@ def _ray_segments(
     origins: NDArray[np.float64], angles: NDArray[np.float64], max_distance: float
 ) -> tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.float64]]:
     """Validate rays and return only finite starts and finite search endpoints."""
-    if (
-        isinstance(max_distance, (bool, np.bool_))
-        or not isinstance(max_distance, (int, float, np.integer, np.floating))
-        or not np.isfinite(max_distance)
-        or max_distance <= 0
-    ):
-        raise ValueError("max_distance must be finite and positive.")
+    validate_finite_scalar(max_distance, name="max_distance", positive=True)
     if origins.ndim != 2 or origins.shape[1] != 2 or angles.shape != (len(origins),):
         raise ValueError(
             "Ray positions must have shape (n_time, 2) and directions (n_time,)."
@@ -571,18 +580,7 @@ def _wall_frame(
         query, error = arena._project(query, error)
         arena = arena.base
     if error is not None:
-        walls = physical_walls(arena)
-        finite = np.all(np.isfinite(query), axis=1)
-        points = shapely.points(query[finite])
-        allowance = np.hypot.reduce(
-            np.minimum(error[finite], _feature_cap(arena)), axis=1
-        )
-        close = shapely.distance(points, walls) <= allowance
-        nearest = shapely.get_point(shapely.shortest_line(points[close], walls), -1)
-        selected = np.flatnonzero(finite)[close]
-        query[selected] = np.column_stack(
-            (shapely.get_x(nearest), shapely.get_y(nearest))
-        )
+        _snap_onto_walls(query, error, physical_walls(arena), arena)
     return arena, query, frames
 
 

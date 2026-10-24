@@ -17,6 +17,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.geometry._arena import (
     Arena,
     MaskArena,
@@ -860,13 +861,9 @@ def combine_binnings(
     """
     if type(auto_bridge) is not bool:
         raise TypeError("auto_bridge must be boolean.")
-    if max_mnn_distance is not None and (
-        not isinstance(max_mnn_distance, (int, float, np.integer, np.floating))
-        or isinstance(max_mnn_distance, (bool, np.bool_))
-        or not np.isfinite(max_mnn_distance)
-        or max_mnn_distance < 0
-    ):
-        raise ValueError("max_mnn_distance must be finite and nonnegative, or None.")
+    validate_finite_scalar(
+        max_mnn_distance, name="max_mnn_distance", positive=False, none_allowed=True
+    )
     # Records are immutable, so the components are shared; a native face
     # recipe is built once here, as every combined face and diffusion reads it.
     children = [
@@ -951,13 +948,7 @@ def combine_binnings(
             raise ValueError(
                 "Conductance endpoints must identify an inferred bridge; inspect get_bridge_attributes()."
             )
-        if (
-            not isinstance(value, (int, float, np.integer, np.floating))
-            or isinstance(value, (bool, np.bool_))
-            or not np.isfinite(value)
-            or value < 0
-        ):
-            raise ValueError("Bridge conductance must be finite and nonnegative.")
+        validate_finite_scalar(value, name="Bridge conductance", positive=False)
         if edge in assigned:
             raise ValueError(
                 "Supply one conductance per unordered bridge; reversed endpoints duplicate the same connection."
