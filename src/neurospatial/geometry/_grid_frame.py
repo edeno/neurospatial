@@ -17,6 +17,9 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
     _check_homogeneous,
+    _forward_residual,
+    _gamma,
+    _inverse_residual,
 )
 
 if TYPE_CHECKING:
@@ -77,8 +80,7 @@ class FramedGrid(ReadOnlyState):
         )
         linear, inverse_linear = matrix[:-1, :-1], inverse[:-1, :-1]
         dims = len(linear)
-        residual = np.abs(np.eye(dims) - inverse_linear @ linear)
-        residual += 2 * _gamma(dims) * (np.abs(inverse_linear) @ np.abs(linear))
+        residual = _inverse_residual(linear, inverse_linear, _gamma(dims))
         sensitivity = (
             None
             if np.max(residual.sum(axis=1)) >= 0.5
@@ -130,18 +132,10 @@ class FramedGrid(ReadOnlyState):
                 "Grid projection has unresolved precision; recenter or rescale coordinates."
             )
         original = self.to_source(points)
-        linear = self.forward[:-1, :-1]
-        gamma = _gamma(len(linear))
         remapped = self.to_world(original)
-        difference = np.abs(points - remapped)
-        error = difference + 0.5 * (
-            np.spacing(difference)
-            + np.spacing(np.abs(remapped))
-            + np.spacing(np.abs(points))
+        error = _forward_residual(
+            points, original, remapped, self.forward[:-1, :-1], incoming
         )
-        error += 2 * gamma * (np.abs(original) @ np.abs(linear).T)
-        if incoming is not None:
-            error += incoming
         return original, error @ self._sensitivity.T
 
     def _project_to_planes(
@@ -246,12 +240,6 @@ class FramedGrid(ReadOnlyState):
                 list(product(*[(edge[0], edge[-1]) for edge in self.source.edges]))
             )
         )
-
-
-def _gamma(n_dims: int) -> float:
-    """Relative rounding bound of the ``n_dims``-term dot products in a projection."""
-    eps = float(np.finfo(np.float64).eps)
-    return (n_dims + 4) * eps / (1 - (n_dims + 4) * eps)
 
 
 def _underflow_error(

@@ -13,7 +13,6 @@ import numpy as np
 import shapely
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
-from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
@@ -26,6 +25,7 @@ from neurospatial.geometry._arena import (
     _CombinedArena,
     _segment_distance,
     _TransformedArena,
+    affine_geometry,
 )
 from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._binning import (
@@ -57,6 +57,19 @@ class _Piece:
     data: Any
     low: NDArray[np.float64]
     high: NDArray[np.float64]
+
+    @classmethod
+    def polygon(cls, polygon: Polygon) -> _Piece:
+        return cls(
+            "polygon",
+            polygon,
+            np.array(polygon.bounds[:2]),
+            np.array(polygon.bounds[2:]),
+        )
+
+    @classmethod
+    def box(cls, vertices: NDArray[np.float64]) -> _Piece:
+        return cls("box", vertices, vertices.min(axis=0), vertices.max(axis=0))
 
 
 def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
@@ -143,30 +156,10 @@ def arena_pieces(arena: Arena) -> list[_Piece]:
         pieces = []
         for piece in arena_pieces(arena.base):
             if piece.kind == "polygon":
-                polygon = affine_transform(
-                    piece.data,
-                    [
-                        linear[0, 0],
-                        linear[0, 1],
-                        linear[1, 0],
-                        linear[1, 1],
-                        shift[0],
-                        shift[1],
-                    ],
-                )
-                pieces.append(
-                    _Piece(
-                        "polygon",
-                        polygon,
-                        np.array(polygon.bounds[:2]),
-                        np.array(polygon.bounds[2:]),
-                    )
-                )
+                polygon = affine_geometry(piece.data, matrix)
+                pieces.append(_Piece.polygon(polygon))
             elif piece.kind == "box":
-                vertices = piece.data @ linear.T + shift
-                pieces.append(
-                    _Piece("box", vertices, vertices.min(axis=0), vertices.max(axis=0))
-                )
+                pieces.append(_Piece.box(piece.data @ linear.T + shift))
             else:
                 points, radius = piece.data
                 points = points @ linear.T + shift
@@ -183,20 +176,12 @@ def arena_pieces(arena: Arena) -> list[_Piece]:
     polygon = arena.polygonal_domain()
     if polygon is not None:
         polygons = (polygon,) if isinstance(polygon, Polygon) else tuple(polygon.geoms)
-        return [
-            _Piece(
-                "polygon", poly, np.array(poly.bounds[:2]), np.array(poly.bounds[2:])
-            )
-            for poly in polygons
-        ]
+        return [_Piece.polygon(poly) for poly in polygons]
     if isinstance(arena, MaskArena):
         boxes = cell_boxes(
             RectilinearLocator(arena.edges, arena.active_mask.shape, arena.active_mask)
         )
-        return [
-            _Piece("box", vertices, vertices.min(axis=0), vertices.max(axis=0))
-            for vertices in boxes
-        ]
+        return [_Piece.box(vertices) for vertices in boxes]
     if isinstance(arena, TrackArena) and arena.width is not None:
         radius = arena.width / 2
         return [
@@ -222,24 +207,13 @@ def _pieces(binning: Binning, arena: Arena) -> list[_Piece]:
         except ValueError:
             pass
         else:
-            return [
-                _Piece(
-                    "polygon",
-                    poly,
-                    np.array(poly.bounds[:2]),
-                    np.array(poly.bounds[2:]),
-                )
-                for poly in polygons
-            ]
+            return [_Piece.polygon(poly) for poly in polygons]
     try:
         boxes = cell_boxes(binning.locator)
     except ValueError:
         pass
     else:
-        return [
-            _Piece("box", vertices, vertices.min(axis=0), vertices.max(axis=0))
-            for vertices in boxes
-        ]
+        return [_Piece.box(vertices) for vertices in boxes]
     nearest = _nearest_partition(binning.locator)
     if nearest is not None:
         base, mapping, _, forward = nearest
@@ -866,15 +840,14 @@ def combine_binnings(
     )
     # Records are immutable, so the components are shared; a native face
     # recipe is built once here, as every combined face and diffusion reads it.
-    children = [
+    children = tuple(
         replace(child, faces=KnownFaces(child.build_faces()))
         if isinstance(child.faces, NativeFaces)
         else child
         for child in binnings
-    ]
-    children_tuple = tuple(children)
-    certify_components(children_tuple, arenas, keys)
-    n_dims = children_tuple[0].bins.n_dims
+    )
+    certify_components(children, arenas, keys)
+    n_dims = children[0].bins.n_dims
     offsets = np.cumsum([0, *[child.bins.n_bins for child in children]])
     pairs, distances = [], []
     if auto_bridge:
@@ -956,7 +929,7 @@ def combine_binnings(
         assigned.add(edge)
         conductances[by_pair[edge]] = value
     locator = CombinedLocator(
-        keys, children_tuple, arenas, bridge_pairs, np.array(distances), conductances
+        keys, children, arenas, bridge_pairs, np.array(distances), conductances
     )
     # The locator holds the components certified above.
     object.__setattr__(locator, _CERTIFIED, True)

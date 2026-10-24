@@ -219,6 +219,58 @@ def _check_homogeneous(matrix: NDArray[np.float64]) -> None:
         raise ValueError("inverse/affine matrix must be invertible.")
 
 
+def _gamma(n_dims: int) -> float:
+    """Relative rounding bound of the ``n_dims``-term dot products in a projection."""
+    eps = float(np.finfo(np.float64).eps)
+    return (n_dims + 4) * eps / (1 - (n_dims + 4) * eps)
+
+
+def _inverse_residual(
+    linear: NDArray[np.float64], inverse_linear: NDArray[np.float64], gamma: float
+) -> NDArray[np.float64]:
+    """Componentwise bound on ``I - inverse_linear @ linear`` and its rounding.
+
+    Both matrices have shape ``(n_dims, n_dims)``. When every row sums below
+    one half, ``2 * solve(I - residual, |inverse_linear|)`` bounds how a
+    forward residual carries back through the numerical inverse.
+    """
+    residual = np.abs(np.eye(len(linear)) - inverse_linear @ linear)
+    residual += 2 * gamma * (np.abs(inverse_linear) @ np.abs(linear))
+    return residual
+
+
+def _forward_residual(
+    query: NDArray[np.float64],
+    original: NDArray[np.float64],
+    remapped: NDArray[np.float64],
+    linear: NDArray[np.float64],
+    incoming: NDArray[np.float64] | None = None,
+) -> NDArray[np.float64]:
+    """Bound how far ``query`` is from the exact forward image of ``original``.
+
+    ``query``, ``original`` (its inverse projection) and ``remapped`` (the
+    rounded forward image of ``original``) have shape ``(n_points, n_dims)``;
+    ``linear`` is the forward map's ``(n_dims, n_dims)`` linear part and
+    ``incoming`` a bound ``query`` already carries. Translation is one
+    rounded addition, not a dot product of origin-sized terms, so half-ULPs
+    of the operands bound it without growing an origin buffer.
+    """
+    difference = np.abs(query - remapped)
+    residual: NDArray[np.float64] = (
+        difference
+        + 0.5
+        * (
+            np.spacing(difference)
+            + np.spacing(np.abs(remapped))
+            + np.spacing(np.abs(query))
+        )
+        + 2 * _gamma(len(linear)) * (np.abs(original) @ np.abs(linear).T)
+    )
+    if incoming is not None:
+        residual += incoming
+    return residual
+
+
 def _owned_array(array: Any, dtype: Any) -> NDArray[Any]:
     """Own an array without freezing the caller's buffer."""
     owned = np.array(array, dtype=dtype, copy=True)
@@ -513,11 +565,8 @@ class TransformedLocator(ReadOnlyState):
         with np.errstate(over="ignore", invalid="ignore", under="ignore"):
             inverse = np.asarray(np.linalg.inv(forward), dtype=np.float64)
             dims = len(forward) - 1
-            eps = float(np.finfo(np.float64).eps)
             linear, inverse_linear = forward[:-1, :-1], inverse[:-1, :-1]
-            gamma = (dims + 4) * eps / (1 - (dims + 4) * eps)
-            residual = np.abs(np.eye(dims) - inverse_linear @ linear)
-            residual += 2 * gamma * (np.abs(inverse_linear) @ np.abs(linear))
+            residual = _inverse_residual(linear, inverse_linear, _gamma(dims))
             sensitivity = (
                 2 * np.linalg.solve(np.eye(dims) - residual, np.abs(inverse_linear))
                 if np.all(np.isfinite(residual)) and np.max(residual.sum(axis=1)) < 0.5
@@ -613,7 +662,6 @@ class TransformedLocator(ReadOnlyState):
                 "the map is too ill-conditioned to bound its roundoff. Recenter "
                 "or rescale the coordinates before transforming."
             )
-        n_dims = query.shape[1]
         original = np.full(query.shape, np.nan, dtype=np.float64)
         error = np.zeros(query.shape, dtype=np.float64)
         finite = np.all(np.isfinite(query), axis=1)
@@ -622,21 +670,10 @@ class TransformedLocator(ReadOnlyState):
         values = query[finite]
         source = values @ self.inverse[:-1, :-1].T + self.inverse[:-1, -1]
         linear, shift = self.forward[:-1, :-1], self.forward[:-1, -1]
-        eps = float(np.finfo(np.float64).eps)
-        gamma = (n_dims + 4) * eps / (1 - (n_dims + 4) * eps)
         with np.errstate(over="ignore", invalid="ignore", under="ignore"):
             remapped = source @ linear.T + shift
-            difference = np.abs(values - remapped)
-            residual = (
-                difference
-                + 0.5
-                * (
-                    np.spacing(difference)
-                    + np.spacing(np.abs(remapped))
-                    + np.spacing(np.abs(values))
-                )
-                + 2 * gamma * (np.abs(source) @ np.abs(linear).T)
-                + incoming[finite]
+            residual = _forward_residual(
+                values, source, remapped, linear, incoming[finite]
             )
             bound = residual @ self._sensitivity.T
         original[finite] = source

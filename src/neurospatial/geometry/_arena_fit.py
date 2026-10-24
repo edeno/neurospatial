@@ -26,7 +26,7 @@ from neurospatial.geometry._arena import (
     _TransformedArena,
 )
 from neurospatial.geometry._binning import BinConnections, KnownFaces
-from neurospatial.geometry._codecs import encode_arena
+from neurospatial.geometry._codecs import same_encoded_arena
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._diffusion import FaceGeometry
@@ -139,18 +139,7 @@ def validate_arena(
                         raise ValueError(
                             "A stored navigation bridge crosses a known physical wall."
                         )
-            actual_meta, actual_arrays = encode_arena(candidate)
-            expected_meta, expected_arrays = encode_arena(
-                _CombinedArena(locator.arenas)
-            )
-            return (
-                actual_meta == expected_meta
-                and actual_arrays.keys() == expected_arrays.keys()
-                and all(
-                    np.array_equal(actual_arrays[key], expected_arrays[key])
-                    for key in actual_arrays
-                )
-            )
+            return same_encoded_arena(candidate, _CombinedArena(locator.arenas))
 
         if not matches(binning.locator, arena):
             raise ValueError("Combined arena disagrees with stored component domains.")

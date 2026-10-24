@@ -16,10 +16,12 @@ from typing import Any, ClassVar, Literal, Protocol, cast, runtime_checkable
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
+from neurospatial.geometry._locators import _forward_residual, _inverse_residual
 
 __all__ = [
     "Arena",
@@ -210,6 +212,15 @@ def _mapped_vertices(
     flat = points.reshape(-1, points.shape[-1])
     unique, indices = np.unique(flat, axis=0, return_inverse=True)
     return _mapped(unique, matrix)[indices.ravel()].reshape(points.shape)
+
+
+def affine_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
+    """Map planar geometry with shapely's affine transform of a (3, 3) matrix.
+
+    Use :func:`mapped_geometry` where the result must share rounded vertices
+    with transformed cells.
+    """
+    return affine_transform(geometry, [*matrix[:2, :2].ravel(), *matrix[:2, 2]])
 
 
 def mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
@@ -902,8 +913,7 @@ class _TransformedArena(ReadOnlyState):
         eps = np.finfo(np.float64).eps
         gamma = (self.n_dims + 2) * eps / (1 - (self.n_dims + 2) * eps)
         with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            residual = np.abs(np.eye(self.n_dims) - inverse_linear @ linear)
-            residual += 2 * gamma * (np.abs(inverse_linear) @ np.abs(linear))
+            residual = _inverse_residual(linear, inverse_linear, gamma)
         if not np.all(np.isfinite(residual)) or np.max(residual.sum(axis=1)) >= 0.5:
             raise _error(
                 "The affine inverse has no useful floating-point error bound.",
@@ -963,28 +973,11 @@ class _TransformedArena(ReadOnlyState):
         self, query: NDArray[np.float64], incoming: NDArray[np.float64] | None = None
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Bound inverse projection through a forward residual in target units."""
-        eps = np.finfo(np.float64).eps
-        gamma = (self.n_dims + 4) * eps / (1 - (self.n_dims + 4) * eps)
         linear, shift = self.forward[:-1, :-1], self.forward[:-1, -1]
         with np.errstate(over="ignore", invalid="ignore", under="ignore"):
             original = (query - shift) @ self.inverse[:-1, :-1].T
             remapped = original @ linear.T + shift
-            difference = np.abs(query - remapped)
-            # Translation is one rounded addition, not a dot product of
-            # origin-sized terms. Half-ULPs bound that addition and the
-            # caller's forward-mapped query without growing an origin buffer.
-            residual = (
-                difference
-                + 0.5
-                * (
-                    np.spacing(difference)
-                    + np.spacing(np.abs(remapped))
-                    + np.spacing(np.abs(query))
-                )
-                + 2 * gamma * (np.abs(original) @ np.abs(linear).T)
-            )
-            if incoming is not None:
-                residual += incoming
+            residual = _forward_residual(query, original, remapped, linear, incoming)
             error = residual @ self._inverse_sensitivity.T
         return original, error
 

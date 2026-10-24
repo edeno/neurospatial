@@ -7,9 +7,9 @@ from dataclasses import replace
 
 import numpy as np
 from numpy.typing import NDArray
-from shapely.affinity import affine_transform
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import (
     active_order,
     mask_active_map,
@@ -605,19 +605,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "the stored outline is a planar polygon",
                 "use a two-dimensional transform for this environment",
             )
-        outline = Outline(
-            affine_transform(
-                outline.geometry,
-                [
-                    linear[0, 0],
-                    linear[0, 1],
-                    linear[1, 0],
-                    linear[1, 1],
-                    matrix[0, -1],
-                    matrix[1, -1],
-                ],
-            )
-        )
+        outline = Outline(affine_geometry(outline.geometry, matrix))
     track = binning.linearization
     if track is not None:
         if isinstance(track, TrackLinearization):
