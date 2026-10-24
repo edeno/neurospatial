@@ -277,12 +277,12 @@ def fit_walls(
 
     ``"split"`` cuts each cell a wall divides into one exact polygon cell per
     side, so the walls stay where they were measured. Exact polygon cells
-    cover only the arena, so every cell is also clipped to the arena outline,
-    as :meth:`Environment.clip` does; this changes only cells that stick out
-    past a slanted or curved outline. ``"snap"`` keeps the cells and moves
-    each wall onto the cell edges that separate the bins it divides, warning
-    how far it moved. Otherwise, bins that no wall divides are returned
-    unchanged.
+    cover only the arena, so when it splits, every other cell is also
+    clipped to the arena outline, as :meth:`Environment.clip` does; this
+    changes only cells that stick out past a slanted or curved outline.
+    ``"snap"`` keeps the cells and moves each wall onto the cell edges that
+    separate the bins it divides, warning how far it moved. When no wall
+    divides a cell, both modes return the bins and walls unchanged.
     """
     if not arena.walls:
         return binning, arena
@@ -695,8 +695,9 @@ def _closing_walls(
 
     Follows the rules :func:`apply_walls` closes pairs by: the wall covering
     most of the edge the cells share; for cells that meet only at a corner,
-    the first wall the corner touches, else the first wall the line between
-    their centers crosses; and for cells known only to within ``errors``,
+    the first wall the corner touches that the line between their centers
+    also crosses, else the first wall the corner touches, else the first
+    wall that line crosses; and for cells known only to within ``errors``,
     the wall running furthest along the strip where their face can lie.
     """
     walls = np.asarray(segments, dtype=object)

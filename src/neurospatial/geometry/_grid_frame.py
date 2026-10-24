@@ -40,7 +40,8 @@ class FramedGrid(ReadOnlyState):
     source: RectilinearGrid
     forward: NDArray[np.float64]
     inverse: NDArray[np.float64] = field(init=False, repr=False)
-    # Fixed by the map and the grid, so built once: the half-open source cells
+    # Fixed by the map and the grid, so built once: the source cells
+    # (half-open, with the outline of the active cells closed)
     # and the bound on how far inverse-map roundoff moves a source coordinate
     # (None when the map is too ill-conditioned to resolve the cells).
     _cells: RectilinearLocator = field(init=False, repr=False)
@@ -151,11 +152,13 @@ class FramedGrid(ReadOnlyState):
         operation: str,
         incoming: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
-        """Recover center/edge planes within bounded inverse-map roundoff.
+        """Map points to source coordinates, snapping them onto nearby planes.
 
-        Cap the bound at a quarter of the smallest source cell width on each
-        axis. A query too imprecise for that resolution refuses; meaningful
-        positive weights on inactive cells are never filled.
+        Each source coordinate within the inverse map's roundoff of one of
+        ``planes`` (cell edges or centers on that axis) is set exactly onto
+        it. The roundoff bound is capped at a quarter of the smallest source
+        cell width on each axis; a point inside the grid whose roundoff
+        reaches that cap cannot be resolved, and the call raises.
         """
         original, errors = self._project(points, incoming)
         for axis, coordinates in enumerate(planes):
@@ -183,7 +186,11 @@ class FramedGrid(ReadOnlyState):
         return original
 
     def _source_locator(self) -> RectilinearLocator:
-        """Half-open source cells, numbering active cells in row-major order."""
+        """Source cells, numbering active cells in row-major order.
+
+        The cells are half-open, with the outline of the active cells closed
+        (see :class:`RectilinearLocator`).
+        """
         return self._cells
 
     def _locate(
@@ -198,9 +205,11 @@ class FramedGrid(ReadOnlyState):
 
         A point is mapped back to source coordinates and snapped onto a cell
         face it lies on within the inverse map's roundoff (see
-        :meth:`_project_to_planes`). The half-open source cells then own it,
-        so a point on a face shared by two cells belongs to the cell above
-        it, as on an axis-aligned grid, however the map rounds.
+        :meth:`_project_to_planes`). The source cells then own it, as on an
+        axis-aligned grid however the map rounds: a point on a face shared by
+        two cells belongs to the cell above it, and a point on the outline of
+        the active cells belongs to the cell it bounds unless ``half_open``
+        is True.
 
         Parameters
         ----------
@@ -321,7 +330,8 @@ def framed_locator(locator: Locator, frame: FramedGrid | None) -> Locator:
     A binning's ``grid_frame`` is the one record of its frame: the locator's
     copy is always set from it here, and removed when it is None. The
     outermost :class:`TransformedLocator` then assigns points by the frame's
-    half-open source cells. Below a :class:`SubsetLocator`, it gets the same
+    source cells (half-open, with the outline of the active cells closed).
+    Below a :class:`SubsetLocator`, it gets the same
     map over the parent's active cells. Other locators are returned
     unchanged; publication validates that they match the frame.
 

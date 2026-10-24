@@ -724,7 +724,30 @@ def boundary_view(
 ) -> NDArray[np.float64]:
     """First wall each gaze ray reaches, shape (n_time, 2); NaN for none.
 
-    ``indexes`` keeps the locator's search structures for the computation.
+    Parameters
+    ----------
+    binning : Binning
+        The environment's bins, from ``env.binning``.
+    arena : Arena
+        The environment's continuous domain, from ``env.arena``.
+    positions : ndarray, shape (n_time, 2)
+        Observer positions. A non-finite observer, or one outside the domain
+        the chosen ``boundary_source`` justifies, gives a NaN row.
+    gaze_direction : ndarray, shape (n_time,)
+        Allocentric gaze direction in radians: 0 = East (+x), +π/2 = North
+        (+y). A non-finite direction gives a NaN row.
+    max_distance : float
+        Finite positive search length; a ray reaching no wall within it gives
+        a NaN row.
+    boundary_source : {'physical', 'analysis'}
+        Declared physical walls, or the boundaries of the analysis cells.
+    indexes : LookupIndexes
+        Keeps the locator's search structures for the computation.
+
+    Returns
+    -------
+    ndarray, shape (n_time, 2)
+        The first wall point on each gaze ray, or NaN.
     """
 
     walls = boundary_geometry(binning, arena, boundary_source)
@@ -781,6 +804,11 @@ def line_of_sight_clear(
 
     Raises
     ------
+    CartesianOnlyError
+        If the arena holds polar ``(distance, angle)`` coordinates.
+    NotImplementedError
+        If the environment is not 2-D, or the chosen boundary source has no
+        exact planar walls or cells.
     ValueError
         If the observer or target is not finite (a missing observation), or
         has the wrong shape.
@@ -835,6 +863,11 @@ def batch_line_of_sight_clear(
 
     Raises
     ------
+    CartesianOnlyError
+        If the arena holds polar ``(distance, angle)`` coordinates.
+    NotImplementedError
+        If the environment is not 2-D, or the chosen boundary source has no
+        exact planar walls or cells.
     ValueError
         If the observer or a target is not finite (a missing observation), or
         the arrays have the wrong shape. A missing position is not evidence

@@ -659,6 +659,76 @@ def test_removed_missing_geometry_no_longer_blocks_certified_subset():
     )
 
 
+def _walled_grid(shift=0.0, walls=()):
+    """Two cells, [shift, shift + 1] and [shift + 1, shift + 2], with walls."""
+    from neurospatial.arena import OpenArena
+
+    return Environment.from_grid_mask(
+        np.ones((2, 1), dtype=bool),
+        grid_edges=(np.arange(3.0) + shift, np.arange(2.0)),
+        units="cm",
+        frame="lab",
+        arena=OpenArena(box(shift, 0, shift + 2, 1), walls=list(walls)),
+    )
+
+
+def _with_child_arena(data, source, child=0):
+    """Saved ``data`` with child ``child``'s arena records taken from ``source``."""
+    data = copy.deepcopy(data)
+    prefixes = (
+        f"arena/children/{child}/",
+        f"binning/locator/children/{child}/arena/",
+    )
+    for key in [key for key in data["arrays"] if key.startswith(prefixes)]:
+        del data["arrays"][key]
+        data["array_specs"].pop(key, None)
+    for key, value in source["arrays"].items():
+        if key.startswith(prefixes):
+            data["arrays"][key] = value
+            if key in source["array_specs"]:
+                data["array_specs"][key] = source["array_specs"][key]
+    data["arena"]["children"][child] = source["arena"]["children"][child]
+    data["binning"]["locator"]["children"][child]["arena"] = source["binning"][
+        "locator"
+    ]["children"][child]["arena"]
+    return data
+
+
+@pytest.mark.parametrize(
+    "wall,message",
+    [
+        # On child a's outer edge: it closes no pair of a, but the bridge from
+        # a's bin at (1.5, 0.5) to b's bin at (4.5, 0.5) crosses it.
+        (
+            (2.0, 0.0, 2.0, 1.0),
+            "A stored navigation bridge crosses a known physical wall.",
+        ),
+        # Between child a's two cells, whose saved pair stays open.
+        (
+            (1.0, 0.0, 1.0, 1.0),
+            "Component connectivity crosses its declared physical walls.",
+        ),
+    ],
+)
+def test_saved_composition_rejects_links_across_child_walls(wall, message):
+    import re
+
+    from shapely.geometry import LineString
+
+    saved = Environment.combine({"a": _walled_grid(), "b": _walled_grid(4.0)})
+    assert saved.get_bridge_attributes()["source"].tolist() == [1]
+    walled = Environment.combine(
+        {
+            "a": _walled_grid(walls=[LineString([wall[:2], wall[2:]])]),
+            "b": _walled_grid(4.0),
+        },
+        auto_bridge=False,
+    )
+    data = _with_child_arena(saved.to_dict(), walled.to_dict())
+    with pytest.raises(ValueError, match=re.escape(message)):
+        Environment.from_dict(data)
+
+
 @pytest.mark.parametrize("corruption", ["faces", "bridge_distance", "arena"])
 def test_saved_composition_rejects_inconsistent_geometry(corruption):
     env = Environment.combine(
@@ -1074,3 +1144,201 @@ def test_transformed_combination_arena_shares_the_bins_inverse(angle):
     np.testing.assert_array_equal(arena.forward, locator.forward)
     np.testing.assert_array_equal(arena.inverse, locator.inverse)
     validate_arena(arena, moved.binning, CartesianSystem())
+
+
+def _maps_into_own_blocks(combined, children):
+    """Each child's bin centers land in that child's block of combined bins."""
+    offset = 0
+    for child in children:
+        np.testing.assert_array_equal(
+            combined.bin_at(child.bin_centers), offset + np.arange(child.n_bins)
+        )
+        offset += child.n_bins
+
+
+def _round_component(kind, center, radius):
+    """One nearest-bin site (a ball) or one straight track (a capsule)."""
+    import networkx as nx
+
+    if kind == "ball":
+        return nearest(center, radius=radius)
+    # A track whose capsule ends in a round cap of ``radius`` at ``center``.
+    graph = nx.Graph()
+    graph.add_node(0, pos=tuple(center))
+    graph.add_node(1, pos=(center[0] + 4.0, center[1]))
+    graph.add_edge(0, 1, distance=4.0)
+    return Environment.from_graph(
+        graph,
+        [(0, 1)],
+        edge_spacing=0.0,
+        bin_size=1.0,
+        track_width=2 * radius,
+        units="cm",
+        frame="lab",
+    )
+
+
+# The grid's cells are [0, 1] x [0, 1] and [1, 2] x [0, 1]. Every placement
+# has bounds that intersect the grid's, so the exact shape test decides.
+_ROUND_PLACEMENTS = {
+    # The round piece covers part of a cell.
+    "interior": ((1.6, 0.5), 0.3),
+    # Its bounds reach past the cell corner (2, 1), but it stays 0.71 away.
+    "outside": ((2.5, 1.5), 0.6),
+    # It touches the corner (2, 1) at exactly its radius: 0.75² + 1² = 1.25².
+    "tangent": ((2.75, 2.0), 1.25),
+}
+
+
+@pytest.mark.parametrize("kind", ["ball", "capsule"])
+@pytest.mark.parametrize("placement", sorted(_ROUND_PLACEMENTS))
+@pytest.mark.parametrize("grid_first", [True, False])
+def test_round_support_against_polygon_cells_is_refused_only_on_overlap(
+    kind, placement, grid_first
+):
+    center, radius = _ROUND_PLACEMENTS[placement]
+    round_part = _round_component(kind, center, radius)
+    components = (
+        {"grid": grid(), "round": round_part}
+        if grid_first
+        else {"round": round_part, "grid": grid()}
+    )
+    if placement == "interior":
+        with pytest.raises(ValueError, match=r"[Oo]verlap"):
+            Environment.combine(components, auto_bridge=False)
+        return
+    combined = Environment.combine(components, auto_bridge=False)
+    _maps_into_own_blocks(combined, list(components.values()))
+
+
+def _unbounded_site_in(arena, center):
+    """One nearest-bin site with no lookup radius, bounded by ``arena``."""
+    centers = np.array([center], dtype=float)
+    n_dims = centers.shape[1]
+    return Environment.from_bins(
+        Binning(
+            "sites",
+            SpatialBins.from_arrays(centers, [1.0], n_dims),
+            BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), []),
+            NearestBinLocator(centers),
+            MissingFaces("Sites lack faces."),
+        ),
+        units="cm",
+        frame="lab",
+        arena=arena,
+    )
+
+
+@pytest.mark.parametrize(
+    "center,overlaps",
+    # A unit square turned 45 degrees is a diamond reaching 0.71 from its
+    # center. At (2.6, 1.3) its bounds meet the cell [1, 2] x [0, 1], but its
+    # lower-left edge, x + y = 3.19, passes outside the cell corner (2, 1).
+    [((2.3, 1.0), True), ((2.6, 1.3), False)],
+)
+def test_rotated_polygon_arena_of_a_site_is_checked_against_grid_cells(
+    center, overlaps
+):
+    from neurospatial.arena import OpenArena
+    from neurospatial.ops.transforms import Affine2D
+
+    site = _unbounded_site_in(OpenArena(box(-0.5, -0.5, 0.5, 0.5)), [0.0, 0.0])
+    angle = np.pi / 4
+    matrix = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), center[0]],
+            [np.sin(angle), np.cos(angle), center[1]],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    turned = site.apply_transform(Affine2D(matrix)).with_metadata(frame="lab")
+    components = {"grid": grid(), "site": turned}
+    if overlaps:
+        with pytest.raises(ValueError, match=r"[Oo]verlap"):
+            Environment.combine(components, auto_bridge=False)
+        return
+    combined = Environment.combine(components, auto_bridge=False)
+    _maps_into_own_blocks(combined, list(components.values()))
+
+
+@pytest.mark.parametrize(
+    "center,overlaps",
+    # A unit cube turned 45 degrees about z reaches 0.71 from its center in
+    # x and y. At (2.6, 1.3, 0.5) its bounds meet the cell [1, 2] x [0, 1] x
+    # [0, 1], but its face x + y = 3.19 passes outside the cell edge at
+    # (2, 1).
+    [((2.3, 1.0, 0.5), True), ((2.6, 1.3, 0.5), False)],
+)
+def test_rotated_3d_mask_arena_of_a_site_is_checked_against_grid_cells(
+    center, overlaps
+):
+    from neurospatial.arena import MaskArena
+    from neurospatial.ops.transforms import AffineND
+
+    unit = np.array([-0.5, 0.5])
+    site = _unbounded_site_in(
+        MaskArena((unit, unit, unit), np.ones((1, 1, 1), dtype=bool)),
+        [0.0, 0.0, 0.0],
+    )
+    angle = np.pi / 4
+    matrix = np.eye(4)
+    matrix[:2, :2] = [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    matrix[:3, 3] = center
+    turned = site.apply_transform(AffineND(matrix)).with_metadata(frame="lab")
+    components = {"grid": grid(dims=3), "site": turned}
+    if overlaps:
+        with pytest.raises(ValueError, match=r"[Oo]verlap"):
+            Environment.combine(components, auto_bridge=False)
+        return
+    combined = Environment.combine(components, auto_bridge=False)
+    _maps_into_own_blocks(combined, list(components.values()))
+
+
+def _bridged_cubes(conductance):
+    """Two unit cubes joined by one bridge with the given conductance."""
+    cubes = {
+        key: Environment.from_grid_mask(
+            np.ones((1, 1, 1), dtype=bool),
+            grid_edges=(np.array([0.0, 1.0]) + shift, *[np.array([0.0, 1.0])] * 2),
+        )
+        for key, shift in (("a", 0.0), ("b", 2.0))
+    }
+    return Environment.combine(
+        cubes, bridge_conductances={(("a", 0), ("b", 0)): conductance}
+    )
+
+
+@pytest.mark.parametrize("conductance,scale", [(1e-300, 1e-30), (1e300, 1e30)])
+def test_scaling_refuses_a_bridge_conductance_it_cannot_represent(conductance, scale):
+    """A volume bridge's conductance scales with length; 0 or inf is refused.
+
+    Rounding the conductance to zero would silently decouple the components,
+    and an infinite one would join them without resistance.
+    """
+    from neurospatial.ops.transforms import scale_3d
+
+    env = _bridged_cubes(conductance)
+    with pytest.raises(
+        ValueError, match="Transformed bridge conductance exceeds floating-point range"
+    ):
+        env.apply_transform(scale_3d(scale), units=env.units)
+
+
+def test_scaling_keeps_a_small_representable_bridge_conductance():
+    from neurospatial.ops.transforms import scale_3d
+
+    env = _bridged_cubes(1e-300)
+    scaled = env.apply_transform(scale_3d(1e-10), units=env.units)
+    np.testing.assert_allclose(
+        scaled.get_bridge_attributes()["conductance"], [1e-310], rtol=1e-6
+    )
+
+
+def test_scaling_refuses_bin_volumes_past_floating_point_range():
+    from neurospatial.ops.transforms import scale_3d
+
+    env = _bridged_cubes(1.0)
+    with pytest.raises(
+        ValueError, match="Transformed bin measures exceed floating-point range"
+    ):
+        env.apply_transform(scale_3d(1e110), units=env.units)

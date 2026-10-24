@@ -1203,7 +1203,8 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
     Returns
     -------
     metadata : dict
-        JSON-compatible tagged data with codec version one.
+        JSON-compatible tagged data, stamped with the current arena codec
+        version (``codec_version``); a reader refuses any other version.
     arrays : dict of ndarray
         Independent writable numerical arrays using local field names.
     """

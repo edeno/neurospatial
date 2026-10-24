@@ -231,8 +231,9 @@ class BinConnections(ReadOnlyState):
     closed_by : ndarray of intp, shape (n_all_pairs,)
         Index into the arena's ``walls`` of the wall that closes each pair:
         the one covering most of the edge the pair's cells share, or for
-        cells that meet only at a corner, the first wall that corner touches,
-        else the first wall the link between their centers crosses. -1 for
+        cells that meet only at a corner, the first wall that corner touches
+        which the link between their centers also crosses, else the first
+        wall the corner touches, else the first wall the link crosses. -1 for
         open pairs and for closed pairs no wall of the arena closes.
         Publication records it when it applies walls.
     pairs : ndarray of intp, shape (n_pairs, 2)
@@ -659,9 +660,10 @@ class TrackLinearization(ReadOnlyState):
         If a graph, node or edge attribute holds a value that pickle cannot
         store, such as a lambda or a lock.
     ValueError
-        If a node has no finite ``pos``, ``edge_order`` names a pair that is
-        not a graph edge, ``edge_spacing`` is negative or has the wrong
-        count, or ``grid_edges`` is not one linear axis matching
+        If ``graph`` is not an undirected simple ``networkx.Graph``, a node
+        has no finite ``pos``, ``edge_order`` names a pair that is not a
+        graph edge, ``edge_spacing`` is not finite and nonnegative or has the
+        wrong count, or ``grid_edges`` is not one linear axis matching
         ``active_mask``.
     """
 
@@ -773,23 +775,26 @@ class Binning:
     ``grid`` holds the bins' rectangular cells, when they have them: a
     :class:`RectilinearGrid` whose cells are axis-aligned in the bins'
     coordinates, or a :class:`FramedGrid` whose source cells an affine map
-    (a rotation or shear) carries into them. ``rectilinear`` and
+    (a rotation, reflection or shear) carries into them. ``rectilinear`` and
     ``grid_frame`` read it as one or the other, so a binning cannot claim
     both. A framed grid is handed to the affine step of ``locator`` (a
     :class:`TransformedLocator`), so ``locator.locate`` assigns points by the
-    frame's half-open source cells, as linear time allocation does.
+    frame's source cells, half-open with the outline of the active cells
+    closed, as linear time allocation does.
 
     Construction checks what the records alone determine: ``kind`` is a
     string, every neighbor pair names a bin, known faces follow the open
-    pairs with one volume per bin, and face normals have one row per open
-    pair. Publication checks the geometry the records must share.
+    pairs with one volume per bin, face normals have one row per open pair,
+    and ``dimension_ranges`` has one numeric ``(low, high)`` pair per axis.
+    Publication checks the geometry the records must share.
 
     Raises
     ------
     TypeError
         If ``kind`` is not a string.
     ValueError
-        If the records disagree in shape as described above.
+        If the records disagree in shape as described above, or
+        ``dimension_ranges`` is malformed.
     """
 
     kind: str
@@ -827,7 +832,7 @@ class Binning:
 
     @property
     def grid_frame(self) -> FramedGrid | None:
-        """The rectangular cells mapped by a rotation or shear, or None."""
+        """The rectangular cells mapped by a rotation, reflection or shear, or None."""
         return self.grid if isinstance(self.grid, FramedGrid) else None
 
     def __post_init__(self) -> None:

@@ -149,6 +149,16 @@ def test_codec_round_trip(codec_part):
     restored = decode(meta, arrays, "part")
     if isinstance(codec_part, FaceGeometry):
         assert isinstance(restored, KnownFaces)
+    if hasattr(codec_part, "locate"):
+        # Probes on a 0.5 lattice hit grid edges, mesh edges and vertices,
+        # points exactly max_distance from a nearest-bin center and points far
+        # beyond it.
+        axis = np.arange(-4.0, 9.5, 0.5)
+        probes = np.column_stack([np.repeat(axis, len(axis)), np.tile(axis, len(axis))])
+        probes = np.vstack([probes, [[np.nan, 0.0], [1e6, -1e6]]])
+        np.testing.assert_array_equal(
+            restored.locate(probes), codec_part.locate(probes)
+        )
     _assert_encoding_equal(encoded, encode(restored, "part"))
     for array in _geometry_arrays(restored):
         assert not array.flags.writeable
@@ -271,6 +281,10 @@ def test_saved_pairs_must_name_existing_bins():
         "mask_dtype",
         "nonmonotonic_edges",
         "invalid_wkb",
+        "duplicate_hex_numbering",
+        "triangle_out_of_range",
+        "negative_max_distance",
+        "negative_nearest_index",
     ],
 )
 def test_decode_refuses_malformed_geometry_payload(corruption):
@@ -279,6 +293,21 @@ def test_decode_refuses_malformed_geometry_payload(corruption):
     )
     if corruption == "invalid_wkb":
         part = Outline(Polygon([(0, 0), (1, 0), (0, 1)]))
+    elif corruption == "duplicate_hex_numbering":
+        part = Environment.from_layout(
+            create_layout("Hexagonal", hexagon_width=2.0, dimension_ranges=[(0, 5)] * 2)
+        )._binning.locator
+    elif corruption == "triangle_out_of_range":
+        part = MeshLocator(
+            np.array([[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]]),
+            np.array([[1, 2, 0]]),
+            np.array([0]),
+            Polygon([(0, 0), (2, 0), (0, 2)]),
+        )
+    elif corruption in {"negative_max_distance", "negative_nearest_index"}:
+        part = NearestBinLocator(
+            np.array([[0.0, 0.0], [2.0, 0.0]]), 3.0, np.array([1, 0])
+        )
     elif corruption in {"missing", "complex"}:
         part = env._binning.bins
     elif corruption in {"fractional_pairs", "overflow_pairs"}:
@@ -304,6 +333,25 @@ def test_decode_refuses_malformed_geometry_payload(corruption):
     elif corruption == "nonmonotonic_edges":
         arrays["part/edges_0"][1] = arrays["part/edges_0"][0]
         pattern = r"edges\[0\]"
+    elif corruption == "duplicate_hex_numbering":
+        numbering = arrays["part/flat_to_active"].copy()
+        active = np.flatnonzero(numbering >= 0)
+        numbering[active[1]] = numbering[active[0]]
+        arrays["part/flat_to_active"] = numbering
+        pattern = "exactly once"
+    elif corruption == "triangle_out_of_range":
+        simplices = arrays["part/simplices"].copy()
+        simplices[0, 0] = 3
+        arrays["part/simplices"] = simplices
+        pattern = "out-of-range vertex index"
+    elif corruption == "negative_max_distance":
+        meta = dict(meta, max_distance=-1.0)
+        pattern = "max_distance"
+    elif corruption == "negative_nearest_index":
+        indices = arrays["part/bin_indices"].copy()
+        indices[0] = -1
+        arrays["part/bin_indices"] = indices
+        pattern = "non-negative index"
     else:
         arrays["part/wkb"] = np.arange(7, dtype=np.uint8)
         pattern = "wkb|WKB|geometry"
@@ -342,3 +390,37 @@ def test_track_codec_preserves_nested_tuple_node_ids_without_mutating_metadata()
     assert list(decoded.graph.nodes) == [u, v]
     assert decoded.edge_order == ((u, v),)
     _assert_encoding_equal((meta, arrays), encode(decoded, "track"))
+
+
+def test_saved_hex_numbering_must_follow_the_bins():
+    """A valid but permuted hexagon numbering disagrees with the bin centers."""
+    env = Environment.from_layout(
+        create_layout("Hexagonal", hexagon_width=2.0, dimension_ranges=[(0, 5)] * 2)
+    )
+    payload = env.to_dict()
+    numbering = np.asarray(payload["arrays"]["binning/locator/flat_to_active"])
+    active = np.flatnonzero(numbering >= 0)
+    numbering[active[[0, 1]]] = numbering[active[[1, 0]]]
+    payload["arrays"]["binning/locator/flat_to_active"] = numbering.tolist()
+    with pytest.raises(ValueError, match="locator geometry does not match"):
+        Environment.from_dict(payload)
+
+
+def test_arena_nesting_is_limited_to_32_levels():
+    from neurospatial.geometry._arena import _CombinedArena
+    from neurospatial.geometry._codecs import decode_arena
+
+    def nested(depth):
+        meta = {
+            "codec": "UnknownArena",
+            "codec_version": 2,
+            "n_dims": 2,
+            "coordinate_kind": "cartesian",
+        }
+        for _ in range(depth):
+            meta = {"codec": "_CombinedArena", "codec_version": 2, "children": [meta]}
+        return meta
+
+    assert isinstance(decode_arena(nested(32), {}), _CombinedArena)
+    with pytest.raises(ValueError, match="nesting exceeds 32 levels"):
+        decode_arena(nested(33), {})

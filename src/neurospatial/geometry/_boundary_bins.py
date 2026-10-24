@@ -7,8 +7,11 @@ cell is missing: an orthogonal neighbor on a rectangular grid, any of the six
 neighbors on a hexagonal lattice. Exact cell shapes (polygon cells, triangle
 meshes) use the outline of their union. Bins measured by length (tracks) have
 no outline; their boundary is the ends of the chain, the bins with fewer than
-two neighbors. Combined environments use each component's own rule. Bins
-measured by area or volume without cell geometry have no defined boundary.
+two neighbors. A combined environment whose cells are exact 2-D shapes
+uses the outline of their union, so bins along a seam where two components
+touch are not boundary bins; other combined environments use each
+component's own rule. Bins measured by area or volume without cell geometry
+have no defined boundary.
 """
 
 from __future__ import annotations

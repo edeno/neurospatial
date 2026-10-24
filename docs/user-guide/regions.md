@@ -46,6 +46,35 @@ reward_bins = env.bins_in_region("reward")
 Point coordinates are read-only. Use `region.data.copy()` when you need an
 editable array; editing that copy does not update the region.
 
+## Regions on an egocentric polar environment
+
+An environment from `Environment.from_polar_egocentric` takes positions as
+`(distance, angle)` rows, angles in radians (0 = ahead, +π/2 = left). Regions
+use the same coordinates: a polygon's x is distance and its y is angle, so a
+box is a wedge of a distance band.
+
+A polygon is not wrapped around the circle. It selects bins whose center
+angles, inside the environment's angle range, lie within it. A wedge behind the
+animal that crosses the ±π seam therefore needs two polygons, one at each end
+of the range; `region_mask` of both gives the whole wedge. A point region is
+located like any position, with its angle wrapped into the range.
+
+```python
+from shapely.geometry import box
+
+ego = Environment.from_polar_egocentric(
+    distance_range=(0.0, 20.0),
+    angle_range=(-np.pi, np.pi),
+    distance_bin_size=10.0,
+    angle_bin_size=np.pi / 4,
+)
+behind = Regions()
+behind.add("behind_left", polygon=box(0.0, 3 * np.pi / 4, 20.0, np.pi))
+behind.add("behind_right", polygon=box(0.0, -np.pi, 20.0, -3 * np.pi / 4))
+ego = ego.with_regions(behind)
+behind_mask = ego.region_mask(["behind_left", "behind_right"])  # 4 bins
+```
+
 ## Replace regions on an existing environment
 
 Start from the current values when you want to retain other names. Build all

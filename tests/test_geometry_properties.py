@@ -11,7 +11,6 @@ from __future__ import annotations
 import numpy as np
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
-from hypothesis.extra import numpy as hnp
 from shapely import Polygon
 
 from neurospatial import Environment
@@ -23,100 +22,7 @@ from neurospatial.regions import Region, Regions
 
 
 @st.composite
-def convex_polygon_strategy(
-    draw: st.DrawFn,
-    min_vertices: int = 4,
-    max_vertices: int = 12,
-    min_radius: float = 1.0,
-    max_radius: float = 100.0,
-) -> Polygon:
-    """Generate convex polygons using polar coordinates.
-
-    Parameters
-    ----------
-    draw : st.DrawFn
-        Hypothesis draw function.
-    min_vertices : int, default=4
-        Minimum number of vertices.
-    max_vertices : int, default=12
-        Maximum number of vertices.
-    min_radius : float, default=1.0
-        Minimum radius from center to vertices.
-    max_radius : float, default=100.0
-        Maximum radius from center to vertices.
-
-    Returns
-    -------
-    Polygon
-        A valid convex polygon.
-    """
-    n_vertices = draw(st.integers(min_value=min_vertices, max_value=max_vertices))
-
-    # Generate sorted angles to ensure convexity
-    angles = np.linspace(0, 2 * np.pi, n_vertices, endpoint=False)
-    # Add small random perturbation to angles (keeping them sorted)
-    angle_perturbation = draw(
-        hnp.arrays(
-            dtype=np.float64,
-            shape=n_vertices,
-            elements=st.floats(min_value=-0.1, max_value=0.1),
-        )
-    )
-    angles = angles + angle_perturbation
-    angles = np.sort(angles % (2 * np.pi))
-
-    # Generate radius for each vertex
-    radius = draw(st.floats(min_value=min_radius, max_value=max_radius))
-
-    # Convert polar to Cartesian
-    vertices = [(radius * np.cos(a), radius * np.sin(a)) for a in angles]
-
-    poly = Polygon(vertices)
-
-    # Ensure polygon is valid
-    assume(poly.is_valid and poly.area > 0)
-
-    return poly
-
-
-@st.composite
-def region_strategy(
-    draw: st.DrawFn,
-    min_radius: float = 1.0,
-    max_radius: float = 50.0,
-) -> Region:
-    """Generate valid polygon regions.
-
-    Parameters
-    ----------
-    draw : st.DrawFn
-        Hypothesis draw function.
-    min_radius : float, default=1.0
-        Minimum polygon radius.
-    max_radius : float, default=50.0
-        Maximum polygon radius.
-
-    Returns
-    -------
-    Region
-        A valid polygon region.
-    """
-    poly = draw(convex_polygon_strategy(min_radius=min_radius, max_radius=max_radius))
-    name = draw(
-        st.text(
-            min_size=1,
-            max_size=20,
-            alphabet=st.characters(
-                whitelist_categories=("Lu", "Ll", "Nd"), whitelist_characters="_"
-            ),
-        )
-    )
-
-    return Region(name=name, kind="polygon", data=poly)
-
-
-@st.composite
-def environment_2d_strategy(
+def environment_and_samples_2d_strategy(
     draw: st.DrawFn,
     min_samples: int = 50,
     max_samples: int = 500,
@@ -124,8 +30,8 @@ def environment_2d_strategy(
     max_extent: float = 100.0,
     min_bin_size: float = 1.0,
     max_bin_size: float = 10.0,
-) -> Environment:
-    """Generate valid 2D environments.
+) -> tuple[Environment, np.ndarray]:
+    """Generate valid 2D environments with the samples that built them.
 
     Parameters
     ----------
@@ -146,8 +52,10 @@ def environment_2d_strategy(
 
     Returns
     -------
-    Environment
+    env : Environment
         A valid fitted Environment.
+    positions : ndarray, shape (n_samples, 2)
+        The samples it was built from, with ``bin_count_threshold=1``.
     """
     n_samples = draw(st.integers(min_value=min_samples, max_value=max_samples))
     extent = draw(st.floats(min_value=min_extent, max_value=max_extent))
@@ -166,109 +74,19 @@ def environment_2d_strategy(
             positions, bin_size=bin_size, bin_count_threshold=1
         )
         assume(env.n_bins >= 5)  # Need enough bins for meaningful tests
-        return env
+        return env, positions
     except (ValueError, RuntimeError):
         assume(False)  # Skip this example
+
+
+def environment_2d_strategy(**kwargs: float) -> st.SearchStrategy[Environment]:
+    """Generate valid 2D environments; see environment_and_samples_2d_strategy."""
+    return environment_and_samples_2d_strategy(**kwargs).map(lambda pair: pair[0])
 
 
 # =============================================================================
 # Property Tests for Regions
 # =============================================================================
-
-
-class TestRegionGeometryProperties:
-    """Property-based tests for Region geometry operations."""
-
-    @given(convex_polygon_strategy())
-    @settings(max_examples=50, deadline=5000)
-    def test_polygon_area_positive(self, poly: Polygon):
-        """Property: Valid polygon area is always positive."""
-        region = Region(name="test", kind="polygon", data=poly)
-        assert region.data.area > 0
-
-    @given(
-        convex_polygon_strategy(min_radius=5.0, max_radius=50.0),
-        st.floats(min_value=0.1, max_value=5.0),
-    )
-    @settings(max_examples=50, deadline=5000)
-    def test_buffer_increases_area(self, poly: Polygon, buffer_distance: float):
-        """Property: Buffering a polygon increases its area."""
-        original_area = poly.area
-        buffered = poly.buffer(buffer_distance)
-
-        # Buffer should always increase area for positive distance
-        assert buffered.area > original_area
-
-    @given(
-        convex_polygon_strategy(min_radius=10.0, max_radius=50.0),
-        st.floats(min_value=0.1, max_value=2.0),
-    )
-    @settings(max_examples=50, deadline=5000)
-    def test_negative_buffer_decreases_area(
-        self, poly: Polygon, buffer_distance: float
-    ):
-        """Property: Negative buffering (erosion) decreases area."""
-        original_area = poly.area
-
-        # Only erode if polygon is large enough
-        assume(buffer_distance < poly.area / 10)  # Rough check
-
-        eroded = poly.buffer(-buffer_distance)
-
-        # Skip if erosion made polygon empty
-        if eroded.is_empty:
-            return
-
-        assert eroded.area < original_area
-
-    @given(convex_polygon_strategy())
-    @settings(max_examples=50, deadline=5000)
-    def test_centroid_inside_convex_polygon(self, poly: Polygon):
-        """Property: Centroid of convex polygon is inside the polygon."""
-        centroid = poly.centroid
-        assert poly.contains(centroid)
-
-    @given(
-        convex_polygon_strategy(min_radius=10.0, max_radius=50.0),
-        st.floats(min_value=1.0, max_value=100.0),
-        st.floats(min_value=1.0, max_value=100.0),
-    )
-    @settings(max_examples=50, deadline=5000)
-    def test_translation_preserves_area(self, poly: Polygon, dx: float, dy: float):
-        """Property: Translation preserves polygon area."""
-        from shapely.affinity import translate
-
-        original_area = poly.area
-        translated = translate(poly, xoff=dx, yoff=dy)
-
-        np.testing.assert_allclose(
-            translated.area,
-            original_area,
-            rtol=1e-10,
-            err_msg="Translation should preserve area",
-        )
-
-    @given(
-        convex_polygon_strategy(),
-        st.floats(min_value=0.1, max_value=10.0),
-    )
-    @settings(max_examples=50, deadline=5000)
-    def test_scaling_changes_area_quadratically(
-        self, poly: Polygon, scale_factor: float
-    ):
-        """Property: Uniform scaling changes area by scale^2."""
-        from shapely.affinity import scale
-
-        original_area = poly.area
-        scaled = scale(poly, xfact=scale_factor, yfact=scale_factor, origin="centroid")
-
-        expected_area = original_area * (scale_factor**2)
-        np.testing.assert_allclose(
-            scaled.area,
-            expected_area,
-            rtol=1e-8,
-            err_msg=f"Scaling by {scale_factor} should change area by {scale_factor**2}",
-        )
 
 
 class TestRegionsContainerProperties:
@@ -346,43 +164,59 @@ class TestEnvironmentBinningProperties:
                     f"Bin center {bin_center[dim]} above range {hi}"
                 )
 
-    @given(environment_2d_strategy())
+    @given(environment_and_samples_2d_strategy())
     @settings(max_examples=30, deadline=10000)
-    def test_bin_at_returns_valid_indices(self, env: Environment):
-        """Property: bin_at returns valid bin indices for points in range."""
-        # Sample random points within the environment bounds
+    def test_bin_at_matches_brute_force_cells(
+        self, env_and_samples: tuple[Environment, np.ndarray]
+    ):
+        """Property: bin_at agrees with a brute-force search of the grid cells.
+
+        With ``bin_count_threshold=1`` every sample used to build the
+        environment lies in an active bin, so each maps to a bin. Every other
+        point in range maps to the active cell whose edges contain it, or -1
+        when that cell is inactive.
+        """
+        env, samples = env_and_samples
+        edges = env.grid_edges
+        active = env.active_mask
+        flat_to_bin = np.full(active.size, -1, dtype=np.intp)
+        flat_to_bin[np.flatnonzero(active)] = np.arange(env.n_bins)
+
+        def brute_force(points: np.ndarray) -> np.ndarray:
+            cells = [
+                np.clip(
+                    np.searchsorted(edge, points[:, axis], side="right") - 1,
+                    0,
+                    len(edge) - 2,
+                )
+                for axis, edge in enumerate(edges)
+            ]
+            return flat_to_bin[np.ravel_multi_index(cells, active.shape)]
+
+        sample_bins = env.bin_at(samples)
+        assert np.all(sample_bins >= 0), "a building sample has no bin"
+        np.testing.assert_array_equal(sample_bins, brute_force(samples))
+
         rng = np.random.default_rng(42)
-        n_test_points = 20
-
-        lo = np.array([r[0] for r in env.dimension_ranges])
-        hi = np.array([r[1] for r in env.dimension_ranges])
-
-        for _ in range(n_test_points):
-            point = rng.uniform(lo, hi)
-
-            try:
-                bin_idx = env.bin_at(point)
-                # Valid index or -1 (out of bounds)
-                assert bin_idx == -1 or 0 <= bin_idx < env.n_bins
-            except (ValueError, IndexError):
-                # Some points may be outside active bins
-                pass
+        lo = np.array([edge[0] for edge in edges])
+        hi = np.array([edge[-1] for edge in edges])
+        points = rng.uniform(lo, hi, size=(200, 2))
+        np.testing.assert_array_equal(env.bin_at(points), brute_force(points))
 
     @given(environment_2d_strategy())
     @settings(max_examples=30, deadline=10000)
-    def test_bin_at_deterministic(self, env: Environment):
-        """Property: bin_at is deterministic (same point → same bin)."""
-        # Test determinism with a fixed point
+    def test_bin_at_batch_matches_single_points(self, env: Environment):
+        """Property: a point's bin does not depend on the other query points."""
+        rng = np.random.default_rng(7)
         lo = np.array([r[0] for r in env.dimension_ranges])
         hi = np.array([r[1] for r in env.dimension_ranges])
-        mid = (lo + hi) / 2
-
-        try:
-            idx1 = env.bin_at(mid)
-            idx2 = env.bin_at(mid)
-            assert idx1 == idx2, "bin_at should be deterministic"
-        except (ValueError, IndexError):
-            pass  # Point may be outside active bins
+        span = hi - lo
+        points = rng.uniform(lo - 0.1 * span, hi + 0.1 * span, size=(30, 2))
+        batch = env.bin_at(points)
+        single = np.array([env.bin_at(point[None, :])[0] for point in points])
+        np.testing.assert_array_equal(batch, single)
+        order = rng.permutation(len(points))
+        np.testing.assert_array_equal(env.bin_at(points[order]), batch[order])
 
     @given(environment_2d_strategy(min_samples=100, max_samples=300))
     @settings(max_examples=20, deadline=15000)
@@ -406,33 +240,43 @@ class TestEnvironmentOccupancyProperties:
     """Property-based tests for occupancy computation."""
 
     @given(
-        environment_2d_strategy(min_samples=100, max_samples=300),
-        st.integers(min_value=100, max_value=500),
+        st.integers(min_value=2, max_value=8),
+        st.integers(min_value=2, max_value=8),
+        st.floats(min_value=0.5, max_value=20.0),
+        st.integers(min_value=2, max_value=400),
+        st.integers(min_value=0, max_value=10_000),
     )
-    @settings(max_examples=20, deadline=15000)
-    def test_occupancy_sums_to_total_time(self, env: Environment, n_samples: int):
-        """Property: Occupancy sums to total trajectory time."""
-        # Generate trajectory
-        rng = np.random.default_rng(42)
-        lo = np.array([r[0] for r in env.dimension_ranges])
-        hi = np.array([r[1] for r in env.dimension_ranges])
+    @settings(max_examples=30, deadline=15000)
+    def test_occupancy_sums_to_total_time(
+        self, n_x: int, n_y: int, bin_size: float, n_samples: int, seed: int
+    ):
+        """Property: on a fully active grid, occupancy sums to the recording time.
 
-        positions = rng.uniform(lo, hi, size=(n_samples, 2))
-        # times must be monotonically increasing
-        times = np.sort(rng.uniform(0, n_samples / 30.0, n_samples))
-
-        # Signature: occupancy(times, positions, ...)
-        occupancy = env.occupancy(times, positions)
-
-        # Total occupancy should equal total time (approximately, due to gaps)
-        total_time = times[-1] - times[0]
-        total_occupancy = np.sum(occupancy)
-
-        # Allow looser tolerance since gaps may reduce total occupancy
-        assert total_occupancy <= total_time * 1.1, (
-            "Occupancy should not exceed trajectory time"
+        Every position is inside the grid (its outer edges included) and
+        every sampling interval is shorter than ``max_gap``, so no interval
+        is excluded and the per-bin times add up to ``times[-1] - times[0]``.
+        """
+        edges = (
+            np.arange(n_x + 1) * bin_size - 3.0,
+            np.arange(n_y + 1) * bin_size + 11.0,
         )
-        assert total_occupancy >= 0, "Occupancy should be non-negative"
+        env = Environment.from_grid_mask(np.ones((n_x, n_y), dtype=bool), edges)
+        rng = np.random.default_rng(seed)
+        lo = np.array([edge[0] for edge in edges])
+        hi = np.array([edge[-1] for edge in edges])
+        positions = rng.uniform(lo, hi, size=(n_samples, 2))
+        # Put some samples exactly on the outer edges, which belong to a bin.
+        positions[::7] = np.where(rng.random((len(positions[::7]), 2)) < 0.5, lo, hi)
+        max_gap = 0.5
+        times = 10.0 + np.cumsum(rng.uniform(0.001, 0.9 * max_gap, n_samples))
+
+        occupancy = env.occupancy(times, positions, max_gap=max_gap)
+
+        assert occupancy.shape == (env.n_bins,)
+        assert np.all(occupancy >= 0)
+        np.testing.assert_allclose(
+            occupancy.sum(), times[-1] - times[0], rtol=1e-12, atol=0
+        )
 
     @given(environment_2d_strategy(min_samples=100, max_samples=300))
     @settings(max_examples=20, deadline=15000)

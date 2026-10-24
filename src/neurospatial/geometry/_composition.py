@@ -202,8 +202,24 @@ class CombinedLocator(ReadOnlyState):
     ) -> NDArray[np.intp]:
         """Locate points known to within ``error`` in each child's domain.
 
-        With ``half_open``, only the children's half-open owners are found,
-        so an enclosing combined environment can ask for them first.
+        Parameters
+        ----------
+        points : ndarray of float64, shape (n_points, n_dims)
+            Query coordinates.
+        error : ndarray of float64, shape (n_points, n_dims)
+            Absolute bound on how far each true coordinate may be from the
+            given one; zeros for exact coordinates.
+        indexes : LookupIndexes, optional
+            Keeps the children's search structures.
+        half_open : bool, default=False
+            Leave points on a grid child's outline unowned, so an enclosing
+            combined environment can ask every component for half-open
+            owners first.
+
+        Returns
+        -------
+        ndarray of intp, shape (n_points,)
+            Combined bin index of each point, or -1.
         """
         query = np.asarray(points, dtype=np.float64)
         dims = self.children[0].bins.n_dims
@@ -212,8 +228,10 @@ class CombinedLocator(ReadOnlyState):
         result = np.full(len(query), -1, dtype=np.intp)
         finite = np.all(np.isfinite(query), axis=1)
         # A grid child's outline is closed, but a face it shares with another
-        # child keeps its half-open owner: every child is asked for interior
-        # owners before any child claims a point on its outline.
+        # child keeps its half-open owner. The first pass asks every child
+        # with grid outlines left open (other locators answer in full); only
+        # the second pass lets a grid child claim a point on its outline.
+        # With half_open, the enclosing environment runs that second pass.
         for interior in (True,) if half_open else (True, False):
             for child, arena, offset in zip(
                 self.children, self.arenas, self.offsets[:-1], strict=True
@@ -425,7 +443,22 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
 def composition_view(
     locator: object,
 ) -> tuple[CombinedLocator, NDArray[np.intp], float] | None:
-    """Resolve current bins to root component IDs and a similarity scale."""
+    """Find the combined binning below a locator and its bins' places in it.
+
+    Parameters
+    ----------
+    locator : object
+        A binning's locator.
+
+    Returns
+    -------
+    tuple or None
+        ``(root, indices, scale)``: the innermost :class:`CombinedLocator`
+        reached through subsets, affine maps and clips; for each current bin,
+        the index of the root bin it comes from, shape ``(n_bins,)``; and the
+        geometric-mean linear scale of the affine maps on the way. None when
+        no combined binning lies below ``locator``.
+    """
 
     if isinstance(locator, CombinedLocator):
         return locator, np.arange(locator.offsets[-1], dtype=np.intp), 1.0
