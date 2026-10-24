@@ -52,6 +52,7 @@ from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
+    _coordinate_roundoff,
 )
 from neurospatial.geometry._polygon import (
     _representative,
@@ -1334,16 +1335,23 @@ def _validate_center_lookup(binning: Binning) -> None:
     if binning.linearization is not None:
         # An embedded track can revisit an identical spatial point at a
         # different linear coordinate. Nearest-point lookup may choose either
-        # coincident bin; the validated track component owns path identity.
+        # coincident bin, centers equal to within rounding included (the
+        # tie rule of NearestBinLocator); the validated track component owns
+        # path identity.
         if located.shape != (bins.n_bins,) or np.any(
             (located < 0) | (located >= bins.n_bins)
         ):
             raise ValueError("Track locator does not locate its bin centers.")
-        _equal(
-            bins.centers[located],
-            bins.centers,
-            "track locator bin-center coordinates",
+        tolerance = _coordinate_roundoff(
+            bins.centers, float(np.max(np.abs(bins.centers)))
         )
+        if np.any(
+            np.linalg.norm(bins.centers[located] - bins.centers, axis=1) > tolerance
+        ):
+            raise ValueError(
+                "track locator bin-center coordinates does not match the "
+                "binning geometry."
+            )
     else:
         _equal(located, np.arange(bins.n_bins), "locator bin-center lookup")
 

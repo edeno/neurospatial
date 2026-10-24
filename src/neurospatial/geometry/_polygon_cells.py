@@ -26,6 +26,7 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
     _check_homogeneous,
     _lookup_index,
+    locate_within,
 )
 
 
@@ -189,19 +190,48 @@ class ClippedLocator:
     ) -> NDArray[np.intp]:
         """Locate ``(n_points, 2)`` coordinates without resurrecting dropped owners."""
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
+        return self.locate_within(query, np.zeros(query.shape), indexes)
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Locate points known to within ``error``.
+
+        The parent's owner is found within the error, and a clipped cell of
+        that parent within the error of the point holds it; of several, the
+        lowest-numbered.
+        """
+        query = np.atleast_2d(np.asarray(points, dtype=np.float64))
         if query.ndim != 2 or query.shape[1] != 2:
             raise ValueError(f"Expected points of shape (M, 2), got {query.shape}.")
         result = np.full(len(query), -1, dtype=np.intp)
         rows = np.flatnonzero(np.all(np.isfinite(query), axis=1))
         if not len(rows) or not self.cells.polygons:
             return result
-        parents = self.base.locate(query[rows], indexes)
+        parents = locate_within(
+            self.base,
+            query[rows],
+            np.asarray(error)[rows],
+            indexes,
+            half_open=half_open,
+        )
         if np.any(parents >= self.mapping.n_parent_bins):
             raise ValueError("base locator returned a parent outside n_parent_bins.")
         tree = _lookup_index(self, indexes, lambda: STRtree(self.cells.polygons))
-        point_ids, child_ids = tree.query(
-            shapely.points(query[rows]), predicate="covered_by"
-        )
+        radius = np.hypot.reduce(np.asarray(error)[rows], axis=1)
+        if np.any(radius > 0):
+            point_ids, child_ids = tree.query(
+                shapely.points(query[rows]), predicate="dwithin", distance=radius
+            )
+        else:
+            point_ids, child_ids = tree.query(
+                shapely.points(query[rows]), predicate="covered_by"
+            )
         matching = self.mapping.parent_bin_indices[child_ids] == parents[point_ids]
         local = np.full(len(rows), len(self.cells.polygons), dtype=np.intp)
         np.minimum.at(local, point_ids[matching], child_ids[matching])

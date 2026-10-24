@@ -903,8 +903,8 @@ def _rigid(angle, offset=(0.0, 0.0), reflect=False):
 @pytest.mark.parametrize("select", [False, True])
 def test_shared_face_owner_does_not_depend_on_transforms_or_order(matrix, select):
     """Rotating or mirroring each grid keeps the half-open owner of a shared
-    face, in either component order, also when the grids were subsets of
-    larger ones."""
+    face, in either component order, as rotating the combined environment
+    does, also when the grids were subsets of larger ones."""
     from neurospatial.ops import Affine2D
 
     transform = Affine2D(matrix)
@@ -917,6 +917,8 @@ def test_shared_face_owner_does_not_depend_on_transforms_or_order(matrix, select
     plain = Environment.combine({"left": left, "right": right})
     expected = [plain.bin_sources[index] for index in plain.bin_at(face)]
     assert {source[0] for source in expected} == {"right"}
+    turned = plain.apply_transform(transform)
+    assert [turned.bin_sources[i] for i in turned.bin_at(transform(face))] == expected
     children = {
         "left": left.apply_transform(transform),
         "right": right.apply_transform(transform),

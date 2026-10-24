@@ -144,9 +144,15 @@ class FramedGrid(ReadOnlyState):
         return self._map(points, self.inverse, inverse=True)
 
     def _project(
-        self, points: NDArray[np.float64]
+        self,
+        points: NDArray[np.float64],
+        incoming: NDArray[np.float64] | None = None,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Project world queries with a forward-residual roundoff bound."""
+        """Project world queries with a forward-residual roundoff bound.
+
+        ``incoming`` (shape (n_points, n_dims)) is a bound the world
+        coordinates already carry, such as an enclosing map's roundoff.
+        """
         if self._sensitivity is None:
             raise ValueError(
                 "Grid projection has unresolved precision; recenter or rescale coordinates."
@@ -162,6 +168,8 @@ class FramedGrid(ReadOnlyState):
             + np.spacing(np.abs(points))
         )
         error += 2 * gamma * (np.abs(original) @ np.abs(linear).T)
+        if incoming is not None:
+            error += incoming
         return original, error @ self._sensitivity.T
 
     def _project_to_planes(
@@ -170,6 +178,7 @@ class FramedGrid(ReadOnlyState):
         planes: Sequence[NDArray[np.float64]],
         *,
         operation: str,
+        incoming: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Recover center/edge planes within bounded inverse-map roundoff.
 
@@ -177,7 +186,7 @@ class FramedGrid(ReadOnlyState):
         axis. A query too imprecise for that resolution refuses; meaningful
         positive weights on inactive cells are never filled.
         """
-        original, errors = self._project(points)
+        original, errors = self._project(points, incoming)
         for axis, coordinates in enumerate(planes):
             edges = self.source.edges[axis]
             cap = float(np.min(np.diff(edges))) / 4
@@ -207,7 +216,12 @@ class FramedGrid(ReadOnlyState):
         return self._cells
 
     def _locate(
-        self, points: NDArray[np.float64], *, operation: str, half_open: bool = False
+        self,
+        points: NDArray[np.float64],
+        *,
+        operation: str,
+        half_open: bool = False,
+        incoming: NDArray[np.float64] | None = None,
     ) -> NDArray[np.intp]:
         """Return the active bin of each world point, or -1 outside active cells.
 
@@ -226,13 +240,18 @@ class FramedGrid(ReadOnlyState):
         half_open : bool, default=False
             Leave points on the outline of the active cells unowned instead
             of closing it (see :meth:`RectilinearLocator.locate_half_open`).
+        incoming : ndarray of float64, shape (n_points, n_dims), optional
+            Bound the world coordinates already carry, added to the map's
+            own roundoff.
 
         Returns
         -------
         ndarray of intp, shape (n_points,)
             Active-bin index of each point, or -1.
         """
-        source = self._project_to_planes(points, self.source.edges, operation=operation)
+        source = self._project_to_planes(
+            points, self.source.edges, operation=operation, incoming=incoming
+        )
         cells = self._source_locator()
         return cells.locate_half_open(source) if half_open else cells.locate(source)
 

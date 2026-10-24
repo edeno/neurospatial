@@ -903,7 +903,7 @@ class _TransformedArena(ReadOnlyState):
         original, error = self._project(query[finite])
         representable = np.all(np.isfinite(original), axis=1)
         selected = np.zeros(len(original), dtype=np.bool_)
-        selected[representable] = _contains_with_error(
+        selected[representable] = contains_with_error(
             self.base, original[representable], error[representable]
         )
         inside[finite] = selected
@@ -1042,19 +1042,19 @@ def _segment_distance(first: NDArray[np.float64], second: NDArray[np.float64]) -
     return min(distances)
 
 
-def _contains_with_error(
+def contains_with_error(
     arena: Arena, query: NDArray[np.float64], error: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
     if isinstance(arena, _CombinedArena):
         return np.asarray(
             np.logical_or.reduce(
-                [_contains_with_error(child, query, error) for child in arena.children]
+                [contains_with_error(child, query, error) for child in arena.children]
             ),
             dtype=np.bool_,
         )
     if isinstance(arena, _TransformedArena):
         original, propagated = arena._project(query, error)
-        return _contains_with_error(arena.base, original, propagated)
+        return contains_with_error(arena.base, original, propagated)
     inside = arena.contains(query)
     rows = np.flatnonzero(~inside)
     if not len(rows):
