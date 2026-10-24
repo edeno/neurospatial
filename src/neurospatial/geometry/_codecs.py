@@ -807,7 +807,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         elif isinstance(locator, SubsetLocator):
             nested.update(_arrays(path, parent_to_child=locator.parent_to_child))
         else:
-            nested.update(_arrays(path, inverse=locator.inverse))
+            nested.update(_arrays(path, forward=locator.forward))
         return local, nested
 
     # Lookup is encoded first so unsupported layout-backed persistence fails
@@ -957,7 +957,7 @@ def _decode_subset_locator(
 
 def _encode_transformed_locator(obj: TransformedLocator, prefix: str) -> Payload:
     base, arrays = encode(obj.base, f"{prefix}/base")
-    arrays.update(_arrays(prefix, inverse=obj.inverse))
+    arrays.update(_arrays(prefix, forward=obj.forward))
     return {"base": base}, arrays
 
 
@@ -967,7 +967,7 @@ def _decode_transformed_locator(
     base = decode(meta["base"], arrays, f"{prefix}/base")
     if not isinstance(base, _LOCATOR_TYPES):
         raise ValueError("base must contain a point-lookup codec.")
-    return TransformedLocator(base, _array(arrays, prefix, "inverse", np.float64))
+    return TransformedLocator(base, _array(arrays, prefix, "forward", np.float64))
 
 
 def _decode_binning(
@@ -1037,7 +1037,7 @@ def _decode_binning(
             return ClippedLocator(base, cell_snapshot, map_snapshot)
         if kind == "SubsetLocator":
             return SubsetLocator(base, _array(arrays, path, "parent_to_child", np.intp))
-        return TransformedLocator(base, _array(arrays, path, "inverse", np.float64))
+        return TransformedLocator(base, _array(arrays, path, "forward", np.float64))
 
     expected: dict[str, type | tuple[type, ...]] = {
         "bins": SpatialBins,
@@ -1237,7 +1237,10 @@ _CODECS: dict[str, Codec] = {
         SubsetLocator, _encode_subset_locator, _decode_subset_locator
     ),
     "TransformedLocator": Codec(
-        TransformedLocator, _encode_transformed_locator, _decode_transformed_locator
+        TransformedLocator,
+        _encode_transformed_locator,
+        _decode_transformed_locator,
+        version=2,
     ),
     "Binning": Codec(Binning, _encode_binning, _decode_binning, version=5),
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),

@@ -96,9 +96,9 @@ def test_present_polygon_snapshot_is_distinct_from_historical_locator_frame(oper
         centers, sizes = original.bins.centers[1:], original.bins.sizes[1:]
     else:
         cells = PolygonCells((box(10, 0, 11, 4), box(13, 0, 14, 4)))
-        inverse = np.eye(3)
-        inverse[0, 2] = -10
-        locator = TransformedLocator(original.locator, inverse)
+        forward = np.eye(3)
+        forward[0, 2] = 10
+        locator = TransformedLocator(original.locator, forward)
         centers, sizes = original.bins.centers + np.array([10, 0]), original.bins.sizes
     bins = SpatialBins.from_arrays(centers, sizes, 2)
     derived = Binning(

@@ -1048,3 +1048,29 @@ def test_combining_bins_without_cells_spans_their_declared_ranges():
     assert Environment.from_dict(joined.to_dict()).dimension_ranges == (
         joined.dimension_ranges
     )
+
+
+@pytest.mark.parametrize("angle", [0.3, 0.7, 2.0, 1e-9])
+def test_transformed_combination_arena_shares_the_bins_inverse(angle):
+    """The arena rebuilt for a moved combined environment uses the bins' own
+    map, so its inverse is the locator's inverse exactly, as validation
+    requires; re-inverting the inverse would round differently."""
+    from neurospatial.geometry._arena_fit import _composition_arena, validate_arena
+    from neurospatial.geometry._coordinates import CartesianSystem
+    from neurospatial.ops import Affine2D
+
+    matrix = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 13.7],
+            [np.sin(angle), np.cos(angle), -2.1],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    joined = Environment.combine({"left": grid(count=2), "right": grid(2.0, count=2)})
+    moved = joined.apply_transform(Affine2D(matrix))
+    locator = moved.binning.locator
+    np.testing.assert_array_equal(locator.forward, matrix)
+    arena = _composition_arena(locator)
+    np.testing.assert_array_equal(arena.forward, locator.forward)
+    np.testing.assert_array_equal(arena.inverse, locator.inverse)
+    validate_arena(arena, moved.binning, CartesianSystem())

@@ -42,7 +42,7 @@ def wrapper_and_inputs(full_locator, request):
     backing = np.zeros((6, 6))
     backing[::2, ::2] = np.array([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
     caller = backing[::2, ::2]
-    return TransformedLocator(full_locator, caller), "inverse", caller
+    return TransformedLocator(full_locator, caller), "forward", caller
 
 
 def test_wrapper_owns_caller_view_without_freezing_it(wrapper_and_inputs):
@@ -90,7 +90,7 @@ def test_nested_wrappers_round_trip_without_layout_objects(full_locator):
     reflected = TransformedLocator(full_locator, np.diag([-1.0, 1.0, 1.0]))
     selected = SubsetLocator(reflected, np.array([-1, 0, -1, 1]))
     translated = TransformedLocator(
-        selected, np.array([[1.0, 0.0, -2.0], [0.0, 1.0, -3.0], [0.0, 0.0, 1.0]])
+        selected, np.array([[1.0, 0.0, 2.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]])
     )
     meta, arrays = encode(translated, "locator")
     assert "locator/base/base/base/edges_0" in arrays

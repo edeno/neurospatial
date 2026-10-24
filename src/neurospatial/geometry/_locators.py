@@ -491,7 +491,7 @@ class SubsetLocator(ReadOnlyState):
 
 @dataclass(frozen=True, eq=False)
 class TransformedLocator(ReadOnlyState):
-    """Find bins by applying an owned inverse homogeneous affine matrix.
+    """Find bins of affinely mapped cells by mapping points back to them.
 
     In a binning with a ``grid_frame`` (a rotated or sheared grid), the
     binning gives this locator its frame. Points are then assigned by the
@@ -504,39 +504,38 @@ class TransformedLocator(ReadOnlyState):
     ----------
     base : Locator
         Locator in the source coordinates.
-    inverse : ndarray of float64, shape (n_dims + 1, n_dims + 1)
-        Homogeneous map from current to source coordinates.
+    forward : ndarray of float64, shape (n_dims + 1, n_dims + 1)
+        Homogeneous map from source to current coordinates: the transform
+        that moved the bins. Its inverse is computed once, as an arena's is,
+        so a locator and an arena moved by one map share one inverse.
     frame : FramedGrid or None, optional
         The grid frame of the binning this locator belongs to; a ``Binning``
         with a ``grid_frame`` sets it, so it is rarely passed directly.
+
+    Attributes
+    ----------
+    inverse : ndarray of float64, shape (n_dims + 1, n_dims + 1)
+        Homogeneous map from current to source coordinates.
     """
 
     base: Locator
-    inverse: NDArray[np.float64]
+    forward: NDArray[np.float64]
     frame: FramedGrid | None = field(default=None, repr=False)
+    inverse: NDArray[np.float64] = field(init=False, repr=False)
 
-    # Fixed by the matrix, so built once: the forward map, the bound on how
-    # far it can differ from the map the inverse was computed from, and the
-    # sensitivity of source coordinates to forward residuals (None when the
-    # map is too ill-conditioned to bound).
-    _forward: NDArray[np.float64] = field(init=False, repr=False)
-    _forward_error: NDArray[np.float64] = field(init=False, repr=False)
+    # Fixed by the matrix, so built once: the sensitivity of source
+    # coordinates to forward residuals (None when the map is too
+    # ill-conditioned to bound).
     _sensitivity: NDArray[np.float64] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        matrix = _owned_array(self.inverse, np.float64)
-        _check_homogeneous(matrix)
-        object.__setattr__(self, "inverse", matrix)
+        forward = _owned_array(self.forward, np.float64)
+        _check_homogeneous(forward)
         with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            forward = np.asarray(np.linalg.inv(matrix), dtype=np.float64)
-            dims = len(matrix) - 1
+            inverse = np.asarray(np.linalg.inv(forward), dtype=np.float64)
+            dims = len(forward) - 1
             eps = float(np.finfo(np.float64).eps)
-            # The stored inverse is a rounded inverse of the map that placed
-            # the bins; inverting it again recovers that map to this bound.
-            forward_error = 16 * len(matrix) * eps * (
-                np.abs(forward) @ np.abs(matrix) @ np.abs(forward)
-            ) + 4 * np.spacing(np.abs(forward))
-            linear, inverse_linear = forward[:-1, :-1], matrix[:-1, :-1]
+            linear, inverse_linear = forward[:-1, :-1], inverse[:-1, :-1]
             gamma = (dims + 4) * eps / (1 - (dims + 4) * eps)
             residual = np.abs(np.eye(dims) - inverse_linear @ linear)
             residual += 2 * gamma * (np.abs(inverse_linear) @ np.abs(linear))
@@ -545,13 +544,18 @@ class TransformedLocator(ReadOnlyState):
                 if np.all(np.isfinite(residual)) and np.max(residual.sum(axis=1)) < 0.5
                 else None
             )
+        if not np.all(np.isfinite(inverse)):
+            raise ValueError(
+                "TransformedLocator.forward has no representable inverse; "
+                "rescale the coordinates before transforming."
+            )
         if sensitivity is not None and not np.all(np.isfinite(sensitivity)):
             sensitivity = None
-        for array in (forward, forward_error, sensitivity):
+        for array in (inverse, sensitivity):
             if array is not None:
                 array.setflags(write=False)
-        object.__setattr__(self, "_forward", forward)
-        object.__setattr__(self, "_forward_error", forward_error)
+        object.__setattr__(self, "forward", forward)
+        object.__setattr__(self, "inverse", inverse)
         object.__setattr__(self, "_sensitivity", sensitivity)
 
     def locate(
@@ -631,7 +635,7 @@ class TransformedLocator(ReadOnlyState):
             return original, error
         values = query[finite]
         source = values @ self.inverse[:-1, :-1].T + self.inverse[:-1, -1]
-        linear, shift = self._forward[:-1, :-1], self._forward[:-1, -1]
+        linear, shift = self.forward[:-1, :-1], self.forward[:-1, -1]
         eps = float(np.finfo(np.float64).eps)
         gamma = (n_dims + 4) * eps / (1 - (n_dims + 4) * eps)
         with np.errstate(over="ignore", invalid="ignore", under="ignore"):
@@ -646,8 +650,6 @@ class TransformedLocator(ReadOnlyState):
                     + np.spacing(np.abs(values))
                 )
                 + 2 * gamma * (np.abs(source) @ np.abs(linear).T)
-                + np.abs(source) @ self._forward_error[:-1, :-1].T
-                + self._forward_error[:-1, -1]
                 + incoming[finite]
             )
             bound = residual @ self._sensitivity.T

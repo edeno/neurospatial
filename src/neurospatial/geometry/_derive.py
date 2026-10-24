@@ -187,7 +187,7 @@ def _subset_locator(
         if not isinstance(base, SubsetLocator):
             # An affine map does not renumber bins, so the grid's own subset
             # sits below it, as if the bins were selected first.
-            return TransformedLocator(base, locator.inverse)
+            return TransformedLocator(base, locator.forward)
     return SubsetLocator(locator, child_of)
 
 
@@ -479,9 +479,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     connections = BinConnections(all_pairs, distances, links.is_open, links.closed_by)
     pairs = connections.pairs
     if locator is None:
-        locator = TransformedLocator(
-            binning.locator, np.asarray(np.linalg.inv(matrix), dtype=np.float64)
-        )
+        locator = TransformedLocator(binning.locator, matrix)
     grid = binning.rectilinear
     if grid is not None:
         diagonal = np.diag(linear)

@@ -656,7 +656,7 @@ def test_scaled_grid_centers_are_the_mapped_edge_midpoints(
 
 
 @pytest.mark.parametrize("built_environment", ["hex", "mesh", "track"], indirect=True)
-@pytest.mark.parametrize("corruption", ["centers", "sizes", "component", "inverse"])
+@pytest.mark.parametrize("corruption", ["centers", "sizes", "component", "forward"])
 def test_wrapped_geometry_corruption_is_rejected(
     built_environment, corruption, corrupted_environment_round_trip
 ):
@@ -666,8 +666,8 @@ def test_wrapped_geometry_corruption_is_rejected(
         if corruption == "sizes":
             arrays["binning/bins/sizes"] *= 2.0
             arrays["binning/faces/volumes"] *= 2.0
-        elif corruption == "inverse":
-            arrays["binning/locator/inverse"][0, -1] += 0.01
+        elif corruption == "forward":
+            arrays["binning/locator/forward"][0, -1] += 0.01
         elif corruption == "component":
             if "binning/shapes/centers" in arrays:
                 arrays["binning/shapes/centers"][0, 0] += 0.01
