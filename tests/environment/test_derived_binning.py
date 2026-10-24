@@ -329,6 +329,34 @@ def test_track_non_similarity_refused(built_environment, linear):
     assert "Fix:" in str(caught.value)
 
 
+@pytest.mark.parametrize("angle", [0.3, 2.0])
+def test_out_and_back_track_rotates_with_its_revisited_bins(angle):
+    """Bins of the return leg sit on the outbound bins' centers; a rotation
+    moves both together instead of refusing the coincident centers."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    for node, position in enumerate([(0.0, 0.0), (10.0, 0.0), (0.0, 0.0)]):
+        graph.add_node(node, pos=position)
+    graph.add_edge(0, 1, distance=10.0)
+    graph.add_edge(1, 2, distance=10.0)
+    env = Environment.from_graph(graph, [(0, 1), (1, 2)], bin_size=2, track_width=1)
+    matrix = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 3.0],
+            [np.sin(angle), np.cos(angle), -1.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    transform = Affine2D(matrix)
+    moved = env.apply_transform(transform)
+    np.testing.assert_allclose(
+        moved.bin_centers, transform(env.bin_centers), atol=1e-12
+    )
+    points = np.array([[1.0, 0.2], [5.0, 0.0], [9.5, -0.3], [3.0, 0.4]])
+    np.testing.assert_array_equal(moved.bin_at(transform(points)), env.bin_at(points))
+
+
 @pytest.mark.parametrize(
     "built_environment", ["grid8", "hex", "mesh", "track"], indirect=True
 )
