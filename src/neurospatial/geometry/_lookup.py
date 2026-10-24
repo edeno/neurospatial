@@ -55,7 +55,9 @@ def locate(
         (see :func:`require_position_columns`).
     NotImplementedError
         If the bins lie along a track in two or more dimensions whose width
-        is unknown (see :func:`require_track_width`).
+        is unknown (see :func:`require_track_width`), or the domain is unknown
+        and nearest-bin lookup has no radius (see
+        :func:`require_lookup_radius`).
     """
     positions = np.asarray(positions, dtype=np.float64)
     n_dims = binning.bins.n_dims
@@ -65,6 +67,7 @@ def locate(
     require_position_columns(positions, n_dims, call=call)
     if not arena.domain_known:
         require_track_width(binning, arena)
+        require_lookup_radius(binning)
         return binning.locator.locate(positions, indexes).astype(np.intp, copy=False)
     if isinstance(arena, EgocentricSurround):
         # An angle a whole turn outside the range names a direction inside it.
@@ -242,14 +245,67 @@ TRACK_WIDTH_FIX = (
 )
 
 
+def require_lookup_radius(binning: Binning) -> None:
+    """Refuse nearest-bin lookup that has no radius and no known domain.
+
+    Called only when the environment's domain is unknown. Bins located by
+    their nearest center, without ``max_distance``, would then put every
+    position, however far away, in some bin. Unlimited lookup must be chosen
+    explicitly with ``max_distance=math.inf``.
+
+    Parameters
+    ----------
+    binning : Binning
+        The bins and their locator, possibly wrapped by subsets or affine
+        maps.
+
+    Raises
+    ------
+    NotImplementedError
+        If the locator finds the nearest bin center with ``max_distance``
+        None.
+    """
+    from neurospatial.geometry._locators import (
+        NearestBinLocator,
+        SubsetLocator,
+        TransformedLocator,
+    )
+
+    locator = binning.locator
+    while isinstance(locator, (SubsetLocator, TransformedLocator)):
+        locator = locator.base
+    if (
+        not isinstance(locator, NearestBinLocator)
+        or locator.max_distance is not None
+        # With no bins, no position can be put in a wrong one.
+        or binning.bins.n_bins == 0
+    ):
+        return
+    raise NotImplementedError(
+        _format_error(
+            "Positions cannot be assigned to these bins: they are found by "
+            "nearest bin center with no max_distance, and the environment has "
+            "no known domain.",
+            why="Why: without a radius or a domain every position, however far "
+            "from the bins (a tracking jump or a position from another "
+            "arena), would be put in its nearest bin.",
+            fix="build the locator with NearestBinLocator(centers, "
+            "max_distance=radius), a radius in the bin centers' length units; "
+            "pass max_distance=math.inf to deliberately give every position its "
+            "nearest bin; or pass the arena that bounds the bins to "
+            "Environment.from_bins(..., arena=...)",
+        )
+    )
+
+
 def require_track_width(binning: Binning, arena: Arena) -> None:
     """Refuse to map positions to a track's bins when its width is unknown.
 
     A centerline and a bin size do not say how far from the centerline a
     position is still on the track, so without a width every position, however
     far off the track, would be put in its nearest bin. A track whose
-    positions have one coordinate has no off-track direction and is not
-    refused.
+    positions have one coordinate has no off-track direction: its arena knows
+    its domain (the centerline, ends included) and never reaches this check.
 
     Parameters
     ----------

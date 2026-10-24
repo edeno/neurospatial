@@ -3140,7 +3140,11 @@ class Environment(Generic[_C]):
             Named regions to snapshot at construction.
         arena : Arena or None, optional
             Continuous domain. Omission infers only what the supplied geometry
-            establishes, without inventing physical walls.
+            establishes, without inventing physical walls. Bins located by
+            ``NearestBinLocator`` without ``max_distance`` and with no known
+            domain refuse position lookups; give the locator a radius in
+            length units (``math.inf`` for unlimited nearest lookup) or pass
+            the arena that bounds the bins.
 
         Returns
         -------

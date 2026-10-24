@@ -62,6 +62,24 @@ def test_a_track_without_width_refuses_position_lookups(factory, lookup):
     assert np.isfinite(env.to_linear(probes[:1])).all()
 
 
+def test_a_one_dimensional_track_contains_only_its_centerline():
+    """Positions beyond a 1-D track's ends are off the track; its ends are on it."""
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0,))
+    graph.add_node(1, pos=(100.0,))
+    graph.add_edge(0, 1)
+    env = Environment.from_graph(graph, [(0, 1)], bin_size=5.0)
+    probes = np.array([[-500.0], [-1e-9], [0.0], [50.0], [100.0], [100.001], [5000.0]])
+    bins = env.bin_at(probes)
+    np.testing.assert_array_equal(
+        bins >= 0, [False, False, True, True, True, False, False]
+    )
+    np.testing.assert_array_equal(bins[[2, 4]], [0, env.n_bins - 1])
+    np.testing.assert_array_equal(env.contains(probes), bins >= 0)
+    restored = Environment.from_dict(env.to_dict())
+    np.testing.assert_array_equal(restored.bin_at(probes), bins)
+
+
 def test_a_point_region_on_a_track_without_width_is_refused():
     regions = Regions()
     regions.add("reward", point=(1000.0, 1000.0))

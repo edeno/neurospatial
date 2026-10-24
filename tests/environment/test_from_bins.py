@@ -492,6 +492,59 @@ def test_rebin_uniformity_guard_preserves_native_large_offset_rounding():
     np.testing.assert_array_equal(restored.bin_sizes, source.bin_sizes)
 
 
+def _sites(max_distance=None, **kwargs):
+    centers = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+    return Environment.from_bins(
+        Binning(
+            "sites",
+            SpatialBins.from_arrays(centers, np.ones(3), 2),
+            BinConnections.from_arrays([[0, 1], [1, 2]], [1.0, 1.0]),
+            NearestBinLocator(centers, max_distance=max_distance),
+            MissingFaces("Sites lack faces."),
+        ),
+        **kwargs,
+    )
+
+
+def test_nearest_lookup_without_a_radius_or_domain_is_refused():
+    """A far position must not silently land in the nearest bin."""
+    env = _sites()
+    for lookup in (env.bin_at, env.contains):
+        with pytest.raises(NotImplementedError, match="max_distance") as info:
+            lookup(np.array([[1000.0, 1000.0]]))
+        assert "math.inf" in str(info.value)
+
+
+def test_nearest_lookup_radius_is_in_physical_units():
+    env = _sites(max_distance=0.25)
+    np.testing.assert_array_equal(
+        env.bin_at(np.array([[1000.0, 1000.0], [1.2, 0.0], [1.0, 0.3]])),
+        [-1, 1, -1],
+    )
+
+
+def test_unlimited_nearest_lookup_is_an_explicit_choice():
+    import math
+
+    env = _sites(max_distance=math.inf)
+    np.testing.assert_array_equal(env.bin_at(np.array([[1000.0, 1000.0]])), [2])
+    restored = Environment.from_dict(env.to_dict())
+    np.testing.assert_array_equal(restored.bin_at(np.array([[1000.0, 1000.0]])), [2])
+
+
+def test_a_known_domain_bounds_nearest_lookup_without_a_radius():
+    env = _sites(arena=OpenArena(box(-0.5, -0.5, 2.5, 0.5)))
+    np.testing.assert_array_equal(
+        env.bin_at(np.array([[1000.0, 1000.0], [1.2, 0.0]])), [-1, 1]
+    )
+
+
+@pytest.mark.parametrize("max_distance", [np.nan, -1.0, True, "1"])
+def test_an_invalid_lookup_radius_is_refused_by_name(max_distance):
+    with pytest.raises((TypeError, ValueError), match="max_distance"):
+        NearestBinLocator(np.zeros((1, 2)), max_distance=max_distance)
+
+
 def test_empty_bins_remain_a_valid_explicit_empty_environment():
     centers = np.empty((0, 2))
     bins = SpatialBins.from_arrays(centers, [], 2)
