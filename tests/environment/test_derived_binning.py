@@ -977,3 +977,18 @@ def test_rotated_rectangular_grid_has_no_world_aligned_shape():
     )
     assert rotated.grid_shape == (36,)
     assert rotated.grid_edges == ()
+
+
+@pytest.mark.parametrize("offset", [7e11, 1.8e12, 1e13])
+def test_moving_fine_bins_far_from_the_origin_advises_recentering(offset):
+    """Whichever check precision loss trips first, the refusal says how to fix it."""
+    env = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0) * 1e-3,) * 2
+    )
+    angle = 0.3
+    transform = _affine(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]],
+        (offset, offset),
+    )
+    with pytest.raises(ValueError, match="recenter or rescale"):
+        env.apply_transform(transform)

@@ -15,10 +15,12 @@ from scipy.spatial import cKDTree
 from shapely.affinity import affine_transform
 from shapely.geometry import MultiPolygon, Polygon
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import active_order, get_centers, per_dimension
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
+    SpatialBins,
     TrackLinearization,
     refuse_mixed_measure_conductance,
 )
@@ -869,8 +871,45 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     """
     if binning.__dict__.get(_VALIDATED_IN) == coordinates:
         return
-    _validate_components(binning, coordinates)
+    try:
+        _validate_components(binning, coordinates)
+    except ValueError as error:
+        why = _precision_loss(binning.bins)
+        # A refusal that already advises recentering needs no second copy.
+        if why is None or "recenter" in str(error):
+            raise
+        raise ValueError(
+            _format_error(
+                str(error),
+                why=why,
+                fix="recenter or rescale the coordinates (for example, subtract "
+                "the arena's center, or use larger units) before building or "
+                "transforming the environment",
+            )
+        ) from error
     object.__setattr__(binning, _VALIDATED_IN, coordinates)
+
+
+def _precision_loss(bins: SpatialBins) -> str | None:
+    """Explain a refusal by coordinates too large to resolve the bins, if so.
+
+    Geometry checks compare values that carry a few roundings each. Once
+    sixteen units in the last place of the largest coordinate reach a quarter
+    of the smallest bin's width, those roundings can move a center, face or
+    normal by a meaningful part of a bin, and any of the checks can fail.
+    """
+    if not bins.n_bins:
+        return None
+    scale = float(np.max(np.abs(bins.centers)))
+    width = float(np.min(bins.sizes ** (1.0 / bins.measure_dims)))
+    resolution = 16 * float(np.spacing(scale))
+    if resolution < width / 4:
+        return None
+    return (
+        f"Why: coordinates as large as {scale:.3g} are stored to steps of "
+        f"{np.spacing(scale):.3g}, too coarse for bins {width:.3g} wide, so "
+        "the bins' geometry cannot be checked."
+    )
 
 
 def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> None:
