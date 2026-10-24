@@ -30,7 +30,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import as_label_array, resolve_unit_ids
+from neurospatial._results import as_label_array, plain_value, resolve_unit_ids
 
 
 def as_spike_trains(
@@ -156,8 +156,7 @@ def require_finite_spike_times(
     for i, train in enumerate(trains):
         bad = np.flatnonzero(~np.isfinite(train))
         if bad.size:
-            label = i if unit_ids is None else unit_ids[i]
-            label = label.item() if isinstance(label, np.generic) else label
+            label = i if unit_ids is None else plain_value(unit_ids[i])
             raise ValueError(
                 _format_error(
                     f"spike_times for unit {label!r} has {bad.size} NaN or "

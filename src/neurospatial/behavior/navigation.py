@@ -120,8 +120,8 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     break_sample_times,
-    intervals_contain,
     recording_index,
+    times_in_intervals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
@@ -1103,9 +1103,7 @@ def distance_to_reward(
     if resolved_epochs is None:
         sample_in_epochs = np.ones(n_samples, dtype=bool)
     else:
-        sample_in_epochs = intervals_contain(
-            resolved_epochs, times, np.nextafter(times, np.inf)
-        )
+        sample_in_epochs = times_in_intervals(resolved_epochs, times)
 
     # Get or interpolate reward positions
     if reward_positions is not None:

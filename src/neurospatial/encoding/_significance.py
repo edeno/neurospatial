@@ -12,6 +12,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import plain_value
 from neurospatial.stats import _validate_circular_shift_settings
 from neurospatial.stats.shuffle import ShuffleTestResult, shuffle_spike_times_circular
 
@@ -129,15 +130,13 @@ def to_shuffle_results(
             if finite.size and std > 0
             else float("nan")
         )
-        result[label.item() if isinstance(label, np.generic) else label] = (
-            ShuffleTestResult(
-                observed_score=obs,
-                null_scores=scores,
-                p_value=float(p[i, 0]),
-                z_score=z,
-                shuffle_type="circular_time_shift",
-                n_shuffles=len(scores),
-            )
+        result[plain_value(label)] = ShuffleTestResult(
+            observed_score=obs,
+            null_scores=scores,
+            p_value=float(p[i, 0]),
+            z_score=z,
+            shuffle_type="circular_time_shift",
+            n_shuffles=len(scores),
         )
     assert len(result) == len(unit_ids)
     return result

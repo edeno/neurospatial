@@ -17,7 +17,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._intervals import (
     as_intervals,
     interval_valid_mask,
-    intervals_contain,
+    times_in_intervals,
     validate_max_gap,
     warn_excluded_intervals,
 )
@@ -249,7 +249,7 @@ def detect_region_visits(
     valid = (bins >= 0) & (bins < env.n_bins)
     selected = valid.copy()
     if windows is not None:
-        selected &= intervals_contain(windows, clock, np.nextafter(clock, np.inf))
+        selected &= times_in_intervals(windows, clock)
     if not selected.any():
         return []
 

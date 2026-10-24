@@ -107,10 +107,14 @@ def _same_labels(given: NDArray[Any], carried: NDArray[Any]) -> bool:
     )
 
 
+def plain_value(value: Any) -> Any:
+    """Return a NumPy scalar as a plain Python value; other values unchanged."""
+    return value.item() if isinstance(value, np.generic) else value
+
+
 def label_at(unit_ids: Any, index: int) -> Any:
     """Return one label as a plain Python value, whatever the array's dtype."""
-    value = np.asarray(unit_ids)[index]
-    return value.item() if isinstance(value, np.generic) else value
+    return plain_value(np.asarray(unit_ids)[index])
 
 
 _ResultT = TypeVar("_ResultT")
@@ -225,7 +229,7 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         except ValueError:
             shown = ", ".join(repr(label) for label in labels[:10])
             more = f", ... ({len(labels)} units)" if len(labels) > 10 else ""
-            missing = unit_id.item() if isinstance(unit_id, np.generic) else unit_id
+            missing = plain_value(unit_id)
             raise KeyError(
                 f"unit_id {missing!r} is not in this {type(self).__name__} "
                 f"(unit_ids: {shown}{more}). Pass one of these labels to "
@@ -239,7 +243,7 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         try:
             position = operator.index(index)
         except TypeError:
-            label = index.item() if isinstance(index, np.generic) else index
+            label = plain_value(index)
             raise TypeError(
                 _format_error(
                     f"{name}[{label!r}]: [] selects one unit by integer position.",
@@ -511,12 +515,8 @@ def units_attr(env: Any) -> dict[str, str]:
         ``{"units": value}`` when units are set, else ``{}``.
     """
     units = getattr(env, "units", None)
-    if units is None:
-        return {}
-    units_str = str(units)
-    if units_str == "":
-        return {}
-    return {"units": units_str}
+    text = "" if units is None else str(units)
+    return {"units": text} if text else {}
 
 
 def env_fingerprint(env: Any) -> str:
@@ -636,15 +636,12 @@ def _bin_center_coords(
             "bin_center_angle": ("bin", bin_centers[:, 1]),
         }
 
+    # x, y, z; axes past the third are bin_center_dim_3, ...
     names = ["bin_center_x", "bin_center_y", "bin_center_z"]
-    n_dims = bin_centers.shape[1]
-    coords: dict[str, tuple[str, NDArray[np.float64]]] = {}
-    for i in range(min(n_dims, 3)):
-        coords[names[i]] = ("bin", bin_centers[:, i])
-    # For >3-D envs, expose remaining axes as bin_center_dim_3, ...
-    for i in range(3, n_dims):
-        coords[f"bin_center_dim_{i}"] = ("bin", bin_centers[:, i])
-    return coords
+    return {
+        (names[i] if i < 3 else f"bin_center_dim_{i}"): ("bin", bin_centers[:, i])
+        for i in range(bin_centers.shape[1])
+    }
 
 
 def build_population_dataset(

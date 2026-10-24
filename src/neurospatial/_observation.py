@@ -23,10 +23,11 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     observed_interval_mask,
+    ragged_arange,
     run_sample_bounds,
     validate_max_gap,
 )
-from neurospatial._results import ReadOnlyArraysMixin, read_only_copy
+from neurospatial._results import ReadOnlyArraysMixin, plain_value, read_only_copy
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     times_positions_problems,
@@ -113,12 +114,8 @@ def _support_from_gates(
     bounds = run_sample_bounds(interval_mask)
     run_ids = np.full(n_samples, -1, dtype=np.intp)
     lengths = bounds[:, 1] - bounds[:, 0] + 1
-    if lengths.size:
-        starts_in_output = np.cumsum(lengths) - lengths
-        samples = np.arange(lengths.sum()) + np.repeat(
-            bounds[:, 0] - starts_in_output, lengths
-        )
-        run_ids[samples] = np.repeat(np.arange(lengths.size, dtype=np.intp), lengths)
+    samples = np.repeat(bounds[:, 0], lengths) + ragged_arange(lengths)
+    run_ids[samples] = np.repeat(np.arange(lengths.size, dtype=np.intp), lengths)
     return ObservationSupport(
         sample_valid=sample_valid,
         interval_gates=gates,
@@ -244,10 +241,7 @@ def label_codes(
     factorized, uniques = pd.factorize(labels, use_na_sentinel=True)
     codes = factorized.astype(np.intp)
     # tolist() already yields Python scalars; object arrays can still hold NumPy ones.
-    values: list[Hashable] = [
-        v.item() if isinstance(v, np.generic) else v
-        for v in np.asarray(uniques).tolist()
-    ]
+    values: list[Hashable] = [plain_value(v) for v in np.asarray(uniques).tolist()]
     if missing_label is not None:
         keep = np.array([not bool(v == missing_label) for v in values], dtype=bool)
         if keep.all():

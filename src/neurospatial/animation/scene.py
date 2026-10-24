@@ -16,7 +16,7 @@ import numpy as np
 from neurospatial._intervals import (
     as_intervals,
     intersect_intervals,
-    intervals_contain,
+    times_in_intervals,
     validate_max_gap,
 )
 from neurospatial._observation import (
@@ -151,9 +151,7 @@ class AnimationField:
         sample_valid = (
             np.ones(len(self.times), dtype=bool)
             if self.epochs is None
-            else intervals_contain(
-                self.epochs, self.times, np.nextafter(self.times, np.inf)
-            )
+            else times_in_intervals(self.epochs, self.times)
         )
         support = resolve_sample_support(
             self.times,

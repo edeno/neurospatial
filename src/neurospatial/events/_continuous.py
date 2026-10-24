@@ -23,6 +23,7 @@ from neurospatial._intervals import intervals_contain
 from neurospatial._observation import _MAX_EXACT_INTEGER
 from neurospatial._results import (
     as_label_array,
+    plain_value,
     read_only_copy,
     require_label_sequence,
 )
@@ -78,11 +79,6 @@ class _FeatureSpec:
     category_labels: NDArray[np.str_]
 
 
-def _plain(value: Any) -> Any:
-    """Return a NumPy scalar as a plain Python value."""
-    return value.item() if isinstance(value, np.generic) else value
-
-
 def _key_index(
     mapping: Mapping[Any, Any] | None,
     name: str,
@@ -96,7 +92,7 @@ def _key_index(
     out: dict[int, Any] = {}
     for key, value in mapping.items():
         try:
-            column = position[_plain(key)]
+            column = position[plain_value(key)]
         except (KeyError, TypeError):
             raise ValueError(
                 _format_error(
@@ -157,7 +153,7 @@ def _resolve_features(
                 fix="Pass one unique id per column of signals.",
             )
         )
-    ids = [_plain(f) for f in ids_array]
+    ids = [plain_value(f) for f in ids_array]
     seen = set()
     for fid in ids:
         if fid in seen:
@@ -330,7 +326,7 @@ def _check_category_codes(
     for col, kind in enumerate(spec.value_kinds):
         if kind != "categorical":
             continue
-        fid = _plain(spec.feature_ids[col])
+        fid = plain_value(spec.feature_ids[col])
         listed = spec.category_codes[spec.category_features == col]
         column = signals[:, col]
         checked = sample_valid[:, col] & np.isfinite(column)

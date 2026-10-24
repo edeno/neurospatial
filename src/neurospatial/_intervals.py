@@ -95,16 +95,16 @@ class TimeSupport(ReadOnlyArraysMixin):
 
     def analysis_settings(self) -> dict[str, Any]:
         """Export independent, JSON-compatible temporal provenance."""
+
+        def listed(array: NDArray[np.float64] | None) -> list[Any] | None:
+            return None if array is None else array.tolist()
+
         return {
-            "epochs": None if self.epochs is None else self.epochs.tolist(),
-            "spike_window": (
-                None if self.spike_window is None else self.spike_window.tolist()
-            ),
+            "epochs": listed(self.epochs),
+            "spike_window": listed(self.spike_window),
             "observed_intervals": self.runs.tolist(),
             "max_gap": None if self.max_gap is None else float(self.max_gap),
-            "break_times": (
-                None if self.break_times is None else self.break_times.tolist()
-            ),
+            "break_times": listed(self.break_times),
         }
 
 
@@ -275,6 +275,18 @@ def _raise_invalid(problems: list[str]) -> None:
     )
 
 
+def _resolve_intervals(
+    value: Any, name: str
+) -> tuple[NDArray[np.float64] | None, list[str]]:
+    """Merged rows (None for None or on problems) and every problem found."""
+    if value is None:
+        return None, []
+    rows, problems = _parse_intervals(value, name)
+    if problems or rows is None:
+        return None, problems
+    return _merge(rows), []
+
+
 def as_intervals(value: Any, *, name: str) -> NDArray[np.float64] | None:
     """Normalize a time-window argument to sorted, merged ``(n, 2)`` rows.
 
@@ -300,13 +312,10 @@ def as_intervals(value: Any, *, name: str) -> NDArray[np.float64] | None:
         Non-finite and inverted rows are all listed in one message; a value
         that is unreadable or wrongly shaped is reported on its own.
     """
-    if value is None:
-        return None
-    rows, problems = _parse_intervals(value, name)
+    rows, problems = _resolve_intervals(value, name)
     if problems:
         _raise_invalid(problems)
-    assert rows is not None  # _parse_intervals returns rows when no problems
-    return _merge(rows)
+    return rows
 
 
 def resolve_time_windows(
@@ -316,18 +325,45 @@ def resolve_time_windows(
 
     Problems in both arguments are reported in a single ``ValueError``.
     """
-    resolved: list[NDArray[np.float64] | None] = []
-    problems: list[str] = []
-    for name, value in (("epochs", epochs), ("spike_window", spike_window)):
-        if value is None:
-            resolved.append(None)
-            continue
-        rows, found = _parse_intervals(value, name)
-        problems.extend(found)
-        resolved.append(None if found or rows is None else _merge(rows))
-    if problems:
-        _raise_invalid(problems)
-    return resolved[0], resolved[1]
+    epoch_rows, epoch_problems = _resolve_intervals(epochs, "epochs")
+    window_rows, window_problems = _resolve_intervals(spike_window, "spike_window")
+    if epoch_problems or window_problems:
+        _raise_invalid(epoch_problems + window_problems)
+    return epoch_rows, window_rows
+
+
+def ragged_arange(counts: NDArray[np.integer[Any]]) -> NDArray[np.intp]:
+    """Concatenate ``arange(counts[i])`` for every ``i`` (vectorized).
+
+    Examples
+    --------
+    >>> ragged_arange(np.array([2, 0, 3])).tolist()
+    [0, 1, 0, 1, 2]
+    """
+    offsets: NDArray[np.intp] = np.arange(counts.sum()) - np.repeat(
+        np.cumsum(counts) - counts, counts
+    )
+    return offsets
+
+
+def times_in_intervals(
+    windows: NDArray[np.float64], times: NDArray[np.float64]
+) -> NDArray[np.bool_]:
+    """Whether each instant lies inside a window row, tested as ``[t, t + ulp)``.
+
+    Parameters
+    ----------
+    windows : ndarray, shape (n_windows, 2)
+        Sorted, merged rows (the output of :func:`as_intervals`).
+    times : ndarray, shape (n,)
+        Instants in seconds.
+
+    Returns
+    -------
+    ndarray of bool, shape (n,)
+    """
+    times = np.asarray(times, dtype=np.float64)
+    return intervals_contain(windows, times, np.nextafter(times, np.inf))
 
 
 def intervals_contain(
@@ -387,8 +423,7 @@ def intersect_intervals(
     hi = np.searchsorted(b[:, 0], a[:, 1], side="left")  # b rows starting before a_stop
     counts = np.maximum(hi - lo, 0)
     a_idx = np.repeat(np.arange(a.shape[0]), counts)
-    offsets = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
-    b_idx = np.repeat(lo, counts) + offsets
+    b_idx = np.repeat(lo, counts) + ragged_arange(counts)
     starts = np.maximum(a[a_idx, 0], b[b_idx, 0])
     stops = np.minimum(a[a_idx, 1], b[b_idx, 1])
     keep = stops > starts

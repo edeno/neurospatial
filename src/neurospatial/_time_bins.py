@@ -10,6 +10,8 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import ragged_arange
+
 
 def _time_bin_rounding(
     windows: NDArray[np.float64],
@@ -106,7 +108,7 @@ def _time_bins_in_windows(
     slack = rounding / dt + 4.0 * np.finfo(np.float64).eps * ratio
     n_per = np.maximum(np.floor(ratio + slack), 0).astype(np.int64)
     window_idx = np.repeat(np.arange(windows.shape[0]), n_per)
-    k = np.arange(int(n_per.sum())) - np.repeat(np.cumsum(n_per) - n_per, n_per)
+    k = ragged_arange(n_per)
     left = start[window_idx] + dt * k
     right = np.minimum(start[window_idx] + dt * (k + 1), stop[window_idx])
     return left, right
