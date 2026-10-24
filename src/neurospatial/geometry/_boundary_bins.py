@@ -16,23 +16,15 @@ have no defined boundary.
 
 from __future__ import annotations
 
-from functools import singledispatch
-from typing import NamedTuple
-
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._composition import CombinedLocator, composition_view
+from neurospatial.geometry._context import cell_lattice
 from neurospatial.geometry._derive import select_bins
 from neurospatial.geometry._hex_lookup import get_hex_grid_neighbor_deltas
-from neurospatial.geometry._locators import (
-    HexLocator,
-    RectilinearLocator,
-    SubsetLocator,
-    TransformedLocator,
-)
 from neurospatial.geometry._polygon import _boundary_cell_indices, cell_polygons
 
 
@@ -61,12 +53,12 @@ def boundary_bins(
     """
     if binning.bins.n_bins == 0:
         return np.empty(0, dtype=np.intp)
-    cells = _logical_cells(binning.locator)
-    if cells is not None and cells.hexagonal:
-        return _hex_boundary_bins(cells.shape, cells.mapping)
-    if cells is not None:
+    lattice = cell_lattice(binning.locator)
+    if lattice is not None and lattice.kind == "hex":
+        return _hex_boundary_bins(lattice.shape, lattice.flat_to_active)
+    if lattice is not None and lattice.kind == "grid":
         # Cell adjacency survives coordinate transforms and subsets.
-        return _grid_boundary_bins(cells.shape, cells.mapping, periodic_axes)
+        return _grid_boundary_bins(lattice.shape, lattice.flat_to_active, periodic_axes)
     if binning.shapes is not None:
         return _boundary_cell_indices(cell_polygons(binning))
     view = composition_view(binning.locator)
@@ -180,60 +172,6 @@ def _grid_boundary_bins(
             shifted[axis] = np.clip(neighbor, 0, size - 1)
             on_boundary |= outside | ~active[tuple(shifted)]
     return np.sort(flat_to_active[cells[on_boundary]]).astype(np.intp, copy=False)
-
-
-class _LogicalCells(NamedTuple):
-    """A locator's logical cell lattice.
-
-    Attributes
-    ----------
-    shape : tuple of int
-        Logical grid shape.
-    mapping : ndarray of intp, shape (prod(shape),)
-        Active-bin index of each flat cell, or ``-1``.
-    hexagonal : bool
-        Whether the cells form a hexagonal lattice with six neighbors per cell
-        rather than a rectangular grid.
-    """
-
-    shape: tuple[int, ...]
-    mapping: NDArray[np.intp]
-    hexagonal: bool
-
-
-@singledispatch
-def _logical_cells(locator: object) -> _LogicalCells | None:
-    """Return a locator's logical cell lattice, if it has one."""
-    return None
-
-
-@_logical_cells.register
-def _(locator: RectilinearLocator) -> _LogicalCells:
-    return _LogicalCells(locator.shape, locator.flat_to_active.copy(), hexagonal=False)
-
-
-@_logical_cells.register
-def _(locator: HexLocator) -> _LogicalCells:
-    return _LogicalCells(
-        locator.centers_shape, locator.flat_to_active.copy(), hexagonal=True
-    )
-
-
-@_logical_cells.register
-def _(locator: SubsetLocator) -> _LogicalCells | None:
-    cells = _logical_cells(locator.base)
-    if cells is None:
-        return None
-    mapping = cells.mapping
-    # Compose the subset map without indexing the -1 sentinel.
-    inside = mapping >= 0
-    mapping[inside] = locator.parent_to_child[mapping[inside]]
-    return cells
-
-
-@_logical_cells.register
-def _(locator: TransformedLocator) -> _LogicalCells | None:
-    return _logical_cells(locator.base)
 
 
 def _hex_boundary_bins(

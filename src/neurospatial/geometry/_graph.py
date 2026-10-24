@@ -11,12 +11,10 @@ from numpy.typing import NDArray
 
 from neurospatial.geometry._arrays import active_order, get_centers
 from neurospatial.geometry._binning import Binning, TrackLinearization
+from neurospatial.geometry._context import cell_lattice
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._locators import (
-    HexLocator,
     Locator,
-    MeshLocator,
-    RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
 )
@@ -27,6 +25,9 @@ _G = TypeVar("_G", bound=nx.Graph)
 
 def _source_grid(locator: Locator) -> tuple[tuple[int, ...], NDArray[np.intp]] | None:
     """Recover logical cell IDs in active-bin order without fitting geometry."""
+    lattice = cell_lattice(locator)
+    if lattice is not None:
+        return lattice.shape, active_order(lattice.flat_to_active)
     if isinstance(locator, ClippedLocator):
         # Clipping creates new cells. Immediate-parent ancestry lives in the
         # separate ClipMapping, rather than in logical grid coordinates.
@@ -45,12 +46,6 @@ def _source_grid(locator: Locator) -> tuple[tuple[int, ...], NDArray[np.intp]] |
             selected = active_order(locator.parent_to_child)
             indices = indices[selected]
         return shape, indices
-    if isinstance(locator, RectilinearLocator):
-        return locator.shape, np.flatnonzero(locator.active_mask).astype(np.intp)
-    if isinstance(locator, HexLocator):
-        return locator.centers_shape, active_order(locator.flat_to_active)
-    if isinstance(locator, MeshLocator):
-        return (len(locator.simplices),), active_order(locator.simplex_to_active)
     return None
 
 
