@@ -295,3 +295,10 @@ def test_filtered_visits_do_not_invent_new_consecutive_pairs(region_env):
         region_transitions([visits[0], visits[0]])
     with pytest.raises(ValueError, match="chronological"):
         region_transitions([visits[0], replace(visits[1], start_time=-1)])
+
+
+def test_millisecond_times_warn_instead_of_splitting_every_visit(region_env):
+    times = np.array([0.0, 0.2, 0.7, 1.2, 2.0, 2.5, 3.0, 4.0]) * 1000.0
+    bins = np.array([1, 0, 0, 1, 3, 3, 4, 5])
+    with pytest.warns(UserWarning, match="probably not in seconds"):
+        detect_region_visits(bins, times, region_env, region_names=["A", "B", "C"])

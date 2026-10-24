@@ -172,3 +172,12 @@ def test_score_forwards_its_configured_gap_policy(env):
         distance="euclidean",  # exact straight-line mean of the interpolated track
     )
     assert score == pytest.approx(50.0)
+
+
+def test_millisecond_truth_clock_warns_instead_of_silent_nan_error(env):
+    times = np.arange(0.0, 2.0, 0.1)
+    result = delta_result(env, times, np.zeros(len(times), dtype=int))
+    true_times = np.arange(0.0, 2.0, 1 / 30) * 1000.0
+    true_positions = np.linspace(0.0, 100.0, true_times.size)[:, None]
+    with pytest.warns(UserWarning, match="probably not in seconds"):
+        result.error_against(true_times, true_positions)

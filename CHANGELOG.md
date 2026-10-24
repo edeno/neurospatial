@@ -42,6 +42,10 @@
   `1`, `True` for `1`) now raise, since results key shuffle seeds by the label.
   `RateComparisonResult` refuses duplicate `unit_ids`, and a `unit_table` that
   is not a DataFrame is named as such instead of reported as a length mismatch.
+- `detect_region_visits`, `DecodingResult.error_against` and the
+  true-position overlay of `DecodingResult.plot` now give the shared
+  excluded-interval warning. With `times` in milliseconds, visits split at
+  every sample and the decoding error was all NaN, with no warning.
 
 ### Spatial geometry review
 

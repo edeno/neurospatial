@@ -99,7 +99,11 @@ def _align_true_positions(
         )
     if np.any(np.isinf(true_positions)):
         raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
-    from neurospatial._intervals import interval_valid_mask, validate_max_gap
+    from neurospatial._intervals import (
+        interval_valid_mask,
+        validate_max_gap,
+        warn_excluded_intervals,
+    )
 
     validate_max_gap(max_gap)
     from neurospatial._observation import validate_break_before
@@ -108,11 +112,15 @@ def _align_true_positions(
 
     aligned = np.full((times.size, n_dims), np.nan, dtype=np.float64)
     finite = np.all(np.isfinite(true_positions), axis=1)
-    continuous = (
-        finite[:-1]
-        & finite[1:]
-        & interval_valid_mask(true_times, max_gap=max_gap, break_before=breaks)
+    gates = interval_valid_mask(true_times, max_gap=max_gap, break_before=breaks)
+    warn_excluded_intervals(
+        true_times,
+        gates,
+        max_gap=max_gap,
+        break_before=breaks,
+        result="true positions are known only at exact sample times",
     )
+    continuous = finite[:-1] & finite[1:] & gates
     source_runs = np.cumsum(np.r_[False, ~continuous], dtype=np.intp)
     run_ids = np.full(times.size, -1, dtype=np.intp)
     right = np.searchsorted(true_times, times, side="left")
