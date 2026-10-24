@@ -969,6 +969,37 @@ class TestPolarRaisesOnCartesianAssumingMethods:
             polar_env.distance_to(region="p"), polar_env.distance_to(bins=covered)
         )
 
+    def test_polygon_regions_compare_angles_modulo_a_turn(self):
+        """A polygon names directions, as a point does, whatever turn it uses."""
+        from shapely.affinity import translate
+        from shapely.geometry import box
+
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 20.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 4,
+        )
+        behind = box(0.0, 3 * np.pi / 4, 20.0, 5 * np.pi / 4)
+        region_builder = Regions()
+        region_builder.add("behind", polygon=behind)
+        region_builder.add("left", polygon=box(0.0, 3 * np.pi / 4, 20.0, np.pi))
+        region_builder.add("right", polygon=box(0.0, -np.pi, 20.0, -3 * np.pi / 4))
+        region_builder.add("ahead", polygon=box(0.0, -np.pi / 4, 20.0, np.pi / 4))
+        region_builder.add(
+            "ahead_next_turn",
+            polygon=translate(box(0.0, -np.pi / 4, 20.0, np.pi / 4), yoff=2 * np.pi),
+        )
+        env = env.with_regions(region_builder)
+
+        wedge = env.region_mask("behind")
+        np.testing.assert_array_equal(wedge, env.region_mask(["left", "right"]))
+        assert np.count_nonzero(wedge) == 4
+        np.testing.assert_allclose(np.abs(env.bin_centers[wedge, 1]), 7 * np.pi / 8)
+        np.testing.assert_array_equal(
+            env.region_mask("ahead_next_turn"), env.region_mask("ahead")
+        )
+
 
 class TestPolarSerializationRoundTrip:
     """The polar type must survive copy and to_file/from_file round-trips."""
@@ -1608,3 +1639,22 @@ def test_layout_plot_names_axes_by_coordinate_meaning(coordinate_kind, labels, a
         assert ax.get_aspect() == aspect
     finally:
         plt.close(fig)
+
+
+@pytest.mark.parametrize("scale", [1e-12, 1e6])
+def test_polar_face_arcs_do_not_depend_on_distance_units(scale):
+    """Ring-to-ring faces are arcs at any distance unit, however small."""
+
+    def faces(unit):
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 3.0 * unit),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=unit,
+            angle_bin_size=np.pi / 4,
+            connect_diagonal_neighbors=False,
+        )
+        return env._binning.build_faces()
+
+    reference, scaled = faces(1.0), faces(scale)
+    np.testing.assert_array_equal(scaled.edges, reference.edges)
+    np.testing.assert_allclose(scaled.A, reference.A * scale, rtol=1e-12)

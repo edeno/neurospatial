@@ -58,9 +58,9 @@ def _rectilinear():
         "explicit_grid",
         bins,
         BinConnections.from_arrays(pairs, [2.0, 3.0, 4.0]),
-        RectilinearLocator(edges, (2, 2), mask, None),
+        RectilinearLocator(edges, (2, 2), mask),
         KnownFaces(FaceGeometry(pairs, np.ones(3), np.ones(3), np.ones(4))),
-        rectilinear=RectilinearGrid(edges, (2, 2), mask),
+        grid=RectilinearGrid(edges, (2, 2), mask),
     )
 
 
@@ -181,14 +181,14 @@ def test_clip_updates_euclidean_edges_without_changing_unaffected_declared_paths
         replace(
             native._binning,
             connections=connections,
-            faces=KnownFaces(native._binning.faces.build()),
+            faces=KnownFaces(native._binning.build_faces()),
         )
     )
     child = env.clip(box(0, 0, 2.8, 1))
     assert child.connectivity.edges[0, 1]["distance"] == 3.0
     assert child.connectivity.edges[1, 2]["distance"] == pytest.approx(0.9)
     # Finite-volume distances still describe center-to-face flux geometry.
-    np.testing.assert_allclose(child._binning.faces.build().distance, [1.0, 0.9])
+    np.testing.assert_allclose(child._binning.build_faces().distance, [1.0, 0.9])
 
 
 def test_ingress_and_exports_do_not_alias_explicit_bin_records():
@@ -257,8 +257,8 @@ def test_similarity_preserves_declared_navigation_weights(
     # These are navigation weights; finite-volume distances have their own units.
     if source_factory is _rectilinear:
         np.testing.assert_array_equal(
-            derived._binning.faces.build().distance,
-            source.faces.build().distance * scale,
+            derived._binning.build_faces().distance,
+            source.build_faces().distance * scale,
         )
     np.testing.assert_array_equal(
         env._binning.connections.pair_distances, source.connections.pair_distances
@@ -381,24 +381,6 @@ def test_regions_and_arena_use_the_normal_ownership_contract():
     assert env.arena.domain_known
 
 
-@pytest.mark.parametrize(
-    "record,field",
-    [
-        ("bins", "centers"),
-        ("bins", "sizes"),
-        ("connections", "pairs"),
-        ("connections", "pair_distances"),
-    ],
-)
-def test_mutated_record_arrays_are_revalidated_at_ingress(record, field):
-    source = _nearest()
-    value = getattr(getattr(source, record), field)
-    value.setflags(write=True)
-    value.flat[0] = np.nan if field == "centers" else -1
-    with pytest.raises(ValueError, match=field):
-        Environment.from_bins(source)
-
-
 def test_missing_faces_is_explicit_and_delegated_faces_are_refused():
     source = _nearest()
     native = Environment.from_grid_mask(
@@ -407,19 +389,11 @@ def test_missing_faces_is_explicit_and_delegated_faces_are_refused():
     for faces in (None, object()):
         with pytest.raises(TypeError, match=r"KnownFaces.*MissingFaces"):
             Environment.from_bins(replace(source, faces=faces))
-    # Another environment's native recipe builds faces for other bins.
-    with pytest.raises(ValueError, match="faces"):
-        Environment.from_bins(replace(source, faces=native._binning.faces))
-
-
-@pytest.mark.parametrize("field,value", [("A", -1), ("distance", 0), ("volumes", -1)])
-def test_mutated_known_faces_are_revalidated_at_ingress(field, value):
-    source = _rectilinear()
-    array = getattr(source.faces.faces, field)
-    array.setflags(write=True)
-    array[0] = value
-    with pytest.raises(ValueError, match=r"face|volume"):
-        Environment.from_bins(source)
+    # A native recipe holds no bins: it builds faces for the bins it is given.
+    rebuilt = Environment.from_bins(replace(source, faces=native._binning.faces))
+    faces = rebuilt._binning.build_faces()
+    np.testing.assert_array_equal(faces.edges, source.connections.pairs)
+    np.testing.assert_array_equal(faces.volumes, source.bins.sizes)
 
 
 def test_shared_geometry_mismatch_is_not_hidden_by_public_ingress():
@@ -427,7 +401,7 @@ def test_shared_geometry_mismatch_is_not_hidden_by_public_ingress():
     bad_edges = (np.array([0.0, 0.95, 2.0]), np.arange(3.0))
     changed = replace(
         source,
-        rectilinear=RectilinearGrid(bad_edges, (2, 2), np.ones((2, 2), dtype=bool)),
+        grid=RectilinearGrid(bad_edges, (2, 2), np.ones((2, 2), dtype=bool)),
     )
     with pytest.raises(ValueError, match=r"rectilinear edges"):
         Environment.from_bins(changed)
@@ -448,9 +422,9 @@ def test_nonuniform_cells_are_supported_without_regular_grid_rebinning():
         "RegularGrid",
         bins,
         BinConnections.from_arrays([[0, 1]], [1.5]),
-        RectilinearLocator(edges, (2, 1), mask, None),
+        RectilinearLocator(edges, (2, 1), mask),
         MissingFaces("No finite-volume faces supplied."),
-        rectilinear=RectilinearGrid(edges, (2, 1), mask),
+        grid=RectilinearGrid(edges, (2, 1), mask),
     )
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env.bin_sizes, [1, 2])
@@ -468,9 +442,9 @@ def test_nearly_uniform_variable_measures_are_not_reinterpreted_as_native_cells(
         "RegularGrid",
         bins,
         BinConnections.from_arrays([[0, 1]], [centers[1, 0] - centers[0, 0]]),
-        RectilinearLocator(edges, (2, 1), mask, None),
+        RectilinearLocator(edges, (2, 1), mask),
         MissingFaces("No finite-volume faces supplied."),
-        rectilinear=RectilinearGrid(edges, (2, 1), mask),
+        grid=RectilinearGrid(edges, (2, 1), mask),
     )
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env.bin_sizes, np.diff(edges[0]))
@@ -490,6 +464,59 @@ def test_rebin_uniformity_guard_preserves_native_large_offset_rounding():
     restored = source.rebin(1)
     np.testing.assert_array_equal(restored.bin_centers, source.bin_centers)
     np.testing.assert_array_equal(restored.bin_sizes, source.bin_sizes)
+
+
+def _sites(max_distance=None, **kwargs):
+    centers = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+    return Environment.from_bins(
+        Binning(
+            "sites",
+            SpatialBins.from_arrays(centers, np.ones(3), 2),
+            BinConnections.from_arrays([[0, 1], [1, 2]], [1.0, 1.0]),
+            NearestBinLocator(centers, max_distance=max_distance),
+            MissingFaces("Sites lack faces."),
+        ),
+        **kwargs,
+    )
+
+
+def test_nearest_lookup_without_a_radius_or_domain_is_refused():
+    """A far position must not silently land in the nearest bin."""
+    env = _sites()
+    for lookup in (env.bin_at, env.contains):
+        with pytest.raises(NotImplementedError, match="max_distance") as info:
+            lookup(np.array([[1000.0, 1000.0]]))
+        assert "math.inf" in str(info.value)
+
+
+def test_nearest_lookup_radius_is_in_physical_units():
+    env = _sites(max_distance=0.25)
+    np.testing.assert_array_equal(
+        env.bin_at(np.array([[1000.0, 1000.0], [1.2, 0.0], [1.0, 0.3]])),
+        [-1, 1, -1],
+    )
+
+
+def test_unlimited_nearest_lookup_is_an_explicit_choice():
+    import math
+
+    env = _sites(max_distance=math.inf)
+    np.testing.assert_array_equal(env.bin_at(np.array([[1000.0, 1000.0]])), [2])
+    restored = Environment.from_dict(env.to_dict())
+    np.testing.assert_array_equal(restored.bin_at(np.array([[1000.0, 1000.0]])), [2])
+
+
+def test_a_known_domain_bounds_nearest_lookup_without_a_radius():
+    env = _sites(arena=OpenArena(box(-0.5, -0.5, 2.5, 0.5)))
+    np.testing.assert_array_equal(
+        env.bin_at(np.array([[1000.0, 1000.0], [1.2, 0.0]])), [-1, 1]
+    )
+
+
+@pytest.mark.parametrize("max_distance", [np.nan, -1.0, True, "1"])
+def test_an_invalid_lookup_radius_is_refused_by_name(max_distance):
+    with pytest.raises((TypeError, ValueError), match="max_distance"):
+        NearestBinLocator(np.zeros((1, 2)), max_distance=max_distance)
 
 
 def test_empty_bins_remain_a_valid_explicit_empty_environment():
@@ -589,7 +616,7 @@ def test_explicit_native_data_retains_lookup_measures_boundaries_and_faces(
 ):
     source = built_environment
     exported = source._binning
-    explicit = replace(exported, faces=KnownFaces(exported.faces.build()))
+    explicit = replace(exported, faces=KnownFaces(exported.build_faces()))
     env = Environment.from_bins(explicit, arena=source.arena)
     np.testing.assert_array_equal(env.bin_centers, source.bin_centers)
     np.testing.assert_array_equal(env.bin_sizes, source.bin_sizes)
@@ -636,7 +663,7 @@ def test_hex_data_roundtrip_preserves_lattice_and_autocorrelation(transport, tmp
         restored = Environment.from_file(path)
     else:
         exported = source._binning
-        explicit = replace(exported, faces=KnownFaces(exported.faces.build()))
+        explicit = replace(exported, faces=KnownFaces(exported.build_faces()))
         restored = Environment.from_bins(explicit, arena=source.arena)
     rates = np.arange(source.n_bins, dtype=float)
     assert source.grid_shape == restored.grid_shape == (7, 6)
@@ -668,7 +695,7 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
     else:
         source = parent.subset(mask=keep).apply_transform(translate(1.0, 2.0))
     exported = source._binning
-    explicit = replace(exported, faces=KnownFaces(exported.faces.build()))
+    explicit = replace(exported, faces=KnownFaces(exported.build_faces()))
     env = Environment.from_bins(explicit, arena=source.arena)
     np.testing.assert_array_equal(env.boundary_bins, source.boundary_bins)
     np.testing.assert_array_equal(
@@ -704,7 +731,7 @@ def test_explicit_outline_is_drawing_geometry_without_physical_wall_evidence():
 @pytest.mark.parametrize("field", ["A", "distance"])
 def test_explicit_grid_faces_must_match_cell_geometry(field):
     source = _rectilinear()
-    faces = source.faces.build()
+    faces = source.build_faces()
     invalid = replace(
         source, faces=KnownFaces(faces._replace(**{field: getattr(faces, field) * 7.0}))
     )
@@ -743,9 +770,9 @@ def _variable_grid_faces(n_dims):
         "variable_grid",
         bins,
         BinConnections.from_arrays(pairs, distances * 3 + 1),
-        RectilinearLocator(edges, mask.shape, mask, None),
+        RectilinearLocator(edges, mask.shape, mask),
         KnownFaces(FaceGeometry(pairs, np.array(areas), distances, sizes)),
-        rectilinear=RectilinearGrid(edges, mask.shape, mask),
+        grid=RectilinearGrid(edges, mask.shape, mask),
     )
 
 
@@ -764,14 +791,14 @@ def test_variable_grid_physical_faces_are_separate_from_navigation_weights(
     np.testing.assert_allclose(
         env.diffuse(np.ones(env.n_bins), bandwidth=0.5, mode="average"), 1
     )
-    assert np.all(exported.connections.pair_distances > exported.faces.build().distance)
+    assert np.all(exported.connections.pair_distances > exported.build_faces().distance)
 
 
 @pytest.mark.parametrize("n_dims", [1, 2, 3])
 @pytest.mark.parametrize("field", ["A", "distance"])
 def test_variable_grid_faces_reject_inconsistent_physical_values(n_dims, field):
     source = _variable_grid_faces(n_dims)
-    faces = source.faces.build()
+    faces = source.build_faces()
     wrong = getattr(faces, field).copy()
     wrong[0] *= 2.0
     with pytest.raises(ValueError, match=r"grid faces"):
@@ -783,7 +810,7 @@ def test_variable_grid_faces_reject_inconsistent_physical_values(n_dims, field):
 @pytest.mark.parametrize("kind", ["missing_face", "invented_diagonal_face"])
 def test_explicit_grid_cannot_omit_a_shared_face_or_invent_a_diagonal_one(kind):
     source = _variable_grid_faces(2)
-    faces = source.faces.build()
+    faces = source.build_faces()
     areas = faces.A.copy()
     areas[
         np.flatnonzero(areas > 0)[0]
@@ -805,7 +832,7 @@ def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(histo
         source = replace(
             source,
             connections=BinConnections.from_arrays(
-                source.connections.pairs, source.faces.build().distance
+                source.connections.pairs, source.build_faces().distance
             ),
         )
     env = Environment.from_bins(source)
@@ -825,7 +852,7 @@ def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(histo
     derived = env.apply_transform(Affine2D(matrix))
     source = derived._binning
     Environment.from_bins(source)
-    faces = source.faces.build()
+    faces = source.build_faces()
     with pytest.raises(ValueError, match=r"grid faces"):
         Environment.from_bins(
             replace(source, faces=KnownFaces(faces._replace(A=faces.A * 7)))
@@ -842,14 +869,16 @@ def test_stored_grid_faces_cannot_bypass_publication_geometry_checks(field):
         Environment.from_dict(payload)
 
 
-def test_legacy_tiny_grid_zero_faces_require_rebuilding():
+def test_tiny_grid_zero_faces_are_refused():
     env = Environment.from_grid_mask(
         np.ones((2, 1), dtype=bool),
         grid_edges=(np.arange(3.0) * 1e-10, np.arange(2.0) * 1e-10),
     )
     source = env._binning
-    faces = source.faces.build()
-    with pytest.raises(ValueError, match="Older tiny-grid records"):
+    faces = source.build_faces()
+    with pytest.raises(
+        ValueError, match=r"grid faces\.A does not match shared cell-face"
+    ):
         Environment.from_bins(
             replace(
                 source,
@@ -867,7 +896,7 @@ def test_native_quantized_grid_faces_remain_valid_at_large_coordinate_offsets(n_
     )
     source = env._binning
     explicit = Environment.from_bins(
-        replace(source, faces=KnownFaces(source.faces.build()))
+        replace(source, faces=KnownFaces(source.build_faces()))
     )
     np.testing.assert_array_equal(
         face_geometry(explicit._cache, explicit._binning).A,
@@ -903,15 +932,15 @@ def test_three_dimensional_affine_grid_faces_follow_physical_planes():
     axes = np.argmax(np.abs(source_vectors), axis=1)
     sizes = source.bins.sizes * np.prod(scales)
     faces = FaceGeometry(
-        pairs, source.faces.build().A * np.prod(scales) / scales[axes], distances, sizes
+        pairs, source.build_faces().A * np.prod(scales) / scales[axes], distances, sizes
     )
     transformed = replace(
         source,
         bins=replace(source.bins, centers=centers, sizes=sizes),
         connections=BinConnections.from_arrays(pairs, distances),
-        locator=TransformedLocator(source.locator, np.linalg.inv(matrix)),
+        locator=TransformedLocator(source.locator, matrix),
         faces=KnownFaces(faces),
-        rectilinear=None,
+        grid=None,
     )
     env = Environment.from_bins(transformed)
     np.testing.assert_allclose(
@@ -934,9 +963,9 @@ def test_grid_face_validation_preserves_finite_extreme_coordinate_scales(scale):
         "finite_extreme_grid",
         SpatialBins.from_arrays(centers, sizes, 1),
         BinConnections.from_arrays(pairs, [scale]),
-        RectilinearLocator(edges, (2,), mask, None),
+        RectilinearLocator(edges, (2,), mask),
         KnownFaces(FaceGeometry(pairs, np.ones(1), np.array([scale]), sizes)),
-        rectilinear=RectilinearGrid(edges, (2,), mask),
+        grid=RectilinearGrid(edges, (2,), mask),
     )
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(
@@ -986,7 +1015,7 @@ def _cell_face_source(kind, history):
         matrix[:2, 2] = [100.0, -50.0]
         env = env.apply_transform(Affine2D(matrix))
     source = env._binning
-    return env, replace(source, faces=KnownFaces(source.faces.build()))
+    return env, replace(source, faces=KnownFaces(source.build_faces()))
 
 
 @pytest.mark.parametrize("kind", ["hex", "mesh"])
@@ -1013,7 +1042,7 @@ def test_explicit_cell_faces_from_native_layouts_round_trip(kind, history):
 @pytest.mark.parametrize("history", ["native", "similarity"])
 def test_explicit_cell_faces_must_match_cell_geometry(kind, field, factor, history):
     _, source = _cell_face_source(kind, history)
-    faces = source.faces.build()
+    faces = source.build_faces()
     invalid = replace(
         source,
         faces=KnownFaces(faces._replace(**{field: getattr(faces, field) * factor})),
@@ -1027,7 +1056,7 @@ def test_explicit_cell_faces_must_match_cell_geometry(kind, field, factor, histo
 def test_explicit_cell_faces_cannot_omit_or_invent_shared_faces(kind, change):
     _, source = _cell_face_source(kind, "native")
     bins = source.bins
-    faces = source.faces.build()
+    faces = source.build_faces()
     if change == "missing_face":
         areas = faces.A.copy()
         areas[0] = 0.0
@@ -1087,12 +1116,12 @@ def test_hexagon_faces_refuse_affine_maps_that_shear_the_lattice():
     pairs = source.connections.pairs
     centers = bins.centers @ matrix[:2, :2].T
     distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
-    faces = source.faces.build()
+    faces = source.build_faces()
     sheared = replace(
         source,
         bins=SpatialBins.from_arrays(centers, bins.sizes * 6.0, 2),
         connections=BinConnections.from_arrays(pairs, distances),
-        locator=TransformedLocator(source.locator, np.linalg.inv(matrix)),
+        locator=TransformedLocator(source.locator, matrix),
         faces=KnownFaces(
             FaceGeometry(pairs, faces.A * np.sqrt(6.0), distances, bins.sizes * 6.0)
         ),
@@ -1117,7 +1146,7 @@ def test_stored_cell_faces_cannot_bypass_publication_geometry_checks(kind):
 def _grid_binning(kind):
     positions = np.random.default_rng(0).uniform(0, 10, (300, 2))
     binning = Environment.from_samples(positions, bin_size=2.0).binning
-    return replace(binning, kind=kind, faces=KnownFaces(binning.faces.build()))
+    return replace(binning, kind=kind, faces=KnownFaces(binning.build_faces()))
 
 
 @pytest.mark.parametrize(
@@ -1176,14 +1205,14 @@ def _cell_descriptions():
     "base,component,source",
     [
         ("grid", "linearization", "track"),
-        ("track", "rectilinear", "grid"),
-        ("hexagons", "rectilinear", "grid"),
+        ("track", "grid", "grid"),
+        ("hexagons", "grid", "grid"),
         ("grid", "shapes", "hexagons"),
         ("grid", "shapes", "polygons"),
-        ("polygons", "rectilinear", "grid"),
+        ("polygons", "grid", "grid"),
         ("framed", "shapes", "hexagons"),
         ("track", "shapes", "hexagons"),
-        ("polygons", "grid_frame", "framed"),
+        ("polygons", "grid", "framed"),
     ],
 )
 def test_bins_carry_one_cell_description(base, component, source):

@@ -93,9 +93,7 @@ class TestPlotField:
 
         env._geometry = replace(
             env._geometry,
-            binning=replace(
-                env._binning, rectilinear=None, shapes=None, linearization=None
-            ),
+            binning=replace(env._binning, grid=None, shapes=None, linearization=None),
         )
 
         fig, ax = plt.subplots()

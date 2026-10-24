@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,7 +14,7 @@ from neurospatial.geometry._arena import EgocentricSurround
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
-    from neurospatial.geometry._locators import LookupIndexes
+    from neurospatial.geometry._locators import LookupIndexes, RectilinearLocator
 
 
 def locate(
@@ -55,7 +56,9 @@ def locate(
         (see :func:`require_position_columns`).
     NotImplementedError
         If the bins lie along a track in two or more dimensions whose width
-        is unknown (see :func:`require_track_width`).
+        is unknown (see :func:`require_track_width`), or the domain is unknown
+        and nearest-bin lookup has no radius (see
+        :func:`require_lookup_radius`).
     """
     positions = np.asarray(positions, dtype=np.float64)
     n_dims = binning.bins.n_dims
@@ -65,6 +68,7 @@ def locate(
     require_position_columns(positions, n_dims, call=call)
     if not arena.domain_known:
         require_track_width(binning, arena)
+        require_lookup_radius(binning)
         return binning.locator.locate(positions, indexes).astype(np.intp, copy=False)
     if isinstance(arena, EgocentricSurround):
         # An angle a whole turn outside the range names a direction inside it.
@@ -92,43 +96,56 @@ def _snap_outline_slivers(
     outside the arena) belongs to the nearest neighboring cell whose center
     lies inside, less than one cell away, when that cell is a bin. A cell
     removed on purpose (by ``subset``) keeps its sliver positions outside, as
-    do positions beyond the grid. Updates ``indices`` in place.
+    do positions beyond the grid. A rotated, reflected or sheared grid
+    applies the rule to its source cells (``binning.grid_frame``), measuring
+    distance there, so a transform moves positions and their bins together.
+    Updates ``indices`` in place.
     """
-    from neurospatial.geometry._locators import RectilinearLocator
-
-    locator = binning.locator
     orphan = inside & (indices < 0)
-    if not np.any(orphan) or not isinstance(locator, RectilinearLocator):
+    if not np.any(orphan):
         return
-    shape = np.asarray(locator.shape)
+    grid = _sliver_grid(binning)
+    if grid is None:
+        return
+    cells_locator, to_source, to_world = grid
+    edges = cells_locator.edges
+    shape = np.asarray(cells_locator.shape)
     rows = np.flatnonzero(orphan)
+    source = to_source(positions[rows])
     # A point on the grid's last edge lies in the last cell (closed outline).
     cells = np.column_stack(
         [
             np.where(
-                positions[rows, axis] == edge[-1],
+                source[:, axis] == edge[-1],
                 len(edge) - 2,
-                np.searchsorted(edge, positions[rows, axis], side="right") - 1,
+                np.searchsorted(edge, source[:, axis], side="right") - 1,
             )
-            for axis, edge in enumerate(locator.edges)
+            for axis, edge in enumerate(edges)
         ]
     )
     in_grid = np.all((cells >= 0) & (cells < shape), axis=1)
-    rows, cells = rows[in_grid], cells[in_grid]
+    rows, cells, source = rows[in_grid], cells[in_grid], source[in_grid]
     if rows.size == 0:
         return
 
     def centers_of(grid_cells: NDArray[np.intp]) -> NDArray[np.float64]:
+        """Grid-frame coordinates of grid cell centers, shape (..., n_dims)."""
         return np.stack(
             [
                 0.5 * (edge[grid_cells[..., axis]] + edge[grid_cells[..., axis] + 1])
-                for axis, edge in enumerate(locator.edges)
+                for axis, edge in enumerate(edges)
             ],
             axis=-1,
         )
 
-    sliver = ~arena.contains(centers_of(cells))
-    rows, cells = rows[sliver], cells[sliver]
+    def in_arena(grid_centers: NDArray[np.float64]) -> NDArray[np.bool_]:
+        flat = grid_centers.reshape(-1, len(edges))
+        return np.asarray(arena.contains(to_world(flat))).reshape(
+            grid_centers.shape[:-1]
+        )
+
+    sliver = ~in_arena(centers_of(cells))
+    rows, cells, source = rows[sliver], cells[sliver], source[sliver]
     if rows.size == 0:
         return
     # Every neighboring cell, (n_rows, n_offsets, n_dims).
@@ -138,15 +155,59 @@ def _snap_outline_slivers(
     valid = np.all((neighbors >= 0) & (neighbors < shape), axis=2)
     neighbors = np.clip(neighbors, 0, shape - 1)
     centers = centers_of(neighbors)
-    flat_centers = centers.reshape(-1, len(shape))
-    valid &= arena.contains(flat_centers).reshape(valid.shape)
-    distance = np.linalg.norm(centers - positions[rows, None, :], axis=2)
+    valid &= in_arena(centers)
+    # Distances in the grid's own frame break ties between equidistant
+    # neighbors the same way before and after a rotation or reflection.
+    distance = np.linalg.norm(centers - source[:, None, :], axis=2)
     distance[~valid] = np.inf
     best = np.argmin(distance, axis=1)
     found = np.isfinite(distance[np.arange(len(rows)), best])
     owner = neighbors[np.arange(len(rows)), best][found]
-    flat = np.ravel_multi_index(tuple(owner.T), locator.shape)
-    indices[rows[found]] = locator._active_index(flat)
+    flat = np.ravel_multi_index(tuple(owner.T), cells_locator.shape)
+    indices[rows[found]] = cells_locator._active_index(flat)
+
+
+def _identity(points: NDArray[np.float64]) -> NDArray[np.float64]:
+    return points
+
+
+def _sliver_grid(
+    binning: Binning,
+) -> (
+    tuple[
+        RectilinearLocator,
+        Callable[[NDArray[np.float64]], NDArray[np.float64]],
+        Callable[[NDArray[np.float64]], NDArray[np.float64]],
+    ]
+    | None
+):
+    """The grid cells of ``binning`` with maps between world and grid frame.
+
+    Returns
+    -------
+    tuple or None
+        ``(cells, to_source, to_world)``: the cells as a locator whose
+        ``_active_index`` numbers the current bins, a map from ``(n_points,
+        n_dims)`` world points into the cells' frame (snapping onto a face
+        within the map's roundoff, as lookup does) and its inverse. None when
+        the bins are not grid cells.
+    """
+    from neurospatial.geometry._locators import RectilinearLocator
+
+    if isinstance(binning.locator, RectilinearLocator):
+        return binning.locator, _identity, _identity
+    frame = binning.grid_frame
+    if frame is None:
+        return None
+
+    def to_source(points: NDArray[np.float64]) -> NDArray[np.float64]:
+        return frame._project_to_planes(
+            points,
+            frame.source.edges,
+            operation="Bin lookup on a rotated or sheared grid",
+        )
+
+    return frame._source_locator(), to_source, frame.to_world
 
 
 def require_position_columns(
@@ -242,14 +303,67 @@ TRACK_WIDTH_FIX = (
 )
 
 
+def require_lookup_radius(binning: Binning) -> None:
+    """Refuse nearest-bin lookup that has no radius and no known domain.
+
+    Called only when the environment's domain is unknown. Bins located by
+    their nearest center, without ``max_distance``, would then put every
+    position, however far away, in some bin. Unlimited lookup must be chosen
+    explicitly with ``max_distance=math.inf``.
+
+    Parameters
+    ----------
+    binning : Binning
+        The bins and their locator, possibly wrapped by subsets or affine
+        maps.
+
+    Raises
+    ------
+    NotImplementedError
+        If the locator finds the nearest bin center with ``max_distance``
+        None.
+    """
+    from neurospatial.geometry._locators import (
+        NearestBinLocator,
+        SubsetLocator,
+        TransformedLocator,
+    )
+
+    locator = binning.locator
+    while isinstance(locator, (SubsetLocator, TransformedLocator)):
+        locator = locator.base
+    if (
+        not isinstance(locator, NearestBinLocator)
+        or locator.max_distance is not None
+        # With no bins, no position can be put in a wrong one.
+        or binning.bins.n_bins == 0
+    ):
+        return
+    raise NotImplementedError(
+        _format_error(
+            "Positions cannot be assigned to these bins: they are found by "
+            "nearest bin center with no max_distance, and the environment has "
+            "no known domain.",
+            why="Why: without a radius or a domain every position, however far "
+            "from the bins (a tracking jump or a position from another "
+            "arena), would be put in its nearest bin.",
+            fix="build the locator with NearestBinLocator(centers, "
+            "max_distance=radius), a radius in the bin centers' length units; "
+            "pass max_distance=math.inf to deliberately give every position its "
+            "nearest bin; or pass the arena that bounds the bins to "
+            "Environment.from_bins(..., arena=...)",
+        )
+    )
+
+
 def require_track_width(binning: Binning, arena: Arena) -> None:
     """Refuse to map positions to a track's bins when its width is unknown.
 
     A centerline and a bin size do not say how far from the centerline a
     position is still on the track, so without a width every position, however
     far off the track, would be put in its nearest bin. A track whose
-    positions have one coordinate has no off-track direction and is not
-    refused.
+    positions have one coordinate has no off-track direction: its arena knows
+    its domain (the centerline, ends included) and never reaches this check.
 
     Parameters
     ----------

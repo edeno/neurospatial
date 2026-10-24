@@ -10,11 +10,14 @@ from numpy.typing import NDArray
 from shapely.affinity import affine_transform
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import per_dimension
+from neurospatial.geometry._arrays import (
+    active_order,
+    mask_active_map,
+    per_dimension,
+)
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
-    FacesSource,
     KnownFaces,
     MissingFaces,
     SpatialBins,
@@ -24,9 +27,9 @@ from neurospatial.geometry._capabilities import (
     RectilinearGrid,
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
-from neurospatial.geometry._composition import bridge_values
+from neurospatial.geometry._composition import CombinedLocator, bridge_values
 from neurospatial.geometry._diffusion import FaceGeometry
-from neurospatial.geometry._explicit import cell_extent
+from neurospatial.geometry._explicit import cell_extent, union_extent
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._face_transform import (
     certify_transformed_faces,
@@ -41,6 +44,7 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
     _check_homogeneous,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import (
     PolygonCells,
@@ -87,37 +91,21 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
             "whole-bin selection preserves geometry only when each parent bin has one selection flag",
             f"pass a boolean mask of shape ({binning.bins.n_bins},) with at least one True entry",
         )
-    parent_ids = np.flatnonzero(keep)
-    child_of = np.full(len(keep), -1, dtype=np.intp)
-    child_of[parent_ids] = np.arange(len(parent_ids))
-    bins = SpatialBins.from_arrays(
-        binning.bins.centers[parent_ids],
-        binning.bins.sizes[parent_ids],
-        binning.bins.measure_dims[parent_ids],
-    )
-    # pair_kept selects the open pairs that survive, for arrays aligned with them.
-    connections, pair_kept = binning.connections.select(child_of)
-    faces: FacesSource = binning.faces
-    if faces.available:
-        old_faces = faces.build()
-        faces = KnownFaces(
-            FaceGeometry(
-                connections.pairs,
-                old_faces.A[pair_kept],
-                old_faces.distance[pair_kept],
-                bins.sizes,
-            )
+    child_of = mask_active_map(keep)
+    bins, connections, faces, normals = selected_records(binning, child_of)
+    locator = _subset_locator(binning.locator, keep, child_of)
+    grid: RectilinearGrid | FramedGrid | None = None
+    if binning.grid is not None:
+        source = (
+            binning.grid.source
+            if isinstance(binning.grid, FramedGrid)
+            else binning.grid
         )
-    locator = (
-        binning.locator.subset(keep)
-        if isinstance(binning.locator, RectilinearLocator)
-        else SubsetLocator(binning.locator, child_of)
-    )
-    grid = binning.rectilinear
-    if grid is not None:
         grid = RectilinearGrid(
-            grid.edges, grid.shape, _restricted_mask(grid.active_mask, keep)
+            source.edges, source.shape, _restricted_mask(source.active_mask, keep)
         )
+        if isinstance(binning.grid, FramedGrid):
+            grid = FramedGrid(grid, binning.grid.forward)
     shapes = None if binning.shapes is None else binning.shapes.subset(keep)
     track = binning.linearization
     if track is not None:
@@ -139,29 +127,100 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         connections,
         locator,
         faces,
-        rectilinear=grid,
+        grid=grid,
         linearization=track,
         shapes=shapes,
         outline=None,
         grid_spec=binning.grid_spec,
-        grid_frame=(
-            FramedGrid(
-                RectilinearGrid(
-                    binning.grid_frame.source.edges,
-                    binning.grid_frame.source.shape,
-                    _restricted_mask(binning.grid_frame.source.active_mask, keep),
-                ),
-                binning.grid_frame.forward,
-            )
-            if binning.grid_frame is not None
-            else None
-        ),
-        face_normals=(
-            FaceNormals(binning.face_normals.values[pair_kept])
-            if binning.face_normals is not None
-            else None
-        ),
+        face_normals=normals,
     )
+
+
+def selected_records(
+    binning: Binning, child_of: NDArray[np.intp]
+) -> tuple[
+    SpatialBins,
+    BinConnections,
+    KnownFaces | NativeFaces | MissingFaces,
+    FaceNormals | None,
+]:
+    """Bins, pairs, faces and face normals of a binning's selected bins.
+
+    Parameters
+    ----------
+    binning : Binning
+        Parent bins.
+    child_of : ndarray of intp, shape (n_parent_bins,)
+        Child index of each parent bin, or -1 when dropped; it numbers the
+        kept bins exactly once from zero.
+
+    Returns
+    -------
+    bins : SpatialBins
+        The kept bins, in child order.
+    connections : BinConnections
+        The pairs between kept bins.
+    faces : KnownFaces, NativeFaces or MissingFaces
+        The kept pairs' faces, or the parent's missing faces.
+    face_normals : FaceNormals or None
+        The kept pairs' normals.
+    """
+    parents = active_order(child_of)
+    bins = SpatialBins.from_arrays(
+        binning.bins.centers[parents],
+        binning.bins.sizes[parents],
+        binning.bins.measure_dims[parents],
+    )
+    # pair_kept selects the open pairs that survive, for arrays aligned with them.
+    connections, pair_kept = binning.connections.select(child_of)
+    faces = binning.faces
+    if faces.available:
+        old_faces = binning.build_faces()
+        faces = KnownFaces(
+            FaceGeometry(
+                connections.pairs,
+                old_faces.A[pair_kept],
+                old_faces.distance[pair_kept],
+                bins.sizes,
+            )
+        )
+    normals = (
+        None
+        if binning.face_normals is None
+        else FaceNormals(binning.face_normals.values[pair_kept])
+    )
+    return bins, connections, faces, normals
+
+
+def _subset_locator(
+    locator: Locator, keep: NDArray[np.bool_], child_of: NDArray[np.intp]
+) -> Locator:
+    """Locator of the kept bins, closing a grid's outline around them.
+
+    A grid, axis-aligned or under affine maps, keeps its cells and recomputes
+    the outline of the kept ones, so a point on a face shared with a dropped
+    cell belongs to the kept cell. Selecting bins then commutes with
+    transforming them. Other locators keep the parent's assignment and drop
+    points in unselected bins.
+
+    Parameters
+    ----------
+    locator : Locator
+        Parent point lookup.
+    keep : ndarray of bool, shape (n_parent_bins,)
+        Selected bins.
+    child_of : ndarray of intp, shape (n_parent_bins,)
+        Child index of each parent bin, or -1 when dropped.
+    """
+    if isinstance(locator, RectilinearLocator):
+        return locator.subset(keep)
+    if isinstance(locator, TransformedLocator):
+        base = _subset_locator(locator.base, keep, child_of)
+        if not isinstance(base, SubsetLocator):
+            # An affine map does not renumber bins, so the grid's own subset
+            # sits below it, as if the bins were selected first.
+            return TransformedLocator(base, locator.forward)
+    return SubsetLocator(locator, child_of)
 
 
 def select_bins(binning: Binning, mask: NDArray[np.bool_]) -> Binning:
@@ -181,10 +240,54 @@ def select_bins(binning: Binning, mask: NDArray[np.bool_]) -> Binning:
         Its ``dimension_ranges`` is the extent of the kept cells, with no
         margin (see :func:`neurospatial.geometry._explicit.cell_extent`): the
         kept grid cells for grids, the kept stretches of centerline for tracks,
-        and the kept bin centers' bounds for other bins without shapes.
+        and the kept bin centers' bounds for other bins without shapes. The
+        kept bins of a combined environment span the union of each
+        component's kept cells, measured the same way.
     """
-    binning = subset_binning(binning, mask)
-    return replace(binning, dimension_ranges=cell_extent(binning, shapeless="centers"))
+    selected = subset_binning(binning, mask)
+    extent = cell_extent(selected, shapeless="centers")
+    if isinstance(selected.locator, SubsetLocator):
+        extent = _combined_extent(binning.locator, np.asarray(mask)) or extent
+    return replace(selected, dimension_ranges=extent)
+
+
+def _combined_extent(
+    locator: Locator, keep: NDArray[np.bool_]
+) -> tuple[tuple[float, float], ...] | None:
+    """Extent of the kept bins of a combined locator, component by component.
+
+    Parameters
+    ----------
+    locator : Locator
+        The parent's locator: a combined locator, possibly after earlier
+        selections (an affine map or clip changes the cells, so it gives
+        None).
+    keep : ndarray of bool, shape (n_parent_bins,)
+        Kept parent bins.
+
+    Returns
+    -------
+    tuple of (float, float), or None
+        The union of each component's kept-cell extent, or None when the
+        locator is not a selection of a combined locator.
+    """
+    mapping = np.flatnonzero(keep)
+    while isinstance(locator, SubsetLocator):
+        selected = active_order(locator.parent_to_child)
+        mapping = selected[mapping]
+        locator = locator.base
+    if not isinstance(locator, CombinedLocator):
+        return None
+    parts = []
+    for child, start, stop in zip(
+        locator.children, locator.offsets[:-1], locator.offsets[1:], strict=True
+    ):
+        local = mapping[(mapping >= start) & (mapping < stop)] - start
+        if len(local):
+            child_keep = np.zeros(child.bins.n_bins, dtype=bool)
+            child_keep[local] = True
+            parts.append(select_bins(child, child_keep).dimension_ranges)
+    return union_extent(parts)
 
 
 def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:
@@ -398,8 +501,9 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "rescale the coordinate units before applying the transform",
             )
     else:
-        # Keep the existing center-based calculation, including its rounding,
-        # for native Euclidean connectivity.
+        # Euclidean connectivity distances are the separations of the mapped
+        # centers, computed as a fresh build would, so the record agrees with
+        # its own centers to the last bit.
         distances = np.linalg.norm(
             centers[all_pairs[:, 1]] - centers[all_pairs[:, 0]], axis=1
         )
@@ -407,23 +511,14 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     connections = BinConnections(all_pairs, distances, links.is_open, links.closed_by)
     pairs = connections.pairs
     if locator is None:
-        locator = TransformedLocator(
-            binning.locator, np.asarray(np.linalg.inv(matrix), dtype=np.float64)
-        )
-    grid = binning.rectilinear
-    if grid is not None:
-        diagonal = np.diag(linear)
-        if np.array_equal(linear, np.diag(diagonal)) and np.all(diagonal > 0):
-            grid = RectilinearGrid(
-                tuple(
-                    diagonal[axis] * edge + matrix[axis, -1]
-                    for axis, edge in enumerate(grid.edges)
-                ),
-                grid.shape,
-                grid.active_mask,
-            )
-        else:
-            grid = None
+        locator = TransformedLocator(binning.locator, matrix)
+    # A stored grid matches its locator, so it keeps the locator's mapped
+    # cells when a positive diagonal scale and shift leave them a grid.
+    grid = (
+        RectilinearGrid(locator.edges, locator.shape, locator.active_mask)
+        if binning.rectilinear is not None and isinstance(locator, RectilinearLocator)
+        else None
+    )
     frame = binning.grid_frame
     if frame is not None:
         frame = FramedGrid(frame.source, matrix @ frame.forward)
@@ -434,9 +529,9 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         if binning.face_normals is not None
         else None
     )
-    faces: FacesSource = binning.faces
+    faces: KnownFaces | NativeFaces | MissingFaces = binning.faces
     if faces.available:
-        old = faces.build()
+        old = binning.build_faces()
         if similarity:
             faces = KnownFaces(
                 FaceGeometry(
@@ -537,11 +632,10 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         connections,
         locator,
         faces,
-        rectilinear=grid,
+        grid=frame if frame is not None else grid,
         linearization=track,
         shapes=shapes,
         outline=outline,
-        grid_frame=frame,
         face_normals=normal_data[0] if normal_data is not None else None,
         grid_spec=(
             type(binning.grid_spec)(

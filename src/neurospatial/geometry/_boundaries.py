@@ -87,15 +87,23 @@ def _analysis_boundary(binning: Binning, arena: Arena) -> shapely.Geometry:
     """Return retained cell edges restricted by the supplied planar domain."""
 
     try:
-        domain = unary_union(materialize_cells(binning))
-        restriction = arena.polygonal_domain() if arena.domain_known else None
-        if restriction is not None:
-            domain = domain.intersection(restriction)
-        return unary_union([domain.boundary, *arena.walls])
+        cells = materialize_cells(binning)
     except ValueError as exc:
         raise NotImplementedError(
-            "Analysis-boundary geometry needs exact planar cells; supply supported grid or polygon cells."
+            _format_error(
+                "Analysis-boundary geometry (boundary_source='analysis') needs "
+                "exact planar cells, and these bins have none: "
+                f"{str(exc).splitlines()[0]}",
+                fix="use a 2-D grid, hexagonal layout, triangular mesh or "
+                "polygon cells, or declare the walls in the arena and use "
+                "boundary_source='physical'",
+            )
         ) from exc
+    domain = unary_union(cells)
+    restriction = arena.polygonal_domain() if arena.domain_known else None
+    if restriction is not None:
+        domain = domain.intersection(restriction)
+    return unary_union([domain.boundary, *arena.walls])
 
 
 def _resolve_wall_contacts(
@@ -716,7 +724,30 @@ def boundary_view(
 ) -> NDArray[np.float64]:
     """First wall each gaze ray reaches, shape (n_time, 2); NaN for none.
 
-    ``indexes`` keeps the locator's search structures for the computation.
+    Parameters
+    ----------
+    binning : Binning
+        The environment's bins, from ``env.binning``.
+    arena : Arena
+        The environment's continuous domain, from ``env.arena``.
+    positions : ndarray, shape (n_time, 2)
+        Observer positions. A non-finite observer, or one outside the domain
+        the chosen ``boundary_source`` justifies, gives a NaN row.
+    gaze_direction : ndarray, shape (n_time,)
+        Allocentric gaze direction in radians: 0 = East (+x), +π/2 = North
+        (+y). A non-finite direction gives a NaN row.
+    max_distance : float
+        Finite positive search length; a ray reaching no wall within it gives
+        a NaN row.
+    boundary_source : {'physical', 'analysis'}
+        Declared physical walls, or the boundaries of the analysis cells.
+    indexes : LookupIndexes
+        Keeps the locator's search structures for the computation.
+
+    Returns
+    -------
+    ndarray, shape (n_time, 2)
+        The first wall point on each gaze ray, or NaN.
     """
 
     walls = boundary_geometry(binning, arena, boundary_source)
@@ -740,7 +771,6 @@ def line_of_sight_clear(
     arena: Arena,
     observer: NDArray[np.float64],
     target: NDArray[np.float64],
-    n_samples: int = 20,
     *,
     boundary_source: Literal["physical", "analysis"] = "physical",
     indexes: LookupIndexes | None = None,
@@ -754,16 +784,13 @@ def line_of_sight_clear(
     arena : Arena
         The environment's continuous domain, from ``env.arena``.
     observer : NDArray[np.float64], shape (2,)
-        Observer position.
+        Observer position; must be finite.
     target : NDArray[np.float64], shape (2,)
-        Target position.
-    n_samples : int
-        Retained for compatibility; line-of-sight tests use exact intersections.
-
+        Target position; must be finite.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray.
     indexes : LookupIndexes, optional
         Search structures shared by the calls of one computation, such as one
         line-of-sight check per timestep; None keeps them for this call only.
@@ -771,7 +798,20 @@ def line_of_sight_clear(
     Returns
     -------
     bool
-        True if line of sight is clear (all points inside environment).
+        True if the segment from observer to target crosses no wall of the
+        chosen boundary source. False if it does, or if the observer is
+        outside the region that source covers.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If the arena holds polar ``(distance, angle)`` coordinates.
+    NotImplementedError
+        If the environment is not 2-D, or the chosen boundary source has no
+        exact planar walls or cells.
+    ValueError
+        If the observer or target is not finite (a missing observation), or
+        has the wrong shape.
     """
     return bool(
         batch_line_of_sight_clear(
@@ -779,7 +819,6 @@ def line_of_sight_clear(
             arena,
             observer,
             np.asarray(target).reshape(1, 2),
-            n_samples=n_samples,
             boundary_source=boundary_source,
             indexes=indexes,
         )[0]
@@ -791,7 +830,6 @@ def batch_line_of_sight_clear(
     arena: Arena,
     observer: NDArray[np.float64],
     targets: NDArray[np.float64],
-    n_samples: int = 20,
     *,
     boundary_source: Literal["physical", "analysis"] = "physical",
     indexes: LookupIndexes | None = None,
@@ -805,16 +843,13 @@ def batch_line_of_sight_clear(
     arena : Arena
         The environment's continuous domain, from ``env.arena``.
     observer : NDArray[np.float64], shape (2,)
-        Observer position.
+        Observer position; must be finite.
     targets : NDArray[np.float64], shape (n_targets, 2)
-        Target positions.
-    n_samples : int
-        Retained for compatibility; line-of-sight tests use exact intersections.
-
+        Target positions; must be finite.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray.
     indexes : LookupIndexes, optional
         Search structures shared by the calls of one computation; None keeps
         them for this call only.
@@ -822,7 +857,21 @@ def batch_line_of_sight_clear(
     Returns
     -------
     NDArray[np.bool_], shape (n_targets,)
-        True if line of sight is clear for each target.
+        True where the segment from the observer to the target crosses no
+        wall of the chosen boundary source. All False when the observer is
+        outside the region that source covers.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If the arena holds polar ``(distance, angle)`` coordinates.
+    NotImplementedError
+        If the environment is not 2-D, or the chosen boundary source has no
+        exact planar walls or cells.
+    ValueError
+        If the observer or a target is not finite (a missing observation), or
+        the arrays have the wrong shape. A missing position is not evidence
+        of occlusion, so callers keep such frames missing instead.
     """
 
     walls = boundary_geometry(binning, arena, boundary_source)
@@ -831,6 +880,24 @@ def batch_line_of_sight_clear(
     if observer.shape != (2,) or targets.ndim != 2 or targets.shape[1] != 2:
         raise ValueError(
             "Line-of-sight observer must have shape (2,) and targets (n_targets, 2)."
+        )
+    missing = []
+    if not np.all(np.isfinite(observer)):
+        missing.append(f"the observer {observer.tolist()}")
+    bad_targets = np.flatnonzero(~np.isfinite(targets).all(axis=1))
+    if len(bad_targets):
+        missing.append(f"{len(bad_targets)} target(s) (first row {bad_targets[0]})")
+    if missing:
+        raise ValueError(
+            _format_error(
+                "Line of sight needs finite positions; NaN or infinite: "
+                + " and ".join(missing)
+                + ".",
+                why="Why: a missing position is not an observation, and calling "
+                "its targets blocked would read lost tracking as occlusion.",
+                fix="check only frames with a finite observer and targets, and "
+                "keep the other frames missing (NaN or masked) in the result",
+            )
         )
     indexes = CallIndexes() if indexes is None else indexes
     if not valid_observers(

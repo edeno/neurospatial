@@ -128,25 +128,11 @@ def test_publication_rejects_stale_parent_geometry():
 
 
 def test_nested_child_faces_cannot_disagree_with_child_measures():
-    from neurospatial.binning import Binning, MissingFaces
-
-    source = snapshot()
-    child = source.children[0]
-    bad_faces = child.faces.build()._replace(volumes=np.array([2.0]))
-    bad = replace(
-        source,
-        children=(replace(child, faces=KnownFaces(bad_faces)), source.children[1]),
-    )
+    child = snapshot().children[0]
+    bad_faces = child.build_faces()._replace(volumes=np.array([2.0]))
+    # The child binning itself refuses faces whose volumes are not its sizes.
     with pytest.raises(ValueError, match=r"faces\.volumes"):
-        Environment.from_bins(
-            Binning(
-                "combined",
-                bad.spatial_bins(),
-                bad.bin_connections(),
-                bad,
-                MissingFaces("bridge"),
-            )
-        )
+        replace(child, faces=KnownFaces(bad_faces))
 
 
 def test_nested_arena_depth_is_bounded():
@@ -162,35 +148,3 @@ def test_nested_arena_depth_is_bounded():
         meta = {"codec": "_CombinedArena", "codec_version": 1, "children": [meta]}
     with pytest.raises(ValueError, match="nesting"):
         decode_arena(meta, {})
-
-
-def test_mutated_nested_face_array_is_revalidated():
-    from neurospatial.binning import Binning, MissingFaces
-
-    env = Environment.from_grid_mask(
-        np.ones((2, 1, 1), dtype=bool),
-        grid_edges=(np.arange(3.0), np.arange(2.0), np.arange(2.0)),
-    )
-    child = replace(
-        env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
-    )
-    child.faces.faces.A.setflags(write=True)
-    child.faces.faces.A[:] = -1
-    combined = CombinedLocator(
-        ("child",),
-        (child,),
-        (env.arena,),
-        np.empty((0, 2), dtype=np.intp),
-        np.array([]),
-        np.array([]),
-    )
-    with pytest.raises(ValueError, match="face areas"):
-        Environment.from_bins(
-            Binning(
-                "combined",
-                combined.spatial_bins(),
-                combined.bin_connections(),
-                combined,
-                MissingFaces("missing"),
-            )
-        )

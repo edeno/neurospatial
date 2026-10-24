@@ -78,11 +78,12 @@ def test_from_bins_builds_and_checks_the_faces_of_an_exported_binning():
     rebuilt = Environment.from_bins(exported, arena=env.arena)
     assert isinstance(rebuilt._binning.faces, KnownFaces)
     np.testing.assert_array_equal(rebuilt.bin_centers, env.bin_centers)
-    # The recipe describes its own bins; faces built for other measures fail.
+    # The recipe builds faces for the binning's own bins, so bins whose
+    # measures disagree with their cells fail against the cells.
     resized = replace(
         exported, bins=replace(exported.bins, sizes=exported.bins.sizes * 2)
     )
-    with pytest.raises(ValueError, match=r"faces\.volumes"):
+    with pytest.raises(ValueError, match=r"bins\.sizes"):
         Environment.from_bins(resized, arena=env.arena)
     np.testing.assert_array_equal(
         rebuilt.compute_kernel(bandwidth=0.5, mode="density"),

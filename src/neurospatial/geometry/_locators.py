@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    NamedTuple,
+    Protocol,
+    TypeVar,
+    cast,
+    runtime_checkable,
+)
 
 import numpy as np
 import shapely
@@ -14,8 +21,19 @@ from scipy.spatial import cKDTree
 from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
-from neurospatial.geometry._arrays import ReadOnlyState, get_centers
-from neurospatial.geometry._hex_lookup import points_to_hex_bin_ind
+from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import (
+    ReadOnlyState,
+    get_centers,
+    mask_active_map,
+    owned_active_map,
+    owned_grid,
+)
+from neurospatial.geometry._hex_lookup import (
+    axial_to_offset_bin_indices,
+    cartesian_to_fractional_cube,
+    round_fractional_cube_to_integer_axial,
+)
 from neurospatial.geometry._regular_lookup import (
     outline_cells,
     points_to_regular_grid_bin_ind,
@@ -55,6 +73,101 @@ class Locator(Protocol):
         it they are built for this call only.
         """
         ...
+
+
+@runtime_checkable
+class TolerantLocator(Locator, Protocol):
+    """A locator that also assigns points known only within a rounding bound."""
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Return bin indices of points that may lie anywhere within ``error``.
+
+        See :func:`locate_within`.
+        """
+        ...
+
+
+def locate_within(
+    locator: Locator,
+    points: NDArray[np.float64],
+    error: NDArray[np.float64] | None = None,
+    indexes: LookupIndexes | None = None,
+    *,
+    half_open: bool = False,
+) -> NDArray[np.intp]:
+    """Bins of points whose coordinates carry a known rounding bound.
+
+    A point whose box of possible positions reaches a cell face is given the
+    owner of that face, by the locator's own rule for points on faces: the
+    cell above on a grid; the highest-numbered of the tied hexagons, active
+    ones first; the lowest-numbered nearest-center bin, triangle or clipped
+    cell. An affine step adds the roundoff of its own
+    inverse map, so a point on a face keeps its bin when bins and points are
+    transformed together. Locators without this rule use ``locate``.
+
+    Parameters
+    ----------
+    locator : Locator
+        Any point lookup.
+    points : ndarray of float64, shape (n_points, n_dims)
+        Query coordinates.
+    error : ndarray of float64, shape (n_points, n_dims), optional
+        Absolute bound on how far each true coordinate may be from the given
+        one. None means the coordinates are exact.
+    indexes : LookupIndexes, optional
+        Keeps the locator's search structures.
+    half_open : bool, default=False
+        Leave points on a grid's outline unowned instead of closing it, so a
+        combined environment can find the half-open owner of a face two
+        components share first.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_points,)
+        Bin index of each point, or -1.
+    """
+    if not isinstance(locator, TolerantLocator):
+        return locator.locate(points, indexes)
+    query = np.atleast_2d(np.asarray(points, dtype=np.float64))
+    bound = np.zeros(query.shape) if error is None else np.asarray(error, float)
+    return locator.locate_within(query, bound, indexes, half_open=half_open)
+
+
+def _error_radius(error: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Euclidean length of each row's per-axis error bound, shape (n_points,)."""
+    if error.ndim != 2:
+        return np.zeros(len(error))
+    return np.asarray(np.hypot.reduce(error, axis=1), dtype=np.float64)
+
+
+def _coordinate_roundoff(
+    points: NDArray[np.float64], reference: float
+) -> NDArray[np.float64]:
+    """Distance a distance comparison of ``points`` can be off by rounding.
+
+    Parameters
+    ----------
+    points : ndarray of float64, shape (n_points, n_dims)
+        Query coordinates.
+    reference : float
+        Largest coordinate magnitude of the locator's own geometry.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_points,)
+        A small multiple of the unit roundoff at the coordinates' magnitude,
+        so a point placed on a face by arithmetic (a midpoint of two
+        centers, say) counts as on it.
+    """
+    scale = np.max(np.abs(points), axis=1, initial=0.0) + reference
+    return np.asarray(64 * np.finfo(np.float64).eps * scale, dtype=np.float64)
 
 
 class CallIndexes:
@@ -113,6 +226,46 @@ def _owned_array(array: Any, dtype: Any) -> NDArray[Any]:
     return owned
 
 
+def snap_to_planes(
+    points: NDArray[np.float64],
+    error: NDArray[np.float64],
+    planes: tuple[NDArray[np.float64], ...],
+) -> NDArray[np.float64]:
+    """Move each coordinate onto its nearest plane when within its error.
+
+    Parameters
+    ----------
+    points : ndarray of float64, shape (n_points, n_dims)
+        Coordinates; non-finite values are left unchanged.
+    error : ndarray of float64, shape (n_points, n_dims)
+        Absolute bound on each coordinate's rounding.
+    planes : tuple of ndarray of float64
+        Increasing plane positions (cell edges) along each axis. The snap is
+        capped at a quarter of the smallest spacing between them.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_points, n_dims)
+        A copy with snapped coordinates.
+    """
+    snapped = np.array(points, dtype=np.float64, copy=True)
+    if not np.any(error > 0):
+        return snapped
+    for axis, coordinates in enumerate(planes):
+        cap = float(np.min(np.diff(coordinates))) / 4 if len(coordinates) > 1 else 0.0
+        values = snapped[:, axis]
+        insertion = np.searchsorted(coordinates, values)
+        lower = coordinates[np.clip(insertion - 1, 0, len(coordinates) - 1)]
+        upper = coordinates[np.clip(insertion, 0, len(coordinates) - 1)]
+        with np.errstate(invalid="ignore"):
+            nearest = np.where(
+                np.abs(values - lower) <= np.abs(values - upper), lower, upper
+            )
+            snap = np.abs(values - nearest) <= np.minimum(error[:, axis], cap)
+        snapped[snap, axis] = nearest[snap]
+    return snapped
+
+
 @dataclass(frozen=True, eq=False)
 class RectilinearLocator(ReadOnlyState):
     """Locate points in the rectangular cells of an active grid.
@@ -128,37 +281,64 @@ class RectilinearLocator(ReadOnlyState):
     Parameters
     ----------
     edges : tuple of ndarray
-        Increasing cell edges along each coordinate axis.
+        Finite, strictly increasing cell edges along each coordinate axis;
+        ``edges[d]`` has shape ``(shape[d] + 1,)``.
     shape : tuple of int
         Number of full-grid cells along each coordinate axis.
-    active_mask : ndarray of bool, shape ``shape``, or None
-        Active cells. None treats the entire grid as active.
-    flat_to_active : ndarray of intp, shape (prod(shape),), or None
-        Active-bin index of each full-grid cell, or -1 when inactive.
+    active_mask : ndarray of bool, shape ``shape``
+        Active cells. Active bins are numbered in row-major order of the
+        mask.
     """
 
     edges: tuple[NDArray[np.float64], ...]
     shape: tuple[int, ...]
-    active_mask: NDArray[np.bool_] | None
-    flat_to_active: NDArray[np.intp] | None
+    active_mask: NDArray[np.bool_]
+    # Active-bin index of each full-grid cell, or -1, from the mask's order.
+    flat_to_active: NDArray[np.intp] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "edges", tuple(_owned_array(edge, np.float64) for edge in self.edges)
+        edges, shape, mask = owned_grid(
+            self.edges, self.shape, self.active_mask, name="RectilinearLocator"
         )
-        if self.active_mask is not None:
-            object.__setattr__(
-                self, "active_mask", _owned_array(self.active_mask, np.bool_)
-            )
-        if self.flat_to_active is not None:
-            object.__setattr__(
-                self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)
-            )
+        object.__setattr__(self, "edges", edges)
+        object.__setattr__(self, "shape", shape)
+        object.__setattr__(self, "active_mask", mask)
+        object.__setattr__(self, "flat_to_active", mask_active_map(mask))
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
     ) -> NDArray[np.intp]:
-        """Return active-bin indices, or -1 outside the grid or active cells."""
+        """Return active-bin indices, or -1 outside the grid or active cells.
+
+        Comparisons with the cell edges are exact, so a point just off a
+        face, such as on the observer's side of a wall, keeps its side.
+        """
+        query_points = self._checked(points)
+        located = self.locate_half_open(query_points)
+        unowned = np.flatnonzero(
+            (located < 0) & np.all(np.isfinite(query_points), axis=1)
+        )
+        if unowned.size:
+            located[unowned] = self._outline_owner(query_points[unowned])
+        return located
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Snap coordinates within ``error`` onto a cell edge, then locate.
+
+        The snap is capped at a quarter of the narrowest cell on each axis,
+        so it never moves a point past a cell center.
+        """
+        snapped = snap_to_planes(self._checked(points), error, self.edges)
+        return self.locate_half_open(snapped) if half_open else self.locate(snapped)
+
+    def _checked(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         query_points = np.atleast_2d(points)
         if query_points.ndim != 2:
             raise ValueError(
@@ -171,13 +351,7 @@ class RectilinearLocator(ReadOnlyState):
                 f"grid_edges has {len(self.edges)} and grid_shape has "
                 f"{len(self.shape)}. Points must match the grid's dimensionality."
             )
-        located = self.locate_half_open(query_points)
-        unowned = np.flatnonzero(
-            (located < 0) & np.all(np.isfinite(query_points), axis=1)
-        )
-        if unowned.size:
-            located[unowned] = self._outline_owner(query_points[unowned])
-        return located
+        return query_points
 
     def locate_half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Return active-bin indices by half-open cells alone, or -1.
@@ -204,15 +378,7 @@ class RectilinearLocator(ReadOnlyState):
 
     def _active_index(self, flat: NDArray[np.intp]) -> NDArray[np.intp]:
         """Active-bin index of full-grid cells, or -1 for inactive cells."""
-        if self.flat_to_active is not None:
-            return self.flat_to_active[flat]
-        if self.active_mask is None:
-            return flat
-        mapping = np.full(self.active_mask.size, -1, dtype=np.intp)
-        mapping[self.active_mask.ravel()] = np.arange(
-            np.count_nonzero(self.active_mask)
-        )
-        return mapping[flat]
+        return self.flat_to_active[flat]
 
     def active_centers(self) -> NDArray[np.float64]:
         """Midpoints of the active cells, in active-bin (row-major) order.
@@ -224,12 +390,7 @@ class RectilinearLocator(ReadOnlyState):
             rectilinear binning are these values, so centers and edges cannot
             disagree.
         """
-        mask = (
-            np.ones(self.shape, dtype=bool)
-            if self.active_mask is None
-            else self.active_mask
-        )
-        coordinates = np.unravel_index(np.flatnonzero(mask), self.shape)
+        coordinates = np.unravel_index(np.flatnonzero(self.active_mask), self.shape)
         return np.column_stack(
             [
                 get_centers(edge)[index]
@@ -239,19 +400,13 @@ class RectilinearLocator(ReadOnlyState):
 
     def subset(self, keep: NDArray[np.bool_]) -> RectilinearLocator:
         """Keep whole active cells in their original row-major order."""
-        mask = (
-            np.ones(self.shape, dtype=bool)
-            if self.active_mask is None
-            else self.active_mask.copy()
-        )
+        mask = self.active_mask.copy()
         keep = np.asarray(keep)
         active = np.flatnonzero(mask)
         if keep.dtype.kind != "b" or keep.shape != (len(active),):
             raise ValueError(f"keep must be a boolean array of shape ({len(active)},).")
         mask.ravel()[active] = keep
-        mapping = np.full(mask.size, -1, dtype=np.intp)
-        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        return RectilinearLocator(self.edges, self.shape, mask, mapping)
+        return RectilinearLocator(self.edges, self.shape, mask)
 
     def transformed(self, transform: AffineMatrix) -> RectilinearLocator | None:
         """Map positive diagonal scales and translations without changing owners."""
@@ -267,9 +422,7 @@ class RectilinearLocator(ReadOnlyState):
             diagonal[axis] * edge + matrix[axis, -1]
             for axis, edge in enumerate(self.edges)
         )
-        return RectilinearLocator(
-            edges, self.shape, self.active_mask, self.flat_to_active
-        )
+        return RectilinearLocator(edges, self.shape, self.active_mask)
 
 
 @dataclass(frozen=True, eq=False)
@@ -280,23 +433,32 @@ class SubsetLocator(ReadOnlyState):
     parent_to_child: NDArray[np.intp]
 
     def __post_init__(self) -> None:
-        raw = np.asarray(self.parent_to_child)
-        if raw.ndim != 1 or raw.dtype.kind not in "iu" or np.any(raw < -1):
-            raise ValueError(
-                "parent_to_child must be one-dimensional integer indices >= -1."
-            )
-        selected = raw[raw >= 0]
-        if not np.array_equal(np.sort(selected), np.arange(len(selected))):
-            raise ValueError(
-                "parent_to_child must number child bins exactly once from zero."
-            )
-        object.__setattr__(self, "parent_to_child", _owned_array(raw, np.intp))
+        object.__setattr__(
+            self,
+            "parent_to_child",
+            owned_active_map(self.parent_to_child, None, name="parent_to_child"),
+        )
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
     ) -> NDArray[np.intp]:
         """Return child indices after checking the parent's outside sentinel."""
-        parent = self.base.locate(points, indexes)
+        return self._children(self.base.locate(points, indexes))
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Return child indices of the parent's owners within ``error``, or -1."""
+        return self._children(
+            locate_within(self.base, points, error, indexes, half_open=half_open)
+        )
+
+    def _children(self, parent: NDArray[np.intp]) -> NDArray[np.intp]:
         out = np.full(parent.shape, -1, dtype=np.intp)
         inside = parent >= 0
         out[inside] = self.parent_to_child[parent[inside]]
@@ -305,55 +467,181 @@ class SubsetLocator(ReadOnlyState):
 
 @dataclass(frozen=True, eq=False)
 class TransformedLocator(ReadOnlyState):
-    """Find bins by applying an owned inverse homogeneous affine matrix.
+    """Find bins of affinely mapped cells by mapping points back to them.
 
     In a binning with a ``grid_frame`` (a rotated or sheared grid), the
     binning gives this locator its frame. Points are then assigned by the
-    frame's half-open source cells, with points on a cell face within the
-    map's roundoff snapped onto it, the rule linear time allocation uses, so
-    a point on a face shared by two cells belongs to the cell above it.
+    frame's source cells, with points on a cell face within the map's
+    roundoff snapped onto it, the rule linear time allocation uses: a point
+    on a face shared by two cells belongs to the cell above it, and a point
+    on the outline of the active cells belongs to the cell it bounds.
     Without a frame, the parent locator owns the inverse-mapped point.
 
     Parameters
     ----------
     base : Locator
         Locator in the source coordinates.
+    forward : ndarray of float64, shape (n_dims + 1, n_dims + 1)
+        Homogeneous map from source to current coordinates: the transform
+        that moved the bins. Its inverse is computed once, as an arena's is,
+        so a locator and an arena moved by one map share one inverse.
+
+    Attributes
+    ----------
     inverse : ndarray of float64, shape (n_dims + 1, n_dims + 1)
         Homogeneous map from current to source coordinates.
-    frame : FramedGrid or None, optional
-        The grid frame of the binning this locator belongs to; a ``Binning``
-        with a ``grid_frame`` sets it, so it is rarely passed directly.
+    frame : FramedGrid or None
+        The ``grid_frame`` of the binning that holds this locator. It is not
+        a constructor argument: a ``Binning`` sets it from its own grid, and
+        clears it when that grid is not framed, so the binning's grid is the
+        one record of the frame. A copy made outside a binning has none.
     """
 
     base: Locator
-    inverse: NDArray[np.float64]
-    frame: FramedGrid | None = field(default=None, repr=False)
+    forward: NDArray[np.float64]
+    frame: FramedGrid | None = field(default=None, init=False, repr=False)
+    inverse: NDArray[np.float64] = field(init=False, repr=False)
+
+    # Fixed by the matrix, so built once: the sensitivity of source
+    # coordinates to forward residuals (None when the map is too
+    # ill-conditioned to bound).
+    _sensitivity: NDArray[np.float64] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        matrix = _owned_array(self.inverse, np.float64)
-        _check_homogeneous(matrix)
-        object.__setattr__(self, "inverse", matrix)
+        forward = _owned_array(self.forward, np.float64)
+        _check_homogeneous(forward)
+        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+            inverse = np.asarray(np.linalg.inv(forward), dtype=np.float64)
+            dims = len(forward) - 1
+            eps = float(np.finfo(np.float64).eps)
+            linear, inverse_linear = forward[:-1, :-1], inverse[:-1, :-1]
+            gamma = (dims + 4) * eps / (1 - (dims + 4) * eps)
+            residual = np.abs(np.eye(dims) - inverse_linear @ linear)
+            residual += 2 * gamma * (np.abs(inverse_linear) @ np.abs(linear))
+            sensitivity = (
+                2 * np.linalg.solve(np.eye(dims) - residual, np.abs(inverse_linear))
+                if np.all(np.isfinite(residual)) and np.max(residual.sum(axis=1)) < 0.5
+                else None
+            )
+        if not np.all(np.isfinite(inverse)):
+            raise ValueError(
+                "TransformedLocator.forward has no representable inverse; "
+                "rescale the coordinates before transforming."
+            )
+        if sensitivity is not None and not np.all(np.isfinite(sensitivity)):
+            sensitivity = None
+        for array in (inverse, sensitivity):
+            if array is not None:
+                array.setflags(write=False)
+        object.__setattr__(self, "forward", forward)
+        object.__setattr__(self, "inverse", inverse)
+        object.__setattr__(self, "_sensitivity", sensitivity)
+
+    def _framed(self, frame: FramedGrid | None) -> TransformedLocator:
+        """A copy that assigns points by ``frame`` (a binning's grid), or by
+        the inverse map when ``frame`` is None."""
+        copy = TransformedLocator(self.base, self.forward)
+        object.__setattr__(copy, "frame", frame)
+        return copy
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
     ) -> NDArray[np.intp]:
         """Undo the affine map before using the parent's boundary ownership."""
+        query = self._checked(points)
+        return self.locate_within(query, np.zeros(query.shape), indexes)
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Undo the affine map, carrying its roundoff into the parent's lookup.
+
+        A point on a face of the parent's cells, mapped here and back, is
+        known only to within the map's roundoff; the parent gives it the
+        face's owner, so the bin does not depend on how the map rounds.
+        """
+        query = self._checked(points)
+        if self.frame is not None:
+            return self.frame._locate(
+                query,
+                operation="Bin lookup on a rotated or sheared grid",
+                half_open=half_open,
+                incoming=error,
+            )
+        original, source_error = self._project(query, error)
+        return locate_within(
+            self.base, original, source_error, indexes, half_open=half_open
+        )
+
+    def _checked(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
         n_dims = len(self.inverse) - 1
         if query.ndim != 2 or query.shape[1] != n_dims:
             raise ValueError(
                 f"Expected points of shape (M, {n_dims}), got {query.shape}."
             )
-        if self.frame is not None:
-            return self.frame._locate(
-                query, operation="Bin lookup on a rotated or sheared grid"
+        return query
+
+    def _project(
+        self, query: NDArray[np.float64], incoming: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Map points to source coordinates with a bound on their roundoff.
+
+        Parameters
+        ----------
+        query : ndarray of float64, shape (n_points, n_dims)
+            Current coordinates.
+        incoming : ndarray of float64, shape (n_points, n_dims)
+            Bound already carried by ``query``.
+
+        Returns
+        -------
+        original : ndarray of float64, shape (n_points, n_dims)
+            Source coordinates; NaN for non-finite rows.
+        error : ndarray of float64, shape (n_points, n_dims)
+            Bound on how far each source coordinate is from the point the
+            forward map sends exactly to ``query``.
+        """
+        if self._sensitivity is None:
+            raise ValueError(
+                "Bin lookup through this affine map has unresolved precision: "
+                "the map is too ill-conditioned to bound its roundoff. Recenter "
+                "or rescale the coordinates before transforming."
             )
+        n_dims = query.shape[1]
         original = np.full(query.shape, np.nan, dtype=np.float64)
+        error = np.zeros(query.shape, dtype=np.float64)
         finite = np.all(np.isfinite(query), axis=1)
-        original[finite] = (
-            query[finite] @ self.inverse[:-1, :-1].T + self.inverse[:-1, -1]
-        )
-        return self.base.locate(original, indexes)
+        if not np.any(finite):
+            return original, error
+        values = query[finite]
+        source = values @ self.inverse[:-1, :-1].T + self.inverse[:-1, -1]
+        linear, shift = self.forward[:-1, :-1], self.forward[:-1, -1]
+        eps = float(np.finfo(np.float64).eps)
+        gamma = (n_dims + 4) * eps / (1 - (n_dims + 4) * eps)
+        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+            remapped = source @ linear.T + shift
+            difference = np.abs(values - remapped)
+            residual = (
+                difference
+                + 0.5
+                * (
+                    np.spacing(difference)
+                    + np.spacing(np.abs(remapped))
+                    + np.spacing(np.abs(values))
+                )
+                + 2 * gamma * (np.abs(source) @ np.abs(linear).T)
+                + incoming[finite]
+            )
+            bound = residual @ self._sensitivity.T
+        original[finite] = source
+        error[finite] = np.where(np.isfinite(bound), bound, np.inf)
+        return original, error
 
 
 @dataclass(frozen=True, eq=False)
@@ -369,7 +657,8 @@ class HexLocator(ReadOnlyState):
     centers_shape : tuple of int
         Number of hexagon rows and columns in the conceptual lattice.
     flat_to_active : ndarray of intp, shape (prod(centers_shape),)
-        Active-bin index of each full-grid cell, or -1 when inactive.
+        Active-bin index of each full-grid cell, or -1 when inactive; the
+        active bins are numbered exactly once from zero.
     """
 
     offset_x: float
@@ -379,29 +668,118 @@ class HexLocator(ReadOnlyState):
     flat_to_active: NDArray[np.intp]
 
     def __post_init__(self) -> None:
+        offset_x, offset_y, radius = (
+            float(self.offset_x),
+            float(self.offset_y),
+            float(self.radius),
+        )
+        if not np.all(np.isfinite([offset_x, offset_y, radius])) or radius <= 0:
+            raise ValueError(
+                "HexLocator offsets must be finite and its radius finite and "
+                f"positive, got offset=({self.offset_x!r}, {self.offset_y!r}), "
+                f"radius={self.radius!r}."
+            )
+        shape = tuple(self.centers_shape)
+        if len(shape) != 2 or any(
+            not isinstance(count, (int, np.integer))
+            or isinstance(count, (bool, np.bool_))
+            or count < 1
+            for count in shape
+        ):
+            raise ValueError(
+                "HexLocator centers_shape must be two positive row and column "
+                f"counts, got {self.centers_shape!r}."
+            )
+        rows, columns = int(shape[0]), int(shape[1])
+        object.__setattr__(self, "offset_x", offset_x)
+        object.__setattr__(self, "offset_y", offset_y)
+        object.__setattr__(self, "radius", radius)
+        object.__setattr__(self, "centers_shape", (rows, columns))
         object.__setattr__(
-            self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)
+            self,
+            "flat_to_active",
+            owned_active_map(
+                self.flat_to_active, rows * columns, name="HexLocator flat_to_active"
+            ),
         )
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
     ) -> NDArray[np.intp]:
-        """Return active-bin indices, or -1 outside active hexagonal cells."""
-        query_points = np.asarray(points)
+        """Return active-bin indices, or -1 outside active hexagonal cells.
+
+        A point on a side shared by two hexagons (or a corner shared by
+        three), to within rounding, belongs to the active one with the
+        highest lattice index: the hexagon above, or to the right in the
+        same row, as a grid gives a shared face to the cell above it.
+        """
+        query_points = np.asarray(points, dtype=np.float64)
         if query_points.ndim != 2 or query_points.shape[1] != 2:
             raise ValueError(
                 f"Expected points of shape (M, 2), got {query_points.shape}."
             )
-        original_flat_indices = points_to_hex_bin_ind(
-            points=query_points,
-            grid_offset_x=self.offset_x,
-            grid_offset_y=self.offset_y,
-            hex_radius=self.radius,
-            centers_shape=self.centers_shape,
+        return self.locate_within(query_points, np.zeros(query_points.shape))
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Return active-bin indices of points known to within ``error``.
+
+        Hexagons of a regular lattice are the cells of their nearest center,
+        so every hexagon whose center is as near as the nearest one, within
+        the error and rounding, could own the point; the tie rule of
+        :meth:`locate` picks one.
+        """
+        query = np.asarray(points, dtype=np.float64)
+        if query.ndim != 2 or query.shape[1] != 2:
+            raise ValueError(f"Expected points of shape (M, 2), got {query.shape}.")
+        indices = np.full(len(query), -1, dtype=np.intp)
+        finite = np.flatnonzero(np.all(np.isfinite(query), axis=1))
+        if not len(finite):
+            return indices
+        values = query[finite]
+        origin = np.array([self.offset_x, self.offset_y])
+        q_frac, r_frac, s_frac = cartesian_to_fractional_cube(
+            values[:, 0] - origin[0], values[:, 1] - origin[1], self.radius
         )
-        indices = np.full(len(original_flat_indices), -1, dtype=np.intp)
-        valid = original_flat_indices != -1
-        indices[valid] = self.flat_to_active[original_flat_indices[valid]]
+        q_axial, r_axial = round_fractional_cube_to_integer_axial(
+            q_frac, r_frac, s_frac
+        )
+        # The rounded hexagon and its six neighbors, in axial coordinates.
+        dq = np.array([0, 1, -1, 0, 0, 1, -1])
+        dr = np.array([0, 0, 0, 1, -1, -1, 1])
+        q_near = q_axial[:, None] + dq
+        r_near = r_axial[:, None] + dr
+        width = np.sqrt(3.0) * self.radius
+        centers = np.stack(
+            (
+                origin[0] + width * (q_near + r_near / 2),
+                origin[1] + 1.5 * self.radius * r_near,
+            ),
+            axis=-1,
+        )
+        distance = np.linalg.norm(centers - values[:, None, :], axis=2)
+        n_rows, n_cols = self.centers_shape
+        extent = float(np.max(np.abs(origin))) + width * (max(n_rows, n_cols) + 1)
+        tolerance = 2 * _error_radius(error[finite]) + _coordinate_roundoff(
+            values, extent
+        )
+        tied = distance <= distance.min(axis=1, keepdims=True) + tolerance[:, None]
+        flat = axial_to_offset_bin_indices(
+            q_near.ravel(), r_near.ravel(), n_cols, n_rows
+        ).reshape(q_near.shape)
+        active = np.where(flat >= 0, self.flat_to_active[np.maximum(flat, 0)], -1)
+        # Active tied hexagons first, then the highest lattice index.
+        rank = np.where(tied, np.where(active >= 0, flat, -1) + 1, -1)
+        best = np.argmax(rank, axis=1)
+        rows = np.arange(len(finite))
+        found = rank[rows, best] > 0
+        indices[finite[found]] = active[rows[found], best[found]]
         return indices
 
 
@@ -594,16 +972,28 @@ class MeshLocator(ReadOnlyState):
     boundary: Polygon | None
 
     def __post_init__(self) -> None:
+        simplices = _owned_array(self.simplices, np.intp)
         object.__setattr__(self, "points", _owned_array(self.points, np.float64))
-        object.__setattr__(self, "simplices", _owned_array(self.simplices, np.intp))
+        object.__setattr__(self, "simplices", simplices)
         object.__setattr__(
-            self, "simplex_to_active", _owned_array(self.simplex_to_active, np.intp)
+            self,
+            "simplex_to_active",
+            owned_active_map(
+                self.simplex_to_active, len(simplices), name="simplex_to_active"
+            ),
         )
 
     def _find_triangles(
-        self, points: NDArray[np.float64], indexes: LookupIndexes | None
+        self,
+        points: NDArray[np.float64],
+        indexes: LookupIndexes | None,
+        radius: NDArray[np.float64],
     ) -> NDArray[np.intp]:
-        """Return the lowest-numbered stored triangle containing each point, or -1."""
+        """Return the lowest-numbered stored triangle near each point, or -1.
+
+        A triangle holds a point when the point lies inside it, within the
+        barycentric tolerance or within ``radius`` (shape (n_points,)) of it.
+        """
         # Building the index also validates the stored triangles.
         index = _lookup_index(
             self, indexes, lambda: _triangle_index(self.points, self.simplices)
@@ -613,15 +1003,34 @@ class MeshLocator(ReadOnlyState):
         # Chunks bound the memory of the (point, candidate triangle) pairs.
         for start in range(0, len(finite), _QUERY_CHUNK):
             rows = finite[start : start + _QUERY_CHUNK]
-            query, entry = index.tree.query(shapely.points(points[rows]))
+            pad = radius[rows]
+            probes = (
+                shapely.box(
+                    points[rows, 0] - pad,
+                    points[rows, 1] - pad,
+                    points[rows, 0] + pad,
+                    points[rows, 1] + pad,
+                )
+                if np.any(pad > 0)
+                else shapely.points(points[rows])
+            )
+            query, entry = index.tree.query(probes)
             query = rows[query]
             offset = points[query] - index.origin[entry]
-            coords = np.einsum("kij,kj->ki", index.inverse[entry], offset)
+            gradients = index.inverse[entry]
+            coords = np.einsum("kij,kj->ki", gradients, offset)
             coords = np.column_stack((coords, 1.0 - coords[:, 0] - coords[:, 1]))
-            inside = np.all(
-                (coords >= -_BARYCENTRIC_EPS) & (coords <= 1.0 + _BARYCENTRIC_EPS),
-                axis=1,
+            # A move of ``radius`` changes each barycentric coordinate by at
+            # most ``radius`` times the length of its gradient.
+            slopes = np.column_stack(
+                (
+                    np.linalg.norm(gradients[:, 0], axis=1),
+                    np.linalg.norm(gradients[:, 1], axis=1),
+                    np.linalg.norm(gradients[:, 0] + gradients[:, 1], axis=1),
+                )
             )
+            slack = _BARYCENTRIC_EPS + radius[query, None] * slopes
+            inside = np.all((coords >= -slack) & (coords <= 1.0 + slack), axis=1)
             np.minimum.at(found, query[inside], index.triangles[entry[inside]])
         found[found == len(self.simplices)] = -1
         return found
@@ -633,19 +1042,90 @@ class MeshLocator(ReadOnlyState):
         pts2d = np.atleast_2d(points).astype(np.float64, copy=False)
         if pts2d.ndim != 2 or pts2d.shape[1] != 2:
             raise ValueError(f"Expected points of shape (M, 2), got {pts2d.shape}.")
+        return self.locate_within(pts2d, np.zeros(pts2d.shape), indexes)
 
-        orig_simplices = self._find_triangles(pts2d, indexes)
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Return active triangle indices of points known to within ``error``.
+
+        A point that could lie in several triangles belongs to the
+        lowest-numbered one, and one that could lie on the boundary is inside.
+        """
+        pts2d = np.atleast_2d(np.asarray(points, dtype=np.float64))
+        if pts2d.ndim != 2 or pts2d.shape[1] != 2:
+            raise ValueError(f"Expected points of shape (M, 2), got {pts2d.shape}.")
+        radius = _error_radius(error)
+        orig_simplices = self._find_triangles(pts2d, indexes, radius)
         active_triangle_idxs = np.full(orig_simplices.shape, -1, dtype=np.intp)
         valid_mask = orig_simplices != -1
         if np.any(valid_mask):
             found_orig = orig_simplices[valid_mask]
             active_triangle_idxs[valid_mask] = self.simplex_to_active[found_orig]
             if self.boundary is not None:
-                xcoords = pts2d[valid_mask, 0]
-                ycoords = pts2d[valid_mask, 1]
-                on_or_inside = shapely.contains_xy(self.boundary, xcoords, ycoords)
-                active_triangle_idxs[np.flatnonzero(valid_mask)[~on_or_inside]] = -1
+                rows = np.flatnonzero(valid_mask)
+                on_or_inside = shapely.intersects_xy(
+                    self.boundary, pts2d[rows, 0], pts2d[rows, 1]
+                )
+                near = ~on_or_inside & (radius[rows] > 0)
+                on_or_inside[near] = shapely.dwithin(
+                    self.boundary, shapely.points(pts2d[rows[near]]), radius[rows[near]]
+                )
+                active_triangle_idxs[rows[~on_or_inside]] = -1
         return active_triangle_idxs.astype(np.intp, copy=False)
+
+
+def _lookup_radius(value: object) -> float:
+    """Return a nearest-bin lookup radius as a float, or raise naming it.
+
+    Parameters
+    ----------
+    value : object
+        The ``max_distance`` given: a real number that is zero or more,
+        possibly ``math.inf``.
+
+    Returns
+    -------
+    float
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is not a real number (booleans included).
+    ValueError
+        If ``value`` is NaN or negative.
+    """
+    fix = (
+        "pass max_distance as a distance in the bin centers' length units, "
+        "math.inf to give every position its nearest bin however far away, "
+        "or None to look up positions only inside a known domain"
+    )
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.integer, np.floating)
+    ):
+        raise TypeError(
+            _format_error(
+                f"max_distance must be a real number or None, got {value!r}.",
+                fix=fix,
+            )
+        )
+    radius = float(value)
+    if np.isnan(radius) or radius < 0:
+        raise ValueError(
+            _format_error(
+                f"max_distance must be zero or more, got {radius!r}.",
+                why="Why: it is the farthest a position may be from a bin "
+                "center and still belong to that bin; a NaN or negative "
+                "radius would put every position outside.",
+                fix=fix,
+            )
+        )
+    return radius
 
 
 @dataclass(frozen=True, eq=False)
@@ -657,9 +1137,22 @@ class NearestBinLocator(ReadOnlyState):
     centers : ndarray of float64, shape (n_centers, n_dims)
         Coordinates used for nearest-neighbor lookup.
     max_distance : float or None, default=None
-        Maximum accepted distance. None preserves unlimited nearest lookup.
+        Largest distance from a bin center, in the centers' length units, at
+        which a point still belongs to that bin; farther points map to -1.
+        ``math.inf`` deliberately gives every finite point its nearest bin.
+        None chooses no radius: an environment then assigns positions only
+        inside a known domain (an arena or a track width) and refuses lookup
+        otherwise.
     bin_indices : ndarray of intp, shape (n_centers,), or None
         Bin index for each stored center. None numbers centers consecutively.
+
+    Raises
+    ------
+    ValueError
+        If ``max_distance`` is NaN or negative, or ``centers`` and
+        ``bin_indices`` have incompatible shapes.
+    TypeError
+        If ``max_distance`` is not a real number or None.
     """
 
     centers: NDArray[np.float64]
@@ -667,6 +1160,8 @@ class NearestBinLocator(ReadOnlyState):
     bin_indices: NDArray[np.intp] | None = None
 
     def __post_init__(self) -> None:
+        if self.max_distance is not None:
+            object.__setattr__(self, "max_distance", _lookup_radius(self.max_distance))
         centers = _owned_array(self.centers, np.float64)
         if centers.ndim != 2:
             raise ValueError(
@@ -695,7 +1190,29 @@ class NearestBinLocator(ReadOnlyState):
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
     ) -> NDArray[np.intp]:
-        """Return nearest bin indices, mapping non-finite rows to -1."""
+        """Return nearest bin indices, mapping non-finite rows to -1.
+
+        A point as near, within rounding, to several centers belongs to the
+        lowest-numbered of their bins, as ``Environment.nearest_bin`` breaks
+        ties by default.
+        """
+        query_points = np.atleast_2d(points)
+        return self.locate_within(query_points, np.zeros(query_points.shape), indexes)
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Return nearest bin indices of points known to within ``error``.
+
+        Every center as near as the nearest one, within twice the error and
+        rounding, ties; the tie rule of :meth:`locate` picks one. A point
+        within the error of ``max_distance`` is inside it.
+        """
         query_points = np.atleast_2d(points)
         n_query_points = query_points.shape[0]
         if query_points.ndim != 2:
@@ -718,22 +1235,24 @@ class NearestBinLocator(ReadOnlyState):
         if not np.any(finite_rows):
             return final_bin_indices
         tree = self.kdtree(indexes)
-        try:
-            distances, kdtree_internal_indices = tree.query(query_points[finite_rows])
-        except Exception as exc:
-            warnings.warn(
-                f"KDTree query failed: {exc}. Returning -1 for all points.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return final_bin_indices
-        max_valid_kdtree_idx = int(tree.data.shape[0] - 1)
-        kdtree_internal_indices = np.clip(
-            kdtree_internal_indices, 0, max_valid_kdtree_idx
-        )
+        finite_points = query_points[finite_rows]
+        # The second-nearest center shows whether the nearest one is tied.
+        nearest, nearest_indices = tree.query(finite_points, k=2)
+        distances = nearest[:, 0]
+        kdtree_internal_indices = nearest_indices[:, 0]
         assert self.bin_indices is not None
         mapped = self.bin_indices[kdtree_internal_indices]
+        radius = _error_radius(np.asarray(error)[finite_rows])
+        tolerance = 2 * radius + _coordinate_roundoff(
+            finite_points, float(np.max(np.abs(self.centers)))
+        )
+        rows = np.flatnonzero(nearest[:, 1] <= distances + tolerance)
+        if len(rows):
+            tied = tree.query_ball_point(
+                finite_points[rows], distances[rows] + tolerance[rows]
+            )
+            mapped[rows] = [int(np.min(self.bin_indices[group])) for group in tied]
         if self.max_distance is not None:
-            mapped = np.where(distances <= self.max_distance, mapped, -1)
+            mapped = np.where(distances <= self.max_distance + radius, mapped, -1)
         final_bin_indices[finite_rows] = mapped
         return np.asarray(final_bin_indices, dtype=np.intp)

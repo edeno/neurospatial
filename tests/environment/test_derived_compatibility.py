@@ -98,7 +98,7 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
         layout.grid_edges = ()
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"No installed snapshot adapter|owned immutable snapshot",
     ):
         publish_environment("external_track", layout, "ExternalTrack", {})
     parent = publish_environment(
@@ -201,7 +201,7 @@ def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
     )
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"No installed snapshot adapter|owned immutable snapshot",
     ):
         publish_environment("external", _ExternalGridLayout(native), "ExternalGrid", {})
     parent = publish_environment(

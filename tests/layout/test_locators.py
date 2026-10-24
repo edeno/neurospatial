@@ -48,7 +48,8 @@ def _assert_mesh_membership(locator, points, actual):
             assert index == -1
             continue
         point = Point(coordinates)
-        if locator.boundary is not None and not locator.boundary.contains(point):
+        # The outline is part of the arena, as Arena.contains has it.
+        if locator.boundary is not None and not locator.boundary.covers(point):
             assert index == -1
             continue
         if index == -1:
@@ -58,6 +59,40 @@ def _assert_mesh_membership(locator, points, actual):
             assert index in cells
             # Lookup permits rounding error at a triangle edge.
             assert cells[index].distance(point) <= 1e-12
+
+
+def _assert_hex_membership(locator, points, actual):
+    """Check each point against hexagon polygons built from the lattice.
+
+    A point belongs to the hexagons that cover it, to within 1e-9; of
+    several (a shared side or corner), to the active one with the highest
+    lattice index, and to no bin when none of them is active.
+    """
+    n_rows, n_cols = locator.centers_shape
+    rows, cols = np.divmod(np.arange(n_rows * n_cols), n_cols)
+    width = np.sqrt(3.0) * locator.radius
+    centers = np.column_stack(
+        (
+            locator.offset_x + width * (cols + 0.5 * (rows % 2)),
+            locator.offset_y + 1.5 * locator.radius * rows,
+        )
+    )
+    angles = np.pi / 6 + np.pi / 3 * np.arange(6)
+    corners = locator.radius * np.column_stack((np.cos(angles), np.sin(angles)))
+    hexagons = [Polygon(center + corners) for center in centers]
+    for coordinates, index in zip(np.atleast_2d(points), actual, strict=True):
+        if not np.all(np.isfinite(coordinates)):
+            assert index == -1
+            continue
+        point = Point(coordinates)
+        covering = [
+            flat
+            for flat, hexagon in enumerate(hexagons)
+            if hexagon.distance(point) <= 1e-9
+        ]
+        active = [flat for flat in covering if locator.flat_to_active[flat] >= 0]
+        expected = locator.flat_to_active[max(active)] if active else -1
+        assert index == expected, (coordinates, covering, index)
 
 
 @pytest.mark.parametrize(
@@ -95,12 +130,18 @@ def test_locator_matches_previous_lookup(
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always", RuntimeWarning)
             actual = locator.locate(points)
+        recorded_warnings = locator_parity[f"{prefix}/warnings"].tolist()
         if case.startswith("mesh"):
             _assert_mesh_membership(env._binning.locator, points, actual)
+        elif case == "hex":
+            # Points on shared sides follow the tie rule, and non-finite
+            # rows no longer pass through the arithmetic that warned.
+            _assert_hex_membership(env._binning.locator, points, actual)
+            recorded_warnings = []
         else:
             np.testing.assert_array_equal(actual, locator_parity[f"{prefix}/values"])
         assert actual.dtype == np.intp
-        assert _warnings(caught) == locator_parity[f"{prefix}/warnings"].tolist()
+        assert _warnings(caught) == recorded_warnings
     np.testing.assert_array_equal(points, unchanged)
     assert points.flags.writeable
 
@@ -228,9 +269,7 @@ def test_rectilinear_locator_matches_brute_force(case):
     """Arbitrary masks and unequal cell widths keep half-open ownership inside
     the active cells and close their outline."""
     edges, shape, active, points = case
-    mapping = np.full(active.size, -1, dtype=np.intp)
-    mapping[active.ravel()] = np.arange(np.count_nonzero(active))
-    locator = RectilinearLocator(edges, shape, active, mapping)
+    locator = RectilinearLocator(edges, shape, active)
     np.testing.assert_array_equal(
         locator.locate(points), _brute_force_boxes(edges, shape, active, points)
     )
@@ -342,13 +381,7 @@ def locator_and_inputs(request):
     if request.param == "rectilinear":
         edges = (np.arange(6.0)[::2], np.arange(6.0)[::2])
         mask = np.array([[True, False], [True, True]])
-        mapping = np.array([0, -1, 1, 2])
-        inputs = {
-            "edges": edges,
-            "shape": (2, 2),
-            "active_mask": mask,
-            "flat_to_active": mapping,
-        }
+        inputs = {"edges": edges, "shape": (2, 2), "active_mask": mask}
         return RectilinearLocator(**inputs), inputs, np.array([[1.0, 1.0], [3.0, 3.0]])
     if request.param == "hex":
         inputs = {
@@ -429,6 +462,23 @@ def test_nearest_lookup_keeps_unlimited_distance_and_identity_mapping():
     np.testing.assert_array_equal(
         locator.locate(np.array([[-100.0, 0.0], [100.0, 0.0]])), [8, 3]
     )
+
+
+def test_nearest_lookup_failure_is_raised_not_reported_as_outside(monkeypatch):
+    """A failed KD-tree query is an error, never "every point is outside"."""
+
+    class FailingTree:
+        def query(self, points, k=1):
+            raise MemoryError("query buffer")
+
+    locator = NearestBinLocator(np.array([[0.0, 0.0], [2.0, 0.0]]))
+    monkeypatch.setattr(
+        NearestBinLocator, "kdtree", lambda self, indexes: FailingTree()
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(MemoryError, match="query buffer"):
+            locator.locate(np.array([[0.0, 0.0]]))
 
 
 def test_empty_nearest_lookup_still_validates_axes():

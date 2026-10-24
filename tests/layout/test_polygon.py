@@ -108,7 +108,7 @@ def test_polygon_cells_name_the_first_overlapping_pair():
 
 def test_clipped_locator_preserves_parent_boundary_and_nonfinite_semantics():
     base = RectilinearLocator(
-        (np.array([0.0, 4.0]), np.array([0.0, 4.0])), (1, 1), None, None
+        (np.array([0.0, 4.0]), np.array([0.0, 4.0])), (1, 1), np.ones((1, 1), bool)
     )
     cells = PolygonCells((box(0, 0, 1, 4), box(3, 0, 4, 4)))
     mapping = ClipMapping([0, 0], 1)
@@ -247,7 +247,7 @@ def test_holed_and_nonconvex_cells_keep_exact_geometry_and_interior_anchor(regio
 def test_rectangular_clip_has_analytic_faces_and_norm_distances():
     child, _ = clip_binning(_grid(), box(0.25, 0, 2, 1))
     assert child.faces.available
-    faces = child.faces.build()
+    faces = child.build_faces()
     np.testing.assert_array_equal(child.bins.centers, [[0.625, 0.5], [1.5, 0.5]])
     np.testing.assert_array_equal(faces.volumes, [0.75, 1])
     np.testing.assert_array_equal(faces.A, [1])
@@ -291,7 +291,7 @@ def test_parent_path_only_faces_stay_zero_and_missing_roles_stay_missing():
     parent = _grid((2, 2), diagonals=True)
     child, _ = clip_binning(parent, box(0, 0, 2, 2))
     np.testing.assert_array_equal(child.connections.pairs, parent.connections.pairs)
-    np.testing.assert_array_equal(child.faces.build().A, parent.faces.build().A)
+    np.testing.assert_array_equal(child.build_faces().A, parent.build_faces().A)
     missing = replace(parent, faces=MissingFaces("Unknown source flux roles"))
     uncertified, _ = clip_binning(missing, box(0, 0, 2, 2))
     np.testing.assert_array_equal(
@@ -303,7 +303,7 @@ def test_parent_path_only_faces_stay_zero_and_missing_roles_stay_missing():
 
 def test_unlocated_partial_parent_conductance_is_not_promoted():
     parent = _grid()
-    faces = parent.faces.build()
+    faces = parent.build_faces()
     parent = replace(
         parent,
         faces=KnownFaces(
@@ -445,7 +445,7 @@ def test_numerical_certificate_keeps_rotated_rectangles_at_large_origin(angle):
 
 def test_partial_parent_conductance_is_not_hidden_by_large_origin():
     parent = _grid(edges=(np.arange(3.0) + 1e9, np.arange(2.0) + 1e9))
-    faces = parent.faces.build()
+    faces = parent.build_faces()
     parent = replace(
         parent,
         faces=KnownFaces(

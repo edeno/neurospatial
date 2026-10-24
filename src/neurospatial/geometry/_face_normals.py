@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 from shapely.ops import linemerge
 
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, active_order
 from neurospatial.geometry._locators import (
     HexLocator,
     Locator,
@@ -95,8 +95,7 @@ def geometric_normals(
         # Recover lattice IDs from interior representatives, then use exact
         # relative lattice offsets. Inverse-mapped world centers can lose low
         # bits at large translations; their subtraction is not face geometry.
-        active = np.flatnonzero(locator.flat_to_active >= 0)
-        active = active[np.argsort(locator.flat_to_active[active])]
+        active = active_order(locator.flat_to_active)
         ids = locator.locate(centers)
         if np.any(ids < 0):
             raise ValueError("hex centers must lie in their stored cells.")
@@ -110,8 +109,7 @@ def geometric_normals(
         normals[~adjacent] = 0
         return normals
     if isinstance(locator, MeshLocator) and centers.shape[1] == 2:
-        active = np.flatnonzero(locator.simplex_to_active >= 0)
-        active = active[np.argsort(locator.simplex_to_active[active])]
+        active = active_order(locator.simplex_to_active)
         stored = locator.simplices[active]
         # Identify stored centroid rows without building the triangle lookup or
         # depending on Qhull's platform-specific simplex ordering. Publication

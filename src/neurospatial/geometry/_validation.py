@@ -15,32 +15,29 @@ from scipy.spatial import cKDTree
 from shapely.affinity import affine_transform
 from shapely.geometry import MultiPolygon, Polygon
 
-from neurospatial.geometry._arrays import get_centers, per_dimension
+from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import active_order, get_centers, per_dimension
 from neurospatial.geometry._binning import (
-    BinConnections,
     Binning,
     KnownFaces,
-    MissingFaces,
     SpatialBins,
     TrackLinearization,
     refuse_mixed_measure_conductance,
 )
-from neurospatial.geometry._combine_geometry import certify_components
+from neurospatial.geometry._combine_geometry import certify_locator
 from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._composition import (
     CombinedLocator,
+    combined_faces,
     combined_normals,
 )
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
-from neurospatial.geometry._derive import transform_binning
-from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._derive import selected_records, transform_binning
 from neurospatial.geometry._face_normals import (
-    FaceNormals,
     _unit_rows,
     geometric_normals,
 )
 from neurospatial.geometry._grid_frame import (
-    FramedGrid,
     _underflow_error,
     frame_from_locator,
 )
@@ -52,7 +49,9 @@ from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
+    _coordinate_roundoff,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import (
     _representative,
     cells_from_locator,
@@ -73,22 +72,25 @@ def _equal(actual: Any, expected: Any, name: str) -> None:
         raise ValueError(f"{name} does not match the binning geometry.")
 
 
-def _active_indices(
-    mapping: NDArray[np.intp], count: int, name: str
-) -> NDArray[np.intp]:
-    """Validate a bijection and return active full-cell IDs in bin order."""
-    if mapping.ndim != 1 or np.any(mapping < -1):
-        raise ValueError(f"{name} must be a one-dimensional active-bin mapping.")
-    active = np.flatnonzero(mapping >= 0).astype(np.intp, copy=False)
-    _equal(np.sort(mapping[active]), np.arange(count, dtype=np.intp), name)
-    return active[np.argsort(mapping[active])]
-
-
 def _gap(points: NDArray[np.float64]) -> float:
-    """Smallest active-center gap, rather than a scale set by the origin."""
+    """Smallest gap between distinct active centers, not set by the origin.
+
+    Centers within rounding of each other are one place, such as the bins
+    of an out-and-back track that revisit the same points on the way back;
+    the gap is to the nearest center that is not at the same place.
+    """
     if len(points) < 2:
         return math.inf
-    distances = cKDTree(points).query(points, k=2)[0][:, 1]
+    tree = cKDTree(points)
+    same = _coordinate_roundoff(points, float(np.max(np.abs(points))))
+    # Widen the search until every point sees a center at another place.
+    k = 2
+    while True:
+        distances = np.asarray(tree.query(points, k=k)[0]).reshape(len(points), k)
+        distances[distances <= same[:, None]] = np.inf
+        if k == len(points) or np.all(np.isfinite(distances[:, -1])):
+            break
+        k = min(2 * k, len(points))
     return float(np.min(distances))
 
 
@@ -96,6 +98,7 @@ def _polygon_area_allowance(
     polygon: Polygon | MultiPolygon,
     *,
     reference_clearance: float = math.inf,
+    uncertainty: NDArray[np.float64] | None = None,
 ) -> float:
     """Return a local, coordinate-ULP bounded polygon area comparison budget.
 
@@ -106,20 +109,25 @@ def _polygon_area_allowance(
     reference_clearance : float, optional
         Cached minimum clearance of a containing reference geometry. It further
         limits the uncertainty without repeatedly traversing that geometry.
+    uncertainty : ndarray of float64, shape (2,), optional
+        ``_polygon_coordinate_errors(polygon)``, when the caller already has
+        it; computed here otherwise.
 
     Returns
     -------
     float
         Boundary variation times directional coordinate uncertainty, including
-        second-order corner terms. The budget is capped by the actual area and
-        by the containing reference's smallest feature.
+        second-order corner terms. The budget is capped at ``1e-4`` of the
+        polygon's area and at ``reference_clearance**2 / 16``, a quarter of
+        the containing reference's smallest feature squared.
 
     Raises
     ------
     ValueError
         If local features cannot be resolved at the stored coordinate origin.
     """
-    uncertainty = _polygon_coordinate_errors(polygon)
+    if uncertainty is None:
+        uncertainty = _polygon_coordinate_errors(polygon)
     coordinates = shapely.get_coordinates(polygon)
     variation = np.sum(np.abs(np.diff(coordinates, axis=0)), axis=0)
     # Varying each shoelace coordinate independently changes area by at most
@@ -167,6 +175,38 @@ def _same_ring(first: Any, second: Any, tolerance: NDArray[np.float64]) -> bool:
     )
 
 
+def _same_cell(
+    actual: Polygon | MultiPolygon,
+    expected: Polygon | MultiPolygon,
+    tolerance: NDArray[np.float64],
+) -> bool:
+    """Match two cells ring by ring within ``tolerance`` on each axis."""
+    actual_normalized, expected_normalized = (
+        shapely.normalize(actual),
+        shapely.normalize(expected),
+    )
+    actual_rings = [actual_normalized.exterior, *actual_normalized.interiors]
+    expected_rings = [expected_normalized.exterior, *expected_normalized.interiors]
+    if len(actual_rings) != len(expected_rings) or not _same_ring(
+        actual_rings[0], expected_rings[0], tolerance
+    ):
+        return False
+    remaining = list(expected_rings[1:])
+    for ring in actual_rings[1:]:
+        match = next(
+            (
+                i
+                for i, candidate in enumerate(remaining)
+                if _same_ring(ring, candidate, tolerance)
+            ),
+            None,
+        )
+        if match is None:
+            return False
+        remaining.pop(match)
+    return True
+
+
 @dataclass(eq=False)
 class _LocatorGeometry:
     """Geometry recovered from a locator, including arithmetic error only."""
@@ -211,7 +251,13 @@ def _grid_width_errors(
 def _uniform_grid_widths(
     edges: tuple[NDArray[np.float64], ...], widths: list[NDArray[np.float64]]
 ) -> bool:
-    """Use the existing saved-grid uniformity condition for quantized edges."""
+    """Whether each axis has equal cell widths, up to rounding of its edges.
+
+    A uniform grid's builder measures every cell with the axis's first
+    width, which differs from the per-cell edge differences by rounding. The
+    tolerance is ``1e-7`` of the first width plus four ULPs of the largest
+    edge, because edges far from the origin quantize their differences.
+    """
     return all(
         np.max(np.abs(axis - axis[0]))
         <= 1e-7 * axis[0] + 4 * np.spacing(np.max(np.abs(edge)))
@@ -229,36 +275,7 @@ def _rectilinear_geometry(
     coordinate_kind: Literal["cartesian", "polar"],
 ) -> _LocatorGeometry:
     shape, edges = locator.shape, locator.edges
-    if (
-        len(edges) != len(shape)
-        or not shape
-        or any(
-            not isinstance(size, (int, np.integer))
-            or isinstance(size, (bool, np.bool_))
-            or size < 1
-            for size in shape
-        )
-    ):
-        raise ValueError("locator shape must match the bin coordinate dimensions.")
-    for axis, (edge, size) in enumerate(zip(edges, shape, strict=True)):
-        if (
-            edge.shape != (size + 1,)
-            or not np.all(np.isfinite(edge))
-            or np.any(np.diff(edge) <= 0)
-        ):
-            raise ValueError(f"locator edges[{axis}] must increase and match shape.")
-    mask = (
-        np.ones(shape, dtype=bool)
-        if locator.active_mask is None
-        else locator.active_mask
-    )
-    if mask.shape != shape:
-        raise ValueError("locator active_mask shape does not match locator shape.")
-    active = np.flatnonzero(mask)
-    if locator.flat_to_active is not None:
-        mapping = np.full(mask.size, -1, dtype=np.intp)
-        mapping[active] = np.arange(len(active))
-        _equal(locator.flat_to_active, mapping, "locator flat_to_active ordering")
+    active = np.flatnonzero(locator.active_mask)
     coordinates = np.unravel_index(active, shape)
     centers = locator.active_centers()
     # Mapped endpoints and mapped centers can differ by a few ULPs even for
@@ -300,8 +317,8 @@ def _rectilinear_geometry(
             [axis[index] for axis, index in zip(width_errors, coordinates, strict=True)]
         ),
     )
-    # Native grids use first spacings. Preserve that candidate only under
-    # their existing uniformity rule, including quantized large-offset edges.
+    # A uniform grid's builder measures every cell with the first width of
+    # each axis, so accept that measure too when the widths are uniform.
     uniform = _uniform_grid_widths(edges, widths)
     if uniform:
         add_measure(
@@ -328,16 +345,8 @@ def _primitive_geometry(
         if coordinate_kind != "cartesian":
             raise ValueError("Combined lookup requires Cartesian coordinates.")
         for child in locator.children:
-            raw, links = child.bins, child.connections
-            SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dims)
-            BinConnections.from_arrays(
-                links.all_pairs, links.all_distances, links.is_open, links.closed_by
-            )
-            if isinstance(child.faces, KnownFaces):
-                KnownFaces(child.faces.faces)
             validate_components(child, CartesianSystem())
-
-        certify_components(locator.children, locator.arenas, locator.keys)
+        certify_locator(locator)
         bins = locator.spatial_bins()
         geometry = _LocatorGeometry(
             locator,
@@ -386,29 +395,7 @@ def _primitive_geometry(
     if isinstance(locator, RectilinearLocator):
         return _rectilinear_geometry(locator, coordinate_kind)
     if isinstance(locator, HexLocator):
-        if (
-            len(locator.centers_shape) != 2
-            or any(
-                not isinstance(size, (int, np.integer))
-                or isinstance(size, (bool, np.bool_))
-                or size < 1
-                for size in locator.centers_shape
-            )
-            or not np.all(
-                np.isfinite([locator.offset_x, locator.offset_y, locator.radius])
-            )
-            or locator.radius <= 0
-        ):
-            raise ValueError("hex locator geometry must define a finite 2D lattice.")
-        if locator.flat_to_active.shape != (int(np.prod(locator.centers_shape)),):
-            raise ValueError(
-                "hex locator flat_to_active shape does not match its lattice."
-            )
-        active = _active_indices(
-            locator.flat_to_active,
-            int(np.count_nonzero(locator.flat_to_active >= 0)),
-            "hex locator flat_to_active ordering",
-        )
+        active = active_order(locator.flat_to_active)
         rows, columns = np.unravel_index(active, locator.centers_shape)
         x = columns.astype(np.float64)
         x[rows % 2 == 1] += 0.5
@@ -442,11 +429,7 @@ def _primitive_geometry(
             raise ValueError(
                 "mesh locator simplex_to_active shape does not match simplices."
             )
-        active = _active_indices(
-            locator.simplex_to_active,
-            int(np.count_nonzero(locator.simplex_to_active >= 0)),
-            "mesh locator simplex_to_active ordering",
-        )
+        active = active_order(locator.simplex_to_active)
         triangles = locator.simplices[active]
         vertices = locator.points[triangles]
         centers = vertices.mean(axis=1)
@@ -467,11 +450,12 @@ def _primitive_geometry(
                 "nearest locator centers must be finite and two dimensional."
             )
         assert locator.bin_indices is not None
-        order = _active_indices(
-            locator.bin_indices,
-            len(locator.centers),
+        _equal(
+            np.sort(locator.bin_indices),
+            np.arange(len(locator.centers)),
             "nearest locator bin_indices ordering",
         )
+        order = np.argsort(locator.bin_indices)
         centers = locator.centers[order]
         return _LocatorGeometry(locator, centers, np.zeros_like(centers), [])
     raise ValueError("locator needs supported stored geometry for consistency checks.")
@@ -486,9 +470,9 @@ def mapped_geometry(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     linear, shift = matrix[:-1, :-1], matrix[:-1, -1]
     mapped = points @ linear.T + shift
-    # Recovering a forward map from its stored inverse and applying it costs
-    # O(n) floating operations. Include input uncertainty and inverse error;
-    # the final comparison separately caps this bound by the active-bin gap.
+    # Applying a forward map costs O(n) floating operations. Include input
+    # uncertainty and the matrix's error bound; the final comparison
+    # separately caps this bound by the active-bin gap.
     magnitude = np.abs(points) @ np.abs(linear).T + np.abs(shift)
     bound = (
         error @ (np.abs(linear) + linear_error).T
@@ -513,11 +497,7 @@ def _locator_geometry(
             raise ValueError(
                 "subset parent_to_child length does not match parent locator bins."
             )
-        active = _active_indices(
-            mapping,
-            int(np.count_nonzero(mapping >= 0)),
-            "subset parent_to_child ordering",
-        )
+        active = active_order(mapping)
         geometry.centers = geometry.centers[active]
         geometry.center_error = geometry.center_error[active]
         geometry.measures = [
@@ -542,11 +522,14 @@ def _locator_geometry(
         raise ValueError(
             "transformed locator inverse dimensions do not match parent geometry."
         )
-    matrix = np.asarray(np.linalg.inv(locator.inverse), dtype=np.float64)
+    matrix = locator.forward
     linear = matrix[:-1, :-1]
-    # Componentwise inverse sensitivity avoids inflating independent diagonal
-    # axes by their normwise condition number. The homogeneous product also
-    # includes cancellation in t = -A @ inverse_t across coordinate axes.
+    # The forward map is stored exactly. Its error bound is still the
+    # componentwise sensitivity of inverting ``inverse``, a conservative
+    # allowance that keeps the similarity test below as tolerant as the
+    # derivation's. Componentwise sensitivity avoids inflating independent
+    # diagonal axes by their normwise condition number. The homogeneous
+    # product also includes cancellation in t = -A @ inverse_t across axes.
     rounding = 16 * (n_dims + 1) * np.finfo(np.float64).eps
     matrix_error = rounding * (
         np.abs(matrix) @ np.abs(locator.inverse) @ np.abs(matrix)
@@ -614,8 +597,8 @@ def _locator_geometry(
         # parent's exact cells mapped forward; map the same cells here.
         geometry.polygons = cells_from_locator(locator.base)
     if geometry.polygons is not None:
-        # Vertices carry the arithmetic error of recovering and applying this
-        # forward map, like centers; bound it at the cells' largest coordinates.
+        # Vertices carry the arithmetic error of applying this forward map,
+        # like centers; bound it at the cells' largest coordinates.
         extent = np.max(
             np.abs(shapely.get_coordinates(geometry.polygons)), axis=0, keepdims=True
         )
@@ -770,8 +753,7 @@ def _validate_rectilinear_faces(binning: Binning, geometry: _LocatorGeometry) ->
         raise ValueError(
             "grid faces.A does not match shared cell-face measures. Supply physical "
             "shared-face areas, using zero only for pairs without a face, or rebuild "
-            "the environment from its source geometry. Older tiny-grid records with "
-            "incorrect zero-area faces must be regenerated."
+            "the environment from its source geometry."
         )
     _validate_face_distances(binning, geometry, "grid faces.distance")
 
@@ -874,23 +856,74 @@ def _validate_cell_faces(binning: Binning, geometry: _LocatorGeometry) -> None:
     _validate_face_distances(binning, geometry, f"{label}.distance")
 
 
+# Set in a Binning's __dict__ to the coordinates it was validated in. A binning
+# is immutable, so the result holds for it and for its copies and unpickled
+# versions (which keep __dict__); dataclasses.replace and the codecs build a
+# new binning, which is validated anew.
+_VALIDATED_IN = "_validated_in"
+
+
 def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None:
-    """Compare shared arrays exactly and recursively check computed geometry."""
+    """Compare shared arrays exactly and recursively check computed geometry.
+
+    A binning is validated once in each coordinate system, so a combined
+    environment's published components are not checked again.
+    """
+    if binning.__dict__.get(_VALIDATED_IN) == coordinates:
+        return
+    try:
+        _validate_components(binning, coordinates)
+    except ValueError as error:
+        why = _precision_loss(binning.bins)
+        # A refusal that already advises recentering needs no second copy.
+        if why is None or "recenter" in str(error):
+            raise
+        raise ValueError(
+            _format_error(
+                str(error),
+                why=why,
+                fix="recenter or rescale the coordinates (for example, subtract "
+                "the arena's center, or use larger units) before building or "
+                "transforming the environment",
+            )
+        ) from error
+    object.__setattr__(binning, _VALIDATED_IN, coordinates)
+
+
+def _precision_loss(bins: SpatialBins) -> str | None:
+    """Explain a refusal by coordinates too large to resolve the bins, if so.
+
+    Geometry checks compare values that carry a few roundings each. Once
+    sixteen units in the last place of the largest coordinate reach a quarter
+    of the smallest bin's width, those roundings can move a center, face or
+    normal by a meaningful part of a bin, and any of the checks can fail.
+    """
+    if not bins.n_bins:
+        return None
+    scale = float(np.max(np.abs(bins.centers)))
+    width = float(np.min(bins.sizes ** (1.0 / bins.measure_dims)))
+    resolution = 16 * float(np.spacing(scale))
+    if resolution < width / 4:
+        return None
+    return (
+        f"Why: coordinates as large as {scale:.3g} are stored to steps of "
+        f"{np.spacing(scale):.3g}, too coarse for bins {width:.3g} wide, so "
+        "the bins' geometry cannot be checked."
+    )
+
+
+def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> None:
     coordinate_kind = coordinates.kind
     bins, links, locator = binning.bins, binning.connections, binning.locator
-    links.check_bins(bins.n_bins)
     if binning.grid_spec is not None:
         spec = binning.grid_spec
         if type(spec) is not GridBinningSpec:
             raise TypeError("grid_spec must be an owned GridBinningSpec.")
-        GridBinningSpec(spec.origin, spec.forward, spec.connect_diagonal)
         if len(spec.origin) != bins.n_dims or coordinate_kind != "cartesian":
             raise ValueError(
                 "Grid specification must match Cartesian coordinate dimensions."
             )
     if isinstance(binning.faces, KnownFaces):
-        _equal(binning.faces.faces.edges, links.pairs, "faces.edges")
-        _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")
         faces = binning.faces.faces
         refuse_mixed_measure_conductance(
             bins.measure_dims,
@@ -902,45 +935,9 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
         )
     if binning.face_normals is not None and coordinate_kind != "cartesian":
         raise ValueError("Physical face normals require Cartesian coordinates.")
+    if coordinate_kind == "polar":
+        _validate_polar_seam(binning, coordinates.circular)
     validate_normals(binning)
-    if isinstance(locator, CombinedLocator):
-        if binning.face_normals is not None:
-            expected_normals = combined_normals(locator)
-            if expected_normals is None:
-                raise ValueError(
-                    "Combined normals require authoritative child normals."
-                )
-            _equal(
-                binning.face_normals.values,
-                expected_normals.values,
-                "combined face normals",
-            )
-        expected_links = locator.bin_connections()
-        _equal(links.all_pairs, expected_links.all_pairs, "combined neighbor pairs")
-        _equal(links.is_open, expected_links.is_open, "combined open pairs")
-        _equal(links.closed_by, expected_links.closed_by, "combined closing walls")
-        _equal(
-            links.all_distances,
-            expected_links.all_distances,
-            "combined path distances",
-        )
-        if locator.bridge_pairs.size and binning.faces.available:
-            raise ValueError(
-                "Navigation bridges cannot be published as physical faces."
-            )
-    if isinstance(locator, CombinedLocator) and isinstance(binning.faces, KnownFaces):
-        if not all(child.faces.available for child in locator.children):
-            raise ValueError(
-                "Combined faces require certified geometry in every child."
-            )
-        for name in ("A", "distance"):
-            _equal(
-                getattr(binning.faces.faces, name),
-                np.concatenate(
-                    [getattr(child.faces.build(), name) for child in locator.children]
-                ),
-                f"combined faces.{name}",
-            )
     grid, shapes, track = binning.rectilinear, binning.shapes, binning.linearization
     geometry = _locator_geometry(
         locator,
@@ -950,12 +947,8 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     gap = min(_gap(geometry.centers), geometry.cell_gap)
     if binning.grid_frame is not None:
         frame = binning.grid_frame
-        if coordinate_kind != "cartesian" or binning.rectilinear is not None:
-            raise ValueError(
-                "FramedGrid requires Cartesian cells without a duplicate world-axis grid."
-            )
-        checked = FramedGrid(frame.source, frame.forward)
-        _equal(frame.inverse, checked.inverse, "grid_frame.inverse")
+        if coordinate_kind != "cartesian":
+            raise ValueError("FramedGrid requires Cartesian cells.")
         expected_frame, error = frame_from_locator(locator)
         _equal(
             frame.source.shape, expected_frame.source.shape, "grid_frame.source.shape"
@@ -994,78 +987,76 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
             "grid_frame.forward projected cells and locator frame",
             gap=gap,
         )
-    if not isinstance(locator, CombinedLocator):
-        composition = expected_composition_binning(locator)
-        if composition is not None:
-            expected_binning, computed = composition
-            if binning.face_normals is not None:
-                expected_normals = expected_binning.face_normals
-                if expected_normals is None:
-                    raise ValueError(
-                        "Derived combined normals require authoritative child normals."
-                    )
-                actual_normals = binning.face_normals.values
-                if computed:
-                    if not np.allclose(
-                        actual_normals, expected_normals.values, rtol=0, atol=1e-12
-                    ):
-                        raise ValueError(
-                            "Derived combined face normals disagree with child geometry."
-                        )
-                else:
-                    _equal(
-                        actual_normals,
-                        expected_normals.values,
-                        "derived combined face normals",
-                    )
-            expected_links = expected_binning.connections
-            _equal(
-                links.all_pairs,
-                expected_links.all_pairs,
-                "derived combined neighbor pairs",
-            )
-            _equal(links.is_open, expected_links.is_open, "derived combined open pairs")
-            _equal(
-                links.closed_by,
-                expected_links.closed_by,
-                "derived combined closing walls",
-            )
+    composition = expected_composition_binning(locator)
+    if composition is not None:
+        expected_binning, computed = composition
+        # A combined binning and one derived from it (by subsets and affine
+        # maps) store copies of what their components define.
+        label = (
+            "combined" if isinstance(locator, CombinedLocator) else "derived combined"
+        )
+        if binning.face_normals is not None:
+            expected_normals = expected_binning.face_normals
+            if expected_normals is None:
+                raise ValueError(
+                    f"{label.capitalize()} normals require authoritative child normals."
+                )
+            actual_normals = binning.face_normals.values
             if computed:
-                u, v = links.all_pairs.T
-                error = np.linalg.norm(
-                    geometry.center_error[u] + geometry.center_error[v], axis=1
-                )
-                error += 64 * np.finfo(float).eps * np.abs(expected_links.all_distances)
-                _computed_equal(
-                    links.all_distances,
-                    expected_links.all_distances,
-                    error,
-                    "derived combined path distances",
-                    gap=gap,
-                )
-            else:
-                _equal(
-                    links.all_distances,
-                    expected_links.all_distances,
-                    "derived combined path distances",
-                )
-            if isinstance(binning.faces, KnownFaces):
-                if not expected_binning.faces.available:
+                if not np.allclose(
+                    actual_normals, expected_normals.values, rtol=0, atol=1e-12
+                ):
                     raise ValueError(
-                        "Combined physical faces cannot be inferred from navigation bridges or missing child faces."
+                        f"{label.capitalize()} face normals disagree with child "
+                        "geometry."
                     )
-                for name in ("A", "distance"):
-                    actual = getattr(binning.faces.faces, name)
-                    reference = getattr(expected_binning.faces.build(), name)
-                    if computed:
-                        _computed_equal(
-                            actual,
-                            reference,
-                            64 * np.finfo(float).eps * np.abs(reference),
-                            f"derived combined faces.{name}",
-                        )
-                    else:
-                        _equal(actual, reference, f"derived combined faces.{name}")
+            else:
+                _equal(actual_normals, expected_normals.values, f"{label} face normals")
+        expected_links = expected_binning.connections
+        _equal(links.all_pairs, expected_links.all_pairs, f"{label} neighbor pairs")
+        _equal(links.is_open, expected_links.is_open, f"{label} open pairs")
+        _equal(links.closed_by, expected_links.closed_by, f"{label} closing walls")
+        if computed:
+            u, v = links.all_pairs.T
+            error = np.linalg.norm(
+                geometry.center_error[u] + geometry.center_error[v], axis=1
+            )
+            error += 64 * np.finfo(float).eps * np.abs(expected_links.all_distances)
+            _computed_equal(
+                links.all_distances,
+                expected_links.all_distances,
+                error,
+                f"{label} path distances",
+                gap=gap,
+            )
+        else:
+            _equal(
+                links.all_distances,
+                expected_links.all_distances,
+                f"{label} path distances",
+            )
+        if binning.faces.available:
+            if not expected_binning.faces.available:
+                raise ValueError(
+                    "Combined physical faces cannot be inferred from navigation "
+                    "bridges or missing child faces."
+                )
+            stored, expected_faces = (
+                binning.build_faces(),
+                expected_binning.build_faces(),
+            )
+            for name in ("A", "distance"):
+                actual = getattr(stored, name)
+                reference = getattr(expected_faces, name)
+                if computed:
+                    _computed_equal(
+                        actual,
+                        reference,
+                        64 * np.finfo(float).eps * np.abs(reference),
+                        f"{label} faces.{name}",
+                    )
+                else:
+                    _equal(actual, reference, f"{label} faces.{name}")
     _computed_equal(
         bins.centers,
         geometry.centers,
@@ -1108,12 +1099,7 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
             zip(grid.edges, grid_locator.edges, strict=True)
         ):
             _equal(actual, expected, f"rectilinear edges[{axis}]")
-        mask = (
-            np.ones(grid_locator.shape, dtype=bool)
-            if grid_locator.active_mask is None
-            else grid_locator.active_mask
-        )
-        _equal(grid.active_mask, mask, "rectilinear active_mask")
+        _equal(grid.active_mask, grid_locator.active_mask, "rectilinear active_mask")
     if (
         shapes is not None
         and not geometry.shapes_supported
@@ -1164,63 +1150,51 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     elif isinstance(shapes, PolygonCells):
         if geometry.polygons is None or len(shapes.polygons) != len(geometry.polygons):
             raise ValueError("polygon shapes need matching clipped locator cells.")
-        clearances = [polygon.minimum_clearance for polygon in shapes.polygons]
+        stored_cells = np.asarray(shapes.polygons, dtype=object)
         coordinate_errors = [
             _polygon_coordinate_errors(polygon) for polygon in shapes.polygons
         ]
+        # A cell stored exactly as the locator gives it (every combined cell,
+        # and any cell read back unchanged) matches with no tolerance.
+        identical = shapely.equals_exact(
+            stored_cells, np.asarray(geometry.polygons, dtype=object), tolerance=0.0
+        )
+        contains_center = shapely.contains_xy(
+            stored_cells, bins.centers[:, 0], bins.centers[:, 1]
+        )
+        areas = shapely.area(stored_cells)
         for index, (actual, expected) in enumerate(
             zip(shapes.polygons, geometry.polygons, strict=True)
         ):
-            # Stored-coordinate rounding plus the arithmetic error of the cells
-            # recovered from the locator; the gap cap keeps it far below a cell.
-            tolerance = (
+            if not identical[index] and not _same_cell(
+                actual,
+                expected,
+                # Stored-coordinate rounding plus the arithmetic error of the
+                # cells recovered from the locator; the gap cap keeps it far
+                # below a cell.
                 np.minimum(
-                    coordinate_errors[index],
-                    _polygon_coordinate_errors(expected),
-                )
-                + geometry.polygon_error
-            )
-            actual_normalized, expected_normalized = (
-                shapely.normalize(actual),
-                shapely.normalize(expected),
-            )
-            actual_rings = [actual_normalized.exterior, *actual_normalized.interiors]
-            expected_rings = [
-                expected_normalized.exterior,
-                *expected_normalized.interiors,
-            ]
-            ring_tolerance = np.minimum(tolerance, gap / 4)
-            same = len(actual_rings) == len(expected_rings) and _same_ring(
-                actual_rings[0], expected_rings[0], ring_tolerance
-            )
-            remaining = list(expected_rings[1:])
-            for ring in actual_rings[1:]:
-                match = next(
-                    (
-                        i
-                        for i, candidate in enumerate(remaining)
-                        if _same_ring(ring, candidate, ring_tolerance)
-                    ),
-                    None,
-                )
-                if match is None:
-                    same = False
-                    break
-                remaining.pop(match)
-            if not same:
+                    np.minimum(
+                        coordinate_errors[index], _polygon_coordinate_errors(expected)
+                    )
+                    + geometry.polygon_error,
+                    gap / 4,
+                ),
+            ):
                 raise ValueError(f"polygon cell {index} disagrees with its locator.")
-            if not actual.contains(shapely.Point(bins.centers[index])):
+            if not contains_center[index]:
                 raise ValueError(
                     f"polygon cell {index} does not contain its bin center."
                 )
-            allowance = _polygon_area_allowance(actual)
-            if abs(actual.area - bins.sizes[index]) > allowance:
+            if areas[index] != bins.sizes[index] and abs(
+                areas[index] - bins.sizes[index]
+            ) > _polygon_area_allowance(actual, uncertainty=coordinate_errors[index]):
                 raise ValueError(
                     f"polygon cell {index} area disagrees with bins.sizes."
                 )
         if isinstance(binning.faces, KnownFaces) and not isinstance(
             geometry.leaf, CombinedLocator
         ):
+            clearances = [polygon.minimum_clearance for polygon in shapes.polygons]
             stored = binning.faces.faces
             contacts = [
                 shapes.polygons[u].boundary.intersection(shapes.polygons[v].boundary)
@@ -1285,17 +1259,7 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
             raise ValueError(
                 "linearization needs stored track geometry and a nearest-bin locator."
             )
-        if len(track.grid_edges) != 1:
-            raise ValueError("linearization grid_edges must contain one linear axis.")
         edges = track.grid_edges[0]
-        if (
-            edges.ndim != 1
-            or len(edges) < 2
-            or not np.all(np.isfinite(edges))
-            or np.any(np.diff(edges) <= 0)
-            or track.active_mask.shape != (len(edges) - 1,)
-        ):
-            raise ValueError("linearization edges and active_mask shape do not agree.")
         if np.count_nonzero(track.active_mask) != bins.n_bins:
             raise ValueError("linearization active_mask count does not match n_bins.")
         projected = track.linear_to_nd(get_centers(edges)[track.active_mask])
@@ -1327,6 +1291,73 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     _validate_center_lookup(binning)
 
 
+def _validate_polar_seam(binning: Binning, circular: bool) -> None:
+    """Check that pairs join the two ends of the angle range exactly when it wraps.
+
+    The arena's ``circular`` flag is the one record of whether the angle
+    wraps; the neighbor pairs and a native face recipe must agree with it.
+
+    Parameters
+    ----------
+    binning : Binning
+        Polar bins over a (distance, angle) grid.
+    circular : bool
+        Whether the angle wraps, from the coordinate descriptor.
+
+    Raises
+    ------
+    ValueError
+        If a pair crosses the seam of a non-wrapping angle, a wrapping angle
+        lacks a seam pair between two active end bins of one distance ring,
+        or a native face recipe disagrees about the wrap.
+    """
+    faces = binning.faces
+    if (
+        isinstance(faces, NativeFaces)
+        and faces.family == "polar"
+        and faces.circular != circular
+    ):
+        raise ValueError(
+            f"The polar face recipe says circular={faces.circular}, but the "
+            f"arena says circular={circular}; rebuild the environment with "
+            "Environment.from_polar_egocentric."
+        )
+    grid = binning.rectilinear
+    if grid is None or len(grid.shape) != 2 or grid.shape[1] < 3:
+        # With one or two angle bins, the seam pairs are the ordinary ones.
+        return
+    n_angle = grid.shape[1]
+    rows, angles = np.unravel_index(np.flatnonzero(grid.active_mask), grid.shape)
+    pairs = binning.connections.all_pairs
+    across = np.abs(angles[pairs[:, 0]] - angles[pairs[:, 1]]) == n_angle - 1
+    if not circular and np.any(across):
+        u, v = pairs[np.flatnonzero(across)[0]]
+        raise ValueError(
+            f"Bins {u} and {v} are paired across the angular seam, but the "
+            "arena's angle does not wrap (circular=False); remove the seam "
+            "pairs or use an arena with circular=True over a full turn."
+        )
+    if circular:
+        ends = grid.active_mask[:, 0] & grid.active_mask[:, -1]
+        bin_of = np.full(grid.active_mask.size, -1, dtype=np.intp)
+        bin_of[grid.active_mask.ravel()] = np.arange(len(rows))
+        ring = np.flatnonzero(ends)
+        first, last = bin_of[ring * n_angle], bin_of[ring * n_angle + n_angle - 1]
+        present = {frozenset((int(u), int(v))) for u, v in pairs[across]}
+        missing = [
+            (int(u), int(v))
+            for u, v in zip(first, last, strict=True)
+            if frozenset((int(u), int(v))) not in present
+        ]
+        if missing:
+            raise ValueError(
+                f"The arena's angle wraps (circular=True), but bins {missing[0]} "
+                "at the two ends of one distance ring are not paired across "
+                "the seam; add the seam pairs or use an arena with "
+                "circular=False."
+            )
+
+
 def _validate_center_lookup(binning: Binning) -> None:
     """Check that the locator places every bin center in its own bin."""
     bins = binning.bins
@@ -1334,16 +1365,23 @@ def _validate_center_lookup(binning: Binning) -> None:
     if binning.linearization is not None:
         # An embedded track can revisit an identical spatial point at a
         # different linear coordinate. Nearest-point lookup may choose either
-        # coincident bin; the validated track component owns path identity.
+        # coincident bin, centers equal to within rounding included (the
+        # tie rule of NearestBinLocator); the validated track component owns
+        # path identity.
         if located.shape != (bins.n_bins,) or np.any(
             (located < 0) | (located >= bins.n_bins)
         ):
             raise ValueError("Track locator does not locate its bin centers.")
-        _equal(
-            bins.centers[located],
-            bins.centers,
-            "track locator bin-center coordinates",
+        tolerance = _coordinate_roundoff(
+            bins.centers, float(np.max(np.abs(bins.centers)))
         )
+        if np.any(
+            np.linalg.norm(bins.centers[located] - bins.centers, axis=1) > tolerance
+        ):
+            raise ValueError(
+                "track locator bin-center coordinates does not match the "
+                "binning geometry."
+            )
     else:
         _equal(located, np.arange(bins.n_bins), "locator bin-center lookup")
 
@@ -1358,7 +1396,6 @@ def validate_normals(binning: Binning) -> None:
     component = binning.face_normals
     if component is None:
         return
-    FaceNormals(component.values)  # Revalidate mutable ndarray headers at ingress.
     bins, pairs = binning.bins, binning.connections.pairs
     values = component.values
     if not bins.has_measure_dim(bins.n_dims) or values.shape != (
@@ -1401,52 +1438,21 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
     if isinstance(locator, CombinedLocator):
         bins = locator.spatial_bins()
         connections = locator.bin_connections()
-        faces: KnownFaces | MissingFaces = MissingFaces(
-            "Navigation bridges have no physical faces."
-        )
-        if not len(locator.bridge_pairs) and all(
-            child.faces.available for child in locator.children
-        ):
-            parts = [child.faces.build() for child in locator.children]
-            faces = KnownFaces(
-                FaceGeometry(
-                    connections.pairs,
-                    np.concatenate([part.A for part in parts]),
-                    np.concatenate([part.distance for part in parts]),
-                    bins.sizes,
-                )
-            )
-        normals = combined_normals(locator)
         return Binning(
-            "combined", bins, connections, locator, faces, face_normals=normals
+            "combined",
+            bins,
+            connections,
+            locator,
+            combined_faces(locator, connections, bins.sizes),
+            face_normals=combined_normals(locator),
         ), False
     if isinstance(locator, SubsetLocator):
         result = expected_composition_binning(locator.base)
         if result is None:
             return None
         parent, computed = result
-        mapping = locator.parent_to_child
-        selected = np.flatnonzero(mapping >= 0)
-        selected = selected[np.argsort(mapping[selected])]
-        bins = SpatialBins.from_arrays(
-            parent.bins.centers[selected],
-            parent.bins.sizes[selected],
-            parent.bins.measure_dims[selected],
-        )
-        connections, kept = parent.connections.select(mapping)
-        subset_faces = parent.faces
-        if subset_faces.available:
-            old = subset_faces.build()
-            subset_faces = KnownFaces(
-                FaceGeometry(
-                    connections.pairs, old.A[kept], old.distance[kept], bins.sizes
-                )
-            )
-
-        normals = (
-            FaceNormals(parent.face_normals.values[kept])
-            if parent.face_normals is not None
-            else None
+        bins, connections, subset_faces, normals = selected_records(
+            parent, locator.parent_to_child
         )
         return Binning(
             "combined_subset",
@@ -1461,7 +1467,5 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
         if result is None:
             return None
         parent, _computed = result
-        return transform_binning(
-            parent, SimpleNamespace(A=np.linalg.inv(locator.inverse))
-        ), True
+        return transform_binning(parent, SimpleNamespace(A=locator.forward)), True
     return None

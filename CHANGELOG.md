@@ -2,6 +2,89 @@
 
 ## [Unreleased]
 
+### Spatial geometry review
+
+- Walls that end on a slanted or curved arena outline now separate the bins
+  on either side. Before, the default `wall_fit="snap"` left pairs across the
+  wall connected wherever the outline cut the shared bin edge, so geodesic
+  distance, connectivity and smoothing passed through the wall. Points beyond
+  a sharp wall bend (under 90°) are now sided by the bend's bisecting normal,
+  which closes the gaps V-shaped walls left. `wall_fit="split"` now works on
+  slanted and curved outlines: bins that stick out past the outline are
+  clipped to it. `from_bins` refuses a wall that divides the part of a bin
+  inside the arena, and snap refuses a wall that cuts off an outline corner
+  with no bin center behind it. Every pair a wall closes, including pairs
+  meeting at a corner, records that wall in `closed_by`.
+- Rotating, reflecting or subsetting a grid no longer drops positions in the
+  partial cells along a curved or slanted wall; before, a mirrored circular
+  arena lost 3% of in-arena samples near its wall. A point on a face shared by
+  two bins now goes to the same bin before and after any affine map, for
+  grid, hexagon, mesh, polygon and track bins, and in combined environments
+  whatever order the components are listed in. A track position tied between
+  two legs goes to the first leg in `edge_order`, in `bin_at` and `to_linear`.
+- Triangular-mesh positions exactly on the polygon outline now get a bin,
+  instead of -1.
+- `Environment.boundary_bins` is computed from cell geometry (grid, hexagon,
+  triangle and polygon cells, and each component of a combined environment).
+  It was empty or nearly empty on triangular meshes and wrong on point bins,
+  so `border_score` was NaN or wrong there. Area bins without cell geometry
+  now raise `NotImplementedError`; track chain ends are found for any length.
+- Nearest-bin lookup without a distance limit is now an explicit choice. A
+  `NearestBinLocator` with `max_distance=None` on bins with no known domain
+  refuses position lookup; pass `max_distance=` in length units, or
+  `math.inf` to accept any distance. `max_distance` is validated. A failed
+  KD-tree query now raises instead of warning and reporting every point as
+  outside. One-dimensional tracks map positions past their ends to -1.
+- `Environment.linear_to_nd` returns NaN rows for linear positions before the
+  start, past the end or inside a gap between segments, instead of clamping
+  them onto track nodes.
+- Missing observations stay missing in visibility. `visible_cues` and
+  `compute_view_field` refuse non-finite positions, headings or cue
+  positions; `compute_viewshed` and `compute_viewshed_trajectory` mark a
+  missing frame's occlusion map and `visibility_fraction` NaN instead of
+  "saw nothing".
+- Distances between polar bins are straight-line chords, so Gaussian
+  smoothing weights on egocentric polar environments now use physical
+  distance. On an open (partial) angle window, bins on opposite sides of the
+  cut are joined through the animal's position, not across the cut.
+- Polygon regions on egocentric polar environments compare angles modulo a
+  full turn, as positions and point regions do, so a wedge across the ±π seam
+  is one polygon. Before, it silently covered only one side.
+- Derived environments keep their extent and logical grid: subsets and saved
+  copies of combined environments keep `dimension_ranges`, and translated,
+  rotated or subset hexagon and mesh environments report their lattice
+  `grid_shape` and `active_mask`. Rotated rectangular grids stay flat, since
+  their source axes are not world-aligned.
+- An out-and-back track whose bins revisit the same places can be rotated.
+  A reflected `MaskArena` with a declared physical footprint keeps
+  `wall_hit_bins(..., "physical")` working.
+- Geometry records check their own invariants when built: `Binning` refuses
+  pairs naming missing bins, inconsistent faces or face normals, and stores
+  one `grid` (`RectilinearGrid`, `FramedGrid` or None) in place of the
+  `rectilinear` and `grid_frame` arguments, which remain read-only
+  properties. `RectilinearGrid`, `RectilinearLocator`, `TrackLinearization`,
+  `HexLocator`, `HexagonShapes`, `TriangleShapes` and `GridIndex` validate
+  their arrays; `EgocentricSurround(circular=True)` requires a full turn, and
+  saved polar environments must store seam pairs exactly when the angle
+  wraps. Native face recipes build on their binning's own pairs
+  (`Binning.build_faces()`; `KnownFaces.build` and `MissingFaces.build` take
+  `bins` and `connections`), and a transformed locator's grid frame lives
+  only on its binning.
+- Breaking record changes: `RectilinearLocator(edges, shape, active_mask)`
+  requires the mask and no longer takes `flat_to_active`;
+  `TransformedLocator(base, forward)` stores the forward map (`inverse` is
+  computed). Saved environments use Binning codec 6, rectilinear and
+  transformed locator codec 2, nearest locator codec 2 and pickle state
+  format 5; older records are refused, so rebuild them from their source
+  data.
+- Coordinates too far from the origin to resolve the bins now always get the
+  "recenter or rescale coordinates" advice. A decoder's own `TypeError` is no
+  longer reported as a corrupt file. Hexagon lookup treats infinite
+  coordinates as missing and refuses a non-positive radius.
+- `Environment.combine` validates each published component once; combining
+  two 10,000-bin grids takes about half the time it did, and nested
+  combinations less than a quarter.
+
 ### Animation workflows
 
 - Render uniform 3-D fastplotlib animation fields as native volumes, with

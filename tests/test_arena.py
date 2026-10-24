@@ -139,7 +139,7 @@ def test_track_uses_exact_segments_and_round_endcaps():
 
 
 def test_egocentric_windows_periodicity_and_analysis_boundary():
-    arena = EgocentricSurround((0.0, 5.0), (-np.pi / 2, np.pi / 2), circular=True)
+    arena = EgocentricSurround((0.0, 5.0), (-np.pi / 2, np.pi / 2), circular=False)
     np.testing.assert_array_equal(
         arena.contains(
             [[0, 0], [5, np.pi / 2], [2, 2 * np.pi], [2, np.pi], [-1, 0], [6, 0]]

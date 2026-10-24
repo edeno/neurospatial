@@ -679,7 +679,13 @@ def _cell_less_bins():
     connections = BinConnections.from_arrays(pairs, np.ones(4))
     faces = KnownFaces(FaceGeometry(pairs, np.ones(4), np.ones(4), bins.sizes))
     return Environment.from_bins(
-        Binning("declared", bins, connections, NearestBinLocator(centers), faces)
+        Binning(
+            "declared",
+            bins,
+            connections,
+            NearestBinLocator(centers, max_distance=0.75),
+            faces,
+        )
     )
 
 

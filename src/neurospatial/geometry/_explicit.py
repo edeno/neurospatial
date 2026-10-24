@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import itertools
 from dataclasses import replace
 from typing import Literal
@@ -12,11 +11,9 @@ import numpy as np
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import axis_ranges
 from neurospatial.geometry._binning import (
-    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
-    SpatialBins,
     TrackLinearization,
 )
 from neurospatial.geometry._capabilities import RectilinearGrid
@@ -29,7 +26,6 @@ from neurospatial.geometry._components import (
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._native_faces import NativeFaces
-from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
 from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.geometry._track import track_cell_ends
 
@@ -63,16 +59,19 @@ def cell_extent(
         return _active_framed_extent(binning.grid_frame)
     if isinstance(binning.locator, CombinedLocator):
         # Components such as a track and an open field share no cell shapes;
-        # the combined cells span the union of the components' cells.
-        parts = [
-            cell_extent(child, shapeless=shapeless)
-            for child in binning.locator.children
-        ]
-        if parts and all(part is not None for part in parts):
-            return tuple(
-                (min(axis[0] for axis in axes), max(axis[1] for axis in axes))
-                for axes in zip(*parts, strict=True)
-            )
+        # the combined cells span the union of the components' extents.
+        # A component without cells contributes its declared ranges
+        # (shapeless="none") or its centers' bounds (shapeless="centers").
+        extent = union_extent(
+            [
+                binning_ranges(child)
+                if shapeless == "none"
+                else cell_extent(child, shapeless=shapeless)
+                for child in binning.locator.children
+            ]
+        )
+        if extent is not None:
+            return extent
     extent = component_extent(
         outline=binning.outline,
         shapes=binning.shapes,
@@ -84,6 +83,31 @@ def cell_extent(
     return tuple(
         (float(a), float(b))
         for a, b in zip(centers.min(axis=0), centers.max(axis=0), strict=True)
+    )
+
+
+def union_extent(
+    parts: list[tuple[tuple[float, float], ...] | None],
+) -> tuple[tuple[float, float], ...] | None:
+    """Bound several extents together, or None when any of them is unknown.
+
+    Parameters
+    ----------
+    parts : list of tuple of (float, float) or None
+        One ``(low, high)`` per axis for each part.
+
+    Returns
+    -------
+    tuple of (float, float), or None
+        The smallest box holding every part; None for no parts or when a
+        part has no extent.
+    """
+    if not parts or any(part is None for part in parts):
+        return None
+    known = [part for part in parts if part is not None]
+    return tuple(
+        (min(axis[0] for axis in axes), max(axis[1] for axis in axes))
+        for axes in zip(*known, strict=True)
     )
 
 
@@ -185,30 +209,36 @@ def binning_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
 
 
 def prepare_bins(binning: object) -> Binning:
-    """Own and validate explicit Cartesian bins, with no layout builder.
+    """Prepare explicit Cartesian bins for publication, with no layout builder.
+
+    Publication owns the records and checks them against each other; this
+    converts an adapter's provider, refuses face sources ``from_bins`` cannot
+    check, and builds a native face recipe into known faces.
 
     Parameters
     ----------
     binning : Binning
-        Supported data records with explicit lookup and KnownFaces or
-        MissingFaces. Neighbor pair order and orientation remain authoritative.
+        Supported data records with explicit lookup and KnownFaces,
+        MissingFaces or NativeFaces (the face recipe ``env.binning``
+        carries). Neighbor pair order and orientation remain authoritative.
 
     Returns
     -------
     Binning
-        Validated, independently owned bins.
+        The bins, with ``KnownFaces`` or ``MissingFaces``; a NativeFaces
+        recipe is built into ``KnownFaces``.
 
     Raises
     ------
     TypeError
-        If a runtime provider or an implicit face source was supplied.
+        If ``binning`` is not a Binning and no installed adapter converts
+        it, or its faces are not KnownFaces, MissingFaces or NativeFaces.
     ValueError
         If records or their shared geometry disagree.
     """
     if type(binning) is not Binning:
         binning = snapshot_provider(binning, "binning")
     assert isinstance(binning, Binning)
-    binning = _snapshot_binning(binning)
     if type(binning.faces) not in (KnownFaces, MissingFaces, NativeFaces):
         raise TypeError(
             _format_error(
@@ -220,30 +250,9 @@ def prepare_bins(binning: object) -> Binning:
                 "env.binning carries",
             )
         )
-    _check_binning(binning)
     if isinstance(binning.faces, NativeFaces):
         # A native recipe, as env.binning carries, is a closed formula over
         # its own owned arrays. Build it here; publication then checks the
         # faces against the supplied bins like any explicit faces.
-        binning = replace(binning, faces=KnownFaces(binning.faces.build()))
-    if not isinstance(binning.kind, str):
-        raise TypeError("Binning.kind must be a descriptive string.")
-    if isinstance(binning.faces, MissingFaces) and not isinstance(
-        binning.faces.reason, str
-    ):
-        raise TypeError("MissingFaces.reason must be a string.")
-    snapshot = copy.deepcopy(binning)
-    raw, links = snapshot.bins, snapshot.connections
-    # Standalone records have writable NumPy headers; revalidate at ingress
-    # rather than assuming they remain identical to their constructor inputs.
-    bins = SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dims)
-    connections = BinConnections.from_arrays(
-        links.all_pairs, links.all_distances, links.is_open, links.closed_by
-    )
-    faces = (
-        KnownFaces(snapshot.faces.faces)
-        if isinstance(snapshot.faces, KnownFaces)
-        else snapshot.faces
-    )
-    snapshot = replace(snapshot, bins=bins, connections=connections, faces=faces)
-    return snapshot
+        binning = replace(binning, faces=KnownFaces(binning.build_faces()))
+    return binning

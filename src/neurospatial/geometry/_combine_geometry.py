@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from itertools import pairwise, product
 from typing import Any
@@ -26,15 +26,17 @@ from neurospatial.geometry._arena import (
     _segment_distance,
     _TransformedArena,
 )
+from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    MissingFaces,
     TrackLinearization,
 )
-from neurospatial.geometry._codecs import decode, encode
-from neurospatial.geometry._composition import CombinedLocator, combined_normals
-from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._composition import (
+    CombinedLocator,
+    combined_faces,
+    combined_normals,
+)
 from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._locators import (
     Locator,
@@ -43,6 +45,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import cells_from_locator, materialize_cells
 from neurospatial.geometry._polygon_cells import PolygonCells
 
@@ -61,25 +64,17 @@ def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
         return [box for child in locator.children for box in cell_boxes(child.locator)]
     if isinstance(locator, SubsetLocator):
         boxes = cell_boxes(locator.base)
-        selected = np.flatnonzero(locator.parent_to_child >= 0)
-        selected = selected[np.argsort(locator.parent_to_child[selected])]
+        selected = active_order(locator.parent_to_child)
         return [boxes[index] for index in selected]
     if isinstance(locator, TransformedLocator):
-        matrix = np.linalg.inv(locator.inverse)
+        matrix = locator.forward
         return [
             vertices @ matrix[:-1, :-1].T + matrix[:-1, -1]
             for vertices in cell_boxes(locator.base)
         ]
     if not isinstance(locator, RectilinearLocator):
         raise ValueError("No stored rectilinear cells.")
-    mask = (
-        np.ones(locator.shape, dtype=bool)
-        if locator.active_mask is None
-        else locator.active_mask
-    )
-    indices = np.flatnonzero(mask.ravel())
-    if locator.flat_to_active is not None:
-        indices = indices[np.argsort(locator.flat_to_active[indices])]
+    indices = np.flatnonzero(locator.active_mask.ravel())
     corners = np.array(list(product((0, 1), repeat=len(locator.shape))), dtype=np.intp)
     return [
         np.column_stack(
@@ -94,22 +89,32 @@ def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
 
 def _nearest_partition(
     locator: Locator,
-) -> tuple[NearestBinLocator, NDArray[np.intp], NDArray[np.float64]] | None:
-    """Identify retained cells of a common nearest query, including wrappers."""
+) -> (
+    tuple[NearestBinLocator, NDArray[np.intp], NDArray[np.float64], NDArray[np.float64]]
+    | None
+):
+    """Identify retained cells of a common nearest query, including wrappers.
+
+    Returns the nearest query, the bin each of its sites maps to (or -1),
+    and the maps from current coordinates to the query's (inverse) and back
+    (forward).
+    """
     if isinstance(locator, NearestBinLocator):
         assert locator.bin_indices is not None
-        return locator, locator.bin_indices.copy(), np.eye(locator.centers.shape[1] + 1)
+        identity = np.eye(locator.centers.shape[1] + 1)
+        return locator, locator.bin_indices.copy(), identity, identity
     if isinstance(locator, (SubsetLocator, TransformedLocator)):
         value = _nearest_partition(locator.base)
         if value is None:
             return None
-        base, mapping, inverse = value
+        base, mapping, inverse, forward = value
         if isinstance(locator, SubsetLocator):
             active = mapping >= 0
             mapping[active] = locator.parent_to_child[mapping[active]]
         else:
             inverse = inverse @ locator.inverse
-        return base, mapping, inverse
+            forward = locator.forward @ forward
+        return base, mapping, inverse, forward
     return None
 
 
@@ -117,8 +122,8 @@ def _partitioned(first: Binning, second: Binning) -> bool:
     a, b = _nearest_partition(first.locator), _nearest_partition(second.locator)
     if a is None or b is None:
         return False
-    left, lm, li = a
-    right, rm, ri = b
+    left, lm, li, _ = a
+    right, rm, ri, _ = b
     return bool(
         left.max_distance == right.max_distance
         and np.array_equal(left.centers, right.centers)
@@ -185,9 +190,7 @@ def arena_pieces(arena: Arena) -> list[_Piece]:
         ]
     if isinstance(arena, MaskArena):
         boxes = cell_boxes(
-            RectilinearLocator(
-                arena.edges, arena.active_mask.shape, arena.active_mask, None
-            )
+            RectilinearLocator(arena.edges, arena.active_mask.shape, arena.active_mask)
         )
         return [
             _Piece("box", vertices, vertices.min(axis=0), vertices.max(axis=0))
@@ -238,9 +241,8 @@ def _pieces(binning: Binning, arena: Arena) -> list[_Piece]:
         ]
     nearest = _nearest_partition(binning.locator)
     if nearest is not None:
-        base, mapping, inverse = nearest
+        base, mapping, _, forward = nearest
         if base.max_distance is not None and np.isfinite(base.max_distance):
-            forward = np.linalg.inv(inverse)
             linear = forward[:-1, :-1]
             # A transformed ball is enclosed by this sphere. Separation proves
             # disjointness; overlap of outer bounds is only inconclusive.
@@ -367,7 +369,7 @@ def _grid_segment_intervals(
     if isinstance(locator, TransformedLocator):
         projector = _TransformedArena(
             UnknownArena(segment.shape[1]),
-            np.asarray(np.linalg.inv(locator.inverse), dtype=np.float64),
+            locator.forward,
         )
         local, propagated = projector._project(segment, error)
         if not np.all(np.isfinite(local)) or not np.all(np.isfinite(propagated)):
@@ -390,19 +392,9 @@ def _grid_segment_intervals(
                 nearest = int(np.argmin(np.abs(edges - segment[row, axis])))
                 if abs(edges[nearest] - segment[row, axis]) <= error[row, axis]:
                     segment[row, axis] = edges[nearest]
-    mask = (
-        np.ones(locator.shape, dtype=bool)
-        if locator.active_mask is None
-        else locator.active_mask.copy()
-    )
+    mask = locator.active_mask.copy()
     if selected is not None:
-        flat_to_active = locator.flat_to_active
-        if flat_to_active is None:
-            flat_to_active = np.full(mask.size, -1, dtype=np.intp)
-            flat_to_active[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        mask.ravel()[flat_to_active >= 0] = selected[
-            flat_to_active[flat_to_active >= 0]
-        ]
+        mask.ravel()[np.flatnonzero(mask)] = selected
     direction = segment[1] - segment[0]
     cuts = [0.0, 1.0]
     for axis, edges in enumerate(locator.edges):
@@ -523,7 +515,7 @@ def _nearest_segment_intervals(
     partition = _nearest_partition(locator)
     if partition is None:
         return None
-    base, mapping, inverse = partition
+    base, mapping, inverse, _ = partition
     local = segment @ inverse[:-1, :-1].T + inverse[:-1, -1]
     if not np.all(np.isfinite(local)) or np.array_equal(local[0], local[1]):
         raise ValueError(
@@ -581,7 +573,7 @@ def _arena_segment_interior(
         return bool(
             _grid_segment_intervals(
                 RectilinearLocator(
-                    arena.edges, arena.active_mask.shape, arena.active_mask, None
+                    arena.edges, arena.active_mask.shape, arena.active_mask
                 ),
                 segment,
                 error=error,
@@ -730,6 +722,27 @@ def _bound_candidates(
     )
 
 
+# Set in a CombinedLocator's __dict__ once its components are certified. A
+# locator is immutable, so the certificate holds for it and for its copies and
+# unpickled versions (which keep __dict__); a decoded locator is certified anew.
+_CERTIFIED = "_components_certified"
+
+
+def certify_locator(locator: CombinedLocator) -> None:
+    """Certify a combined locator's components once per record.
+
+    Raises
+    ------
+    ValueError
+        If two components overlap or their disjoint support cannot be
+        certified.
+    """
+    if locator.__dict__.get(_CERTIFIED, False):
+        return
+    certify_components(locator.children, locator.arenas, locator.keys)
+    object.__setattr__(locator, _CERTIFIED, True)
+
+
 def certify_components(
     children: tuple[Binning, ...], arenas: tuple[Arena, ...], keys: tuple[str, ...]
 ) -> None:
@@ -745,8 +758,9 @@ def certify_components(
                 continue
             try:
                 left, right = _pieces(first, arenas[i]), _pieces(second, arenas[j])
-                # Pairs are tested in the same order as a full scan, so the
-                # first overlap or uncertain contact reported is unchanged.
+                # Candidate pairs keep full-scan order, so the overlap or
+                # uncertain contact reported is the first one a full scan of
+                # every piece pair would find.
                 if any(
                     _overlap(left[a], right[b])
                     for a, b in zip(*_bound_candidates(left, right), strict=True)
@@ -809,7 +823,10 @@ def combine_binnings(
     keys : tuple of str
         Component keys, in output bin order.
     binnings : tuple of Binning
-        Component binnings with matching coordinate and measure dimensions.
+        Cartesian component binnings with the same number of coordinate
+        dimensions. Their bins may be measured differently (for example a
+        track's length bins next to an arena's area bins); a bridge between
+        such bins is then navigation-only.
     arenas : tuple of Arena
         Each component's arena.
     auto_bridge : bool
@@ -831,9 +848,15 @@ def combine_binnings(
 
     Raises
     ------
+    TypeError
+        If ``auto_bridge`` is not a bool.
     ValueError
-        If components overlap, support cannot be certified, or a bridge
-        option is invalid.
+        If components overlap, support cannot be certified, a bridge option
+        is invalid, or a bridge with positive conductance joins bins measured
+        in different dimensions.
+    NotImplementedError
+        If ``auto_bridge`` is True outside 2-D while an arena has walls,
+        because a bridge's wall crossings cannot be certified there.
     """
     if type(auto_bridge) is not bool:
         raise TypeError("auto_bridge must be boolean.")
@@ -844,12 +867,14 @@ def combine_binnings(
         or max_mnn_distance < 0
     ):
         raise ValueError("max_mnn_distance must be finite and nonnegative, or None.")
-    children = []
-    for source in binnings:
-        meta, arrays = encode(source, "child")
-        child = decode(meta, arrays, "child")
-        assert isinstance(child, Binning)
-        children.append(child)
+    # Records are immutable, so the components are shared; a native face
+    # recipe is built once here, as every combined face and diffusion reads it.
+    children = [
+        replace(child, faces=KnownFaces(child.build_faces()))
+        if isinstance(child.faces, NativeFaces)
+        else child
+        for child in binnings
+    ]
     children_tuple = tuple(children)
     certify_components(children_tuple, arenas, keys)
     n_dims = children_tuple[0].bins.n_dims
@@ -942,23 +967,11 @@ def combine_binnings(
     locator = CombinedLocator(
         keys, children_tuple, arenas, bridge_pairs, np.array(distances), conductances
     )
+    # The locator holds the components certified above.
+    object.__setattr__(locator, _CERTIFIED, True)
     bins = locator.spatial_bins()
     connections = locator.bin_connections()
-    faces: KnownFaces | MissingFaces
-    if not len(pairs) and all(child.faces.available for child in children):
-        child_faces = [child.faces.build() for child in children]
-        faces = KnownFaces(
-            FaceGeometry(
-                connections.pairs,
-                np.concatenate([part.A for part in child_faces]),
-                np.concatenate([part.distance for part in child_faces]),
-                bins.sizes,
-            )
-        )
-    else:
-        faces = MissingFaces(
-            "Combined navigation bridges have no physical face geometry; use scalar diffusion when child geometry is certified."
-        )
+    faces = combined_faces(locator, connections, bins.sizes)
     shapes = None
     if n_dims == 2 and bins.has_measure_dim(2):
         with suppress(ValueError):

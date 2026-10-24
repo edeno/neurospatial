@@ -96,7 +96,7 @@ def test_each_factory_publishes_once(factory, monkeypatch):
 def test_from_bins_and_combine_publish_once(monkeypatch):
     left = _grid()
     right = left.apply_transform(translate(20.0, 0.0))
-    snapshot = replace(left.binning, faces=KnownFaces(left.binning.faces.build()))
+    snapshot = replace(left.binning, faces=KnownFaces(left.binning.build_faces()))
     published = record_publications(monkeypatch)
     from_bins = Environment.from_bins(snapshot, arena=left.arena)
     combined = Environment.combine({"left": left, "right": right})

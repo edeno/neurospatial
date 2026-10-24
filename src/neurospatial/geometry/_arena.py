@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
 __all__ = [
     "Arena",
@@ -438,33 +438,14 @@ class MaskArena(ReadOnlyState):
     wall_names: ClassVar[tuple[str, ...]] = ()
 
     def __post_init__(self) -> None:
-        edges = tuple(
-            _real_array(edge, f"edges[{axis}]") for axis, edge in enumerate(self.edges)
+        edges, _, mask = owned_grid(
+            self.edges, None, self.active_mask, name="MaskArena"
         )
-        mask = np.asarray(self.active_mask)
-        if not edges or any(
-            edge.ndim != 1
-            or len(edge) < 2
-            or not np.all(np.isfinite(edge))
-            or np.any(edge[1:] <= edge[:-1])
-            for edge in edges
-        ):
+        if not np.any(mask):
             raise _error(
-                "edges must be finite strictly increasing 1-D arrays.",
-                "supply at least two edges per coordinate axis",
-            )
-        if (
-            mask.dtype.kind != "b"
-            or mask.shape != tuple(len(edge) - 1 for edge in edges)
-            or not np.any(mask)
-        ):
-            raise _error(
-                "active_mask must be boolean, nonempty, and match the edges.",
+                "MaskArena active_mask has no active cell.",
                 "pass a boolean cell mask with at least one active cell",
             )
-        mask = np.array(mask, dtype=np.bool_, copy=True)
-        for array in (*edges, mask):
-            array.setflags(write=False)
         object.__setattr__(self, "edges", edges)
         object.__setattr__(self, "active_mask", mask)
         object.__setattr__(
@@ -517,22 +498,21 @@ class MaskArena(ReadOnlyState):
         return None
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
-        """Retain axis-aligned masks, or store an inverse coordinate map."""
+        """Retain masks under positive axis scaling, or store the affine map.
+
+        A reflection keeps the map, as a grid's bins do (``FramedGrid``), so
+        the arena and its cells stay in one source frame.
+        """
         matrix = _affine(matrix, self.n_dims)
         diagonal = np.diag(matrix[:-1, :-1])
-        if np.array_equal(matrix[:-1, :-1], np.diag(diagonal)):
+        if np.array_equal(matrix[:-1, :-1], np.diag(diagonal)) and np.all(diagonal > 0):
             edges = []
-            mask = self.active_mask
             for axis, edge in enumerate(self.edges):
                 with np.errstate(over="ignore", invalid="ignore"):
-                    mapped = edge * diagonal[axis] + matrix[axis, -1]
-                if diagonal[axis] < 0:
-                    mapped = mapped[::-1]
-                    mask = np.flip(mask, axis=axis)
-                edges.append(mapped)
+                    edges.append(edge * diagonal[axis] + matrix[axis, -1])
             return MaskArena(
                 tuple(edges),
-                mask,
+                self.active_mask,
                 physical_footprint_known=self.physical_footprint_known,
             )
         return _TransformedArena(self, matrix)
@@ -572,6 +552,42 @@ class MaskArena(ReadOnlyState):
         )
 
 
+def _similarity_scale(matrix: NDArray[np.float64]) -> float:
+    """Uniform length scale of a homogeneous affine ``matrix`` that is a similarity.
+
+    Raises
+    ------
+    ValueError
+        If the map is not a similarity, which a track's centerline and width
+        need: any other map changes lengths differently in each direction.
+    """
+    linear = matrix[:-1, :-1]
+    n_dims = len(linear)
+    with np.errstate(under="ignore"):
+        _, logdet = np.linalg.slogdet(linear)
+    scale = math.exp(float(logdet) / n_dims)
+    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+        normalized = linear / scale
+        residual = np.max(np.abs(normalized @ normalized.T - np.eye(n_dims)))
+    if residual > 1e-12 or not np.isfinite(residual):
+        raise _error(
+            "TrackArena transforms must be a similarity.",
+            "use translation, rotation, reflection and uniform scale, or rebuild the measured footprint",
+        )
+    return scale
+
+
+def _holds_track(arena: Arena) -> bool:
+    """Whether ``arena`` is a track, or maps or combines one."""
+    if isinstance(arena, TrackArena):
+        return True
+    if isinstance(arena, _TransformedArena):
+        return _holds_track(arena.base)
+    if isinstance(arena, _CombinedArena):
+        return any(_holds_track(child) for child in arena.children)
+    return False
+
+
 @dataclass(frozen=True, eq=False)
 class TrackArena(ReadOnlyState):
     """Union of exact constant-width capsules around centerline segments.
@@ -581,7 +597,10 @@ class TrackArena(ReadOnlyState):
     segments : ndarray, shape (n_segments, 2, n_dims)
         Finite nondegenerate centerline segments in Cartesian coordinates.
     width : float or None
-        Positive full physical width. None preserves an unknown footprint.
+        Positive full physical width. None preserves an unknown footprint,
+        except on a one-dimensional track: positions there have no off-track
+        direction, so its domain is the centerline itself, ends included
+        (``domain_known``), though no physical footprint is recorded.
         End caps are round and junctions are unions of segment capsules.
     """
 
@@ -634,20 +653,30 @@ class TrackArena(ReadOnlyState):
 
     @property
     def domain_known(self) -> bool:
-        """Whether a positive physical width was supplied."""
-        return self.width is not None
+        """Whether a width was supplied or the track is one-dimensional."""
+        return self.width is not None or self.n_dims == 1
 
     @property
     def physical_footprint_known(self) -> bool:
         """Whether the physical capsule footprint is known."""
-        return self.domain_known
+        return self.width is not None
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
-        """Use point-to-segment distance rather than nearest bin centers."""
+        """Use point-to-segment distance rather than nearest bin centers.
+
+        A one-dimensional track without a width contains the closed
+        intervals its segments cover.
+        """
         query, finite = _query(positions, self.n_dims)
-        if self.width is None:
-            raise _unknown()
         inside = np.zeros(len(query), dtype=np.bool_)
+        if self.width is None:
+            if self.n_dims != 1:
+                raise _unknown()
+            low = self.segments[:, :, 0].min(axis=1)
+            high = self.segments[:, :, 0].max(axis=1)
+            values = query[finite, :1]
+            inside[finite] = np.any((values >= low) & (values <= high), axis=1)
+            return inside
         inside[finite] = _track_distances(self, query[finite]) <= self.width / 2
         return inside
 
@@ -663,7 +692,7 @@ class TrackArena(ReadOnlyState):
         :meth:`as_track` gives the mapped centerline and width.
         """
         matrix = _affine(matrix, self.n_dims)
-        scale = self._similarity_scale(matrix)
+        scale = _similarity_scale(matrix)
         _mapped(self.segments, matrix)
         if self.width is not None and not np.isfinite(self.width * scale):
             raise _error(
@@ -672,34 +701,19 @@ class TrackArena(ReadOnlyState):
             )
         return _TransformedArena(self, matrix)
 
-    def _similarity_scale(self, matrix: NDArray[np.float64]) -> float:
-        """Uniform length scale of an affine ``matrix`` that is a similarity."""
-        linear = matrix[:-1, :-1]
-        with np.errstate(under="ignore"):
-            _, logdet = np.linalg.slogdet(linear)
-        scale = math.exp(float(logdet) / self.n_dims)
-        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            normalized = linear / scale
-            residual = np.max(np.abs(normalized @ normalized.T - np.eye(self.n_dims)))
-        if residual > 1e-12 or not np.isfinite(residual):
-            raise _error(
-                "TrackArena transforms must be a similarity.",
-                "use translation, rotation, reflection and uniform scale, or rebuild the measured footprint",
-            )
-        return scale
-
     def polygonal_domain(self) -> None:
         """Do not approximate round caps with a polygonal buffer."""
         return None
 
     def domain_bounds(self) -> NDArray[np.float64] | None:
-        """Bound the capsules of a track with a known width."""
-        if self.width is None:
+        """Bound the capsules of a track with a known width, or a 1-D track."""
+        if not self.domain_known:
             return None
+        half_width = 0.0 if self.width is None else self.width / 2
         return np.array(
             [
-                self.segments.min(axis=(0, 1)) - self.width / 2,
-                self.segments.max(axis=(0, 1)) + self.width / 2,
+                self.segments.min(axis=(0, 1)) - half_width,
+                self.segments.max(axis=(0, 1)) + half_width,
             ]
         )
 
@@ -716,10 +730,18 @@ class EgocentricSurround:
         Finite increasing angular limits in radians.
     circular : bool
         Whether the angular axis wraps across the seam, so the bins at the
-        two ends of the angle range are neighbors. Containment does not
-        depend on it: an angle names a direction, so every window compares
-        angles modulo two pi (see :meth:`wrap_angles`), and a partial window
-        keeps its configured angular exclusions.
+        two ends of the angle range are neighbors. Only a full turn (2π) can
+        wrap. Containment does not depend on it: an angle names a direction,
+        so every window compares angles modulo two pi (see
+        :meth:`wrap_angles`), and a partial window keeps its configured
+        angular exclusions.
+
+    Raises
+    ------
+    ValueError
+        If a limit is not finite, the limits are not increasing, a distance
+        is negative, the angles span more than one turn, ``circular`` is not
+        a boolean, or ``circular`` is True for less than one turn.
     """
 
     distance_range: tuple[float, float]
@@ -747,14 +769,24 @@ class EgocentricSurround:
                 )
             object.__setattr__(self, name, (float(values[0]), float(values[1])))
         low, high = self.angle_range
-        if high - low > 2 * np.pi and not np.isclose(
-            high - low, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0
-        ):
+        full_turn = bool(
+            np.isclose(high - low, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0)
+        )
+        if high - low > 2 * np.pi and not full_turn:
             raise _error(
                 "angle_range spans more than one full turn (2π).",
                 "pass at most one turn; angles a whole turn apart name one direction",
             )
-        object.__setattr__(self, "circular", _boolean(self.circular, "circular"))
+        circular = _boolean(self.circular, "circular")
+        if circular and not full_turn:
+            raise _error(
+                f"angle_range={self.angle_range!r} spans {high - low:.6g} rad, "
+                "less than a full turn (2π), so its angle cannot wrap "
+                "(circular=True).",
+                "pass circular=False for a partial angular window, or an "
+                "angle_range one full turn wide",
+            )
+        object.__setattr__(self, "circular", circular)
 
     def wrap_angles(self, positions: NDArray[np.float64]) -> NDArray[np.float64]:
         """Express each angle in ``[low, low + 2π)`` of the angle range.
@@ -784,10 +816,22 @@ class EgocentricSurround:
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test native ``(distance, angle)`` positions against the closed window.
 
-        The window includes its edges, while the bins are half-open: a row
-        exactly at the outer distance limit, or at the upper angle of a
-        partial window, is inside the window but in no bin, so
-        ``Environment.bin_at`` gives it ``-1``.
+        The window includes its edges, and so do the edge bins: a row exactly
+        at the outer distance limit, or at the upper angle of a partial
+        window, lands in the last bin along that axis. On a full circle the
+        upper angle names the same direction as the lower one, so it lands
+        in the first angle bin.
+
+        Parameters
+        ----------
+        positions : ndarray, shape (n_positions, 2)
+            ``(distance, angle)`` rows, angles in radians.
+
+        Returns
+        -------
+        ndarray of bool, shape (n_positions,)
+            True for finite rows inside the window. NaN or infinite rows are
+            False.
         """
         query, finite = _query(positions, 2)
         selected = self.wrap_angles(query[finite])
@@ -837,6 +881,9 @@ class _TransformedArena(ReadOnlyState):
                 "retain native polar coordinates",
             )
         forward = _affine(self.forward, self.base.n_dims)
+        if _holds_track(self.base):
+            # Each layer is checked, so a chain of maps stays a similarity.
+            _similarity_scale(forward)
         if isinstance(self.base, OpenArena):
             _mapped(shapely.get_coordinates(self.base.polygon), forward)
         with np.errstate(under="ignore"):
@@ -903,7 +950,7 @@ class _TransformedArena(ReadOnlyState):
         original, error = self._project(query[finite])
         representable = np.all(np.isfinite(original), axis=1)
         selected = np.zeros(len(original), dtype=np.bool_)
-        selected[representable] = _contains_with_error(
+        selected[representable] = contains_with_error(
             self.base, original[representable], error[representable]
         )
         inside[finite] = selected
@@ -951,7 +998,7 @@ class _TransformedArena(ReadOnlyState):
             _mapped_vertices(track.segments, self.forward),
             None
             if track.width is None
-            else track.width * track._similarity_scale(self.forward),
+            else track.width * _similarity_scale(self.forward),
         )
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
@@ -1042,19 +1089,19 @@ def _segment_distance(first: NDArray[np.float64], second: NDArray[np.float64]) -
     return min(distances)
 
 
-def _contains_with_error(
+def contains_with_error(
     arena: Arena, query: NDArray[np.float64], error: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
     if isinstance(arena, _CombinedArena):
         return np.asarray(
             np.logical_or.reduce(
-                [_contains_with_error(child, query, error) for child in arena.children]
+                [contains_with_error(child, query, error) for child in arena.children]
             ),
             dtype=np.bool_,
         )
     if isinstance(arena, _TransformedArena):
         original, propagated = arena._project(query, error)
-        return _contains_with_error(arena.base, original, propagated)
+        return contains_with_error(arena.base, original, propagated)
     inside = arena.contains(query)
     rows = np.flatnonzero(~inside)
     if not len(rows):

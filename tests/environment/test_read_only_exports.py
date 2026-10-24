@@ -53,7 +53,7 @@ def _handed_out(env):
             arrays[f"binning.rectilinear.edges[{i}]"] = edge
     if binning.linearization is not None:
         arrays["binning.linearization.active_mask"] = binning.linearization.active_mask
-    faces = binning.faces.build()
+    faces = binning.build_faces()
     arrays.update({f"faces.{name}": value for name, value in faces._asdict().items()})
     geometry = env.get_diffusion_geometry()
     arrays.update(

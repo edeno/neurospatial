@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 MIN_HEX_RADIUS = 1e-10
 
 
@@ -13,20 +15,22 @@ def cartesian_to_fractional_cube(
     points_y: NDArray[np.float64],
     hex_radius: float,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-    """Convert Cartesian (x, y) coordinates to fractional axial coordinates of a hex grid.
+    """Convert Cartesian (x, y) coordinates to fractional cube coordinates of a hex grid.
 
-    Axial coordinates represent positions in a hexagonal grid using two axes (q, r),
-    simplifying neighbor and distance calculations compared to Cartesian coordinates.
+    Cube coordinates name a position in a pointy-top hexagonal grid with three
+    axes (q, r, s) that always sum to zero. The integer (q, r) pair of a
+    hexagon is its axial coordinate.
 
     Parameters
     ----------
     points_x : NDArray[np.float64], shape (n_points,)
-        X-coordinate(s) in Cartesian space, typically relative to the hexagonal
-        grid's origin.
+        X-coordinate(s) relative to the center of hexagon (0, 0).
     points_y : NDArray[np.float64], shape (n_points,)
-        Y-coordinate(s) in Cartesian space, relative to the grid's origin.
+        Y-coordinate(s) relative to the center of hexagon (0, 0).
     hex_radius : float
-        Width of each hexagon in the grid, measured as the distance between opposite sides.
+        Distance from a hexagon's center to any of its corners, in the
+        positions' length units. The flat-to-flat width is
+        ``sqrt(3) * hex_radius``.
 
     Returns
     -------
@@ -42,34 +46,35 @@ def cartesian_to_fractional_cube(
     The conversion follows the standard formulas (see
     https://www.redblobgames.com/grids/hexagons/#coordinates):
 
-        q = (sqrt(3)/3 * x - 1/3 * y) / hex_width
-        r = (2/3 * y) / hex_width
+        q = (sqrt(3)/3 * x - 1/3 * y) / hex_radius
+        r = (2/3 * y) / hex_radius
+        s = -q - r
 
-    Fractional axial coordinates allow for smooth interpolation before rounding
-    to discrete hex indices.
+    Rounding the fractional coordinates gives the hexagon that contains each
+    point (see :func:`round_fractional_cube_to_integer_axial`).
 
-    Points outside the grid bounds or containing NaNs in inputs will produce NaN outputs.
+    NaN inputs produce NaN outputs; the conversion does not check grid bounds.
 
     Raises
     ------
     ValueError
-        If hex_radius is below MIN_HEX_RADIUS (1e-10), which would cause
-        numerical instability in coordinate conversion.
+        If hex_radius is not a positive radius of at least MIN_HEX_RADIUS
+        (1e-10): zero, negative or NaN radii, and radii so small that the
+        division in the conversion is numerically unstable.
 
     """
-    # Validate hex_radius is not too small (prevents numerical instability)
-    if abs(hex_radius) < MIN_HEX_RADIUS:
+    if not hex_radius >= MIN_HEX_RADIUS:
         raise ValueError(
-            f"hex_radius too small ({hex_radius:.2e}). "
-            f"Minimum supported radius: {MIN_HEX_RADIUS:.2e}. "
-            "This prevents division by near-zero values which cause numerical instability."
+            _format_error(
+                f"hex_radius must be a positive radius of at least "
+                f"{MIN_HEX_RADIUS:.0e}; got {hex_radius!r}.",
+                why="Why: positions are divided by the radius, so a zero, "
+                "negative or NaN radius gives meaningless hexagon indices and "
+                "a tiny one gives unstable ones.",
+                fix="pass the hexagons' center-to-vertex radius in the "
+                "positions' length units",
+            )
         )
-
-    # Handle near-zero case using tolerance-based comparison (more robust than hex_radius == 0)
-    if np.isclose(hex_radius, 0.0, atol=1e-12):
-        # Degenerate grid - all points map to origin
-        zero_coords = np.zeros_like(points_x)
-        return zero_coords, zero_coords, zero_coords
 
     q_frac = (np.sqrt(3.0) / 3.0 * points_x - 1.0 / 3.0 * points_y) / hex_radius
     r_frac = (2.0 / 3.0 * points_y) / hex_radius
@@ -105,40 +110,24 @@ def round_fractional_cube_to_integer_axial(
         Integer r axial coordinate.
 
     """
-    # Initial rounding to nearest integer
     q_round_f: NDArray[np.float64] = np.round(q_frac)
     r_round_f: NDArray[np.float64] = np.round(r_frac)
-    s_round_f: NDArray[np.float64] = np.round(
-        s_frac,
-    )  # s_round = np.round(-q_frac - r_frac)
+    s_round_f: NDArray[np.float64] = np.round(s_frac)
 
-    # Differences from original fractional values
     q_diff: NDArray[np.float64] = np.abs(q_round_f - q_frac)
     r_diff: NDArray[np.float64] = np.abs(r_round_f - r_frac)
     s_diff: NDArray[np.float64] = np.abs(s_round_f - s_frac)
 
-    # Initialize axial coordinates with the basic rounded values
     q_axial: NDArray[np.int_] = q_round_f.astype(int)
     r_axial: NDArray[np.int_] = r_round_f.astype(int)
-    # s_axial for sum check, not directly returned for offset conversion
-    # s_axial: NDArray[np.int_] = s_round_f.astype(np.int_)
 
-    # Correct coordinates to ensure q_axial + r_axial + s_axial = 0
-    # Condition where q_diff is strictly the largest
+    # Recompute the coordinate that rounding moved furthest from the other two,
+    # so the integer cube coordinates sum to zero. When s moved furthest (or
+    # ties leave it last), q and r are already the rounded axial pair.
     cond1: NDArray[np.bool_] = (q_diff > r_diff) & (q_diff > s_diff)
     q_axial[cond1] = (-r_round_f[cond1] - s_round_f[cond1]).astype(int)
-    # r_axial[cond1] remains r_round_f[cond1]
-
-    # Condition where r_diff is strictly the largest (and q_diff was not)
     cond2: NDArray[np.bool_] = (~cond1) & (r_diff > s_diff)
     r_axial[cond2] = (-q_round_f[cond2] - s_round_f[cond2]).astype(int)
-    # q_axial[cond2] remains q_round_f[cond2]
-
-    # Condition where s_diff is largest (or ties put it here), and others were not
-    # In this case, s_axial would be adjusted:
-    # s_axial[cond3] = (-q_round_f[cond3] - r_round_f[cond3]).astype(np.int_)
-    # q_axial and r_axial remain as their initially rounded values, which is correct.
-    # No explicit action needed for q_axial, r_axial under cond3 as they are already set.
 
     return q_axial, r_axial
 
@@ -152,8 +141,9 @@ def axial_to_offset_bin_indices(
     """Convert integer axial coordinates (q, r) to 1D bin indices.
 
     This conversion is for an "odd-r" offset grid arrangement where odd rows
-    are shifted relative to even rows. The resulting 1D index corresponds
-    to a flattened row-major order of the conceptual rectangular grid of hexagons.
+    are shifted half a hexagon to the right (+x) of even rows. The resulting
+    1D index is the row-major flat index into the full rectangular grid of
+    hexagons.
 
     Parameters
     ----------
@@ -174,18 +164,11 @@ def axial_to_offset_bin_indices(
         are assigned an index of -1.
 
     """
-    # Convert axial to "odd-r" offset coordinates
-    # col = q + (r - (r & 1)) / 2
-    # row = r
-    # (r_axial & 1) is 1 if r_axial is odd, 0 if even. Works for negative r_axial.
+    # "odd-r" offset coordinates; (r & 1) is 1 for odd r, negative r included.
     grid_col: NDArray[np.int_] = q_axial + (r_axial - (r_axial & 1)) // 2
     grid_row: NDArray[np.int_] = r_axial
-
-    # Calculate 1D bin index (row-major flattening)
-    # bin_idx = row * num_cols + col
     bin_idx: NDArray[np.int_] = grid_row * n_hex_x + grid_col
 
-    # Mark out-of-bounds indices as -1
     valid_mask: NDArray[np.bool_] = (
         (grid_col >= 0) & (grid_col < n_hex_x) & (grid_row >= 0) & (grid_row < n_hex_y)
     )
@@ -212,7 +195,7 @@ def points_to_hex_bin_ind(
     ----------
     points : NDArray[np.float64], shape (n_points, 2)
         The (x, y) coordinates of the points to assign to bins.
-        NaN input points result in an index of -1.
+        NaN or infinite input points result in an index of -1.
     grid_offset_x : float
         The x-coordinate of the grid's effective origin (e.g., min_x from
         `_create_hex_grid`).
@@ -228,8 +211,8 @@ def points_to_hex_bin_ind(
     -------
     NDArray[np.int_], shape (n_points,)
         The 1D bin index (relative to the full conceptual grid) for each
-        data point. Points falling outside the defined grid area or NaN input
-        points are assigned an index of -1.
+        data point. Points falling outside the defined grid area and NaN or
+        infinite input points are assigned an index of -1.
 
     """
     n_points = points.shape[0]
@@ -240,12 +223,13 @@ def points_to_hex_bin_ind(
 
     output_indices: NDArray[np.int_] = np.full(n_points, -1, dtype=int)
 
-    # Identify valid (non-NaN) points
+    # NaN and infinite points have no hexagon; an infinite coordinate must not
+    # reach the float-to-integer cast, whose result is platform-defined.
     valid_mask: NDArray[np.bool_] = np.asarray(
-        ~np.isnan(points).any(axis=1), dtype=np.bool_
+        np.isfinite(points).all(axis=1), dtype=np.bool_
     )
     if not np.any(valid_mask):
-        return output_indices  # All points are NaN or empty after all
+        return output_indices
 
     valid_points: NDArray[np.float64] = points[valid_mask]
 
@@ -282,7 +266,7 @@ def get_hex_grid_neighbor_deltas(is_odd_row: bool) -> list[tuple[int, int]]:
     """Return (delta_col, delta_row) coordinate deltas for hexagon neighbors.
 
     This is for an "odd-r" pointy-top hex grid, where odd rows (1, 3, ...)
-    are typically shifted right relative to even rows (0, 2, ...).
+    are shifted half a hexagon to the right (+x) of even rows (0, 2, ...).
     The y-axis (row index) increases "upwards" in grid coordinates.
 
     Parameters

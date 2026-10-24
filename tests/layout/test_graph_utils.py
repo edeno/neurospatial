@@ -109,19 +109,35 @@ def test_project_1d_to_2d_with_gap(simple_graph):
             simple_graph.edges[e]["distance"] = np.linalg.norm(pos1 - pos0)
     positions = np.array([0.0, 0.5, 1.0, 1.25, 1.5, 2.0, 2.5])
     coords = project_1d_to_2d(positions, simple_graph, edge_order, edge_spacing=0.5)
-    # The gap is between 1.0 and 1.5, so 1.25 should be projected to the end of first edge or start of second
+    # The gap between 1.0 and 1.5 is not on the track: 1.25 has no position.
     expected = np.array(
         [
             [0.0, 0.0],  # lin_pos = 0.0
             [0.5, 0.0],  # lin_pos = 0.5
             [1.0, 0.0],  # lin_pos = 1.0 (end of edge 1)
-            [1.0, 0.0],  # lin_pos = 1.25 (in gap, projects to end of edge 1)
+            [np.nan, np.nan],  # lin_pos = 1.25 (in the gap)
             [1.0, 0.0],  # lin_pos = 1.5 (start of edge 2)
             [1.5, 0.0],  # lin_pos = 2.0 (mid of edge 2)
             [2.0, 0.0],  # lin_pos = 2.5 (end of edge 2)
         ]
     )
     np.testing.assert_allclose(coords, expected, atol=1e-7)
+
+
+@pytest.mark.parametrize("edge_spacing", [0.0, 0.5])
+def test_project_1d_to_2d_off_track_positions_are_missing(simple_graph, edge_spacing):
+    """Positions before the start, past the end or in a gap are not on the track."""
+    edge_order = [(0, 1), (1, 2)]
+    total = 2.0 + edge_spacing
+    positions = np.array([-50.0, -1e-6, total + 1e-6, 1e9, np.inf, -np.inf, 0.0, total])
+    coords = project_1d_to_2d(positions, simple_graph, edge_order, edge_spacing)
+    assert np.isnan(coords[:6]).all()
+    np.testing.assert_allclose(coords[6:], [[0.0, 0.0], [2.0, 0.0]])
+    if edge_spacing:
+        gap = project_1d_to_2d(
+            np.array([1.0 + 1e-6, 1.25, 1.5 - 1e-6]), simple_graph, edge_order, 0.5
+        )
+        assert np.isnan(gap).all()
 
 
 def test_project_1d_to_2d_nan(simple_graph):

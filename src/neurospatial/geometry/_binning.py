@@ -6,14 +6,14 @@ import copy
 import pickle
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.geometry._diffusion import (
@@ -23,9 +23,10 @@ from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid, framed_locator
 from neurospatial.geometry._locators import Locator
 from neurospatial.geometry._rebin_spec import GridBinningSpec
-from neurospatial.geometry._track import project_1d_to_2d
+from neurospatial.geometry._track import project_1d_to_2d, project_nd_to_1d
 
 if TYPE_CHECKING:
+    from neurospatial.geometry._native_faces import NativeFaces
     from neurospatial.geometry._polygon_cells import PolygonCells
 
 
@@ -230,9 +231,11 @@ class BinConnections(ReadOnlyState):
     closed_by : ndarray of intp, shape (n_all_pairs,)
         Index into the arena's ``walls`` of the wall that closes each pair:
         the one covering most of the edge the pair's cells share, or for
-        cells that meet only at a corner, the first wall the link between
-        their centers crosses. -1 for open pairs and for closed pairs no wall
-        of the arena closes. Publication records it when it applies walls.
+        cells that meet only at a corner, the first wall that corner touches
+        which the link between their centers also crosses, else the first
+        wall the corner touches, else the first wall the link crosses. -1 for
+        open pairs and for closed pairs no wall of the arena closes.
+        Publication records it when it applies walls.
     pairs : ndarray of intp, shape (n_pairs, 2)
         The open pairs, in the order of ``all_pairs``.
     pair_distances : ndarray of float64, shape (n_pairs,)
@@ -261,7 +264,9 @@ class BinConnections(ReadOnlyState):
                     index = tuple(int(i) for i in np.argwhere(invalid)[0])
                     raise ValueError(f"pairs{index} must contain integer bin indices.")
             else:
-                raise ValueError("pairs(0, 0) must contain integer bin indices.")
+                raise ValueError(
+                    f"pairs must contain integer bin indices, got {raw_pairs.dtype}."
+                )
         invalid = raw_pairs < 0
         if np.any(invalid):
             index = tuple(int(i) for i in np.argwhere(invalid)[0])
@@ -427,28 +432,6 @@ class BinConnections(ReadOnlyState):
             raise ValueError(f"pairs{index} must be in [0, {n_bins}).")
 
 
-class FacesSource(Protocol):
-    """Source of an environment's finite-volume cell faces."""
-
-    @property
-    def available(self) -> bool:
-        """Whether validated finite-volume faces can be built."""
-        ...
-
-    def build(self) -> FaceGeometry:
-        """Build validated faces in connectivity pair order, without caching."""
-        ...
-
-    def missing_error(self, operation: str) -> Exception:
-        """Return an actionable error when the named operation needs faces.
-
-        A source that is not ``available`` returns a
-        ``MissingCellGeometryError``, the error that marks bins which cannot
-        smooth.
-        """
-        ...
-
-
 @dataclass(frozen=True, eq=False)
 class KnownFaces(ReadOnlyState):
     """Owned finite-volume faces that no longer need their originating layout."""
@@ -493,13 +476,9 @@ class KnownFaces(ReadOnlyState):
         """Whether validated face geometry can be obtained."""
         return True
 
-    def build(self) -> FaceGeometry:
-        """Return the stored faces in published pair order."""
+    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
+        """Return the stored faces, which a binning checks against its pairs."""
         return self.faces
-
-    def missing_error(self, operation: str) -> NotImplementedError:
-        """Return an error only relevant to unavailable face sources."""
-        return NotImplementedError(f"{operation}: stored faces are available.")
 
 
 class MissingCellGeometryError(NotImplementedError):
@@ -508,16 +487,29 @@ class MissingCellGeometryError(NotImplementedError):
 
 @dataclass(frozen=True, eq=False)
 class MissingFaces:
-    """The reason finite-volume operations cannot use a binning."""
+    """The reason finite-volume operations cannot use a binning.
+
+    Raises
+    ------
+    TypeError
+        If ``reason`` is not a string.
+    """
 
     reason: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.reason, str):
+            raise TypeError(
+                "MissingFaces.reason must be a string explaining why the faces "
+                f"are missing, got {self.reason!r}."
+            )
 
     @property
     def available(self) -> bool:
         """Whether validated face geometry can be obtained."""
         return False
 
-    def build(self) -> FaceGeometry:
+    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
         """Refuse construction because valid face geometry is unavailable."""
         raise self.missing_error("This operation")
 
@@ -597,6 +589,53 @@ def _refuse_unsaveable_attributes(graph: nx.Graph) -> None:
             ) from exc
 
 
+def _node_position(node: Any, attributes: dict[str, Any]) -> tuple[float, ...]:
+    """A track node's ``pos`` as finite floats, or an error naming the node."""
+    try:
+        position = tuple(float(value) for value in attributes["pos"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            _format_error(
+                f"Track graph node {node!r} has no numeric 'pos' attribute "
+                f"(got {attributes.get('pos')!r}).",
+                why="Why: the linear coordinate runs along the segments "
+                "between node positions.",
+                fix=f"set graph.nodes[{node!r}]['pos'] = (x, y) for every node",
+            )
+        ) from error
+    if not position or not np.all(np.isfinite(position)):
+        raise ValueError(
+            f"Track graph node {node!r} 'pos' must be finite coordinates, "
+            f"got {position!r}."
+        )
+    return position
+
+
+def _edge_spacing(spacing: Any, n_segments: int) -> float | tuple[float, ...]:
+    """Validate the gaps between ``n_segments`` successive track segments."""
+    scalar = np.ndim(spacing) == 0
+    try:
+        values = np.asarray(spacing, dtype=np.float64)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"TrackLinearization.edge_spacing must be numbers, got {spacing!r}."
+        ) from error
+    if isinstance(spacing, (str, bytes, bool, np.bool_)) or (
+        not scalar and values.shape != (max(n_segments - 1, 0),)
+    ):
+        raise ValueError(
+            "TrackLinearization.edge_spacing must be one number or one gap per "
+            f"pair of successive segments ({max(n_segments - 1, 0)}), got "
+            f"{spacing!r}."
+        )
+    if not np.all(np.isfinite(values) & (values >= 0)):
+        raise ValueError(
+            "TrackLinearization.edge_spacing must be finite and non-negative, "
+            f"got {spacing!r}."
+        )
+    return float(values) if scalar else tuple(float(value) for value in values)
+
+
 @dataclass(frozen=True, eq=False)
 class TrackLinearization(ReadOnlyState):
     """Owned track geometry and its absolute linear coordinate system.
@@ -606,11 +645,14 @@ class TrackLinearization(ReadOnlyState):
     graph : networkx.Graph
         Original track graph with node positions and enumerated edge IDs.
     edge_order : sequence of pairs
-        Track segments in linear coordinate order.
+        Track segments in linear coordinate order; each pair is an edge of
+        ``graph``.
     edge_spacing : float or sequence of float
-        Gaps between successive segments.
+        Finite, non-negative gaps between successive segments: one value for
+        every gap, or ``len(edge_order) - 1`` values.
     grid_edges : tuple of ndarray
-        Full linear bin edges, including gaps.
+        Full linear bin edges, including gaps: one finite, strictly
+        increasing axis.
     active_mask : ndarray of bool, shape (n_linear_bins,)
         Active linear cells in their original coordinate order.
 
@@ -619,6 +661,12 @@ class TrackLinearization(ReadOnlyState):
     TypeError
         If a graph, node or edge attribute holds a value that pickle cannot
         store, such as a lambda or a lock.
+    ValueError
+        If ``graph`` is not an undirected simple ``networkx.Graph``, a node
+        has no finite ``pos``, ``edge_order`` names a pair that is not a
+        graph edge, ``edge_spacing`` is not finite and nonnegative or has the
+        wrong count, or ``grid_edges`` is not one linear axis matching
+        ``active_mask``.
     """
 
     graph: nx.Graph
@@ -628,11 +676,18 @@ class TrackLinearization(ReadOnlyState):
     active_mask: NDArray[np.bool_]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.graph, nx.Graph) or (
+            self.graph.is_directed() or self.graph.is_multigraph()
+        ):
+            raise ValueError(
+                "TrackLinearization.graph must be an undirected simple "
+                f"networkx.Graph, got {type(self.graph).__name__}."
+            )
         _refuse_unsaveable_attributes(self.graph)
         graph = copy.deepcopy(self.graph)
         for node, attrs in graph.nodes(data=True):
             graph._node[node] = _ReadOnlyTrackAttributes(
-                attrs, pos=tuple(float(value) for value in attrs["pos"])
+                attrs, pos=_node_position(node, attrs)
             )
         for expected_id, (u, v, attrs) in enumerate(graph.edges(data=True)):
             edge_id = attrs.get("edge_id")
@@ -649,41 +704,47 @@ class TrackLinearization(ReadOnlyState):
             graph._adj[u][v] = graph._adj[v][u] = frozen
         graph.graph = _ReadOnlyTrackAttributes(graph.graph)
         object.__setattr__(self, "graph", nx.freeze(graph))
-        object.__setattr__(self, "edge_order", tuple(tuple(e) for e in self.edge_order))
-        spacing = self.edge_spacing
+        edge_order = tuple(tuple(edge) for edge in self.edge_order)
+        for index, edge in enumerate(edge_order):
+            if len(edge) != 2 or not graph.has_edge(*edge):
+                raise ValueError(
+                    f"TrackLinearization.edge_order[{index}] = {edge!r} is not "
+                    "an edge of the track graph; list the graph's edges in "
+                    "linear order."
+                )
+        object.__setattr__(self, "edge_order", edge_order)
         object.__setattr__(
-            self,
-            "edge_spacing",
-            float(spacing)
-            if isinstance(spacing, (int, float, np.number))
-            else tuple(float(x) for x in spacing),
+            self, "edge_spacing", _edge_spacing(self.edge_spacing, len(edge_order))
         )
-        edges = tuple(np.array(e, dtype=np.float64, copy=True) for e in self.grid_edges)
-        mask = np.array(self.active_mask, dtype=bool, copy=True)
-        for array in (*edges, mask):
-            array.setflags(write=False)
+        if len(self.grid_edges) != 1:
+            raise ValueError(
+                "TrackLinearization.grid_edges must hold one linear axis, got "
+                f"{len(self.grid_edges)}."
+            )
+        edges, _, mask = owned_grid(
+            self.grid_edges, None, self.active_mask, name="TrackLinearization"
+        )
         object.__setattr__(self, "grid_edges", edges)
         object.__setattr__(self, "active_mask", mask)
 
     def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Map ``(n_points, n_dims)`` coordinates onto the track."""
-        # Imported on use: track_linearization loads pandas and matplotlib (~0.6 s).
-        from track_linearization import get_linearized_position
+        """Map ``(n_points, n_dims)`` coordinates onto the track.
 
-        result = get_linearized_position(
-            data_points,
-            self.graph,
-            list(self.edge_order),
-            self.edge_spacing
-            if isinstance(self.edge_spacing, (int, float))
-            else list(self.edge_spacing),
-        ).linear_position.to_numpy()
-        return np.asarray(result, dtype=np.float64)
+        Each point goes to its nearest segment; a tie goes to the segment
+        first in ``edge_order`` (see :func:`project_nd_to_1d`).
+        """
+        return project_nd_to_1d(
+            data_points, self.graph, self.edge_order, self.edge_spacing
+        )
 
     def linear_to_nd(
         self, linear_coordinates: NDArray[np.float64]
     ) -> NDArray[np.float64]:
-        """Map ``(n_points,)`` absolute linear positions into track coordinates."""
+        """Map ``(n_points,)`` absolute linear positions into track coordinates.
+
+        Returns ``(n_points, n_dims)`` coordinates. A position on no segment
+        (below 0, past the end, inside a gap, or not finite) is a row of NaN.
+        """
 
         return project_1d_to_2d(
             linear_coordinates,
@@ -708,31 +769,101 @@ class Binning:
     without cells keep a declared value (or None). An environment's
     binning carries the environment's ``dimension_ranges``.
 
-    A ``grid_frame`` is handed to the affine step of ``locator`` (a
+    ``grid`` holds the bins' rectangular cells, when they have them: a
+    :class:`RectilinearGrid` whose cells are axis-aligned in the bins'
+    coordinates, or a :class:`FramedGrid` whose source cells an affine map
+    (a rotation, reflection or shear) carries into them. ``rectilinear`` and
+    ``grid_frame`` read it as one or the other, so a binning cannot claim
+    both. A framed grid is handed to the affine step of ``locator`` (a
     :class:`TransformedLocator`), so ``locator.locate`` assigns points by the
-    frame's half-open source cells, as linear time allocation does.
+    frame's source cells, half-open with the outline of the active cells
+    closed, as linear time allocation does.
+
+    Construction checks what the records alone determine: ``kind`` is a
+    string, every neighbor pair names a bin, known faces follow the open
+    pairs with one volume per bin, face normals have one row per open pair,
+    and ``dimension_ranges`` has one numeric ``(low, high)`` pair per axis.
+    Publication checks the geometry the records must share.
+
+    Raises
+    ------
+    TypeError
+        If ``kind`` is not a string.
+    ValueError
+        If the records disagree in shape as described above, or
+        ``dimension_ranges`` is malformed.
     """
 
     kind: str
     bins: SpatialBins
     connections: BinConnections
     locator: Locator
-    faces: FacesSource
-    rectilinear: RectilinearGrid | None = None
+    faces: KnownFaces | NativeFaces | MissingFaces
+    grid: RectilinearGrid | FramedGrid | None = None
     linearization: TrackLinearization | None = None
     shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None
     outline: Outline | None = None
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
-    grid_frame: FramedGrid | None = None
     dimension_ranges: tuple[tuple[float, float], ...] | None = None
 
+    def build_faces(self) -> FaceGeometry:
+        """Build the finite-volume faces of these bins, in open-pair order.
+
+        Returns
+        -------
+        FaceGeometry
+            Faces aligned with ``connections.pairs``, built on each call.
+
+        Raises
+        ------
+        MissingCellGeometryError
+            If the bins have no faces (``MissingFaces``).
+        """
+        return self.faces.build(self.bins, self.connections)
+
+    @property
+    def rectilinear(self) -> RectilinearGrid | None:
+        """The axis-aligned rectangular cells, or None."""
+        return self.grid if isinstance(self.grid, RectilinearGrid) else None
+
+    @property
+    def grid_frame(self) -> FramedGrid | None:
+        """The rectangular cells mapped by a rotation, reflection or shear, or None."""
+        return self.grid if isinstance(self.grid, FramedGrid) else None
+
     def __post_init__(self) -> None:
-        if self.grid_frame is not None:
-            # Lookup and linear allocation share the frame's cell rule.
-            object.__setattr__(
-                self, "locator", framed_locator(self.locator, self.grid_frame)
+        if not isinstance(self.kind, str):
+            raise TypeError(
+                f"Binning.kind must be a descriptive string, got {self.kind!r}."
             )
+        self.connections.check_bins(self.bins.n_bins)
+        pairs = self.connections.pairs
+        if isinstance(self.faces, KnownFaces):
+            faces = self.faces.faces
+            if not np.array_equal(faces.edges, pairs):
+                raise ValueError(
+                    "Binning faces.edges must be the open neighbor pairs, "
+                    "connections.pairs, in the same order and orientation."
+                )
+            if not np.array_equal(faces.volumes, self.bins.sizes):
+                raise ValueError(
+                    "Binning faces.volumes must equal bins.sizes, one per bin."
+                )
+        if self.face_normals is not None and self.face_normals.values.shape != (
+            len(pairs),
+            self.bins.n_dims,
+        ):
+            raise ValueError(
+                "Binning face_normals must have one row per open pair and one "
+                f"column per axis, shape ({len(pairs)}, {self.bins.n_dims}), got "
+                f"{self.face_normals.values.shape}."
+            )
+        # The grid is the one record of a frame: lookup and linear allocation
+        # share its cell rule, and a locator without one keeps none.
+        object.__setattr__(
+            self, "locator", framed_locator(self.locator, self.grid_frame)
+        )
         if self.dimension_ranges is None:
             return
         try:
@@ -762,8 +893,8 @@ def require_rectilinear(
     NotImplementedError
         If the binning has no axis-aligned rectangular cells.
     """
-    if binning.rectilinear is not None:
-        return binning.rectilinear
+    if isinstance(binning.grid, RectilinearGrid):
+        return binning.grid
     raise NotImplementedError(
         _format_error(
             f"{operation} needs a grid of axis-aligned rectangular cells; this "
@@ -782,6 +913,6 @@ def require_grid_context(
     binning: Binning, operation: str, *, fix: str
 ) -> tuple[RectilinearGrid, FramedGrid | None]:
     """Read source axes and their optional world frame without copying grids."""
-    if binning.grid_frame is not None:
-        return binning.grid_frame.source, binning.grid_frame
+    if isinstance(binning.grid, FramedGrid):
+        return binning.grid.source, binning.grid
     return require_rectilinear(binning, operation, fix=fix), None

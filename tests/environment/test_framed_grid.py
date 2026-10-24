@@ -12,7 +12,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.binning import FramedGrid, RectilinearGrid
+from neurospatial.binning import FramedGrid, RectilinearGrid, TransformedLocator
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import PolygonCells
@@ -100,16 +100,19 @@ def test_rotating_the_grid_and_positions_together_keeps_each_bin(
     expected = env.bin_at(source)
     np.testing.assert_array_equal(child.bin_at(world), expected)
 
-    # The binning's own locator applies the same rule, also after a subset.
+    # The binning's own locator applies the same rule, also after a subset:
+    # the kept cells close their outline, as on the axis-aligned grid, so a
+    # point on a face shared with a dropped cell belongs to the kept cell.
     np.testing.assert_array_equal(child._binning.locator.locate(world), expected)
     keep = np.arange(child.n_bins) % 3 != 1
     subset = child.subset(mask=keep)
+    selected_first = env.subset(mask=keep).bin_at(source)
     renumber = np.full(child.n_bins + 1, -1)
     renumber[np.flatnonzero(keep)] = np.arange(keep.sum())
-    np.testing.assert_array_equal(subset.bin_at(world), renumber[expected])
-    np.testing.assert_array_equal(
-        subset._binning.locator.locate(world), renumber[expected]
-    )
+    owned = expected >= 0
+    assert np.any(selected_first[owned] != renumber[expected[owned]])
+    np.testing.assert_array_equal(subset.bin_at(world), selected_first)
+    np.testing.assert_array_equal(subset._binning.locator.locate(world), selected_first)
 
     # A combined environment finds the same bins in its rotated component.
     far = moved(grid(n_dims), oblique(n_dims, angle, shear, offset + 100.0))
@@ -168,7 +171,7 @@ def test_frame_round_trip_owns_all_arrays(
         .reshape(n_dims, -1)
         .T
     )
-    locator = RectilinearLocator(edges, shape, None, None)
+    locator = RectilinearLocator(edges, shape, np.ones(shape, bool))
     bins = SpatialBins(centers, np.ones(len(centers)), n_dims)
     native = Environment.from_bins(
         Binning(
@@ -177,7 +180,7 @@ def test_frame_round_trip_owns_all_arrays(
             BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), np.empty(0)),
             locator,
             MissingFaces("No edges."),
-            rectilinear=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
+            grid=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
         )
     )
     env = moved(native, oblique(n_dims, 0.123, 0.3, 13.7))
@@ -232,9 +235,7 @@ def test_frame_round_trip_owns_all_arrays(
     )
 
 
-@pytest.mark.parametrize(
-    "corruption", ["shift", "mask", "edges", "duplicate", "inverse"]
-)
+@pytest.mark.parametrize("corruption", ["shift", "mask", "edges"])
 def test_publication_rejects_inconsistent_frame(corruption):
     env = moved(grid(), matrix())
     binning = env._binning
@@ -251,12 +252,7 @@ def test_publication_rejects_inconsistent_frame(corruption):
         edges = tuple(edge + 0.1 for edge in source.edges)
         source = RectilinearGrid(edges, source.shape, source.active_mask)
     frame = FramedGrid(source, forward)
-    if corruption == "inverse":
-        frame.inverse.setflags(write=True)
-        frame.inverse[0, -1] += 0.1
-    candidate = replace(binning, grid_frame=frame)
-    if corruption == "duplicate":
-        candidate = replace(candidate, rectilinear=source)
+    candidate = replace(binning, grid=frame)
     with pytest.raises(ValueError, match=r"[Ff]rame"):
         Environment.from_bins(candidate)
 
@@ -293,8 +289,9 @@ def test_hexagon_conversion_retains_exact_vertices(kind):
 
 def test_binning_and_frame_codec_versions():
     meta, _ = encode(moved(grid(), matrix())._binning, "binning")
-    assert meta["codec_version"] == 4
-    assert meta["grid_frame"]["codec_version"] == 1
+    assert meta["codec_version"] == 6
+    assert meta["grid"]["codec"] == "FramedGrid"
+    assert meta["grid"]["codec_version"] == 1
 
 
 @pytest.mark.parametrize("kind", ["grid", "hexagonal"])
@@ -345,7 +342,7 @@ def test_similarity_inverse_after_cancelling_translations_keeps_lookup_and_stora
             Environment.from_bins(
                 replace(
                     child._binning,
-                    grid_frame=FramedGrid(child._binning.grid_frame.source, bad),
+                    grid=FramedGrid(child._binning.grid_frame.source, bad),
                 ),
                 arena=child.arena,
             )
@@ -390,12 +387,65 @@ def test_hole_ring_order_does_not_change_polygon_identity_after_inverse(angle, r
         )
 
 
-def test_a_replaced_framed_locator_keeps_its_frame():
+def test_the_binning_grid_is_the_one_record_of_the_locator_frame():
     env = Environment.from_grid_mask(
         np.ones((4, 4), bool), grid_edges=(np.arange(5.0),) * 2
     ).apply_transform(
         AffineND(np.array([[0.6, -0.8, 1.0], [0.8, 0.6, 2.0], [0, 0, 1]]))
     )
-    locator = env._binning.locator
-    assert locator.frame is not None
-    assert replace(locator).frame is locator.frame
+    binning = env._binning
+    locator = binning.locator
+    assert locator.frame is binning.grid_frame
+    # A locator copied back into the binning gets the binning's frame again.
+    assert replace(binning, locator=replace(locator)).locator.frame is (
+        binning.grid_frame
+    )
+    # The frame is not a constructor argument, and a binning without a framed
+    # grid keeps no frame on its locator.
+    with pytest.raises(TypeError):
+        TransformedLocator(locator.base, locator.forward, binning.grid_frame)
+    unframed = replace(binning, grid=None)
+    assert unframed.locator.frame is None
+    points = env.bin_centers + np.array([0.3, -0.2])
+    np.testing.assert_array_equal(unframed.locator.locate(points), env.bin_at(points))
+
+
+@pytest.mark.parametrize("offset", [6e11, 1e12])
+def test_rotated_millimetre_grid_far_from_the_origin_is_refused(offset):
+    """Lookup that cannot resolve a 1e-3 cell refuses with the fix to apply.
+
+    At these offsets the inverse map's rounding reaches a quarter of a cell,
+    so no position could be assigned to its cell reliably. The rotated
+    environment checks that its centers locate themselves, so the refusal
+    comes as it is built.
+    """
+    edges = np.arange(4.0) * 1e-3
+    env = Environment.from_grid_mask(np.ones((3, 3), dtype=bool), (edges, edges))
+    cosine, sine = np.cos(0.3), np.sin(0.3)
+    turn = np.array([[cosine, -sine, offset], [sine, cosine, offset], [0, 0, 1.0]])
+    with pytest.raises(ValueError, match="recenter or rescale coordinates"):
+        env.apply_transform(Affine2D(turn))
+
+
+@pytest.mark.parametrize("gap,certified", [(0.0, True), (-1e-15, False)])
+def test_rotated_cells_in_contact_within_rounding_are_not_certified(gap, certified):
+    """Rotated unit cubes that touch combine; an overlap of 1e-15 is unresolvable."""
+    child = Environment.from_grid_mask(
+        np.ones((1, 1, 1), dtype=bool), grid_edges=(np.array([0.0, 1.0]),) * 3
+    )
+    turn = np.eye(4)
+    turn[:2, :2] = [
+        [np.cos(np.pi / 4), -np.sin(np.pi / 4)],
+        [np.sin(np.pi / 4), np.cos(np.pi / 4)],
+    ]
+    shifted = turn.copy()
+    shifted[:3, 3] = turn[:3, :3] @ [1.0 + gap, 0.0, 0.0]
+    components = {
+        "a": child.apply_transform(AffineND(turn)),
+        "b": child.apply_transform(AffineND(shifted)),
+    }
+    if certified:
+        assert Environment.combine(components, auto_bridge=False).n_bins == 2
+        return
+    with pytest.raises(ValueError, match="Cannot resolve transformed-cell contact"):
+        Environment.combine(components, auto_bridge=False)

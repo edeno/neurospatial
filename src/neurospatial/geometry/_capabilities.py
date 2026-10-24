@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
 
 @dataclass(frozen=True, eq=False)
@@ -17,8 +17,8 @@ class RectilinearGrid(ReadOnlyState):
     Attributes
     ----------
     edges : tuple of ndarray
-        Cell edges along each axis; ``edges[d]`` has shape ``(shape[d] + 1,)``.
-        Spacing may vary along an axis.
+        Finite, strictly increasing cell edges along each axis; ``edges[d]``
+        has shape ``(shape[d] + 1,)``. Spacing may vary along an axis.
     shape : tuple of int
         Number of cells along each axis, active or not.
     active_mask : ndarray of bool, shape ``shape``
@@ -31,11 +31,9 @@ class RectilinearGrid(ReadOnlyState):
     active_mask: NDArray[np.bool_]
 
     def __post_init__(self) -> None:
-        edges = tuple(
-            np.array(edge, dtype=np.float64, copy=True) for edge in self.edges
+        edges, shape, active_mask = owned_grid(
+            self.edges, self.shape, self.active_mask, name="RectilinearGrid"
         )
-        active_mask = np.array(self.active_mask, dtype=np.bool_, copy=True)
-        for array in (*edges, active_mask):
-            array.setflags(write=False)
         object.__setattr__(self, "edges", edges)
+        object.__setattr__(self, "shape", shape)
         object.__setattr__(self, "active_mask", active_mask)

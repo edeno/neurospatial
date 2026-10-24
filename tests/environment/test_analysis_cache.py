@@ -541,7 +541,8 @@ def test_track_lookups_share_one_kdtree(first, monkeypatch):
 
 
 def test_track_lookups_resolve_equidistant_points_alike():
-    """bin_at and nearest_bin search one tree, so ties go to the same bin."""
+    """bin_at gives a point equidistant from several centers to the lowest
+    bin, as nearest_bin does by default."""
     import networkx as nx
 
     corners = {0: (0.0, 0.0), 1: (40.0, 0.0), 2: (40.0, 40.0), 3: (0.0, 40.0)}
@@ -557,7 +558,7 @@ def test_track_lookups_resolve_equidistant_points_alike():
     # Points on a half-unit lattice are often equidistant from several centers.
     points = np.round(np.random.default_rng(0).uniform(0, 40, (5000, 2)) * 2) / 2
 
-    nearest = env.nearest_bin(points, tie_break="closest_center", max_distance=np.inf)
+    nearest = env.nearest_bin(points, tie_break="lowest_index", max_distance=np.inf)
 
     bins = env.bin_at(points)
     on_track = bins >= 0

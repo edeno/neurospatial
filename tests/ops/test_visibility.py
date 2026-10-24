@@ -1037,6 +1037,111 @@ class TestLineOfSightClear:
         )
 
 
+class TestMissingObservations:
+    """A missing position is never reported as blocked or as seeing nothing."""
+
+    @pytest.fixture
+    def open_field(self):
+        from neurospatial import Environment
+
+        x, y = np.meshgrid(np.arange(0.0, 20.0), np.arange(0.0, 20.0))
+        return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=5.0)
+
+    @pytest.mark.parametrize(
+        ("observer", "targets", "named"),
+        [
+            ([np.nan, 10.0], [[12.0, 10.0]], "observer"),
+            ([10.0, 10.0], [[12.0, 10.0], [np.inf, 10.0]], "first row 1"),
+        ],
+    )
+    def test_line_of_sight_refuses_non_finite_positions(
+        self, open_field, observer, targets, named
+    ):
+        from neurospatial.geometry._boundaries import batch_line_of_sight_clear
+
+        with pytest.raises(ValueError, match=named) as info:
+            batch_line_of_sight_clear(
+                open_field.binning,
+                open_field.arena,
+                np.array(observer),
+                np.array(targets),
+                boundary_source="analysis",
+            )
+        assert "Fix:" in str(info.value)
+
+    @pytest.mark.parametrize(
+        ("position", "heading", "cues"),
+        [
+            ([np.nan, 10.0], 0.0, [[12.0, 10.0]]),
+            ([10.0, 10.0], np.nan, [[12.0, 10.0]]),
+            ([10.0, 10.0], 0.0, [[12.0, 10.0], [np.nan, 1.0]]),
+        ],
+    )
+    def test_visible_cues_refuses_a_missing_observation(
+        self, open_field, position, heading, cues
+    ):
+        from neurospatial.ops.visibility import visible_cues
+
+        with pytest.raises(ValueError, match="visible_cues"):
+            visible_cues(
+                open_field,
+                np.array(position),
+                heading,
+                np.array(cues),
+                boundary_source="analysis",
+            )
+
+    def test_view_field_refuses_a_missing_observation(self, open_field):
+        from neurospatial.ops.visibility import compute_view_field
+
+        with pytest.raises(ValueError, match="compute_view_field"):
+            compute_view_field(
+                open_field, np.array([np.nan, 10.0]), 0.0, boundary_source="analysis"
+            )
+
+    def test_trajectory_keeps_missing_frames_missing(self, open_field):
+        from neurospatial.ops.visibility import compute_viewshed_trajectory
+
+        positions = np.array([[10.0, 10.0], [np.nan, 10.0], [10.0, 10.0]])
+        headings = np.array([0.0, 0.0, np.nan])
+        observed, *missing = compute_viewshed_trajectory(
+            open_field, positions, headings, n_rays=36, boundary_source="analysis"
+        )
+        assert observed.n_visible_bins > 0
+        assert np.all(np.isfinite(observed.occlusion_map))
+        for frame in missing:
+            assert frame.n_visible_bins == 0
+            assert np.isnan(frame.occlusion_map).all()
+            assert np.isnan(frame.visibility_fraction)
+
+    def test_analysis_walls_name_why_the_bins_have_no_cells(self):
+        from neurospatial import Environment
+        from neurospatial.binning import (
+            BinConnections,
+            Binning,
+            MissingFaces,
+            NearestBinLocator,
+            SpatialBins,
+        )
+        from neurospatial.ops.visibility import compute_viewshed
+
+        centers = np.array([[0.0, 0.0], [1.0, 0.0]])
+        env = Environment.from_bins(
+            Binning(
+                "sites",
+                SpatialBins.from_arrays(centers, np.ones(2), 1),
+                BinConnections.from_arrays([[0, 1]], [1.0]),
+                NearestBinLocator(centers, max_distance=0.5),
+                MissingFaces("Sites lack faces."),
+            )
+        )
+        with pytest.raises(NotImplementedError, match="exact planar cells") as info:
+            compute_viewshed(env, np.zeros(2), 0.0, boundary_source="analysis")
+        message = str(info.value)
+        assert "planar area-measured" in message
+        assert message.count("Fix:") == 1
+
+
 @pytest.mark.parametrize("call", ["occupancy", "trajectory"])
 def test_trajectory_viewsheds_build_the_mesh_lookup_once(call, monkeypatch):
     """Per-frame viewsheds share one triangle index over the whole trajectory."""

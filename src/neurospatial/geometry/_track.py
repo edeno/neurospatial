@@ -1,4 +1,4 @@
-"""Pure projection from a stored linear track to embedded coordinates."""
+"""Pure projections between a stored linear track and embedded coordinates."""
 
 from __future__ import annotations
 
@@ -9,7 +9,84 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._locators import _coordinate_roundoff
+
 Edge = tuple[Any, Any]
+
+
+def _segment_starts(
+    graph: nx.Graph, edge_order: Sequence[Edge], edge_spacing: float | Sequence[float]
+) -> NDArray[np.float64]:
+    """Linear position of the first node of each segment, shape (n_edges,)."""
+    lengths = np.array([graph.edges[e]["distance"] for e in edge_order], dtype=float)
+    if isinstance(edge_spacing, (int, float, np.number)):
+        gaps = np.full(max(0, len(edge_order) - 1), float(edge_spacing))
+    else:
+        gaps = np.asarray(edge_spacing, dtype=float)
+    return np.concatenate([[0.0], np.cumsum(lengths[:-1] + gaps)])
+
+
+def project_nd_to_1d(
+    points: NDArray[np.float64],
+    graph: nx.Graph,
+    edge_order: Sequence[Edge],
+    edge_spacing: float | Sequence[float],
+) -> NDArray[np.float64]:
+    """Map N-D points to linear positions on their nearest track segment.
+
+    A point as near, within rounding, to several segments (as on the shared
+    stretch of an out-and-back track) takes the segment first in
+    ``edge_order``, the one holding the lowest-numbered bins, as bin lookup
+    takes the lowest-numbered of tied bins. The choice therefore does not
+    depend on how a rotation or shift of the track rounds.
+
+    Parameters
+    ----------
+    points : ndarray of float64, shape (n_points, n_dims)
+        Positions in the track's coordinates.
+    graph : networkx.Graph
+        Track graph with node ``pos`` and edge ``distance`` attributes.
+    edge_order : sequence of (node, node)
+        Track segments in linear coordinate order.
+    edge_spacing : float or sequence of float
+        Gaps between successive segments in linear coordinates.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_points,)
+        Linear position of each point's projection, measured from the first
+        node of its segment; NaN for a non-finite point.
+    """
+    query = np.atleast_2d(np.asarray(points, dtype=np.float64))
+    order = list(edge_order)
+    position = nx.get_node_attributes(graph, "pos")
+    # Project along each edge as the graph stores it.
+    stored = {frozenset(edge): edge for edge in graph.edges()}
+    segments = np.array(
+        [[position[node] for node in stored[frozenset(edge)]] for edge in order],
+        dtype=np.float64,
+    )
+    first = segments[:, 0]
+    direction = segments[:, 1] - first
+    squared = np.sum(direction**2, axis=1)
+    finite = np.all(np.isfinite(query), axis=1)
+    values = np.where(finite[:, None], query, 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        along = np.sum(direction * (values[:, None, :] - first), axis=2) / squared
+    # A zero-length segment is its one node.
+    along = np.clip(np.where(squared > 0, along, 0.0), 0.0, 1.0)
+    projected = first + along[:, :, None] * direction
+    distance = np.linalg.norm(values[:, None, :] - projected, axis=2)
+    tolerance = _coordinate_roundoff(values, float(np.max(np.abs(segments))))
+    tied = distance <= (distance.min(axis=1) + tolerance)[:, None]
+    segment = np.argmax(tied, axis=1)
+    rows = np.arange(len(query))
+    start_nodes = np.array([position[edge[0]] for edge in order], dtype=np.float64)
+    linear = _segment_starts(graph, order, edge_spacing)[segment] + np.linalg.norm(
+        start_nodes[segment] - projected[rows, segment], axis=1
+    )
+    linear[~finite] = np.nan
+    return np.asarray(linear, dtype=np.float64)
 
 
 def project_1d_to_2d(
@@ -41,15 +118,17 @@ def project_1d_to_2d(
     -------
     coords_nd : NDArray[np.float64], shape (n_points, n_dims)
         N-dimensional coordinates corresponding to each input `linear_position`.
-        Positions falling into gaps or beyond track ends are typically
-        projected onto the nearest valid track segment endpoint.
-        NaNs in `linear_position` propagate to rows of NaNs in output.
+        A position on no segment is a row of NaN: one before the start (below
+        0), past the end of the last segment, inside a gap between segments,
+        or not finite (NaN or ±inf). Segment ends, including both ends of the
+        track, are on the track.
 
     Raises
     ------
     ValueError
-        If `linear_position` is not 1D.
-        If `edge_spacing` (if a list) has an incorrect length.
+        If `linear_position` is not 1D, `edge_spacing` (if a list) has an
+        incorrect length, or an edge in `edge_order` has no 'distance'
+        attribute.
 
     """
     linear_position = np.asarray(linear_position, dtype=float)
@@ -101,24 +180,37 @@ def project_1d_to_2d(
         [[0.0], np.cumsum(edge_lengths[:-1] + gaps)],
     )  # shape (n_edges,)
 
-    edge_ind = (
+    # The last edge starting at or before each position; positions before the
+    # first edge start on edge 0 and are rejected below.
+    edge_ind = np.clip(
         np.searchsorted(cumulative_edge_start_position, linear_position, side="right")
-        - 1
+        - 1,
+        0,
+        n_edges - 1,
     )
-    edge_ind = np.clip(edge_ind, 0, n_edges - 1)  # clamp to valid edge index
-
-    nan_mask = ~np.isfinite(linear_position).squeeze()
-    edge_ind[nan_mask] = 0  # dummy index, will overwrite later
+    finite = np.isfinite(linear_position)
+    edge_ind[~finite] = 0  # dummy index, overwritten with NaN below
 
     # param along each chosen edge
-    normalized_edge_position = (
-        linear_position - cumulative_edge_start_position[edge_ind]
-    ) / edge_lengths[edge_ind]
-    normalized_edge_position = np.clip(
-        normalized_edge_position,
-        0.0,
-        1.0,
-    )  # project extremes onto endpoints
+    edge_start = cumulative_edge_start_position[edge_ind]
+    edge_length = edge_lengths[edge_ind]
+    with np.errstate(invalid="ignore"):
+        normalized_edge_position = (linear_position - edge_start) / edge_length
+        # Rounding of the subtraction, so the ends of each edge stay on it.
+        slack = (
+            4
+            * np.finfo(np.float64).eps
+            * (np.abs(linear_position) + np.abs(edge_start) + edge_length)
+            / edge_length
+        )
+        on_track = (
+            finite
+            & (normalized_edge_position >= -slack)
+            & (normalized_edge_position <= 1.0 + slack)
+        )
+    # Positions before the start, past the end or in a gap are not on the track.
+    nan_mask = ~on_track
+    normalized_edge_position = np.clip(normalized_edge_position, 0.0, 1.0)
 
     # gather endpoint coordinates
     node_position_2d = nx.get_node_attributes(graph, "pos")
@@ -137,7 +229,6 @@ def project_1d_to_2d(
         None,
     ] * end_node_position_2d
 
-    # propagate NaNs from the input
     position_2d[nan_mask] = np.nan
 
     return np.asarray(position_2d, dtype=np.float64)

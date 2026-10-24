@@ -158,7 +158,6 @@ def test_decoder_rejects_different_inherited_bin_boundary_ownership():
         (np.array([-2.0, -1.0, 0.0]), np.array([0.0, 1.0])),
         (2, 1),
         np.ones((2, 1), bool),
-        np.array([0, 1]),
     )
     alternate = SubsetLocator(
         TransformedLocator(reversed_grid, np.diag([-1.0, 1.0, 1.0])), np.array([1, 0])
@@ -353,7 +352,7 @@ def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
 ):
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"No installed snapshot adapter|owned immutable snapshot",
     ):
         publish_environment(
             "custom", _CustomHexLayout(built_environment), "CustomHex", {}

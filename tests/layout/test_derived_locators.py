@@ -19,7 +19,7 @@ from neurospatial.ops.transforms import Affine2D
 
 @pytest.fixture
 def full_locator():
-    return RectilinearLocator((np.arange(3.0),) * 2, (2, 2), None, None)
+    return RectilinearLocator((np.arange(3.0),) * 2, (2, 2), np.ones((2, 2), bool))
 
 
 def test_subset_locator_masks_outside_parent_before_mapping(full_locator):
@@ -42,7 +42,7 @@ def wrapper_and_inputs(full_locator, request):
     backing = np.zeros((6, 6))
     backing[::2, ::2] = np.array([[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
     caller = backing[::2, ::2]
-    return TransformedLocator(full_locator, caller), "inverse", caller
+    return TransformedLocator(full_locator, caller), "forward", caller
 
 
 def test_wrapper_owns_caller_view_without_freezing_it(wrapper_and_inputs):
@@ -90,7 +90,7 @@ def test_nested_wrappers_round_trip_without_layout_objects(full_locator):
     reflected = TransformedLocator(full_locator, np.diag([-1.0, 1.0, 1.0]))
     selected = SubsetLocator(reflected, np.array([-1, 0, -1, 1]))
     translated = TransformedLocator(
-        selected, np.array([[1.0, 0.0, -2.0], [0.0, 1.0, -3.0], [0.0, 0.0, 1.0]])
+        selected, np.array([[1.0, 0.0, 2.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]])
     )
     meta, arrays = encode(translated, "locator")
     assert "locator/base/base/base/edges_0" in arrays
@@ -119,14 +119,11 @@ def test_transformed_locator_nonfinite_rows_do_not_poison_finite_rows(full_locat
 
 def test_rectilinear_subset_keeps_full_grid_and_changes_active_map():
     mask = np.array([[True, False], [True, True]])
-    parent = RectilinearLocator(
-        (np.arange(3.0),) * 2, (2, 2), mask, np.array([0, -1, 1, 2])
-    )
+    parent = RectilinearLocator((np.arange(3.0),) * 2, (2, 2), mask)
     keep = np.array([True, False, True])
     child = parent.subset(keep)
     assert isinstance(child, RectilinearLocator)
     np.testing.assert_array_equal(child.active_mask, [[True, False], [False, True]])
-    np.testing.assert_array_equal(child.flat_to_active, [0, -1, -1, 1])
     np.testing.assert_array_equal(parent.active_mask, mask)
     np.testing.assert_array_equal(
         child.locate(np.array([[0.5, 0.5], [1.5, 0.5], [1.5, 1.5]])), [0, -1, 1]

@@ -329,6 +329,65 @@ def test_track_non_similarity_refused(built_environment, linear):
     assert "Fix:" in str(caught.value)
 
 
+@pytest.mark.parametrize("angle", [0.3, 2.0])
+def test_out_and_back_track_rotates_with_its_revisited_bins(angle):
+    """Bins of the return leg sit on the outbound bins' centers; a rotation
+    moves both together instead of refusing the coincident centers."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    for node, position in enumerate([(0.0, 0.0), (10.0, 0.0), (0.0, 0.0)]):
+        graph.add_node(node, pos=position)
+    graph.add_edge(0, 1, distance=10.0)
+    graph.add_edge(1, 2, distance=10.0)
+    env = Environment.from_graph(graph, [(0, 1), (1, 2)], bin_size=2, track_width=1)
+    matrix = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 3.0],
+            [np.sin(angle), np.cos(angle), -1.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    transform = Affine2D(matrix)
+    moved = env.apply_transform(transform)
+    np.testing.assert_allclose(
+        moved.bin_centers, transform(env.bin_centers), atol=1e-12
+    )
+    points = np.array([[1.0, 0.2], [5.0, 0.0], [9.5, -0.3], [3.0, 0.4]])
+    np.testing.assert_array_equal(moved.bin_at(transform(points)), env.bin_at(points))
+
+
+@pytest.mark.parametrize("angle", [0.3, 2.0])
+def test_out_and_back_linear_position_takes_the_first_leg_under_rotation(angle):
+    """A point on both legs takes the outbound leg, as bin lookup takes the
+    lowest-numbered of tied bins, however the rotation rounds."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    for node, position in enumerate([(0.0, 0.0), (10.0, 0.0), (0.0, 0.0)]):
+        graph.add_node(node, pos=position)
+    graph.add_edge(0, 1)
+    graph.add_edge(1, 2)
+    env = Environment.from_graph(graph, [(0, 1), (1, 2)], bin_size=2, track_width=1)
+    transform = _affine(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    moved = env.apply_transform(transform)
+    along = np.linspace(0.0, 10.0, 101)
+    points = np.column_stack([along, np.zeros_like(along)])
+    points[1::2, 1] = 0.3
+
+    parent_linear = env.to_linear(points)
+    moved_linear = moved.to_linear(transform(points))
+
+    np.testing.assert_allclose(parent_linear, along, atol=1e-12)
+    np.testing.assert_allclose(moved_linear, along, atol=1e-12)
+    np.testing.assert_array_equal(
+        env.bin_at(env.linear_to_nd(parent_linear)), env.bin_at(points)
+    )
+    np.testing.assert_array_equal(moved.bin_at(transform(points)), env.bin_at(points))
+
+
 @pytest.mark.parametrize(
     "built_environment", ["grid8", "hex", "mesh", "track"], indirect=True
 )
@@ -519,6 +578,33 @@ def test_rounding_allowance_still_rejects_a_moved_cell_vertex(kind):
         )
 
 
+@pytest.mark.parametrize("kind", ["grid_clipped", "combined"])
+def test_a_cell_stored_from_another_starting_vertex_is_the_same_cell(kind):
+    if kind == "combined":
+        grid = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
+        env = Environment.combine(
+            {"a": grid, "b": grid.apply_transform(_affine(offset=(5.0, 0.0)))},
+            auto_bridge=False,
+        )
+    else:
+        env = _small_cell_environment(kind)
+    binning = env._binning
+    assert isinstance(binning.shapes, PolygonCells)
+    cell = binning.shapes.polygons[0]
+    ring = np.asarray(cell.exterior.coords)[:-1]
+    restarted = Polygon(np.roll(ring, 1, axis=0))
+    assert not restarted.equals_exact(cell, tolerance=0.0)
+    stored = (restarted, *binning.shapes.polygons[1:])
+
+    rebuilt = Environment.from_bins(
+        replace(binning, shapes=PolygonCells(stored)), arena=env.arena
+    )
+
+    np.testing.assert_array_equal(rebuilt.bin_sizes, env.bin_sizes)
+
+
 def _derive_environment(parent, derivation):
     if derivation == "subset":
         return parent.subset(mask=_keep_bins(parent))
@@ -628,7 +714,7 @@ def test_scaled_grid_centers_are_the_mapped_edge_midpoints(
 
 
 @pytest.mark.parametrize("built_environment", ["hex", "mesh", "track"], indirect=True)
-@pytest.mark.parametrize("corruption", ["centers", "sizes", "component", "inverse"])
+@pytest.mark.parametrize("corruption", ["centers", "sizes", "component", "forward"])
 def test_wrapped_geometry_corruption_is_rejected(
     built_environment, corruption, corrupted_environment_round_trip
 ):
@@ -638,8 +724,8 @@ def test_wrapped_geometry_corruption_is_rejected(
         if corruption == "sizes":
             arrays["binning/bins/sizes"] *= 2.0
             arrays["binning/faces/volumes"] *= 2.0
-        elif corruption == "inverse":
-            arrays["binning/locator/inverse"][0, -1] += 0.01
+        elif corruption == "forward":
+            arrays["binning/locator/forward"][0, -1] += 0.01
         elif corruption == "component":
             if "binning/shapes/centers" in arrays:
                 arrays["binning/shapes/centers"][0, 0] += 0.01
@@ -842,3 +928,67 @@ def test_extreme_axis_reflection_does_not_hide_wrong_measures(
         payload["arrays"]["binning/faces/volumes"][0] = 1.2
     with pytest.raises(ValueError, match=r"sizes|volumes|measures"):
         from_dict(payload)
+
+
+@pytest.mark.parametrize("built_environment", ["hex", "mesh"], indirect=True)
+def test_hexagon_and_triangle_lattices_survive_maps_and_subsets(built_environment):
+    """grid_shape indexes the lattice, so moving or selecting bins keeps it;
+    a subset keeps the shape and deactivates the dropped cells."""
+    env = built_environment
+    angle = 0.4
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle), 2.0], [np.sin(angle), np.cos(angle), 1.0]]
+    )
+    keep = np.arange(env.n_bins) != 3
+    derived = {
+        "translated": env.apply_transform(
+            Affine2D(np.array([[1.0, 0.0, 5.0], [0.0, 1.0, -3.0], [0.0, 0.0, 1.0]]))
+        ),
+        "rotated": env.apply_transform(Affine2D(np.vstack((rotation, [0, 0, 1])))),
+        "subset": env.subset(mask=keep),
+    }
+    for name, child in derived.items():
+        assert child.grid_shape == env.grid_shape, name
+        expected = env.active_mask.copy()
+        if name == "subset":
+            expected.flat[np.flatnonzero(env.active_mask)[~keep]] = False
+        np.testing.assert_array_equal(child.active_mask, expected, err_msg=name)
+        restored = from_dict(to_dict(child))
+        assert restored.grid_shape == env.grid_shape, name
+        np.testing.assert_array_equal(restored.active_mask, expected, err_msg=name)
+
+
+def test_rotated_rectangular_grid_has_no_world_aligned_shape():
+    """Source axes of a rotated grid are not world axes (see alignment.md)."""
+    grid = Environment.from_grid_mask(
+        np.ones((6, 6), dtype=bool), grid_edges=(np.arange(7.0),) * 2
+    )
+    angle = 0.4
+    rotated = grid.apply_transform(
+        Affine2D(
+            np.array(
+                [
+                    [np.cos(angle), -np.sin(angle), 0.0],
+                    [np.sin(angle), np.cos(angle), 0.0],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+        )
+    )
+    assert rotated.grid_shape == (36,)
+    assert rotated.grid_edges == ()
+
+
+@pytest.mark.parametrize("offset", [7e11, 1.8e12, 1e13])
+def test_moving_fine_bins_far_from_the_origin_advises_recentering(offset):
+    """Whichever check precision loss trips first, the refusal says how to fix it."""
+    env = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0) * 1e-3,) * 2
+    )
+    angle = 0.3
+    transform = _affine(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]],
+        (offset, offset),
+    )
+    with pytest.raises(ValueError, match="recenter or rescale"):
+        env.apply_transform(transform)

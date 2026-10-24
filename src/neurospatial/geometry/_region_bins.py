@@ -32,7 +32,9 @@ def polygon_bin_mask(
     Parameters
     ----------
     polygon : shapely geometry
-        Area in the same 2-D coordinates as ``centers``.
+        Area in the same 2-D coordinates as ``centers``. This function tests
+        the centers as given; :func:`region_bin_masks` also tests polar
+        centers moved by whole turns.
     centers : ndarray of float64, shape (n_bins, 2)
         Bin centers.
     include_boundary : bool, default=True
@@ -90,6 +92,12 @@ def region_bin_mask(
     point is outside the environment). A polygon region covers the bins whose
     centers lie inside it; ``include_boundary`` decides a center exactly on
     the edge. Every region query of an environment uses this rule.
+
+    Both are read in the bins' own coordinates. For polar
+    ``(distance, angle)`` bins, angles are compared modulo a full turn: a
+    point's angle is wrapped into the angle range as for any position, and a
+    polygon covers a bin when the center's angle plus any whole number of
+    turns lies inside it, so a wedge across the ±π seam is one polygon.
 
     Parameters
     ----------
@@ -184,6 +192,13 @@ def region_bin_masks(
             masks[:, column] = polygon_bin_mask(
                 region.data, centers, include_boundary=include_boundary, points=points
             )
+            if arena.coordinate_kind == "polar":
+                for turns in _polygon_turns(region.data, centers):
+                    masks[:, column] |= polygon_bin_mask(
+                        region.data,
+                        centers + np.array([0.0, turns * 2 * np.pi]),
+                        include_boundary=include_boundary,
+                    )
             continue
         point = np.asarray(region.data, dtype=np.float64).reshape(1, -1)
         if point.shape[1] != n_dims:
@@ -200,3 +215,30 @@ def region_bin_masks(
         if index >= 0:
             masks[index, column] = True
     return masks
+
+
+def _polygon_turns(
+    polygon: shapely.geometry.base.BaseGeometry, centers: NDArray[np.float64]
+) -> list[int]:
+    """Return the nonzero whole turns that can move a polar center into a polygon.
+
+    Parameters
+    ----------
+    polygon : shapely geometry
+        Area in ``(distance, angle)`` coordinates.
+    centers : ndarray of float64, shape (n_bins, 2)
+        Polar bin centers.
+
+    Returns
+    -------
+    list of int
+        Each whole number of turns ``k``, other than zero, for which some
+        center angle plus ``2πk`` can fall inside the polygon's angle bounds.
+    """
+    if len(centers) == 0:
+        return []
+    _, low, _, high = polygon.bounds
+    turn = 2 * np.pi
+    first = int(np.floor((low - np.max(centers[:, 1])) / turn))
+    last = int(np.ceil((high - np.min(centers[:, 1])) / turn))
+    return [turns for turns in range(first, last + 1) if turns != 0]

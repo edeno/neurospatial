@@ -63,6 +63,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     ClippedLocator,
@@ -168,7 +169,7 @@ def decode(
         )
     try:
         return codec.decode(meta, arrays, prefix)
-    except (KeyError, TypeError, ValueError, IndexError, OverflowError) as exc:
+    except (KeyError, ValueError, IndexError, OverflowError) as exc:
         raise ValueError(f"invalid {name} payload at {prefix}: {exc}") from exc
 
 
@@ -262,16 +263,15 @@ def _shape(meta: dict[str, Any], name: str = "shape") -> tuple[int, ...]:
     return tuple(raw)
 
 
-def _finite(value: Any, name: str, *, positive: bool = False) -> float:
+def _finite(value: Any, name: str) -> float:
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{name} must be a finite numeric value, not a boolean.")
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be a finite numeric value.") from exc
-    if not np.isfinite(result) or (positive and result <= 0):
-        condition = "finite and positive" if positive else "finite"
-        raise ValueError(f"{name} must be {condition}.")
+    if not np.isfinite(result):
+        raise ValueError(f"{name} must be finite.")
     return result
 
 
@@ -282,27 +282,7 @@ def _grid_edges(
     edges = tuple(
         _array(arrays, prefix, f"edges_{i}", np.float64) for i in range(len(shape))
     )
-    for axis, edge in enumerate(edges):
-        if (
-            edge.shape != (shape[axis] + 1,)
-            or np.any(~np.isfinite(edge))
-            or np.any(np.diff(edge) <= 0)
-        ):
-            raise ValueError(
-                f"edges_{axis} must have shape ({shape[axis] + 1},) "
-                "and be finite and strictly increasing."
-            )
     return edges, shape
-
-
-def _active_map(mapping: NDArray[Any], size: int, name: str) -> None:
-    if mapping.shape != (size,) or np.any(mapping < -1):
-        raise ValueError(f"{name} must have shape ({size},) and indices >= -1.")
-    active = mapping[mapping >= 0]
-    if not np.array_equal(np.sort(active), np.arange(len(active))):
-        raise ValueError(
-            f"{name} active indices must number bins exactly once from zero."
-        )
 
 
 def _encode_bins(obj: SpatialBins, prefix: str) -> Payload:
@@ -373,8 +353,6 @@ def _encode_missing(obj: MissingFaces, prefix: str) -> Payload:
 def _decode_missing(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> MissingFaces:
-    if not isinstance(meta["reason"], str):
-        raise ValueError("reason must be a string explaining unavailable faces.")
     return MissingFaces(meta["reason"])
 
 
@@ -390,10 +368,9 @@ def _decode_grid(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> RectilinearGrid:
     edges, shape = _grid_edges(meta, arrays, prefix)
-    mask = _array(arrays, prefix, "active_mask", np.bool_)
-    if mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
-    return RectilinearGrid(edges, shape, mask)
+    return RectilinearGrid(
+        edges, shape, _array(arrays, prefix, "active_mask", np.bool_)
+    )
 
 
 def _refuse_json_attributes(graph: nx.Graph) -> None:
@@ -547,26 +524,17 @@ def graph_from_node_link(data: dict[str, Any]) -> nx.Graph:
 def _decode_track(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> TrackLinearization:
-    edges, shape = _grid_edges(meta, arrays, prefix)
-    if len(shape) != 1:
-        raise ValueError("track grid edges must describe one linear coordinate.")
-    mask = _array(arrays, prefix, "active_mask", np.bool_)
-    if mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
-    graph = graph_from_node_link(meta["graph"])
-    if graph.is_directed() or graph.is_multigraph():
-        raise ValueError("track graph must be an undirected simple graph.")
+    edges, _ = _grid_edges(meta, arrays, prefix)
     edge_order = tuple(
         tuple(_node_id(node) for node in edge) for edge in meta["edge_order"]
     )
-    if any(len(edge) != 2 or not graph.has_edge(*edge) for edge in edge_order):
-        raise ValueError("edge_order must contain pairs from the stored track graph.")
-    spacing = meta["edge_spacing"]
-    if isinstance(spacing, (list, tuple)):
-        spacing = tuple(_finite(value, "edge_spacing") for value in spacing)
-    else:
-        spacing = _finite(spacing, "edge_spacing")
-    return TrackLinearization(graph, edge_order, spacing, edges, mask)
+    return TrackLinearization(
+        graph_from_node_link(meta["graph"]),
+        edge_order,
+        meta["edge_spacing"],
+        edges,
+        _array(arrays, prefix, "active_mask", np.bool_),
+    )
 
 
 def _encode_hex_shapes(obj: HexagonShapes, prefix: str) -> Payload:
@@ -578,12 +546,9 @@ def _encode_hex_shapes(obj: HexagonShapes, prefix: str) -> Payload:
 def _decode_hex_shapes(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> HexagonShapes:
-    centers = _array(arrays, prefix, "centers", np.float64)
-    if centers.ndim != 2 or centers.shape[1] != 2 or np.any(~np.isfinite(centers)):
-        raise ValueError("centers must be finite with shape (n_bins, 2).")
     return HexagonShapes(
-        centers,
-        _finite(meta["radius"], "radius", positive=True),
+        _array(arrays, prefix, "centers", np.float64),
+        _finite(meta["radius"], "radius"),
         _finite(meta["orientation"], "orientation"),
     )
 
@@ -609,7 +574,10 @@ def _mesh_arrays(
 def _decode_triangle_shapes(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> TriangleShapes:
-    return TriangleShapes(*_mesh_arrays(arrays, prefix, "triangles"))
+    return TriangleShapes(
+        _array(arrays, prefix, "points", np.float64),
+        _array(arrays, prefix, "triangles", np.intp),
+    )
 
 
 def _encode_outline(obj: Outline, prefix: str) -> Payload:
@@ -637,41 +605,17 @@ def _encode_rectilinear_locator(obj: RectilinearLocator, prefix: str) -> Payload
     values: dict[str, NDArray[Any]] = {
         f"edges_{axis}": edge for axis, edge in enumerate(obj.edges)
     }
-    if obj.active_mask is not None:
-        values["active_mask"] = obj.active_mask
-    if obj.flat_to_active is not None:
-        values["flat_to_active"] = obj.flat_to_active
-    return {
-        "shape": list(obj.shape),
-        "has_active_mask": obj.active_mask is not None,
-        "has_flat_to_active": obj.flat_to_active is not None,
-    }, _arrays(prefix, **values)
+    values["active_mask"] = obj.active_mask
+    return {"shape": list(obj.shape)}, _arrays(prefix, **values)
 
 
 def _decode_rectilinear_locator(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> RectilinearLocator:
     edges, shape = _grid_edges(meta, arrays, prefix)
-    mask = (
-        _array(arrays, prefix, "active_mask", np.bool_)
-        if _flag(meta, "has_active_mask")
-        else None
+    return RectilinearLocator(
+        edges, shape, _array(arrays, prefix, "active_mask", np.bool_)
     )
-    mapping = (
-        _array(arrays, prefix, "flat_to_active", np.intp)
-        if _flag(meta, "has_flat_to_active")
-        else None
-    )
-    if mask is not None and mask.shape != shape:
-        raise ValueError(f"active_mask must have shape {shape}, got {mask.shape}.")
-    if mapping is not None:
-        _active_map(mapping, math.prod(shape), "flat_to_active")
-        if mask is not None:
-            expected = np.full(mask.size, -1, dtype=np.intp)
-            expected[mask.ravel()] = np.arange(np.count_nonzero(mask))
-            if not np.array_equal(mapping, expected):
-                raise ValueError("flat_to_active does not match active_mask ordering.")
-    return RectilinearLocator(edges, shape, mask, mapping)
 
 
 def _encode_hex_locator(obj: HexLocator, prefix: str) -> Payload:
@@ -687,16 +631,12 @@ def _decode_hex_locator(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> HexLocator:
     shape = _shape(meta, "centers_shape")
-    if len(shape) != 2:
-        raise ValueError("centers_shape must describe two hexagonal lattice axes.")
-    mapping = _array(arrays, prefix, "flat_to_active", np.intp)
-    _active_map(mapping, math.prod(shape), "flat_to_active")
     return HexLocator(
         _finite(meta["offset_x"], "offset_x"),
         _finite(meta["offset_y"], "offset_y"),
-        _finite(meta["radius"], "radius", positive=True),
-        (shape[0], shape[1]),
-        mapping,
+        _finite(meta["radius"], "radius"),
+        cast("tuple[int, int]", shape),
+        _array(arrays, prefix, "flat_to_active", np.intp),
     )
 
 
@@ -719,7 +659,6 @@ def _decode_mesh_locator(
 ) -> MeshLocator:
     points, simplices = _mesh_arrays(arrays, prefix, "simplices")
     mapping = _array(arrays, prefix, "simplex_to_active", np.intp)
-    _active_map(mapping, len(simplices), "simplex_to_active")
     boundary = None
     if meta["boundary"] is not None:
         component = decode(meta["boundary"], arrays, f"{prefix}/boundary")
@@ -733,9 +672,13 @@ def _decode_mesh_locator(
 
 def _encode_nearest_locator(obj: NearestBinLocator, prefix: str) -> Payload:
     assert obj.bin_indices is not None
-    return {"max_distance": obj.max_distance}, _arrays(
-        prefix, centers=obj.centers, bin_indices=obj.bin_indices
-    )
+    # JSON metadata holds only finite numbers; an unlimited radius is a flag.
+    unbounded = obj.max_distance is not None and np.isinf(obj.max_distance)
+    meta = {
+        "max_distance": None if unbounded else obj.max_distance,
+        "unbounded": unbounded,
+    }
+    return meta, _arrays(prefix, centers=obj.centers, bin_indices=obj.bin_indices)
 
 
 def _decode_nearest_locator(
@@ -748,10 +691,10 @@ def _decode_nearest_locator(
     if indices.shape != (len(centers),) or np.any(indices < 0):
         raise ValueError("bin_indices must give one non-negative index per center.")
     maximum = meta["max_distance"]
-    if maximum is not None:
+    if _flag(meta, "unbounded"):
+        maximum = math.inf
+    elif maximum is not None:
         maximum = _finite(maximum, "max_distance")
-        if maximum < 0:
-            raise ValueError("max_distance must be non-negative.")
     return NearestBinLocator(centers, maximum, indices)
 
 
@@ -807,7 +750,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         elif isinstance(locator, SubsetLocator):
             nested.update(_arrays(path, parent_to_child=locator.parent_to_child))
         else:
-            nested.update(_arrays(path, inverse=locator.inverse))
+            nested.update(_arrays(path, forward=locator.forward))
         return local, nested
 
     # Lookup is encoded first so unsupported layout-backed persistence fails
@@ -817,21 +760,16 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "bins",
         "connections",
         "faces",
-        "rectilinear",
+        "grid",
         "linearization",
         "shapes",
         "outline",
         "grid_spec",
         "face_normals",
-        "grid_frame",
     ):
         part = getattr(obj, name)
-        if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
-            part = (
-                KnownFaces(part.build())
-                if part.available
-                else MissingFaces(str(part.missing_error("this operation")))
-            )
+        if name == "faces" and isinstance(part, NativeFaces):
+            part = KnownFaces(obj.build_faces())
         if part is None:
             meta[name] = None
         elif isinstance(part, (PolygonCells, ClipMapping)):
@@ -842,6 +780,11 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         else:
             meta[name], nested = encode(part, f"{prefix}/{name}")
             arrays.update(nested)
+    meta["dimension_ranges"] = (
+        None
+        if obj.dimension_ranges is None
+        else [[float(low), float(high)] for low, high in obj.dimension_ranges]
+    )
     if cells or mappings:
         meta["snapshots"] = {"polygon_cells": [], "clip_mappings": []}
         for name, snapshots in (("polygon_cells", cells), ("clip_mappings", mappings)):
@@ -952,7 +895,7 @@ def _decode_subset_locator(
 
 def _encode_transformed_locator(obj: TransformedLocator, prefix: str) -> Payload:
     base, arrays = encode(obj.base, f"{prefix}/base")
-    arrays.update(_arrays(prefix, inverse=obj.inverse))
+    arrays.update(_arrays(prefix, forward=obj.forward))
     return {"base": base}, arrays
 
 
@@ -962,7 +905,7 @@ def _decode_transformed_locator(
     base = decode(meta["base"], arrays, f"{prefix}/base")
     if not isinstance(base, _LOCATOR_TYPES):
         raise ValueError("base must contain a point-lookup codec.")
-    return TransformedLocator(base, _array(arrays, prefix, "inverse", np.float64))
+    return TransformedLocator(base, _array(arrays, prefix, "forward", np.float64))
 
 
 def _decode_binning(
@@ -1032,20 +975,19 @@ def _decode_binning(
             return ClippedLocator(base, cell_snapshot, map_snapshot)
         if kind == "SubsetLocator":
             return SubsetLocator(base, _array(arrays, path, "parent_to_child", np.intp))
-        return TransformedLocator(base, _array(arrays, path, "inverse", np.float64))
+        return TransformedLocator(base, _array(arrays, path, "forward", np.float64))
 
     expected: dict[str, type | tuple[type, ...]] = {
         "bins": SpatialBins,
         "connections": BinConnections,
         "locator": _LOCATOR_TYPES,
         "faces": (KnownFaces, MissingFaces),
-        "rectilinear": RectilinearGrid,
+        "grid": (RectilinearGrid, FramedGrid),
         "linearization": TrackLinearization,
         "shapes": (HexagonShapes, TriangleShapes, PolygonCells),
         "outline": Outline,
         "grid_spec": GridBinningSpec,
         "face_normals": FaceNormals,
-        "grid_frame": FramedGrid,
     }
     part: object | None
     for name, kind in expected.items():
@@ -1071,10 +1013,24 @@ def _decode_binning(
         if part is not None and not isinstance(part, kind):
             raise ValueError(f"{name} has the wrong geometry codec kind.")
         parts[name] = part
-    if not isinstance(meta["kind"], str):
-        raise ValueError("kind must be a descriptive string.")
-    parts["connections"].check_bins(parts["bins"].n_bins)
-    return Binning(kind=meta["kind"], **parts)
+    ranges = meta["dimension_ranges"]
+    if ranges is not None and (
+        not isinstance(ranges, list)
+        or any(not isinstance(axis, list) or len(axis) != 2 for axis in ranges)
+    ):
+        raise ValueError("dimension_ranges must be one [low, high] pair per axis.")
+    return Binning(
+        kind=meta["kind"],
+        **parts,
+        dimension_ranges=(
+            None
+            if ranges is None
+            else tuple(
+                (_finite(low, "dimension_ranges"), _finite(high, "dimension_ranges"))
+                for low, high in ranges
+            )
+        ),
+    )
 
 
 def _encode_combined(obj: CombinedLocator, prefix: str) -> Payload:
@@ -1204,20 +1160,26 @@ _CODECS: dict[str, Codec] = {
         ClippedLocator, _encode_clipped_locator, _decode_clipped_locator
     ),
     "RectilinearLocator": Codec(
-        RectilinearLocator, _encode_rectilinear_locator, _decode_rectilinear_locator
+        RectilinearLocator,
+        _encode_rectilinear_locator,
+        _decode_rectilinear_locator,
+        version=2,
     ),
     "HexLocator": Codec(HexLocator, _encode_hex_locator, _decode_hex_locator),
     "MeshLocator": Codec(MeshLocator, _encode_mesh_locator, _decode_mesh_locator),
     "NearestBinLocator": Codec(
-        NearestBinLocator, _encode_nearest_locator, _decode_nearest_locator
+        NearestBinLocator, _encode_nearest_locator, _decode_nearest_locator, version=2
     ),
     "SubsetLocator": Codec(
         SubsetLocator, _encode_subset_locator, _decode_subset_locator
     ),
     "TransformedLocator": Codec(
-        TransformedLocator, _encode_transformed_locator, _decode_transformed_locator
+        TransformedLocator,
+        _encode_transformed_locator,
+        _decode_transformed_locator,
+        version=2,
     ),
-    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=4),
+    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=6),
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
     "FramedGrid": Codec(FramedGrid, _encode_grid_frame, _decode_grid_frame),
 }
@@ -1241,7 +1203,8 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
     Returns
     -------
     metadata : dict
-        JSON-compatible tagged data with codec version one.
+        JSON-compatible tagged data, stamped with the current arena codec
+        version (``codec_version``); a reader refuses any other version.
     arrays : dict of ndarray
         Independent writable numerical arrays using local field names.
     """
@@ -1550,8 +1513,8 @@ def snapshot_provider(provider: object, role: _SnapshotRole) -> object:
         raise TypeError(
             _format_error(
                 f"arena= takes an arena from neurospatial.arena (OpenArena, "
-                f"MaskArena, TrackArena or UnknownArena, not a subclass), got "
-                f"{name}.",
+                f"MaskArena, TrackArena, EgocentricSurround or UnknownArena, not "
+                f"a subclass), got {name}.",
                 why="Why: the environment stores its arena as data it can "
                 "save, transform and use to test containment, and no installed "
                 f"converter turns a {name} into that data.",
@@ -1593,7 +1556,7 @@ def _decode_snapshot(
         try:
             value = adapter.decode(detached_meta, detached_arrays, prefix)
             return _normalize_snapshot(value, adapter.role)
-        except (KeyError, TypeError, ValueError, IndexError, OverflowError) as exc:
+        except (KeyError, ValueError, IndexError, OverflowError) as exc:
             raise ValueError(
                 f"invalid {name} snapshot payload at {prefix}: {exc}"
             ) from exc

@@ -8,7 +8,9 @@ import numpy as np
 import shapely
 from shapely.geometry import MultiPolygon, Polygon
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arena import _TransformedArena
+from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 from neurospatial.geometry._polygon import cells_from_locator
 from neurospatial.geometry._polygon_cells import (
@@ -22,6 +24,21 @@ if TYPE_CHECKING:
 
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._locators import Locator
+
+
+def _clearance_message(wall: str, child: int, error: float) -> str:
+    """Say that wall ``wall`` may cut clipped bin ``child``, and why that is unknown."""
+    return _format_error(
+        f"Physical wall {wall!r} lies within {error:.3g} of clipped bin {child}, "
+        "so whether it cuts through that bin is unresolved.",
+        why="Why: the bins were clipped after being rotated, scaled or moved, "
+        "so in the coordinates the walls were declared in, the clipped bin's "
+        f"boundary is only known to within {error:.3g}.",
+        fix="clip the environment before transforming it. A wall meant to lie "
+        f"off the clipped bin can instead be moved more than {error:.3g} from "
+        "it, or the coordinates recentered near the origin, where rounding is "
+        "smaller",
+    )
 
 
 def wall_source_frame(
@@ -45,6 +62,14 @@ def wall_source_frame(
     can lie from the exact image of the published cell (0 where the frame
     recovers the cells exactly). None when the walls share no stored frame
     with the cells.
+
+    Raises
+    ------
+    ValueError
+        If a clipped cell, mapped back into the walls' frame, no longer
+        overlaps the cell it was clipped from, or if a wall inside the cell a
+        clipped bin was cut from lies within that bin's error bound of the
+        bin, so whether the wall cuts the bin is unresolved.
     """
 
     if isinstance(locator, TransformedLocator) and isinstance(arena, _TransformedArena):
@@ -75,8 +100,7 @@ def wall_source_frame(
         if inner is not None:
             cells, walls, original, inverse, frames, errors = inner
             if isinstance(locator, SubsetLocator):
-                selected = np.flatnonzero(locator.parent_to_child >= 0)
-                selected = selected[np.argsort(locator.parent_to_child[selected])]
+                selected = active_order(locator.parent_to_child)
                 return (
                     tuple(cells[index] for index in selected),
                     walls,
@@ -154,7 +178,7 @@ def wall_source_frame(
                             np.linalg.norm(source_errors[parent])
                         )
                         clipped_errors[child] += error
-                        for wall in walls:
+                        for number, wall in enumerate(walls):
                             interior = wall.intersection(cells[parent]).difference(
                                 cells[parent].boundary
                             )
@@ -167,8 +191,11 @@ def wall_source_frame(
                                 and interior.distance(retained) <= error
                             ):
                                 raise ValueError(
-                                    f"Physical wall clearance from clipped bin {child} is unresolved in the source frame. "
-                                    "Declare walls before clipping or transforming, or recenter coordinates."
+                                    _clearance_message(
+                                        frames[-1].base.wall_names[number],
+                                        child,
+                                        error,
+                                    )
                                 )
                     clipped.append(retained)
                 return (

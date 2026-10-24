@@ -33,7 +33,9 @@ NO_CONNECTIONS = BinConnections.from_arrays(np.empty((0, 2), int), [])
 def clipped_binning():
     cells = PolygonCells((box(0, 0, 1, 4), box(3, 0, 4, 4)))
     mapping = ClipMapping(np.array([0, 0]), 1)
-    base = RectilinearLocator((np.array([0.0, 4.0]),) * 2, (1, 1), None, None)
+    base = RectilinearLocator(
+        (np.array([0.0, 4.0]),) * 2, (1, 1), np.ones((1, 1), bool)
+    )
     locator = ClippedLocator(base, cells, mapping)
     bins = SpatialBins.from_arrays([[0.5, 2.0], [3.5, 2.0]], [4.0, 4.0], 2)
     return Binning(
@@ -96,9 +98,9 @@ def test_present_polygon_snapshot_is_distinct_from_historical_locator_frame(oper
         centers, sizes = original.bins.centers[1:], original.bins.sizes[1:]
     else:
         cells = PolygonCells((box(10, 0, 11, 4), box(13, 0, 14, 4)))
-        inverse = np.eye(3)
-        inverse[0, 2] = -10
-        locator = TransformedLocator(original.locator, inverse)
+        forward = np.eye(3)
+        forward[0, 2] = 10
+        locator = TransformedLocator(original.locator, forward)
         centers, sizes = original.bins.centers + np.array([10, 0]), original.bins.sizes
     bins = SpatialBins.from_arrays(centers, sizes, 2)
     derived = Binning(

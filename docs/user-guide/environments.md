@@ -231,6 +231,14 @@ graph.remove_node(0)  # editable export; the environment keeps its own graph
 assert env.n_bins == env.connectivity.number_of_nodes() == 3
 ```
 
+`max_distance` is how far, in the centers' length units, a position may be from
+a bin center and still belong to that bin; the position 10 cm away above gets
+`-1`. Choose it from what a bin represents, such as the radius a recording site
+covers. Without `max_distance` the bins have no limit, so position lookups
+raise unless `from_bins(..., arena=...)` supplies the domain that bounds them.
+Pass `max_distance=math.inf` only when every position, however far away,
+should get its nearest bin.
+
 The environment owns its published snapshot. `edge_pairs` determines the order
 and orientation of pair-aligned values, including flux when faces are available;
 NetworkX edge iteration can have a different order. `MissingFaces` permits lookup
@@ -716,7 +724,10 @@ footprint yields NaN. An observer tracked exactly on a wall sees the next wall
 when it faces into the room; facing out through the wall, or exactly along it,
 gives a zero-distance contact at the observer. On an internal wall, the
 observer sees the side it faces. A cue at the first contact is visible; a cue
-behind it is occluded. Stored affine frames
+behind it is occluded. A lost tracking frame is not an occluded view:
+`visible_cues()` and `compute_view_field()` refuse a NaN or infinite position
+or heading, and `compute_viewshed_trajectory()` keeps such frames missing,
+with an `occlusion_map` of NaN. Stored affine frames
 use locally bounded projection errors for boundary contact. Physical mode only
 uses supplied wall evidence; inferred domains do not add unasserted outer walls.
 

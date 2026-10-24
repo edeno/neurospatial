@@ -10,24 +10,26 @@ from numpy.typing import NDArray
 from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
-from neurospatial.geometry._arena import Arena
-from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
+from neurospatial.geometry._arena import Arena, contains_with_error
+from neurospatial.geometry._arrays import ReadOnlyState, active_order, per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
+    KnownFaces,
     MissingCellGeometryError,
+    MissingFaces,
     SpatialBins,
     refuse_mixed_measure_conductance,
 )
 from neurospatial.geometry._components import TriangleShapes
-from neurospatial.geometry._diffusion import DiffusionGeometry
+from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
 from neurospatial.geometry._face_builders import triangle_skew_message
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import (
     LookupIndexes,
-    RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
+    locate_within,
 )
 from neurospatial.geometry._polygon_cells import ClippedLocator
 
@@ -190,29 +192,103 @@ class CombinedLocator(ReadOnlyState):
     ) -> NDArray[np.intp]:
         """Locate native points with each child's original arena and lookup."""
         query = np.asarray(points, dtype=np.float64)
+        return self.locate_within(query, np.zeros(query.shape), indexes)
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Locate points known to within ``error`` in each child's domain.
+
+        Parameters
+        ----------
+        points : ndarray of float64, shape (n_points, n_dims)
+            Query coordinates.
+        error : ndarray of float64, shape (n_points, n_dims)
+            Absolute bound on how far each true coordinate may be from the
+            given one; zeros for exact coordinates.
+        indexes : LookupIndexes, optional
+            Keeps the children's search structures.
+        half_open : bool, default=False
+            Leave points on a grid child's outline unowned, so an enclosing
+            combined environment can ask every component for half-open
+            owners first.
+
+        Returns
+        -------
+        ndarray of intp, shape (n_points,)
+            Combined bin index of each point, or -1.
+        """
+        query = np.asarray(points, dtype=np.float64)
         dims = self.children[0].bins.n_dims
         if query.ndim != 2 or query.shape[1] != dims:
             raise ValueError(f"Expected positions of shape (n_points, {dims}).")
         result = np.full(len(query), -1, dtype=np.intp)
         finite = np.all(np.isfinite(query), axis=1)
         # A grid child's outline is closed, but a face it shares with another
-        # child keeps its half-open owner: every child is asked for interior
-        # owners before any child claims a point on its outline.
-        for interior in (True, False):
+        # child keeps its half-open owner. The first pass asks every child
+        # with grid outlines left open (other locators answer in full); only
+        # the second pass lets a grid child claim a point on its outline.
+        # With half_open, the enclosing environment runs that second pass.
+        for interior in (True,) if half_open else (True, False):
             for child, arena, offset in zip(
                 self.children, self.arenas, self.offsets[:-1], strict=True
             ):
                 rows = np.flatnonzero(finite & (result < 0))
                 if arena.domain_known:
-                    rows = rows[arena.contains(query[rows])]
-                locator = child.locator
-                if interior and isinstance(locator, RectilinearLocator):
-                    local = locator.locate_half_open(query[rows])
-                else:
-                    local = locator.locate(query[rows], indexes)
+                    rows = rows[contains_with_error(arena, query[rows], error[rows])]
+                local = locate_within(
+                    child.locator,
+                    query[rows],
+                    error[rows],
+                    indexes,
+                    half_open=interior,
+                )
                 valid = local >= 0
                 result[rows[valid]] = offset + local[valid]
         return result
+
+
+def combined_faces(
+    locator: CombinedLocator, connections: BinConnections, sizes: NDArray[np.float64]
+) -> KnownFaces | MissingFaces:
+    """Join the components' faces, in the combined open-pair order.
+
+    Parameters
+    ----------
+    locator : CombinedLocator
+        The components and their bridges.
+    connections : BinConnections
+        ``locator.bin_connections()``.
+    sizes : ndarray of float64, shape (n_bins,)
+        ``locator.spatial_bins().sizes``.
+
+    Returns
+    -------
+    KnownFaces or MissingFaces
+        Missing when a bridge joins components, since a bridge has no
+        physical face, or when a component has no faces.
+    """
+    if len(locator.bridge_pairs) or not all(
+        child.faces.available for child in locator.children
+    ):
+        return MissingFaces(
+            "Combined navigation bridges have no physical face geometry; use "
+            "scalar diffusion when child geometry is certified."
+        )
+    parts = [child.build_faces() for child in locator.children]
+    return KnownFaces(
+        FaceGeometry(
+            connections.pairs,
+            np.concatenate([part.A for part in parts]),
+            np.concatenate([part.distance for part in parts]),
+            sizes,
+        )
+    )
 
 
 def combined_normals(locator: CombinedLocator) -> FaceNormals | None:
@@ -289,8 +365,7 @@ def triangle_skew_messages(binning: Binning) -> tuple[str, ...]:
                 if retained is None or np.any(retained):
                     visit(child, retained, (*path, key))
         elif isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             retained = np.zeros(len(locator.parent_to_child), dtype=np.bool_)
             retained[selected if active is None else selected[active]] = True
             walk(locator.base, retained, path)
@@ -325,11 +400,11 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                     )
                     continue
                 if child.faces.available:
-                    block = DiffusionGeometry.from_faces(child.faces.build()).W
+                    block = DiffusionGeometry.from_faces(child.build_faces()).W
                 else:
                     nested = weights(child.locator, retained)
                     if nested is None:
-                        child.faces.build()  # Preserve the actionable missing-child refusal.
+                        child.build_faces()  # Preserve the actionable missing-child refusal.
                         raise AssertionError(
                             "missing faces unexpectedly returned geometry"
                         )
@@ -350,8 +425,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                 [child.bins.measure_dims for child in locator.children]
             )
         if isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             retained = np.zeros(len(locator.parent_to_child), dtype=np.bool_)
             retained[selected if active is None else selected[active]] = True
             result = weights(locator.base, retained)
@@ -364,7 +438,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             if result is None:
                 return None
             matrix, dims = result
-            linear = np.linalg.inv(locator.inverse)[:-1, :-1]
+            linear = locator.forward[:-1, :-1]
             scale = float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
             normalized = linear / scale
             if not np.allclose(
@@ -407,7 +481,22 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
 def composition_view(
     locator: object,
 ) -> tuple[CombinedLocator, NDArray[np.intp], float] | None:
-    """Resolve current bins to root component IDs and a similarity scale."""
+    """Find the combined binning below a locator and its bins' places in it.
+
+    Parameters
+    ----------
+    locator : object
+        A binning's locator.
+
+    Returns
+    -------
+    tuple or None
+        ``(root, indices, scale)``: the innermost :class:`CombinedLocator`
+        reached through subsets, affine maps and clips; for each current bin,
+        the index of the root bin it comes from, shape ``(n_bins,)``; and the
+        geometric-mean linear scale of the affine maps on the way. None when
+        no combined binning lies below ``locator``.
+    """
 
     if isinstance(locator, CombinedLocator):
         return locator, np.arange(locator.offsets[-1], dtype=np.intp), 1.0
@@ -417,13 +506,12 @@ def composition_view(
             return None
         root, indices, scale = result
         if isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             indices = indices[selected]
         elif isinstance(locator, ClippedLocator):
             indices = indices[locator.mapping.parent_bin_indices]
         else:
-            linear = np.linalg.inv(locator.inverse)[:-1, :-1]
+            linear = locator.forward[:-1, :-1]
             scale *= float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
         return root, indices, scale
     return None

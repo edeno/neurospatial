@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import linemerge, unary_union
 
+from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
@@ -55,8 +56,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
         return locator.cells.polygons
     if isinstance(locator, SubsetLocator):
         parent_polygons = cells_from_locator(locator.base)
-        order = np.flatnonzero(locator.parent_to_child >= 0)
-        order = order[np.argsort(locator.parent_to_child[order])]
+        order = active_order(locator.parent_to_child)
         return tuple(parent_polygons[index] for index in order)
     if isinstance(locator, TransformedLocator):
         return transform_polygon_cells(
@@ -69,21 +69,10 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
                 "Cell materialization requires a Cartesian 2-D locator.",
                 "retain planar area-measured geometry",
             )
-        mask = (
-            np.ones(locator.shape, dtype=bool)
-            if locator.active_mask is None
-            else locator.active_mask
-        )
-        mapping = locator.flat_to_active
-        if mapping is None:
-            mapping = np.full(mask.size, -1, dtype=np.intp)
-            mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        flat = np.flatnonzero(mapping >= 0)
-        i, j = np.unravel_index(flat[np.argsort(mapping[flat])], locator.shape)
+        i, j = np.unravel_index(np.flatnonzero(locator.active_mask), locator.shape)
         return _boxes(locator.edges, i, j)
     if isinstance(locator, MeshLocator):
-        order = np.flatnonzero(locator.simplex_to_active >= 0)
-        order = order[np.argsort(locator.simplex_to_active[order])]
+        order = active_order(locator.simplex_to_active)
         return tuple(shapely.polygons(locator.points[locator.simplices[order]]))
     if not isinstance(locator, HexLocator):
         raise _error(
@@ -94,8 +83,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
     # neighboring cells share exactly the same corner coordinates.
     width = np.sqrt(3.0) * locator.radius
     offsets = np.array([(0, 2), (1, 1), (1, -1), (0, -2), (-1, -1), (-1, 1)])
-    flat = np.flatnonzero(locator.flat_to_active >= 0)
-    flat = flat[np.argsort(locator.flat_to_active[flat])]
+    flat = active_order(locator.flat_to_active)
     row, column = np.divmod(flat, locator.centers_shape[1])
     x = (2 * column + row % 2)[:, None] + offsets[:, 0]
     y = (3 * row)[:, None] + offsets[:, 1]
@@ -280,11 +268,41 @@ def certify_faces(
     path_only: NDArray[np.bool_] | None = None,
     center_errors: NDArray[np.float64] | None = None,
 ) -> KnownFaces | MissingFaces:
-    """Certify two-point fluxes, optionally bounding recovered-center roundoff.
+    """Certify two-point fluxes between convex polygon cells.
 
-    ``center_errors`` is used when validating geometry recovered from stored
-    affine locators. It propagates source arithmetic through cancelled shifts;
-    native/clipping certification keeps its existing current-coordinate bound.
+    A pair is certified when the two cells share one straight opening (their
+    common boundary minus any wall), the link between their representative
+    points crosses that opening's interior, and the link is orthogonal to the
+    opening within rounding. The orthogonality bound counts rounding in the
+    current coordinates only, unless ``center_errors`` widens it.
+
+    Parameters
+    ----------
+    cells : PolygonCells
+        One convex polygon per bin.
+    centers : ndarray, shape (n_bins, 2)
+        Representative point of each cell; each must lie strictly inside its
+        cell.
+    pairs : ndarray of int, shape (n_pairs, 2)
+        Open neighbor pairs of bin indices.
+    walls : sequence of shapely geometry, optional
+        Walls removed from each shared boundary before it counts as an
+        opening.
+    path_only : ndarray of bool, shape (n_pairs,), optional
+        True for pairs joined only for navigation (for example cells touching
+        at one corner); they get zero face area and are not checked.
+    center_errors : ndarray, shape (n_bins, 2), optional
+        Per-axis error bound of each center, in length units. Pass it when
+        the centers were recomputed through a stored affine map, whose
+        rounding the current coordinates alone do not show.
+
+    Returns
+    -------
+    KnownFaces or MissingFaces
+        The certified face areas, center distances and cell areas, or a
+        MissingFaces record naming the first cell or pair that fails. It
+        returns rather than raises, so callers can fall back to scalar
+        diffusion.
     """
     polygons = cells.polygons
     for index, polygon in enumerate(polygons):
@@ -405,14 +423,19 @@ def clip_binning(
 
 
 def split_binning(
-    binning: Binning, walls: Sequence[shapely.Geometry]
+    binning: Binning,
+    walls: Sequence[shapely.Geometry],
+    *,
+    domain: Polygon | MultiPolygon | None = None,
 ) -> tuple[Binning, ClipMapping]:
     """Split every cell a wall divides into the pieces on each side of it.
 
     A cell crossed from edge to edge by a wall becomes one exact polygon cell
     per side; a cell holding only a wall's end stays whole. The pieces of
     one cell are closed neighbors, and the walls themselves are applied later
-    by :func:`apply_walls`, which closes the paths they block.
+    by :func:`apply_walls`, which closes the paths they block. With
+    ``domain``, each cell not inside it is first clipped to it, as
+    :func:`clip_binning` does, so that every polygon cell lies in the arena.
 
     Returns
     -------
@@ -424,10 +447,25 @@ def split_binning(
     """
     source = materialize_cells(binning)
     wall = unary_union(walls)
+    regions = (
+        source
+        if domain is None
+        else tuple(
+            cell if domain.covers(cell) else cell.intersection(domain)
+            for cell in source
+        )
+    )
     records = [
         (parent, shapely.normalize(piece))
-        for parent, cell in enumerate(source)
-        for piece in sorted(_parts(shapely.ops.split(cell, wall)), key=_key)
+        for parent, region in enumerate(regions)
+        for piece in sorted(
+            (
+                piece
+                for part in _parts(region)
+                for piece in _parts(shapely.ops.split(part, wall))
+            ),
+            key=_key,
+        )
     ]
     cells = PolygonCells(tuple(piece for _, piece in records))
     mapping = ClipMapping(
@@ -476,7 +514,7 @@ def _pieces_binning(
     by_parent: dict[int, list[int]] = defaultdict(list)
     for child, parent in enumerate(mapping.parent_bin_indices):
         by_parent[int(parent)].append(child)
-    old_faces = binning.faces.build() if binning.faces.available else None
+    old_faces = binning.build_faces() if binning.faces.available else None
     wall = unary_union(walls)
     divider = wall if dividers is None else unary_union(dividers)
 
@@ -617,7 +655,7 @@ def _pieces_binning(
         geometric_normals(locator, bins.centers, pairs) if faces.available else None
     )
     if normal_values is not None:
-        normal_values[faces.build().A == 0] = 0
+        normal_values[faces.build(bins, connections).A == 0] = 0
     return Binning(
         binning.kind,
         bins,

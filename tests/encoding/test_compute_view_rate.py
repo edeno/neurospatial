@@ -1897,3 +1897,112 @@ class TestComputeViewRateNaNHandling:
         # Did not raise; produced a usable (not all-NaN) map with a finite peak.
         assert not np.isnan(result.firing_rate).all()
         assert np.isfinite(np.nanmax(result.firing_rate))
+
+
+def _walled_room(shift=0.0):
+    """A 40 x 24 cm room of 4 cm bins whose outline is a physical wall."""
+    from shapely.geometry import box
+
+    from neurospatial.arena import OpenArena
+
+    edges_x, edges_y = np.arange(0.0, 41.0, 4.0) + shift, np.arange(0.0, 25.0, 4.0)
+    return Environment.from_grid_mask(
+        np.ones((10, 6), dtype=bool),
+        (edges_x, edges_y),
+        units="cm",
+        frame="arena",
+        arena=OpenArena(box(shift, 0, shift + 40, 24)),
+    )
+
+
+@pytest.mark.parametrize("boundary_source", ["analysis", "physical"])
+def test_ray_cast_view_rates_turn_with_a_rotated_room(boundary_source):
+    """Rotating room, positions and headings together changes no viewed bin.
+
+    The rotated room keeps its grid in a stored affine frame, so a gaze ray
+    that ends on a wall is assigned to the same observer-side bin as in the
+    original room. (A ray running exactly along a cell face is left out: the
+    rotated heading and position round, so its end falls on either side of
+    the corner it would reach.)
+    """
+    from neurospatial.encoding._view_counts import _precompute_view_bins
+    from neurospatial.encoding.view import compute_view_rate
+    from neurospatial.ops.transforms import Affine2D
+
+    env = _walled_room()
+    rng = np.random.default_rng(0)
+    positions = rng.uniform([1.0, 1.0], [39.0, 23.0], size=(400, 2))
+    headings = rng.uniform(-np.pi, np.pi, size=400)
+    times = np.arange(len(positions)) * 0.02
+    spike_times = np.sort(np.random.default_rng(1).uniform(0.0, times[-1], 200))
+
+    angle = 0.7
+    turn = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 13.0],
+            [np.sin(angle), np.cos(angle), -5.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    turned = env.apply_transform(Affine2D(turn))
+    turned_positions = positions @ turn[:2, :2].T + turn[:2, 2]
+    turned_headings = headings + angle
+
+    bins = _precompute_view_bins(
+        env, positions, headings, gaze_model="ray_cast", boundary_source=boundary_source
+    )
+    turned_bins = _precompute_view_bins(
+        turned,
+        turned_positions,
+        turned_headings,
+        gaze_model="ray_cast",
+        boundary_source=boundary_source,
+    )
+    assert np.all(bins >= 0)
+    np.testing.assert_array_equal(turned_bins, bins)
+
+    settings = {
+        "gaze_model": "ray_cast",
+        "method": "binned",
+        "boundary_source": boundary_source,
+    }
+    rates = compute_view_rate(env, spike_times, times, positions, headings, **settings)
+    turned_rates = compute_view_rate(
+        turned, spike_times, times, turned_positions, turned_headings, **settings
+    )
+    np.testing.assert_array_equal(turned_rates.occupancy, rates.occupancy)
+    np.testing.assert_array_equal(turned_rates.firing_rate, rates.firing_rate)
+
+
+def test_physical_ray_cast_refuses_a_combined_room_with_its_own_frame():
+    """Physical wall bins need one source frame; a rotated component has its own."""
+    from neurospatial.encoding._view_counts import _precompute_view_bins
+    from neurospatial.ops.transforms import Affine2D
+
+    angle = 0.4
+    turn = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 60.0],
+            [np.sin(angle), np.cos(angle), 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    turned = _walled_room().apply_transform(Affine2D(turn))
+    combined = Environment.combine(
+        {"a": _walled_room(), "b": turned.with_metadata(frame="arena")},
+        auto_bridge=False,
+    )
+    positions = np.array([[20.0, 12.0], [10.0, 6.0]])
+    headings = np.array([0.3, 2.0])
+    analysis = _precompute_view_bins(
+        combined, positions, headings, gaze_model="ray_cast", boundary_source="analysis"
+    )
+    assert np.all(analysis >= 0)
+    with pytest.raises(NotImplementedError, match="shared source frame"):
+        _precompute_view_bins(
+            combined,
+            positions,
+            headings,
+            gaze_model="ray_cast",
+            boundary_source="physical",
+        )

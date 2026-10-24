@@ -54,7 +54,7 @@ class _RecordedGrid:
             "RecordedGrid",
             SpatialBins.from_arrays(centers, np.full(len(centers), bin_size**2), 2),
             BinConnections.from_arrays(pairs, np.full(n_pairs, bin_size)),
-            RectilinearLocator(edges, shape, mask, None),
+            RectilinearLocator(edges, shape, mask),
             KnownFaces(
                 FaceGeometry(
                     pairs,
@@ -63,7 +63,7 @@ class _RecordedGrid:
                     np.full(len(centers), bin_size**2),
                 )
             ),
-            rectilinear=RectilinearGrid(edges, shape, mask),
+            grid=RectilinearGrid(edges, shape, mask),
         )
 
     def binning(self) -> Binning:

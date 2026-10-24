@@ -13,7 +13,18 @@ from neurospatial.geometry._arrays import ReadOnlyState, axis_ranges, boolean_se
 
 @dataclass(frozen=True, eq=False)
 class HexagonShapes(ReadOnlyState):
-    """Regular hexagons with centers ``(n_bins, 2)``, radius and orientation."""
+    """Regular hexagons with centers ``(n_bins, 2)``, radius and orientation.
+
+    Parameters
+    ----------
+    centers : ndarray, shape (n_bins, 2)
+        Hexagon centers.
+    radius : float
+        Distance from a center to each corner, in length units.
+    orientation : float
+        Rotation in radians, counterclockwise. At 0 the hexagons are
+        pointy-top: one corner points straight along +y.
+    """
 
     centers: NDArray[np.float64]
     radius: float
@@ -21,13 +32,31 @@ class HexagonShapes(ReadOnlyState):
 
     def __post_init__(self) -> None:
         centers = np.array(self.centers, dtype=np.float64, copy=True)
+        if (
+            centers.ndim != 2
+            or centers.shape[1] != 2
+            or not np.all(np.isfinite(centers))
+        ):
+            raise ValueError(
+                "HexagonShapes centers must be finite with shape (n_bins, 2), "
+                f"got shape {centers.shape}."
+            )
+        radius, orientation = float(self.radius), float(self.orientation)
+        if not (np.isfinite(radius) and radius > 0) or not np.isfinite(orientation):
+            raise ValueError(
+                "HexagonShapes radius must be finite and positive and its "
+                f"orientation finite, got radius={self.radius!r}, "
+                f"orientation={self.orientation!r}."
+            )
         centers.setflags(write=False)
         object.__setattr__(self, "centers", centers)
+        object.__setattr__(self, "radius", radius)
+        object.__setattr__(self, "orientation", orientation)
 
     def corner_offsets(self) -> NDArray[np.float64]:
         """Corners relative to a hexagon's center, counterclockwise, shape (6, 2).
 
-        The first corner points along ``orientation`` + 90 degrees, as
+        The first corner points along ``orientation + π/2`` radians, as
         Matplotlib's ``RegularPolygon`` draws it.
         """
         angles = np.arange(6) * np.pi / 3 + np.pi / 2 + self.orientation
@@ -76,7 +105,23 @@ class TriangleShapes(ReadOnlyState):
 
     def __post_init__(self) -> None:
         points = np.array(self.points, dtype=np.float64, copy=True)
-        triangles = np.array(self.triangles, dtype=np.intp, copy=True)
+        raw = np.asarray(self.triangles)
+        if points.ndim != 2 or points.shape[1] != 2 or not np.all(np.isfinite(points)):
+            raise ValueError(
+                "TriangleShapes points must be finite with shape (n_points, 2), "
+                f"got shape {points.shape}."
+            )
+        if (
+            raw.ndim != 2
+            or raw.shape[1] != 3
+            or (raw.size and raw.dtype.kind not in "iu")
+            or np.any((raw < 0) | (raw >= len(points)))
+        ):
+            raise ValueError(
+                "TriangleShapes triangles must be integer indices into the "
+                f"{len(points)} points with shape (n_bins, 3)."
+            )
+        triangles = np.array(raw, dtype=np.intp, copy=True)
         points.setflags(write=False)
         triangles.setflags(write=False)
         object.__setattr__(self, "points", points)

@@ -46,7 +46,8 @@ def test_polar_coordinate_state_is_owned(n_angle, circular, restore):
 
 
 def test_native_face_recipe_contains_only_owned_data(built_environment):
-    source = built_environment._binning.faces
+    binning = built_environment._binning
+    source = binning.faces
     assert isinstance(source, NativeFaces)
     seen = set()
 
@@ -67,7 +68,11 @@ def test_native_face_recipe_contains_only_owned_data(built_environment):
     assert not hasattr(source, "layout")
     for restored in (copy.deepcopy(source), pickle.loads(pickle.dumps(source))):
         check(restored)
-        for actual, expected in zip(restored.build(), source.build(), strict=True):
+        for actual, expected in zip(
+            restored.build(binning.bins, binning.connections),
+            binning.build_faces(),
+            strict=True,
+        ):
             np.testing.assert_array_equal(actual, expected)
             assert not actual.flags.writeable
 

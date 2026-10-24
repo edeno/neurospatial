@@ -302,7 +302,7 @@ def test_different_cell_faces_between_the_same_bins_need_may_differ(env, make) -
     # Same bins, neighbors and arena; halving each face's size halves how
     # much of a field smoothing passes between neighbors.
     binning = renumbered(env, np.arange(env.n_bins)).binning
-    faces = binning.faces.build()
+    faces = binning.build_faces()
     narrow = Environment.from_bins(
         replace(
             binning,

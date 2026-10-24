@@ -463,7 +463,7 @@ def test_layout_engine_protocol_adherence(
     )
     assert binning.faces.available
     np.testing.assert_array_equal(
-        binning.faces.build().edges, binning.connections.pairs
+        binning.build_faces().edges, binning.connections.pairs
     )
     assert (binning.linearization is not None) == layout.is_linearized_track
 
