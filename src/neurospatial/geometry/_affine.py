@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -76,6 +78,49 @@ def _forward_residual(
     if incoming is not None:
         residual += incoming
     return residual
+
+
+# Largest Gram residual of a normalized linear map that still counts as a
+# similarity (rotation, reflection and uniform scale).
+SIMILARITY_TOLERANCE = 1e-12
+
+
+class LinearScale(NamedTuple):
+    """Determinant, uniform scale and similarity residual of a linear map.
+
+    Attributes
+    ----------
+    sign : float
+        Sign of the determinant: 1, -1 for a reflection, 0 if singular.
+    logdet : float
+        Natural log of the determinant's absolute value.
+    scale : float
+        Geometric-mean length scale, ``exp(logdet / n_dims)``.
+    residual : float
+        ``max |N N^T - I|`` for ``N = linear / scale``; zero for an exact
+        similarity, NaN when the product overflows.
+    """
+
+    sign: float
+    logdet: float
+    scale: float
+    residual: float
+
+    def is_similarity(self, slack: float = 0.0) -> bool:
+        """Whether the map scales every direction alike, within ``slack``."""
+        return bool(self.residual <= SIMILARITY_TOLERANCE + slack)
+
+
+def linear_scale(linear: NDArray[np.float64]) -> LinearScale:
+    """Measure how a ``(n_dims, n_dims)`` linear map scales lengths."""
+    n_dims = len(linear)
+    # Strong anisotropy can overflow the Gram product without being singular.
+    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+        sign, logdet = np.linalg.slogdet(linear)
+        scale = math.exp(float(logdet) / n_dims)
+        normalized = linear / scale
+        residual = float(np.max(np.abs(normalized @ normalized.T - np.eye(n_dims))))
+    return LinearScale(float(sign), float(logdet), scale, residual)
 
 
 @dataclass(frozen=True, eq=False)

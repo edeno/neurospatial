@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._affine import _check_homogeneous
+from neurospatial.geometry._affine import _check_homogeneous, linear_scale
 from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import (
     active_order,
@@ -309,20 +309,16 @@ def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:
 
 def _classification(linear: NDArray[np.float64]) -> tuple[str, float, float]:
     """Classify with exact axes and a scale-independent Gram residual."""
-    n_dims = len(linear)
-    if np.array_equal(linear, np.eye(n_dims)):
+    if np.array_equal(linear, np.eye(len(linear))):
         return "translation", 1.0, 0.0
-    _, logdet = np.linalg.slogdet(linear)
-    scale = math.exp(float(logdet) / n_dims)
-    normalized = linear / scale
-    # Strong anisotropy can overflow the Gram product without being singular.
-    with np.errstate(over="ignore", invalid="ignore"):
-        residual = np.max(np.abs(normalized @ normalized.T - np.eye(n_dims)))
-    if residual <= 1e-12:
-        return "similarity", scale, float(logdet)
-    if np.array_equal(linear, np.diag(np.diag(linear))):
-        return "axis-aligned scaling", scale, float(logdet)
-    return "general affine transform", scale, float(logdet)
+    measured = linear_scale(linear)
+    if measured.is_similarity():
+        kind = "similarity"
+    elif np.array_equal(linear, np.diag(np.diag(linear))):
+        kind = "axis-aligned scaling"
+    else:
+        kind = "general affine transform"
+    return kind, measured.scale, measured.logdet
 
 
 def _mapped(

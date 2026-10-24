@@ -8,7 +8,6 @@ that its boundary is a measured physical wall.
 from __future__ import annotations
 
 import itertools
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal, Protocol, cast, runtime_checkable
@@ -20,7 +19,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._affine import AffineMap
+from neurospatial.geometry._affine import AffineMap, linear_scale
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
 __all__ = [
@@ -575,20 +574,13 @@ def _similarity_scale(matrix: NDArray[np.float64]) -> float:
         If the map is not a similarity, which a track's centerline and width
         need: any other map changes lengths differently in each direction.
     """
-    linear = matrix[:-1, :-1]
-    n_dims = len(linear)
-    with np.errstate(under="ignore"):
-        _, logdet = np.linalg.slogdet(linear)
-    scale = math.exp(float(logdet) / n_dims)
-    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-        normalized = linear / scale
-        residual = np.max(np.abs(normalized @ normalized.T - np.eye(n_dims)))
-    if residual > 1e-12 or not np.isfinite(residual):
+    measured = linear_scale(matrix[:-1, :-1])
+    if not measured.is_similarity():
         raise _error(
             "TrackArena transforms must be a similarity.",
             "use translation, rotation, reflection and uniform scale, or rebuild the measured footprint",
         )
-    return scale
+    return measured.scale
 
 
 def _holds_track(arena: Arena) -> bool:

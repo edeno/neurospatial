@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
+from neurospatial.geometry._affine import linear_scale
 from neurospatial.geometry._arena import Arena, contains_with_error
 from neurospatial.geometry._arrays import ReadOnlyState, active_order, per_dimension
 from neurospatial.geometry._binning import (
@@ -438,12 +439,9 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             if result is None:
                 return None
             matrix, dims = result
-            linear = locator.forward[:-1, :-1]
-            scale = float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
-            normalized = linear / scale
-            if not np.allclose(
-                normalized @ normalized.T, np.eye(len(linear)), rtol=0, atol=1e-12
-            ):
+            measured = linear_scale(locator.forward[:-1, :-1])
+            scale = measured.scale
+            if not measured.is_similarity():
                 raise MissingCellGeometryError(
                     "Combined scalar diffusion requires a similarity transform; use the original coordinates."
                 )
@@ -511,8 +509,7 @@ def composition_view(
         elif isinstance(locator, ClippedLocator):
             indices = indices[locator.mapping.parent_bin_indices]
         else:
-            linear = locator.forward[:-1, :-1]
-            scale *= float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
+            scale *= linear_scale(locator.forward[:-1, :-1]).scale
         return root, indices, scale
     return None
 

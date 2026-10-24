@@ -15,6 +15,7 @@ from scipy.spatial import cKDTree
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import linear_scale
 from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import active_order, get_centers, per_dimension
 from neurospatial.geometry._binning import (
@@ -536,13 +537,11 @@ def _locator_geometry(
     arithmetic = rounding + float(
         np.sum(np.abs(locator.inverse[:-1, :-1].T) * linear_error)
     )
-    sign, logdet = np.linalg.slogdet(linear)
-    scale = math.exp(float(logdet) / n_dims)
+    measured = linear_scale(linear)
+    sign, logdet, scale = measured.sign, measured.logdet, measured.scale
     normalized = linear / scale
     normalized_error = float(np.max(linear_error)) / scale
-    similarity = np.max(np.abs(normalized @ normalized.T - np.eye(n_dims))) <= (
-        1e-12 + 8 * normalized_error
-    )
+    similarity = measured.is_similarity(slack=8 * normalized_error)
     cell_dims = geometry.measure_dims
     lowest = (
         int(cell_dims.min())
