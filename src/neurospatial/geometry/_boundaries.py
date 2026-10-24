@@ -319,40 +319,34 @@ def wall_hit_bins(
     )
 
 
-def _physical_evidence(
-    arena: Arena,
-) -> tuple[list[shapely.Geometry], list[shapely.Geometry]]:
-    """Explicit wall lines and asserted footprint polygons in the arena frame."""
+def _physical_footprints(arena: Arena) -> list[shapely.Geometry]:
+    """Asserted footprint polygons in the arena frame, component by component.
 
+    A combined arena gives each component's asserted footprint, even when
+    other components assert none.
+    """
     if isinstance(arena, _CombinedArena):
-        lines: list[shapely.Geometry] = []
-        footprints: list[shapely.Geometry] = []
-        for child in arena.children:
-            child_lines, child_footprints = _physical_evidence(child)
-            lines += child_lines
-            footprints += child_footprints
-        return lines, footprints
+        return [
+            part for child in arena.children for part in _physical_footprints(child)
+        ]
     if isinstance(arena, _TransformedArena):
-        lines, footprints = _physical_evidence(arena.base)
-        return (
-            [mapped_geometry(part, arena.forward) for part in lines],
-            [mapped_geometry(part, arena.forward) for part in footprints],
+        return [
+            mapped_geometry(part, arena.forward)
+            for part in _physical_footprints(arena.base)
+        ]
+    if not arena.physical_footprint_known:
+        return []
+    domain = arena.polygonal_domain()
+    if domain is None:
+        raise NotImplementedError(
+            "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
         )
-    lines = list(arena.walls)
-    footprints = []
-    if arena.physical_footprint_known:
-        domain = arena.polygonal_domain()
-        if domain is None:
-            raise NotImplementedError(
-                "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
-            )
-        footprints.append(domain)
-    return lines, footprints
+    return [domain]
 
 
 def physical_footprint_interior(arena: Arena) -> Interior | None:
     """Closed asserted footprints, or None when only wall lines are known."""
-    footprints = _physical_evidence(arena)[1]
+    footprints = _physical_footprints(arena)
     if not footprints:
         return None
     footprint = unary_union(footprints)
@@ -376,8 +370,12 @@ def analysis_interior(
 
 def physical_walls(arena: Arena) -> shapely.Geometry:
     """Read asserted planar wall evidence independently of analysis bins."""
-    lines, footprints = _physical_evidence(arena)
-    parts = lines + [footprint.boundary for footprint in footprints]
+    # A transformed or combined arena's walls are its components' walls,
+    # mapped, in order.
+    parts = [
+        *arena.walls,
+        *(footprint.boundary for footprint in _physical_footprints(arena)),
+    ]
     if not parts:
         raise NotImplementedError(
             "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. "

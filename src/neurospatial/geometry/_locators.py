@@ -896,6 +896,12 @@ class MeshLocator(ReadOnlyState):
             # Indexes the boundary for the point tests of every lookup.
             shapely.prepare(self.boundary)
 
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        # Pickling keeps the boundary but not its index.
+        if self.boundary is not None:
+            shapely.prepare(self.boundary)
+
     def _find_triangles(
         self,
         points: NDArray[np.float64],
