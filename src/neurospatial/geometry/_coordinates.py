@@ -149,38 +149,40 @@ class EgocentricPolarSystem:
         return (1,) if self.circular else ()
 
     def squared_distances(self, centers: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Squared physical distance, with angular wrapping only if circular."""
-        # Egocentric polar env: centers[:, 0] is distance (length units),
-        # centers[:, 1] is angle (radians). A naive Euclidean norm on
-        # these columns collapses cm and radians into one scalar. Instead use
-        # the physical polar distance between bin centers:
-        #     d² = Δr² + (r̄ · Δθ)²
-        # with r̄ the mean radius of the two bins. ``bandwidth`` is then a
-        # single physical length (e.g. cm), consistent with the corrected
-        # connectivity edge geometry.
+        """Squared physical distances between ``(distance, angle)`` places.
+
+        The places lie in the animal's plane (see :meth:`cartesian_embedding`)
+        and the distance is the straight line between them, the chord
+        ``r1² + r2² - 2 r1 r2 cos(Δθ)``, so ``bandwidth`` is one physical
+        length. An open angular axis cuts the plane along its seam (the
+        angles outside the range), and smoothing must not cross a cut the
+        caller left open: when the straight line between two places would
+        pass through the angles outside the range (their in-range angular
+        separation exceeds π), the shortest path goes around the cut's end
+        at the animal, ``r1 + r2``.
+
+        Parameters
+        ----------
+        centers : ndarray of float64, shape (n, 2)
+            ``(distance, angle)`` rows, angles in radians.
+
+        Returns
+        -------
+        ndarray of float64, shape (n, n)
+            Squared distances, in squared length units.
+        """
         r = centers[:, 0]
         theta = centers[:, 1]
-        d_r = r[:, None] - r[None, :]
-        r_mean = 0.5 * (r[:, None] + r[None, :])
-        d_theta_raw = theta[:, None] - theta[None, :]
-        # Wrap the angular difference into [-pi, pi] ONLY when the angular axis
-        # is circular, so bins straddling the -pi/+pi seam are treated as
-        # adjacent (Delta theta ~ 0) rather than ~2*pi apart. Without this wrap
-        # the seam gets a vanishing Gaussian weight, a hard artifact for a
-        # full-circle egocentric-polar gaussian_kde. When the angular axis is
-        # OPEN (circular_angle=False -- no seam edges in the graph), bins at -pi
-        # and +pi are genuinely far apart, so wrapping would leak smoothing
-        # across a boundary the caller deliberately left open; use the raw
-        # angular difference instead. Circularity comes from the environment's
-        # EgocentricSurround arena, which the layout's seam edges agree with
-        # and which survives serialization. The diffusion_kde path is
-        # unaffected: it smooths over the environment graph directly.
+        r1, r2 = r[:, None], r[None, :]
+        d_theta = theta[:, None] - theta[None, :]
+        # The chord, written without cancellation for nearby places.
+        chord_sq: NDArray[np.float64] = (r1 - r2) ** 2 + 4.0 * r1 * r2 * np.sin(
+            d_theta / 2.0
+        ) ** 2
         if self.circular:
-            d_theta = (d_theta_raw + np.pi) % (2.0 * np.pi) - np.pi
-        else:
-            d_theta = d_theta_raw
-        arc = r_mean * d_theta
-        dist_sq = d_r**2 + arc**2
+            return chord_sq
+        around_cut = np.abs(d_theta) > np.pi
+        dist_sq: NDArray[np.float64] = np.where(around_cut, (r1 + r2) ** 2, chord_sq)
         return dist_sq
 
     def length_ranges(
