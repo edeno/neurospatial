@@ -10,16 +10,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._affine import AffineMap
 from neurospatial.geometry._arrays import ReadOnlyState, active_order
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
-    _check_homogeneous,
-    _forward_residual,
-    _gamma,
-    _inverse_residual,
 )
 
 if TYPE_CHECKING:
@@ -42,13 +39,10 @@ class FramedGrid(ReadOnlyState):
 
     source: RectilinearGrid
     forward: NDArray[np.float64]
-    inverse: NDArray[np.float64] = field(init=False, repr=False)
-    # Fixed by the map and the grid, so built once: the source cells
-    # (half-open, with the outline of the active cells closed)
-    # and the bound on how far inverse-map roundoff moves a source coordinate
-    # (None when the map is too ill-conditioned to resolve the cells).
+    affine: AffineMap = field(init=False, repr=False)
+    # Fixed by the grid, so built once: the source cells (half-open, with
+    # the outline of the active cells closed).
     _cells: RectilinearLocator = field(init=False, repr=False)
-    _sensitivity: NDArray[np.float64] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if type(self.source) is not RectilinearGrid:
@@ -58,85 +52,40 @@ class FramedGrid(ReadOnlyState):
             raise ValueError("FramedGrid needs a 2-D or 3-D source grid.")
         if np.asarray(self.forward).dtype.kind not in "iuf":
             raise ValueError("FramedGrid.forward must be real numeric data.")
-        matrix = np.array(self.forward, dtype=np.float64, copy=True)
-        _check_homogeneous(matrix)
-        if matrix.shape != (len(grid.shape) + 1,) * 2:
+        affine = AffineMap(self.forward)
+        if affine.n_dims != len(grid.shape):
             raise ValueError("FramedGrid dimensions must match its source grid.")
-        with np.errstate(over="raise", invalid="raise", divide="raise"):
-            inverse = np.asarray(np.linalg.inv(matrix), dtype=np.float64)
-        if not np.all(np.isfinite(inverse)):
-            raise ValueError(
-                "FramedGrid inverse is not representable; rescale coordinates."
-            )
-        matrix.setflags(write=False)
-        inverse.setflags(write=False)
-        object.__setattr__(self, "forward", matrix)
-        object.__setattr__(self, "inverse", inverse)
-        source = self.source
+        object.__setattr__(self, "forward", affine.forward)
+        object.__setattr__(self, "affine", affine)
         object.__setattr__(
             self,
             "_cells",
-            RectilinearLocator(source.edges, source.shape, source.active_mask),
+            RectilinearLocator(grid.edges, grid.shape, grid.active_mask),
         )
-        linear, inverse_linear = matrix[:-1, :-1], inverse[:-1, :-1]
-        dims = len(linear)
-        residual = _inverse_residual(linear, inverse_linear, _gamma(dims))
-        sensitivity = (
-            None
-            if np.max(residual.sum(axis=1)) >= 0.5
-            else 2 * np.linalg.solve(np.eye(dims) - residual, np.abs(inverse_linear))
-        )
-        if sensitivity is not None:
-            sensitivity.setflags(write=False)
-        object.__setattr__(self, "_sensitivity", sensitivity)
 
-    def _map(
-        self,
-        points: NDArray[np.float64],
-        matrix: NDArray[np.float64],
-        *,
-        inverse: bool = False,
-    ) -> NDArray[np.float64]:
+    @property
+    def inverse(self) -> NDArray[np.float64]:
+        """Homogeneous map from world to source coordinates."""
+        return self.affine.inverse
+
+    def _checked(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         values = np.asarray(points, dtype=np.float64)
         n_dims = len(self.source.shape)
         if values.ndim != 2 or values.shape[1] != n_dims:
             raise ValueError(
                 f"Expected points of shape (n_points, {n_dims}), got {values.shape}."
             )
-        result = np.full(values.shape, np.nan)
-        finite = np.all(np.isfinite(values), axis=1)
-        if inverse:
-            result[finite] = (values[finite] - self.forward[:-1, -1]) @ matrix[
-                :-1, :-1
-            ].T
-        else:
-            result[finite] = values[finite] @ matrix[:-1, :-1].T + matrix[:-1, -1]
-        return result
+        return values
 
     def to_source(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` world points into source coordinates."""
-        return self._map(points, self.inverse, inverse=True)
-
-    def _project(
-        self,
-        points: NDArray[np.float64],
-        incoming: NDArray[np.float64] | None = None,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Project world queries with a forward-residual roundoff bound.
-
-        ``incoming`` (shape (n_points, n_dims)) is a bound the world
-        coordinates already carry, such as an enclosing map's roundoff.
-        """
-        if self._sensitivity is None:
-            raise ValueError(
-                "Grid projection has unresolved precision; recenter or rescale coordinates."
-            )
-        original = self.to_source(points)
-        remapped = self.to_world(original)
-        error = _forward_residual(
-            points, original, remapped, self.forward[:-1, :-1], incoming
-        )
-        return original, error @ self._sensitivity.T
+        values = self._checked(points)
+        result = np.full(values.shape, np.nan)
+        finite = np.all(np.isfinite(values), axis=1)
+        result[finite] = (values[finite] - self.forward[:-1, -1]) @ self.inverse[
+            :-1, :-1
+        ].T
+        return result
 
     def _project_to_planes(
         self,
@@ -154,7 +103,7 @@ class FramedGrid(ReadOnlyState):
         cell width on each axis; a point inside the grid whose roundoff
         reaches that cap cannot be resolved, and the call raises.
         """
-        original, errors = self._project(points, incoming)
+        original, errors = self.affine.project(self._checked(points), incoming)
         for axis, coordinates in enumerate(planes):
             edges = self.source.edges[axis]
             cap = float(np.min(np.diff(edges))) / 4
@@ -231,7 +180,11 @@ class FramedGrid(ReadOnlyState):
 
     def to_world(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` source points into world coordinates."""
-        return self._map(points, self.forward)
+        values = self._checked(points)
+        result = np.full(values.shape, np.nan)
+        finite = np.all(np.isfinite(values), axis=1)
+        result[finite] = self.affine.apply(values[finite])
+        return result
 
     def corners(self) -> NDArray[np.float64]:
         """Return world corners of the full source grid's bounding box."""

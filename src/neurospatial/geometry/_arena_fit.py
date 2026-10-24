@@ -110,7 +110,7 @@ def validate_arena(
             if isinstance(locator, TransformedLocator):
                 return (
                     isinstance(candidate, _TransformedArena)
-                    and np.array_equal(locator.inverse, candidate.inverse)
+                    and locator.affine.same_as(candidate.affine)
                     and matches(locator.base, candidate.base)
                 )
             if not isinstance(locator, CombinedLocator):

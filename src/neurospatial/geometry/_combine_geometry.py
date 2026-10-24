@@ -21,7 +21,6 @@ from neurospatial.geometry._arena import (
     Arena,
     MaskArena,
     TrackArena,
-    UnknownArena,
     _CombinedArena,
     _segment_distance,
     _TransformedArena,
@@ -342,11 +341,7 @@ def _grid_segment_intervals(
             retained[retained] = selected[mapping[retained]]
         return _grid_segment_intervals(locator.base, segment, retained, error)
     if isinstance(locator, TransformedLocator):
-        projector = _TransformedArena(
-            UnknownArena(segment.shape[1]),
-            locator.forward,
-        )
-        local, propagated = projector._project(segment, error)
+        local, propagated = locator.affine.project(segment, error)
         if not np.all(np.isfinite(local)) or not np.all(np.isfinite(propagated)):
             raise ValueError(
                 "Cannot represent automatic bridge coordinates in the grid frame; "
@@ -542,7 +537,7 @@ def _arena_segment_interior(
     if not arena.domain_known:
         return True
     if isinstance(arena, _TransformedArena):
-        local, propagated = arena._project(segment, error)
+        local, propagated = arena.affine.project(segment, error)
         return _arena_segment_interior(arena.base, local, propagated)
     if isinstance(arena, MaskArena):
         return bool(

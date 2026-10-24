@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._affine import _check_homogeneous
 from neurospatial.geometry._arrays import ReadOnlyState
-from neurospatial.geometry._locators import _check_homogeneous
 
 
 @dataclass(frozen=True, eq=False)

@@ -14,6 +14,7 @@ from shapely.ops import polygonize, unary_union
 from shapely.strtree import STRtree
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import _check_homogeneous
 from neurospatial.geometry._arena import mapped_geometry
 from neurospatial.geometry._arrays import (
     ReadOnlyState,
@@ -26,7 +27,6 @@ from neurospatial.geometry._locators import (
     LookupIndexes,
     SubsetLocator,
     TransformedLocator,
-    _check_homogeneous,
     _lookup_index,
     locate_within,
 )

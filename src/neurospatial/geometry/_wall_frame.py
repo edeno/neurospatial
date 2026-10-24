@@ -73,7 +73,7 @@ def wall_source_frame(
     """
 
     if isinstance(locator, TransformedLocator) and isinstance(arena, _TransformedArena):
-        if np.array_equal(locator.inverse, arena.inverse):
+        if locator.affine.same_as(arena.affine):
             original = (centers - arena.forward[:-1, -1]) @ arena.inverse[:-1, :-1].T
             inner = wall_source_frame(locator.base, arena.base, original)
             if inner is None:
@@ -120,7 +120,7 @@ def wall_source_frame(
                 mapped = unique
                 projection_errors = np.zeros_like(unique)
                 for frame in frames:
-                    mapped, projection_errors = frame._project(
+                    mapped, projection_errors = frame.affine.project(
                         mapped, projection_errors
                     )
                 current_parents = cells_from_locator(locator.base)

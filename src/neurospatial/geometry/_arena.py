@@ -20,8 +20,8 @@ from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import AffineMap
 from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
-from neurospatial.geometry._locators import _forward_residual, _inverse_residual
 
 __all__ = [
     "Arena",
@@ -885,8 +885,7 @@ class _TransformedArena(ReadOnlyState):
 
     base: Arena
     forward: NDArray[np.float64]
-    inverse: NDArray[np.float64] = field(init=False, repr=False)
-    _inverse_sensitivity: NDArray[np.float64] = field(init=False, repr=False)
+    affine: AffineMap = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.base.coordinate_kind != "cartesian":
@@ -900,38 +899,19 @@ class _TransformedArena(ReadOnlyState):
             _similarity_scale(forward)
         if isinstance(self.base, OpenArena):
             _mapped(shapely.get_coordinates(self.base.polygon), forward)
-        with np.errstate(under="ignore"):
-            inverse = np.asarray(np.linalg.inv(forward), dtype=np.float64)
-        if not np.all(np.isfinite(inverse)):
-            raise _error(
-                "The affine inverse exceeds floating-point range.",
-                "rescale coordinates before transforming",
-            )
-        linear, inverse_linear = forward[:-1, :-1], inverse[:-1, :-1]
-        # A componentwise Neumann bound accounts for the numerical inverse.
-        # The factor two leaves a margin for rounding in the small bound solve.
-        eps = np.finfo(np.float64).eps
-        gamma = (self.n_dims + 2) * eps / (1 - (self.n_dims + 2) * eps)
-        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            residual = _inverse_residual(linear, inverse_linear, gamma)
-        if not np.all(np.isfinite(residual)) or np.max(residual.sum(axis=1)) >= 0.5:
+        affine = AffineMap(forward)
+        if affine.sensitivity is None:
             raise _error(
                 "The affine inverse has no useful floating-point error bound.",
                 "rescale coordinates or use a better-conditioned affine map",
             )
-        sensitivity = 2 * np.linalg.solve(
-            np.eye(self.n_dims) - residual, np.abs(inverse_linear)
-        )
-        if not np.all(np.isfinite(sensitivity)):
-            raise _error(
-                "The affine inverse sensitivity exceeds floating-point range.",
-                "rescale the coordinate units before transforming",
-            )
-        for array in (forward, inverse, sensitivity):
-            array.setflags(write=False)
-        object.__setattr__(self, "forward", forward)
-        object.__setattr__(self, "inverse", inverse)
-        object.__setattr__(self, "_inverse_sensitivity", sensitivity)
+        object.__setattr__(self, "forward", affine.forward)
+        object.__setattr__(self, "affine", affine)
+
+    @property
+    def inverse(self) -> NDArray[np.float64]:
+        """Homogeneous map from current to stored coordinates."""
+        return self.affine.inverse
 
     @property
     def n_dims(self) -> int:
@@ -960,7 +940,7 @@ class _TransformedArena(ReadOnlyState):
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         query, finite = _query(positions, self.n_dims)
         inside = np.zeros(len(query), dtype=np.bool_)
-        original, error = self._project(query[finite])
+        original, error = self.affine.project(query[finite])
         representable = np.all(np.isfinite(original), axis=1)
         selected = np.zeros(len(original), dtype=np.bool_)
         selected[representable] = contains_with_error(
@@ -968,18 +948,6 @@ class _TransformedArena(ReadOnlyState):
         )
         inside[finite] = selected
         return inside
-
-    def _project(
-        self, query: NDArray[np.float64], incoming: NDArray[np.float64] | None = None
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Bound inverse projection through a forward residual in target units."""
-        linear, shift = self.forward[:-1, :-1], self.forward[:-1, -1]
-        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            original = (query - shift) @ self.inverse[:-1, :-1].T
-            remapped = original @ linear.T + shift
-            residual = _forward_residual(query, original, remapped, linear, incoming)
-            error = residual @ self._inverse_sensitivity.T
-        return original, error
 
     def as_track(self) -> TrackArena | None:
         """The base track mapped into the current coordinates, or None.
@@ -1105,7 +1073,7 @@ def contains_with_error(
             dtype=np.bool_,
         )
     if isinstance(arena, _TransformedArena):
-        original, propagated = arena._project(query, error)
+        original, propagated = arena.affine.project(query, error)
         return contains_with_error(arena.base, original, propagated)
     inside = arena.contains(query)
     rows = np.flatnonzero(~inside)

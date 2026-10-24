@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import _check_homogeneous
 from neurospatial.geometry._arena import affine_geometry
 from neurospatial.geometry._arrays import (
     active_order,
@@ -42,7 +43,6 @@ from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
-    _check_homogeneous,
 )
 from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import materialize_cells

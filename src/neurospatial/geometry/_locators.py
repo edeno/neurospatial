@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import (
@@ -22,6 +23,7 @@ from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._affine import AffineMap, _check_homogeneous
 from neurospatial.geometry._arrays import (
     ReadOnlyState,
     get_centers,
@@ -202,73 +204,6 @@ class AffineMatrix(Protocol):
 
     @property
     def A(self) -> NDArray[np.float64]: ...  # noqa: N802
-
-
-def _check_homogeneous(matrix: NDArray[np.float64]) -> None:
-    if (
-        matrix.ndim != 2
-        or matrix.shape[0] < 2
-        or matrix.shape[0] != matrix.shape[1]
-        or not np.all(np.isfinite(matrix))
-        or not np.array_equal(matrix[-1], np.r_[np.zeros(len(matrix) - 1), 1.0])
-    ):
-        raise ValueError(
-            "inverse/affine matrix must be finite, square and homogeneous."
-        )
-    if np.linalg.slogdet(matrix[:-1, :-1])[0] == 0:
-        raise ValueError("inverse/affine matrix must be invertible.")
-
-
-def _gamma(n_dims: int) -> float:
-    """Relative rounding bound of the ``n_dims``-term dot products in a projection."""
-    eps = float(np.finfo(np.float64).eps)
-    return (n_dims + 4) * eps / (1 - (n_dims + 4) * eps)
-
-
-def _inverse_residual(
-    linear: NDArray[np.float64], inverse_linear: NDArray[np.float64], gamma: float
-) -> NDArray[np.float64]:
-    """Componentwise bound on ``I - inverse_linear @ linear`` and its rounding.
-
-    Both matrices have shape ``(n_dims, n_dims)``. When every row sums below
-    one half, ``2 * solve(I - residual, |inverse_linear|)`` bounds how a
-    forward residual carries back through the numerical inverse.
-    """
-    residual = np.abs(np.eye(len(linear)) - inverse_linear @ linear)
-    residual += 2 * gamma * (np.abs(inverse_linear) @ np.abs(linear))
-    return residual
-
-
-def _forward_residual(
-    query: NDArray[np.float64],
-    original: NDArray[np.float64],
-    remapped: NDArray[np.float64],
-    linear: NDArray[np.float64],
-    incoming: NDArray[np.float64] | None = None,
-) -> NDArray[np.float64]:
-    """Bound how far ``query`` is from the exact forward image of ``original``.
-
-    ``query``, ``original`` (its inverse projection) and ``remapped`` (the
-    rounded forward image of ``original``) have shape ``(n_points, n_dims)``;
-    ``linear`` is the forward map's ``(n_dims, n_dims)`` linear part and
-    ``incoming`` a bound ``query`` already carries. Translation is one
-    rounded addition, not a dot product of origin-sized terms, so half-ULPs
-    of the operands bound it without growing an origin buffer.
-    """
-    difference = np.abs(query - remapped)
-    residual: NDArray[np.float64] = (
-        difference
-        + 0.5
-        * (
-            np.spacing(difference)
-            + np.spacing(np.abs(remapped))
-            + np.spacing(np.abs(query))
-        )
-        + 2 * _gamma(len(linear)) * (np.abs(original) @ np.abs(linear).T)
-    )
-    if incoming is not None:
-        residual += incoming
-    return residual
 
 
 def _owned_array(array: Any, dtype: Any) -> NDArray[Any]:
@@ -535,13 +470,14 @@ class TransformedLocator(ReadOnlyState):
         Locator in the source coordinates.
     forward : ndarray of float64, shape (n_dims + 1, n_dims + 1)
         Homogeneous map from source to current coordinates: the transform
-        that moved the bins. Its inverse is computed once, as an arena's is,
-        so a locator and an arena moved by one map share one inverse.
+        that moved the bins.
 
     Attributes
     ----------
-    inverse : ndarray of float64, shape (n_dims + 1, n_dims + 1)
-        Homogeneous map from current to source coordinates.
+    affine : AffineMap
+        ``forward`` with its inverse and the inverse's roundoff bound, as an
+        arena moved by the same transform holds it, so points map back into
+        the bins' and the arena's stored coordinates alike.
     frame : FramedGrid or None
         The ``grid_frame`` of the binning that holds this locator. It is not
         a constructor argument: a ``Binning`` sets it from its own grid, and
@@ -552,46 +488,25 @@ class TransformedLocator(ReadOnlyState):
     base: Locator
     forward: NDArray[np.float64]
     frame: FramedGrid | None = field(default=None, init=False, repr=False)
-    inverse: NDArray[np.float64] = field(init=False, repr=False)
-
-    # Fixed by the matrix, so built once: the sensitivity of source
-    # coordinates to forward residuals (None when the map is too
-    # ill-conditioned to bound).
-    _sensitivity: NDArray[np.float64] | None = field(init=False, repr=False)
+    affine: AffineMap = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        forward = _owned_array(self.forward, np.float64)
-        _check_homogeneous(forward)
-        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            inverse = np.asarray(np.linalg.inv(forward), dtype=np.float64)
-            dims = len(forward) - 1
-            linear, inverse_linear = forward[:-1, :-1], inverse[:-1, :-1]
-            residual = _inverse_residual(linear, inverse_linear, _gamma(dims))
-            sensitivity = (
-                2 * np.linalg.solve(np.eye(dims) - residual, np.abs(inverse_linear))
-                if np.all(np.isfinite(residual)) and np.max(residual.sum(axis=1)) < 0.5
-                else None
-            )
-        if not np.all(np.isfinite(inverse)):
-            raise ValueError(
-                "TransformedLocator.forward has no representable inverse; "
-                "rescale the coordinates before transforming."
-            )
-        if sensitivity is not None and not np.all(np.isfinite(sensitivity)):
-            sensitivity = None
-        for array in (inverse, sensitivity):
-            if array is not None:
-                array.setflags(write=False)
-        object.__setattr__(self, "forward", forward)
-        object.__setattr__(self, "inverse", inverse)
-        object.__setattr__(self, "_sensitivity", sensitivity)
+        affine = AffineMap(self.forward)
+        object.__setattr__(self, "forward", affine.forward)
+        object.__setattr__(self, "affine", affine)
+
+    @property
+    def inverse(self) -> NDArray[np.float64]:
+        """Homogeneous map from current to source coordinates."""
+        return self.affine.inverse
 
     def _framed(self, frame: FramedGrid | None) -> TransformedLocator:
         """A copy that assigns points by ``frame`` (a binning's grid), or by
         the inverse map when ``frame`` is None."""
-        copy = TransformedLocator(self.base, self.forward)
-        object.__setattr__(copy, "frame", frame)
-        return copy
+        # Shares the map, which depends only on ``forward``.
+        framed = copy.copy(self)
+        object.__setattr__(framed, "frame", frame)
+        return framed
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
@@ -622,63 +537,21 @@ class TransformedLocator(ReadOnlyState):
                 half_open=half_open,
                 incoming=error,
             )
-        original, source_error = self._project(query, error)
+        original, source_error = self.affine.project(query, error)
+        # A bound that overflowed is unbounded, not missing.
+        source_error = np.where(np.isfinite(source_error), source_error, np.inf)
         return locate_within(
             self.base, original, source_error, indexes, half_open=half_open
         )
 
     def _checked(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
-        n_dims = len(self.inverse) - 1
+        n_dims = self.affine.n_dims
         if query.ndim != 2 or query.shape[1] != n_dims:
             raise ValueError(
                 f"Expected points of shape (M, {n_dims}), got {query.shape}."
             )
         return query
-
-    def _project(
-        self, query: NDArray[np.float64], incoming: NDArray[np.float64]
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Map points to source coordinates with a bound on their roundoff.
-
-        Parameters
-        ----------
-        query : ndarray of float64, shape (n_points, n_dims)
-            Current coordinates.
-        incoming : ndarray of float64, shape (n_points, n_dims)
-            Bound already carried by ``query``.
-
-        Returns
-        -------
-        original : ndarray of float64, shape (n_points, n_dims)
-            Source coordinates; NaN for non-finite rows.
-        error : ndarray of float64, shape (n_points, n_dims)
-            Bound on how far each source coordinate is from the point the
-            forward map sends exactly to ``query``.
-        """
-        if self._sensitivity is None:
-            raise ValueError(
-                "Bin lookup through this affine map has unresolved precision: "
-                "the map is too ill-conditioned to bound its roundoff. Recenter "
-                "or rescale the coordinates before transforming."
-            )
-        original = np.full(query.shape, np.nan, dtype=np.float64)
-        error = np.zeros(query.shape, dtype=np.float64)
-        finite = np.all(np.isfinite(query), axis=1)
-        if not np.any(finite):
-            return original, error
-        values = query[finite]
-        source = values @ self.inverse[:-1, :-1].T + self.inverse[:-1, -1]
-        linear, shift = self.forward[:-1, :-1], self.forward[:-1, -1]
-        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            remapped = source @ linear.T + shift
-            residual = _forward_residual(
-                values, source, remapped, linear, incoming[finite]
-            )
-            bound = residual @ self._sensitivity.T
-        original[finite] = source
-        error[finite] = np.where(np.isfinite(bound), bound, np.inf)
-        return original, error
 
 
 @dataclass(frozen=True, eq=False)

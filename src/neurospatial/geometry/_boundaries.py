@@ -240,10 +240,10 @@ def wall_hit_bins(
         locator: Locator, arena: Arena, centers: NDArray[np.float64]
     ) -> Locator:
         if isinstance(locator, TransformedLocator):
-            if isinstance(arena, _TransformedArena) and np.array_equal(
-                locator.inverse, arena.inverse
+            if isinstance(arena, _TransformedArena) and locator.affine.same_as(
+                arena.affine
             ):
-                original, _error = arena._project(centers)
+                original, _error = arena.affine.project(centers)
                 return source_locator(locator.base, arena.base, original)
             if source == "physical":
                 raise NotImplementedError(
@@ -298,7 +298,7 @@ def wall_hit_bins(
     query = np.vstack((hits, origins))
     error = None
     for arena in frames:
-        query, error = arena._project(query, error)
+        query, error = arena.affine.project(query, error)
     base = frames[-1].base
     walls = (
         physical_walls(base) if source == "physical" else _cells_boundary(cells, base)
@@ -577,7 +577,7 @@ def _wall_frame(
     error = None
     while isinstance(arena, _TransformedArena):
         frames.append(arena)
-        query, error = arena._project(query, error)
+        query, error = arena.affine.project(query, error)
         arena = arena.base
     if error is not None:
         _snap_onto_walls(query, error, physical_walls(arena), arena)
