@@ -108,11 +108,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
                 bins.sizes,
             )
         )
-    locator = (
-        binning.locator.subset(keep)
-        if isinstance(binning.locator, RectilinearLocator)
-        else SubsetLocator(binning.locator, child_of)
-    )
+    locator = _subset_locator(binning.locator, keep, child_of)
     grid = binning.rectilinear
     if grid is not None:
         grid = RectilinearGrid(
@@ -162,6 +158,37 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
             else None
         ),
     )
+
+
+def _subset_locator(
+    locator: Locator, keep: NDArray[np.bool_], child_of: NDArray[np.intp]
+) -> Locator:
+    """Locator of the kept bins, closing a grid's outline around them.
+
+    A grid, axis-aligned or under affine maps, keeps its cells and recomputes
+    the outline of the kept ones, so a point on a face shared with a dropped
+    cell belongs to the kept cell. Selecting bins then commutes with
+    transforming them. Other locators keep the parent's assignment and drop
+    points in unselected bins.
+
+    Parameters
+    ----------
+    locator : Locator
+        Parent point lookup.
+    keep : ndarray of bool, shape (n_parent_bins,)
+        Selected bins.
+    child_of : ndarray of intp, shape (n_parent_bins,)
+        Child index of each parent bin, or -1 when dropped.
+    """
+    if isinstance(locator, RectilinearLocator):
+        return locator.subset(keep)
+    if isinstance(locator, TransformedLocator):
+        base = _subset_locator(locator.base, keep, child_of)
+        if not isinstance(base, SubsetLocator):
+            # An affine map does not renumber bins, so the grid's own subset
+            # sits below it, as if the bins were selected first.
+            return TransformedLocator(base, locator.inverse)
+    return SubsetLocator(locator, child_of)
 
 
 def select_bins(binning: Binning, mask: NDArray[np.bool_]) -> Binning:
