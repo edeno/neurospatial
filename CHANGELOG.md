@@ -30,6 +30,11 @@
   mask is unchanged, but the warning now names this case and suggests a
   `max_gap` above the sampling interval, instead of saying (at 1 kHz) that
   `times` are probably not in seconds or (at 30 Hz) saying nothing.
+- Decoding warns when whole `dt` bins leave more than 10% of the observed
+  time undecoded. Each recording run keeps only whole bins, so with frequent
+  tracking dropouts a large `dt` silently dropped the end of every run and its
+  spikes (27% of the observed time in one example at `dt=0.5`). The warning
+  names `dt` and `max_gap`; `warn_on_drop=False` silences it.
 
 ### Spatial geometry review
 

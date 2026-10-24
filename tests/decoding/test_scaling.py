@@ -153,7 +153,8 @@ def test_session_summary_streams_binning_under_full_matrix(small_2d_env):
         encoding_models,
         dt=dt,
         time_chunk=512,
-        warn_on_drop=False,
+        warn_spikes_outside=False,
+        warn_partial_bins=False,
     )
     _, streamed_peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()

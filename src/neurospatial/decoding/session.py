@@ -18,11 +18,14 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
 from neurospatial._observation import validate_break_before
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _count_spikes_in_time_bins
 
 # Warn when more than this fraction of spikes fall outside the decode window.
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
 _DROP_WARN_THRESHOLD = 0.5
+# Share of observed time that whole-dt bins may leave undecoded before warning.
+_DROPPED_TIME_WARN_FRACTION = 0.1
 
 # Default time-block size for the streaming summary path. Matches
 # decode_position_summary's default ``time_chunk`` so the two paths block the
@@ -92,6 +95,48 @@ def _warn_if_spikes_out_of_window(
         f"Set warn_on_drop=False to suppress this warning.",
         UserWarning,
         stacklevel=2,
+    )
+
+
+def _warn_if_bins_drop_observed_time(
+    runs: NDArray[np.float64],
+    bin_left: NDArray[np.float64],
+    bin_right: NDArray[np.float64],
+    dt: float,
+    max_gap: float | None,
+) -> None:
+    """Warn when whole-``dt`` bins leave much of the observed time undecoded.
+
+    Each observed run keeps only whole bins, so the end of every run shorter
+    than ``dt`` is not decoded. Short, frequent runs (tracking dropouts with a
+    small ``max_gap``) can lose a large share of the recording this way.
+
+    Parameters
+    ----------
+    runs : ndarray, shape (n_runs, 2)
+        Observed half-open runs in seconds.
+    bin_left, bin_right : ndarray, shape (n_time_bins,)
+        Decode bin edges tiled inside ``runs``.
+    dt, max_gap : float, float or None
+        The decode bin width and the gap threshold, named in the message.
+    """
+    observed = float(np.sum(runs[:, 1] - runs[:, 0]))
+    if observed <= 0:
+        return
+    binned = float(np.sum(bin_right - bin_left))
+    dropped = (observed - binned) / observed
+    if dropped <= _DROPPED_TIME_WARN_FRACTION:
+        return
+    warnings.warn(
+        f"Decode bins cover {binned:.4g} s of the {observed:.4g} s observed in "
+        f"{runs.shape[0]} recording run(s); {100 * dropped:.0f}% is not "
+        f"decoded. Each run keeps only whole dt={dt} s bins, so the end of "
+        f"every run shorter than dt is dropped, with its spikes. Fix: use a "
+        f"smaller dt, or a larger max_gap (now {max_gap}) if the short runs "
+        f"come from brief tracking dropouts. Set warn_on_drop=False to "
+        f"suppress this warning.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -211,7 +256,9 @@ def decode_session(
         is in seconds — which would otherwise produce an all-zero count matrix
         and a plausible-but-wrong posterior.  The warning fires exactly once
         per call, from the encoder. This also covers spikes mapped outside
-        the environment. Set ``False`` to suppress the coverage diagnostics.
+        the environment. It also warns when more than 10% of the observed
+        time falls in run remainders shorter than ``dt``, which are not
+        decoded. Set ``False`` to suppress the coverage diagnostics.
     dtype : {np.float32, np.float64}, default=np.float64
         "Decode in this dtype." Controls BOTH the encoding-model working set
         AND the posterior dtype end-to-end. ``np.float32`` halves the
@@ -367,7 +414,8 @@ def decode_session(
         epochs=resolved_epochs,
         break_before=break_before,
         spike_window=resolved_spike_window,
-        warn_on_drop=False,
+        warn_spikes_outside=False,
+        warn_partial_bins=warn_on_drop,
         dtype=dtype,
         spatial_support=rates_result.spatial_support,
         **decode_kwargs,
@@ -411,7 +459,8 @@ def _prepare_session_decode(
     epochs: NDArray[np.float64] | None = None,
     break_before: ArrayLike | None = None,
     spike_window: NDArray[np.float64] | None = None,
-    warn_on_drop: bool,
+    warn_spikes_outside: bool,
+    warn_partial_bins: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     context: str = "decode_session",
 ) -> tuple[
@@ -459,7 +508,7 @@ def _prepare_session_decode(
     t_stop = float(times_arr.max())
 
     firing_rates = cast("NDArray[np.float64]", np.asarray(encoding_models, dtype=dtype))
-    if warn_on_drop:
+    if warn_spikes_outside:
         _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
     from neurospatial._intervals import TimeSupport, interval_valid_mask
@@ -486,6 +535,8 @@ def _prepare_session_decode(
     )
     runs = recording_support.runs
     bin_left, bin_right = _time_bins_in_windows(runs, dt)
+    if warn_partial_bins:
+        _warn_if_bins_drop_observed_time(runs, bin_left, bin_right, dt, max_gap)
     if bin_left.size == 0:
         longest = float(np.max(np.diff(runs, axis=1), initial=0.0))
         raise ValueError(
@@ -671,7 +722,9 @@ def _build_encoding_model(
         epochs=epochs,
         break_before=break_before,
         spike_window=spike_window,
-        warn_on_drop=False,
+        warn_spikes_outside=False,
+        # The decode step tiles the same bins and owns this warning.
+        warn_partial_bins=False,
         dtype=dtype,
         context=context,
     )
@@ -689,7 +742,8 @@ def _decode_with_models(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
-    warn_on_drop: bool = True,
+    warn_spikes_outside: bool = True,
+    warn_partial_bins: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     spatial_support: NDArray[np.bool_] | None = None,
     context: str = "decode_session",
@@ -708,7 +762,8 @@ def _decode_with_models(
         epochs=resolved_epochs,
         break_before=break_before,
         spike_window=resolved_spike_window,
-        warn_on_drop=warn_on_drop,
+        warn_spikes_outside=warn_spikes_outside,
+        warn_partial_bins=warn_partial_bins,
         dtype=dtype,
         context=context,
     )
@@ -904,7 +959,8 @@ warn_on_drop, dtype
         epochs=resolved_epochs,
         break_before=break_before,
         spike_window=resolved_spike_window,
-        warn_on_drop=False,
+        warn_spikes_outside=False,
+        warn_partial_bins=warn_on_drop,
         dtype=dtype,
         spatial_support=rates_result.spatial_support,
         **decode_kwargs,
@@ -922,7 +978,8 @@ def _decode_with_models_summary(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
-    warn_on_drop: bool = True,
+    warn_spikes_outside: bool = True,
+    warn_partial_bins: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     spatial_support: NDArray[np.bool_] | None = None,
     context: str = "decode_session_summary",
@@ -967,7 +1024,8 @@ def _decode_with_models_summary(
         epochs=resolved_epochs,
         break_before=break_before,
         spike_window=resolved_spike_window,
-        warn_on_drop=warn_on_drop,
+        warn_spikes_outside=warn_spikes_outside,
+        warn_partial_bins=warn_partial_bins,
         dtype=dtype,
         context=context,
     )
