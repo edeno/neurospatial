@@ -14,11 +14,11 @@ import networkx as nx
 import numpy as np
 import pytest
 import shapely
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.geometry._arena_fit import clip_wall
+from neurospatial.geometry._arena_fit import _wall_sides, clip_wall
 
 SLANTED = Polygon([(0, 0), (20, 3), (17, 20), (-2, 16)])
 
@@ -117,3 +117,32 @@ def test_a_wall_ending_short_of_a_slanted_outline_leaves_the_gap_open():
     )
     assert len(end) == 1
     assert faces.A[end[0]] == pytest.approx(1.0)
+
+
+def test_points_outside_a_sharp_bend_are_on_the_outer_side():
+    # A left turn sharper than a right angle at (1, 0): just past the bend the
+    # nearest wall point is the bend itself, and both its segments' lines
+    # would give different answers there.
+    wall = LineString([(0, 0), (1, 0), (0, 0.2)])
+    points = np.array([[1.5, 0.05], [1.5, -0.05], [0.5, 0.05], [0.5, -0.5]])
+    # Inside the V is the left of the wall's direction; outside it, the right.
+    assert _wall_sides(wall, points).tolist() == [False, False, True, False]
+    # Reversing the wall swaps its left and right.
+    assert _wall_sides(wall.reverse(), points).tolist() == [True, True, False, True]
+
+
+def _v_wall(rng):
+    apex = rng.uniform([10, 8], [14, 12])
+    half = rng.uniform(0.15, 0.35)
+    length = rng.uniform(6, 9)
+    arm = length * np.array([-np.cos(half), np.sin(half)])
+    return LineString([apex + arm, apex, apex + arm * [1, -1]])
+
+
+def test_snapped_walls_with_sharp_bends_never_leak():
+    outline = box(0, 0, 20, 20)
+    rng = np.random.default_rng(0)
+    for _ in range(40):
+        wall = _v_wall(rng)
+        env = _build(outline, wall)
+        assert len(_leaking_pairs(env, wall)) == 0, list(wall.coords)

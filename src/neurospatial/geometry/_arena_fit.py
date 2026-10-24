@@ -346,12 +346,17 @@ def clip_wall(wall: LineString, polygon: Polygon) -> list[LineString]:
 
 
 def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.bool_]:
-    """Which side of ``wall`` each point lies on, by its nearest wall segment.
+    """Which side of ``wall`` each point lies on, by its nearest wall point.
 
     True is the left of the wall's direction; a point on the wall counts as
-    left, so a wall through bin centers puts those bins on one side.
+    left, so a wall through bin centers puts those bins on one side. A point
+    nearest a bend of the wall lies in the wedge outside the bend, and is
+    sided by the bend's bisecting normal (the sum of the unit left normals of
+    the two segments meeting there); the side of either segment's line alone
+    is wrong there for bends sharper than a right angle. Beyond the wall's
+    ends, the end segment's line decides.
     """
-    coords = np.asarray(wall.coords)
+    coords = np.asarray(wall.coords, dtype=np.float64)
     starts, ends = coords[:-1], coords[1:]
     direction = ends - starts  # (n_segments, 2)
     offset = points[:, None, :] - starts[None, :, :]  # (n_points, n_segments, 2)
@@ -368,6 +373,16 @@ def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.boo
         direction[segment, 0] * offset[rows, segment, 1]
         - direction[segment, 1] * offset[rows, segment, 0]
     )
+    # The interior vertex nearest each point, if its nearest wall point is one.
+    t = along[rows, segment]
+    vertex = np.where(t == 0.0, segment, np.where(t == 1.0, segment + 1, -1))
+    at_bend = (vertex > 0) & (vertex < len(coords) - 1)
+    if np.any(at_bend):
+        unit = direction / np.hypot.reduce(direction, axis=1)[:, None]
+        left_normal = np.stack((-unit[:, 1], unit[:, 0]), axis=1)
+        bend = vertex[at_bend]
+        bisector = left_normal[bend - 1] + left_normal[bend]
+        cross[at_bend] = np.einsum("pk,pk->p", points[at_bend] - coords[bend], bisector)
     return np.asarray(cross >= 0.0)
 
 
