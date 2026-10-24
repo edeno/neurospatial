@@ -3238,7 +3238,9 @@ class Environment(Generic[_C]):
             keeping the measured wall. Smoothing and other finite-volume
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
-            measures. Bins no wall divides are the same either way.
+            measures. Bins no wall divides are the same either way, except
+            that ``'split'`` clips bins sticking out past a slanted or curved
+            outline to the arena, since polygon bins cover only the arena.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``, as a LayoutType member or a
             case-insensitive string. For "Hexagonal", `bin_size` is the
@@ -3455,7 +3457,9 @@ class Environment(Generic[_C]):
             keeping the measured wall. Smoothing and other finite-volume
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
-            measures. Bins no wall divides are the same either way.
+            measures. Bins no wall divides are the same either way, except
+            that ``'split'`` clips bins sticking out past a slanted or curved
+            outline to the arena, since polygon bins cover only the arena.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``. See :meth:`from_samples`.
         dimension_ranges : sequence of (float, float), optional
@@ -4012,7 +4016,9 @@ class Environment(Generic[_C]):
             keeping the measured wall. Smoothing and other finite-volume
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
-            measures. Bins no wall divides are the same either way.
+            measures. Bins no wall divides are the same either way, except
+            that ``'split'`` clips bins sticking out past a slanted or curved
+            outline to the arena, since polygon bins cover only the arena.
 
         Returns
         -------
@@ -4124,7 +4130,9 @@ class Environment(Generic[_C]):
             keeping the measured wall. Smoothing and other finite-volume
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
-            measures. Bins no wall divides are the same either way.
+            measures. Bins no wall divides are the same either way, except
+            that ``'split'`` clips bins sticking out past a slanted or curved
+            outline to the arena, since polygon bins cover only the arena.
 
         Returns
         -------
@@ -4227,7 +4235,9 @@ class Environment(Generic[_C]):
             keeping the measured wall. Smoothing and other finite-volume
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
-            measures. Bins no wall divides are the same either way.
+            measures. Bins no wall divides are the same either way, except
+            that ``'split'`` clips bins sticking out past a slanted or curved
+            outline to the arena, since polygon bins cover only the arena.
 
         Returns
         -------
@@ -4329,7 +4339,9 @@ class Environment(Generic[_C]):
             keeping the measured wall. Smoothing and other finite-volume
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
-            measures. Bins no wall divides are the same either way.
+            measures. Bins no wall divides are the same either way, except
+            that ``'split'`` clips bins sticking out past a slanted or curved
+            outline to the arena, since polygon bins cover only the arena.
 
         Returns
         -------

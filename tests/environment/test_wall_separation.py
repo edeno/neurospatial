@@ -9,18 +9,21 @@ the arena to the other leaves the bins on each side unconnected.
 from __future__ import annotations
 
 import warnings
+from dataclasses import replace
 
 import networkx as nx
 import numpy as np
 import pytest
 import shapely
-from shapely.geometry import LineString, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
+from neurospatial.binning import KnownFaces
 from neurospatial.geometry._arena_fit import _wall_sides, clip_wall
 
 SLANTED = Polygon([(0, 0), (20, 3), (17, 20), (-2, 16)])
+ROUND = Point(10, 10).buffer(9.3, quad_segs=32)
 
 
 def _build(outline, wall, **options):
@@ -146,3 +149,57 @@ def test_snapped_walls_with_sharp_bends_never_leak():
         wall = _v_wall(rng)
         env = _build(outline, wall)
         assert len(_leaking_pairs(env, wall)) == 0, list(wall.coords)
+
+
+def test_split_fits_a_wall_in_a_slanted_arena():
+    # wall_fit="split" turns the bins into exact polygon cells, which must lie
+    # in the arena, so bins sticking out past the slanted outline are clipped
+    # to it; bins inside it keep their shape and center.
+    wall = LineString([(8.3, 8.4), (11.7, 9.6)])
+    plain = Environment.from_polygon(SLANTED, bin_size=1.0)
+    split = _build(SLANTED, wall, wall_fit="split")
+    # The wall crosses two bins from edge to edge; each becomes two pieces.
+    assert split.n_bins == plain.n_bins + 2
+    cells = np.asarray(split.binning.shapes.polygons, dtype=object)
+    assert np.all(shapely.area(shapely.difference(cells, SLANTED)) < 1e-12)
+    # 1 cm squares inside the outline, away from the wall.
+    whole = np.isclose(shapely.area(cells), 1.0) & ~shapely.intersects(cells, wall)
+    assert np.count_nonzero(whole) > 250
+    plain_index = plain.bin_at(split.bin_centers[whole])
+    assert np.all(plain_index >= 0)
+    np.testing.assert_allclose(
+        split.bin_centers[whole], plain.bin_centers[plain_index], atol=1e-12
+    )
+
+
+@pytest.mark.parametrize("outline", [SLANTED, ROUND], ids=["slanted", "round"])
+def test_split_walls_across_an_arena_never_leak(outline):
+    rng = np.random.default_rng(1)
+    for _ in range(10):
+        start, stop = rng.uniform(6, 12, 2)
+        line = LineString([(-5, start), (25, stop)])
+        (wall,) = clip_wall(line, outline)
+        env = _build(outline, wall, wall_fit="split")
+        assert len(_leaking_pairs(env, wall)) == 0, list(wall.coords)
+        assert _separated(env, line), list(wall.coords)
+
+
+# Along the bin edge y = 9, then across the in-arena part of the bin centered
+# at (18.5, 9.5) to the slanted outline. The whole square is not divided (the
+# wall ends inside it), but its part inside the arena is.
+BENT_LINE = LineString([(-5, 9), (18, 9), (22, 11)])
+(BENT,) = clip_wall(BENT_LINE, SLANTED)
+
+
+def test_a_wall_dividing_only_the_in_arena_part_of_a_bin_is_refused():
+    source = Environment.from_polygon(SLANTED, bin_size=1.0).binning
+    source = replace(source, faces=KnownFaces(source.faces.build()))
+    with pytest.raises(ValueError, match=r"wall 'w' cuts through bin .*18\.5, 9\.5"):
+        Environment.from_bins(source, arena=OpenArena(SLANTED, walls={"w": BENT}))
+
+
+@pytest.mark.parametrize("wall_fit", ["snap", "split"])
+def test_a_wall_dividing_only_the_in_arena_part_of_a_bin_is_fitted(wall_fit):
+    env = _build(SLANTED, BENT, wall_fit=wall_fit)
+    assert len(_leaking_pairs(env, BENT)) == 0
+    assert _separated(env, BENT_LINE)

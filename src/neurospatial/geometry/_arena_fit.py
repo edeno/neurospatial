@@ -217,15 +217,59 @@ def _wall_cut_message(
     )
 
 
-def _divides(cell: Polygon, walls: shapely.Geometry) -> bool:
-    """Whether the walls cut ``cell`` into two or more pieces.
+def _divides(
+    cell: Polygon | MultiPolygon,
+    walls: shapely.Geometry,
+    domain: Polygon | MultiPolygon | None,
+) -> bool:
+    """Whether the walls cut the part of ``cell`` inside ``domain`` apart.
 
-    A wall that only enters a cell and ends inside it does not divide it.
+    A wall that only enters a cell and ends inside it does not divide it. A
+    cell at a slanted outline sticks out past it, and a wall ending on the
+    outline divides only the part inside, so pass ``walls`` through
+    :func:`_reaching` first.
     """
     if not walls.intersects(cell):
         return False
-    pieces = shapely.ops.split(cell, walls)
-    return bool(sum(piece.area > 0 for piece in pieces.geoms) > 1)
+    if domain is not None and not domain.covers(cell):
+        cell = cell.intersection(domain)
+    parts = [
+        part
+        for part in shapely.get_parts(cell)
+        if isinstance(part, Polygon) and part.area > 0
+    ]
+    # A piece within the rounding of the part's area is a sliver from
+    # splitting along an edge the part already has, not a side of a wall.
+    pieces = sum(
+        piece.area > _polygon_area_allowance(part)
+        for part in parts
+        for piece in shapely.ops.split(part, walls).geoms
+    )
+    return bool(pieces > len(parts))
+
+
+def _reaching(
+    walls: Sequence[LineString], domain: Polygon | MultiPolygon | None
+) -> shapely.Geometry:
+    """The walls, each end within :func:`_wall_end_slack` of ``domain``'s edge
+    extended past it.
+
+    :func:`wall_inside` may have pulled such an end in from the arena's edge;
+    extending it again lets the wall divide a cell clipped to the arena.
+    """
+    if domain is None:
+        return unary_union(walls)
+    slack = _wall_end_slack(domain)
+    boundary = domain.boundary
+    reaching = []
+    for wall in walls:
+        coords = np.asarray(wall.coords, dtype=np.float64)
+        for end, previous in ((0, 1), (-1, -2)):
+            if shapely.distance(shapely.points(coords[end]), boundary) <= slack:
+                outward = coords[end] - coords[previous]
+                coords[end] += 2 * slack * outward / np.hypot.reduce(outward)
+        reaching.append(LineString(coords))
+    return unary_union(reaching)
 
 
 def fit_walls(
@@ -234,21 +278,25 @@ def fit_walls(
     """Fit the bins and walls together before publication.
 
     ``"split"`` cuts each cell a wall divides into one exact polygon cell per
-    side, so the walls stay where they were measured. ``"snap"`` keeps the
-    cells and moves each wall onto the cell edges that separate the bins it
-    divides, warning how far it moved. Bins that no wall divides are
-    returned unchanged either way.
+    side, so the walls stay where they were measured. Exact polygon cells
+    cover only the arena, so every cell is also clipped to the arena outline,
+    as :meth:`Environment.clip` does; this changes only cells that stick out
+    past a slanted or curved outline. ``"snap"`` keeps the cells and moves
+    each wall onto the cell edges that separate the bins it divides, warning
+    how far it moved. Otherwise, bins that no wall divides are returned
+    unchanged.
     """
     if not arena.walls:
         return binning, arena
     cells = materialize_cells(binning)
-    walls = unary_union(arena.walls)
-    if not any(_divides(cell, walls) for cell in cells):
+    domain = arena.polygonal_domain()
+    walls = _reaching(arena.walls, domain)
+    if not any(_divides(cell, walls, domain) for cell in cells):
         return binning, arena
     if mode == "split":
         from neurospatial.geometry._polygon import split_binning
 
-        return split_binning(binning, arena.walls)[0], arena
+        return split_binning(binning, (walls,), domain=domain)[0], arena
     if not isinstance(arena, OpenArena):
         raise ValueError(
             _format_error(
@@ -418,8 +466,10 @@ def _snapped_walls(
                     f"wall_fit='snap' cannot place wall {name!r} "
                     f"{list(wall.coords)} on bin edges: it separates no two bin "
                     "centers.",
-                    why="Why: the wall is shorter than a bin, so the nearest bin "
-                    "edges would remove it.",
+                    why="Why: every bin center lies on one side of it (it is "
+                    "shorter than a bin, or cuts off a part of the arena "
+                    "narrower than a bin), so the nearest bin edges would "
+                    "remove it.",
                     fix="use wall_fit='split', or a smaller bin_size",
                 )
             )
@@ -678,8 +728,9 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     if errors is not None:
         # Cells whose uncertain boundary can reach a wall.
         near_wall = shapely.dwithin(np.asarray(cells, dtype=object), walls, errors)
+    reaching = _reaching(wall_segments, domain)
     for index, cell in enumerate(cells):
-        if _divides(cell, walls):
+        if _divides(cell, reaching, domain):
             raise ValueError(
                 _wall_cut_message(binning, arena, wall_segments, cell, index)
             )
