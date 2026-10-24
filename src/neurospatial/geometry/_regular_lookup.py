@@ -70,9 +70,6 @@ def points_to_regular_grid_bin_ind(
         return output_indices
 
     valid_points = points_atleast_2d[valid_input_mask]
-    if valid_points.shape[0] == 0:  # Should be caught by above, but defensive
-        return output_indices
-
     n_dims = valid_points.shape[1]
     if n_dims != len(grid_edges) or n_dims != len(grid_shape):
         raise ValueError(
