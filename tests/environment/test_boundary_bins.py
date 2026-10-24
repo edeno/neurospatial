@@ -146,6 +146,40 @@ def test_combined_grid_and_track_use_each_components_boundary():
     expected = [b for b in range(9) if b != 4] + [9, 9 + track.n_bins - 1]
     np.testing.assert_array_equal(env.boundary_bins, expected)
 
+    # Subsets and affine maps keep each component's boundary.
+    np.testing.assert_array_equal(
+        env.subset(mask=np.ones(env.n_bins, dtype=bool)).boundary_bins, expected
+    )
+    np.testing.assert_array_equal(
+        env.apply_transform(_rotation(0.7)).boundary_bins, expected
+    )
+    without_end = np.ones(env.n_bins, dtype=bool)
+    without_end[-1] = False
+    np.testing.assert_array_equal(
+        env.subset(mask=without_end).boundary_bins, [*expected[:-1], env.n_bins - 2]
+    )
+
+
+def test_combined_3d_grids_keep_their_boundary_through_derivations():
+    def cube(shift: float) -> Environment:
+        edges = np.arange(4.0)
+        return Environment.from_grid_mask(
+            np.ones((3, 3, 3), dtype=bool), grid_edges=(edges + shift, edges, edges)
+        )
+
+    env = Environment.combine({"a": cube(0.0), "b": cube(10.0)})
+    # Every cell of a 3x3x3 block but its center touches the block's outline.
+    expected = [b for b in range(54) if b not in (13, 27 + 13)]
+    np.testing.assert_array_equal(env.boundary_bins, expected)
+    np.testing.assert_array_equal(
+        env.subset(mask=np.ones(env.n_bins, dtype=bool)).boundary_bins, expected
+    )
+    translation = np.eye(4)
+    translation[0, 3] = 5.0
+    np.testing.assert_array_equal(
+        env.apply_transform(AffineND(translation)).boundary_bins, expected
+    )
+
 
 def _rotation(angle: float) -> AffineND:
     c, s = np.cos(angle), np.sin(angle)
