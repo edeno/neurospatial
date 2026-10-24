@@ -167,12 +167,12 @@ def test_from_bins_keeps_supplied_closed_pairs_without_a_wall():
     assert env.get_blocked_edges()["wall"].isna().all()
 
 
-@pytest.mark.parametrize("version", [1, 2, 3])
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
 def test_binnings_saved_by_earlier_versions_are_refused(version):
     meta, arrays = encode(_rooms({}).binning, "binning")
     meta["codec_version"] = version
     with pytest.raises(
-        ValueError, match=r"Binning codec_version .*supported version is 4"
+        ValueError, match=r"Binning codec_version .*supported version is 5"
     ):
         decode(meta, arrays, "binning")
 

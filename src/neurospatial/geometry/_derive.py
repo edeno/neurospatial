@@ -24,9 +24,9 @@ from neurospatial.geometry._capabilities import (
     RectilinearGrid,
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
-from neurospatial.geometry._composition import bridge_values
+from neurospatial.geometry._composition import CombinedLocator, bridge_values
 from neurospatial.geometry._diffusion import FaceGeometry
-from neurospatial.geometry._explicit import cell_extent
+from neurospatial.geometry._explicit import cell_extent, union_extent
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._face_transform import (
     certify_transformed_faces,
@@ -208,10 +208,55 @@ def select_bins(binning: Binning, mask: NDArray[np.bool_]) -> Binning:
         Its ``dimension_ranges`` is the extent of the kept cells, with no
         margin (see :func:`neurospatial.geometry._explicit.cell_extent`): the
         kept grid cells for grids, the kept stretches of centerline for tracks,
-        and the kept bin centers' bounds for other bins without shapes.
+        and the kept bin centers' bounds for other bins without shapes. The
+        kept bins of a combined environment span the union of each
+        component's kept cells, measured the same way.
     """
-    binning = subset_binning(binning, mask)
-    return replace(binning, dimension_ranges=cell_extent(binning, shapeless="centers"))
+    selected = subset_binning(binning, mask)
+    extent = cell_extent(selected, shapeless="centers")
+    if isinstance(selected.locator, SubsetLocator):
+        extent = _combined_extent(binning.locator, np.asarray(mask)) or extent
+    return replace(selected, dimension_ranges=extent)
+
+
+def _combined_extent(
+    locator: Locator, keep: NDArray[np.bool_]
+) -> tuple[tuple[float, float], ...] | None:
+    """Extent of the kept bins of a combined locator, component by component.
+
+    Parameters
+    ----------
+    locator : Locator
+        The parent's locator: a combined locator, possibly after earlier
+        selections (an affine map or clip changes the cells, so it gives
+        None).
+    keep : ndarray of bool, shape (n_parent_bins,)
+        Kept parent bins.
+
+    Returns
+    -------
+    tuple of (float, float), or None
+        The union of each component's kept-cell extent, or None when the
+        locator is not a selection of a combined locator.
+    """
+    mapping = np.flatnonzero(keep)
+    while isinstance(locator, SubsetLocator):
+        selected = np.flatnonzero(locator.parent_to_child >= 0)
+        selected = selected[np.argsort(locator.parent_to_child[selected])]
+        mapping = selected[mapping]
+        locator = locator.base
+    if not isinstance(locator, CombinedLocator):
+        return None
+    parts = []
+    for child, start, stop in zip(
+        locator.children, locator.offsets[:-1], locator.offsets[1:], strict=True
+    ):
+        local = mapping[(mapping >= start) & (mapping < stop)] - start
+        if len(local):
+            child_keep = np.zeros(child.bins.n_bins, dtype=bool)
+            child_keep[local] = True
+            parts.append(select_bins(child, child_keep).dimension_ranges)
+    return union_extent(parts)
 
 
 def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:

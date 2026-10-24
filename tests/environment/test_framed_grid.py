@@ -296,7 +296,7 @@ def test_hexagon_conversion_retains_exact_vertices(kind):
 
 def test_binning_and_frame_codec_versions():
     meta, _ = encode(moved(grid(), matrix())._binning, "binning")
-    assert meta["codec_version"] == 4
+    assert meta["codec_version"] == 5
     assert meta["grid_frame"]["codec_version"] == 1
 
 

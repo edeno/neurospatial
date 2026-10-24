@@ -63,16 +63,18 @@ def cell_extent(
         return _active_framed_extent(binning.grid_frame)
     if isinstance(binning.locator, CombinedLocator):
         # Components such as a track and an open field share no cell shapes;
-        # the combined cells span the union of the components' cells.
-        parts = [
-            cell_extent(child, shapeless=shapeless)
-            for child in binning.locator.children
-        ]
-        if parts and all(part is not None for part in parts):
-            return tuple(
-                (min(axis[0] for axis in axes), max(axis[1] for axis in axes))
-                for axes in zip(*parts, strict=True)
-            )
+        # the combined cells span the union of the components' extents.
+        # A component without cells contributes its declared ranges.
+        extent = union_extent(
+            [
+                binning_ranges(child)
+                if shapeless == "none"
+                else cell_extent(child, shapeless=shapeless)
+                for child in binning.locator.children
+            ]
+        )
+        if extent is not None:
+            return extent
     extent = component_extent(
         outline=binning.outline,
         shapes=binning.shapes,
@@ -84,6 +86,31 @@ def cell_extent(
     return tuple(
         (float(a), float(b))
         for a, b in zip(centers.min(axis=0), centers.max(axis=0), strict=True)
+    )
+
+
+def union_extent(
+    parts: list[tuple[tuple[float, float], ...] | None],
+) -> tuple[tuple[float, float], ...] | None:
+    """Bound several extents together, or None when any of them is unknown.
+
+    Parameters
+    ----------
+    parts : list of tuple of (float, float) or None
+        One ``(low, high)`` per axis for each part.
+
+    Returns
+    -------
+    tuple of (float, float), or None
+        The smallest box holding every part; None for no parts or when a
+        part has no extent.
+    """
+    if not parts or any(part is None for part in parts):
+        return None
+    known = [part for part in parts if part is not None]
+    return tuple(
+        (min(axis[0] for axis in axes), max(axis[1] for axis in axes))
+        for axes in zip(*known, strict=True)
     )
 
 

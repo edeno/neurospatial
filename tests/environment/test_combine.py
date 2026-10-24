@@ -1002,3 +1002,49 @@ def test_subclass_combine_accepts_plain_environment_components():
     combined = Room.combine({"a": a, "b": b})
     assert combined.n_bins == a.n_bins + b.n_bins
     assert combined.layout_type == "Combined"
+
+
+def test_selected_combined_bins_keep_each_components_cell_extent():
+    """Dropping one grid cell leaves the grid's other cells spanning the
+    same box, so the combined extent does not shrink to bin centers."""
+    import networkx as nx
+
+    field = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool), grid_edges=(np.arange(0.0, 11.0, 2.0),) * 2
+    )
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 12.0))
+    graph.add_node(1, pos=(10.0, 12.0))
+    graph.add_edge(0, 1, distance=10.0)
+    track = Environment.from_graph(graph, [(0, 1)], bin_size=2.0, track_width=2.0)
+    joined = Environment.combine({"field": field, "track": track})
+    assert joined.dimension_ranges == ((0.0, 10.0), (0.0, 12.0))
+    keep = np.ones(joined.n_bins, dtype=bool)
+    keep[0] = False  # the field's corner cell; its neighbors still reach 0
+    assert joined.subset(mask=keep).dimension_ranges == ((0.0, 10.0), (0.0, 12.0))
+    only_field = np.arange(joined.n_bins) < field.n_bins
+    selected = joined.subset(mask=only_field).subset(mask=keep[only_field])
+    assert selected.dimension_ranges == field.dimension_ranges
+
+
+def test_combining_bins_without_cells_spans_their_declared_ranges():
+    def points(shift, ranges):
+        centers = np.array([[shift, 0.0], [shift + 1.0, 0.0]])
+        return Environment.from_bins(
+            Binning(
+                "explicit",
+                SpatialBins.from_arrays(centers, [1.0, 1.0], 2),
+                BinConnections.from_arrays([[0, 1]], [1.0]),
+                NearestBinLocator(centers, max_distance=0.5),
+                MissingFaces("Point bins have no faces."),
+                dimension_ranges=ranges,
+            )
+        )
+
+    left = points(0.0, ((-5.0, 5.0), (-5.0, 5.0)))
+    right = points(20.0, ((15.0, 25.0), (-4.0, 6.0)))
+    joined = Environment.combine({"left": left, "right": right})
+    assert joined.dimension_ranges == ((-5.0, 25.0), (-5.0, 6.0))
+    assert Environment.from_dict(joined.to_dict()).dimension_ranges == (
+        joined.dimension_ranges
+    )
