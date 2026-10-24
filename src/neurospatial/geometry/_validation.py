@@ -99,6 +99,7 @@ def _polygon_area_allowance(
     polygon: Polygon | MultiPolygon,
     *,
     reference_clearance: float = math.inf,
+    uncertainty: NDArray[np.float64] | None = None,
 ) -> float:
     """Return a local, coordinate-ULP bounded polygon area comparison budget.
 
@@ -109,6 +110,9 @@ def _polygon_area_allowance(
     reference_clearance : float, optional
         Cached minimum clearance of a containing reference geometry. It further
         limits the uncertainty without repeatedly traversing that geometry.
+    uncertainty : ndarray of float64, shape (2,), optional
+        ``_polygon_coordinate_errors(polygon)``, when the caller already has
+        it; computed here otherwise.
 
     Returns
     -------
@@ -123,7 +127,8 @@ def _polygon_area_allowance(
     ValueError
         If local features cannot be resolved at the stored coordinate origin.
     """
-    uncertainty = _polygon_coordinate_errors(polygon)
+    if uncertainty is None:
+        uncertainty = _polygon_coordinate_errors(polygon)
     coordinates = shapely.get_coordinates(polygon)
     variation = np.sum(np.abs(np.diff(coordinates, axis=0)), axis=0)
     # Varying each shoelace coordinate independently changes area by at most
@@ -169,6 +174,38 @@ def _same_ring(first: Any, second: Any, tolerance: NDArray[np.float64]) -> bool:
         np.all(np.abs(actual - np.roll(expected, -start, axis=0)) <= tolerance)
         for start in starts
     )
+
+
+def _same_cell(
+    actual: Polygon | MultiPolygon,
+    expected: Polygon | MultiPolygon,
+    tolerance: NDArray[np.float64],
+) -> bool:
+    """Match two cells ring by ring within ``tolerance`` on each axis."""
+    actual_normalized, expected_normalized = (
+        shapely.normalize(actual),
+        shapely.normalize(expected),
+    )
+    actual_rings = [actual_normalized.exterior, *actual_normalized.interiors]
+    expected_rings = [expected_normalized.exterior, *expected_normalized.interiors]
+    if len(actual_rings) != len(expected_rings) or not _same_ring(
+        actual_rings[0], expected_rings[0], tolerance
+    ):
+        return False
+    remaining = list(expected_rings[1:])
+    for ring in actual_rings[1:]:
+        match = next(
+            (
+                i
+                for i, candidate in enumerate(remaining)
+                if _same_ring(ring, candidate, tolerance)
+            ),
+            None,
+        )
+        if match is None:
+            return False
+        remaining.pop(match)
+    return True
 
 
 @dataclass(eq=False)
@@ -1098,63 +1135,51 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     elif isinstance(shapes, PolygonCells):
         if geometry.polygons is None or len(shapes.polygons) != len(geometry.polygons):
             raise ValueError("polygon shapes need matching clipped locator cells.")
-        clearances = [polygon.minimum_clearance for polygon in shapes.polygons]
+        stored_cells = np.asarray(shapes.polygons, dtype=object)
         coordinate_errors = [
             _polygon_coordinate_errors(polygon) for polygon in shapes.polygons
         ]
+        # A cell stored exactly as the locator gives it (every combined cell,
+        # and any cell read back unchanged) matches with no tolerance.
+        identical = shapely.equals_exact(
+            stored_cells, np.asarray(geometry.polygons, dtype=object), tolerance=0.0
+        )
+        contains_center = shapely.contains_xy(
+            stored_cells, bins.centers[:, 0], bins.centers[:, 1]
+        )
+        areas = shapely.area(stored_cells)
         for index, (actual, expected) in enumerate(
             zip(shapes.polygons, geometry.polygons, strict=True)
         ):
-            # Stored-coordinate rounding plus the arithmetic error of the cells
-            # recovered from the locator; the gap cap keeps it far below a cell.
-            tolerance = (
+            if not identical[index] and not _same_cell(
+                actual,
+                expected,
+                # Stored-coordinate rounding plus the arithmetic error of the
+                # cells recovered from the locator; the gap cap keeps it far
+                # below a cell.
                 np.minimum(
-                    coordinate_errors[index],
-                    _polygon_coordinate_errors(expected),
-                )
-                + geometry.polygon_error
-            )
-            actual_normalized, expected_normalized = (
-                shapely.normalize(actual),
-                shapely.normalize(expected),
-            )
-            actual_rings = [actual_normalized.exterior, *actual_normalized.interiors]
-            expected_rings = [
-                expected_normalized.exterior,
-                *expected_normalized.interiors,
-            ]
-            ring_tolerance = np.minimum(tolerance, gap / 4)
-            same = len(actual_rings) == len(expected_rings) and _same_ring(
-                actual_rings[0], expected_rings[0], ring_tolerance
-            )
-            remaining = list(expected_rings[1:])
-            for ring in actual_rings[1:]:
-                match = next(
-                    (
-                        i
-                        for i, candidate in enumerate(remaining)
-                        if _same_ring(ring, candidate, ring_tolerance)
-                    ),
-                    None,
-                )
-                if match is None:
-                    same = False
-                    break
-                remaining.pop(match)
-            if not same:
+                    np.minimum(
+                        coordinate_errors[index], _polygon_coordinate_errors(expected)
+                    )
+                    + geometry.polygon_error,
+                    gap / 4,
+                ),
+            ):
                 raise ValueError(f"polygon cell {index} disagrees with its locator.")
-            if not actual.contains(shapely.Point(bins.centers[index])):
+            if not contains_center[index]:
                 raise ValueError(
                     f"polygon cell {index} does not contain its bin center."
                 )
-            allowance = _polygon_area_allowance(actual)
-            if abs(actual.area - bins.sizes[index]) > allowance:
+            if areas[index] != bins.sizes[index] and abs(
+                areas[index] - bins.sizes[index]
+            ) > _polygon_area_allowance(actual, uncertainty=coordinate_errors[index]):
                 raise ValueError(
                     f"polygon cell {index} area disagrees with bins.sizes."
                 )
         if isinstance(binning.faces, KnownFaces) and not isinstance(
             geometry.leaf, CombinedLocator
         ):
+            clearances = [polygon.minimum_clearance for polygon in shapes.polygons]
             stored = binning.faces.faces
             contacts = [
                 shapes.polygons[u].boundary.intersection(shapes.polygons[v].boundary)

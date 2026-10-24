@@ -547,6 +547,33 @@ def test_rounding_allowance_still_rejects_a_moved_cell_vertex(kind):
         )
 
 
+@pytest.mark.parametrize("kind", ["grid_clipped", "combined"])
+def test_a_cell_stored_from_another_starting_vertex_is_the_same_cell(kind):
+    if kind == "combined":
+        grid = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
+        env = Environment.combine(
+            {"a": grid, "b": grid.apply_transform(_affine(offset=(5.0, 0.0)))},
+            auto_bridge=False,
+        )
+    else:
+        env = _small_cell_environment(kind)
+    binning = env._binning
+    assert isinstance(binning.shapes, PolygonCells)
+    cell = binning.shapes.polygons[0]
+    ring = np.asarray(cell.exterior.coords)[:-1]
+    restarted = Polygon(np.roll(ring, 1, axis=0))
+    assert not restarted.equals_exact(cell, tolerance=0.0)
+    stored = (restarted, *binning.shapes.polygons[1:])
+
+    rebuilt = Environment.from_bins(
+        replace(binning, shapes=PolygonCells(stored)), arena=env.arena
+    )
+
+    np.testing.assert_array_equal(rebuilt.bin_sizes, env.bin_sizes)
+
+
 def _derive_environment(parent, derivation):
     if derivation == "subset":
         return parent.subset(mask=_keep_bins(parent))
