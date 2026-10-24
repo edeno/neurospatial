@@ -23,33 +23,63 @@ from numpy.typing import NDArray
 DEFAULT_STARTING_TIME: float = 0.0
 
 
-# NWB spells units out ("meters" is pynwb's default); map them to the
-# ``Environment.units`` registry values.
-_NWB_UNIT_ALIASES = {
-    "meter": "m",
-    "meters": "m",
-    "metre": "m",
-    "metres": "m",
-    "m": "m",
-    "centimeter": "cm",
-    "centimeters": "cm",
-    "cm": "cm",
-    "millimeter": "mm",
-    "millimeters": "mm",
-    "mm": "mm",
-    "pixel": "px",
-    "pixels": "px",
-    "px": "px",
-}
-
-
 def position_units_from_series(series: Any) -> str | None:
     """Return declared position units without assuming a fallback or rescaling."""
     unit = getattr(series, "unit", None)
     if unit is None or not str(unit).strip():
         return None
+    from neurospatial._units import _UNIT_SPELLINGS
+
+    # NWB spells units out ("meters" is pynwb's default); keep a custom unit
+    # verbatim.
     declaration = str(unit)
-    return _NWB_UNIT_ALIASES.get(declaration.strip().lower(), declaration)
+    return _UNIT_SPELLINGS.get(declaration.strip().lower(), declaration)
+
+
+def position_frame_from_series(series: Any) -> str | None:
+    """Preserve a nonempty reference-frame description without interpretation."""
+    frame = getattr(series, "reference_frame", None)
+    return str(frame) if frame is not None and str(frame).strip() else None
+
+
+def merge_overlay_coordinate_metadata(
+    units: str | None,
+    frame: str | None,
+    kwargs: dict[str, Any],
+    *,
+    context: str,
+    source: str,
+) -> dict[str, str | None]:
+    """Consume overlay declarations, allowing only absent metadata to be supplied.
+
+    Known declarations cannot be erased or relabeled: equivalent unit aliases
+    are accepted, while frame descriptions must agree verbatim. Coordinates
+    are never transformed or rescaled by a metadata override.
+    """
+    from neurospatial._exceptions import _format_error
+    from neurospatial._units import same_coordinate_declaration
+
+    declarations: dict[str, str | None] = {"units": units, "frame": frame}
+    for name, known in declarations.items():
+        if name not in kwargs:
+            continue
+        requested = kwargs.pop(name)
+        # A known declaration can be restated, never erased or relabeled.
+        if known is not None and not same_coordinate_declaration(
+            name, requested, known, undeclared_matches=False
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{context} {name} {requested!r} conflicts with NWB {source} "
+                    f"{name} {known!r}.",
+                    fix="explicitly convert the source coordinates before "
+                    "constructing the overlay; metadata cannot relabel or "
+                    "rescale coordinates.",
+                )
+            )
+        if known is None:
+            declarations[name] = requested
+    return declarations
 
 
 def timestamps_from_series(series: Any) -> NDArray[np.float64]:

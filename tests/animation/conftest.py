@@ -59,7 +59,7 @@ def sample_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
     video files are read-only in tests. Use `sample_video_array` for tests
     that accept array input directly.
     """
-    import cv2
+    cv2 = pytest.importorskip("cv2")
 
     tmp_path = tmp_path_factory.mktemp("video")
     video_path = tmp_path / "sample_video.mp4"

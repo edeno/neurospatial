@@ -931,12 +931,19 @@ class TestEnvFromBoundaryWithWalls:
             c, s = np.cos(angle), np.sin(angle)
             square = np.array([(0, 0), (10, 0), (10, 10), (0, 10)]) @ [[c, s], [-s, c]]
             boundary = Region(name="arena", kind="polygon", data=shp.Polygon(square))
-            start, end = rng.uniform(-8, 18, size=(2, 2))
+            walls = {"w": shp.LineString(rng.uniform(-8, 18, size=(2, 2)))}
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                env_from_boundary_region(
-                    boundary, bin_size=1.0, walls={"w": shp.LineString([start, end])}
-                )
+                try:
+                    env_from_boundary_region(boundary, bin_size=1.0, walls=walls)
+                except ValueError as error:
+                    # A clipped wall that cuts off a corner of the arena with
+                    # no bin center behind it cannot be snapped, wherever the
+                    # corner is; splitting the bins keeps it.
+                    assert "separates no two bin centers" in str(error)
+                    env_from_boundary_region(
+                        boundary, bin_size=1.0, walls=walls, wall_fit="split"
+                    )
 
     def test_a_wall_entirely_outside_is_skipped(self):
         outside = shp.LineString([(120, 0), (120, 50)])

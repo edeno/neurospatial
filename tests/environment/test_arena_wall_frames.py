@@ -268,6 +268,20 @@ def test_wall_along_part_of_a_face_is_refused_whether_or_not_the_cells_touch(
         _publish(child, arena)
 
 
+@pytest.mark.parametrize("ulps", [-3, 0, 3])
+def test_wall_across_the_center_link_of_a_rounding_gap_is_refused(ulps):
+    """Source cells parted by rounding meet nowhere, so a wall across the line
+    between their centers is refused rather than decided by the gap."""
+    # The source centers of bins 4 and 8 are (1.5, 0.625) and (2.5, 0.625).
+    wall = LineString([(1.95, 0.6), (2.05, 0.65)])
+    child, arena = _face_grid(ulps, wall)
+    with pytest.raises(
+        ValueError,
+        match=r"'wall_0' crosses the line between the centers of bins 4 and 8",
+    ):
+        _publish(child, arena)
+
+
 def test_genuine_source_inset_does_not_snap_to_a_nearby_parent_boundary():
     matrix = _matrix(0.0)
     base = Environment.from_grid_mask(
@@ -334,6 +348,18 @@ def test_unresolved_exterior_projection_gap_refuses_source_interior_wall(
     child, arena = _rotated_clipped_grid(wall_x, y_range)
     with pytest.raises(ValueError, match=r"wall.*(?:cuts|clearance|unresolved)"):
         _publish(child, arena)
+
+
+def test_unresolved_wall_clearance_names_the_wall_and_the_fix():
+    """The refusal gives the same advice as an unresolved face."""
+    child, arena = _rotated_clipped_grid(1e-12, (1.49, 1.51))
+    with pytest.raises(ValueError) as refusal:
+        _publish(child, arena)
+    message = str(refusal.value)
+    assert "Physical wall 'wall_0' lies within" in message
+    assert "clipped after being rotated, scaled or moved" in message
+    assert "clip the environment before transforming it" in message
+    assert "recentered near the origin" in message
 
 
 def test_a_resolved_wall_stub_inside_a_bin_leaves_its_paths():

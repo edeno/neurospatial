@@ -9,17 +9,23 @@ from __future__ import annotations
 
 from neurospatial._exceptions import _format_error
 
-# Centimeters in one unit, for every accepted spelling of a metric length unit.
-_CENTIMETERS_PER_UNIT = {
-    **dict.fromkeys(["m", "meter", "meters", "metre", "metres"], 100.0),
+# Every accepted spelling of a length unit, mapped to its canonical name.
+_UNIT_SPELLINGS = {
+    **dict.fromkeys(["m", "meter", "meters", "metre", "metres"], "m"),
     **dict.fromkeys(
-        ["cm", "centimeter", "centimeters", "centimetre", "centimetres"], 1.0
+        ["cm", "centimeter", "centimeters", "centimetre", "centimetres"], "cm"
     ),
     **dict.fromkeys(
-        ["mm", "millimeter", "millimeters", "millimetre", "millimetres"], 0.1
+        ["mm", "millimeter", "millimeters", "millimetre", "millimetres"], "mm"
     ),
-    **dict.fromkeys(["um", "µm", "micrometer", "micrometers", "micrometre"], 1e-4),
+    **dict.fromkeys(
+        ["um", "µm", "micrometer", "micrometers", "micrometre", "micrometres"], "um"
+    ),
+    **dict.fromkeys(["px", "pixel", "pixels"], "px"),
 }
+
+# Centimeters in one canonical metric unit. Pixels have no conversion.
+_CENTIMETERS_PER_UNIT = {"m": 100.0, "cm": 1.0, "mm": 0.1, "um": 1e-4}
 
 
 def units_per_centimeter(units: str | None) -> float | None:
@@ -36,8 +42,52 @@ def units_per_centimeter(units: str | None) -> float | None:
         For example 100.0 for ``"mm"`` and 0.01 for ``"m"``; None for pixels,
         custom units and unset units.
     """
-    centimeters = _CENTIMETERS_PER_UNIT.get(str(units or "").lower().strip())
+    centimeters = _CENTIMETERS_PER_UNIT.get(normalize_position_units(str(units or "")))
     return None if centimeters is None else 1.0 / centimeters
+
+
+def normalize_position_units(units: str) -> str:
+    """Canonical spelling for matching spatial metadata, without conversion.
+
+    Unknown units are returned lowercased and stripped.
+    """
+    value = units.strip().lower()
+    return _UNIT_SPELLINGS.get(value, value)
+
+
+def same_coordinate_declaration(
+    name: str,
+    first: str | None,
+    second: str | None,
+    *,
+    undeclared_matches: bool,
+) -> bool:
+    """Whether two ``units`` or ``frame`` declarations describe the same coordinates.
+
+    Units are compared by canonical spelling (``"metres"`` matches ``"m"``);
+    frames verbatim. Nothing is converted.
+
+    Parameters
+    ----------
+    name : {"units", "frame"}
+        Which declaration is compared.
+    first, second : str or None
+        The two declarations; None is undeclared.
+    undeclared_matches : bool
+        What an undeclared side means. True: it takes the other side's
+        coordinates, as an overlay without units is in its environment's.
+        False: one-sided metadata cannot establish a correspondence, so only
+        two undeclared sides match.
+
+    Returns
+    -------
+    bool
+    """
+    if first is None or second is None:
+        return undeclared_matches or first is second
+    if name == "units":
+        return normalize_position_units(first) == normalize_position_units(second)
+    return first == second
 
 
 def default_speed(

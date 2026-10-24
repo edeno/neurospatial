@@ -217,15 +217,59 @@ def _wall_cut_message(
     )
 
 
-def _divides(cell: Polygon, walls: shapely.Geometry) -> bool:
-    """Whether the walls cut ``cell`` into two or more pieces.
+def _divides(
+    cell: Polygon | MultiPolygon,
+    walls: shapely.Geometry,
+    domain: Polygon | MultiPolygon | None,
+) -> bool:
+    """Whether the walls cut the part of ``cell`` inside ``domain`` apart.
 
-    A wall that only enters a cell and ends inside it does not divide it.
+    A wall that only enters a cell and ends inside it does not divide it. A
+    cell at a slanted outline sticks out past it, and a wall ending on the
+    outline divides only the part inside, so pass ``walls`` through
+    :func:`_reaching` first.
     """
     if not walls.intersects(cell):
         return False
-    pieces = shapely.ops.split(cell, walls)
-    return bool(sum(piece.area > 0 for piece in pieces.geoms) > 1)
+    if domain is not None and not domain.covers(cell):
+        cell = cell.intersection(domain)
+    parts = [
+        part
+        for part in shapely.get_parts(cell)
+        if isinstance(part, Polygon) and part.area > 0
+    ]
+    # A piece within the rounding of the part's area is a sliver from
+    # splitting along an edge the part already has, not a side of a wall.
+    pieces = sum(
+        piece.area > _polygon_area_allowance(part)
+        for part in parts
+        for piece in shapely.ops.split(part, walls).geoms
+    )
+    return bool(pieces > len(parts))
+
+
+def _reaching(
+    walls: Sequence[LineString], domain: Polygon | MultiPolygon | None
+) -> shapely.Geometry:
+    """The walls, each end within :func:`_wall_end_slack` of ``domain``'s edge
+    extended past it.
+
+    :func:`wall_inside` may have pulled such an end in from the arena's edge;
+    extending it again lets the wall divide a cell clipped to the arena.
+    """
+    if domain is None:
+        return unary_union(walls)
+    slack = _wall_end_slack(domain)
+    boundary = domain.boundary
+    reaching = []
+    for wall in walls:
+        coords = np.asarray(wall.coords, dtype=np.float64)
+        for end, previous in ((0, 1), (-1, -2)):
+            if shapely.distance(shapely.points(coords[end]), boundary) <= slack:
+                outward = coords[end] - coords[previous]
+                coords[end] += 2 * slack * outward / np.hypot.reduce(outward)
+        reaching.append(LineString(coords))
+    return unary_union(reaching)
 
 
 def fit_walls(
@@ -234,21 +278,25 @@ def fit_walls(
     """Fit the bins and walls together before publication.
 
     ``"split"`` cuts each cell a wall divides into one exact polygon cell per
-    side, so the walls stay where they were measured. ``"snap"`` keeps the
-    cells and moves each wall onto the cell edges that separate the bins it
-    divides, warning how far it moved. Bins that no wall divides are
-    returned unchanged either way.
+    side, so the walls stay where they were measured. Exact polygon cells
+    cover only the arena, so every cell is also clipped to the arena outline,
+    as :meth:`Environment.clip` does; this changes only cells that stick out
+    past a slanted or curved outline. ``"snap"`` keeps the cells and moves
+    each wall onto the cell edges that separate the bins it divides, warning
+    how far it moved. Otherwise, bins that no wall divides are returned
+    unchanged.
     """
     if not arena.walls:
         return binning, arena
     cells = materialize_cells(binning)
-    walls = unary_union(arena.walls)
-    if not any(_divides(cell, walls) for cell in cells):
+    domain = arena.polygonal_domain()
+    walls = _reaching(arena.walls, domain)
+    if not any(_divides(cell, walls, domain) for cell in cells):
         return binning, arena
     if mode == "split":
         from neurospatial.geometry._polygon import split_binning
 
-        return split_binning(binning, arena.walls)[0], arena
+        return split_binning(binning, (walls,), domain=domain)[0], arena
     if not isinstance(arena, OpenArena):
         raise ValueError(
             _format_error(
@@ -296,23 +344,35 @@ def fit_walls(
     )
 
 
+def _wall_end_slack(polygon: Polygon | MultiPolygon) -> float:
+    """How far :func:`wall_inside` may pull a wall end in from ``polygon``'s edge.
+
+    A millionth of the polygon's size.
+    """
+    x0, y0, x1, y1 = polygon.bounds
+    return 1e-6 * float(max(x1 - x0, y1 - y0))
+
+
 def wall_inside(piece: LineString, polygon: Polygon) -> LineString | None:
     """``piece``, shortened at its ends if needed so that ``polygon`` covers it.
 
     A wall clipped at a slanted edge ends at a computed intersection point that
     can fall a rounding error outside the polygon, which ``OpenArena`` then
-    refuses. Pull the ends in along the wall, by at most a millionth of the
-    polygon's size, until the arena's own containment test accepts the piece;
-    None if it never does (a piece lying along a slanted edge).
+    refuses. Pull each end that lies outside in along the wall, by at most
+    :func:`_wall_end_slack`, until the arena's own containment test accepts the
+    piece; an end already inside stays where it is. None if the piece is never
+    accepted (a piece lying along a slanted edge).
     """
     if polygon.covers(piece):
         return piece
-    x0, y0, x1, y1 = polygon.bounds
-    scale = max(x1 - x0, y1 - y0)
-    for step in scale * np.array([1e-12, 1e-10, 1e-8, 1e-6]):
-        if piece.length <= 2 * step:
+    ends = shapely.points(np.asarray(piece.coords)[[0, -1]])
+    outside = ~shapely.covers(polygon, ends)
+    slack = _wall_end_slack(polygon)
+    for step in slack * np.array([1e-6, 1e-4, 1e-2, 1.0]):
+        start, stop = step * outside
+        if piece.length <= start + stop:
             break
-        shorter = shapely.ops.substring(piece, step, piece.length - step)
+        shorter = shapely.ops.substring(piece, start, piece.length - stop)
         if isinstance(shorter, LineString) and polygon.covers(shorter):
             return shorter
     return None
@@ -334,12 +394,17 @@ def clip_wall(wall: LineString, polygon: Polygon) -> list[LineString]:
 
 
 def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.bool_]:
-    """Which side of ``wall`` each point lies on, by its nearest wall segment.
+    """Which side of ``wall`` each point lies on, by its nearest wall point.
 
     True is the left of the wall's direction; a point on the wall counts as
-    left, so a wall through bin centers puts those bins on one side.
+    left, so a wall through bin centers puts those bins on one side. A point
+    nearest a bend of the wall lies in the wedge outside the bend, and is
+    sided by the bend's bisecting normal (the sum of the unit left normals of
+    the two segments meeting there); the side of either segment's line alone
+    is wrong there for bends sharper than a right angle. Beyond the wall's
+    ends, the end segment's line decides.
     """
-    coords = np.asarray(wall.coords)
+    coords = np.asarray(wall.coords, dtype=np.float64)
     starts, ends = coords[:-1], coords[1:]
     direction = ends - starts  # (n_segments, 2)
     offset = points[:, None, :] - starts[None, :, :]  # (n_points, n_segments, 2)
@@ -356,6 +421,16 @@ def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.boo
         direction[segment, 0] * offset[rows, segment, 1]
         - direction[segment, 1] * offset[rows, segment, 0]
     )
+    # The interior vertex nearest each point, if its nearest wall point is one.
+    t = along[rows, segment]
+    vertex = np.where(t == 0.0, segment, np.where(t == 1.0, segment + 1, -1))
+    at_bend = (vertex > 0) & (vertex < len(coords) - 1)
+    if np.any(at_bend):
+        unit = direction / np.hypot.reduce(direction, axis=1)[:, None]
+        left_normal = np.stack((-unit[:, 1], unit[:, 0]), axis=1)
+        bend = vertex[at_bend]
+        bisector = left_normal[bend - 1] + left_normal[bend]
+        cross[at_bend] = np.einsum("pk,pk->p", points[at_bend] - coords[bend], bisector)
     return np.asarray(cross >= 0.0)
 
 
@@ -391,8 +466,10 @@ def _snapped_walls(
                     f"wall_fit='snap' cannot place wall {name!r} "
                     f"{list(wall.coords)} on bin edges: it separates no two bin "
                     "centers.",
-                    why="Why: the wall is shorter than a bin, so the nearest bin "
-                    "edges would remove it.",
+                    why="Why: every bin center lies on one side of it (it is "
+                    "shorter than a bin, or cuts off a part of the arena "
+                    "narrower than a bin), so the nearest bin edges would "
+                    "remove it.",
                     fix="use wall_fit='split', or a smaller bin_size",
                 )
             )
@@ -411,9 +488,10 @@ def _wall_geometry(
     Sequence[Polygon | MultiPolygon],
     Sequence[LineString],
     NDArray[np.float64],
+    Polygon | MultiPolygon | None,
     NDArray[np.float64] | None,
 ]:
-    """Cells, wall segments and centers in the frame walls are checked in.
+    """Cells, wall segments, centers and arena domain in the frame walls are checked in.
 
     The last value is None for the published cells and walls. For a stored
     source frame recovered through transforms, it bounds how far each cell's
@@ -421,11 +499,18 @@ def _wall_geometry(
     """
     frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
     if frame is None:
-        return materialize_cells(binning), arena.walls, binning.bins.centers, None
+        return (
+            materialize_cells(binning),
+            arena.walls,
+            binning.bins.centers,
+            arena.polygonal_domain(),
+            None,
+        )
     # Shared snapshots avoid independently rounded collinear vertices.
     # Retained source-frame cells preserve current clipping and ownership.
-    cells, segments, centers, _, _, errors = frame
-    return cells, segments, centers, errors
+    cells, segments, centers, _, frames, errors = frame
+    # The innermost transformed arena wraps the arena the walls belong to.
+    return cells, segments, centers, frames[-1].base.polygonal_domain(), errors
 
 
 def _face_band(
@@ -448,10 +533,13 @@ def _face_cover(
     through one long side and leaves through the other crosses the face at a
     single point, at any angle, and runs along none of it. Any other piece
     that extends more than ``width`` along the strip could lie on the face.
-    Returns ``"whole"`` when such pieces cover the strip's length to within
-    ``width`` at each end, ``"part"`` when they cover less, and ``"none"``
-    when there are none, with the index of the first wall that runs along
-    (None when none does).
+    Returns ``"whole"`` when such pieces leave at most ``2 * width`` of the
+    strip's length uncovered in total, ``"part"`` when they leave more, and
+    ``"none"`` when there are none, with the index of the first wall that runs
+    along (None when none does). The uncovered length may lie at the strip's
+    ends, which are each uncertain by ``width``, or between pieces: a gap
+    that small is rounding (two walls meant to meet), not an opening an
+    animal could pass, and the exact face is known no better than that.
     """
     outline = shapely.get_coordinates(band)
     center = outline.mean(axis=0)
@@ -540,19 +628,19 @@ def _uncertain_face(
     errors: NDArray[np.float64],
     pair: tuple[int, int],
     contact: shapely.Geometry,
-) -> Literal["closed", "open", "by_contact"]:
+) -> Literal["closed", "open"]:
     """Decide a published face whose source-frame cells are only approximate.
 
     The face lies somewhere in the strip the two cells' error bounds allow.
-    Returns ``"closed"`` when walls run along the whole strip, ``"open"`` when
-    no wall runs along it and none crosses the line between the centers
-    through a rounded point contact, and ``"by_contact"`` to leave the pair to
-    the rule for exact cells.
+    Returns ``"closed"`` when walls run along the whole strip and ``"open"``
+    when no wall runs along it: cells that meet only at a rounded point are
+    not closed through it.
 
     Raises
     ------
     ValueError
-        If walls run along only part of the strip.
+        If walls run along only part of the strip, or if the source cells meet
+        only at a point and a wall crosses the line between their centers.
     """
     u, v = pair
     bound = errors[u] + errors[v]
@@ -563,13 +651,39 @@ def _uncertain_face(
         raise ValueError(_unresolved_face_message(arena, wall, pair, bound, "along"))
     if cover == "whole":
         return "closed"
-    # No wall runs along the face. Cells that meet only at a rounded point
-    # are not closed through it; only a wall across the line between the
-    # centers is left to the rule for exact cells.
     link = LineString(centers[[u, v]])
-    if contact.length > 0 or not link.crosses(walls):
-        return "open"
-    return "by_contact"
+    if contact.length == 0 and link.crosses(walls):
+        crossing = next(
+            number
+            for number, segment in enumerate(wall_segments)
+            if segment.intersects(link)
+        )
+        raise ValueError(
+            _unresolved_face_message(arena, crossing, pair, bound, "crosses")
+        )
+    return "open"
+
+
+def _open_length(
+    face: shapely.Geometry,
+    walls: shapely.Geometry,
+    domain: Polygon | MultiPolygon | None,
+) -> float:
+    """Length of ``face`` that no wall covers.
+
+    A gap no longer than :func:`_wall_end_slack` against the arena's edge is
+    where :func:`wall_inside` pulled a clipped wall end in to keep it inside
+    the arena; it counts as covered.
+    """
+    gaps = shapely.get_parts(face.difference(walls))
+    gaps = gaps[shapely.length(gaps) > 0]
+    if domain is not None and len(gaps):
+        slack = _wall_end_slack(domain)
+        rounding = (shapely.length(gaps) <= slack) & (
+            shapely.distance(gaps, domain.boundary) <= slack
+        )
+        gaps = gaps[~rounding]
+    return float(np.sum(shapely.length(gaps)))
 
 
 def _closing_walls(
@@ -577,17 +691,31 @@ def _closing_walls(
     cells: Sequence[Polygon | MultiPolygon],
     segments: Sequence[LineString],
     centers: NDArray[np.float64],
+    errors: NDArray[np.float64] | None,
 ) -> NDArray[np.intp]:
-    """Index of the wall closing each closed pair; see ``BinConnections.closed_by``."""
+    """Index of the wall closing each closed pair; see ``BinConnections.closed_by``.
+
+    Follows the rules :func:`apply_walls` closes pairs by: the wall covering
+    most of the edge the cells share; for cells that meet only at a corner,
+    the first wall the corner touches, else the first wall the line between
+    their centers crosses; and for cells known only to within ``errors``,
+    the wall running furthest along the strip where their face can lie.
+    """
+    walls = np.asarray(segments, dtype=object)
     closed_by = np.full(len(connections.all_pairs), -1, dtype=np.intp)
     for row in np.flatnonzero(~connections.is_open):
         u, v = connections.all_pairs[row]
         contact = cells[u].boundary.intersection(cells[v].boundary)
         if contact.length > 0:
-            cover = [contact.intersection(wall).length for wall in segments]
+            cover = shapely.length(shapely.intersection(contact, walls))
         else:
             link = LineString(centers[[u, v]])
-            cover = [float(link.intersects(wall)) for wall in segments]
+            cover = 2.0 * shapely.intersects(contact, walls) + shapely.crosses(
+                link, walls
+            )
+        if not np.any(cover > 0) and errors is not None and errors[u] + errors[v] > 0:
+            band = _face_band(cells[u], cells[v], errors[u], errors[v])
+            cover = shapely.length(shapely.intersection(walls, band))
         best = int(np.argmax(cover))
         if cover[best] > 0:
             closed_by[row] = best
@@ -595,12 +723,16 @@ def _closing_walls(
 
 
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
-    """Close the neighbor pairs whose shared edge a wall blocks completely.
+    """Close the neighbor pairs whose shared edge walls block completely.
 
-    A closed pair stays listed in ``binning.connections`` but leaves paths and
-    finite-volume faces. A partly covered edge stays open with the open share
-    of its face. Pairs already closed stay closed, and every closed pair
-    records the wall that closes it (``connections.closed_by``).
+    Only the part of a shared edge inside the arena counts: a bin at a slanted
+    outline sticks out past it, where no wall can be. Cells that meet only at
+    a corner close when the corner touches a wall or the line between their
+    centers crosses one. A closed pair stays listed in ``binning.connections``
+    but leaves paths and finite-volume faces. A partly covered edge stays open
+    with the open share of its face. Pairs already closed stay closed. Every
+    closed pair a wall of ``arena`` would close records that wall in
+    ``connections.closed_by``; a pair closed for another reason records -1.
     """
     if _composition_arena(binning.locator) is not None:
         # Each owned child already carries its certified wall geometry. Rechecking
@@ -615,13 +747,14 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         unattributed = np.full(len(links.closed_by), -1, dtype=np.intp)
         return replace(binning, connections=replace(links, closed_by=unattributed))
 
-    cells, wall_segments, centers, errors = _wall_geometry(binning, arena)
+    cells, wall_segments, centers, domain, errors = _wall_geometry(binning, arena)
     walls = unary_union(wall_segments)
     if errors is not None:
         # Cells whose uncertain boundary can reach a wall.
         near_wall = shapely.dwithin(np.asarray(cells, dtype=object), walls, errors)
+    reaching = _reaching(wall_segments, domain)
     for index, cell in enumerate(cells):
-        if _divides(cell, walls):
+        if _divides(cell, reaching, domain):
             raise ValueError(
                 _wall_cut_message(binning, arena, wall_segments, cell, index)
             )
@@ -662,15 +795,16 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
                 (int(u), int(v)),
                 contact,
             )
-            if decision == "closed":
-                keep[index] = False
-                continue
-            if decision == "open":
-                continue
+            keep[index] = decision == "open"
+            continue
         blocked = contact.intersection(walls)
         if contact.length > 0 and blocked.length > 0:
-            if blocked.length < contact.length:
-                open_share[index] = 1.0 - blocked.length / contact.length
+            # Only the part of the edge inside the arena is a face an animal
+            # can cross: a bin at a slanted outline sticks out past it.
+            face = contact if domain is None else contact.intersection(domain)
+            opening = _open_length(face, walls, domain)
+            if opening > 0:
+                open_share[index] = opening / face.length
             else:
                 keep[index] = False
         elif contact.length == 0:
@@ -694,7 +828,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     connections = links.closed(keep)
     connections = replace(
         connections,
-        closed_by=_closing_walls(connections, cells, wall_segments, centers),
+        closed_by=_closing_walls(connections, cells, wall_segments, centers, errors),
     )
     if np.all(keep) and np.all(open_share == 1.0):
         return replace(binning, connections=connections)

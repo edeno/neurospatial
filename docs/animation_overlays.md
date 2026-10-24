@@ -6,31 +6,29 @@ Visualize animal behavior alongside spatial field dynamics using flexible overla
 
 ```python
 from neurospatial import Environment
-from neurospatial.animation import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
-from neurospatial.encoding import compute_spatial_rates
-import numpy as np
+from neurospatial.animation import PositionOverlay
+from neurospatial.decoding import decode_session
 
-# Create environment and batch-encode all cells at once.
-# spike_times is a list of per-cell spike-time arrays (length 100 here).
-env = Environment.from_samples(positions, bin_size=2.5)
-fields = compute_spatial_rates(env, spike_times, times, positions).firing_rates  # (100, n_bins)
-frame_times = np.arange(len(fields), dtype=float) / 30.0  # one timestamp per field
+# positions: (n_samples, 2) tracking in cm; times: (n_samples,) seconds;
+# spike_times: one array of spike times per unit.
+env = Environment.from_samples(positions, bin_size=2.5, units="cm")
+result = decode_session(env, spike_times, times, positions, dt=0.025)
 
-# Position overlay with trail
+# The animal's position on its own clock, with a short trail
 position_overlay = PositionOverlay(
-    positions=trajectory,  # shape: (n_samples, 2)
-    times=timestamps,  # Optional: align to fields
-    color="red",
+    positions=positions,
+    times=times,
+    color="magenta",
     size=10.0,
-    trail_length=5  # Show last 5 frames
+    trail_length=5,
 )
 
-# Animate with overlay
+# One posterior row per 25 ms decoding bin, with the animal drawn over it
 env.animate_fields(
-    fields,
-    frame_times=frame_times,
+    result.posterior,
+    frame_times=result.times,
     overlays=[position_overlay],
-    backend="napari",  # or "video", "html", "widget"
+    backend="napari",  # or "widget", "fastplotlib", or save_path="clip.mp4"
 )
 ```
 
@@ -48,13 +46,15 @@ The overlay system enables rich behavioral visualizations by combining spatial f
 
 - Temporal alignment: Overlays automatically sync to field frames
 - Mixed sampling rates: Interpolation handles different data frequencies
-- Backend flexibility: Full support in Napari/Video/Widget, partial in HTML
+- Every backend draws every overlay type; a combination an environment
+  cannot show is refused before anything is drawn (see
+  [Backend Capabilities](#backend-capabilities))
 - Scientifically correct: NaN extrapolation, validation, actionable errors
 
 **Related resources:**
 
-- [Example Notebook](examples/08_visualization.ipynb) - Hands-on tutorial with 7 comprehensive examples
-- [Field Animation Guide](examples/08_visualization.ipynb) - Core animation features without overlays
+- [Example Notebook](examples/08_visualization.ipynb) - Hands-on tutorial with overlays, an HTML player and calibrated video
+- [Field Animation Guide](user-guide/animation.md) - Viewers, timing, color limits and exports
 
 ## Overlay Types
 
@@ -89,7 +89,8 @@ overlay = PositionOverlay(
 - `positions`: NDArray of shape `(n_samples, n_dims)` with coordinates
 - `times`: Optional timestamps for temporal alignment (default: assumes 1:1 with frames)
 - `color`: Matplotlib/Napari color name (default: `"red"`)
-- `size`: Marker size in points (default: `10.0`)
+- `size`: Marker diameter in logical screen pixels (default: `10.0`), independent
+  of environment units and camera zoom.
 - `trail_length`: Number of frames to show as trail (default: `None` = no trail)
 
 ### Bodypart Overlay
@@ -193,7 +194,7 @@ calibration = calibrate_video(
     env,
     "session.mp4",
     landmarks_px=arena_corners_px,    # Video pixel coordinates
-    landmarks_env=arena_corners_env,  # Environment cm coordinates
+    landmarks_env=arena_corners_env,  # Coordinates in env.units
 )
 
 # Create video overlay
@@ -230,7 +231,7 @@ env.animate_fields(
 | Balanced view | `alpha=0.5, z_order="above"` | Equal video/field visibility (default) |
 | Field dominant | `alpha=0.3, z_order="above"` | Field shows through video |
 | Video dominant | `alpha=0.7, z_order="above"` | Video shows through field |
-| Video as background | `z_order="below"` | Field drawn over the video; in the fastplotlib backend, see-through where its values are low (a posterior over the camera's view); elsewhere only where the field is transparent |
+| Video as background | `z_order="below"` | Field drawn over the video, see-through where its values are low (a posterior over the camera's view): opacity rises from clear at `vmin` to opaque at a typical frame's peak |
 
 **Requirements:**
 
@@ -270,8 +271,10 @@ arrow keys, shows its rate map under the field (on a track, rate against
 position along it) and marks the unit: its spikes highlighted and its row
 striped. Escape shows none. So you can check where each cell of a sequence
 has its field.
-Only `backend="fastplotlib"` draws rasters; the other backends skip them with
-a warning.
+The hover labels, clicking a row and the arrow keys are fastplotlib controls.
+The napari view, the notebook widget and exported files draw the same raster
+as a panel below the field, with each row labeled by its unit and a cursor at
+the current time.
 
 ### Epoch Overlay
 
@@ -298,9 +301,11 @@ For non-local or replay periods, the lab's decoding figures shade red:
 `EpochOverlay(nonlocal_times, label="non-local", color="red", alpha=0.2)`.
 
 `epochs` takes a `(start, stop)` pair, an `(n, 2)` array or a pynapple
-`IntervalSet`; overlapping or touching epochs are merged. Only
-`backend="fastplotlib"` draws epochs; the other backends skip them with a
-warning.
+`IntervalSet`; overlapping or touching epochs are merged. The shading on
+every time panel, the status line and the N keys are fastplotlib's. The
+napari view, the notebook widget and exported files draw each `EpochOverlay`
+as a labeled row of shaded intervals in a panel against time, with a cursor at
+the current time.
 
 ## Multi-Animal Support
 
@@ -427,39 +432,22 @@ env.animate_fields(
 
 ## Backend Capabilities
 
-Not all backends support all overlay types.
+Every backend (napari, the notebook widget, fastplotlib, and video and HTML
+files) draws every overlay type and regions. What an environment can show
+limits a few combinations, and each is refused before any viewer opens or
+any frame is written, with a message naming the alternative:
 
-| Backend | Position | Bodypart | HeadDirection | Video | Regions |
-|---------|----------|----------|---------------|-------|---------|
-| **Napari** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
-| **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Fastplotlib** | ✓ | ✓ | ✓ | ✓ | ✓ |
+- **1-D environments (tracks):** no regions, `HeadDirectionOverlay` or
+  `VideoOverlay`; show a heading as a `TimeSeriesOverlay` instead. Napari
+  needs 2-D or 3-D coordinates, and fastplotlib also refuses
+  `BodypartOverlay` and `ObjectVectorOverlay` on a track.
+- **3-D environments:** headings must be 3-D unit vectors; only point regions
+  are drawn; no `VideoOverlay` or scale bar.
+- **Fastplotlib:** no scale bar.
+- **Napari:** no polygon regions with holes.
 
-Spike rasters and epochs are drawn only by the fastplotlib backend.
-
-**HTML backend limitations:**
-
-- Supports **positions** and **regions** only
-- **Bodypart, head direction, and video overlays are skipped with warnings**
-- Emits warnings for unsupported overlays before rendering
-- Animation proceeds with only supported overlays rendered
-- Suggestion: Use video or napari backend for full overlay features
-
-```python
-# HTML backend warns for unsupported overlays
-env.animate_fields(
-    fields,
-    frame_times=frame_times,
-    overlays=[bodypart_overlay, position_overlay],  # Mixed overlays
-    backend="html"
-)
-# UserWarning: HTML backend supports positions and regions only.
-#              Bodypart and head direction overlays will not be rendered.
-#              Consider using 'video' or 'napari' backend for full overlay support.
-# → Animation proceeds with only position_overlay rendered
-```
+See [What each environment can show](user-guide/animation.md#what-each-environment-can-show)
+in the animation guide.
 
 ## Video Overlay Coordinate Systems
 
@@ -482,8 +470,19 @@ Three coordinate systems are involved:
 The calibration transform handles the coordinate conversion, including:
 
 1. **Y-axis flip**: Video origin (top-left) → Environment origin (bottom-left)
-2. **Scale**: Pixels → centimeters
+2. **Scale**: Pixels → centimeters → environment metric units
 3. **Rotation/Translation**: If camera and arena are not perfectly aligned
+
+`VideoCalibration` always stores a pixel-to-centimeter transform. Overlay
+preparation converts it to `env.units`, so the same calibration can be used
+with centimeter, meter or millimeter environments. An environment without
+declared units follows the historical centimeter convention. Calibrated video
+rejects unknown units and pixel units; uncalibrated video can still be fitted
+to environment bounds.
+
+Landmarks passed as `landmarks_env` use the environment's units. The
+`cm_per_px` parameter and scale-bar length always use centimeters, regardless
+of environment units.
 
 ### Calibration Methods
 
@@ -522,7 +521,7 @@ corners_px = np.array([
     [50, 430],   # Bottom-left
 ])
 
-# Same corners in environment coordinates (x_cm, y_cm)
+# Same corners in environment coordinates (this example uses env.units="cm")
 corners_env = np.array([
     [0, 80],     # Environment top-left (high Y)
     [100, 80],   # Environment top-right
@@ -610,7 +609,7 @@ from neurospatial.animation import (
     HeadDirectionOverlay,
     Skeleton,
 )
-from neurospatial.encoding import compute_spatial_rates
+from neurospatial.decoding import decode_session
 import numpy as np
 
 # Load data
@@ -618,7 +617,7 @@ positions = np.load("positions.npy")  # Animal position data
 pose_data = np.load("pose.npy")  # DLC/SLEAP output
 head_angles = np.load("angles.npy")  # Computed head direction
 timestamps = np.load("times.npy")  # Timestamps in seconds
-spike_times = ...  # list of per-cell spike-time arrays (length 50 here)
+spike_times = ...  # list of per-cell spike-time arrays
 
 # Create environment
 env = Environment.from_samples(positions, bin_size=2.5, units="cm")
@@ -626,8 +625,8 @@ region_builder = Regions(env.regions.values())
 region_builder.add("goal", point=np.array([80.0, 80.0]))
 env = env.with_regions(region_builder)
 
-# Batch-encode all cells at once (e.g., place fields for the population)
-fields = compute_spatial_rates(env, spike_times, timestamps, positions).firing_rates  # (50, n_bins)
+# Decoded position over time: one posterior row per 25 ms bin
+result = decode_session(env, spike_times, timestamps, positions, dt=0.025)
 
 # Create overlays
 position_overlay = PositionOverlay(
@@ -672,21 +671,19 @@ direction_overlay = HeadDirectionOverlay(
     length=10.0
 )
 
-# Frame times (50 frames at 2 Hz)
-frame_times = np.linspace(timestamps[0], timestamps[-1], 50)
-
-# Animate with all overlays
+# Animate with all overlays; each overlay keeps its own clock
 env.animate_fields(
-    fields,
+    result.posterior,
+    frame_times=result.times,
     overlays=[position_overlay, pose_overlay, direction_overlay],
-    frame_times=frame_times,
     show_regions=["goal"],
     region_alpha=0.4,
-    backend="video",
+    colorbar_label="Probability",
     save_path="behavior_analysis.mp4",
-    frame_labels=[f"{t:.1f} s" for t in frame_times],
 )
 ```
+
+Each frame of the video is labeled with its recording time.
 
 ## Common Errors and Solutions
 
@@ -866,38 +863,34 @@ print(f"Overlay range: x=[{overlay.positions[:, 0].min()}, {overlay.positions[:,
 trajectory_cm = trajectory_meters * 100
 ```
 
-### Pickle-ability Error (Parallel Rendering)
+### Pickle-ability Error (Parallel Export)
 
 **Error:**
-```
-ValueError: WHAT: overlay_data is not pickle-able for parallel rendering.
-WHY: Parallel rendering (n_workers=4) requires serializing overlay_data to send to worker processes.
-Fix: Choose one of these solutions:
-  1. Remove unpickleable objects (lambdas, closures, local functions)
-  2. Ensure overlay_data uses only standard types (numpy arrays, strings, numbers)
-  3. Use n_workers=1 for serial rendering (no pickling required)
+```text
+ValueError: Parallel export (n_workers=4) sends the scene to worker processes,
+but Video overlay 0 cannot be pickled (...). Pass n_workers=1 to
+render in this process, or replace what cannot be pickled with plain data:
+NumPy arrays, numbers, strings, and file paths instead of open readers, locks,
+lambdas or local functions.
 ```
 
-Parallel rendering pickles the overlays and the environment to send them to
-worker processes. Only objects you supplied can fail: a lambda or local
-function, an open file or video reader, a lock. The environment's cached
-analyses are never pickled, so clearing them does not help.
+With `n_workers` above 1, each worker process rebuilds the scene from the
+environment, the fields and the overlay observations the scene prepared, so
+these must be picklable; the overlay objects themselves are not sent. Only
+objects you supplied can fail: a field source or custom video reader holding a
+lambda, an open file or a lock. The environment's cached analyses are never sent, and memory-mapped
+fields are reopened from their files rather than copied.
 
 **Solution:**
 ```python
-import pickle
-
-pickle.dumps(overlay)  # raises on the object that cannot be pickled
-
-# Replace that object with plain data (arrays, numbers, strings), or render
-# serially, which pickles nothing:
+# Replace that object with plain data (arrays, numbers, strings, file paths),
+# or render in this process:
 env.animate_fields(
     fields,
     frame_times=frame_times,
     overlays=[overlay],
-    backend="video",
     n_workers=1,
-    save_path="output.mp4"
+    save_path="output.mp4",
 )
 ```
 
@@ -907,9 +900,9 @@ env.animate_fields(
 
 **Possible causes:**
 
-1. **Backend doesn't support overlay type**
-   - Check [Backend Capabilities](#backend-capabilities) table
-   - HTML backend only supports positions and regions
+1. **The overlay is outside the shown time**
+   - An overlay draws nothing before its first sample, after its last, or
+     across a gap longer than its `max_gap`
 
 2. **Temporal misalignment**
    - Overlay time range doesn't overlap with frame times
@@ -933,34 +926,34 @@ print(f"NaN count: {np.isnan(overlay.positions).sum()}")
 
 **Possible causes:**
 
-1. **Too many overlays or large datasets**
-   - Use Napari backend for >10K frames (lazy loading)
-   - Reduce trail_length for position overlays
+1. **The notebook widget draws every frame with Matplotlib**
+   - Use `backend="napari"` or `backend="fastplotlib"` for long recordings
+   - Reduce `trail_length` for position overlays
 
-2. **Serial rendering (n_workers=1)**
-   - Enable parallel rendering for video backend
-   - Keep overlays to plain data (arrays, numbers, strings) so they can be
-     sent to worker processes
+2. **A long file export renders in one process**
+   - Pass `n_workers=None` to render frames on every CPU
+   - Keep overlays to plain data (arrays, numbers, strings, file paths) so
+     they can be sent to worker processes
 
 3. **High-resolution rendering**
-   - Reduce dpi for video backend (default: 100)
-   - Subsample fields or lower `speed` for fewer rendered frames per second
+   - Reduce `dpi` (default: 100)
+   - Export a shorter window with `Animation.export(time_range=...)`, or
+     subsample the fields
 
 **Optimize:**
 ```python
-# Parallel video rendering
-env.animate_fields(
-    fields,
-    frame_times=frame_times,
-    overlays=[overlay],
-    backend="video",
-    n_workers=4,  # Use 4 cores
-    dpi=80,  # Lower resolution
-    speed=0.8,  # Slower playback
-    save_path="output.mp4"
-)
+# Parallel export at a lower resolution
+if __name__ == "__main__":  # required for worker processes on macOS and Windows
+    env.animate_fields(
+        fields,
+        frame_times=frame_times,
+        overlays=[overlay],
+        n_workers=None,  # every CPU
+        dpi=80,
+        save_path="output.mp4",
+    )
 
-# Or use Napari for interactive exploration
+# Or explore interactively
 env.animate_fields(fields, frame_times=frame_times, overlays=[overlay], backend="napari")
 ```
 
@@ -1048,25 +1041,15 @@ env.animate_fields(
 )
 ```
 
-### Caches and Parallel Rendering
+### Caches and Parallel Export
 
-Pickling an environment for worker processes never includes its cached
-analyses, so parallel rendering does not need a cleared cache. Clearing only
+Worker processes for `n_workers` never receive the environment's cached
+analyses, so a parallel export does not need a cleared cache. Clearing only
 frees the memory held by kernels and eigenbases in the main process:
 
 ```python
 # Optional: release every cached analysis (takes no arguments)
 env.clear_cache()
-
-# Parallel rendering
-env.animate_fields(
-    fields,
-    frame_times=frame_times,
-    overlays=[overlay],
-    backend="video",
-    n_workers=4,
-    save_path="output.mp4"
-)
 ```
 
 ## API Reference
@@ -1148,28 +1131,40 @@ class VideoCalibration:
 ```python
 def animate_fields(
     self,
-    fields: NDArray[np.float64],
+    fields: NDArray[np.float64] | Sequence[NDArray[np.float64]] | Mapping[str, Any],
     *,
     frame_times: NDArray[np.float64],
-    backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
-    save_path: str | None = None,
+    backend: Literal["auto", "napari", "video", "html", "widget", "fastplotlib"] = "auto",
+    save_path: str | Path | None = None,
+    overwrite: bool = False,
+    overlays: list[OverlayProtocol] | None = None,
     speed: float = 1.0,
-    overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay] | None = None,
+    max_playback_fps: int = 60,
+    max_gap: float | None = 0.5,
+    cmap: str = "viridis",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    title: str | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
-    # ... other parameters (cmap, vmin, vmax, title, etc.)
-) -> Any:
-    """Animate spatial fields with optional behavior overlays."""
+    scale_bar: bool | ScaleBarConfig | None = None,
+    **kwargs: Any,  # e.g. colorbar_label, layer_names, track, dpi, n_workers
+) -> AnimationView | Path:
+    """Animate spatial fields on their recording clock."""
 ```
 
-**New parameters:**
-
-- `overlays`: List of overlay instances to render
-- `frame_times`: Explicit frame timestamps for temporal alignment (required)
+- `overlays`: List of overlay instances, each on its own clock
+- `frame_times`: Time of each field row, in seconds (required)
+- `max_gap`: Longest interval over which a field row is held; longer gaps
+  show as missing
 - `show_regions`: Display named regions (bool for all, list for specific)
 - `region_alpha`: Transparency for region rendering (0-1)
 
+It returns an `AnimationView` for napari, the notebook widget and
+fastplotlib, or the `Path` of the written file. See the
+[animation guide](user-guide/animation.md) for every option.
+
 ## See Also
 
-- [Field Animation](examples/08_visualization.ipynb) - Core animation features
+- [Field Animation](user-guide/animation.md) - Viewers, timing, color limits and exports
 - [Regions](examples/01_getting_started.ipynb) - Defining spatial zones

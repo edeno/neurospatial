@@ -30,8 +30,8 @@
 # **Prerequisites**: [Spatial rate maps](02_spatial_rate_maps.ipynb).
 #
 # The default run shows figures and an HTML animation. The desktop viewer,
-# notebook widget, and video export are switched off below. Reading a video
-# file requires `neurospatial[video]`; desktop and widget viewers use
+# notebook widget, and video export are switched off below. Reading or writing
+# a video file requires `neurospatial[video]`; desktop and widget viewers use
 # `neurospatial[animation]`.
 
 # %%
@@ -174,9 +174,7 @@ html_path = env.animate_fields(
     backend="html",
     save_path=str(output_dir / "spatial_scene.html"),
     embed=EMBED_HTML,
-    n_workers=2,
     dpi=60,
-    frame_labels=[f"t = {time:.3f} s" for time in frame_times],
     **view_settings,
 )
 print(f"Animation saved: {html_path} ({html_path.stat().st_size / 1e6:.2f} MB)")
@@ -190,12 +188,13 @@ if "get_ipython" in globals() and EMBED_HTML:
 # move together. Event markers should appear at the expected times and places.
 # These checks can reveal a clock offset or swapped coordinates in a recording.
 #
-# `EMBED_HTML=True` keeps all frames inside one HTML file. With False, share
-# the HTML file together with its separate PNG-frame directory. Both choices
-# support position, body parts, head direction, events, and regions. HTML does
-# not display video or additional time-series panels; requesting those produces
-# a warning. For long recordings, select a short period and select its maps,
-# timestamps, and tracking together before export.
+# Each frame is labeled with its recording time. `EMBED_HTML=True` keeps all
+# frames inside one HTML file. With False, share the HTML file together with
+# its separate PNG-frame directory. The player draws the same overlays as the
+# interactive viewers, including video, signals, spike rasters, and epochs.
+# For long recordings, build an `Animation` and export a short window with
+# `scene.export(path, time_range=(start, stop))`; `n_workers=None` renders the
+# frames of a long export on every CPU.
 #
 # ## 4. Put video and tracking in the same arena coordinates
 #
@@ -282,8 +281,10 @@ plt.show()
 #
 # To use this cell, change the relevant flag near the imports and rerun it.
 # Napari needs a working desktop and the animation extra. The widget needs
-# Jupyter and ipywidgets. MP4 export needs an `ffmpeg` executable. These options
-# stay off in the default run.
+# Jupyter and ipywidgets. MP4 export needs the video extra, which installs its
+# own ffmpeg. These options stay off in the default run. Each viewer returns a
+# view: `view.native` is the napari viewer or notebook widget, and
+# `view.close()` releases the video it reads.
 #
 # `VideoOverlay` accepts an image array or reads frames from a video file as
 # needed. Give it video timestamps on the same clock as `frame_times`. Use
@@ -301,7 +302,7 @@ video_overlay = VideoOverlay(
 if RUN_NAPARI:
     import napari
 
-    viewer = env.animate_fields(
+    napari_view = env.animate_fields(
         fields,
         overlays=[*overlays, video_overlay],
         backend="napari",
@@ -311,21 +312,19 @@ if RUN_NAPARI:
         napari.run()
 
 if RUN_WIDGET:
-    env.animate_fields(fields, overlays=overlays, backend="widget", **view_settings)
+    from IPython.display import display
+
+    widget_view = env.animate_fields(
+        fields, overlays=[*overlays, video_overlay], backend="widget", **view_settings
+    )
+    display(widget_view)
 
 if RUN_VIDEO_EXPORT:
-    from neurospatial.animation.backends.video_backend import check_ffmpeg_available
-
-    if not check_ffmpeg_available():
-        raise RuntimeError(
-            "Install the ffmpeg executable before enabling RUN_VIDEO_EXPORT."
-        )
     env.animate_fields(
         fields,
         overlays=[*overlays, video_overlay],
         backend="video",
         save_path=str(output_dir / "spatial_scene.mp4"),
-        n_workers=2,
         dpi=80,
         **view_settings,
     )

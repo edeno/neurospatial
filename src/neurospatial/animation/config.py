@@ -23,9 +23,15 @@ video-to-environment coordinate transforms.
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from neurospatial._logging import logger
+from neurospatial.animation.backends._napari_compat import (
+    canvas_overlay,
+    scene_camera,
+    spatial_unit_label,
+)
 from neurospatial.layout import (
     ScaleBarConfig,
 )
@@ -76,7 +82,8 @@ def _patch_napari_scale_bar_format(viewer: napari.Viewer) -> None:
 
     The patch is applied per-viewer and does not affect other viewers.
 
-    **Compatibility**: Tested with napari 0.5.x. The patch relies on napari's
+    **Compatibility**: Supports the legacy and napari 0.9 formatting hooks.
+    The patch relies on napari's
     internal API (``_vispy.overlays.scale_bar.VispyScaleBarOverlay``) which
     may change in future versions. If the patch fails, the scale bar will
     still work but will use napari's default unit conversion (cm → mm).
@@ -92,16 +99,41 @@ def _patch_napari_scale_bar_format(viewer: napari.Viewer) -> None:
         # but we can access the vispy overlay through the internal structures
         from napari._vispy.overlays.scale_bar import VispyScaleBarOverlay
 
-        # Find the scale bar overlay in the viewer's overlays
-        for overlay in viewer.window._qt_viewer.canvas._overlay_to_visual.values():
+        # Napari 0.9 groups multiple visuals per viewer overlay. Keep both
+        # representations inside this optional formatting compatibility hook.
+        canvas = viewer.window._qt_viewer.canvas
+        grouped = getattr(canvas, "_viewer_overlay_to_visual", None)
+        visuals = (
+            [visual for group in grouped.values() for visual in group]
+            if grouped is not None
+            else list(canvas._overlay_to_visual.values())
+        )
+        for overlay in visuals:
             if isinstance(overlay, VispyScaleBarOverlay):
+                # 0.9 computes units from layers and has a different rendering
+                # hook. Wrap the final draw so zoom/resize events retain the
+                # original physical unit without replacing connected handlers.
+                if hasattr(overlay, "_on_rendering_change"):
+                    if getattr(overlay, "_neurospatial_unit_format", False):
+                        return
+                    draw = overlay._on_rendering_change
+
+                    def draw_in_original_units(*, _overlay=overlay, _draw=draw):
+                        length = _overlay._current_length * _overlay._scale
+                        _overlay.node.text.text = f"{length * _overlay._unit:g~P}"
+                        _draw()
+
+                    overlay._on_rendering_change = draw_in_original_units
+                    overlay._neurospatial_unit_format = True
+                    overlay._on_size_or_zoom_change(force=True)
+                    return
 
                 def patched_on_zoom_change(*, force: bool = False, _overlay=overlay):
                     """Patched zoom handler that uses unit-preserving format."""
                     import numpy as np
 
                     # If scale has not changed, do not redraw
-                    scale = 1 / _overlay.viewer.camera.zoom
+                    scale = 1 / scene_camera(_overlay.viewer).zoom
                     scale_diff = abs(np.log10(_overlay._scale) - np.log10(scale))
                     if scale_diff < _SCALE_CHANGE_THRESHOLD and not force:
                         return
@@ -191,9 +223,9 @@ def configure_napari_scale_bar(
     use but means ``ScaleBarConfig.length`` has no effect in napari.
 
     **Layer scale**: For napari's scale bar to show correct units, the
-    image layer must have the correct ``scale`` attribute set. This is
-    typically set via ``EnvScale`` in ``animation/transforms.py``. If scale
-    is (1, 1), the scale bar shows pixels regardless of ``unit`` setting.
+    image layer must be placed in physical units; the napari scene does this
+    through each field layer's affine. A layer in pixel units makes the
+    scale bar show pixels regardless of the ``unit`` setting.
 
     Supported config attributes:
 
@@ -223,15 +255,27 @@ def configure_napari_scale_bar(
         "upper left": "top_left",
     }
 
-    viewer.scale_bar.visible = True
-    viewer.scale_bar.position = position_map.get(config.position, "bottom_right")
-    viewer.scale_bar.font_size = config.font_size
+    scale_bar = canvas_overlay(viewer, "scale_bar")
+    if units is not None and spatial_unit_label(units) is None:
+        scale_bar.visible = False
+        warnings.warn(
+            f"Napari cannot interpret the environment's unit label {units!r}; "
+            "the scale bar is hidden. Use recognized physical units to display it.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return
+    scale_bar.visible = True
+    scale_bar.position = position_map.get(config.position, "bottom_right")
+    scale_bar.font_size = config.font_size
 
-    if units:
-        viewer.scale_bar.unit = units
+    if units and getattr(viewer, "canvas", None) is None:
+        # Since 0.9 the scale-bar unit setter is a deprecated no-op. Scene
+        # adapters declare units on their owned layers instead.
+        scale_bar.unit = units
 
     if config.color:
-        viewer.scale_bar.color = config.color
+        scale_bar.color = config.color
 
     # Monkey-patch napari's scale bar to preserve user-specified units
     # By default, napari uses format string "{:g~#P}" which converts cm→mm

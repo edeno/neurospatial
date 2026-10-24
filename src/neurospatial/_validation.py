@@ -60,6 +60,12 @@ def validate_finite(
     if bad.any():
         n = int(bad.sum())
         first = int(np.argmax(bad))
+        if allow_nan:
+            raise ValueError(
+                f"{name} contains {n} infinite value(s) "
+                f"(first at index {first}: {arr.flat[first]!r}). "
+                "NaN marks a missing value; replace infinities with NaN."
+            )
         raise ValueError(
             f"{name} contains {n} non-finite value(s) "
             f"(first at index {first}: {arr.flat[first]!r}). "

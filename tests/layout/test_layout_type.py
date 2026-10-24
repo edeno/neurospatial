@@ -117,24 +117,3 @@ def test_custom_label_matching_a_layout_type_is_spelled_canonically():
     layout.build(**_BUILDS["MaskedGrid"])
     layout.layout_type = "masked-grid"
     assert Environment.from_layout(layout).layout_type == "MaskedGrid"
-
-
-def test_field_to_rgb_for_napari_grid_layout():
-    """End-to-end: napari rendering rasterizes a rectilinear grid."""
-    import matplotlib.pyplot as plt
-
-    from neurospatial import Environment
-    from neurospatial.animation.rendering import field_to_rgb_for_napari
-
-    rng = np.random.default_rng(42)
-    positions = rng.standard_normal((100, 2)) * 50
-    env = Environment.from_samples(positions, bin_size=10.0)
-    assert env._binning.rectilinear is not None
-
-    cmap_obj = plt.get_cmap("viridis")
-    cmap_lookup = (cmap_obj(np.linspace(0, 1, 256))[:, :3] * 255).astype(np.uint8)
-    field = rng.random(env.n_bins)
-
-    rgb = field_to_rgb_for_napari(env, field, cmap_lookup, 0, 1)
-    assert rgb.ndim == 3
-    assert rgb.shape[2] == 3

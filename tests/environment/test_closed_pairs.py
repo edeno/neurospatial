@@ -135,6 +135,28 @@ def test_split_bins_close_the_pieces_a_wall_separates():
     assert not np.any((x[open_pairs[:, 0]] < 1.5) != (x[open_pairs[:, 1]] < 1.5))
 
 
+def test_split_pieces_meeting_at_a_corner_on_a_wall_record_that_wall():
+    # The wall bends at the grid corner (2, 2), so split pieces of diagonal
+    # cells meet only there, and the line between their uneven centers can
+    # pass beside the corner. The corner touching the wall closes the pair.
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool),
+        grid_edges=(np.arange(5.0), np.arange(5.0)),
+        arena=OpenArena(
+            box(0, 0, 4, 4), walls={"bend": LineString([(0, 1), (2, 2), (4, 3.6)])}
+        ),
+        wall_fit="split",
+        connect_diagonal_neighbors=True,
+    )
+    links = env.binning.connections
+    closed = ~links.is_open
+    centers = env.bin_centers[links.all_pairs[closed]]
+    beside = [not LineString(pair).intersects(env.arena.walls[0]) for pair in centers]
+    assert any(beside)
+    assert set(env.get_blocked_edges()["wall"]) == {"bend"}
+    assert np.all(links.closed_by[closed] == 0)
+
+
 def test_from_bins_keeps_supplied_closed_pairs_without_a_wall():
     source = _rooms(CLOSED).binning
     source = replace(source, faces=KnownFaces(source.faces.build()))

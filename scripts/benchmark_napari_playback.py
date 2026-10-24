@@ -504,7 +504,6 @@ def create_selected_overlays(
             times=ts_times,
             label="LFP (mV)",
             color="cyan",
-            window_seconds=2.0,
         )
         overlays.append(timeseries_overlay)
 
@@ -706,7 +705,7 @@ def run_benchmark(
     frames_to_step = min(playback_frames, n_frames)
     for i in range(frames_to_step):
         start = time.perf_counter()
-        viewer.dims.set_current_step(0, i)
+        viewer.seek(float(frame_times[i]))
         app.processEvents()  # Process Qt events
         elapsed_ms = (time.perf_counter() - start) * 1000
         frame_times_ms.append(elapsed_ms)

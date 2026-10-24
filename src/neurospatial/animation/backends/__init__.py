@@ -1,8 +1,5 @@
-"""Animation backend implementations.
+"""Native viewers for animation scenes.
 
-This module contains the concrete backend implementations:
-- napari_backend: GPU-accelerated interactive viewer
-- video_backend: Parallel MP4 export with ffmpeg
-- html_backend: Standalone HTML player
-- widget_backend: Jupyter notebook integration
+- _napari_scene: napari desktop viewer for 2-D and 3-D scenes
+- fastplotlib_backend: GPU viewer in Jupyter or a desktop window
 """

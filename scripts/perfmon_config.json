@@ -4,22 +4,16 @@
     "trace_callables": ["neurospatial_animation"],
     "callable_lists": {
         "neurospatial_animation": [
-            "neurospatial.animation.backends.napari_backend.LazyFieldRenderer.__getitem__",
-            "neurospatial.animation.backends.napari_backend.LazyFieldRenderer._get_frame",
-            "neurospatial.animation.backends.napari_backend.LazyFieldRenderer._getitem_locked",
-            "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer.__getitem__",
-            "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer._get_frame",
-            "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer._render_chunk",
-            "neurospatial.animation.backends.napari_backend.ChunkedLazyFieldRenderer._get_chunk",
-            "neurospatial.animation.rendering.field_to_rgb_for_napari",
-            "neurospatial.animation.backends.napari_backend._build_skeleton_vectors",
-            "neurospatial.animation.backends.napari_backend._render_bodypart_overlay",
-            "neurospatial.animation.backends.napari_backend._render_head_direction_overlay",
-            "neurospatial.animation.backends.napari_backend._render_position_overlay",
-            "neurospatial.animation.backends.napari_backend._render_event_overlay",
-            "neurospatial.animation.backends.napari_backend._make_video_frame_callback",
-            "neurospatial.animation.backends.napari_backend._add_video_layer",
-            "neurospatial.animation.backends.napari_backend._add_timeseries_dock"
+            "neurospatial.animation.backends._napari_scene.NapariScene._build_fields",
+            "neurospatial.animation.backends._napari_scene.NapariScene._build_overlays",
+            "neurospatial.animation.backends._napari_scene.NapariScene.seek",
+            "neurospatial.animation.backends._napari_scene.NapariScene._request_seek",
+            "neurospatial.animation.backends._napari_scene.NapariScene._prepare",
+            "neurospatial.animation.backends._napari_scene.NapariScene._apply",
+            "neurospatial.animation.backends._napari_scene.NapariScene._prepared_ready",
+            "neurospatial.animation.backends._napari_scene.NapariScene._tick",
+            "neurospatial.animation.backends._napari_scene._ScientificPanels.prepare",
+            "neurospatial.animation.backends._napari_scene._ScientificPanels.update"
         ]
     }
 }

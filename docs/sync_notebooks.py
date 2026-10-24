@@ -59,7 +59,10 @@ def sync_catalog() -> None:
 # Validate metadata before publishing any mirrors.
 sync_catalog()
 
-patterns = ("*.ipynb", "*.py")
+# The notebook collection: numbered examples and the private helpers they
+# import, such as _style.py. Scripts run from a checkout, such as
+# try_annotation.py, are not part of the rendered collection.
+patterns = ("[0-9][0-9]_*.ipynb", "[0-9][0-9]_*.py", "_*.py")
 synced = 0
 
 for pattern in patterns:

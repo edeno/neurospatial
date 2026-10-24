@@ -1,12 +1,11 @@
-"""Performance benchmarks for animation backends.
+"""Performance benchmarks for animation exports and frame selection.
 
 All tests marked with @pytest.mark.slow - excluded from default test runs.
 Run explicitly with: uv run pytest -m slow tests/animation/test_benchmarks.py
 
 Targets:
-- Napari seek: <100ms for 100K frames
-- Parallel rendering: Linear speedup up to 4 workers
 - HTML generation: <20s for 100 frames
+- subsample_frames: <3s for 900K memory-mapped frames
 """
 
 import time
@@ -15,7 +14,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.animation import subsample_frames
+from neurospatial.animation import Animation, AnimationField, subsample_frames
 
 
 @pytest.fixture
@@ -30,164 +29,6 @@ def benchmark_env():
     return env
 
 
-@pytest.fixture
-def small_benchmark_env():
-    """Create smaller environment for video benchmarks (50x50 bins)."""
-    # Use deterministic grid instead of random sampling
-    x = np.linspace(0, 50, 51)
-    y = np.linspace(0, 50, 51)
-    xx, yy = np.meshgrid(x, y)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=1.0)
-    return env
-
-
-@pytest.mark.slow
-@pytest.mark.xdist_group(name="napari_gui")
-@pytest.mark.wallclock
-def test_napari_seek_performance_100k_frames(benchmark_env, tmp_path):
-    """Benchmark Napari seek performance with 100K frames.
-
-    Target: <100ms average seek time
-    Method: Create lazy renderer, time 100 random seeks
-    """
-    pytest.importorskip("napari")
-    from neurospatial.animation.backends.napari_backend import (
-        LazyFieldRenderer,
-    )
-    from neurospatial.animation.rendering import animation_colormap_range
-
-    n_frames = 100_000
-    n_seeks = 500  # Increased from 100 for better statistics
-
-    # Create memory-mapped array (don't populate - lazy loading)
-    memmap_path = tmp_path / "benchmark_fields.dat"
-    fields = np.memmap(
-        memmap_path,
-        dtype=np.float32,
-        mode="w+",
-        shape=(n_frames, benchmark_env.n_bins),
-    )
-
-    # Populate first and last frames only (for colormap range)
-    rng = np.random.default_rng(42)
-    fields[0] = rng.random(benchmark_env.n_bins)
-    fields[-1] = rng.random(benchmark_env.n_bins)
-    fields.flush()
-
-    # Compute colormap range
-    vmin, vmax = animation_colormap_range(fields, None, None)
-    cmap_lookup = np.zeros((256, 3), dtype=np.uint8)  # Dummy LUT
-
-    # Create lazy renderer
-    renderer = LazyFieldRenderer(
-        env=benchmark_env,
-        fields=fields,
-        cmap_lookup=cmap_lookup,
-        vmin=vmin,
-        vmax=vmax,
-    )
-
-    # Warm-up (first seek might be slower due to cache setup)
-    _ = renderer[0]
-
-    # Benchmark random seeks
-    seek_times = []
-    seek_rng = np.random.default_rng(42)
-    random_frames = seek_rng.integers(0, n_frames, size=n_seeks)
-
-    for frame_idx in random_frames:
-        start = time.perf_counter()
-        _ = renderer[frame_idx]
-        end = time.perf_counter()
-        seek_times.append((end - start) * 1000)  # Convert to ms
-
-    # Compute statistics
-    mean_seek_time = np.mean(seek_times)
-    median_seek_time = np.median(seek_times)
-    p95_seek_time = np.percentile(seek_times, 95)
-    max_seek_time = np.max(seek_times)
-
-    # Print results
-    print(f"\nNapari Seek Performance (100K frames, {n_seeks} seeks):")
-    print(f"  Mean:   {mean_seek_time:.2f} ms")
-    print(f"  Median: {median_seek_time:.2f} ms")
-    print(f"  P95:    {p95_seek_time:.2f} ms")
-    print(f"  Max:    {max_seek_time:.2f} ms")
-
-    # Target: <100ms average
-    assert mean_seek_time < 100, (
-        f"Mean seek time {mean_seek_time:.2f}ms exceeds 100ms target"
-    )
-    print("  ✓ Target met: <100ms average seek time")
-
-
-@pytest.mark.slow
-@pytest.mark.benchmark
-def test_parallel_rendering_scalability(small_benchmark_env, tmp_path):
-    """Benchmark parallel rendering scalability.
-
-    Reports speedups for 1/2/4/8 workers but does not assert on them: parallel
-    speedup is machine- and load-dependent and flakes under a hard threshold.
-    Marked benchmark + slow so it is excluded from the default suite.
-    """
-    from neurospatial.animation.backends.video_backend import (
-        check_ffmpeg_available,
-        render_video,
-    )
-
-    if not check_ffmpeg_available():
-        pytest.skip("ffmpeg not available")
-
-    # Create fields (200 frames for more robust statistics)
-    n_frames = 200
-    rng = np.random.default_rng(42)
-    fields = [rng.random(small_benchmark_env.n_bins) for _ in range(n_frames)]
-
-    # Test different worker counts
-    worker_counts = [1, 2, 4, 8]
-    render_times = {}
-
-    for n_workers in worker_counts:
-        output_path = tmp_path / f"benchmark_{n_workers}workers.mp4"
-
-        start = time.perf_counter()
-        render_video(
-            env=small_benchmark_env,
-            fields=fields,
-            save_path=output_path,
-            fps=30,
-            n_workers=n_workers,
-            codec="mpeg4",  # Fast encoding for benchmark
-        )
-        end = time.perf_counter()
-
-        render_time = end - start
-        render_times[n_workers] = render_time
-
-        # Clean up video file
-        output_path.unlink()
-
-    # Compute speedups
-    baseline_time = render_times[1]
-    speedups = {n: baseline_time / render_times[n] for n in worker_counts}
-
-    # Print results
-    print(f"\nParallel Rendering Scalability ({n_frames} frames):")
-    for n_workers in worker_counts:
-        time_sec = render_times[n_workers]
-        speedup = speedups[n_workers]
-        efficiency = (speedup / n_workers) * 100
-        print(
-            f"  {n_workers} worker{'s' if n_workers > 1 else ''}: "
-            f"{time_sec:.2f}s (speedup: {speedup:.2f}x, efficiency: {efficiency:.1f}%)"
-        )
-
-    # Speedups reported above are informational. Process spawn, pickling, and
-    # sequential ffmpeg encoding (Amdahl's law) make absolute speedup highly
-    # machine-dependent, so we do not assert a hard threshold here.
-
-
 @pytest.mark.slow
 @pytest.mark.wallclock
 def test_html_generation_performance(benchmark_env, tmp_path):
@@ -196,23 +37,20 @@ def test_html_generation_performance(benchmark_env, tmp_path):
     Target: <20s for 100 frames
     Method: Generate HTML with 100 frames, measure total time
     """
-    from neurospatial.animation.backends.html_backend import render_html
-
     n_frames = 100
     rng = np.random.default_rng(42)
-    fields = [rng.random(benchmark_env.n_bins) for _ in range(n_frames)]
-
+    fields = rng.random((n_frames, benchmark_env.n_bins))
+    frame_times = np.arange(n_frames + 1) / 30.0
     output_path = tmp_path / "benchmark.html"
 
-    start = time.perf_counter()
-    render_html(
-        env=benchmark_env,
-        fields=fields,
-        save_path=output_path,
-        fps=30,
-        dpi=72,  # Lower DPI for faster encoding
-    )
-    end = time.perf_counter()
+    with Animation(
+        benchmark_env,
+        # One more row so the half-open export interval holds 100 frames.
+        {"field": AnimationField(np.vstack([fields, fields[-1:]]), frame_times)},
+    ) as scene:
+        start = time.perf_counter()
+        scene.export(output_path, fps=30, dpi=72)
+        end = time.perf_counter()
 
     generation_time = end - start
 
@@ -226,124 +64,6 @@ def test_html_generation_performance(benchmark_env, tmp_path):
         f"HTML generation {generation_time:.2f}s exceeds 20s target"
     )
     print("  ✓ Target met: <20s for 100 frames")
-
-
-@pytest.mark.slow
-@pytest.mark.xdist_group(name="napari_gui")
-def test_napari_chunked_cache_performance(benchmark_env, tmp_path):
-    """Benchmark chunked cache vs regular cache for large datasets.
-
-    Target: Chunked cache should be faster for sequential access
-    Method: Compare seek times with regular vs chunked caching
-    """
-    pytest.importorskip("napari")
-    from neurospatial.animation.backends.napari_backend import (
-        ChunkedLazyFieldRenderer,
-        LazyFieldRenderer,
-    )
-    from neurospatial.animation.rendering import animation_colormap_range
-
-    n_frames = 100_000  # 100K frames for realistic large dataset
-    n_seeks = 500  # More seeks for better statistics
-
-    # Create memory-mapped array
-    memmap_path = tmp_path / "chunked_benchmark_fields.dat"
-    fields = np.memmap(
-        memmap_path,
-        dtype=np.float32,
-        mode="w+",
-        shape=(n_frames, benchmark_env.n_bins),
-    )
-
-    # Populate first and last frames for colormap
-    rng = np.random.default_rng(42)
-    fields[0] = rng.random(benchmark_env.n_bins)
-    fields[-1] = rng.random(benchmark_env.n_bins)
-    fields.flush()
-
-    # Compute colormap
-    vmin, vmax = animation_colormap_range(fields, None, None)
-    cmap_lookup = np.zeros((256, 3), dtype=np.uint8)
-
-    # Test regular cache
-    regular_renderer = LazyFieldRenderer(
-        env=benchmark_env,
-        fields=fields,
-        cmap_lookup=cmap_lookup,
-        vmin=vmin,
-        vmax=vmax,
-    )
-
-    # Test chunked cache
-    chunked_renderer = ChunkedLazyFieldRenderer(
-        env=benchmark_env,
-        fields=fields,
-        cmap_lookup=cmap_lookup,
-        vmin=vmin,
-        vmax=vmax,
-        chunk_size=100,
-        max_chunks=50,  # 50 chunks * 100 frames = 5000 frames cached
-    )
-
-    # Warm-up
-    _ = regular_renderer[0]
-    _ = chunked_renderer[0]
-
-    # Sequential access pattern (simulates playback)
-    seq_rng = np.random.default_rng(42)
-    start_frame = seq_rng.integers(0, n_frames - n_seeks)
-    sequential_frames = np.arange(start_frame, start_frame + n_seeks)
-
-    # Benchmark regular cache
-    start = time.perf_counter()
-    for frame_idx in sequential_frames:
-        _ = regular_renderer[frame_idx]
-    regular_time = time.perf_counter() - start
-
-    # Benchmark chunked cache
-    start = time.perf_counter()
-    for frame_idx in sequential_frames:
-        _ = chunked_renderer[frame_idx]
-    chunked_time = time.perf_counter() - start
-
-    # Random access pattern (simulates scrubbing)
-    random_frames = seq_rng.integers(0, n_frames, size=n_seeks)
-
-    # Benchmark regular cache (random)
-    start = time.perf_counter()
-    for frame_idx in random_frames:
-        _ = regular_renderer[frame_idx]
-    regular_random_time = time.perf_counter() - start
-
-    # Benchmark chunked cache (random)
-    start = time.perf_counter()
-    for frame_idx in random_frames:
-        _ = chunked_renderer[frame_idx]
-    chunked_random_time = time.perf_counter() - start
-
-    # Print results
-    print(f"\nChunked Cache Performance ({n_frames} frames, {n_seeks} seeks):")
-    print("  Sequential access:")
-    print(
-        f"    Regular cache: {regular_time:.3f}s ({regular_time / n_seeks * 1000:.2f}ms/frame)"
-    )
-    print(
-        f"    Chunked cache: {chunked_time:.3f}s ({chunked_time / n_seeks * 1000:.2f}ms/frame)"
-    )
-    print(f"    Speedup: {regular_time / chunked_time:.2f}x")
-    print("  Random access:")
-    print(
-        f"    Regular cache: {regular_random_time:.3f}s ({regular_random_time / n_seeks * 1000:.2f}ms/frame)"
-    )
-    print(
-        f"    Chunked cache: {chunked_random_time:.3f}s ({chunked_random_time / n_seeks * 1000:.2f}ms/frame)"
-    )
-    print(f"    Speedup: {regular_random_time / chunked_random_time:.2f}x")
-
-    # Note: Informational only - chunked cache has overhead for unpopulated memmap
-    # In real scenarios with expensive rendering, chunked cache pre-loading benefits
-    # outweigh the overhead. This benchmark uses empty fields for speed.
-    print("  ✓ Benchmark complete (informational - empty fields used for speed)")
 
 
 @pytest.mark.slow

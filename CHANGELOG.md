@@ -2,8 +2,229 @@
 
 ## [Unreleased]
 
+### Animation workflows
+
+- Render uniform 3-D fastplotlib animation fields as native volumes, with
+  `field_rendering="mip"`, `"iso"`, `"slice"` and explicit `"points"` fallback.
+  Preserve affine environment coordinates, fixed scales and missing voxels;
+  thresholds use field units and slice planes use world XYZ coordinates.
+  Keep volume thresholding and maximum selection independent of colormap
+  saturation, so clipped colors cannot erase a surface or change its depth.
+  Correct translated isosurface depth in the affected pygfx shader without
+  changing other applications' materials.
+- Keep overlay marker diameters in logical screen pixels across napari,
+  fastplotlib, HTML and Matplotlib exports, independent of coordinate units and
+  zoom. This corrects oversized napari 3-D markers and inconsistent HTML radii.
+- Prepare napari scene reads off the GUI thread with a bounded pending request,
+  elapsed-time playback, held-row and overlapping-window caches, and persistent
+  scientific-panel artists. Serialize shared reader access across native views,
+  view preparation and scene exports; drain workers before closing readers.
+- Snapshot sampled rows and decoded frames before retaining them or handing
+  them to a renderer, so lazy readers that reuse scratch buffers cannot change
+  already-sampled observations.
+- Reduce redundant field copies and statistics scans, reuse prepared event
+  clocks during rendering, and export notebook RGB frames without decoding
+  their display PNGs. Share field-support, event-alignment and heading-color
+  rules across consumers.
+- Isolate native compatibility hooks, use napari's current canvas/scene APIs,
+  and carry physical units on owned layers. Check fastplotlib's supported widget
+  capabilities before allocation. Add a reproducible real-backend benchmark
+  separating GUI playback responsiveness from synchronous GPU capture latency.
+- Preserve NWB position reference frames in eager and lazy reads. Position and
+  pose overlay adapters share validation that prevents keyword overrides from
+  erasing or relabeling declared coordinate units and frames.
+- Correct export timing roundoff against prepared overlay clocks as well as
+  field clocks, retaining isolated observations beside recording gaps in scene
+  exports and native-view capture.
+- Preserve event-table dtypes, categorical levels, nested metadata and original
+  IDs when taking independent snapshots. JSON export verifies that IDs survive
+  pandas' table-format round trip before creating or replacing a file; composite
+  IDs remain supported for in-memory inspection and CSV export.
+- Validate every NWB pose bodypart's clock and spatial metadata before sharing
+  a time axis. Pose overlays retain declared units and reference frames and
+  reject mismatches with the environment without silently relabeling coordinates.
+- Normalize custom overlay support during preparation so invalid observations
+  remain missing in markers, trails and track panels. Partial bodypart mask
+  dictionaries now follow the same rules during sampling and realignment.
+- Share heading geometry across renderers: zero vectors, including interpolated
+  opposite directions, no longer produce an arbitrary eastward arrow.
+- Unit spellings are matched and converted through one table, so `"um"`,
+  `"µm"` and `"micrometers"` match each other in overlay, track and NWB
+  metadata checks as they already did in centimeter-based defaults.
+- A `HeadDirectionOverlay` with more than one `PositionOverlay` now raises
+  `ValueError` in every backend. Its arrow was previously drawn at the arena
+  center, because no single position identifies where it starts. Pass the one
+  tracked point whose heading you measured.
+- Apply observation masks and gap rules to overlays that inherit `frame_times`,
+  including fastplotlib sampling between frames. Preserve NaNs when normalizing
+  constant signals and share finite, bounded object-vector rate opacity across
+  scene renderers without changing its scale for selected windows.
+- Close scene-owned views, playback and inspection controls before releasing
+  video readers, while retaining caller ownership of borrowed resources.
+  Native window closure also unregisters its scene view and runs close callbacks,
+  allowing a reusable scene to release closed viewers.
+- Correct the internal coordinate guide to distinguish prepared environment
+  units, pixel centers and each backend's display transform.
+- Preserve decoding recording windows through `Animation.from_decoding` and
+  expose half-open `AnimationField(epochs=...)` support. Unsupported exact
+  samples and intervals remain missing in spatial and track views.
+- Preserve mixed raster unit identifiers, custom video frame mappings and
+  frozen overlay adapters. Prepare adapters once and snapshot their internal
+  data while retaining explicit video-reader ownership.
+- Convert centimeter video calibrations into environment metric units,
+  including cropped and downsampled video. Landmark calibration accepts
+  environment units; calibrated video rejects unknown units and pixel units.
+- Share scene sampling and scientific-panel preparation independently of
+  Matplotlib canvases. Napari consumes the same prepared data directly.
+  One-dimensional scene views draw positions, pose and object vectors on the
+  spatial axis and reject headings and video before rendering.
+- Preserve each field's native clock and declared gaps in fastplotlib track
+  panels and exports, including when the scene uses a coarser output clock.
+  Track projection now rejects incompatible units or coordinate frames.
+- Apply the shared observation-support rules to trajectory-based event
+  locations. Events inside tracking gaps retain their timestamps with unknown
+  positions; `max_gap=None` explicitly permits sparse continuous tracking.
+- Freeze field metadata while retaining lazy, caller-owned values. Scene
+  overlay conversions borrow prepared video readers, and failed preparation
+  closes acquired readers deterministically.
+- Use a typed viewer adapter and check scene capabilities before allocating
+  a viewer, including dimensions, overlay combinations and requested options.
+- `Animation` and named `AnimationField` streams retain physical clocks,
+  lazy sources and fixed color scales across notebook viewing and MP4/GIF
+  export. `Animation.from_decoding` retains the result's environment and times.
+  `AnimationView` adds recording-time seeking, interval selection and export,
+  with native viewers available through `native`. A view exports the whole
+  recording through its last time until `select_time(start, stop)` selects a
+  half-open window, even one spanning the whole recording.
+- Extend scenes to 3-D and napari, preserving independent field clocks and
+  scales. Napari combines native layers with synchronized signal, raster,
+  epoch and projected-track panels; fastplotlib now supports a separate
+  colormap, range and label for each field.
+- `AnimationView.export()` captures the current native view, including camera
+  edits and custom graphics, and restores time and playback after success or
+  failure. Use `render="scene"` for the standard scene layout. Both paths use
+  the same half-open export clock and publish output files only after encoding
+  succeeds.
+- Move shared video reading out of animation so annotation can load frames
+  without importing rendering modules. Extract styling and track geometry into
+  lightweight shared helpers.
+- `EventInspector` preserves overlapping event IDs and analysis metadata during
+  filtering, selection and annotation, and exports selected event clips and
+  typed review tables. Scene exports include multiple fields, spike rasters,
+  epochs, signals, object vectors and calibrated video.
+- Observed animation overlays now preserve missing NaN samples and do not
+  interpolate across gaps over 0.5 seconds or `break_before` boundaries.
+  Pass `max_gap=None` explicitly for continuous observations sampled more
+  sparsely. Native GPU views use the same interpolation and support rules.
+  Position metadata and NWB units are validated against the environment;
+  raster rate-result adapters align maps by unit identity.
+- Fix cropped/downsampled video calibration and napari physical-scale video
+  placement, missing-value colors, grouped trace limits and duplicate labels.
+  Capability checks name any overlay a view cannot draw before it opens.
+- Every view draws overlays and panels from one preparation layer, so they
+  follow the same rules. Colorbars mark an end with a triangle when sampled
+  values lie beyond it, for computed, shared and explicit limits and for
+  projected track panels. Over a video below the field, opacity rises from
+  `vmin` to the field's typical peak (scene and napari used to fade from 0,
+  hiding negative values). Trails fade with each segment's age; track paths
+  break where the position changes maze segment; skeletons use their
+  `edge_color` and `edge_width`; body parts take their given color, then the
+  skeleton's node color, then red; signal panels use rounded limits, so a
+  near-zero floor reads as 0; events of one type draw in time order. In
+  fastplotlib, time series draw every sample in the window (no 100,000-point
+  cap) and a signal with no values draws an empty panel instead of being
+  skipped.
+- Faster views and exports: the field along a track is one mesh (a 1-D
+  track frame went from 196 ms to 17 ms), trails are vectorized (2.9 ms to
+  9 µs at a million frames), poses are sampled in one pass, napari prepares
+  overlay layers on its worker thread, and fastplotlib reads each lazy field
+  row once instead of 6 to 10 times during slow playback. Event tables copy
+  in 14 ms instead of 230 ms for 10,000 events.
+- `Animation.export` writes `.mp4`, `.webm`, `.mov`, `.avi`, `.gif` and
+  self-contained `.html` players. Video takes `codec` (`"h264"`, `"h265"`,
+  `"vp9"`, `"mpeg4"`), `crf` (default 18), `preset` and `bitrate`; HTML takes
+  `image_format`, `max_html_frames`, `embed` and `frames_dir`. An option the
+  chosen file type does not use raises `TypeError`. Without imageio-ffmpeg
+  (the `video` extra), a video export raises `ImportError` saying what to
+  install before anything is rendered. Exports to filesystems
+  without hard links (exFAT, FAT32, some network drives) still refuse to
+  replace a file created during encoding, and files get the usual permissions.
+- `Animation.export(n_workers=...)` renders frames in worker processes, with
+  output identical to one process; `None` uses every CPU. Workers render the
+  observations the scene prepared, so changing an overlay's arrays or an
+  adapter's source afterward changes neither serial nor parallel output, and
+  adapters need not be picklable. A field or prepared overlay that cannot be
+  sent to a worker raises before rendering and names it.
+  File-backed memory maps are reopened in each worker rather than copied.
+  Scripts using workers need an `if __name__ == "__main__":` guard on macOS
+  and Windows.
+- Napari scene views draw every overlay and region in each field's panel of a
+  `layout="horizontal"`, `"vertical"` or `"grid"` view, in 2-D and 3-D, and
+  view capture includes all panels. With a layout, overlay layer names carry
+  their field's name (`"cellA: Position 1"`).
+- Export and render frames faster: each event type is drawn as one marker
+  collection (a frame with 10,000 persistent events went from 8.6 s to
+  86 ms), in-memory video is downsampled as frames are read rather than
+  copied on every conversion, and views share the scene's prepared overlay
+  arrays instead of copying them. Arrays returned by `Animation.overlay_data()`
+  are read-only.
+
 ### Breaking
 
+- `Environment.animate_fields` now builds an `Animation` and returns an
+  `AnimationView` (napari, widget, fastplotlib; the viewer is `view.native`)
+  or the written `Path` (video, HTML), instead of a napari `Viewer`,
+  `FastplotlibAnimation` or `None`. Closing the view releases the readers it
+  opened. Every backend draws every overlay type and several fields side by
+  side (a mapping of name to field, or a list named by `layer_names`).
+  Fields are shown on their recording clock: each row is held until the next
+  for at most `max_gap` (new, default 0.5 s; `None` holds every row), and
+  longer gaps show as missing instead of a stale field. The frame rate is the
+  sampling rate of `frame_times` times `speed`, capped at `max_playback_fps`;
+  a capped file keeps `speed` and skips rows, with a warning, instead of
+  playing slower than requested. An export of the whole recording ends on
+  its last row; selected `time_range` windows are half-open. Fields shown side
+  by side share one cmap, colorbar label and, without `vmin`/`vmax`, one
+  robust color scale from up to 100 rows of each, so a color means the same
+  value in every panel; build an `Animation` with separate `AnimationField`s
+  for independent scales. Lazy sources that are not arrays (h5py datasets)
+  are read by row, and an iterator of rows raises `TypeError`. HTML players
+  label each frame with its recording time (`"t = 12.345 s"`).
+  `trail_length` spans that many animation frames in every view, drawing
+  every tracked sample in that time with older segments fading, and no trail
+  is drawn while the current position is missing. `TimeSeriesOverlay`'s
+  `show_cursor` and `cursor_color` apply in every view.
+- `FastplotlibAnimation` is the fastplotlib view's `view.native`; build it
+  through `Animation.show(backend="fastplotlib")` or `animate_fields`.
+  `Animation.show(backend="fastplotlib")` no longer takes `cmap`, `vmin`,
+  `vmax`, `colorbar_label`, `title`, `show_regions`, `region_alpha`,
+  `window_seconds` or `track`: set them on the `Animation` or its
+  `AnimationField`s, which every view reads. `animate_fields` still takes them.
+- Custom overlay adapters: `OverlayProtocol` needs only `convert_to_data`,
+  which is called once with the scene clock; sampled data must carry its
+  `times`, and its support masks and shapes are checked when it is built.
+  Readers an adapter returns stay the adapter's to close
+  (`VideoData._owns_reader` is removed). `Animation.overlay_data()` has no
+  `own_samples` argument and returns sampled overlays with `times` set to the
+  requested clock.
+- Requests no view can draw are refused when the `Animation` is built, for
+  built-in overlays and custom adapters alike: angle-only headings in 3-D,
+  headings or video in 1-D, and misspelled `show_regions` names. `speed`,
+  `max_playback_fps` and napari's `fps` are checked before any viewer opens.
+  `animate_fields(speed="fast")` raises `ValueError`, and
+  `SpikeRasterOverlay` rates on a different environment raise
+  `IncompatibleEnvironmentError`.
+- `TimeSeriesOverlay` no longer takes `window_seconds`, `interp`,
+  `update_mode`, `playback_throttle_hz` or `scrub_throttle_hz`: every signal
+  panel spans the scene's `window_seconds`, and no view throttled or paused
+  its panels by them.
+- Removed animation options: napari `cache_size`, `chunk_size` and
+  `max_chunks`, widget `initial_cache_size`, `cache_limit`, `image_format`
+  and `return_container`, `dry_run`, and `frame_labels` outside fastplotlib.
+  `large_session_napari_config` is removed: napari scene views read on a
+  worker thread with bounded caches. The legacy napari, video, HTML and widget
+  backend modules, `neurospatial.animation.transforms` and the
+  `neurospatial.animation._video_io` import path are removed.
 - `annotation.TrackGraphResult` has a trailing `units` field. Existing manual
   constructors still work because it defaults to `None`, but positional tuple
   unpacking must now include this ninth item. Prefer named attributes such as
@@ -60,8 +281,7 @@
   required ones (bin widths `dt` and `bin_size`, sampling rates, durations,
   thresholds such as `min_speed`, counts, radii and NWB table names). An NWB
   reader or writer given a former positional option raises a `TypeError`
-  that shows the corrected call. `large_session_napari_config` no longer
-  takes `sample_rate_hz`, which it ignored.
+  that shows the corrected call.
 
   ```python
   # before
@@ -2602,6 +2822,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- Closing a napari scene view while napari's perfmon traces its methods no
+  longer fails to release the view: it disconnects the slots it connected.
+- `ScaleBarConfig(background=None)` draws the scale bar without a box, as
+  documented; it drew the default white box behind it.
 
 - The annotation editor opens on **Annotation Controls**, showing the current
   annotation type and name before switching to assisted outlines.

@@ -405,14 +405,19 @@ def clip_binning(
 
 
 def split_binning(
-    binning: Binning, walls: Sequence[shapely.Geometry]
+    binning: Binning,
+    walls: Sequence[shapely.Geometry],
+    *,
+    domain: Polygon | MultiPolygon | None = None,
 ) -> tuple[Binning, ClipMapping]:
     """Split every cell a wall divides into the pieces on each side of it.
 
     A cell crossed from edge to edge by a wall becomes one exact polygon cell
     per side; a cell holding only a wall's end stays whole. The pieces of
     one cell are closed neighbors, and the walls themselves are applied later
-    by :func:`apply_walls`, which closes the paths they block.
+    by :func:`apply_walls`, which closes the paths they block. With
+    ``domain``, each cell not inside it is first clipped to it, as
+    :func:`clip_binning` does, so that every polygon cell lies in the arena.
 
     Returns
     -------
@@ -424,10 +429,25 @@ def split_binning(
     """
     source = materialize_cells(binning)
     wall = unary_union(walls)
+    regions = (
+        source
+        if domain is None
+        else tuple(
+            cell if domain.covers(cell) else cell.intersection(domain)
+            for cell in source
+        )
+    )
     records = [
         (parent, shapely.normalize(piece))
-        for parent, cell in enumerate(source)
-        for piece in sorted(_parts(shapely.ops.split(cell, wall)), key=_key)
+        for parent, region in enumerate(regions)
+        for piece in sorted(
+            (
+                piece
+                for part in _parts(region)
+                for piece in _parts(shapely.ops.split(part, wall))
+            ),
+            key=_key,
+        )
     ]
     cells = PolygonCells(tuple(piece for _, piece in records))
     mapping = ClipMapping(

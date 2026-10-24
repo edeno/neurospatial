@@ -41,36 +41,55 @@ def env_and_fields():
 def test_forwards_all_parameters(mock_animate, env_and_fields):
     """Every documented kwarg lands on the core dispatcher unchanged."""
     env, fields, frame_times = env_and_fields
+    overlays = [object()]
 
     env.animate_fields(
         fields,
         frame_times=frame_times,
         backend="video",
         save_path="test.mp4",
+        overwrite=True,
+        overlays=overlays,
         speed=0.5,
+        max_playback_fps=30,
+        max_gap=None,
         cmap="hot",
         vmin=0.0,
         vmax=1.0,
-        frame_labels=["A", "B", "C"],
+        title="Session 1",
+        show_regions=["goal"],
+        region_alpha=0.5,
+        scale_bar=True,
         dpi=150,
         codec="h265",
         n_workers=4,
     )
 
-    call = mock_animate.call_args.kwargs
-    assert call["env"] is env
-    assert len(call["fields"]) == 3
+    (passed_env, passed_fields), call = mock_animate.call_args
+    assert passed_env is env
+    assert passed_fields is fields
     np.testing.assert_array_equal(call["frame_times"], frame_times)
-    assert call["backend"] == "video"
-    assert call["save_path"] == "test.mp4"
-    assert call["speed"] == 0.5
-    assert call["cmap"] == "hot"
-    assert call["vmin"] == 0.0
-    assert call["vmax"] == 1.0
-    assert call["frame_labels"] == ["A", "B", "C"]
-    assert call["dpi"] == 150
-    assert call["codec"] == "h265"
-    assert call["n_workers"] == 4
+    assert call["overlays"] is overlays
+    assert call == {
+        "frame_times": call["frame_times"],
+        "backend": "video",
+        "save_path": "test.mp4",
+        "overwrite": True,
+        "overlays": overlays,
+        "speed": 0.5,
+        "max_playback_fps": 30,
+        "max_gap": None,
+        "cmap": "hot",
+        "vmin": 0.0,
+        "vmax": 1.0,
+        "title": "Session 1",
+        "show_regions": ["goal"],
+        "region_alpha": 0.5,
+        "scale_bar": True,
+        "dpi": 150,
+        "codec": "h265",
+        "n_workers": 4,
+    }
 
 
 @patch("neurospatial.animation.core.animate_fields")
@@ -85,6 +104,5 @@ def test_accepts_ndarray_input(mock_animate):
 
     env.animate_fields(fields, frame_times=frame_times, backend="html")
 
-    passed = mock_animate.call_args.kwargs["fields"]
-    assert isinstance(passed, np.ndarray)
-    assert passed.shape == (n_frames, env.n_bins)
+    # The array itself is passed on, so a memory-mapped array stays lazy.
+    assert mock_animate.call_args.args[1] is fields

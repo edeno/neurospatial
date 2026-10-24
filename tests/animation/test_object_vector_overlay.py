@@ -214,7 +214,11 @@ class TestObjectVectorOverlayConversion:
         result = overlay.convert_to_data(frame_times, n_frames, mock_env)
 
         assert isinstance(result, ObjectVectorData)
-        assert result.animal_positions.shape == (n_frames, 2)
+        # The animal positions keep their own samples and times.
+        assert_array_equal(result.animal_positions, animal_positions)
+        assert_array_equal(result.times, times)
+        on_frames = result.on_clock(frame_times)
+        assert on_frames.animal_positions.shape == (n_frames, 2)
         assert_array_equal(result.object_positions, object_positions)
         assert result.color == "white"
         assert result.linewidth == 2.0
@@ -238,10 +242,13 @@ class TestObjectVectorOverlayConversion:
             object_positions=object_positions,
             animal_positions=animal_positions,
             times=times,
+            max_gap=None,
             firing_rates=firing_rates,
         )
 
-        result = overlay.convert_to_data(frame_times, n_frames, mock_env)
+        result = overlay.convert_to_data(frame_times, n_frames, mock_env).on_clock(
+            frame_times
+        )
 
         assert isinstance(result, ObjectVectorData)
         assert result.firing_rates is not None
@@ -313,6 +320,7 @@ class TestObjectVectorDataContainer:
             show_objects=True,
             object_marker="o",
             object_size=15.0,
+            times=np.arange(len(animal_positions), dtype=float),
         )
 
         assert_array_equal(data.object_positions, object_positions)
@@ -341,6 +349,7 @@ class TestObjectVectorDataContainer:
             show_objects=True,
             object_marker="o",
             object_size=15.0,
+            times=np.arange(len(animal_positions), dtype=float),
         )
 
         assert_array_equal(data.firing_rates, firing_rates)
@@ -417,7 +426,7 @@ class TestObjectVectorOverlayValidation:
             overlay.convert_to_data(frame_times, len(frame_times), mock_env)
 
     def test_validates_firing_rates_finite(self, mock_env: Any):
-        """Test that firing_rates with NaN/Inf are rejected."""
+        """Missing rate modulation remains missing rather than zero activity."""
         from neurospatial.animation.overlays import ObjectVectorOverlay
 
         object_positions = np.array([[50.0, 50.0]])
@@ -433,8 +442,9 @@ class TestObjectVectorOverlayValidation:
             firing_rates=firing_rates,
         )
 
-        with pytest.raises(ValueError, match="finite"):
-            overlay.convert_to_data(frame_times, len(frame_times), mock_env)
+        result = overlay.convert_to_data(frame_times, len(frame_times), mock_env)
+        assert result.firing_rates[0] == 1.0
+        assert np.isnan(result.firing_rates[1])
 
     def test_validates_object_positions_finite(self, mock_env: Any):
         """Test that object_positions with NaN/Inf are rejected."""
