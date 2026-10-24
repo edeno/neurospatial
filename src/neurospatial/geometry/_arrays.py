@@ -178,6 +178,47 @@ def owned_active_map(
     return owned
 
 
+def mask_active_map(mask: NDArray[np.bool_]) -> NDArray[np.intp]:
+    """Number a mask's active cells in row-major order.
+
+    Parameters
+    ----------
+    mask : ndarray of bool, any shape
+        Active cells of a full lattice.
+
+    Returns
+    -------
+    ndarray of intp, shape (mask.size,)
+        Read-only active-bin index of each flattened cell, or -1 for an
+        inactive cell.
+    """
+    flat = np.asarray(mask, dtype=np.bool_).ravel()
+    mapping = np.full(flat.size, -1, dtype=np.intp)
+    mapping[flat] = np.arange(np.count_nonzero(flat), dtype=np.intp)
+    mapping.setflags(write=False)
+    return mapping
+
+
+def active_order(mapping: NDArray[np.intp]) -> NDArray[np.intp]:
+    """Source cell of each active bin, in active-bin order.
+
+    Parameters
+    ----------
+    mapping : ndarray of intp, shape (n_cells,)
+        Active-bin index of each source cell, or -1. It numbers the active
+        bins exactly once from zero, as :func:`owned_active_map` checks.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_active,)
+        ``order[i]`` is the cell whose active-bin index is ``i``.
+    """
+    active = np.flatnonzero(mapping >= 0)
+    order = np.empty(len(active), dtype=np.intp)
+    order[mapping[active]] = active
+    return order
+
+
 def boolean_selection(keep: ArrayLike, n_items: int) -> NDArray[np.bool_]:
     """Return ``keep`` as a boolean mask with one entry per item.
 

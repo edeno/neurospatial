@@ -120,8 +120,9 @@ def triangle_skew_message(
         f"({100.0 * n_skewed / n_interior:.1f}%) of interior edges exceed "
         f"{_MESH_SKEW_ANGLE_DEG:.0f} degrees of non-orthogonality "
         f"(threshold {100.0 * _MESH_SKEW_FRACTION:.0f}%). The diffusion "
-        f"bandwidth (sigma) is only approximate on this mesh; refine toward "
-        f"well-shaped (near-equilateral) triangles for an exact physical sigma."
+        f"bandwidth is only approximate on this mesh; refine toward "
+        f"well-shaped (near-equilateral) triangles for an exact physical "
+        f"bandwidth."
     )
 
 
@@ -197,7 +198,9 @@ def polar_geometry(
     graph, volumes = grid_geometry(graph, centers, volumes, widths)
     radius = centers[:, 0]
     for u, v, data in graph.edges(data=True):
-        if abs(radius[u] - radius[v]) > 1e-9:
+        # Bins of one ring store the same radius exactly, as grid_geometry
+        # finds a pair's axis, so the test needs no unit-dependent threshold.
+        if radius[u] != radius[v]:
             data["A"] *= 0.5 * (radius[u] + radius[v])
         elif n_angle == 2 and circular:
             data["A"] *= 2.0

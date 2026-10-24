@@ -23,7 +23,7 @@ from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid, framed_locator
 from neurospatial.geometry._locators import Locator
 from neurospatial.geometry._rebin_spec import GridBinningSpec
-from neurospatial.geometry._track import project_1d_to_2d
+from neurospatial.geometry._track import project_1d_to_2d, project_nd_to_1d
 
 if TYPE_CHECKING:
     from neurospatial.geometry._native_faces import NativeFaces
@@ -264,7 +264,9 @@ class BinConnections(ReadOnlyState):
                     index = tuple(int(i) for i in np.argwhere(invalid)[0])
                     raise ValueError(f"pairs{index} must contain integer bin indices.")
             else:
-                raise ValueError("pairs(0, 0) must contain integer bin indices.")
+                raise ValueError(
+                    f"pairs must contain integer bin indices, got {raw_pairs.dtype}."
+                )
         invalid = raw_pairs < 0
         if np.any(invalid):
             index = tuple(int(i) for i in np.argwhere(invalid)[0])
@@ -726,19 +728,14 @@ class TrackLinearization(ReadOnlyState):
         object.__setattr__(self, "active_mask", mask)
 
     def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Map ``(n_points, n_dims)`` coordinates onto the track."""
-        # Imported on use: track_linearization loads pandas and matplotlib (~0.6 s).
-        from track_linearization import get_linearized_position
+        """Map ``(n_points, n_dims)`` coordinates onto the track.
 
-        result = get_linearized_position(
-            data_points,
-            self.graph,
-            list(self.edge_order),
-            self.edge_spacing
-            if isinstance(self.edge_spacing, (int, float))
-            else list(self.edge_spacing),
-        ).linear_position.to_numpy()
-        return np.asarray(result, dtype=np.float64)
+        Each point goes to its nearest segment; a tie goes to the segment
+        first in ``edge_order`` (see :func:`project_nd_to_1d`).
+        """
+        return project_nd_to_1d(
+            data_points, self.graph, self.edge_order, self.edge_spacing
+        )
 
     def linear_to_nd(
         self, linear_coordinates: NDArray[np.float64]

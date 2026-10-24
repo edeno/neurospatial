@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import linemerge, unary_union
 
+from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
@@ -55,8 +56,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
         return locator.cells.polygons
     if isinstance(locator, SubsetLocator):
         parent_polygons = cells_from_locator(locator.base)
-        order = np.flatnonzero(locator.parent_to_child >= 0)
-        order = order[np.argsort(locator.parent_to_child[order])]
+        order = active_order(locator.parent_to_child)
         return tuple(parent_polygons[index] for index in order)
     if isinstance(locator, TransformedLocator):
         return transform_polygon_cells(
@@ -72,8 +72,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
         i, j = np.unravel_index(np.flatnonzero(locator.active_mask), locator.shape)
         return _boxes(locator.edges, i, j)
     if isinstance(locator, MeshLocator):
-        order = np.flatnonzero(locator.simplex_to_active >= 0)
-        order = order[np.argsort(locator.simplex_to_active[order])]
+        order = active_order(locator.simplex_to_active)
         return tuple(shapely.polygons(locator.points[locator.simplices[order]]))
     if not isinstance(locator, HexLocator):
         raise _error(
@@ -84,8 +83,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
     # neighboring cells share exactly the same corner coordinates.
     width = np.sqrt(3.0) * locator.radius
     offsets = np.array([(0, 2), (1, 1), (1, -1), (0, -2), (-1, -1), (-1, 1)])
-    flat = np.flatnonzero(locator.flat_to_active >= 0)
-    flat = flat[np.argsort(locator.flat_to_active[flat])]
+    flat = active_order(locator.flat_to_active)
     row, column = np.divmod(flat, locator.centers_shape[1])
     x = (2 * column + row % 2)[:, None] + offsets[:, 0]
     y = (3 * row)[:, None] + offsets[:, 1]

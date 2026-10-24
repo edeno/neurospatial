@@ -11,6 +11,8 @@ import itertools
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._arrays import mask_active_map
+
 
 def points_to_regular_grid_bin_ind(
     points: NDArray[np.float64],
@@ -68,9 +70,6 @@ def points_to_regular_grid_bin_ind(
         return output_indices
 
     valid_points = points_atleast_2d[valid_input_mask]
-    if valid_points.shape[0] == 0:  # Should be caught by above, but defensive
-        return output_indices
-
     n_dims = valid_points.shape[1]
     if n_dims != len(grid_edges) or n_dims != len(grid_shape):
         raise ValueError(
@@ -115,9 +114,7 @@ def points_to_regular_grid_bin_ind(
     if active_mask is not None:
         active_mask_flat = active_mask.ravel()
         if inverse_map is None:
-            inverse_map = np.full(active_mask_flat.size, -1, dtype=np.intp)
-            active_indices = np.flatnonzero(active_mask_flat)
-            inverse_map[active_indices] = np.arange(len(active_indices), dtype=np.intp)
+            inverse_map = mask_active_map(active_mask)
 
         valid_flat_mask = original_bin_flat_idx_for_valid_points != -1
         # Clipping only makes -1 indexable; valid_flat_mask excludes those rows.

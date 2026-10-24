@@ -808,6 +808,16 @@ def test_derived_saved_authority_cannot_disagree(derive, with_bridge):
         Environment.from_dict(data)
 
 
+def test_saved_combined_faces_cannot_disagree_with_components():
+    env = Environment.combine({"a": grid(), "b": grid(4)}, auto_bridge=False)
+    data = env.to_dict()
+    data["arrays"]["binning/faces/A"] = (
+        2 * np.asarray(data["arrays"]["binning/faces/A"])
+    ).tolist()
+    with pytest.raises(ValueError, match=r": combined faces\.A"):
+        Environment.from_dict(data)
+
+
 def test_nwb_preserves_composition_after_reader_closes(tmp_path):
     from datetime import datetime, timezone
 
@@ -1061,6 +1071,43 @@ def test_touching_grid_certification_tests_no_cell_pairs(monkeypatch):
     with pytest.raises(ValueError, match=r"[Oo]verlap"):
         Environment.combine({"a": square(0.0), "b": square(29.5)})
     assert len(calls) == 1
+
+
+def test_components_are_certified_and_validated_once_per_record(monkeypatch):
+    import neurospatial.geometry._combine_geometry as geometry
+    import neurospatial.geometry._validation as validation
+
+    certified, validated = [], []
+    certify, validate = geometry.certify_components, validation._validate_components
+
+    def counted_certify(children, arenas, keys):
+        certified.append(keys)
+        return certify(children, arenas, keys)
+
+    def counted_validate(binning, coordinates):
+        validated.append(binning.kind)
+        return validate(binning, coordinates)
+
+    monkeypatch.setattr(geometry, "certify_components", counted_certify)
+    monkeypatch.setattr(validation, "_validate_components", counted_validate)
+
+    pair = Environment.combine({"a": grid(), "b": grid(5.0)}, auto_bridge=False)
+    assert certified == [("a", "b")]
+    certified.clear()
+    validated.clear()
+
+    nested = Environment.combine({"ab": pair, "c": grid(10.0)}, auto_bridge=False)
+    # The published pair is neither certified nor validated again.
+    assert certified == [("ab", "c")]
+    assert validated.count("Combined") == 1
+    certified.clear()
+
+    nested.subset(mask=np.arange(nested.n_bins) > 0)
+    assert certified == []
+
+    # A record decoded from storage is certified again.
+    Environment.from_dict(nested.to_dict())
+    assert sorted(certified) == [("a", "b"), ("ab", "c")]
 
 
 def test_subclass_combine_accepts_plain_environment_components():

@@ -1,4 +1,4 @@
-"""Pure projection from a stored linear track to embedded coordinates."""
+"""Pure projections between a stored linear track and embedded coordinates."""
 
 from __future__ import annotations
 
@@ -9,7 +9,84 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._locators import _coordinate_roundoff
+
 Edge = tuple[Any, Any]
+
+
+def _segment_starts(
+    graph: nx.Graph, edge_order: Sequence[Edge], edge_spacing: float | Sequence[float]
+) -> NDArray[np.float64]:
+    """Linear position of the first node of each segment, shape (n_edges,)."""
+    lengths = np.array([graph.edges[e]["distance"] for e in edge_order], dtype=float)
+    if isinstance(edge_spacing, (int, float, np.number)):
+        gaps = np.full(max(0, len(edge_order) - 1), float(edge_spacing))
+    else:
+        gaps = np.asarray(edge_spacing, dtype=float)
+    return np.concatenate([[0.0], np.cumsum(lengths[:-1] + gaps)])
+
+
+def project_nd_to_1d(
+    points: NDArray[np.float64],
+    graph: nx.Graph,
+    edge_order: Sequence[Edge],
+    edge_spacing: float | Sequence[float],
+) -> NDArray[np.float64]:
+    """Map N-D points to linear positions on their nearest track segment.
+
+    A point as near, within rounding, to several segments (as on the shared
+    stretch of an out-and-back track) takes the segment first in
+    ``edge_order``, the one holding the lowest-numbered bins, as bin lookup
+    takes the lowest-numbered of tied bins. The choice therefore does not
+    depend on how a rotation or shift of the track rounds.
+
+    Parameters
+    ----------
+    points : ndarray of float64, shape (n_points, n_dims)
+        Positions in the track's coordinates.
+    graph : networkx.Graph
+        Track graph with node ``pos`` and edge ``distance`` attributes.
+    edge_order : sequence of (node, node)
+        Track segments in linear coordinate order.
+    edge_spacing : float or sequence of float
+        Gaps between successive segments in linear coordinates.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_points,)
+        Linear position of each point's projection, measured from the first
+        node of its segment; NaN for a non-finite point.
+    """
+    query = np.atleast_2d(np.asarray(points, dtype=np.float64))
+    order = list(edge_order)
+    position = nx.get_node_attributes(graph, "pos")
+    # Project along each edge as the graph stores it.
+    stored = {frozenset(edge): edge for edge in graph.edges()}
+    segments = np.array(
+        [[position[node] for node in stored[frozenset(edge)]] for edge in order],
+        dtype=np.float64,
+    )
+    first = segments[:, 0]
+    direction = segments[:, 1] - first
+    squared = np.sum(direction**2, axis=1)
+    finite = np.all(np.isfinite(query), axis=1)
+    values = np.where(finite[:, None], query, 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        along = np.sum(direction * (values[:, None, :] - first), axis=2) / squared
+    # A zero-length segment is its one node.
+    along = np.clip(np.where(squared > 0, along, 0.0), 0.0, 1.0)
+    projected = first + along[:, :, None] * direction
+    distance = np.linalg.norm(values[:, None, :] - projected, axis=2)
+    tolerance = _coordinate_roundoff(values, float(np.max(np.abs(segments))))
+    tied = distance <= (distance.min(axis=1) + tolerance)[:, None]
+    segment = np.argmax(tied, axis=1)
+    rows = np.arange(len(query))
+    start_nodes = np.array([position[edge[0]] for edge in order], dtype=np.float64)
+    linear = _segment_starts(graph, order, edge_spacing)[segment] + np.linalg.norm(
+        start_nodes[segment] - projected[rows, segment], axis=1
+    )
+    linear[~finite] = np.nan
+    return np.asarray(linear, dtype=np.float64)
 
 
 def project_1d_to_2d(

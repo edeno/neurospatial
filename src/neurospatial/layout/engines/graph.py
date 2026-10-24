@@ -247,7 +247,8 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
     def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Convert N-D points to 1D linearized coordinates along the track.
 
-        Uses `track_linearization.get_linearized_position`.
+        A point equally near several segments takes the one first in
+        ``edge_order``.
 
         Parameters
         ----------

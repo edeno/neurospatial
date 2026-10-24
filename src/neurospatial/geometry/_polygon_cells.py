@@ -16,6 +16,7 @@ from shapely.strtree import STRtree
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import (
     ReadOnlyState,
+    active_order,
     axis_ranges,
     boolean_selection,
 )
@@ -259,8 +260,7 @@ def clip_mapping_of(locator: Locator) -> ClipMapping | None:
             raise ValueError(
                 "A subset's parent count disagrees with the clip it selects from."
             )
-        kept = np.flatnonzero(child >= 0)
-        kept = kept[np.argsort(child[kept])]
+        kept = active_order(child)
         return ClipMapping(mapping.parent_bin_indices[kept], mapping.n_parent_bins)
     return None
 

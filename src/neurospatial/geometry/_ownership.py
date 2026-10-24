@@ -51,9 +51,10 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 def _migration(provider: object) -> NoReturn:
     raise TypeError(
         f"{type(provider).__name__} cannot be published as an owned immutable "
-        "snapshot. Migrate custom providers to supported owned binning/domain "
-        "data before constructing an environment; retaining delegated mutable "
-        "geometry is no longer supported."
+        "snapshot: an environment holds only the geometry records of "
+        "neurospatial.binning and neurospatial.arena. Convert it to those "
+        "records, or install a snapshot adapter for it, before constructing "
+        "the environment."
     )
 
 
@@ -62,7 +63,7 @@ def _check_locator(locator: Locator) -> None:
         for child in locator.children:
             _check_binning(child)
         for arena in locator.arenas:
-            own_arena(arena)
+            _snapshot_arena(arena)
         return
     if isinstance(
         locator, (SubsetLocator, TransformedLocator, ClippedLocator)
@@ -114,11 +115,16 @@ def _snapshot_locator(locator: Locator) -> Locator:
         base = _snapshot_locator(locator.base)
         return locator if base is locator.base else replace(locator, base=base)
     if type(locator) is CombinedLocator:
-        return replace(
-            locator,
-            children=tuple(_snapshot_binning(child) for child in locator.children),
-            arenas=tuple(own_arena(arena) for arena in locator.arenas),
-        )
+        children = tuple(_snapshot_binning(child) for child in locator.children)
+        arenas = tuple(_snapshot_arena(arena) for arena in locator.arenas)
+        if all(
+            new is old
+            for new, old in zip(
+                (*children, *arenas), (*locator.children, *locator.arenas), strict=True
+            )
+        ):
+            return locator
+        return replace(locator, children=children, arenas=arenas)
     if type(locator) in (
         RectilinearLocator,
         HexLocator,
@@ -148,27 +154,31 @@ def own_binning(binning: Binning) -> Binning:
     return copy.deepcopy(normalized)
 
 
+def _snapshot_arena(value: Arena) -> Arena:
+    """Adapt a registered arena provider, keeping built-in arenas as they are."""
+    if type(value) is _CombinedArena:
+        children = tuple(_snapshot_arena(child) for child in value.children)
+        if all(new is old for new, old in zip(children, value.children, strict=True)):
+            return value
+        return _CombinedArena(children)
+    if type(value) is _TransformedArena:
+        base = _snapshot_arena(value.base)
+        return value if base is value.base else replace(value, base=base)
+    elif type(value) not in (
+        UnknownArena,
+        OpenArena,
+        MaskArena,
+        TrackArena,
+        EgocentricSurround,
+    ):
+        return cast("Arena", snapshot_provider(value, "arena"))
+    return value
+
+
 def own_arena(arena: Arena) -> Arena:
     """Own a native continuous domain, refusing delegated custom behavior.
 
     The environment retains this private snapshot; public arena access must
     separately detach it so mutable NumPy headers cannot reach its authority.
     """
-
-    def snapshot(value: Arena) -> Arena:
-        if type(value) is _CombinedArena:
-            return _CombinedArena(tuple(snapshot(child) for child in value.children))
-        if type(value) is _TransformedArena:
-            base = snapshot(value.base)
-            return value if base is value.base else replace(value, base=base)
-        elif type(value) not in (
-            UnknownArena,
-            OpenArena,
-            MaskArena,
-            TrackArena,
-            EgocentricSurround,
-        ):
-            return cast("Arena", snapshot_provider(value, "arena"))
-        return value
-
-    return copy.deepcopy(snapshot(arena))
+    return copy.deepcopy(_snapshot_arena(arena))

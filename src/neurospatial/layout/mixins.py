@@ -156,31 +156,8 @@ class _GridMixin(_NeighborPairsMixin):
     bin_centers: NDArray[np.float64] | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
     layout_type: str
-    _active_mask_inverse_map: NDArray[np.intp] | None = None
     _locator: RectilinearLocator | None = None
     _grid_spec: GridBinningSpec | None = None
-
-    @property
-    def active_mask_inverse_map(self) -> NDArray[np.intp] | None:
-        """Cached inverse mapping from flat grid index to active bin index.
-
-        Returns None if no active_mask is set. Otherwise returns an array where
-        inverse_map[flat_idx] = active_bin_idx (or -1 if not active).
-
-        This is computed once and cached for efficient repeated lookups.
-        """
-        if self.active_mask is None:
-            return None
-
-        # Compute and cache on first access
-        if self._active_mask_inverse_map is None:
-            active_mask_flat = self.active_mask.ravel()
-            inverse_map = np.full(active_mask_flat.size, -1, dtype=np.intp)
-            active_indices = np.flatnonzero(active_mask_flat)
-            inverse_map[active_indices] = np.arange(len(active_indices), dtype=np.intp)
-            self._active_mask_inverse_map = inverse_map
-
-        return self._active_mask_inverse_map
 
     def _build_locator(self, *, connect_diagonal: bool | None = None) -> None:
         """Snapshot cells and explicit native construction choices together.
@@ -198,7 +175,6 @@ class _GridMixin(_NeighborPairsMixin):
                     if getattr(self, name) is None
                 ),
             )
-        self._active_mask_inverse_map = None
         self._locator = RectilinearLocator(
             self.grid_edges,
             self.grid_shape,

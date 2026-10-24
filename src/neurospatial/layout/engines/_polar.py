@@ -73,9 +73,6 @@ class _PolarGridLayout(MaskedGridLayout):
             grid_edges=grid_edges,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
-        # A rebuild changes active-bin numbering; both seams and point lookup
-        # must derive their inverse mapping from the new mask.
-        self._active_mask_inverse_map = None
         self.circular_angle = bool(circular_angle)
         grid_pairs, _ = self._neighbor_pairs()
         first, second = grid_pairs[:, 0], grid_pairs[:, 1]
@@ -85,9 +82,8 @@ class _PolarGridLayout(MaskedGridLayout):
             assert self.grid_edges is not None
             distance_edges, angle_edges = self.grid_edges
             distance_centers = 0.5 * (distance_edges[:-1] + distance_edges[1:])
-            assert self.active_mask_inverse_map is not None
             seams, seam_lengths = _circular_seam_pairs(
-                self.active_mask_inverse_map,
+                self.locator().flat_to_active,
                 n_distance,
                 n_angle,
                 distance_centers,

@@ -869,14 +869,16 @@ def test_stored_grid_faces_cannot_bypass_publication_geometry_checks(field):
         Environment.from_dict(payload)
 
 
-def test_legacy_tiny_grid_zero_faces_require_rebuilding():
+def test_tiny_grid_zero_faces_are_refused():
     env = Environment.from_grid_mask(
         np.ones((2, 1), dtype=bool),
         grid_edges=(np.arange(3.0) * 1e-10, np.arange(2.0) * 1e-10),
     )
     source = env._binning
     faces = source.build_faces()
-    with pytest.raises(ValueError, match="Older tiny-grid records"):
+    with pytest.raises(
+        ValueError, match=r"grid faces\.A does not match shared cell-face"
+    ):
         Environment.from_bins(
             replace(
                 source,

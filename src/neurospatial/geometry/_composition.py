@@ -11,16 +11,18 @@ from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
 from neurospatial.geometry._arena import Arena, contains_with_error
-from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
+from neurospatial.geometry._arrays import ReadOnlyState, active_order, per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
+    KnownFaces,
     MissingCellGeometryError,
+    MissingFaces,
     SpatialBins,
     refuse_mixed_measure_conductance,
 )
 from neurospatial.geometry._components import TriangleShapes
-from neurospatial.geometry._diffusion import DiffusionGeometry
+from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
 from neurospatial.geometry._face_builders import triangle_skew_message
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import (
@@ -251,6 +253,44 @@ class CombinedLocator(ReadOnlyState):
         return result
 
 
+def combined_faces(
+    locator: CombinedLocator, connections: BinConnections, sizes: NDArray[np.float64]
+) -> KnownFaces | MissingFaces:
+    """Join the components' faces, in the combined open-pair order.
+
+    Parameters
+    ----------
+    locator : CombinedLocator
+        The components and their bridges.
+    connections : BinConnections
+        ``locator.bin_connections()``.
+    sizes : ndarray of float64, shape (n_bins,)
+        ``locator.spatial_bins().sizes``.
+
+    Returns
+    -------
+    KnownFaces or MissingFaces
+        Missing when a bridge joins components, since a bridge has no
+        physical face, or when a component has no faces.
+    """
+    if len(locator.bridge_pairs) or not all(
+        child.faces.available for child in locator.children
+    ):
+        return MissingFaces(
+            "Combined navigation bridges have no physical face geometry; use "
+            "scalar diffusion when child geometry is certified."
+        )
+    parts = [child.build_faces() for child in locator.children]
+    return KnownFaces(
+        FaceGeometry(
+            connections.pairs,
+            np.concatenate([part.A for part in parts]),
+            np.concatenate([part.distance for part in parts]),
+            sizes,
+        )
+    )
+
+
 def combined_normals(locator: CombinedLocator) -> FaceNormals | None:
     """Combine authoritative child normals; bridges have no physical normal."""
 
@@ -325,8 +365,7 @@ def triangle_skew_messages(binning: Binning) -> tuple[str, ...]:
                 if retained is None or np.any(retained):
                     visit(child, retained, (*path, key))
         elif isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             retained = np.zeros(len(locator.parent_to_child), dtype=np.bool_)
             retained[selected if active is None else selected[active]] = True
             walk(locator.base, retained, path)
@@ -386,8 +425,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                 [child.bins.measure_dims for child in locator.children]
             )
         if isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             retained = np.zeros(len(locator.parent_to_child), dtype=np.bool_)
             retained[selected if active is None else selected[active]] = True
             result = weights(locator.base, retained)
@@ -400,7 +438,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             if result is None:
                 return None
             matrix, dims = result
-            linear = np.linalg.inv(locator.inverse)[:-1, :-1]
+            linear = locator.forward[:-1, :-1]
             scale = float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
             normalized = linear / scale
             if not np.allclose(
@@ -468,13 +506,12 @@ def composition_view(
             return None
         root, indices, scale = result
         if isinstance(locator, SubsetLocator):
-            selected = np.flatnonzero(locator.parent_to_child >= 0)
-            selected = selected[np.argsort(locator.parent_to_child[selected])]
+            selected = active_order(locator.parent_to_child)
             indices = indices[selected]
         elif isinstance(locator, ClippedLocator):
             indices = indices[locator.mapping.parent_bin_indices]
         else:
-            linear = np.linalg.inv(locator.inverse)[:-1, :-1]
+            linear = locator.forward[:-1, :-1]
             scale *= float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
         return root, indices, scale
     return None
