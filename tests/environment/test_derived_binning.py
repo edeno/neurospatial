@@ -870,3 +870,52 @@ def test_extreme_axis_reflection_does_not_hide_wrong_measures(
         payload["arrays"]["binning/faces/volumes"][0] = 1.2
     with pytest.raises(ValueError, match=r"sizes|volumes|measures"):
         from_dict(payload)
+
+
+@pytest.mark.parametrize("built_environment", ["hex", "mesh"], indirect=True)
+def test_hexagon_and_triangle_lattices_survive_maps_and_subsets(built_environment):
+    """grid_shape indexes the lattice, so moving or selecting bins keeps it;
+    a subset keeps the shape and deactivates the dropped cells."""
+    env = built_environment
+    angle = 0.4
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle), 2.0], [np.sin(angle), np.cos(angle), 1.0]]
+    )
+    keep = np.arange(env.n_bins) != 3
+    derived = {
+        "translated": env.apply_transform(
+            Affine2D(np.array([[1.0, 0.0, 5.0], [0.0, 1.0, -3.0], [0.0, 0.0, 1.0]]))
+        ),
+        "rotated": env.apply_transform(Affine2D(np.vstack((rotation, [0, 0, 1])))),
+        "subset": env.subset(mask=keep),
+    }
+    for name, child in derived.items():
+        assert child.grid_shape == env.grid_shape, name
+        expected = env.active_mask.copy()
+        if name == "subset":
+            expected.flat[np.flatnonzero(env.active_mask)[~keep]] = False
+        np.testing.assert_array_equal(child.active_mask, expected, err_msg=name)
+        restored = from_dict(to_dict(child))
+        assert restored.grid_shape == env.grid_shape, name
+        np.testing.assert_array_equal(restored.active_mask, expected, err_msg=name)
+
+
+def test_rotated_rectangular_grid_has_no_world_aligned_shape():
+    """Source axes of a rotated grid are not world axes (see alignment.md)."""
+    grid = Environment.from_grid_mask(
+        np.ones((6, 6), dtype=bool), grid_edges=(np.arange(7.0),) * 2
+    )
+    angle = 0.4
+    rotated = grid.apply_transform(
+        Affine2D(
+            np.array(
+                [
+                    [np.cos(angle), -np.sin(angle), 0.0],
+                    [np.sin(angle), np.cos(angle), 0.0],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+        )
+    )
+    assert rotated.grid_shape == (36,)
+    assert rotated.grid_edges == ()
