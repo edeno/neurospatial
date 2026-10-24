@@ -69,17 +69,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
                 "Cell materialization requires a Cartesian 2-D locator.",
                 "retain planar area-measured geometry",
             )
-        mask = (
-            np.ones(locator.shape, dtype=bool)
-            if locator.active_mask is None
-            else locator.active_mask
-        )
-        mapping = locator.flat_to_active
-        if mapping is None:
-            mapping = np.full(mask.size, -1, dtype=np.intp)
-            mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        flat = np.flatnonzero(mapping >= 0)
-        i, j = np.unravel_index(flat[np.argsort(mapping[flat])], locator.shape)
+        i, j = np.unravel_index(np.flatnonzero(locator.active_mask), locator.shape)
         return _boxes(locator.edges, i, j)
     if isinstance(locator, MeshLocator):
         order = np.flatnonzero(locator.simplex_to_active >= 0)

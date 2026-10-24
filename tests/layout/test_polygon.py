@@ -108,7 +108,7 @@ def test_polygon_cells_name_the_first_overlapping_pair():
 
 def test_clipped_locator_preserves_parent_boundary_and_nonfinite_semantics():
     base = RectilinearLocator(
-        (np.array([0.0, 4.0]), np.array([0.0, 4.0])), (1, 1), None, None
+        (np.array([0.0, 4.0]), np.array([0.0, 4.0])), (1, 1), np.ones((1, 1), bool)
     )
     cells = PolygonCells((box(0, 0, 1, 4), box(3, 0, 4, 4)))
     mapping = ClipMapping([0, 0], 1)

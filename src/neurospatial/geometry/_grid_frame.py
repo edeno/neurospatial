@@ -69,14 +69,10 @@ class FramedGrid(ReadOnlyState):
         object.__setattr__(self, "forward", matrix)
         object.__setattr__(self, "inverse", inverse)
         source = self.source
-        mapping = np.full(source.active_mask.size, -1, dtype=np.intp)
-        mapping[source.active_mask.ravel()] = np.arange(
-            np.count_nonzero(source.active_mask)
-        )
         object.__setattr__(
             self,
             "_cells",
-            RectilinearLocator(source.edges, source.shape, source.active_mask, mapping),
+            RectilinearLocator(source.edges, source.shape, source.active_mask),
         )
         linear, inverse_linear = matrix[:-1, :-1], inverse[:-1, :-1]
         dims = len(linear)
@@ -300,17 +296,8 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
         ), error
     if not isinstance(locator, RectilinearLocator):
         raise ValueError("FramedGrid requires a matching rectangular locator.")
-    mask = (
-        np.ones(locator.shape, dtype=bool)
-        if locator.active_mask is None
-        else locator.active_mask
-    )
-    if locator.flat_to_active is not None and not np.array_equal(
-        locator.flat_to_active[mask.ravel()], np.arange(np.count_nonzero(mask))
-    ):
-        raise ValueError("FramedGrid requires row-major locator bin ordering.")
     return FramedGrid(
-        RectilinearGrid(locator.edges, locator.shape, mask),
+        RectilinearGrid(locator.edges, locator.shape, locator.active_mask),
         np.eye(len(locator.shape) + 1),
     ), np.zeros((len(locator.shape) + 1,) * 2)
 

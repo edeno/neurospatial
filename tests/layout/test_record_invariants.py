@@ -11,6 +11,7 @@ from neurospatial.binning import (
     RectilinearLocator,
     TrackLinearization,
 )
+from neurospatial.geometry._codecs import decode, encode
 
 
 def _track_graph() -> nx.Graph:
@@ -24,7 +25,7 @@ def _track_graph() -> nx.Graph:
 GRID_RECORDS = {
     "RectilinearGrid": lambda edges, shape, mask: RectilinearGrid(edges, shape, mask),
     "RectilinearLocator": lambda edges, shape, mask: RectilinearLocator(
-        edges, shape, mask, None
+        edges, shape, mask
     ),
     "MaskArena": lambda edges, shape, mask: MaskArena(edges, mask),
     "TrackLinearization": lambda edges, shape, mask: TrackLinearization(
@@ -67,3 +68,24 @@ def test_framed_grid_refuses_a_one_dimensional_source():
     grid = RectilinearGrid((np.array([0.0, 1.0]),), (1,), np.ones(1, bool))
     with pytest.raises(ValueError, match="2-D or 3-D"):
         FramedGrid(grid, np.eye(2))
+
+
+def test_rectilinear_locator_numbers_bins_by_its_mask():
+    """The active-bin numbering follows the mask, so lookup and centers agree."""
+    edges = (np.array([0.0, 1.0, 2.0]),)
+    locator = RectilinearLocator(edges, (2,), np.array([True, False]))
+    np.testing.assert_array_equal(locator.active_centers().ravel(), [0.5])
+    np.testing.assert_array_equal(locator.locate(np.array([[0.5], [1.5]])), [0, -1])
+    with pytest.raises(TypeError):
+        RectilinearLocator(edges, (2,), np.array([True, False]), np.array([-1, 0]))
+
+
+def test_rectilinear_locator_codec_refuses_the_old_record_format():
+    locator = RectilinearLocator(
+        (np.array([0.0, 1.0, 2.0]),), (2,), np.array([True, True])
+    )
+    meta, arrays = encode(locator, "part")
+    assert meta["codec_version"] == 2
+    assert set(arrays) == {"part/edges_0", "part/active_mask"}
+    with pytest.raises(ValueError, match="codec_version 1"):
+        decode({**meta, "codec_version": 1}, arrays, "part")

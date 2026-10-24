@@ -96,7 +96,6 @@ def grid_env():
         "active_count",
         "grid_edges",
         "grid_shape",
-        "locator_order",
         "locator_edges",
     ],
 )
@@ -130,12 +129,6 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
             grid = replace(grid, edges=tuple(edges))
             pattern = "edges|centers|geometry"
         binning = replace(binning, rectilinear=grid)
-    elif mismatch == "locator_order":
-        mapping = np.arange(env.n_bins, dtype=np.intp)[::-1]
-        binning = replace(
-            binning, locator=replace(binning.locator, flat_to_active=mapping)
-        )
-        pattern = "flat_to_active|locator|bin.*order"
     else:
         edges = [edge.copy() for edge in binning.locator.edges]
         edges[0][1] = 0.95
@@ -335,7 +328,7 @@ def test_facade_validates_genuinely_nonuniform_cartesian_cells(corrupt):
         "MaskedGrid",
         SpatialBins(centers, sizes, 2),
         BinConnections.from_arrays(pairs, distances),
-        RectilinearLocator(edges, (2, 1), mask, np.arange(2)),
+        RectilinearLocator(edges, (2, 1), mask),
         KnownFaces(FaceGeometry(pairs, np.array([1.0]), distances, sizes)),
         rectilinear=RectilinearGrid(edges, (2, 1), mask),
     )

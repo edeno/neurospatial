@@ -23,7 +23,11 @@ from neurospatial.geometry._binning import (
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._components import Outline, TriangleShapes
 from neurospatial.geometry._diffusion import FaceGeometry
-from neurospatial.geometry._locators import MeshLocator, NearestBinLocator
+from neurospatial.geometry._locators import (
+    MeshLocator,
+    NearestBinLocator,
+    RectilinearLocator,
+)
 from neurospatial.layout import create_layout
 
 
@@ -137,6 +141,7 @@ def test_codec_round_trip(codec_part):
         Binning: 5,
         SpatialBins: 2,
         NearestBinLocator: 2,
+        RectilinearLocator: 2,
     }.get(type(codec_part), 1)
     assert isinstance(meta["codec"], str)
     assert all(name.startswith("part/") for name in arrays)
@@ -254,11 +259,8 @@ def test_saved_pairs_must_name_existing_bins():
         "complex",
         "fractional_pairs",
         "overflow_pairs",
-        "duplicate_map",
-        "fractional_map",
         "mask_dtype",
         "nonmonotonic_edges",
-        "presence_flag",
         "invalid_wkb",
     ],
 )
@@ -287,22 +289,12 @@ def test_decode_refuses_malformed_geometry_payload(corruption):
         array[0, 0] = 0.5 if corruption == "fractional_pairs" else 2.0**63
         arrays["part/all_pairs"] = array
         pattern = "pairs"
-    elif corruption == "duplicate_map":
-        arrays["part/flat_to_active"] = np.zeros(4, dtype=np.intp)
-        pattern = "flat_to_active"
-    elif corruption == "fractional_map":
-        arrays["part/flat_to_active"] = arrays["part/flat_to_active"].astype(float)
-        arrays["part/flat_to_active"][0] = 0.5
-        pattern = "flat_to_active"
     elif corruption == "mask_dtype":
         arrays["part/active_mask"] = arrays["part/active_mask"].astype(int)
         pattern = "active_mask"
     elif corruption == "nonmonotonic_edges":
         arrays["part/edges_0"][1] = arrays["part/edges_0"][0]
         pattern = r"edges\[0\]"
-    elif corruption == "presence_flag":
-        meta["has_active_mask"] = "false"
-        pattern = "has_active_mask"
     else:
         arrays["part/wkb"] = np.arange(7, dtype=np.uint8)
         pattern = "wkb|WKB|geometry"

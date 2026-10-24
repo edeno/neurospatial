@@ -330,7 +330,7 @@ class TestFFTAutocorrelationLagsArePhysical:
                 "RegularGrid",
                 SpatialBins.from_arrays(centers, areas, 2),
                 BinConnections.from_arrays(pairs, distances),
-                RectilinearLocator(edges, shape, mask, None),
+                RectilinearLocator(edges, shape, mask),
                 MissingFaces("No finite-volume faces supplied."),
                 rectilinear=RectilinearGrid(edges, shape, mask),
             )
@@ -486,7 +486,7 @@ def _pixel_size_cases():
                 "RegularGrid",
                 SpatialBins.from_arrays(centers, areas, 2),
                 BinConnections.from_arrays(pairs, distances),
-                RectilinearLocator((x_edges, y_edges), shape, mask, None),
+                RectilinearLocator((x_edges, y_edges), shape, mask),
                 MissingFaces("No finite-volume faces supplied."),
                 rectilinear=RectilinearGrid((x_edges, y_edges), shape, mask),
             )

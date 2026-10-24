@@ -171,7 +171,7 @@ def test_frame_round_trip_owns_all_arrays(
         .reshape(n_dims, -1)
         .T
     )
-    locator = RectilinearLocator(edges, shape, None, None)
+    locator = RectilinearLocator(edges, shape, np.ones(shape, bool))
     bins = SpatialBins(centers, np.ones(len(centers)), n_dims)
     native = Environment.from_bins(
         Binning(

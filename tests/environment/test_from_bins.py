@@ -58,7 +58,7 @@ def _rectilinear():
         "explicit_grid",
         bins,
         BinConnections.from_arrays(pairs, [2.0, 3.0, 4.0]),
-        RectilinearLocator(edges, (2, 2), mask, None),
+        RectilinearLocator(edges, (2, 2), mask),
         KnownFaces(FaceGeometry(pairs, np.ones(3), np.ones(3), np.ones(4))),
         rectilinear=RectilinearGrid(edges, (2, 2), mask),
     )
@@ -448,7 +448,7 @@ def test_nonuniform_cells_are_supported_without_regular_grid_rebinning():
         "RegularGrid",
         bins,
         BinConnections.from_arrays([[0, 1]], [1.5]),
-        RectilinearLocator(edges, (2, 1), mask, None),
+        RectilinearLocator(edges, (2, 1), mask),
         MissingFaces("No finite-volume faces supplied."),
         rectilinear=RectilinearGrid(edges, (2, 1), mask),
     )
@@ -468,7 +468,7 @@ def test_nearly_uniform_variable_measures_are_not_reinterpreted_as_native_cells(
         "RegularGrid",
         bins,
         BinConnections.from_arrays([[0, 1]], [centers[1, 0] - centers[0, 0]]),
-        RectilinearLocator(edges, (2, 1), mask, None),
+        RectilinearLocator(edges, (2, 1), mask),
         MissingFaces("No finite-volume faces supplied."),
         rectilinear=RectilinearGrid(edges, (2, 1), mask),
     )
@@ -796,7 +796,7 @@ def _variable_grid_faces(n_dims):
         "variable_grid",
         bins,
         BinConnections.from_arrays(pairs, distances * 3 + 1),
-        RectilinearLocator(edges, mask.shape, mask, None),
+        RectilinearLocator(edges, mask.shape, mask),
         KnownFaces(FaceGeometry(pairs, np.array(areas), distances, sizes)),
         rectilinear=RectilinearGrid(edges, mask.shape, mask),
     )
@@ -987,7 +987,7 @@ def test_grid_face_validation_preserves_finite_extreme_coordinate_scales(scale):
         "finite_extreme_grid",
         SpatialBins.from_arrays(centers, sizes, 1),
         BinConnections.from_arrays(pairs, [scale]),
-        RectilinearLocator(edges, (2,), mask, None),
+        RectilinearLocator(edges, (2,), mask),
         KnownFaces(FaceGeometry(pairs, np.ones(1), np.array([scale]), sizes)),
         rectilinear=RectilinearGrid(edges, (2,), mask),
     )

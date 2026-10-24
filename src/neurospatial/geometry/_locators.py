@@ -275,37 +275,32 @@ class RectilinearLocator(ReadOnlyState):
     Parameters
     ----------
     edges : tuple of ndarray
-        Increasing cell edges along each coordinate axis.
+        Finite, strictly increasing cell edges along each coordinate axis;
+        ``edges[d]`` has shape ``(shape[d] + 1,)``.
     shape : tuple of int
         Number of full-grid cells along each coordinate axis.
-    active_mask : ndarray of bool, shape ``shape``, or None
-        Active cells. None treats the entire grid as active.
-    flat_to_active : ndarray of intp, shape (prod(shape),), or None
-        Active-bin index of each full-grid cell, or -1 when inactive.
+    active_mask : ndarray of bool, shape ``shape``
+        Active cells. Active bins are numbered in row-major order of the
+        mask.
     """
 
     edges: tuple[NDArray[np.float64], ...]
     shape: tuple[int, ...]
-    active_mask: NDArray[np.bool_] | None
-    flat_to_active: NDArray[np.intp] | None
+    active_mask: NDArray[np.bool_]
+    # Active-bin index of each full-grid cell, or -1, from the mask's order.
+    _flat_to_active: NDArray[np.intp] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         edges, shape, mask = owned_grid(
-            self.edges,
-            self.shape,
-            np.ones(tuple(self.shape), dtype=bool)
-            if self.active_mask is None
-            else self.active_mask,
-            name="RectilinearLocator",
+            self.edges, self.shape, self.active_mask, name="RectilinearLocator"
         )
+        mapping = np.full(mask.size, -1, dtype=np.intp)
+        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask), dtype=np.intp)
+        mapping.setflags(write=False)
         object.__setattr__(self, "edges", edges)
         object.__setattr__(self, "shape", shape)
-        if self.active_mask is not None:
-            object.__setattr__(self, "active_mask", mask)
-        if self.flat_to_active is not None:
-            object.__setattr__(
-                self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)
-            )
+        object.__setattr__(self, "active_mask", mask)
+        object.__setattr__(self, "_flat_to_active", mapping)
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
@@ -367,7 +362,7 @@ class RectilinearLocator(ReadOnlyState):
             grid_edges=self.edges,
             grid_shape=self.shape,
             active_mask=self.active_mask,
-            inverse_map=self.flat_to_active,
+            inverse_map=self._flat_to_active,
         ).astype(np.intp, copy=False)
 
     def _outline_owner(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
@@ -380,15 +375,7 @@ class RectilinearLocator(ReadOnlyState):
 
     def _active_index(self, flat: NDArray[np.intp]) -> NDArray[np.intp]:
         """Active-bin index of full-grid cells, or -1 for inactive cells."""
-        if self.flat_to_active is not None:
-            return self.flat_to_active[flat]
-        if self.active_mask is None:
-            return flat
-        mapping = np.full(self.active_mask.size, -1, dtype=np.intp)
-        mapping[self.active_mask.ravel()] = np.arange(
-            np.count_nonzero(self.active_mask)
-        )
-        return mapping[flat]
+        return self._flat_to_active[flat]
 
     def active_centers(self) -> NDArray[np.float64]:
         """Midpoints of the active cells, in active-bin (row-major) order.
@@ -400,12 +387,7 @@ class RectilinearLocator(ReadOnlyState):
             rectilinear binning are these values, so centers and edges cannot
             disagree.
         """
-        mask = (
-            np.ones(self.shape, dtype=bool)
-            if self.active_mask is None
-            else self.active_mask
-        )
-        coordinates = np.unravel_index(np.flatnonzero(mask), self.shape)
+        coordinates = np.unravel_index(np.flatnonzero(self.active_mask), self.shape)
         return np.column_stack(
             [
                 get_centers(edge)[index]
@@ -415,19 +397,13 @@ class RectilinearLocator(ReadOnlyState):
 
     def subset(self, keep: NDArray[np.bool_]) -> RectilinearLocator:
         """Keep whole active cells in their original row-major order."""
-        mask = (
-            np.ones(self.shape, dtype=bool)
-            if self.active_mask is None
-            else self.active_mask.copy()
-        )
+        mask = self.active_mask.copy()
         keep = np.asarray(keep)
         active = np.flatnonzero(mask)
         if keep.dtype.kind != "b" or keep.shape != (len(active),):
             raise ValueError(f"keep must be a boolean array of shape ({len(active)},).")
         mask.ravel()[active] = keep
-        mapping = np.full(mask.size, -1, dtype=np.intp)
-        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        return RectilinearLocator(self.edges, self.shape, mask, mapping)
+        return RectilinearLocator(self.edges, self.shape, mask)
 
     def transformed(self, transform: AffineMatrix) -> RectilinearLocator | None:
         """Map positive diagonal scales and translations without changing owners."""
@@ -443,9 +419,7 @@ class RectilinearLocator(ReadOnlyState):
             diagonal[axis] * edge + matrix[axis, -1]
             for axis, edge in enumerate(self.edges)
         )
-        return RectilinearLocator(
-            edges, self.shape, self.active_mask, self.flat_to_active
-        )
+        return RectilinearLocator(edges, self.shape, self.active_mask)
 
 
 @dataclass(frozen=True, eq=False)

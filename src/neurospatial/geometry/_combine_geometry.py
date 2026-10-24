@@ -72,14 +72,7 @@ def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
         ]
     if not isinstance(locator, RectilinearLocator):
         raise ValueError("No stored rectilinear cells.")
-    mask = (
-        np.ones(locator.shape, dtype=bool)
-        if locator.active_mask is None
-        else locator.active_mask
-    )
-    indices = np.flatnonzero(mask.ravel())
-    if locator.flat_to_active is not None:
-        indices = indices[np.argsort(locator.flat_to_active[indices])]
+    indices = np.flatnonzero(locator.active_mask.ravel())
     corners = np.array(list(product((0, 1), repeat=len(locator.shape))), dtype=np.intp)
     return [
         np.column_stack(
@@ -185,9 +178,7 @@ def arena_pieces(arena: Arena) -> list[_Piece]:
         ]
     if isinstance(arena, MaskArena):
         boxes = cell_boxes(
-            RectilinearLocator(
-                arena.edges, arena.active_mask.shape, arena.active_mask, None
-            )
+            RectilinearLocator(arena.edges, arena.active_mask.shape, arena.active_mask)
         )
         return [
             _Piece("box", vertices, vertices.min(axis=0), vertices.max(axis=0))
@@ -390,19 +381,9 @@ def _grid_segment_intervals(
                 nearest = int(np.argmin(np.abs(edges - segment[row, axis])))
                 if abs(edges[nearest] - segment[row, axis]) <= error[row, axis]:
                     segment[row, axis] = edges[nearest]
-    mask = (
-        np.ones(locator.shape, dtype=bool)
-        if locator.active_mask is None
-        else locator.active_mask.copy()
-    )
+    mask = locator.active_mask.copy()
     if selected is not None:
-        flat_to_active = locator.flat_to_active
-        if flat_to_active is None:
-            flat_to_active = np.full(mask.size, -1, dtype=np.intp)
-            flat_to_active[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        mask.ravel()[flat_to_active >= 0] = selected[
-            flat_to_active[flat_to_active >= 0]
-        ]
+        mask.ravel()[np.flatnonzero(mask)] = selected
     direction = segment[1] - segment[0]
     cuts = [0.0, 1.0]
     for axis, edges in enumerate(locator.edges):
@@ -581,7 +562,7 @@ def _arena_segment_interior(
         return bool(
             _grid_segment_intervals(
                 RectilinearLocator(
-                    arena.edges, arena.active_mask.shape, arena.active_mask, None
+                    arena.edges, arena.active_mask.shape, arena.active_mask
                 ),
                 segment,
                 error=error,

@@ -624,39 +624,17 @@ def _encode_rectilinear_locator(obj: RectilinearLocator, prefix: str) -> Payload
     values: dict[str, NDArray[Any]] = {
         f"edges_{axis}": edge for axis, edge in enumerate(obj.edges)
     }
-    if obj.active_mask is not None:
-        values["active_mask"] = obj.active_mask
-    if obj.flat_to_active is not None:
-        values["flat_to_active"] = obj.flat_to_active
-    return {
-        "shape": list(obj.shape),
-        "has_active_mask": obj.active_mask is not None,
-        "has_flat_to_active": obj.flat_to_active is not None,
-    }, _arrays(prefix, **values)
+    values["active_mask"] = obj.active_mask
+    return {"shape": list(obj.shape)}, _arrays(prefix, **values)
 
 
 def _decode_rectilinear_locator(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> RectilinearLocator:
     edges, shape = _grid_edges(meta, arrays, prefix)
-    mask = (
-        _array(arrays, prefix, "active_mask", np.bool_)
-        if _flag(meta, "has_active_mask")
-        else None
+    return RectilinearLocator(
+        edges, shape, _array(arrays, prefix, "active_mask", np.bool_)
     )
-    mapping = (
-        _array(arrays, prefix, "flat_to_active", np.intp)
-        if _flag(meta, "has_flat_to_active")
-        else None
-    )
-    if mapping is not None:
-        _active_map(mapping, math.prod(shape), "flat_to_active")
-        if mask is not None:
-            expected = np.full(mask.size, -1, dtype=np.intp)
-            expected[mask.ravel()] = np.arange(np.count_nonzero(mask))
-            if not np.array_equal(mapping, expected):
-                raise ValueError("flat_to_active does not match active_mask ordering.")
-    return RectilinearLocator(edges, shape, mask, mapping)
 
 
 def _encode_hex_locator(obj: HexLocator, prefix: str) -> Payload:
@@ -1215,7 +1193,10 @@ _CODECS: dict[str, Codec] = {
         ClippedLocator, _encode_clipped_locator, _decode_clipped_locator
     ),
     "RectilinearLocator": Codec(
-        RectilinearLocator, _encode_rectilinear_locator, _decode_rectilinear_locator
+        RectilinearLocator,
+        _encode_rectilinear_locator,
+        _decode_rectilinear_locator,
+        version=2,
     ),
     "HexLocator": Codec(HexLocator, _encode_hex_locator, _decode_hex_locator),
     "MeshLocator": Codec(MeshLocator, _encode_mesh_locator, _decode_mesh_locator),

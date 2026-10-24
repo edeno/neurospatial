@@ -244,16 +244,7 @@ def _rectilinear_geometry(
     coordinate_kind: Literal["cartesian", "polar"],
 ) -> _LocatorGeometry:
     shape, edges = locator.shape, locator.edges
-    mask = (
-        np.ones(shape, dtype=bool)
-        if locator.active_mask is None
-        else locator.active_mask
-    )
-    active = np.flatnonzero(mask)
-    if locator.flat_to_active is not None:
-        mapping = np.full(mask.size, -1, dtype=np.intp)
-        mapping[active] = np.arange(len(active))
-        _equal(locator.flat_to_active, mapping, "locator flat_to_active ordering")
+    active = np.flatnonzero(locator.active_mask)
     coordinates = np.unravel_index(active, shape)
     centers = locator.active_centers()
     # Mapped endpoints and mapped centers can differ by a few ULPs even for
@@ -1103,12 +1094,7 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
             zip(grid.edges, grid_locator.edges, strict=True)
         ):
             _equal(actual, expected, f"rectilinear edges[{axis}]")
-        mask = (
-            np.ones(grid_locator.shape, dtype=bool)
-            if grid_locator.active_mask is None
-            else grid_locator.active_mask
-        )
-        _equal(grid.active_mask, mask, "rectilinear active_mask")
+        _equal(grid.active_mask, grid_locator.active_mask, "rectilinear active_mask")
     if (
         shapes is not None
         and not geometry.shapes_supported
