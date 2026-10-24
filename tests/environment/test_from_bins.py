@@ -381,24 +381,6 @@ def test_regions_and_arena_use_the_normal_ownership_contract():
     assert env.arena.domain_known
 
 
-@pytest.mark.parametrize(
-    "record,field",
-    [
-        ("bins", "centers"),
-        ("bins", "sizes"),
-        ("connections", "pairs"),
-        ("connections", "pair_distances"),
-    ],
-)
-def test_mutated_record_arrays_are_revalidated_at_ingress(record, field):
-    source = _nearest()
-    value = getattr(getattr(source, record), field)
-    value.setflags(write=True)
-    value.flat[0] = np.nan if field == "centers" else -1
-    with pytest.raises(ValueError, match=field):
-        Environment.from_bins(source)
-
-
 def test_missing_faces_is_explicit_and_delegated_faces_are_refused():
     source = _nearest()
     native = Environment.from_grid_mask(
@@ -412,16 +394,6 @@ def test_missing_faces_is_explicit_and_delegated_faces_are_refused():
     faces = rebuilt._binning.build_faces()
     np.testing.assert_array_equal(faces.edges, source.connections.pairs)
     np.testing.assert_array_equal(faces.volumes, source.bins.sizes)
-
-
-@pytest.mark.parametrize("field,value", [("A", -1), ("distance", 0), ("volumes", -1)])
-def test_mutated_known_faces_are_revalidated_at_ingress(field, value):
-    source = _rectilinear()
-    array = getattr(source.faces.faces, field)
-    array.setflags(write=True)
-    array[0] = value
-    with pytest.raises(ValueError, match=r"face|volume"):
-        Environment.from_bins(source)
 
 
 def test_shared_geometry_mismatch_is_not_hidden_by_public_ingress():

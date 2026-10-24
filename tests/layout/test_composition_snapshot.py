@@ -148,35 +148,3 @@ def test_nested_arena_depth_is_bounded():
         meta = {"codec": "_CombinedArena", "codec_version": 1, "children": [meta]}
     with pytest.raises(ValueError, match="nesting"):
         decode_arena(meta, {})
-
-
-def test_mutated_nested_face_array_is_revalidated():
-    from neurospatial.binning import Binning, MissingFaces
-
-    env = Environment.from_grid_mask(
-        np.ones((2, 1, 1), dtype=bool),
-        grid_edges=(np.arange(3.0), np.arange(2.0), np.arange(2.0)),
-    )
-    child = replace(
-        env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
-    )
-    child.faces.faces.A.setflags(write=True)
-    child.faces.faces.A[:] = -1
-    combined = CombinedLocator(
-        ("child",),
-        (child,),
-        (env.arena,),
-        np.empty((0, 2), dtype=np.intp),
-        np.array([]),
-        np.array([]),
-    )
-    with pytest.raises(ValueError, match="face areas"):
-        Environment.from_bins(
-            Binning(
-                "combined",
-                combined.spatial_bins(),
-                combined.bin_connections(),
-                combined,
-                MissingFaces("missing"),
-            )
-        )

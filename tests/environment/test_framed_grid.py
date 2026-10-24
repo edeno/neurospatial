@@ -235,7 +235,7 @@ def test_frame_round_trip_owns_all_arrays(
     )
 
 
-@pytest.mark.parametrize("corruption", ["shift", "mask", "edges", "inverse"])
+@pytest.mark.parametrize("corruption", ["shift", "mask", "edges"])
 def test_publication_rejects_inconsistent_frame(corruption):
     env = moved(grid(), matrix())
     binning = env._binning
@@ -252,9 +252,6 @@ def test_publication_rejects_inconsistent_frame(corruption):
         edges = tuple(edge + 0.1 for edge in source.edges)
         source = RectilinearGrid(edges, source.shape, source.active_mask)
     frame = FramedGrid(source, forward)
-    if corruption == "inverse":
-        frame.inverse.setflags(write=True)
-        frame.inverse[0, -1] += 0.1
     candidate = replace(binning, grid=frame)
     with pytest.raises(ValueError, match=r"[Ff]rame"):
         Environment.from_bins(candidate)

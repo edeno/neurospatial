@@ -12,11 +12,9 @@ import numpy as np
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import axis_ranges
 from neurospatial.geometry._binning import (
-    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
-    SpatialBins,
     TrackLinearization,
 )
 from neurospatial.geometry._capabilities import RectilinearGrid
@@ -253,18 +251,4 @@ def prepare_bins(binning: object) -> Binning:
         # its own owned arrays. Build it here; publication then checks the
         # faces against the supplied bins like any explicit faces.
         binning = replace(binning, faces=KnownFaces(binning.build_faces()))
-    snapshot = copy.deepcopy(binning)
-    raw, links = snapshot.bins, snapshot.connections
-    # Standalone records have writable NumPy headers; revalidate at ingress
-    # rather than assuming they remain identical to their constructor inputs.
-    bins = SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dims)
-    connections = BinConnections.from_arrays(
-        links.all_pairs, links.all_distances, links.is_open, links.closed_by
-    )
-    faces = (
-        KnownFaces(snapshot.faces.faces)
-        if isinstance(snapshot.faces, KnownFaces)
-        else snapshot.faces
-    )
-    snapshot = replace(snapshot, bins=bins, connections=connections, faces=faces)
-    return snapshot
+    return copy.deepcopy(binning)

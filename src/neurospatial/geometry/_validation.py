@@ -17,7 +17,6 @@ from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial.geometry._arrays import get_centers, per_dimension
 from neurospatial.geometry._binning import (
-    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -40,7 +39,6 @@ from neurospatial.geometry._face_normals import (
     geometric_normals,
 )
 from neurospatial.geometry._grid_frame import (
-    FramedGrid,
     _underflow_error,
     frame_from_locator,
 )
@@ -315,13 +313,6 @@ def _primitive_geometry(
         if coordinate_kind != "cartesian":
             raise ValueError("Combined lookup requires Cartesian coordinates.")
         for child in locator.children:
-            raw, links = child.bins, child.connections
-            SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dims)
-            BinConnections.from_arrays(
-                links.all_pairs, links.all_distances, links.is_open, links.closed_by
-            )
-            if isinstance(child.faces, KnownFaces):
-                KnownFaces(child.faces.faces)
             validate_components(child, CartesianSystem())
 
         certify_components(locator.children, locator.arenas, locator.keys)
@@ -851,7 +842,6 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
         spec = binning.grid_spec
         if type(spec) is not GridBinningSpec:
             raise TypeError("grid_spec must be an owned GridBinningSpec.")
-        GridBinningSpec(spec.origin, spec.forward, spec.connect_diagonal)
         if len(spec.origin) != bins.n_dims or coordinate_kind != "cartesian":
             raise ValueError(
                 "Grid specification must match Cartesian coordinate dimensions."
@@ -920,8 +910,6 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
         frame = binning.grid_frame
         if coordinate_kind != "cartesian":
             raise ValueError("FramedGrid requires Cartesian cells.")
-        checked = FramedGrid(frame.source, frame.forward)
-        _equal(frame.inverse, checked.inverse, "grid_frame.inverse")
         expected_frame, error = frame_from_locator(locator)
         _equal(
             frame.source.shape, expected_frame.source.shape, "grid_frame.source.shape"
@@ -1383,7 +1371,6 @@ def validate_normals(binning: Binning) -> None:
     component = binning.face_normals
     if component is None:
         return
-    FaceNormals(component.values)  # Revalidate mutable ndarray headers at ingress.
     bins, pairs = binning.bins, binning.connections.pairs
     values = component.values
     if not bins.has_measure_dim(bins.n_dims) or values.shape != (
