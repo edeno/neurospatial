@@ -105,7 +105,9 @@ def _real_array(value: Any, name: str, *, copy: bool = True) -> NDArray[np.float
         raise _error(
             f"{name} must contain real numeric values.", "pass real-valued arrays"
         )
-    return np.array(raw, dtype=np.float64, copy=copy or None)
+    if copy:
+        return np.array(raw, dtype=np.float64, copy=True)
+    return np.asarray(raw, dtype=np.float64)
 
 
 def _boolean(value: Any, name: str) -> bool:
