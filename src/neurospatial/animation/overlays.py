@@ -2012,20 +2012,17 @@ class SpikeRasterOverlay(_Overlay):
 
     def __post_init__(self) -> None:
         """Check the spikes, the order and the labels."""
-        from neurospatial._results import resolve_unit_ids
-        from neurospatial._spikes import _as_spike_trains_with_ids
+        from neurospatial._spikes import as_labelled_spike_trains
 
-        trains, carried = _as_spike_trains_with_ids(self.spike_times)
+        trains, ids, _ = as_labelled_spike_trains(
+            self.spike_times,
+            cast("Any", self.unit_ids),
+            context="SpikeRasterOverlay",
+        )
         if not trains:
             raise ValueError(
                 "SpikeRasterOverlay needs the spikes of at least one unit."
             )
-        ids = resolve_unit_ids(
-            cast("Any", self.unit_ids),
-            len(trains),
-            context="SpikeRasterOverlay",
-            input_ids=carried,
-        )
         order = (
             np.arange(len(trains))
             if self.order is None
@@ -2038,13 +2035,6 @@ class SpikeRasterOverlay(_Overlay):
                 "row of the raster is one unit. Fix: pass a permutation, such "
                 "as np.argsort of each unit's place-field peak."
             )
-        for i, train in enumerate(trains):
-            if not np.all(np.isfinite(train)):
-                raise ValueError(
-                    f"Unit {ids.tolist()[i]!r} has spike times that are NaN or infinite. "
-                    "Why: a spike is drawn at its time. Fix: drop them, e.g. "
-                    "train[np.isfinite(train)]."
-                )
         self._order = order
         self._rows = [trains[i] for i in order], ids[order]
 

@@ -293,17 +293,10 @@ def test_adapter_extracts_actual_trains_and_ids(trains: list[np.ndarray]) -> Non
         np.testing.assert_array_equal(got, ref)
 
 
-def test_adapter_handles_nan_bearing_trains() -> None:
-    # A train containing NaN must survive the adapter's iterate branch intact
-    # (NaN-aware comparison), proving iteration yields the trains, not ids.
+def test_nan_spike_times_are_refused_naming_the_unit_label() -> None:
     trains = [np.array([0.1, np.nan, 0.3]), np.array([0.2])]
-    st = SpikeTrains(trains, unit_ids=np.array([4, 5]))
-
-    extracted_trains, extracted_ids = _as_spike_trains_with_ids(st)
-
-    np.testing.assert_array_equal(extracted_ids, np.array([4, 5]))
-    np.testing.assert_array_equal(extracted_trains[0], trains[0])
-    np.testing.assert_array_equal(extracted_trains[1], trains[1])
+    with pytest.raises(ValueError, match="unit 4 has 1 NaN or infinite"):
+        SpikeTrains(trains, unit_ids=np.array([4, 5]))
 
 
 def test_flows_through_compute_spatial_rates_with_ids_preserved() -> None:

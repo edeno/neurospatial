@@ -131,13 +131,14 @@ def decode_session(
     env : Environment
         Spatial environment that defines the bin layout and
         connectivity graph.
-    spike_times : array or sequence of arrays
-        Spike times for one or more neurons.  Accepted formats mirror
-        :func:`~neurospatial.encoding.as_spike_trains`:
+    spike_times : array, sequence of arrays, or spike group
+        Spike times in seconds for one or more neurons; every spike time must
+        be finite. Accepted formats:
 
-        - 1-D array / list of scalars → single neuron
-        - 2-D array, shape ``(n_neurons, max_spikes)``, NaN-padded
+        - 1-D array / list of scalars / pynapple ``Ts`` → single neuron
+        - 2-D array, shape ``(n_neurons, max_spikes)``, padded with trailing NaN
         - List/tuple of 1-D arrays → one array per neuron (canonical)
+        - pynapple ``TsGroup``, ``SpikeTrains`` or a dict of unit id to train
     times : array-like, shape (n_frames,)
         Tracking timestamps in seconds. Decode bins tile each observed run;
         the returned clock can contain gaps. For pynapple, pass ``tsd.t``.

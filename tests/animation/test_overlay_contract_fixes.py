@@ -225,7 +225,7 @@ def test_raster_does_not_merge_integer_and_string_labels(env):
     raster = SpikeRasterOverlay([np.array([0.0]), np.array([0.1])], unit_ids=[1, "1"])
     data = raster.convert_to_data(np.array([0.0, 0.1]), 2, env)
     assert data.unit_ids.tolist() == [1, "1"]
-    with pytest.raises(ValueError, match=r"Unit 'b'.*NaN or infinite"):
+    with pytest.raises(ValueError, match=r"unit 'b' has 1 NaN or infinite"):
         SpikeRasterOverlay([np.array([0.0]), np.array([np.inf])], unit_ids=[1, "b"])
 
 

@@ -310,7 +310,7 @@ class TestNormalizeSpikeTimesErrors:
             np.array([0.1, 0.5]),
             np.array([[0.2, 0.3]]),  # 2D - invalid
         ]
-        with pytest.raises(ValueError, match="1D"):
+        with pytest.raises(ValueError, match="1-D"):
             as_spike_trains(spikes)
 
     def test_list_with_0d_element_raises(self) -> None:
@@ -321,7 +321,7 @@ class TestNormalizeSpikeTimesErrors:
             np.array([0.1, 0.5]),
             np.array(0.2),  # 0D scalar - invalid
         ]
-        with pytest.raises(ValueError, match="1D"):
+        with pytest.raises(ValueError, match="1-D"):
             as_spike_trains(spikes)
 
 
@@ -454,11 +454,110 @@ class TestNormalizeSpikeTimesListOfScalars:
         np.testing.assert_array_equal(result[0], [1.0, 2.0, 3.0])
 
 
-class TestSpikesImports:
-    """Test that expected items are importable from _spikes module."""
+class TestSpikeInputBoundaries:
+    """Inputs whose layout or values would silently change the units counted."""
 
-    def test_as_spike_trains_importable(self) -> None:
-        """as_spike_trains should be importable from _spikes."""
+    def test_column_vector_is_refused_not_read_as_many_units(self) -> None:
         from neurospatial._spikes import as_spike_trains
 
-        assert callable(as_spike_trains)
+        with pytest.raises(ValueError, match=r"spike_times\[:, 0\]"):
+            as_spike_trains(np.arange(5.0)[:, None])
+
+    def test_one_by_one_array_is_one_unit(self) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        (train,) = as_spike_trains(np.array([[0.5]]))
+        np.testing.assert_array_equal(train, [0.5])
+
+    def test_units_in_columns_is_refused(self) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        units_in_columns = np.column_stack(
+            [np.linspace(0, 10, 50), np.linspace(0.1, 9, 50), np.linspace(1, 5, 50)]
+        )
+        with pytest.raises(ValueError, match=r"spike_times\.T"):
+            as_spike_trains(units_in_columns)
+
+    def test_nan_before_a_spike_is_not_padding(self) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        with pytest.raises(ValueError, match="NaN before a spike"):
+            as_spike_trains(np.array([[0.1, np.nan, 0.5], [0.2, 0.3, 0.4]]))
+
+    @pytest.mark.parametrize(
+        "spikes",
+        [
+            np.array([0.1, np.nan, 0.5]),
+            [0.1, np.nan],
+            [np.array([0.1]), np.array([0.2, np.inf])],
+            np.array([[0.1, np.inf], [0.2, 0.3]]),
+            {"a": np.array([0.1, np.nan])},
+        ],
+        ids=["1-D", "scalars", "list", "2-D inf", "dict"],
+    )
+    def test_non_finite_spike_times_are_refused(self, spikes: object) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        with pytest.raises(ValueError, match="NaN or infinite"):
+            as_spike_trains(spikes)
+
+    def test_scalar_input_is_refused(self) -> None:
+        from neurospatial._spikes import as_spike_trains
+
+        with pytest.raises(ValueError, match=r"got shape \(\)"):
+            as_spike_trains(np.float64(0.5))
+
+    def test_pandas_series_is_one_unit(self) -> None:
+        pd = pytest.importorskip("pandas")
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        trains, ids, supplied = as_labelled_spike_trains(
+            pd.Series([0.1, 0.5, 1.2], index=[10, 11, 12]), None, context="demo"
+        )
+        assert len(trains) == 1
+        np.testing.assert_array_equal(trains[0], [0.1, 0.5, 1.2])
+        assert ids.tolist() == [0]
+        assert not supplied
+
+    def test_pynapple_ts_is_one_unit(self) -> None:
+        nap = pytest.importorskip("pynapple")
+        from neurospatial._spikes import as_labelled_spike_trains, as_spike_trains
+
+        ts = nap.Ts(t=np.array([0.1, 0.5, 1.2]))
+        trains, ids, supplied = as_labelled_spike_trains(ts, None, context="demo")
+        np.testing.assert_array_equal(trains[0], [0.1, 0.5, 1.2])
+        assert ids.tolist() == [0]
+        assert not supplied
+        np.testing.assert_array_equal(as_spike_trains(ts)[0], [0.1, 0.5, 1.2])
+
+    def test_dict_of_trains_keeps_unit_labels(self) -> None:
+        from neurospatial._spikes import as_labelled_spike_trains
+
+        trains, ids, supplied = as_labelled_spike_trains(
+            {"ca1_3": [0.1, 0.2], "ca1_7": np.array([0.5])}, None, context="demo"
+        )
+        assert ids.tolist() == ["ca1_3", "ca1_7"]
+        assert supplied
+        np.testing.assert_array_equal(trains[1], [0.5])
+
+    def test_dataframe_is_refused_with_a_conversion(self) -> None:
+        pd = pytest.importorskip("pandas")
+        from neurospatial._spikes import as_spike_trains
+
+        frame = pd.DataFrame({"u0": [0.1, 0.2], "u1": [0.3, np.nan]})
+        with pytest.raises(ValueError, match="DataFrame"):
+            as_spike_trains(frame)
+
+    def test_decoding_counts_refuse_nan_spikes(self) -> None:
+        from neurospatial.decoding import bin_spikes_in_time
+
+        with pytest.raises(ValueError, match="NaN or infinite"):
+            bin_spikes_in_time(
+                [np.array([0.05, np.nan, 0.3])], dt=0.25, t_start=0.0, t_stop=1.0
+            )
+
+    def test_decoding_counts_refuse_infinite_bounds(self) -> None:
+        from neurospatial.decoding import bin_spikes_in_time
+
+        with pytest.raises(ValueError, match="finite t_start and t_stop"):
+            bin_spikes_in_time([np.array([0.05])], dt=0.25, t_stop=np.inf)

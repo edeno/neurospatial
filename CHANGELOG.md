@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Spike, interval and result inputs
+
+- Spike times must be finite everywhere. Decoding (`bin_spikes_in_time`,
+  `decode_session`, `BayesianDecoder.predict`) silently dropped NaN spike
+  times, biasing counts low, while encoding and peri-event analyses refused
+  them. Now every entry point, including `SpikeTrains`, refuses NaN or
+  infinite spike times and names the unit by its label.
+- A `(n_spikes, 1)` column of spike times (the default `scipy.io.loadmat`
+  shape) was read as n_spikes units of one spike each; it now raises and
+  suggests `spike_times[:, 0]`. A 2-D array whose columns, not rows, are the
+  units now raises and suggests `spike_times.T`, and NaN before a spike in a
+  row is refused instead of being dropped as padding.
+- A pynapple `Ts` or pandas `Series` of spike times is one unit. Before, it was
+  taken for a group of units, with one unit per spike or a cryptic error. A
+  dict of unit id to spike train is a labelled group, and a DataFrame is
+  refused with how to convert it.
+
 ### Spatial geometry review
 
 - Walls that end on a slanted or curved arena outline now separate the bins

@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
+from neurospatial._spikes import as_spike_trains
 from neurospatial._time_bins import _count_spikes_in_time_bins, _time_bins_in_windows
 
 
@@ -84,8 +85,10 @@ def bin_spikes_in_time(
 
     Parameters
     ----------
-    spike_times : Sequence[NDArray[np.float64]]
-        One 1-D array of spike times per neuron. Arrays may have different
+    spike_times : Sequence[NDArray[np.float64]] or spike group
+        One 1-D array of spike times per neuron, or any spike input
+        :func:`~neurospatial.decoding.decode_session` accepts. Every spike
+        time must be finite. Arrays may have different
         lengths (different numbers of spikes); a neuron with no spikes is
         allowed and yields an all-zero row/column. Times are in the same
         units as ``dt``, ``t_start``, and ``t_stop`` (typically seconds).
@@ -175,7 +178,7 @@ def bin_spikes_in_time(
     True
     """
     dt = validate_dt(dt)
-    trains = [np.asarray(s, dtype=np.float64) for s in spike_times]
+    trains = as_spike_trains(spike_times)
     if epochs is not None:
         if t_start is not None or t_stop is not None:
             raise ValueError(
@@ -193,6 +196,15 @@ def bin_spikes_in_time(
             t_stop = max((s.max() for s in trains if s.size), default=t_start) + dt
         elif t_stop <= t_start:
             raise ValueError(f"t_stop ({t_stop}) must be > t_start ({t_start}).")
+        if not (np.isfinite(t_start) and np.isfinite(t_stop)):
+            raise ValueError(
+                _format_error(
+                    f"bin_spikes_in_time got t_start={t_start}, t_stop={t_stop}.",
+                    why="Why: the time grid needs finite bounds in seconds.",
+                    fix="pass finite t_start and t_stop, or omit them to span "
+                    "the spikes.",
+                )
+            )
         windows = np.array([[t_start, t_stop]], dtype=np.float64)
     left, right = _time_bins_in_windows(windows, dt)
     if left.size == 0:
