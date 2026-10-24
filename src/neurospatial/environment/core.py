@@ -1755,7 +1755,10 @@ class Environment(Generic[_C]):
         -------
         NDArray[np.floating], shape (n_samples, n_dims)
             N-D positions corresponding to the input linear coordinates.
-            For 2D environments, shape is (n_samples, 2).
+            For 2D environments, shape is (n_samples, 2). A linear position
+            on no track segment has a row of NaN: one below 0, past the end
+            of the track, inside a gap between segments (``edge_spacing``),
+            or not finite. Both ends of each segment are on the track.
 
         Raises
         ------
@@ -1787,6 +1790,10 @@ class Environment(Generic[_C]):
         >>> # 50 cm along the track is the middle of the centerline
         >>> env.linear_to_nd(np.array([50.0]))
         array([[50.,  0.]])
+        >>> # 150 cm is past the end of the track, so it has no position
+        >>> env.linear_to_nd(np.array([100.0, 150.0]))
+        array([[100.,   0.],
+               [ nan,  nan]])
 
         """
         return _linear_to_nd(self._binning, linear_position)

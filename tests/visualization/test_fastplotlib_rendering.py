@@ -1413,7 +1413,8 @@ def test_overlays_move_at_their_own_rate_between_slow_frames(apparatus, track):
 
     # On a track, the position line has every sample in the window.
     times = np.arange(0.0, 4.0, 1 / 30)
-    on_track = track.linear_to_nd(np.linspace(0.0, 70.0, len(times)))
+    # Linear 30-40 cm is the gap between segments, off the track.
+    on_track = track.linear_to_nd(np.linspace(0.0, 30.0, len(times)))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         animation = track.animate_fields(

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import pickle
 
+import networkx as nx
 import numpy as np
 import pandas as pd
 import pytest
@@ -327,6 +328,27 @@ class TestLinearization:
 
         # Should be finite
         assert np.all(np.isfinite(nd_position))
+
+    def test_linear_to_nd_has_no_position_off_the_track(self) -> None:
+        """Before the start, past the end or in a gap is NaN, not a node."""
+        track = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0
+        )
+        np.testing.assert_array_equal(
+            track.linear_to_nd(np.array([-50.0, 0.0, 100.0, 150.0, 1e9])),
+            [[np.nan, np.nan], [0.0, 0.0], [100.0, 0.0], [np.nan] * 2, [np.nan] * 2],
+        )
+        graph = nx.Graph()
+        for node, x in enumerate([0.0, 50.0, 100.0]):
+            graph.add_node(node, pos=(x, 0.0))
+        graph.add_edges_from([(0, 1), (1, 2)])
+        gapped = Environment.from_graph(
+            graph, edge_order=[(0, 1), (1, 2)], edge_spacing=20.0, bin_size=5.0
+        )
+        np.testing.assert_array_equal(
+            gapped.linear_to_nd(np.array([50.0, 55.0, 65.0, 69.9, 70.0, 120.0])),
+            [[50.0, 0.0], *[[np.nan, np.nan]] * 3, [50.0, 0.0], [100.0, 0.0]],
+        )
 
     def test_to_linear_round_trip(self, graph_env: Environment) -> None:
         """Test that to_linear -> linear_to_nd round trip is consistent."""

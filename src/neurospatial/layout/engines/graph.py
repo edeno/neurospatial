@@ -277,7 +277,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         Returns
         -------
         NDArray[np.float64], shape (n_points, n_dims)
-            N-D coordinates corresponding to the input linear positions.
+            N-D coordinates corresponding to the input linear positions. A
+            position on no segment (below 0, past the end, inside a gap, or
+            not finite) is a row of NaN.
 
         """
         return self.linearization().linear_to_nd(linear_coordinates)

@@ -683,7 +683,11 @@ class TrackLinearization(ReadOnlyState):
     def linear_to_nd(
         self, linear_coordinates: NDArray[np.float64]
     ) -> NDArray[np.float64]:
-        """Map ``(n_points,)`` absolute linear positions into track coordinates."""
+        """Map ``(n_points,)`` absolute linear positions into track coordinates.
+
+        Returns ``(n_points, n_dims)`` coordinates. A position on no segment
+        (below 0, past the end, inside a gap, or not finite) is a row of NaN.
+        """
 
         return project_1d_to_2d(
             linear_coordinates,
