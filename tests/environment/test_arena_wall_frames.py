@@ -268,6 +268,20 @@ def test_wall_along_part_of_a_face_is_refused_whether_or_not_the_cells_touch(
         _publish(child, arena)
 
 
+@pytest.mark.parametrize("ulps", [-3, 0, 3])
+def test_wall_across_the_center_link_of_a_rounding_gap_is_refused(ulps):
+    """Source cells parted by rounding meet nowhere, so a wall across the line
+    between their centers is refused rather than decided by the gap."""
+    # The source centers of bins 4 and 8 are (1.5, 0.625) and (2.5, 0.625).
+    wall = LineString([(1.95, 0.6), (2.05, 0.65)])
+    child, arena = _face_grid(ulps, wall)
+    with pytest.raises(
+        ValueError,
+        match=r"'wall_0' crosses the line between the centers of bins 4 and 8",
+    ):
+        _publish(child, arena)
+
+
 def test_genuine_source_inset_does_not_snap_to_a_nearby_parent_boundary():
     matrix = _matrix(0.0)
     base = Environment.from_grid_mask(

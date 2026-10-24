@@ -625,19 +625,19 @@ def _uncertain_face(
     errors: NDArray[np.float64],
     pair: tuple[int, int],
     contact: shapely.Geometry,
-) -> Literal["closed", "open", "by_contact"]:
+) -> Literal["closed", "open"]:
     """Decide a published face whose source-frame cells are only approximate.
 
     The face lies somewhere in the strip the two cells' error bounds allow.
-    Returns ``"closed"`` when walls run along the whole strip, ``"open"`` when
-    no wall runs along it and none crosses the line between the centers
-    through a rounded point contact, and ``"by_contact"`` to leave the pair to
-    the rule for exact cells.
+    Returns ``"closed"`` when walls run along the whole strip and ``"open"``
+    when no wall runs along it: cells that meet only at a rounded point are
+    not closed through it.
 
     Raises
     ------
     ValueError
-        If walls run along only part of the strip.
+        If walls run along only part of the strip, or if the source cells meet
+        only at a point and a wall crosses the line between their centers.
     """
     u, v = pair
     bound = errors[u] + errors[v]
@@ -648,13 +648,17 @@ def _uncertain_face(
         raise ValueError(_unresolved_face_message(arena, wall, pair, bound, "along"))
     if cover == "whole":
         return "closed"
-    # No wall runs along the face. Cells that meet only at a rounded point
-    # are not closed through it; only a wall across the line between the
-    # centers is left to the rule for exact cells.
     link = LineString(centers[[u, v]])
-    if contact.length > 0 or not link.crosses(walls):
-        return "open"
-    return "by_contact"
+    if contact.length == 0 and link.crosses(walls):
+        crossing = next(
+            number
+            for number, segment in enumerate(wall_segments)
+            if segment.intersects(link)
+        )
+        raise ValueError(
+            _unresolved_face_message(arena, crossing, pair, bound, "crosses")
+        )
+    return "open"
 
 
 def _open_length(
@@ -771,11 +775,8 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
                 (int(u), int(v)),
                 contact,
             )
-            if decision == "closed":
-                keep[index] = False
-                continue
-            if decision == "open":
-                continue
+            keep[index] = decision == "open"
+            continue
         blocked = contact.intersection(walls)
         if contact.length > 0 and blocked.length > 0:
             # Only the part of the edge inside the arena is a face an animal
