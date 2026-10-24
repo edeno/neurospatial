@@ -533,10 +533,13 @@ def _face_cover(
     through one long side and leaves through the other crosses the face at a
     single point, at any angle, and runs along none of it. Any other piece
     that extends more than ``width`` along the strip could lie on the face.
-    Returns ``"whole"`` when such pieces cover the strip's length to within
-    ``width`` at each end, ``"part"`` when they cover less, and ``"none"``
-    when there are none, with the index of the first wall that runs along
-    (None when none does).
+    Returns ``"whole"`` when such pieces leave at most ``2 * width`` of the
+    strip's length uncovered in total, ``"part"`` when they leave more, and
+    ``"none"`` when there are none, with the index of the first wall that runs
+    along (None when none does). The uncovered length may lie at the strip's
+    ends, which are each uncertain by ``width``, or between pieces: a gap
+    that small is rounding (two walls meant to meet), not an opening an
+    animal could pass, and the exact face is known no better than that.
     """
     outline = shapely.get_coordinates(band)
     center = outline.mean(axis=0)

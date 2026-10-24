@@ -350,6 +350,18 @@ def test_unresolved_exterior_projection_gap_refuses_source_interior_wall(
         _publish(child, arena)
 
 
+def test_unresolved_wall_clearance_names_the_wall_and_the_fix():
+    """The refusal gives the same advice as an unresolved face."""
+    child, arena = _rotated_clipped_grid(1e-12, (1.49, 1.51))
+    with pytest.raises(ValueError) as refusal:
+        _publish(child, arena)
+    message = str(refusal.value)
+    assert "Physical wall 'wall_0' lies within" in message
+    assert "clipped after being rotated, scaled or moved" in message
+    assert "clip the environment before transforming it" in message
+    assert "recentered near the origin" in message
+
+
 def test_a_resolved_wall_stub_inside_a_bin_leaves_its_paths():
     """A wall that ends inside a bin does not divide it, so no path changes."""
     child, arena = _rotated_clipped_grid(1e-12, (0.29, 0.31))
