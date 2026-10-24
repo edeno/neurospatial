@@ -70,6 +70,57 @@ def test_framed_grid_refuses_a_one_dimensional_source():
         FramedGrid(grid, np.eye(2))
 
 
+def _track(graph=None, edge_order=((0, 1),), spacing=0.0, edges=None, mask=None):
+    return TrackLinearization(
+        _track_graph() if graph is None else graph,
+        edge_order,
+        spacing,
+        (np.array([0.0, 1.0]),) if edges is None else edges,
+        np.ones(1, bool) if mask is None else mask,
+    )
+
+
+@pytest.mark.parametrize(
+    ("changes", "pattern"),
+    [
+        ({"edges": (np.array([0.0, 1.0]), np.array([2.0, 1.0]))}, "one linear axis"),
+        ({"edge_order": ((5, 9),)}, r"edge_order\[0\]"),
+        ({"edge_order": ((0, 1, 2),)}, r"edge_order\[0\]"),
+        ({"spacing": -3.0}, "non-negative"),
+        ({"spacing": float("nan")}, "non-negative"),
+        ({"spacing": (1.0, 2.0)}, "one gap per pair"),
+        ({"spacing": "1.0"}, "edge_spacing"),
+        ({"graph": nx.DiGraph(_track_graph())}, "undirected"),
+    ],
+    ids=["two-axes", "not-an-edge", "triple", "negative", "nan", "count", "str", "di"],
+)
+def test_track_linearization_refuses_inconsistent_numbers(changes, pattern):
+    with pytest.raises(ValueError, match=pattern):
+        _track(**changes)
+
+
+def test_track_linearization_names_a_node_without_a_position():
+    graph = _track_graph()
+    del graph.nodes[0]["pos"]
+    with pytest.raises(ValueError, match="node 0 has no numeric 'pos'"):
+        _track(graph=graph)
+
+
+def test_track_linearization_owns_valid_spacing():
+    graph = _track_graph()
+    graph.add_node(2, pos=(2.0, 0.0))
+    graph.add_edge(1, 2, edge_id=1)
+    track = _track(
+        graph=graph,
+        edge_order=[(0, 1), (1, 2)],
+        spacing=[np.float32(0.5)],
+        edges=(np.array([0.0, 1.0, 1.5, 2.5]),),
+        mask=np.array([True, False, True]),
+    )
+    assert track.edge_spacing == (0.5,) and track.edge_order == ((0, 1), (1, 2))
+    assert _track(spacing=np.int64(2)).edge_spacing == 2.0
+
+
 def test_rectilinear_locator_numbers_bins_by_its_mask():
     """The active-bin numbering follows the mask, so lookup and centers agree."""
     edges = (np.array([0.0, 1.0, 2.0]),)

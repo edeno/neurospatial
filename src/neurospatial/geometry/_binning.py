@@ -598,6 +598,53 @@ def _refuse_unsaveable_attributes(graph: nx.Graph) -> None:
             ) from exc
 
 
+def _node_position(node: Any, attributes: dict[str, Any]) -> tuple[float, ...]:
+    """A track node's ``pos`` as finite floats, or an error naming the node."""
+    try:
+        position = tuple(float(value) for value in attributes["pos"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            _format_error(
+                f"Track graph node {node!r} has no numeric 'pos' attribute "
+                f"(got {attributes.get('pos')!r}).",
+                why="Why: the linear coordinate runs along the segments "
+                "between node positions.",
+                fix=f"set graph.nodes[{node!r}]['pos'] = (x, y) for every node",
+            )
+        ) from error
+    if not position or not np.all(np.isfinite(position)):
+        raise ValueError(
+            f"Track graph node {node!r} 'pos' must be finite coordinates, "
+            f"got {position!r}."
+        )
+    return position
+
+
+def _edge_spacing(spacing: Any, n_segments: int) -> float | tuple[float, ...]:
+    """Validate the gaps between ``n_segments`` successive track segments."""
+    scalar = np.ndim(spacing) == 0
+    try:
+        values = np.asarray(spacing, dtype=np.float64)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"TrackLinearization.edge_spacing must be numbers, got {spacing!r}."
+        ) from error
+    if isinstance(spacing, (str, bytes, bool, np.bool_)) or (
+        not scalar and values.shape != (max(n_segments - 1, 0),)
+    ):
+        raise ValueError(
+            "TrackLinearization.edge_spacing must be one number or one gap per "
+            f"pair of successive segments ({max(n_segments - 1, 0)}), got "
+            f"{spacing!r}."
+        )
+    if not np.all(np.isfinite(values) & (values >= 0)):
+        raise ValueError(
+            "TrackLinearization.edge_spacing must be finite and non-negative, "
+            f"got {spacing!r}."
+        )
+    return float(values) if scalar else tuple(float(value) for value in values)
+
+
 @dataclass(frozen=True, eq=False)
 class TrackLinearization(ReadOnlyState):
     """Owned track geometry and its absolute linear coordinate system.
@@ -607,11 +654,14 @@ class TrackLinearization(ReadOnlyState):
     graph : networkx.Graph
         Original track graph with node positions and enumerated edge IDs.
     edge_order : sequence of pairs
-        Track segments in linear coordinate order.
+        Track segments in linear coordinate order; each pair is an edge of
+        ``graph``.
     edge_spacing : float or sequence of float
-        Gaps between successive segments.
+        Finite, non-negative gaps between successive segments: one value for
+        every gap, or ``len(edge_order) - 1`` values.
     grid_edges : tuple of ndarray
-        Full linear bin edges, including gaps.
+        Full linear bin edges, including gaps: one finite, strictly
+        increasing axis.
     active_mask : ndarray of bool, shape (n_linear_bins,)
         Active linear cells in their original coordinate order.
 
@@ -620,6 +670,11 @@ class TrackLinearization(ReadOnlyState):
     TypeError
         If a graph, node or edge attribute holds a value that pickle cannot
         store, such as a lambda or a lock.
+    ValueError
+        If a node has no finite ``pos``, ``edge_order`` names a pair that is
+        not a graph edge, ``edge_spacing`` is negative or has the wrong
+        count, or ``grid_edges`` is not one linear axis matching
+        ``active_mask``.
     """
 
     graph: nx.Graph
@@ -629,11 +684,18 @@ class TrackLinearization(ReadOnlyState):
     active_mask: NDArray[np.bool_]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.graph, nx.Graph) or (
+            self.graph.is_directed() or self.graph.is_multigraph()
+        ):
+            raise ValueError(
+                "TrackLinearization.graph must be an undirected simple "
+                f"networkx.Graph, got {type(self.graph).__name__}."
+            )
         _refuse_unsaveable_attributes(self.graph)
         graph = copy.deepcopy(self.graph)
         for node, attrs in graph.nodes(data=True):
             graph._node[node] = _ReadOnlyTrackAttributes(
-                attrs, pos=tuple(float(value) for value in attrs["pos"])
+                attrs, pos=_node_position(node, attrs)
             )
         for expected_id, (u, v, attrs) in enumerate(graph.edges(data=True)):
             edge_id = attrs.get("edge_id")
@@ -650,15 +712,23 @@ class TrackLinearization(ReadOnlyState):
             graph._adj[u][v] = graph._adj[v][u] = frozen
         graph.graph = _ReadOnlyTrackAttributes(graph.graph)
         object.__setattr__(self, "graph", nx.freeze(graph))
-        object.__setattr__(self, "edge_order", tuple(tuple(e) for e in self.edge_order))
-        spacing = self.edge_spacing
+        edge_order = tuple(tuple(edge) for edge in self.edge_order)
+        for index, edge in enumerate(edge_order):
+            if len(edge) != 2 or not graph.has_edge(*edge):
+                raise ValueError(
+                    f"TrackLinearization.edge_order[{index}] = {edge!r} is not "
+                    "an edge of the track graph; list the graph's edges in "
+                    "linear order."
+                )
+        object.__setattr__(self, "edge_order", edge_order)
         object.__setattr__(
-            self,
-            "edge_spacing",
-            float(spacing)
-            if isinstance(spacing, (int, float, np.number))
-            else tuple(float(x) for x in spacing),
+            self, "edge_spacing", _edge_spacing(self.edge_spacing, len(edge_order))
         )
+        if len(self.grid_edges) != 1:
+            raise ValueError(
+                "TrackLinearization.grid_edges must hold one linear axis, got "
+                f"{len(self.grid_edges)}."
+            )
         edges, _, mask = owned_grid(
             self.grid_edges, None, self.active_mask, name="TrackLinearization"
         )

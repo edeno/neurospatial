@@ -1266,8 +1266,6 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
             raise ValueError(
                 "linearization needs stored track geometry and a nearest-bin locator."
             )
-        if len(track.grid_edges) != 1:
-            raise ValueError("linearization grid_edges must contain one linear axis.")
         edges = track.grid_edges[0]
         if np.count_nonzero(track.active_mask) != bins.n_bins:
             raise ValueError("linearization active_mask count does not match n_bins.")

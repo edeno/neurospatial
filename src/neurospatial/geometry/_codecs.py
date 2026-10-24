@@ -536,24 +536,17 @@ def graph_from_node_link(data: dict[str, Any]) -> nx.Graph:
 def _decode_track(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> TrackLinearization:
-    edges, shape = _grid_edges(meta, arrays, prefix)
-    if len(shape) != 1:
-        raise ValueError("track grid edges must describe one linear coordinate.")
-    mask = _array(arrays, prefix, "active_mask", np.bool_)
-    graph = graph_from_node_link(meta["graph"])
-    if graph.is_directed() or graph.is_multigraph():
-        raise ValueError("track graph must be an undirected simple graph.")
+    edges, _ = _grid_edges(meta, arrays, prefix)
     edge_order = tuple(
         tuple(_node_id(node) for node in edge) for edge in meta["edge_order"]
     )
-    if any(len(edge) != 2 or not graph.has_edge(*edge) for edge in edge_order):
-        raise ValueError("edge_order must contain pairs from the stored track graph.")
-    spacing = meta["edge_spacing"]
-    if isinstance(spacing, (list, tuple)):
-        spacing = tuple(_finite(value, "edge_spacing") for value in spacing)
-    else:
-        spacing = _finite(spacing, "edge_spacing")
-    return TrackLinearization(graph, edge_order, spacing, edges, mask)
+    return TrackLinearization(
+        graph_from_node_link(meta["graph"]),
+        edge_order,
+        meta["edge_spacing"],
+        edges,
+        _array(arrays, prefix, "active_mask", np.bool_),
+    )
 
 
 def _encode_hex_shapes(obj: HexagonShapes, prefix: str) -> Payload:
