@@ -1190,9 +1190,6 @@ class Environment(Generic[_C]):
         def build() -> NDArray[np.intp]:
             return boundary_bins(
                 self._binning,
-                self.connectivity,
-                self.grid_shape,
-                self.active_mask,
                 periodic_axes=self._geometry.coordinates.periodic_axes,
             )
 
@@ -6211,14 +6208,24 @@ class Environment(Generic[_C]):
         NDArray[np.intp], shape (n_boundary_bins,)
             Array of bin IDs that are on the boundary.
 
+        Raises
+        ------
+        NotImplementedError
+            If the bins are measured by area or volume but carry no cell
+            geometry (for example points passed to ``from_bins`` without
+            shapes), so the outline is unknown.
+
         Notes
         -----
         - Detection is cached; each access returns an independent array.
         - For large environments (>100,000 bins), initial computation may take a few seconds
         - Grid and hexagonal bins use their cell lattice: a bin is on the
           boundary when an orthogonal grid neighbor, or any of a hexagon's six
-          neighbors, is inactive or outside the lattice. Exact polygon cells
-          use the outline of their union; other layouts use node degrees.
+          neighbors, is inactive or outside the lattice. Triangular meshes and
+          exact polygon cells use the outline of their union: a bin is on the
+          boundary when its cell shares an edge with it. Track bins are on the
+          boundary at the track's dead ends (bins with fewer than two
+          neighbors). A combined environment uses each component's rule.
 
         See Also
         --------
