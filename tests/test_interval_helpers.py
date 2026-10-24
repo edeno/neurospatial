@@ -315,3 +315,10 @@ def test_time_support_records_fractional_runs_when_given():
         runs=np.array([[0.25, 1.75]]),
     )
     assert support.analysis_settings()["observed_intervals"] == [[0.25, 1.75]]
+
+
+def test_touching_interval_sets_do_not_intersect():
+    from neurospatial._intervals import intersect_intervals
+
+    actual = intersect_intervals(np.array([[0.0, 10.0]]), np.array([[10.0, 20.0]]))
+    assert actual.shape == (0, 2)

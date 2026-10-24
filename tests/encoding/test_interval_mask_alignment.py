@@ -602,6 +602,28 @@ def _make_many_neurons(times, n_neurons: int, seed: int = 0):
     return [np.sort(rng.uniform(t0, t1, size=20)) for _ in range(n_neurons)]
 
 
+def _spy_on_interval_mask(monkeypatch) -> dict[str, int]:
+    """Count calls of interval_valid_mask through every module that imported it."""
+    import sys
+
+    import neurospatial._intervals as intervals
+
+    real_mask = intervals.interval_valid_mask
+    calls = {"n": 0}
+
+    def _spy(*args, **kwargs):
+        calls["n"] += 1
+        return real_mask(*args, **kwargs)
+
+    for module in list(sys.modules.values()):
+        name = getattr(module, "__name__", "")
+        if name.startswith("neurospatial") and (
+            getattr(module, "interval_valid_mask", None) is real_mask
+        ):
+            monkeypatch.setattr(module, "interval_valid_mask", _spy)
+    return calls
+
+
 def test_interval_mask_not_recomputed_per_neuron_batch(
     monkeypatch, env_1d, gap_trajectory
 ) -> None:
@@ -613,19 +635,9 @@ def test_interval_mask_not_recomputed_per_neuron_batch(
     helper and assert its call count does not grow with the neuron count (the
     pre-fix code called it once per neuron inside the loop).
     """
-    import neurospatial._intervals as traj_mod
-
     times = gap_trajectory["times"]
     positions = gap_trajectory["positions"]
-
-    real_mask = traj_mod.interval_valid_mask
-    calls = {"n": 0}
-
-    def _spy(*args, **kwargs):
-        calls["n"] += 1
-        return real_mask(*args, **kwargs)
-
-    monkeypatch.setattr(traj_mod, "interval_valid_mask", _spy)
+    calls = _spy_on_interval_mask(monkeypatch)
 
     # 5 neurons.
     calls["n"] = 0
@@ -661,19 +673,9 @@ def test_compute_spatial_rates_mask_computed_once(
     monkeypatch, env_1d, gap_trajectory
 ) -> None:
     """A `compute_spatial_rates` call computes the shared mask a constant # of times."""
-    import neurospatial._intervals as traj_mod
-
     times = gap_trajectory["times"]
     positions = gap_trajectory["positions"]
-
-    real_mask = traj_mod.interval_valid_mask
-    calls = {"n": 0}
-
-    def _spy(*args, **kwargs):
-        calls["n"] += 1
-        return real_mask(*args, **kwargs)
-
-    monkeypatch.setattr(traj_mod, "interval_valid_mask", _spy)
+    calls = _spy_on_interval_mask(monkeypatch)
 
     n_neurons = 8
     spike_trains = _make_many_neurons(times, n_neurons, seed=1)

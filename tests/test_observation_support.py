@@ -277,19 +277,20 @@ def test_signals_shared_gate_warns_once_for_many_features():
 
 
 @pytest.mark.parametrize(
-    ("times", "signals", "valid"),
+    ("times", "signals", "valid", "reason"),
     [
-        ([0.0, 0.1, 0.1, 0.3, 0.4], np.ones((5, 2)), None),
-        (_T5, np.ones((5, 2)), np.ones((5, 2), dtype=int)),
-        (_T5, np.ones((5, 2)), np.ones((4, 2), dtype=bool)),
-        (_T5, np.ones((5, 2, 1)), None),
-        (_T5, np.ones((4, 2)), None),
-        ([], np.ones((0, 2)), None),
-        ([0.0, 0.1, np.nan, 0.3, 0.4], np.ones((5, 2)), None),
-        ([0.4, 0.3, 0.2, 0.1, 0.0], np.ones((5, 2)), None),
-        (_T5, np.ones((5, 2), dtype=complex), None),
-        (_T5, np.array([["a", "b"]] * 5), None),
-        (_T5, np.ones((5, 0)), None),
+        ([0.0, 0.1, 0.1, 0.3, 0.4], np.ones((5, 2)), None, "strictly increasing"),
+        (_T5, np.ones((5, 2)), np.ones((5, 2), dtype=int), "got dtype int64"),
+        (_T5, np.ones((5, 2)), np.ones((4, 2), dtype=bool), r"shape \(4, 2\)"),
+        (_T5, np.ones((5, 2, 1)), None, r"got shape \(5, 2, 1\)"),
+        (_T5, np.ones((4, 2)), None, r"got shape \(4, 2\)"),
+        ([], np.ones((0, 2)), None, "got no samples"),
+        ([0.0, 0.1, np.nan, 0.3, 0.4], np.ones((5, 2)), None, "non-finite"),
+        ([0.4, 0.3, 0.2, 0.1, 0.0], np.ones((5, 2)), None, "decreases"),
+        (_T5, np.ones((5, 2), dtype=complex), None, "real numeric signals"),
+        (_T5, np.array([["a", "b"]] * 5), None, "real numeric signals"),
+        (_T5, np.ones((5, 0)), None, "at least one feature"),
+        (list("abcde"), np.ones((5, 2)), None, "numeric values convertible"),
     ],
     ids=[
         "repeated-time",
@@ -303,11 +304,14 @@ def test_signals_shared_gate_warns_once_for_many_features():
         "complex",
         "non-numeric",
         "zero-features",
+        "non-numeric-times",
     ],
 )
-def test_signals_errors_name_the_fix(times, signals, valid):
-    with pytest.raises(ValueError, match="Fix:"):
+def test_signals_errors_name_the_reason_and_fix(times, signals, valid, reason):
+    with pytest.raises(ValueError, match=reason) as caught:
         _signals(times, signals, valid=valid)
+    assert "\nWhy: " in str(caught.value)
+    assert "\nFix: " in str(caught.value)
 
 
 def test_signals_without_features_say_so():
@@ -333,7 +337,10 @@ def test_signals_refuse_integers_float64_cannot_hold(dtype):
 
 def test_signals_accept_integers_at_the_float64_limit():
     sig = np.array([-(2**53), 2**53, 0, 1, 2], dtype=np.int64)
-    _signals(signals=sig)
+    _, values, _ = _signals(signals=sig)
+    np.testing.assert_array_equal(
+        values[:, 0], np.array([-(2**53), 2**53, 0, 1, 2], dtype=np.float64)
+    )
 
 
 def test_interval_gates_ignore_sample_validity():
@@ -435,7 +442,7 @@ def test_label_codes_none_and_nan_are_missing():
 def test_missing_label_that_differs_only_in_case_warns():
     labels = np.array(["rest", "run", "rest"], dtype=object)
     with pytest.warns(UserWarning, match="missing_label='Rest'.*'rest'"):
-        codes, values = label_codes(labels, "Rest")
+        _, values = label_codes(labels, "Rest")
     assert values == ["rest", "run"]
 
 
