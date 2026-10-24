@@ -408,3 +408,44 @@ def test_the_binning_grid_is_the_one_record_of_the_locator_frame():
     assert unframed.locator.frame is None
     points = env.bin_centers + np.array([0.3, -0.2])
     np.testing.assert_array_equal(unframed.locator.locate(points), env.bin_at(points))
+
+
+@pytest.mark.parametrize("offset", [6e11, 1e12])
+def test_rotated_millimetre_grid_far_from_the_origin_is_refused(offset):
+    """Lookup that cannot resolve a 1e-3 cell refuses with the fix to apply.
+
+    At these offsets the inverse map's rounding reaches a quarter of a cell,
+    so no position could be assigned to its cell reliably. The rotated
+    environment checks that its centers locate themselves, so the refusal
+    comes as it is built.
+    """
+    edges = np.arange(4.0) * 1e-3
+    env = Environment.from_grid_mask(np.ones((3, 3), dtype=bool), (edges, edges))
+    cosine, sine = np.cos(0.3), np.sin(0.3)
+    turn = np.array([[cosine, -sine, offset], [sine, cosine, offset], [0, 0, 1.0]])
+    with pytest.raises(ValueError, match="recenter or rescale coordinates"):
+        env.apply_transform(Affine2D(turn))
+
+
+@pytest.mark.parametrize("gap,certified", [(0.0, True), (-1e-15, False)])
+def test_rotated_cells_in_contact_within_rounding_are_not_certified(gap, certified):
+    """Rotated unit cubes that touch combine; an overlap of 1e-15 is unresolvable."""
+    child = Environment.from_grid_mask(
+        np.ones((1, 1, 1), dtype=bool), grid_edges=(np.array([0.0, 1.0]),) * 3
+    )
+    turn = np.eye(4)
+    turn[:2, :2] = [
+        [np.cos(np.pi / 4), -np.sin(np.pi / 4)],
+        [np.sin(np.pi / 4), np.cos(np.pi / 4)],
+    ]
+    shifted = turn.copy()
+    shifted[:3, 3] = turn[:3, :3] @ [1.0 + gap, 0.0, 0.0]
+    components = {
+        "a": child.apply_transform(AffineND(turn)),
+        "b": child.apply_transform(AffineND(shifted)),
+    }
+    if certified:
+        assert Environment.combine(components, auto_bridge=False).n_bins == 2
+        return
+    with pytest.raises(ValueError, match="Cannot resolve transformed-cell contact"):
+        Environment.combine(components, auto_bridge=False)
