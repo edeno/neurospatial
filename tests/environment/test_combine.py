@@ -882,6 +882,51 @@ def test_shared_grid_boundary_keeps_child_half_open_rule():
         assert env.bin_sources[index] == ("right", 0)
 
 
+def _rigid(angle, offset=(0.0, 0.0), reflect=False):
+    matrix = np.eye(3)
+    matrix[:2, :2] = [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    if reflect:
+        matrix[:2, 0] *= -1
+    matrix[:2, 2] = offset
+    return matrix
+
+
+@pytest.mark.parametrize(
+    "matrix",
+    [
+        _rigid(np.pi / 2),
+        _rigid(0.3, (13.7, -2.1)),
+        _rigid(2.0, (1e4, 0.0), reflect=True),
+    ],
+    ids=["quarter-turn", "rotation", "reflection"],
+)
+@pytest.mark.parametrize("select", [False, True])
+def test_shared_face_owner_does_not_depend_on_transforms_or_order(matrix, select):
+    """Rotating or mirroring each grid keeps the half-open owner of a shared
+    face, in either component order, also when the grids were subsets of
+    larger ones."""
+    from neurospatial.ops import Affine2D
+
+    transform = Affine2D(matrix)
+    left, right = grid(count=2), grid(2.0, count=2)
+    if select:
+        # Each grid loses its far cell, so the shared face stays shared.
+        left = left.subset(mask=np.array([False, True]))
+        right = right.subset(mask=np.array([True, False]))
+    face = np.array([[2.0, 0.25], [2.0, 0.5], [2.0, 0.75]])
+    plain = Environment.combine({"left": left, "right": right})
+    expected = [plain.bin_sources[index] for index in plain.bin_at(face)]
+    assert {source[0] for source in expected} == {"right"}
+    children = {
+        "left": left.apply_transform(transform),
+        "right": right.apply_transform(transform),
+    }
+    for order in (("left", "right"), ("right", "left")):
+        env = Environment.combine({key: children[key] for key in order})
+        found = env.bin_at(transform(face))
+        assert [env.bin_sources[index] for index in found] == expected
+
+
 def test_touching_nearest_supports_resolve_boundary_tie_by_component_order():
     left, right = nearest([0.0, 0.0], radius=1), nearest([2.0, 0.0], radius=1)
     point = np.array([[1.0, 0.0]])

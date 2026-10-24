@@ -5,7 +5,15 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    NamedTuple,
+    Protocol,
+    TypeVar,
+    cast,
+    runtime_checkable,
+)
 
 import numpy as np
 import shapely
@@ -55,6 +63,52 @@ class Locator(Protocol):
         it they are built for this call only.
         """
         ...
+
+
+@runtime_checkable
+class HalfOpenLocator(Locator, Protocol):
+    """A locator whose cells close their outline, with a half-open lookup too."""
+
+    def locate_half_open(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
+        """Return bin indices by half-open cells alone, or -1.
+
+        A point on a face shared with another environment's cells is left
+        unowned, so a combined environment can give it the half-open owner
+        before any component claims it on its closed outline.
+        """
+        ...
+
+
+def locate_half_open(
+    locator: Locator,
+    points: NDArray[np.float64],
+    indexes: LookupIndexes | None = None,
+) -> NDArray[np.intp]:
+    """Bins of ``points`` by half-open grid cells, or by ``locator.locate``.
+
+    Grids, including rotated, reflected or selected ones, leave points on
+    their outline unowned. Other locators have no closed outline and assign
+    points as ``locate`` does.
+
+    Parameters
+    ----------
+    locator : Locator
+        Any point lookup.
+    points : ndarray of float64, shape (n_points, n_dims)
+        Query coordinates.
+    indexes : LookupIndexes, optional
+        Keeps the locator's search structures.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_points,)
+        Bin index of each point, or -1.
+    """
+    if isinstance(locator, HalfOpenLocator):
+        return locator.locate_half_open(points, indexes)
+    return locator.locate(points, indexes)
 
 
 class CallIndexes:
@@ -179,7 +233,9 @@ class RectilinearLocator(ReadOnlyState):
             located[unowned] = self._outline_owner(query_points[unowned])
         return located
 
-    def locate_half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate_half_open(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Return active-bin indices by half-open cells alone, or -1.
 
         A combined environment asks every child for this owner before any
@@ -296,7 +352,15 @@ class SubsetLocator(ReadOnlyState):
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
     ) -> NDArray[np.intp]:
         """Return child indices after checking the parent's outside sentinel."""
-        parent = self.base.locate(points, indexes)
+        return self._children(self.base.locate(points, indexes))
+
+    def locate_half_open(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
+        """Return child indices of the parent's half-open owners, or -1."""
+        return self._children(locate_half_open(self.base, points, indexes))
+
+    def _children(self, parent: NDArray[np.intp]) -> NDArray[np.intp]:
         out = np.full(parent.shape, -1, dtype=np.intp)
         inside = parent >= 0
         out[inside] = self.parent_to_child[parent[inside]]
@@ -338,6 +402,21 @@ class TransformedLocator(ReadOnlyState):
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
     ) -> NDArray[np.intp]:
         """Undo the affine map before using the parent's boundary ownership."""
+        return self._locate(points, indexes, half_open=False)
+
+    def locate_half_open(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
+        """Undo the affine map, then find the parent's half-open owners."""
+        return self._locate(points, indexes, half_open=True)
+
+    def _locate(
+        self,
+        points: NDArray[np.float64],
+        indexes: LookupIndexes | None,
+        *,
+        half_open: bool,
+    ) -> NDArray[np.intp]:
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
         n_dims = len(self.inverse) - 1
         if query.ndim != 2 or query.shape[1] != n_dims:
@@ -346,13 +425,17 @@ class TransformedLocator(ReadOnlyState):
             )
         if self.frame is not None:
             return self.frame._locate(
-                query, operation="Bin lookup on a rotated or sheared grid"
+                query,
+                operation="Bin lookup on a rotated or sheared grid",
+                half_open=half_open,
             )
         original = np.full(query.shape, np.nan, dtype=np.float64)
         finite = np.all(np.isfinite(query), axis=1)
         original[finite] = (
             query[finite] @ self.inverse[:-1, :-1].T + self.inverse[:-1, -1]
         )
+        if half_open:
+            return locate_half_open(self.base, original, indexes)
         return self.base.locate(original, indexes)
 
 

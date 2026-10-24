@@ -25,9 +25,9 @@ from neurospatial.geometry._face_builders import triangle_skew_message
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import (
     LookupIndexes,
-    RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
+    locate_half_open,
 )
 from neurospatial.geometry._polygon_cells import ClippedLocator
 
@@ -189,6 +189,25 @@ class CombinedLocator(ReadOnlyState):
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
     ) -> NDArray[np.intp]:
         """Locate native points with each child's original arena and lookup."""
+        return self._locate(points, indexes, passes=(True, False))
+
+    def locate_half_open(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
+        """Locate points by each child's half-open cells alone, or -1.
+
+        An enclosing combined environment asks this before any component
+        claims a point on its outline.
+        """
+        return self._locate(points, indexes, passes=(True,))
+
+    def _locate(
+        self,
+        points: NDArray[np.float64],
+        indexes: LookupIndexes | None,
+        *,
+        passes: tuple[bool, ...],
+    ) -> NDArray[np.intp]:
         query = np.asarray(points, dtype=np.float64)
         dims = self.children[0].bins.n_dims
         if query.ndim != 2 or query.shape[1] != dims:
@@ -198,18 +217,18 @@ class CombinedLocator(ReadOnlyState):
         # A grid child's outline is closed, but a face it shares with another
         # child keeps its half-open owner: every child is asked for interior
         # owners before any child claims a point on its outline.
-        for interior in (True, False):
+        for interior in passes:
             for child, arena, offset in zip(
                 self.children, self.arenas, self.offsets[:-1], strict=True
             ):
                 rows = np.flatnonzero(finite & (result < 0))
                 if arena.domain_known:
                     rows = rows[arena.contains(query[rows])]
-                locator = child.locator
-                if interior and isinstance(locator, RectilinearLocator):
-                    local = locator.locate_half_open(query[rows])
-                else:
-                    local = locator.locate(query[rows], indexes)
+                local = (
+                    locate_half_open(child.locator, query[rows], indexes)
+                    if interior
+                    else child.locator.locate(query[rows], indexes)
+                )
                 valid = local >= 0
                 result[rows[valid]] = offset + local[valid]
         return result

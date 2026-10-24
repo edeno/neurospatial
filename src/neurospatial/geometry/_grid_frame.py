@@ -207,7 +207,7 @@ class FramedGrid(ReadOnlyState):
         return self._cells
 
     def _locate(
-        self, points: NDArray[np.float64], *, operation: str
+        self, points: NDArray[np.float64], *, operation: str, half_open: bool = False
     ) -> NDArray[np.intp]:
         """Return the active bin of each world point, or -1 outside active cells.
 
@@ -223,15 +223,18 @@ class FramedGrid(ReadOnlyState):
             World coordinates; non-finite rows return -1.
         operation : str
             Names the calling operation in a precision error.
+        half_open : bool, default=False
+            Leave points on the outline of the active cells unowned instead
+            of closing it (see :meth:`RectilinearLocator.locate_half_open`).
 
         Returns
         -------
         ndarray of intp, shape (n_points,)
             Active-bin index of each point, or -1.
         """
-        return self._source_locator().locate(
-            self._project_to_planes(points, self.source.edges, operation=operation)
-        )
+        source = self._project_to_planes(points, self.source.edges, operation=operation)
+        cells = self._source_locator()
+        return cells.locate_half_open(source) if half_open else cells.locate(source)
 
     def to_world(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` source points into world coordinates."""
