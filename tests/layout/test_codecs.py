@@ -133,9 +133,11 @@ def test_codec_round_trip(codec_part):
     encoded = encode(codec_part, "part")
     meta, arrays = encoded
     assert json.loads(json.dumps(meta)) == meta
-    assert meta["codec_version"] == {Binning: 4, SpatialBins: 2}.get(
-        type(codec_part), 1
-    )
+    assert meta["codec_version"] == {
+        Binning: 4,
+        SpatialBins: 2,
+        NearestBinLocator: 2,
+    }.get(type(codec_part), 1)
     assert isinstance(meta["codec"], str)
     assert all(name.startswith("part/") for name in arrays)
     restored = decode(meta, arrays, "part")

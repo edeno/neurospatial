@@ -41,12 +41,45 @@ def test_cartesian_distances_match_direct_computation(n_dims):
     )
 
 
+def _embedded_squared_distances(system, centers):
+    """Squared Euclidean distances between the places in the animal's plane."""
+    places = system.cartesian_embedding(centers)
+    return ((places[:, None] - places[None]) ** 2).sum(axis=-1)
+
+
 @pytest.mark.parametrize("circular", [True, False])
-def test_polar_distances_wrap_only_circular_seams(circular):
-    centers = np.array([[20.0, -np.pi + 0.1], [20.0, np.pi - 0.1]])
-    distances = EgocentricPolarSystem(circular=circular).squared_distances(centers)
-    delta_angle = 0.2 if circular else 2 * np.pi - 0.2
-    assert distances[0, 1] == pytest.approx((20.0 * delta_angle) ** 2)
+def test_polar_distances_are_physical_between_places(circular):
+    """Bins are places in the animal's plane: distance is the straight line."""
+    system = EgocentricPolarSystem(circular=circular)
+    rng = np.random.default_rng(1)
+    # Angles within pi of each other, so no straight line crosses the seam.
+    centers = np.c_[rng.uniform(0, 40, 9), rng.uniform(-np.pi / 2, np.pi / 2, 9)]
+    np.testing.assert_allclose(
+        system.squared_distances(centers),
+        _embedded_squared_distances(system, centers),
+        rtol=1e-12,
+        atol=1e-9,
+    )
+    # Two places 2.5 cm away, nearly opposite: the chord, not the arc.
+    pair = np.array([[2.5, 0.0], [2.5, np.pi - 0.2]])
+    assert np.sqrt(system.squared_distances(pair)[0, 1]) == pytest.approx(
+        5.0 * np.sin((np.pi - 0.2) / 2)
+    )
+
+
+@pytest.mark.parametrize("circular", [True, False])
+def test_polar_distances_cross_only_circular_seams(circular):
+    """A circular seam is open space; an open seam is a cut to go around."""
+    system = EgocentricPolarSystem(circular=circular)
+    centers = np.array([[20.0, -np.pi + 0.1], [10.0, np.pi - 0.1]])
+    distances = system.squared_distances(centers)
+    if circular:
+        np.testing.assert_allclose(
+            distances, _embedded_squared_distances(system, centers), atol=1e-9
+        )
+    else:
+        # Around the cut's end at the animal: 20 cm in, then 10 cm out.
+        assert distances[0, 1] == pytest.approx(30.0**2)
     np.testing.assert_array_equal(np.diag(distances), np.zeros(2))
     np.testing.assert_allclose(distances, distances.T, rtol=0, atol=1e-9)
 

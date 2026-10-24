@@ -100,7 +100,12 @@ def test_locator_matches_previous_lookup(
         else:
             np.testing.assert_array_equal(actual, locator_parity[f"{prefix}/values"])
         assert actual.dtype == np.intp
-        assert _warnings(caught) == locator_parity[f"{prefix}/warnings"].tolist()
+        expected_warnings = locator_parity[f"{prefix}/warnings"].tolist()
+        if case == "hex" and probe == "nonfinite":
+            # The recording cast infinite coordinates to integers, with
+            # invalid-value warnings; non-finite rows are now screened first.
+            expected_warnings = []
+        assert _warnings(caught) == expected_warnings
     np.testing.assert_array_equal(points, unchanged)
     assert points.flags.writeable
 
@@ -429,6 +434,23 @@ def test_nearest_lookup_keeps_unlimited_distance_and_identity_mapping():
     np.testing.assert_array_equal(
         locator.locate(np.array([[-100.0, 0.0], [100.0, 0.0]])), [8, 3]
     )
+
+
+def test_nearest_lookup_failure_is_raised_not_reported_as_outside(monkeypatch):
+    """A failed KD-tree query is an error, never "every point is outside"."""
+
+    class FailingTree:
+        def query(self, points):
+            raise MemoryError("query buffer")
+
+    locator = NearestBinLocator(np.array([[0.0, 0.0], [2.0, 0.0]]))
+    monkeypatch.setattr(
+        NearestBinLocator, "kdtree", lambda self, indexes: FailingTree()
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(MemoryError, match="query buffer"):
+            locator.locate(np.array([[0.0, 0.0]]))
 
 
 def test_empty_nearest_lookup_still_validates_axes():

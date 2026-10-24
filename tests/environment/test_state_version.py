@@ -164,8 +164,6 @@ class TestPublishedGeometryIsReadOnly:
     def test_restored_graph_sequences_reject_edits(
         self, restored_grid, attribute
     ) -> None:
-        from neurospatial.geometry._boundary_bins import find_boundary_nodes
-
         env = restored_grid
         boundary = env.boundary_bins.copy()
         geometry = env._geometry
@@ -179,10 +177,6 @@ class TestPublishedGeometryIsReadOnly:
 
         assert env._geometry is geometry
         np.testing.assert_array_equal(env.boundary_bins, boundary)
-        np.testing.assert_array_equal(
-            find_boundary_nodes(env.connectivity, env.grid_shape, env.active_mask),
-            boundary,
-        )
 
     def test_restored_graph_copy_cannot_corrupt_transformed_distances(
         self, restored_grid

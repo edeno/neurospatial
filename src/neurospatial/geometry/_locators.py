@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar, cast
@@ -14,6 +13,7 @@ from scipy.spatial import cKDTree
 from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import ReadOnlyState, get_centers
 from neurospatial.geometry._hex_lookup import points_to_hex_bin_ind
 from neurospatial.geometry._regular_lookup import (
@@ -648,6 +648,54 @@ class MeshLocator(ReadOnlyState):
         return active_triangle_idxs.astype(np.intp, copy=False)
 
 
+def _lookup_radius(value: object) -> float:
+    """Return a nearest-bin lookup radius as a float, or raise naming it.
+
+    Parameters
+    ----------
+    value : object
+        The ``max_distance`` given: a real number that is zero or more,
+        possibly ``math.inf``.
+
+    Returns
+    -------
+    float
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is not a real number (booleans included).
+    ValueError
+        If ``value`` is NaN or negative.
+    """
+    fix = (
+        "pass max_distance as a distance in the bin centers' length units, "
+        "math.inf to give every position its nearest bin however far away, "
+        "or None to look up positions only inside a known domain"
+    )
+    if isinstance(value, (bool, np.bool_)) or not isinstance(
+        value, (int, float, np.integer, np.floating)
+    ):
+        raise TypeError(
+            _format_error(
+                f"max_distance must be a real number or None, got {value!r}.",
+                fix=fix,
+            )
+        )
+    radius = float(value)
+    if np.isnan(radius) or radius < 0:
+        raise ValueError(
+            _format_error(
+                f"max_distance must be zero or more, got {radius!r}.",
+                why="Why: it is the farthest a position may be from a bin "
+                "center and still belong to that bin; a NaN or negative "
+                "radius would put every position outside.",
+                fix=fix,
+            )
+        )
+    return radius
+
+
 @dataclass(frozen=True, eq=False)
 class NearestBinLocator(ReadOnlyState):
     """Find the nearest bin center, optionally within a maximum distance.
@@ -657,9 +705,22 @@ class NearestBinLocator(ReadOnlyState):
     centers : ndarray of float64, shape (n_centers, n_dims)
         Coordinates used for nearest-neighbor lookup.
     max_distance : float or None, default=None
-        Maximum accepted distance. None preserves unlimited nearest lookup.
+        Largest distance from a bin center, in the centers' length units, at
+        which a point still belongs to that bin; farther points map to -1.
+        ``math.inf`` deliberately gives every finite point its nearest bin.
+        None chooses no radius: an environment then assigns positions only
+        inside a known domain (an arena or a track width) and refuses lookup
+        otherwise.
     bin_indices : ndarray of intp, shape (n_centers,), or None
         Bin index for each stored center. None numbers centers consecutively.
+
+    Raises
+    ------
+    ValueError
+        If ``max_distance`` is NaN or negative, or ``centers`` and
+        ``bin_indices`` have incompatible shapes.
+    TypeError
+        If ``max_distance`` is not a real number or None.
     """
 
     centers: NDArray[np.float64]
@@ -667,6 +728,8 @@ class NearestBinLocator(ReadOnlyState):
     bin_indices: NDArray[np.intp] | None = None
 
     def __post_init__(self) -> None:
+        if self.max_distance is not None:
+            object.__setattr__(self, "max_distance", _lookup_radius(self.max_distance))
         centers = _owned_array(self.centers, np.float64)
         if centers.ndim != 2:
             raise ValueError(
@@ -717,19 +780,8 @@ class NearestBinLocator(ReadOnlyState):
         finite_rows = np.all(np.isfinite(query_points), axis=1)
         if not np.any(finite_rows):
             return final_bin_indices
-        tree = self.kdtree(indexes)
-        try:
-            distances, kdtree_internal_indices = tree.query(query_points[finite_rows])
-        except Exception as exc:
-            warnings.warn(
-                f"KDTree query failed: {exc}. Returning -1 for all points.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return final_bin_indices
-        max_valid_kdtree_idx = int(tree.data.shape[0] - 1)
-        kdtree_internal_indices = np.clip(
-            kdtree_internal_indices, 0, max_valid_kdtree_idx
+        distances, kdtree_internal_indices = self.kdtree(indexes).query(
+            query_points[finite_rows]
         )
         assert self.bin_indices is not None
         mapped = self.bin_indices[kdtree_internal_indices]

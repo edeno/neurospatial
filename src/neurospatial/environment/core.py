@@ -1190,9 +1190,6 @@ class Environment(Generic[_C]):
         def build() -> NDArray[np.intp]:
             return boundary_bins(
                 self._binning,
-                self.connectivity,
-                self.grid_shape,
-                self.active_mask,
                 periodic_axes=self._geometry.coordinates.periodic_axes,
             )
 
@@ -1758,7 +1755,10 @@ class Environment(Generic[_C]):
         -------
         NDArray[np.floating], shape (n_samples, n_dims)
             N-D positions corresponding to the input linear coordinates.
-            For 2D environments, shape is (n_samples, 2).
+            For 2D environments, shape is (n_samples, 2). A linear position
+            on no track segment has a row of NaN: one below 0, past the end
+            of the track, inside a gap between segments (``edge_spacing``),
+            or not finite. Both ends of each segment are on the track.
 
         Raises
         ------
@@ -1790,6 +1790,10 @@ class Environment(Generic[_C]):
         >>> # 50 cm along the track is the middle of the centerline
         >>> env.linear_to_nd(np.array([50.0]))
         array([[50.,  0.]])
+        >>> # 150 cm is past the end of the track, so it has no position
+        >>> env.linear_to_nd(np.array([100.0, 150.0]))
+        array([[100.,   0.],
+               [ nan,  nan]])
 
         """
         return _linear_to_nd(self._binning, linear_position)
@@ -3143,7 +3147,11 @@ class Environment(Generic[_C]):
             Named regions to snapshot at construction.
         arena : Arena or None, optional
             Continuous domain. Omission infers only what the supplied geometry
-            establishes, without inventing physical walls.
+            establishes, without inventing physical walls. Bins located by
+            ``NearestBinLocator`` without ``max_distance`` and with no known
+            domain refuse position lookups; give the locator a radius in
+            length units (``math.inf`` for unlimited nearest lookup) or pass
+            the arena that bounds the bins.
 
         Returns
         -------
@@ -5328,6 +5336,9 @@ class Environment(Generic[_C]):
         ------
         KeyError
             If ``region_name`` is not found in ``self.regions``.
+        CartesianOnlyError
+            If a polygon region is used on a polar environment: its vertices
+            are Cartesian (x, y) points, not (distance, angle) pairs.
         ValueError
             If a point region has a different number of coordinates than the
             bins, or a polygon region is used in an environment that is not
@@ -5408,6 +5419,8 @@ class Environment(Generic[_C]):
         TypeError
             If regions parameter is not a Regions instance or None.
             If include_boundary is not a boolean.
+        CartesianOnlyError
+            If a polygon region is used on a polar environment.
 
         See Also
         --------
@@ -5525,6 +5538,8 @@ class Environment(Generic[_C]):
         TypeError
             If ``regions`` has an invalid type or ``include_boundary`` is not
             a bool.
+        CartesianOnlyError
+            If a polygon region is used on a polar environment.
 
         Notes
         -----
@@ -6223,14 +6238,24 @@ class Environment(Generic[_C]):
         NDArray[np.intp], shape (n_boundary_bins,)
             Array of bin IDs that are on the boundary.
 
+        Raises
+        ------
+        NotImplementedError
+            If the bins are measured by area or volume but carry no cell
+            geometry (for example points passed to ``from_bins`` without
+            shapes), so the outline is unknown.
+
         Notes
         -----
         - Detection is cached; each access returns an independent array.
         - For large environments (>100,000 bins), initial computation may take a few seconds
         - Grid and hexagonal bins use their cell lattice: a bin is on the
           boundary when an orthogonal grid neighbor, or any of a hexagon's six
-          neighbors, is inactive or outside the lattice. Exact polygon cells
-          use the outline of their union; other layouts use node degrees.
+          neighbors, is inactive or outside the lattice. Triangular meshes and
+          exact polygon cells use the outline of their union: a bin is on the
+          boundary when its cell shares an edge with it. Track bins are on the
+          boundary at the track's dead ends (bins with fewer than two
+          neighbors). A combined environment uses each component's rule.
 
         See Also
         --------

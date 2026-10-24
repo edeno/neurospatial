@@ -15,12 +15,31 @@ from environment_helpers import native_layout
 from neurospatial.geometry._binning import TrackLinearization
 
 
+def _on_track(component, linear_positions):
+    """Whether each linear position lies on a segment, ends included."""
+    lengths = np.array(
+        [component.graph.edges[e]["distance"] for e in component.edge_order]
+    )
+    gaps = np.broadcast_to(component.edge_spacing, (len(lengths) - 1,))
+    starts = np.concatenate([[0.0], np.cumsum(lengths[:-1] + gaps)])
+    ends = starts + lengths
+    position = linear_positions[:, None]
+    return np.any((position >= starts) & (position <= ends), axis=1)
+
+
 def _assert_previous_projection(component, layout, prefix, recorded):
     for operation in ("to_linear", "linear_to_nd", "linear_wrong_shape"):
         method = "linear_to_nd" if operation == "linear_wrong_shape" else operation
         key = f"{prefix}/{operation}"
         points = recorded[f"{key}/points"].copy()
         unchanged = points.copy()
+        expected = recorded.get(f"{key}/values")
+        if operation == "linear_to_nd":
+            # The recording clamped positions off the track onto its nodes;
+            # they are not on the track, so they now have no position.
+            on_track = _on_track(component, points)
+            assert 0 < np.count_nonzero(on_track) < len(points)
+            expected = np.where(on_track[:, None], expected, np.nan)
         for target in (component, layout):
             if f"{key}/error_type" in recorded:
                 assert recorded[f"{key}/error_type"].item() == "ValueError"
@@ -31,7 +50,7 @@ def _assert_previous_projection(component, layout, prefix, recorded):
                 with warnings.catch_warnings(record=True) as caught:
                     warnings.simplefilter("always", RuntimeWarning)
                     actual = getattr(target, method)(points)
-                np.testing.assert_array_equal(actual, recorded[f"{key}/values"])
+                np.testing.assert_array_equal(actual, expected)
                 messages = [
                     f"{warning.category.__name__}: {warning.message}"
                     for warning in caught
@@ -55,7 +74,7 @@ def test_track_linearization_matches_previous(built_environment, locator_parity)
 def test_gapped_track_linearization_matches_previous(
     graph_layout_with_gap, simple_y_maze_graph, locator_parity, spacing_kind
 ):
-    """Gap and outside queries retain their previous endpoint projections."""
+    """On-track queries keep their projections; gap and outside queries are NaN."""
     layout = graph_layout_with_gap
     if spacing_kind == "list":
         graph, edge_order = simple_y_maze_graph

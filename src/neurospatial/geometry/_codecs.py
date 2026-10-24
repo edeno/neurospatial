@@ -733,9 +733,13 @@ def _decode_mesh_locator(
 
 def _encode_nearest_locator(obj: NearestBinLocator, prefix: str) -> Payload:
     assert obj.bin_indices is not None
-    return {"max_distance": obj.max_distance}, _arrays(
-        prefix, centers=obj.centers, bin_indices=obj.bin_indices
-    )
+    # JSON metadata holds only finite numbers; an unlimited radius is a flag.
+    unbounded = obj.max_distance is not None and np.isinf(obj.max_distance)
+    meta = {
+        "max_distance": None if unbounded else obj.max_distance,
+        "unbounded": unbounded,
+    }
+    return meta, _arrays(prefix, centers=obj.centers, bin_indices=obj.bin_indices)
 
 
 def _decode_nearest_locator(
@@ -748,10 +752,10 @@ def _decode_nearest_locator(
     if indices.shape != (len(centers),) or np.any(indices < 0):
         raise ValueError("bin_indices must give one non-negative index per center.")
     maximum = meta["max_distance"]
-    if maximum is not None:
+    if _flag(meta, "unbounded"):
+        maximum = math.inf
+    elif maximum is not None:
         maximum = _finite(maximum, "max_distance")
-        if maximum < 0:
-            raise ValueError("max_distance must be non-negative.")
     return NearestBinLocator(centers, maximum, indices)
 
 
@@ -1209,7 +1213,7 @@ _CODECS: dict[str, Codec] = {
     "HexLocator": Codec(HexLocator, _encode_hex_locator, _decode_hex_locator),
     "MeshLocator": Codec(MeshLocator, _encode_mesh_locator, _decode_mesh_locator),
     "NearestBinLocator": Codec(
-        NearestBinLocator, _encode_nearest_locator, _decode_nearest_locator
+        NearestBinLocator, _encode_nearest_locator, _decode_nearest_locator, version=2
     ),
     "SubsetLocator": Codec(
         SubsetLocator, _encode_subset_locator, _decode_subset_locator

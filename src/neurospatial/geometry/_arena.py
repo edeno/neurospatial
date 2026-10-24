@@ -581,7 +581,9 @@ class TrackArena(ReadOnlyState):
     segments : ndarray, shape (n_segments, 2, n_dims)
         Finite nondegenerate centerline segments in Cartesian coordinates.
     width : float or None
-        Positive full physical width. None preserves an unknown footprint.
+        Positive full physical width. None preserves an unknown footprint,
+        except on a one-dimensional track: positions there have no off-track
+        direction, so the footprint is the centerline itself, ends included.
         End caps are round and junctions are unions of segment capsules.
     """
 
@@ -634,20 +636,30 @@ class TrackArena(ReadOnlyState):
 
     @property
     def domain_known(self) -> bool:
-        """Whether a positive physical width was supplied."""
-        return self.width is not None
+        """Whether a width was supplied or the track is one-dimensional."""
+        return self.width is not None or self.n_dims == 1
 
     @property
     def physical_footprint_known(self) -> bool:
         """Whether the physical capsule footprint is known."""
-        return self.domain_known
+        return self.width is not None
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
-        """Use point-to-segment distance rather than nearest bin centers."""
+        """Use point-to-segment distance rather than nearest bin centers.
+
+        A one-dimensional track without a width contains the closed
+        intervals its segments cover.
+        """
         query, finite = _query(positions, self.n_dims)
-        if self.width is None:
-            raise _unknown()
         inside = np.zeros(len(query), dtype=np.bool_)
+        if self.width is None:
+            if self.n_dims != 1:
+                raise _unknown()
+            low = self.segments[:, :, 0].min(axis=1)
+            high = self.segments[:, :, 0].max(axis=1)
+            values = query[finite, :1]
+            inside[finite] = np.any((values >= low) & (values <= high), axis=1)
+            return inside
         inside[finite] = _track_distances(self, query[finite]) <= self.width / 2
         return inside
 
@@ -693,13 +705,14 @@ class TrackArena(ReadOnlyState):
         return None
 
     def domain_bounds(self) -> NDArray[np.float64] | None:
-        """Bound the capsules of a track with a known width."""
-        if self.width is None:
+        """Bound the capsules of a track with a known width, or a 1-D track."""
+        if not self.domain_known:
             return None
+        half_width = 0.0 if self.width is None else self.width / 2
         return np.array(
             [
-                self.segments.min(axis=(0, 1)) - self.width / 2,
-                self.segments.max(axis=(0, 1)) + self.width / 2,
+                self.segments.min(axis=(0, 1)) - half_width,
+                self.segments.max(axis=(0, 1)) + half_width,
             ]
         )
 
