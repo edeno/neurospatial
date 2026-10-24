@@ -302,9 +302,10 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
     ), np.zeros((len(locator.shape) + 1,) * 2)
 
 
-def _same_frame(left: FramedGrid | None, right: FramedGrid) -> bool:
+def _same_frame(left: FramedGrid | None, right: FramedGrid | None) -> bool:
     return left is right or (
         left is not None
+        and right is not None
         and np.array_equal(left.forward, right.forward)
         and np.array_equal(left.source.active_mask, right.source.active_mask)
         and all(
@@ -314,37 +315,41 @@ def _same_frame(left: FramedGrid | None, right: FramedGrid) -> bool:
     )
 
 
-def framed_locator(locator: Locator, frame: FramedGrid) -> Locator:
-    """Give the affine step of a framed grid's locator the binning's frame.
+def framed_locator(locator: Locator, frame: FramedGrid | None) -> Locator:
+    """Give the affine step of a binning's locator the binning's frame.
 
-    The outermost :class:`TransformedLocator` then assigns points by the
-    frame's half-open source cells. Below a :class:`SubsetLocator`, it gets
-    the same map over the parent's active cells. Other locators are
-    returned unchanged; publication validates that they match the frame.
+    A binning's ``grid_frame`` is the one record of its frame: the locator's
+    copy is always set from it here, and removed when it is None. The
+    outermost :class:`TransformedLocator` then assigns points by the frame's
+    half-open source cells. Below a :class:`SubsetLocator`, it gets the same
+    map over the parent's active cells. Other locators are returned
+    unchanged; publication validates that they match the frame.
 
     Parameters
     ----------
     locator : Locator
         The binning's locator.
-    frame : FramedGrid
+    frame : FramedGrid or None
         The binning's ``grid_frame``.
 
     Returns
     -------
     Locator
-        ``locator`` itself when it already carries this frame, or a copy
-        that does.
+        ``locator`` itself when it already carries this frame (or, for None,
+        no frame), or a copy that does.
     """
     if isinstance(locator, TransformedLocator):
         if _same_frame(locator.frame, frame):
             return locator
-        return TransformedLocator(locator.base, locator.forward, frame)
+        return locator._framed(frame)
     if isinstance(locator, SubsetLocator):
-        parent_mask = frame_from_locator(locator.base)[0].source.active_mask
-        parent = FramedGrid(
-            RectilinearGrid(frame.source.edges, frame.source.shape, parent_mask),
-            frame.forward,
-        )
+        parent = None
+        if frame is not None:
+            parent_mask = frame_from_locator(locator.base)[0].source.active_mask
+            parent = FramedGrid(
+                RectilinearGrid(frame.source.edges, frame.source.shape, parent_mask),
+                frame.forward,
+            )
         base = framed_locator(locator.base, parent)
         if base is locator.base:
             return locator

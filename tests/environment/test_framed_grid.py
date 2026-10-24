@@ -12,7 +12,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.binning import FramedGrid, RectilinearGrid
+from neurospatial.binning import FramedGrid, RectilinearGrid, TransformedLocator
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import PolygonCells
@@ -390,12 +390,24 @@ def test_hole_ring_order_does_not_change_polygon_identity_after_inverse(angle, r
         )
 
 
-def test_a_replaced_framed_locator_keeps_its_frame():
+def test_the_binning_grid_is_the_one_record_of_the_locator_frame():
     env = Environment.from_grid_mask(
         np.ones((4, 4), bool), grid_edges=(np.arange(5.0),) * 2
     ).apply_transform(
         AffineND(np.array([[0.6, -0.8, 1.0], [0.8, 0.6, 2.0], [0, 0, 1]]))
     )
-    locator = env._binning.locator
-    assert locator.frame is not None
-    assert replace(locator).frame is locator.frame
+    binning = env._binning
+    locator = binning.locator
+    assert locator.frame is binning.grid_frame
+    # A locator copied back into the binning gets the binning's frame again.
+    assert replace(binning, locator=replace(locator)).locator.frame is (
+        binning.grid_frame
+    )
+    # The frame is not a constructor argument, and a binning without a framed
+    # grid keeps no frame on its locator.
+    with pytest.raises(TypeError):
+        TransformedLocator(locator.base, locator.forward, binning.grid_frame)
+    unframed = replace(binning, grid=None)
+    assert unframed.locator.frame is None
+    points = env.bin_centers + np.array([0.3, -0.2])
+    np.testing.assert_array_equal(unframed.locator.locate(points), env.bin_at(points))

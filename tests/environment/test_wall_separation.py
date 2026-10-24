@@ -111,7 +111,7 @@ def test_a_wall_ending_short_of_a_slanted_outline_leaves_the_gap_open():
     wall = LineString([(1, 9), (17, 9)])
     env = _build(SLANTED, wall)
     assert not _separated(env, LineString([(-5, 9), (25, 9)]))
-    faces = env.binning.faces.build()
+    faces = env.binning.build_faces()
     centers = env.bin_centers
     pairs = env.binning.connections.pairs
     end = np.flatnonzero(
@@ -193,7 +193,7 @@ BENT_LINE = LineString([(-5, 9), (18, 9), (22, 11)])
 
 def test_a_wall_dividing_only_the_in_arena_part_of_a_bin_is_refused():
     source = Environment.from_polygon(SLANTED, bin_size=1.0).binning
-    source = replace(source, faces=KnownFaces(source.faces.build()))
+    source = replace(source, faces=KnownFaces(source.build_faces()))
     with pytest.raises(ValueError, match=r"wall 'w' cuts through bin .*18\.5, 9\.5"):
         Environment.from_bins(source, arena=OpenArena(SLANTED, walls={"w": BENT}))
 

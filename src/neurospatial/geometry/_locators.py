@@ -492,19 +492,21 @@ class TransformedLocator(ReadOnlyState):
         Homogeneous map from source to current coordinates: the transform
         that moved the bins. Its inverse is computed once, as an arena's is,
         so a locator and an arena moved by one map share one inverse.
-    frame : FramedGrid or None, optional
-        The grid frame of the binning this locator belongs to; a ``Binning``
-        with a ``grid_frame`` sets it, so it is rarely passed directly.
 
     Attributes
     ----------
     inverse : ndarray of float64, shape (n_dims + 1, n_dims + 1)
         Homogeneous map from current to source coordinates.
+    frame : FramedGrid or None
+        The ``grid_frame`` of the binning that holds this locator. It is not
+        a constructor argument: a ``Binning`` sets it from its own grid, and
+        clears it when that grid is not framed, so the binning's grid is the
+        one record of the frame. A copy made outside a binning has none.
     """
 
     base: Locator
     forward: NDArray[np.float64]
-    frame: FramedGrid | None = field(default=None, repr=False)
+    frame: FramedGrid | None = field(default=None, init=False, repr=False)
     inverse: NDArray[np.float64] = field(init=False, repr=False)
 
     # Fixed by the matrix, so built once: the sensitivity of source
@@ -541,6 +543,13 @@ class TransformedLocator(ReadOnlyState):
         object.__setattr__(self, "forward", forward)
         object.__setattr__(self, "inverse", inverse)
         object.__setattr__(self, "_sensitivity", sensitivity)
+
+    def _framed(self, frame: FramedGrid | None) -> TransformedLocator:
+        """A copy that assigns points by ``frame`` (a binning's grid), or by
+        the inverse map when ``frame`` is None."""
+        copy = TransformedLocator(self.base, self.forward)
+        object.__setattr__(copy, "frame", frame)
+        return copy
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None

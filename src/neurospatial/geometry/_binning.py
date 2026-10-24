@@ -882,11 +882,11 @@ class Binning:
                 f"column per axis, shape ({len(pairs)}, {self.bins.n_dims}), got "
                 f"{self.face_normals.values.shape}."
             )
-        if self.grid_frame is not None:
-            # Lookup and linear allocation share the frame's cell rule.
-            object.__setattr__(
-                self, "locator", framed_locator(self.locator, self.grid_frame)
-            )
+        # The grid is the one record of a frame: lookup and linear allocation
+        # share its cell rule, and a locator without one keeps none.
+        object.__setattr__(
+            self, "locator", framed_locator(self.locator, self.grid_frame)
+        )
         if self.dimension_ranges is None:
             return
         try:
