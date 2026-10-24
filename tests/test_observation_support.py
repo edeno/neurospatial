@@ -430,3 +430,23 @@ def test_label_codes_none_and_nan_are_missing():
     codes, values = label_codes(labels, None)
     np.testing.assert_array_equal(codes, [0, -1, 1, -1, 0])
     assert values == ["a", "b"]
+
+
+def test_missing_label_that_differs_only_in_case_warns():
+    labels = np.array(["rest", "run", "rest"], dtype=object)
+    with pytest.warns(UserWarning, match="missing_label='Rest'.*'rest'"):
+        codes, values = label_codes(labels, "Rest")
+    assert values == ["rest", "run"]
+
+
+def test_absent_missing_label_without_a_near_match_is_silent(recwarn):
+    label_codes(np.array(["run", "run"], dtype=object), "stationary")
+    assert not recwarn.list
+
+
+def test_validated_break_before_is_read_only():
+    flags = np.array([False, True, False])
+    owned = validate_break_before(flags, 3, call="demo")
+    assert not owned.flags.writeable
+    flags[1] = False
+    assert owned[1]

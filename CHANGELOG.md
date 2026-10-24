@@ -55,6 +55,9 @@
   `ResampledPathResult` and `ContinuousEventResult`. A result's repr names an
   error raised by its `summary()` instead of showing `ClassName(...)`, and
   rounds NumPy `float32` metrics like other floats.
+- A `missing_label` that matches no label but differs from one only in case or
+  spaces (`"Rest"` for `"rest"`) warns, since that label would otherwise be
+  kept as a real condition or direction.
 
 ### Spatial geometry review
 
