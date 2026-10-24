@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar, cast
@@ -717,19 +716,8 @@ class NearestBinLocator(ReadOnlyState):
         finite_rows = np.all(np.isfinite(query_points), axis=1)
         if not np.any(finite_rows):
             return final_bin_indices
-        tree = self.kdtree(indexes)
-        try:
-            distances, kdtree_internal_indices = tree.query(query_points[finite_rows])
-        except Exception as exc:
-            warnings.warn(
-                f"KDTree query failed: {exc}. Returning -1 for all points.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return final_bin_indices
-        max_valid_kdtree_idx = int(tree.data.shape[0] - 1)
-        kdtree_internal_indices = np.clip(
-            kdtree_internal_indices, 0, max_valid_kdtree_idx
+        distances, kdtree_internal_indices = self.kdtree(indexes).query(
+            query_points[finite_rows]
         )
         assert self.bin_indices is not None
         mapped = self.bin_indices[kdtree_internal_indices]

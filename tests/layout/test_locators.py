@@ -431,6 +431,23 @@ def test_nearest_lookup_keeps_unlimited_distance_and_identity_mapping():
     )
 
 
+def test_nearest_lookup_failure_is_raised_not_reported_as_outside(monkeypatch):
+    """A failed KD-tree query is an error, never "every point is outside"."""
+
+    class FailingTree:
+        def query(self, points):
+            raise MemoryError("query buffer")
+
+    locator = NearestBinLocator(np.array([[0.0, 0.0], [2.0, 0.0]]))
+    monkeypatch.setattr(
+        NearestBinLocator, "kdtree", lambda self, indexes: FailingTree()
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(MemoryError, match="query buffer"):
+            locator.locate(np.array([[0.0, 0.0]]))
+
+
 def test_empty_nearest_lookup_still_validates_axes():
     """No centers means no match; it does not permit a different coordinate space."""
     locator = NearestBinLocator(np.empty((0, 2)))
