@@ -217,10 +217,13 @@ def _overlay(
     # together can create rounding-sized strips whose representative point is
     # assigned to a different parent, losing coverage of an otherwise valid
     # cell. GEOS overlay computes the common intersections directly instead.
+    overlaps = [cell.intersection(polygon) for cell in source]
+    pieces = [
+        [shapely.normalize(piece) for piece in sorted(_parts(overlap), key=_key)]
+        for overlap in overlaps
+    ]
     records = [
-        (parent, shapely.normalize(piece))
-        for parent, cell in enumerate(source)
-        for piece in sorted(_parts(cell.intersection(polygon)), key=_key)
+        (parent, piece) for parent, group in enumerate(pieces) for piece in group
     ]
     if not records:
         raise _error(
@@ -231,11 +234,10 @@ def _overlay(
     mapping = ClipMapping(
         np.array([parent for parent, _ in records], dtype=np.intp), len(source)
     )
-    for parent in range(len(source)):
-        expected = source[parent].intersection(polygon)
-        actual = unary_union([piece for index, piece in records if index == parent])
+    for parent, (expected, group) in enumerate(zip(overlaps, pieces, strict=True)):
+        actual = unary_union(group)
         positive = [piece.area for piece in _parts(expected)]
-        positive.extend(piece.area for index, piece in records if index == parent)
+        positive.extend(piece.area for piece in group)
         if not positive:
             continue
         scale = max(abs(value) for value in source[parent].bounds) + max(

@@ -97,13 +97,13 @@ def _error(what: str, fix: str) -> ValueError:
     return ValueError(_format_error(what, fix=fix))
 
 
-def _real_array(value: Any, name: str) -> NDArray[np.float64]:
+def _real_array(value: Any, name: str, *, copy: bool = True) -> NDArray[np.float64]:
     raw = np.asarray(value)
     if raw.dtype.kind not in "iuf":
         raise _error(
             f"{name} must contain real numeric values.", "pass real-valued arrays"
         )
-    return np.array(raw, dtype=np.float64, copy=True)
+    return np.array(raw, dtype=np.float64, copy=copy or None)
 
 
 def _boolean(value: Any, name: str) -> bool:
@@ -115,7 +115,8 @@ def _boolean(value: Any, name: str) -> bool:
 def _query(
     positions: Any, n_dims: int
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
-    query = np.atleast_2d(_real_array(positions, "positions"))
+    # Read-only: containment never writes the positions, so they are not copied.
+    query = np.atleast_2d(_real_array(positions, "positions", copy=False))
     if query.ndim != 2 or query.shape[1] != n_dims:
         raise _error(
             f"Expected positions of shape (n_positions, {n_dims}), got {query.shape}.",
@@ -190,7 +191,7 @@ def _mapped(
         )
     if not np.all(np.isfinite(result)):
         raise _error(
-            "Transformed arena coordinates exceed floating-point range.",
+            "Transformed coordinates exceed floating-point range.",
             "rescale the coordinate units before transforming",
         )
     return result
@@ -364,6 +365,8 @@ class OpenArena:
 
     def __post_init__(self) -> None:
         _polygon(self.polygon)
+        # Indexes the polygon for the point tests of every lookup.
+        shapely.prepare(self.polygon)
         walls = self.walls
         for index, wall in enumerate(walls):
             if (

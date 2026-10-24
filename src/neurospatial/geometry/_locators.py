@@ -982,6 +982,9 @@ class MeshLocator(ReadOnlyState):
                 self.simplex_to_active, len(simplices), name="simplex_to_active"
             ),
         )
+        if self.boundary is not None:
+            # Indexes the boundary for the point tests of every lookup.
+            shapely.prepare(self.boundary)
 
     def _find_triangles(
         self,
