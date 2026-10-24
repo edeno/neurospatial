@@ -60,7 +60,7 @@ _PV = _Caller(
 )
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
     """Results from population coverage analysis.
 

@@ -214,7 +214,7 @@ class PreDecisionMetrics:
         )
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
     """Metrics related to decision boundaries between goals.
 

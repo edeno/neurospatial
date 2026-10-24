@@ -347,7 +347,7 @@ def _directional_summary_frame(
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class DirectionalRateResult(SpatialResultMixin):
     """Result of directional rate computation for a single neuron.
 
@@ -1205,7 +1205,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of directional rate computation for multiple neurons.
 

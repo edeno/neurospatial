@@ -28,7 +28,7 @@ __all__ = ["ResampledPathResult", "resample_by_distance"]
 _SNAP_TOLERANCE = 1e-9  # fraction of ``spacing``
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
     """Equal-distance samples of a path, returned by ``resample_by_distance``.
 

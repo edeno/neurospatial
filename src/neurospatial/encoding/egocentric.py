@@ -155,7 +155,7 @@ def _object_vector_summary_frame(
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     """Result of object-vector rate computation for a single neuron.
 
@@ -631,7 +631,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelectionMixin):
     """Result of object-vector rate computation for multiple neurons.
 

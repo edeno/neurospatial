@@ -171,7 +171,7 @@ __all__ = [  # noqa: RUF022
 # =============================================================================
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     """Path efficiency metrics for a trajectory segment.
 
@@ -267,7 +267,7 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         )
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     """Path efficiency with subgoal decomposition.
 
@@ -328,7 +328,7 @@ class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
 # =============================================================================
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     """Goal-directed navigation metrics for a trajectory.
 

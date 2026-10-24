@@ -387,7 +387,7 @@ class FieldOfView:
         return in_binocular
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ViewshedResult(ReadOnlyArraysMixin):
     """Result of viewshed analysis from a single observer position.
 

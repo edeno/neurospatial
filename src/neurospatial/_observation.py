@@ -31,7 +31,7 @@ from neurospatial._validation import (
 )
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class ObservationSupport(ReadOnlyArraysMixin):
     """Valid samples, usable intervals and runs of one trajectory.
 

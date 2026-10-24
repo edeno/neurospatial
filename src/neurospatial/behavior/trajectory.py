@@ -50,7 +50,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class MSDResult(ReadOnlyArraysMixin, ResultMixin):
     """Mean square displacement curve returned by ``mean_square_displacement``.
 
@@ -81,7 +81,7 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
     """Observed distance travelled, returned by ``compute_cumulative_distance``.
 

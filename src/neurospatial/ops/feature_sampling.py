@@ -50,7 +50,7 @@ __all__ = [
 ]
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class SpatialFeatureResult(ReadOnlyArraysMixin, ResultMixin):
     """Feature-map values at query points, from ``sample_spatial_features``.
 

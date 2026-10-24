@@ -170,3 +170,21 @@ def test_xarray_export_is_an_editable_copy(populations, family):
     dataset = result.to_xarray()
     dataset["firing_rate"][0, 0] = -5.0
     assert np.asarray(result.firing_rates)[0, 0] != -5.0
+
+
+def test_array_records_compare_by_identity_instead_of_raising():
+    from neurospatial._observation import resolve_sample_support
+    from neurospatial.encoding import SpikeTrains
+
+    trains = SpikeTrains([np.array([0.1, 0.2]), np.array([0.3, 0.4])])
+    support = resolve_sample_support(
+        np.arange(4.0),
+        np.ones(4, dtype=bool),
+        max_gap=None,
+        epochs=None,
+        break_before=None,
+        result="empty",
+    )
+    for record in (trains, support):
+        assert record == record
+        assert record != copy.deepcopy(record)  # equal values, no ValueError

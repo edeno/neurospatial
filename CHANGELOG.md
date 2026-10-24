@@ -46,6 +46,9 @@
   true-position overlay of `DecodingResult.plot` now give the shared
   excluded-interval warning. With `times` in milliseconds, visits split at
   every sample and the decoding error was all NaN, with no warning.
+- Result and record classes that hold arrays compare by identity. Comparing
+  two equal-valued copies with `==` raised "truth value of an array is
+  ambiguous"; it now returns `False`, and compare their arrays to test values.
 
 ### Spatial geometry review
 

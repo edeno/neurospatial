@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 __all__ = ["SpikeTrains"]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class SpikeTrains(UnitSelectionMixin):
     """Immutable container of ragged per-unit spike trains.
 

@@ -1111,7 +1111,7 @@ class DecodingResult(ResultMixin):
         return errors
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
     """Per-time decode reductions, without the full posterior.
 

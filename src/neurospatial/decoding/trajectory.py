@@ -69,7 +69,7 @@ except ImportError:
     radon = None
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
     """Container for isotonic regression trajectory fit results.
 
@@ -181,7 +181,7 @@ class LinearFitResult(ResultMixin):
         }
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     """Container for Radon transform trajectory detection results.
 
