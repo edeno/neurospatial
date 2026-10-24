@@ -489,6 +489,30 @@ def test_nearest_lookup_without_a_radius_or_domain_is_refused():
         assert "math.inf" in str(info.value)
 
 
+def test_derived_and_combined_sites_still_need_a_lookup_radius():
+    """Wrapping sites in a combination, subset or map keeps the refusal."""
+    from neurospatial.ops.transforms import Affine2D
+
+    sites = _sites()
+    combined = Environment.combine({"sites": sites})
+    shifted = Affine2D(np.array([[1.0, 0.0, 5.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+    for env in (
+        combined,
+        combined.subset(mask=np.array([True, True, False])),
+        combined.apply_transform(shifted),
+        Environment.combine({"outer": combined}),
+    ):
+        with pytest.raises(NotImplementedError, match="max_distance"):
+            env.bin_at(np.array([[1000.0, 1000.0]]))
+
+
+def test_combined_sites_with_a_radius_keep_it():
+    combined = Environment.combine({"sites": _sites(max_distance=0.25)})
+    np.testing.assert_array_equal(
+        combined.bin_at(np.array([[1000.0, 1000.0], [1.2, 0.0]])), [-1, 1]
+    )
+
+
 def test_nearest_lookup_radius_is_in_physical_units():
     env = _sites(max_distance=0.25)
     np.testing.assert_array_equal(

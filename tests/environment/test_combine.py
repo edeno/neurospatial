@@ -1,6 +1,7 @@
 """Scientific invariants for ordinary combined environments."""
 
 import copy
+import math
 import pickle
 
 import numpy as np
@@ -318,7 +319,7 @@ def test_complementary_unbounded_nearest_subsets_are_valid():
             "sites",
             SpatialBins.from_arrays(centers, [1, 1], 2),
             BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), []),
-            NearestBinLocator(centers),
+            NearestBinLocator(centers, max_distance=math.inf),
             MissingFaces("sites"),
         )
     )

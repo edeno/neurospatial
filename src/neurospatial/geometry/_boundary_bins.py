@@ -24,7 +24,8 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._composition import CombinedLocator, composition_view
+from neurospatial.geometry._derive import select_bins
 from neurospatial.geometry._hex_lookup import get_hex_grid_neighbor_deltas
 from neurospatial.geometry._locators import (
     HexLocator,
@@ -68,16 +69,9 @@ def boundary_bins(
         return _grid_boundary_bins(cells.shape, cells.mapping, periodic_axes)
     if binning.shapes is not None:
         return _boundary_cell_indices(cell_polygons(binning))
-    locator = binning.locator
-    if isinstance(locator, CombinedLocator):
-        parts = [
-            boundary_bins(child, periodic_axes=()) + offset
-            for child, offset in zip(
-                locator.children, locator.offsets[:-1], strict=True
-            )
-        ]
-        combined: NDArray[np.intp] = np.concatenate(parts).astype(np.intp, copy=False)
-        return combined
+    view = composition_view(binning.locator)
+    if view is not None:
+        return _combined_boundary_bins(*view[:2])
     if binning.bins.has_measure_dim(1):
         return _chain_ends(binning)
     raise NotImplementedError(
@@ -92,6 +86,43 @@ def boundary_bins(
             "shapes to Environment.from_bins",
         )
     )
+
+
+def _combined_boundary_bins(
+    root: CombinedLocator, indices: NDArray[np.intp]
+) -> NDArray[np.intp]:
+    """Each component's boundary among the bins it keeps, in current bins.
+
+    Parameters
+    ----------
+    root : CombinedLocator
+        The combined binning the current bins come from.
+    indices : ndarray of intp, shape (n_bins,)
+        For each current bin, the index of the root bin it comes from.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_boundary,)
+        Sorted current bins on the boundary of their own component. Affine
+        maps do not change which bins these are; dropping bins can expose
+        new ones.
+    """
+    parts = []
+    for child, start, stop in zip(
+        root.children, root.offsets[:-1], root.offsets[1:], strict=True
+    ):
+        rows = np.flatnonzero((indices >= start) & (indices < stop))
+        if len(rows) == 0:
+            continue
+        keep = np.zeros(child.bins.n_bins, dtype=bool)
+        keep[indices[rows] - start] = True
+        current = np.full(child.bins.n_bins, -1, dtype=np.intp)
+        current[indices[rows] - start] = rows
+        kept = child if np.all(keep) else select_bins(child, keep)
+        parts.append(
+            current[np.flatnonzero(keep)[boundary_bins(kept, periodic_axes=())]]
+        )
+    return np.sort(np.concatenate(parts)).astype(np.intp, copy=False)
 
 
 def _chain_ends(binning: Binning) -> NDArray[np.intp]:

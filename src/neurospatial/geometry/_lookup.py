@@ -315,14 +315,18 @@ def require_lookup_radius(binning: Binning) -> None:
     ----------
     binning : Binning
         The bins and their locator, possibly wrapped by subsets or affine
-        maps.
+        maps. A combined environment's components whose domain is unknown
+        are checked in turn, as if each were looked up on its own.
 
     Raises
     ------
     NotImplementedError
-        If the locator finds the nearest bin center with ``max_distance``
-        None.
+        If the locator, or that of a component with an unknown domain, finds
+        the nearest bin center with ``max_distance`` None, or such a
+        component is a track without a width (see
+        :func:`require_track_width`).
     """
+    from neurospatial.geometry._composition import CombinedLocator
     from neurospatial.geometry._locators import (
         NearestBinLocator,
         SubsetLocator,
@@ -332,6 +336,12 @@ def require_lookup_radius(binning: Binning) -> None:
     locator = binning.locator
     while isinstance(locator, (SubsetLocator, TransformedLocator)):
         locator = locator.base
+    if isinstance(locator, CombinedLocator):
+        for child, arena in zip(locator.children, locator.arenas, strict=True):
+            if not arena.domain_known:
+                require_track_width(child, arena)
+                require_lookup_radius(child)
+        return
     if (
         not isinstance(locator, NearestBinLocator)
         or locator.max_distance is not None

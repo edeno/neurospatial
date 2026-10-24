@@ -25,16 +25,18 @@
 - Triangular-mesh positions exactly on the polygon outline now get a bin,
   instead of -1.
 - `Environment.boundary_bins` is computed from cell geometry (grid, hexagon,
-  triangle and polygon cells, and each component of a combined environment).
+  triangle and polygon cells, and each component of a combined environment,
+  also after subsets and affine maps).
   It was empty or nearly empty on triangular meshes and wrong on point bins,
   so `border_score` was NaN or wrong there. Area bins without cell geometry
   now raise `NotImplementedError`; track chain ends are found for any length.
 - Nearest-bin lookup without a distance limit is now an explicit choice. A
   `NearestBinLocator` with `max_distance=None` on bins with no known domain
-  refuses position lookup; pass `max_distance=` in length units, or
-  `math.inf` to accept any distance. `max_distance` is validated. A failed
+  refuses position lookup, also as a component of a combined environment;
+  pass `max_distance=` in length units, or `math.inf` to accept any distance. `max_distance` is validated. A failed
   KD-tree query now raises instead of warning and reporting every point as
-  outside. One-dimensional tracks map positions past their ends to -1.
+  outside. One-dimensional tracks map positions past their ends to -1 and
+  keep their ends after affine maps.
 - `Environment.linear_to_nd` returns NaN rows for linear positions before the
   start, past the end or inside a gap between segments, instead of clamping
   them onto track nodes.

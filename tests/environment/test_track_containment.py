@@ -148,6 +148,26 @@ def test_track_containment_contract_survives_derivation_and_storage(
             np.testing.assert_array_equal(candidate.contains(probes), expected)
 
 
+def test_a_mapped_one_dimensional_track_keeps_its_ends():
+    """Rounding in an affine map must not push the track's ends outside."""
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.1,))
+    graph.add_node(1, pos=(10.1,))
+    graph.add_edge(0, 1, distance=10.0)
+    env = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0)
+    ends = np.array([[0.1], [10.1]])
+    np.testing.assert_array_equal(env.bin_at(ends), [0, env.n_bins - 1])
+
+    matrix = np.array([[0.3, 13.7], [0.0, 1.0]])
+    mapped = env.apply_transform(AffineND(matrix))
+    mapped_ends = ends * 0.3 + 13.7
+    np.testing.assert_array_equal(mapped.bin_at(mapped_ends), [0, env.n_bins - 1])
+    # One bin width past either end is still outside.
+    np.testing.assert_array_equal(
+        mapped.bin_at(mapped_ends + np.array([[-0.3], [0.3]])), [-1, -1]
+    )
+
+
 @pytest.mark.parametrize("factory", ["linear_track", "maze"])
 def test_track_presets_accept_a_declared_width(factory):
     if factory == "linear_track":
