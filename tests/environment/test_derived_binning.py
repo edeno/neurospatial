@@ -329,6 +329,34 @@ def test_track_non_similarity_refused(built_environment, linear):
     assert "Fix:" in str(caught.value)
 
 
+@pytest.mark.parametrize("angle", [0.3, 2.0])
+def test_out_and_back_track_rotates_with_its_revisited_bins(angle):
+    """Bins of the return leg sit on the outbound bins' centers; a rotation
+    moves both together instead of refusing the coincident centers."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    for node, position in enumerate([(0.0, 0.0), (10.0, 0.0), (0.0, 0.0)]):
+        graph.add_node(node, pos=position)
+    graph.add_edge(0, 1, distance=10.0)
+    graph.add_edge(1, 2, distance=10.0)
+    env = Environment.from_graph(graph, [(0, 1), (1, 2)], bin_size=2, track_width=1)
+    matrix = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 3.0],
+            [np.sin(angle), np.cos(angle), -1.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    transform = Affine2D(matrix)
+    moved = env.apply_transform(transform)
+    np.testing.assert_allclose(
+        moved.bin_centers, transform(env.bin_centers), atol=1e-12
+    )
+    points = np.array([[1.0, 0.2], [5.0, 0.0], [9.5, -0.3], [3.0, 0.4]])
+    np.testing.assert_array_equal(moved.bin_at(transform(points)), env.bin_at(points))
+
+
 @pytest.mark.parametrize(
     "built_environment", ["grid8", "hex", "mesh", "track"], indirect=True
 )
@@ -628,7 +656,7 @@ def test_scaled_grid_centers_are_the_mapped_edge_midpoints(
 
 
 @pytest.mark.parametrize("built_environment", ["hex", "mesh", "track"], indirect=True)
-@pytest.mark.parametrize("corruption", ["centers", "sizes", "component", "inverse"])
+@pytest.mark.parametrize("corruption", ["centers", "sizes", "component", "forward"])
 def test_wrapped_geometry_corruption_is_rejected(
     built_environment, corruption, corrupted_environment_round_trip
 ):
@@ -638,8 +666,8 @@ def test_wrapped_geometry_corruption_is_rejected(
         if corruption == "sizes":
             arrays["binning/bins/sizes"] *= 2.0
             arrays["binning/faces/volumes"] *= 2.0
-        elif corruption == "inverse":
-            arrays["binning/locator/inverse"][0, -1] += 0.01
+        elif corruption == "forward":
+            arrays["binning/locator/forward"][0, -1] += 0.01
         elif corruption == "component":
             if "binning/shapes/centers" in arrays:
                 arrays["binning/shapes/centers"][0, 0] += 0.01
@@ -842,3 +870,52 @@ def test_extreme_axis_reflection_does_not_hide_wrong_measures(
         payload["arrays"]["binning/faces/volumes"][0] = 1.2
     with pytest.raises(ValueError, match=r"sizes|volumes|measures"):
         from_dict(payload)
+
+
+@pytest.mark.parametrize("built_environment", ["hex", "mesh"], indirect=True)
+def test_hexagon_and_triangle_lattices_survive_maps_and_subsets(built_environment):
+    """grid_shape indexes the lattice, so moving or selecting bins keeps it;
+    a subset keeps the shape and deactivates the dropped cells."""
+    env = built_environment
+    angle = 0.4
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle), 2.0], [np.sin(angle), np.cos(angle), 1.0]]
+    )
+    keep = np.arange(env.n_bins) != 3
+    derived = {
+        "translated": env.apply_transform(
+            Affine2D(np.array([[1.0, 0.0, 5.0], [0.0, 1.0, -3.0], [0.0, 0.0, 1.0]]))
+        ),
+        "rotated": env.apply_transform(Affine2D(np.vstack((rotation, [0, 0, 1])))),
+        "subset": env.subset(mask=keep),
+    }
+    for name, child in derived.items():
+        assert child.grid_shape == env.grid_shape, name
+        expected = env.active_mask.copy()
+        if name == "subset":
+            expected.flat[np.flatnonzero(env.active_mask)[~keep]] = False
+        np.testing.assert_array_equal(child.active_mask, expected, err_msg=name)
+        restored = from_dict(to_dict(child))
+        assert restored.grid_shape == env.grid_shape, name
+        np.testing.assert_array_equal(restored.active_mask, expected, err_msg=name)
+
+
+def test_rotated_rectangular_grid_has_no_world_aligned_shape():
+    """Source axes of a rotated grid are not world axes (see alignment.md)."""
+    grid = Environment.from_grid_mask(
+        np.ones((6, 6), dtype=bool), grid_edges=(np.arange(7.0),) * 2
+    )
+    angle = 0.4
+    rotated = grid.apply_transform(
+        Affine2D(
+            np.array(
+                [
+                    [np.cos(angle), -np.sin(angle), 0.0],
+                    [np.sin(angle), np.cos(angle), 0.0],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+        )
+    )
+    assert rotated.grid_shape == (36,)
+    assert rotated.grid_edges == ()

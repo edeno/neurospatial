@@ -100,16 +100,19 @@ def test_rotating_the_grid_and_positions_together_keeps_each_bin(
     expected = env.bin_at(source)
     np.testing.assert_array_equal(child.bin_at(world), expected)
 
-    # The binning's own locator applies the same rule, also after a subset.
+    # The binning's own locator applies the same rule, also after a subset:
+    # the kept cells close their outline, as on the axis-aligned grid, so a
+    # point on a face shared with a dropped cell belongs to the kept cell.
     np.testing.assert_array_equal(child._binning.locator.locate(world), expected)
     keep = np.arange(child.n_bins) % 3 != 1
     subset = child.subset(mask=keep)
+    selected_first = env.subset(mask=keep).bin_at(source)
     renumber = np.full(child.n_bins + 1, -1)
     renumber[np.flatnonzero(keep)] = np.arange(keep.sum())
-    np.testing.assert_array_equal(subset.bin_at(world), renumber[expected])
-    np.testing.assert_array_equal(
-        subset._binning.locator.locate(world), renumber[expected]
-    )
+    owned = expected >= 0
+    assert np.any(selected_first[owned] != renumber[expected[owned]])
+    np.testing.assert_array_equal(subset.bin_at(world), selected_first)
+    np.testing.assert_array_equal(subset._binning.locator.locate(world), selected_first)
 
     # A combined environment finds the same bins in its rotated component.
     far = moved(grid(n_dims), oblique(n_dims, angle, shear, offset + 100.0))
@@ -293,7 +296,7 @@ def test_hexagon_conversion_retains_exact_vertices(kind):
 
 def test_binning_and_frame_codec_versions():
     meta, _ = encode(moved(grid(), matrix())._binning, "binning")
-    assert meta["codec_version"] == 4
+    assert meta["codec_version"] == 5
     assert meta["grid_frame"]["codec_version"] == 1
 
 

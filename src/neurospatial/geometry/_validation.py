@@ -52,6 +52,7 @@ from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
+    _coordinate_roundoff,
 )
 from neurospatial.geometry._polygon import (
     _representative,
@@ -85,10 +86,24 @@ def _active_indices(
 
 
 def _gap(points: NDArray[np.float64]) -> float:
-    """Smallest active-center gap, rather than a scale set by the origin."""
+    """Smallest gap between distinct active centers, not set by the origin.
+
+    Centers within rounding of each other are one place, such as the bins
+    of an out-and-back track that revisit the same points on the way back;
+    the gap is to the nearest center that is not at the same place.
+    """
     if len(points) < 2:
         return math.inf
-    distances = cKDTree(points).query(points, k=2)[0][:, 1]
+    tree = cKDTree(points)
+    same = _coordinate_roundoff(points, float(np.max(np.abs(points))))
+    # Widen the search until every point sees a center at another place.
+    k = 2
+    while True:
+        distances = np.asarray(tree.query(points, k=k)[0]).reshape(len(points), k)
+        distances[distances <= same[:, None]] = np.inf
+        if k == len(points) or np.all(np.isfinite(distances[:, -1])):
+            break
+        k = min(2 * k, len(points))
     return float(np.min(distances))
 
 
@@ -1334,16 +1349,23 @@ def _validate_center_lookup(binning: Binning) -> None:
     if binning.linearization is not None:
         # An embedded track can revisit an identical spatial point at a
         # different linear coordinate. Nearest-point lookup may choose either
-        # coincident bin; the validated track component owns path identity.
+        # coincident bin, centers equal to within rounding included (the
+        # tie rule of NearestBinLocator); the validated track component owns
+        # path identity.
         if located.shape != (bins.n_bins,) or np.any(
             (located < 0) | (located >= bins.n_bins)
         ):
             raise ValueError("Track locator does not locate its bin centers.")
-        _equal(
-            bins.centers[located],
-            bins.centers,
-            "track locator bin-center coordinates",
+        tolerance = _coordinate_roundoff(
+            bins.centers, float(np.max(np.abs(bins.centers)))
         )
+        if np.any(
+            np.linalg.norm(bins.centers[located] - bins.centers, axis=1) > tolerance
+        ):
+            raise ValueError(
+                "track locator bin-center coordinates does not match the "
+                "binning geometry."
+            )
     else:
         _equal(located, np.arange(bins.n_bins), "locator bin-center lookup")
 

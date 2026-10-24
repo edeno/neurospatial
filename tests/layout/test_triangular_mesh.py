@@ -323,6 +323,25 @@ class TestTriangularMeshLayoutPointLookup:
         assert bin_indices[1] == -1
         assert bin_indices[2] >= 0
 
+    def test_points_on_the_outline_belong_to_a_bin(self):
+        """The outline is part of the arena, so its points have a bin."""
+        from neurospatial import Environment
+
+        layout = TriangularMeshLayout()
+        layout.build(shapely.geometry.box(0, 0, 20, 20), point_spacing=2.0)
+        env = Environment.from_layout(layout)
+        outline = np.array(
+            [[0.0, 5.3], [20.0, 7.1], [3.3, 0.0], [7.7, 20.0], [0.0, 0.0], [20.0, 20.0]]
+        )
+        assert env.arena.contains(outline).all()
+        bins = env.bin_at(outline)
+        assert np.all(bins >= 0)
+        np.testing.assert_array_equal(bins, layout.binning().locator.locate(outline))
+        beyond = outline + np.array(
+            [[-1e-9, 0], [1e-9, 0], [0, -1e-9], [0, 1e-9], [-1e-9, -1e-9], [1e-9, 1e-9]]
+        )
+        np.testing.assert_array_equal(env.bin_at(beyond), -1)
+
     def test_single_point_input(self):
         """Test point lookup with a single point."""
         layout = TriangularMeshLayout()

@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
-from neurospatial.geometry._arena import Arena
+from neurospatial.geometry._arena import Arena, contains_with_error
 from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
@@ -25,9 +25,9 @@ from neurospatial.geometry._face_builders import triangle_skew_message
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import (
     LookupIndexes,
-    RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
+    locate_within,
 )
 from neurospatial.geometry._polygon_cells import ClippedLocator
 
@@ -190,6 +190,22 @@ class CombinedLocator(ReadOnlyState):
     ) -> NDArray[np.intp]:
         """Locate native points with each child's original arena and lookup."""
         query = np.asarray(points, dtype=np.float64)
+        return self.locate_within(query, np.zeros(query.shape), indexes)
+
+    def locate_within(
+        self,
+        points: NDArray[np.float64],
+        error: NDArray[np.float64],
+        indexes: LookupIndexes | None = None,
+        *,
+        half_open: bool = False,
+    ) -> NDArray[np.intp]:
+        """Locate points known to within ``error`` in each child's domain.
+
+        With ``half_open``, only the children's half-open owners are found,
+        so an enclosing combined environment can ask for them first.
+        """
+        query = np.asarray(points, dtype=np.float64)
         dims = self.children[0].bins.n_dims
         if query.ndim != 2 or query.shape[1] != dims:
             raise ValueError(f"Expected positions of shape (n_points, {dims}).")
@@ -198,18 +214,20 @@ class CombinedLocator(ReadOnlyState):
         # A grid child's outline is closed, but a face it shares with another
         # child keeps its half-open owner: every child is asked for interior
         # owners before any child claims a point on its outline.
-        for interior in (True, False):
+        for interior in (True,) if half_open else (True, False):
             for child, arena, offset in zip(
                 self.children, self.arenas, self.offsets[:-1], strict=True
             ):
                 rows = np.flatnonzero(finite & (result < 0))
                 if arena.domain_known:
-                    rows = rows[arena.contains(query[rows])]
-                locator = child.locator
-                if interior and isinstance(locator, RectilinearLocator):
-                    local = locator.locate_half_open(query[rows])
-                else:
-                    local = locator.locate(query[rows], indexes)
+                    rows = rows[contains_with_error(arena, query[rows], error[rows])]
+                local = locate_within(
+                    child.locator,
+                    query[rows],
+                    error[rows],
+                    indexes,
+                    half_open=interior,
+                )
                 valid = local >= 0
                 result[rows[valid]] = offset + local[valid]
         return result

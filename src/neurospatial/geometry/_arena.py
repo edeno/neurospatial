@@ -517,22 +517,21 @@ class MaskArena(ReadOnlyState):
         return None
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
-        """Retain axis-aligned masks, or store an inverse coordinate map."""
+        """Retain masks under positive axis scaling, or store the affine map.
+
+        A reflection keeps the map, as a grid's bins do (``FramedGrid``), so
+        the arena and its cells stay in one source frame.
+        """
         matrix = _affine(matrix, self.n_dims)
         diagonal = np.diag(matrix[:-1, :-1])
-        if np.array_equal(matrix[:-1, :-1], np.diag(diagonal)):
+        if np.array_equal(matrix[:-1, :-1], np.diag(diagonal)) and np.all(diagonal > 0):
             edges = []
-            mask = self.active_mask
             for axis, edge in enumerate(self.edges):
                 with np.errstate(over="ignore", invalid="ignore"):
-                    mapped = edge * diagonal[axis] + matrix[axis, -1]
-                if diagonal[axis] < 0:
-                    mapped = mapped[::-1]
-                    mask = np.flip(mask, axis=axis)
-                edges.append(mapped)
+                    edges.append(edge * diagonal[axis] + matrix[axis, -1])
             return MaskArena(
                 tuple(edges),
-                mask,
+                self.active_mask,
                 physical_footprint_known=self.physical_footprint_known,
             )
         return _TransformedArena(self, matrix)
@@ -916,7 +915,7 @@ class _TransformedArena(ReadOnlyState):
         original, error = self._project(query[finite])
         representable = np.all(np.isfinite(original), axis=1)
         selected = np.zeros(len(original), dtype=np.bool_)
-        selected[representable] = _contains_with_error(
+        selected[representable] = contains_with_error(
             self.base, original[representable], error[representable]
         )
         inside[finite] = selected
@@ -1055,19 +1054,19 @@ def _segment_distance(first: NDArray[np.float64], second: NDArray[np.float64]) -
     return min(distances)
 
 
-def _contains_with_error(
+def contains_with_error(
     arena: Arena, query: NDArray[np.float64], error: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
     if isinstance(arena, _CombinedArena):
         return np.asarray(
             np.logical_or.reduce(
-                [_contains_with_error(child, query, error) for child in arena.children]
+                [contains_with_error(child, query, error) for child in arena.children]
             ),
             dtype=np.bool_,
         )
     if isinstance(arena, _TransformedArena):
         original, propagated = arena._project(query, error)
-        return _contains_with_error(arena.base, original, propagated)
+        return contains_with_error(arena.base, original, propagated)
     inside = arena.contains(query)
     rows = np.flatnonzero(~inside)
     if not len(rows):

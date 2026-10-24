@@ -222,7 +222,7 @@ def test_environment_round_trip_keeps_normal_ownership(environment_round_trip):
 def test_current_binning_requires_normal_field_and_other_codecs_stay_version_one():
     env = _grid()
     meta, arrays = encode(env._binning, "binning")
-    assert meta["codec_version"] == 4
+    assert meta["codec_version"] == 5
     assert meta["face_normals"]["codec_version"] == 1
     del meta["face_normals"]
     with pytest.raises(ValueError, match="face_normals"):

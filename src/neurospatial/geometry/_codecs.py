@@ -811,7 +811,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         elif isinstance(locator, SubsetLocator):
             nested.update(_arrays(path, parent_to_child=locator.parent_to_child))
         else:
-            nested.update(_arrays(path, inverse=locator.inverse))
+            nested.update(_arrays(path, forward=locator.forward))
         return local, nested
 
     # Lookup is encoded first so unsupported layout-backed persistence fails
@@ -846,6 +846,11 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         else:
             meta[name], nested = encode(part, f"{prefix}/{name}")
             arrays.update(nested)
+    meta["dimension_ranges"] = (
+        None
+        if obj.dimension_ranges is None
+        else [[float(low), float(high)] for low, high in obj.dimension_ranges]
+    )
     if cells or mappings:
         meta["snapshots"] = {"polygon_cells": [], "clip_mappings": []}
         for name, snapshots in (("polygon_cells", cells), ("clip_mappings", mappings)):
@@ -956,7 +961,7 @@ def _decode_subset_locator(
 
 def _encode_transformed_locator(obj: TransformedLocator, prefix: str) -> Payload:
     base, arrays = encode(obj.base, f"{prefix}/base")
-    arrays.update(_arrays(prefix, inverse=obj.inverse))
+    arrays.update(_arrays(prefix, forward=obj.forward))
     return {"base": base}, arrays
 
 
@@ -966,7 +971,7 @@ def _decode_transformed_locator(
     base = decode(meta["base"], arrays, f"{prefix}/base")
     if not isinstance(base, _LOCATOR_TYPES):
         raise ValueError("base must contain a point-lookup codec.")
-    return TransformedLocator(base, _array(arrays, prefix, "inverse", np.float64))
+    return TransformedLocator(base, _array(arrays, prefix, "forward", np.float64))
 
 
 def _decode_binning(
@@ -1036,7 +1041,7 @@ def _decode_binning(
             return ClippedLocator(base, cell_snapshot, map_snapshot)
         if kind == "SubsetLocator":
             return SubsetLocator(base, _array(arrays, path, "parent_to_child", np.intp))
-        return TransformedLocator(base, _array(arrays, path, "inverse", np.float64))
+        return TransformedLocator(base, _array(arrays, path, "forward", np.float64))
 
     expected: dict[str, type | tuple[type, ...]] = {
         "bins": SpatialBins,
@@ -1078,7 +1083,24 @@ def _decode_binning(
     if not isinstance(meta["kind"], str):
         raise ValueError("kind must be a descriptive string.")
     parts["connections"].check_bins(parts["bins"].n_bins)
-    return Binning(kind=meta["kind"], **parts)
+    ranges = meta["dimension_ranges"]
+    if ranges is not None and (
+        not isinstance(ranges, list)
+        or any(not isinstance(axis, list) or len(axis) != 2 for axis in ranges)
+    ):
+        raise ValueError("dimension_ranges must be one [low, high] pair per axis.")
+    return Binning(
+        kind=meta["kind"],
+        **parts,
+        dimension_ranges=(
+            None
+            if ranges is None
+            else tuple(
+                (_finite(low, "dimension_ranges"), _finite(high, "dimension_ranges"))
+                for low, high in ranges
+            )
+        ),
+    )
 
 
 def _encode_combined(obj: CombinedLocator, prefix: str) -> Payload:
@@ -1219,9 +1241,12 @@ _CODECS: dict[str, Codec] = {
         SubsetLocator, _encode_subset_locator, _decode_subset_locator
     ),
     "TransformedLocator": Codec(
-        TransformedLocator, _encode_transformed_locator, _decode_transformed_locator
+        TransformedLocator,
+        _encode_transformed_locator,
+        _decode_transformed_locator,
+        version=2,
     ),
-    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=4),
+    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=5),
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
     "FramedGrid": Codec(FramedGrid, _encode_grid_frame, _decode_grid_frame),
 }

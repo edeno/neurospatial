@@ -92,9 +92,7 @@ def _composition_arena(locator: object) -> Arena | None:
     if isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
         arena = _composition_arena(locator.base)
         if arena is not None and isinstance(locator, TransformedLocator):
-            arena = arena.transformed(
-                np.asarray(np.linalg.inv(locator.inverse), dtype=np.float64)
-            )
+            arena = arena.transformed(locator.forward)
         return arena
     return None
 

@@ -962,7 +962,7 @@ def test_three_dimensional_affine_grid_faces_follow_physical_planes():
         source,
         bins=replace(source.bins, centers=centers, sizes=sizes),
         connections=BinConnections.from_arrays(pairs, distances),
-        locator=TransformedLocator(source.locator, np.linalg.inv(matrix)),
+        locator=TransformedLocator(source.locator, matrix),
         faces=KnownFaces(faces),
         rectilinear=None,
     )
@@ -1145,7 +1145,7 @@ def test_hexagon_faces_refuse_affine_maps_that_shear_the_lattice():
         source,
         bins=SpatialBins.from_arrays(centers, bins.sizes * 6.0, 2),
         connections=BinConnections.from_arrays(pairs, distances),
-        locator=TransformedLocator(source.locator, np.linalg.inv(matrix)),
+        locator=TransformedLocator(source.locator, matrix),
         faces=KnownFaces(
             FaceGeometry(pairs, faces.A * np.sqrt(6.0), distances, bins.sizes * 6.0)
         ),
