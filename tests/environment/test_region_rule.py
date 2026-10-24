@@ -52,8 +52,7 @@ _LAYOUTS = {
         )
     ),
     "track": _track,
-    # Point regions on a polar environment are (distance, angle) pairs; polygon
-    # regions are Cartesian and refused there.
+    # Regions on a polar environment are read in (distance, angle) coordinates.
     "polar": lambda: Environment.from_polar_egocentric(
         distance_range=(0.0, 30.0),
         angle_range=(-np.pi, np.pi),
@@ -73,28 +72,13 @@ def _with_regions(layout: str) -> Environment:
     regions = Regions()
     # A point just off a bin center, so the point region is not a bin center.
     regions.add("reward", point=centers[len(centers) // 3] + 0.1)
-    if env.coordinate_kind == "cartesian":
-        # A box whose lower edges pass exactly through the lowest bin centers.
-        regions.add("zone", polygon=box(lo[0], lo[1], mid[0], hi[1]))
+    # A box whose lower edges pass exactly through the lowest bin centers.
+    regions.add("zone", polygon=box(lo[0], lo[1], mid[0], hi[1]))
     return env.with_regions(regions)
-
-
-# Every (layout, region) pair: a polar environment holds no polygon region.
-_LAYOUT_REGIONS = [
-    (layout, name)
-    for layout in sorted(_LAYOUTS)
-    for name in ("reward", "zone")
-    if not (layout == "polar" and name == "zone")
-]
 
 
 @pytest.fixture(params=sorted(_LAYOUTS))
 def env_with_regions(request) -> Environment:
-    return _with_regions(request.param)
-
-
-@pytest.fixture(params=sorted(set(_LAYOUTS) - {"polar"}))
-def cartesian_env_with_regions(request) -> Environment:
     return _with_regions(request.param)
 
 
@@ -136,9 +120,9 @@ def _consumers(env: Environment, name: str, include_boundary: bool) -> dict:
 
 
 @pytest.mark.parametrize("include_boundary", [True, False])
-@pytest.mark.parametrize(("layout", "name"), _LAYOUT_REGIONS)
-def test_region_queries_agree_on_every_layout(layout, name, include_boundary):
-    env = _with_regions(layout)
+@pytest.mark.parametrize("name", ["reward", "zone"])
+def test_region_queries_agree_on_every_layout(env_with_regions, name, include_boundary):
+    env = env_with_regions
     reported = _consumers(env, name, include_boundary)
     reference = reported.pop("bins_in_region")
     # Track centers all lie on the zone's lower edge, so only its interior is empty.
@@ -149,10 +133,10 @@ def test_region_queries_agree_on_every_layout(layout, name, include_boundary):
 
 @pytest.mark.parametrize("include_boundary", [True, False])
 def test_polygon_region_matches_an_independent_shapely_oracle(
-    cartesian_env_with_regions, include_boundary
+    env_with_regions, include_boundary
 ):
     """The polygon column is shapely's covers (or contains) on the bin centers."""
-    env = cartesian_env_with_regions
+    env = env_with_regions
     polygon = env.regions["zone"].data
     predicate = shapely.covers if include_boundary else shapely.contains
     expected = np.flatnonzero(predicate(polygon, shapely.points(env.bin_centers)))
@@ -165,9 +149,9 @@ def test_polygon_region_matches_an_independent_shapely_oracle(
     )
 
 
-@pytest.mark.parametrize(("layout", "name"), _LAYOUT_REGIONS)
-def test_distance_to_region_is_zero_exactly_on_its_bins(layout, name):
-    env = _with_regions(layout)
+@pytest.mark.parametrize("name", ["reward", "zone"])
+def test_distance_to_region_is_zero_exactly_on_its_bins(env_with_regions, name):
+    env = env_with_regions
     distances = env.distance_to(region=name, metric="geodesic")
     np.testing.assert_array_equal(
         np.flatnonzero(distances == 0.0), env.bins_in_region(name)

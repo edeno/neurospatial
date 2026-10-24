@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from shapely.geometry import box
 
 from neurospatial import Environment, compute_spatial_rate
 from neurospatial._exceptions import CartesianOnlyError
@@ -90,11 +91,9 @@ def _rates(env: Environment) -> np.ndarray:
 
 
 def _polar_regions_env(env: Environment) -> Environment:
-    # Polygon regions are Cartesian and refused on polar bins; points are
-    # (distance, angle) pairs.
     regions = Regions()
-    regions.add("near", point=tuple(env.bin_centers[0]))
-    regions.add("far", point=tuple(env.bin_centers[8]))
+    regions.add("near", polygon=box(0.0, -4.0, 15.0, 4.0))
+    regions.add("far", polygon=box(15.0, -4.0, 30.0, 4.0))
     return env.with_regions(regions)
 
 

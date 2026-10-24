@@ -5336,9 +5336,6 @@ class Environment(Generic[_C]):
         ------
         KeyError
             If ``region_name`` is not found in ``self.regions``.
-        CartesianOnlyError
-            If a polygon region is used on a polar environment: its vertices
-            are Cartesian (x, y) points, not (distance, angle) pairs.
         ValueError
             If a point region has a different number of coordinates than the
             bins, or a polygon region is used in an environment that is not
@@ -5419,8 +5416,6 @@ class Environment(Generic[_C]):
         TypeError
             If regions parameter is not a Regions instance or None.
             If include_boundary is not a boolean.
-        CartesianOnlyError
-            If a polygon region is used on a polar environment.
 
         See Also
         --------
@@ -5538,8 +5533,6 @@ class Environment(Generic[_C]):
         TypeError
             If ``regions`` has an invalid type or ``include_boundary`` is not
             a bool.
-        CartesianOnlyError
-            If a polygon region is used on a polar environment.
 
         Notes
         -----

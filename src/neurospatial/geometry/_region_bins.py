@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import numpy as np
 import shapely
 import shapely.geometry.base
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import CartesianOnlyError, _format_error
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._lookup import locate
 
 if TYPE_CHECKING:
@@ -24,7 +24,6 @@ def polygon_bin_mask(
     polygon: shapely.geometry.base.BaseGeometry,
     centers: NDArray[np.float64],
     *,
-    coordinate_kind: Literal["cartesian", "polar"],
     include_boundary: bool = True,
     points: NDArray[np.object_] | None = None,
 ) -> NDArray[np.bool_]:
@@ -33,12 +32,9 @@ def polygon_bin_mask(
     Parameters
     ----------
     polygon : shapely geometry
-        Area in the same 2-D Cartesian coordinates as ``centers``.
+        Area in the same 2-D coordinates as ``centers``.
     centers : ndarray of float64, shape (n_bins, 2)
         Bin centers.
-    coordinate_kind : {'cartesian', 'polar'}
-        What the bin centers' columns are, ``arena.coordinate_kind``. Polar
-        ``(distance, angle)`` centers are refused.
     include_boundary : bool, default=True
         Count a center exactly on the polygon's edge as inside.
     points : ndarray of shapely Point, shape (n_bins,), optional
@@ -54,27 +50,12 @@ def polygon_bin_mask(
     ------
     TypeError
         If ``include_boundary`` is not a bool.
-    CartesianOnlyError
-        If the bins are polar ``(distance, angle)`` pairs.
     ValueError
         If ``centers`` are not 2-D coordinates.
     """
     if not isinstance(include_boundary, bool):
         raise TypeError(
             f"include_boundary must be a bool, got {type(include_boundary).__name__}."
-        )
-    if coordinate_kind != "cartesian":
-        raise CartesianOnlyError(
-            "A polygon region",
-            why="A polygon's vertices are Cartesian (x, y) points; read as "
-            "(distance, angle) pairs, a box becomes a band of distances across "
-            "every angle in its range.",
-            fix="select bins by distance and angle with a boolean mask, or test "
-            "the polygon against the bin centers in the animal's egocentric "
-            "Cartesian frame (x ahead, y to the left)",
-            example="shapely.contains_xy(polygon, env.bin_centers[:, 0] * "
-            "np.cos(env.bin_centers[:, 1]), env.bin_centers[:, 0] * "
-            "np.sin(env.bin_centers[:, 1]))",
         )
     if centers.shape[1] != 2:
         raise ValueError(
@@ -134,8 +115,6 @@ def region_bin_mask(
     ------
     TypeError
         If ``include_boundary`` is not a bool.
-    CartesianOnlyError
-        If a polygon region is used with polar ``(distance, angle)`` bins.
     ValueError
         If a point region has a different number of coordinates than the bins,
         or a polygon region is used with bins that are not 2-D.
@@ -186,8 +165,6 @@ def region_bin_masks(
     ------
     TypeError
         If ``include_boundary`` is not a bool.
-    CartesianOnlyError
-        If a polygon region is used with polar ``(distance, angle)`` bins.
     ValueError
         If a point region has a different number of coordinates than the bins,
         or a polygon region is used with bins that are not 2-D.
@@ -205,11 +182,7 @@ def region_bin_masks(
             if points is None and n_dims == 2:
                 points = shapely.points(centers)
             masks[:, column] = polygon_bin_mask(
-                region.data,
-                centers,
-                coordinate_kind=arena.coordinate_kind,
-                include_boundary=include_boundary,
-                points=points,
+                region.data, centers, include_boundary=include_boundary, points=points
             )
             continue
         point = np.asarray(region.data, dtype=np.float64).reshape(1, -1)
