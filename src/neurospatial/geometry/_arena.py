@@ -1061,6 +1061,15 @@ def _feature_cap(arena: Arena) -> NDArray[np.float64]:
                 if gap > 0:
                     feature = min(feature, gap)
         return np.full(arena.n_dims, feature / (4 * np.sqrt(arena.n_dims)))
+    if isinstance(arena, TrackArena) and arena.n_dims == 1:
+        # The features are the segments' intervals and the gaps between them.
+        bounds = np.sort(arena.segments[:, :, 0], axis=1)
+        bounds = bounds[np.argsort(bounds[:, 0])]
+        gaps = bounds[1:, 0] - np.maximum.accumulate(bounds[:-1, 1])
+        feature = float(
+            np.min(np.concatenate([np.diff(bounds, axis=1)[:, 0], gaps[gaps > 0]]))
+        )
+        return np.array([feature / 4])
     return np.zeros(arena.n_dims)
 
 
@@ -1128,6 +1137,13 @@ def contains_with_error(
         inside[rows] = _track_distances(
             arena, query[rows]
         ) <= arena.width / 2 + np.hypot.reduce(allowance, axis=1)
+    elif isinstance(arena, TrackArena) and arena.n_dims == 1:
+        # A widthless 1-D track holds the closed intervals of its segments.
+        low = arena.segments[:, :, 0].min(axis=1)
+        high = arena.segments[:, :, 0].max(axis=1)
+        values = query[rows, :1]
+        gap = np.maximum(np.maximum(low - values, values - high), 0.0)
+        inside[rows] = np.any(gap <= allowance[:, :1], axis=1)
     return inside
 
 
