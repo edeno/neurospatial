@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from itertools import pairwise, product
 from typing import Any
@@ -33,7 +33,6 @@ from neurospatial.geometry._binning import (
     MissingFaces,
     TrackLinearization,
 )
-from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._composition import CombinedLocator, combined_normals
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._explicit import prepare_bins
@@ -44,6 +43,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._polygon import cells_from_locator, materialize_cells
 from neurospatial.geometry._polygon_cells import PolygonCells
 
@@ -711,6 +711,27 @@ def _bound_candidates(
     )
 
 
+# Set in a CombinedLocator's __dict__ once its components are certified. A
+# locator is immutable, so the certificate holds for it and for its copies and
+# unpickled versions (which keep __dict__); a decoded locator is certified anew.
+_CERTIFIED = "_components_certified"
+
+
+def certify_locator(locator: CombinedLocator) -> None:
+    """Certify a combined locator's components once per record.
+
+    Raises
+    ------
+    ValueError
+        If two components overlap or their disjoint support cannot be
+        certified.
+    """
+    if locator.__dict__.get(_CERTIFIED, False):
+        return
+    certify_components(locator.children, locator.arenas, locator.keys)
+    object.__setattr__(locator, _CERTIFIED, True)
+
+
 def certify_components(
     children: tuple[Binning, ...], arenas: tuple[Arena, ...], keys: tuple[str, ...]
 ) -> None:
@@ -835,12 +856,14 @@ def combine_binnings(
         or max_mnn_distance < 0
     ):
         raise ValueError("max_mnn_distance must be finite and nonnegative, or None.")
-    children = []
-    for source in binnings:
-        meta, arrays = encode(source, "child")
-        child = decode(meta, arrays, "child")
-        assert isinstance(child, Binning)
-        children.append(child)
+    # Records are immutable, so the components are shared; a native face
+    # recipe is built once here, as every combined face and diffusion reads it.
+    children = [
+        replace(child, faces=KnownFaces(child.build_faces()))
+        if isinstance(child.faces, NativeFaces)
+        else child
+        for child in binnings
+    ]
     children_tuple = tuple(children)
     certify_components(children_tuple, arenas, keys)
     n_dims = children_tuple[0].bins.n_dims
@@ -933,6 +956,8 @@ def combine_binnings(
     locator = CombinedLocator(
         keys, children_tuple, arenas, bridge_pairs, np.array(distances), conductances
     )
+    # The locator holds the components certified above.
+    object.__setattr__(locator, _CERTIFIED, True)
     bins = locator.spatial_bins()
     connections = locator.bin_connections()
     faces: KnownFaces | MissingFaces

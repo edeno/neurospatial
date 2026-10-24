@@ -24,7 +24,7 @@ from neurospatial.geometry._binning import (
     TrackLinearization,
     refuse_mixed_measure_conductance,
 )
-from neurospatial.geometry._combine_geometry import certify_components
+from neurospatial.geometry._combine_geometry import certify_locator
 from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._composition import (
     CombinedLocator,
@@ -347,8 +347,7 @@ def _primitive_geometry(
             raise ValueError("Combined lookup requires Cartesian coordinates.")
         for child in locator.children:
             validate_components(child, CartesianSystem())
-
-        certify_components(locator.children, locator.arenas, locator.keys)
+        certify_locator(locator)
         bins = locator.spatial_bins()
         geometry = _LocatorGeometry(
             locator,
@@ -856,8 +855,26 @@ def _validate_cell_faces(binning: Binning, geometry: _LocatorGeometry) -> None:
     _validate_face_distances(binning, geometry, f"{label}.distance")
 
 
+# Set in a Binning's __dict__ to the coordinates it was validated in. A binning
+# is immutable, so the result holds for it and for its copies and unpickled
+# versions (which keep __dict__); dataclasses.replace and the codecs build a
+# new binning, which is validated anew.
+_VALIDATED_IN = "_validated_in"
+
+
 def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None:
-    """Compare shared arrays exactly and recursively check computed geometry."""
+    """Compare shared arrays exactly and recursively check computed geometry.
+
+    A binning is validated once in each coordinate system, so a combined
+    environment's published components are not checked again.
+    """
+    if binning.__dict__.get(_VALIDATED_IN) == coordinates:
+        return
+    _validate_components(binning, coordinates)
+    object.__setattr__(binning, _VALIDATED_IN, coordinates)
+
+
+def _validate_components(binning: Binning, coordinates: CoordinateSystem) -> None:
     coordinate_kind = coordinates.kind
     bins, links, locator = binning.bins, binning.connections, binning.locator
     if binning.grid_spec is not None:
