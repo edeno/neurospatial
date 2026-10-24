@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -189,8 +189,6 @@ def prepare_linear_spatial_intervals(
             runs[-1][1] = max(runs[-1][1], right)
         else:
             runs.append([left, right])
-    run_array = np.asarray(runs, dtype=np.float64).reshape(-1, 2)
-    run_array.setflags(write=False)
     occupancy.setflags(write=False)
     support = TimeSupport.from_mask(
         times,
@@ -199,8 +197,8 @@ def prepare_linear_spatial_intervals(
         spike_window=resolved_spike_window,
         max_gap=max_gap,
         break_before=break_before,
+        runs=np.asarray(runs, dtype=np.float64).reshape(-1, 2),
     )
-    support = replace(support, runs=run_array)
     return LinearSpatialIntervals(support, pieces, occupancy)
 
 

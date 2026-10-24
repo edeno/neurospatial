@@ -278,3 +278,40 @@ def test_all_excluding_breaks_are_named_in_the_warning():
             break_before=np.array([False, True, True]),
         )
     assert not mask.any()
+
+
+@pytest.mark.parametrize("how", ["direct", "replace", "deepcopy", "pickle"])
+def test_time_support_arrays_are_read_only_on_every_path(how):
+    import copy
+    import dataclasses
+    import pickle
+
+    from neurospatial._intervals import TimeSupport
+
+    mask = np.array([True, False, True])
+    support = TimeSupport(mask, np.array([[0.0, 1.0]]), None, None, 0.5)
+    if how == "replace":
+        support = dataclasses.replace(support, runs=np.array([[0.0, 2.0]]))
+    elif how == "deepcopy":
+        support = copy.deepcopy(support)
+    elif how == "pickle":
+        support = pickle.loads(pickle.dumps(support))
+    mask[0] = False
+    assert support.mask[0]
+    assert not support.mask.flags.writeable
+    assert not support.runs.flags.writeable
+
+
+def test_time_support_records_fractional_runs_when_given():
+    from neurospatial._intervals import TimeSupport
+
+    times = np.array([0.0, 1.0, 2.0])
+    support = TimeSupport.from_mask(
+        times,
+        np.array([True, True]),
+        epochs=None,
+        spike_window=None,
+        max_gap=None,
+        runs=np.array([[0.25, 1.75]]),
+    )
+    assert support.analysis_settings()["observed_intervals"] == [[0.25, 1.75]]

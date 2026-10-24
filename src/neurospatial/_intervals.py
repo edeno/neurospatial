@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
 
@@ -38,17 +39,19 @@ _ACCEPTED_FORMS = (
 )
 
 
-@dataclass(frozen=True)
-class TimeSupport:
+@dataclass(frozen=True, eq=False)
+class TimeSupport(ReadOnlyArraysMixin):
     """Resolved windows and the exact intervals retained by an operation.
 
     ``mask`` gates both spike counts and dwell time. ``runs`` records its
-    contiguous half-open time bounds without retaining the recording arrays.
-    Recording support and training support are separate instances: training
-    may additionally exclude slow movement or invalid coordinates.
-    ``break_times`` holds the time of the first sample after each declared
-    recording break (``times[k]`` where ``break_before[k]``, ``k >= 1``), or
-    ``None`` when no ``break_before`` was given.
+    contiguous half-open time bounds without retaining the recording arrays;
+    under linear time allocation, they are the fractional pieces retained
+    inside those bounds. Recording support and training support are separate
+    instances: training may additionally exclude slow movement or invalid
+    coordinates. ``break_times`` holds the time of the first sample after
+    each declared recording break (``times[k]`` where ``break_before[k]``,
+    ``k >= 1``), or ``None`` when no ``break_before`` was given. The arrays
+    are read-only copies.
     """
 
     mask: NDArray[np.bool_]
@@ -57,6 +60,9 @@ class TimeSupport:
     spike_window: NDArray[np.float64] | None
     max_gap: float | None
     break_times: NDArray[np.float64] | None = None
+
+    def __post_init__(self) -> None:
+        self._own_arrays()
 
     @classmethod
     def from_mask(
@@ -68,27 +74,23 @@ class TimeSupport:
         spike_window: NDArray[np.float64] | None,
         max_gap: float | None,
         break_before: NDArray[np.bool_] | None = None,
+        runs: NDArray[np.float64] | None = None,
     ) -> TimeSupport:
         """Snapshot an interval mask and already normalized time windows.
 
         ``break_before`` (already validated, shape ``(n_samples,)``) is
         recorded as the times of the samples that start a new recording.
+        ``runs`` (shape ``(n_runs, 2)``) replaces the mask's run bounds when
+        the retained time is a fraction of each run, as under linear time
+        allocation.
         """
-
-        def snapshot(array: Any) -> Any:
-            if array is None:
-                return None
-            copied = np.array(array, copy=True)
-            copied.setflags(write=False)
-            return copied
-
         return cls(
-            snapshot(mask),
-            snapshot(run_time_bounds(times, mask)),
-            snapshot(epochs),
-            snapshot(spike_window),
+            mask,
+            run_time_bounds(times, mask) if runs is None else runs,
+            epochs,
+            spike_window,
             max_gap,
-            snapshot(break_sample_times(times, break_before)),
+            break_sample_times(times, break_before),
         )
 
     def analysis_settings(self) -> dict[str, Any]:
