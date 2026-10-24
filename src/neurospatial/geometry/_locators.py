@@ -22,7 +22,12 @@ from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import ReadOnlyState, get_centers, owned_grid
+from neurospatial.geometry._arrays import (
+    ReadOnlyState,
+    get_centers,
+    owned_active_map,
+    owned_grid,
+)
 from neurospatial.geometry._hex_lookup import (
     axial_to_offset_bin_indices,
     cartesian_to_fractional_cube,
@@ -650,7 +655,8 @@ class HexLocator(ReadOnlyState):
     centers_shape : tuple of int
         Number of hexagon rows and columns in the conceptual lattice.
     flat_to_active : ndarray of intp, shape (prod(centers_shape),)
-        Active-bin index of each full-grid cell, or -1 when inactive.
+        Active-bin index of each full-grid cell, or -1 when inactive; the
+        active bins are numbered exactly once from zero.
     """
 
     offset_x: float
@@ -660,8 +666,39 @@ class HexLocator(ReadOnlyState):
     flat_to_active: NDArray[np.intp]
 
     def __post_init__(self) -> None:
+        offset_x, offset_y, radius = (
+            float(self.offset_x),
+            float(self.offset_y),
+            float(self.radius),
+        )
+        if not np.all(np.isfinite([offset_x, offset_y, radius])) or radius <= 0:
+            raise ValueError(
+                "HexLocator offsets must be finite and its radius finite and "
+                f"positive, got offset=({self.offset_x!r}, {self.offset_y!r}), "
+                f"radius={self.radius!r}."
+            )
+        shape = tuple(self.centers_shape)
+        if len(shape) != 2 or any(
+            not isinstance(count, (int, np.integer))
+            or isinstance(count, (bool, np.bool_))
+            or count < 1
+            for count in shape
+        ):
+            raise ValueError(
+                "HexLocator centers_shape must be two positive row and column "
+                f"counts, got {self.centers_shape!r}."
+            )
+        rows, columns = int(shape[0]), int(shape[1])
+        object.__setattr__(self, "offset_x", offset_x)
+        object.__setattr__(self, "offset_y", offset_y)
+        object.__setattr__(self, "radius", radius)
+        object.__setattr__(self, "centers_shape", (rows, columns))
         object.__setattr__(
-            self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)
+            self,
+            "flat_to_active",
+            owned_active_map(
+                self.flat_to_active, rows * columns, name="HexLocator flat_to_active"
+            ),
         )
 
     def locate(

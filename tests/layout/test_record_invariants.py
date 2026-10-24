@@ -4,13 +4,17 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial.arena import MaskArena
+from neurospatial.arena import MaskArena, TrackArena
 from neurospatial.binning import (
     FramedGrid,
+    HexagonShapes,
+    HexLocator,
     RectilinearGrid,
     RectilinearLocator,
     TrackLinearization,
+    TriangleShapes,
 )
+from neurospatial.geometry import GridIndex, _CombinedArena
 from neurospatial.geometry._codecs import decode, encode
 
 
@@ -119,6 +123,61 @@ def test_track_linearization_owns_valid_spacing():
     )
     assert track.edge_spacing == (0.5,) and track.edge_order == ((0, 1), (1, 2))
     assert _track(spacing=np.int64(2)).edge_spacing == 2.0
+
+
+def test_grid_index_owns_a_frozen_mask():
+    mask = np.ones(2, bool)
+    index = GridIndex((np.arange(3.0),), (2,), mask)
+    assert not index.active_mask.flags.writeable and index.active_mask is not mask
+    assert mask.flags.writeable
+    with pytest.raises(ValueError, match="GridIndex"):
+        GridIndex((np.arange(5.0),), (9,), mask)
+    with pytest.raises(ValueError, match="GridIndex"):
+        GridIndex((), (3,), mask)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: HexagonShapes(np.zeros((2, 2)), -1.0, 0.0),
+        lambda: HexagonShapes(np.zeros((2, 2)), 1.0, float("nan")),
+        lambda: HexagonShapes(np.zeros((2, 3)), 1.0, 0.0),
+        lambda: TriangleShapes(np.zeros((3, 2)), np.array([[0, 1, 99]])),
+        lambda: TriangleShapes(np.zeros((3, 2)), np.array([[0, 1]])),
+        lambda: HexLocator(0.0, 0.0, -1.0, (1, 2), np.arange(2)),
+        lambda: HexLocator(0.0, float("inf"), 1.0, (1, 2), np.arange(2)),
+        lambda: HexLocator(0.0, 0.0, 1.0, (3, 3), np.arange(2)),
+        lambda: HexLocator(0.0, 0.0, 1.0, (1, 2), np.array([0, 0])),
+        lambda: HexLocator(0.0, 0.0, 1.0, (2,), np.arange(2)),
+    ],
+    ids=[
+        "hex-radius",
+        "hex-orientation",
+        "hex-3d-centers",
+        "triangle-index",
+        "triangle-shape",
+        "locator-radius",
+        "locator-offset",
+        "locator-mapping-size",
+        "locator-duplicate-bin",
+        "locator-shape",
+    ],
+)
+def test_cell_shape_records_refuse_impossible_geometry(build):
+    with pytest.raises(ValueError, match=r"Hexagon|Triangle|HexLocator"):
+        build()
+
+
+def test_chained_track_arena_transforms_stay_similarities():
+    track = TrackArena(np.array([[[0.0, 0.0], [10.0, 0.0]]]), 2.0)
+    rotation = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    shear = np.array([[1.0, 3.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    rotated = track.transformed(rotation)
+    assert rotated.transformed(rotation).as_track() is not None
+    with pytest.raises(ValueError, match="similarity"):
+        rotated.transformed(shear)
+    with pytest.raises(ValueError, match="similarity"):
+        _CombinedArena((track,)).transformed(shear)
 
 
 def test_rectilinear_locator_numbers_bins_by_its_mask():

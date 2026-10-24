@@ -7,7 +7,6 @@ data is normalized back through these built-in codecs.
 from __future__ import annotations
 
 import copy
-import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -262,16 +261,15 @@ def _shape(meta: dict[str, Any], name: str = "shape") -> tuple[int, ...]:
     return tuple(raw)
 
 
-def _finite(value: Any, name: str, *, positive: bool = False) -> float:
+def _finite(value: Any, name: str) -> float:
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(f"{name} must be a finite numeric value, not a boolean.")
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be a finite numeric value.") from exc
-    if not np.isfinite(result) or (positive and result <= 0):
-        condition = "finite and positive" if positive else "finite"
-        raise ValueError(f"{name} must be {condition}.")
+    if not np.isfinite(result):
+        raise ValueError(f"{name} must be finite.")
     return result
 
 
@@ -558,12 +556,9 @@ def _encode_hex_shapes(obj: HexagonShapes, prefix: str) -> Payload:
 def _decode_hex_shapes(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> HexagonShapes:
-    centers = _array(arrays, prefix, "centers", np.float64)
-    if centers.ndim != 2 or centers.shape[1] != 2 or np.any(~np.isfinite(centers)):
-        raise ValueError("centers must be finite with shape (n_bins, 2).")
     return HexagonShapes(
-        centers,
-        _finite(meta["radius"], "radius", positive=True),
+        _array(arrays, prefix, "centers", np.float64),
+        _finite(meta["radius"], "radius"),
         _finite(meta["orientation"], "orientation"),
     )
 
@@ -589,7 +584,10 @@ def _mesh_arrays(
 def _decode_triangle_shapes(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> TriangleShapes:
-    return TriangleShapes(*_mesh_arrays(arrays, prefix, "triangles"))
+    return TriangleShapes(
+        _array(arrays, prefix, "points", np.float64),
+        _array(arrays, prefix, "triangles", np.intp),
+    )
 
 
 def _encode_outline(obj: Outline, prefix: str) -> Payload:
@@ -643,16 +641,12 @@ def _decode_hex_locator(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> HexLocator:
     shape = _shape(meta, "centers_shape")
-    if len(shape) != 2:
-        raise ValueError("centers_shape must describe two hexagonal lattice axes.")
-    mapping = _array(arrays, prefix, "flat_to_active", np.intp)
-    _active_map(mapping, math.prod(shape), "flat_to_active")
     return HexLocator(
         _finite(meta["offset_x"], "offset_x"),
         _finite(meta["offset_y"], "offset_y"),
-        _finite(meta["radius"], "radius", positive=True),
-        (shape[0], shape[1]),
-        mapping,
+        _finite(meta["radius"], "radius"),
+        cast("tuple[int, int]", shape),
+        _array(arrays, prefix, "flat_to_active", np.intp),
     )
 
 

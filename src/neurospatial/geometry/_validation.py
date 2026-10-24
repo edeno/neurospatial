@@ -372,24 +372,6 @@ def _primitive_geometry(
     if isinstance(locator, RectilinearLocator):
         return _rectilinear_geometry(locator, coordinate_kind)
     if isinstance(locator, HexLocator):
-        if (
-            len(locator.centers_shape) != 2
-            or any(
-                not isinstance(size, (int, np.integer))
-                or isinstance(size, (bool, np.bool_))
-                or size < 1
-                for size in locator.centers_shape
-            )
-            or not np.all(
-                np.isfinite([locator.offset_x, locator.offset_y, locator.radius])
-            )
-            or locator.radius <= 0
-        ):
-            raise ValueError("hex locator geometry must define a finite 2D lattice.")
-        if locator.flat_to_active.shape != (int(np.prod(locator.centers_shape)),):
-            raise ValueError(
-                "hex locator flat_to_active shape does not match its lattice."
-            )
         active = _active_indices(
             locator.flat_to_active,
             int(np.count_nonzero(locator.flat_to_active >= 0)),

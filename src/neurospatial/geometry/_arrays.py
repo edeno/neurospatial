@@ -130,6 +130,47 @@ def owned_grid(
     return owned, cells, mask
 
 
+def owned_active_map(mapping: ArrayLike, size: int, *, name: str) -> NDArray[np.intp]:
+    """Validate and own a map from full-lattice cells to active-bin indices.
+
+    Parameters
+    ----------
+    mapping : array-like of int, shape (size,)
+        Active-bin index of each cell, or -1 for an inactive cell.
+    size : int
+        Number of cells in the full lattice.
+    name : str
+        The field being checked, named in error messages.
+
+    Returns
+    -------
+    ndarray of intp, shape (size,)
+        A read-only copy.
+
+    Raises
+    ------
+    ValueError
+        If the map is not integer, has the wrong shape, holds an index below
+        -1, or does not number the active bins exactly once from zero.
+    """
+    raw = np.asarray(mapping)
+    if (
+        raw.shape != (size,)
+        or (raw.size and raw.dtype.kind not in "iu")
+        or np.any(raw < -1)
+    ):
+        raise ValueError(
+            f"{name} must hold one integer index >= -1 for each of the {size} "
+            f"cells, got {raw.dtype} with shape {raw.shape}."
+        )
+    active = raw[raw >= 0]
+    if not np.array_equal(np.sort(active), np.arange(len(active))):
+        raise ValueError(f"{name} must number the active bins exactly once from zero.")
+    owned = np.array(raw, dtype=np.intp, copy=True)
+    owned.setflags(write=False)
+    return owned
+
+
 def boolean_selection(keep: ArrayLike, n_items: int) -> NDArray[np.bool_]:
     """Return ``keep`` as a boolean mask with one entry per item.
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 from neurospatial.geometry._binning import Binning, TrackLinearization
 from neurospatial.geometry._locators import (
     HexLocator,
@@ -19,11 +19,39 @@ from neurospatial.geometry._locators import (
 
 @dataclass(frozen=True, eq=False)
 class GridIndex(ReadOnlyState):
-    """Logical grid indexing; hexagon indices do not assert rectangular cells."""
+    """Logical grid indexing; hexagon indices do not assert rectangular cells.
+
+    Attributes
+    ----------
+    edges : tuple of ndarray
+        Cell edges along each axis for rectangular and linear cells, or empty
+        when the cells are hexagons, triangles or unstructured bins.
+    shape : tuple of int
+        Number of cells along each logical axis.
+    active_mask : ndarray of bool, shape ``shape``
+        Which logical cells are bins, read-only.
+    """
 
     edges: tuple[NDArray[np.float64], ...]
     shape: tuple[int, ...]
     active_mask: NDArray[np.bool_]
+
+    def __post_init__(self) -> None:
+        if self.edges:
+            edges, shape, mask = owned_grid(
+                self.edges, self.shape, self.active_mask, name="GridIndex"
+            )
+        else:
+            edges, shape = (), tuple(int(count) for count in self.shape)
+            mask = np.array(self.active_mask, dtype=np.bool_, copy=True)
+            if mask.shape != shape:
+                raise ValueError(
+                    f"GridIndex active_mask has shape {mask.shape}, not {shape}."
+                )
+            mask.setflags(write=False)
+        object.__setattr__(self, "edges", edges)
+        object.__setattr__(self, "shape", shape)
+        object.__setattr__(self, "active_mask", mask)
 
 
 def grid_index(binning: Binning) -> GridIndex:

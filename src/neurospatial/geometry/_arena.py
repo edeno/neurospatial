@@ -552,6 +552,42 @@ class MaskArena(ReadOnlyState):
         )
 
 
+def _similarity_scale(matrix: NDArray[np.float64]) -> float:
+    """Uniform length scale of a homogeneous affine ``matrix`` that is a similarity.
+
+    Raises
+    ------
+    ValueError
+        If the map is not a similarity, which a track's centerline and width
+        need: any other map changes lengths differently in each direction.
+    """
+    linear = matrix[:-1, :-1]
+    n_dims = len(linear)
+    with np.errstate(under="ignore"):
+        _, logdet = np.linalg.slogdet(linear)
+    scale = math.exp(float(logdet) / n_dims)
+    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+        normalized = linear / scale
+        residual = np.max(np.abs(normalized @ normalized.T - np.eye(n_dims)))
+    if residual > 1e-12 or not np.isfinite(residual):
+        raise _error(
+            "TrackArena transforms must be a similarity.",
+            "use translation, rotation, reflection and uniform scale, or rebuild the measured footprint",
+        )
+    return scale
+
+
+def _holds_track(arena: Arena) -> bool:
+    """Whether ``arena`` is a track, or maps or combines one."""
+    if isinstance(arena, TrackArena):
+        return True
+    if isinstance(arena, _TransformedArena):
+        return _holds_track(arena.base)
+    if isinstance(arena, _CombinedArena):
+        return any(_holds_track(child) for child in arena.children)
+    return False
+
+
 @dataclass(frozen=True, eq=False)
 class TrackArena(ReadOnlyState):
     """Union of exact constant-width capsules around centerline segments.
@@ -655,7 +691,7 @@ class TrackArena(ReadOnlyState):
         :meth:`as_track` gives the mapped centerline and width.
         """
         matrix = _affine(matrix, self.n_dims)
-        scale = self._similarity_scale(matrix)
+        scale = _similarity_scale(matrix)
         _mapped(self.segments, matrix)
         if self.width is not None and not np.isfinite(self.width * scale):
             raise _error(
@@ -663,22 +699,6 @@ class TrackArena(ReadOnlyState):
                 "rescale the coordinate units before transforming",
             )
         return _TransformedArena(self, matrix)
-
-    def _similarity_scale(self, matrix: NDArray[np.float64]) -> float:
-        """Uniform length scale of an affine ``matrix`` that is a similarity."""
-        linear = matrix[:-1, :-1]
-        with np.errstate(under="ignore"):
-            _, logdet = np.linalg.slogdet(linear)
-        scale = math.exp(float(logdet) / self.n_dims)
-        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
-            normalized = linear / scale
-            residual = np.max(np.abs(normalized @ normalized.T - np.eye(self.n_dims)))
-        if residual > 1e-12 or not np.isfinite(residual):
-            raise _error(
-                "TrackArena transforms must be a similarity.",
-                "use translation, rotation, reflection and uniform scale, or rebuild the measured footprint",
-            )
-        return scale
 
     def polygonal_domain(self) -> None:
         """Do not approximate round caps with a polygonal buffer."""
@@ -830,6 +850,9 @@ class _TransformedArena(ReadOnlyState):
                 "retain native polar coordinates",
             )
         forward = _affine(self.forward, self.base.n_dims)
+        if _holds_track(self.base):
+            # Each layer is checked, so a chain of maps stays a similarity.
+            _similarity_scale(forward)
         if isinstance(self.base, OpenArena):
             _mapped(shapely.get_coordinates(self.base.polygon), forward)
         with np.errstate(under="ignore"):
@@ -944,7 +967,7 @@ class _TransformedArena(ReadOnlyState):
             _mapped_vertices(track.segments, self.forward),
             None
             if track.width is None
-            else track.width * track._similarity_scale(self.forward),
+            else track.width * _similarity_scale(self.forward),
         )
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
