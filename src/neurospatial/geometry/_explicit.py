@@ -252,7 +252,7 @@ def prepare_bins(binning: object) -> Binning:
         # A native recipe, as env.binning carries, is a closed formula over
         # its own owned arrays. Build it here; publication then checks the
         # faces against the supplied bins like any explicit faces.
-        binning = replace(binning, faces=KnownFaces(binning.faces.build()))
+        binning = replace(binning, faces=KnownFaces(binning.build_faces()))
     snapshot = copy.deepcopy(binning)
     raw, links = snapshot.bins, snapshot.connections
     # Standalone records have writable NumPy headers; revalidate at ingress

@@ -902,7 +902,7 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
             _equal(
                 getattr(binning.faces.faces, name),
                 np.concatenate(
-                    [getattr(child.faces.build(), name) for child in locator.children]
+                    [getattr(child.build_faces(), name) for child in locator.children]
                 ),
                 f"combined faces.{name}",
             )
@@ -1019,7 +1019,7 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
                     )
                 for name in ("A", "distance"):
                     actual = getattr(binning.faces.faces, name)
-                    reference = getattr(expected_binning.faces.build(), name)
+                    reference = getattr(expected_binning.build_faces(), name)
                     if computed:
                         _computed_equal(
                             actual,
@@ -1362,7 +1362,7 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
         if not len(locator.bridge_pairs) and all(
             child.faces.available for child in locator.children
         ):
-            parts = [child.faces.build() for child in locator.children]
+            parts = [child.build_faces() for child in locator.children]
             faces = KnownFaces(
                 FaceGeometry(
                     connections.pairs,
@@ -1391,7 +1391,7 @@ def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | Non
         connections, kept = parent.connections.select(mapping)
         subset_faces = parent.faces
         if subset_faces.available:
-            old = subset_faces.build()
+            old = parent.build_faces()
             subset_faces = KnownFaces(
                 FaceGeometry(
                     connections.pairs, old.A[kept], old.distance[kept], bins.sizes

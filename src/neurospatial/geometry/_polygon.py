@@ -486,7 +486,7 @@ def _pieces_binning(
     by_parent: dict[int, list[int]] = defaultdict(list)
     for child, parent in enumerate(mapping.parent_bin_indices):
         by_parent[int(parent)].append(child)
-    old_faces = binning.faces.build() if binning.faces.available else None
+    old_faces = binning.build_faces() if binning.faces.available else None
     wall = unary_union(walls)
     divider = wall if dividers is None else unary_union(dividers)
 
@@ -627,7 +627,7 @@ def _pieces_binning(
         geometric_normals(locator, bins.centers, pairs) if faces.available else None
     )
     if normal_values is not None:
-        normal_values[faces.build().A == 0] = 0
+        normal_values[faces.build(bins, connections).A == 0] = 0
     return Binning(
         binning.kind,
         bins,

@@ -927,7 +927,7 @@ def combine_binnings(
     connections = locator.bin_connections()
     faces: KnownFaces | MissingFaces
     if not len(pairs) and all(child.faces.available for child in children):
-        child_faces = [child.faces.build() for child in children]
+        child_faces = [child.build_faces() for child in children]
         faces = KnownFaces(
             FaceGeometry(
                 connections.pairs,

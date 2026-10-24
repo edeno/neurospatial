@@ -14,6 +14,7 @@ from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -58,7 +59,7 @@ def codec_part(request):
         grid_edges=(np.arange(3.0),) * 2,
     )
     binning = env._binning
-    faces = binning.faces.build()
+    faces = binning.build_faces()
     triangle = Polygon([(0, 0), (2, 0), (0, 2)])
     second = Polygon([(4, 0), (6, 0), (4, 2)])
     if request.param == "bins":
@@ -184,8 +185,16 @@ def test_missing_faces_preserves_actionable_reason():
     meta, arrays = encode(MissingFaces(reason), "faces")
     restored = decode(meta, arrays, "faces")
     assert not restored.available
+    bins = SpatialBins.from_arrays(np.zeros((1, 2)), np.ones(1), 2)
+    binning = Binning(
+        "point",
+        bins,
+        BinConnections.from_arrays(np.empty((0, 2), int), []),
+        NearestBinLocator(bins.centers),
+        restored,
+    )
     with pytest.raises(NotImplementedError) as caught:
-        restored.build()
+        binning.build_faces()
     assert reason in str(caught.value)
     assert "Fix:" in str(caught.value)
     assert "smooth" in str(restored.missing_error("smooth"))
@@ -307,7 +316,7 @@ def test_face_decode_rejects_invalid_arrays(field):
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    meta, arrays = encode(env._binning.faces.build(), "faces")
+    meta, arrays = encode(env._binning.build_faces(), "faces")
     arrays[f"faces/{field}"] = arrays[f"faces/{field}"].copy()
     if field == "edges":
         arrays[f"faces/{field}"][0, 0] = env.n_bins

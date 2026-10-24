@@ -129,7 +129,7 @@ def test_publication_rejects_stale_parent_geometry():
 
 def test_nested_child_faces_cannot_disagree_with_child_measures():
     child = snapshot().children[0]
-    bad_faces = child.faces.build()._replace(volumes=np.array([2.0]))
+    bad_faces = child.build_faces()._replace(volumes=np.array([2.0]))
     # The child binning itself refuses faces whose volumes are not its sizes.
     with pytest.raises(ValueError, match=r"faces\.volumes"):
         replace(child, faces=KnownFaces(bad_faces))

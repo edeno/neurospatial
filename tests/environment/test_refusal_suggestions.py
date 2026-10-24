@@ -169,7 +169,7 @@ def _clipped_pixels() -> dict[str, Any]:
 def _unrecorded_lattice() -> dict[str, Any]:
     grid = _grid()
     bins = replace(grid.binning, grid_spec=None)
-    bins = replace(bins, faces=KnownFaces(grid.binning.faces.build()))
+    bins = replace(bins, faces=KnownFaces(grid.binning.build_faces()))
     return {"env": Environment.from_bins(bins, arena=grid.arena)}
 
 

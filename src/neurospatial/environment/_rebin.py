@@ -547,7 +547,7 @@ def _rebin_resolution(
     grid = replace(
         grid,
         kind=binning.kind,
-        faces=KnownFaces(grid.faces.build()),
+        faces=KnownFaces(grid.build_faces()),
         grid_spec=None,
     )
     if not np.array_equal(spec.forward, np.eye(dims + 1)):
@@ -617,8 +617,6 @@ def _require_native_grid_navigation(
         binning,
         connections=candidate_links,
         faces=NativeFaces(
-            bins,
-            candidate_links,
             "grid",
             (np.array([edge[1] - edge[0] for edge in grid.edges]),),
         ),

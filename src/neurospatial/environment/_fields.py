@@ -322,7 +322,7 @@ def _interpolate_linear(
 
 def face_geometry(cache: AnalysisCache, binning: Binning) -> FaceGeometry:
     """Validated cell faces, built once per published geometry."""
-    return cache.get(FACE_GEOMETRY, binning.faces.build)
+    return cache.get(FACE_GEOMETRY, binning.build_faces)
 
 
 def with_cached_faces(cache: AnalysisCache, binning: Binning) -> Binning:

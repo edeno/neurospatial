@@ -780,7 +780,7 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         part = getattr(obj, name)
         if name == "faces" and not isinstance(part, (KnownFaces, MissingFaces)):
             part = (
-                KnownFaces(part.build())
+                KnownFaces(obj.build_faces())
                 if part.available
                 else MissingFaces(str(part.missing_error("this operation")))
             )

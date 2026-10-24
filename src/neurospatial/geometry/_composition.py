@@ -343,11 +343,11 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                     )
                     continue
                 if child.faces.available:
-                    block = DiffusionGeometry.from_faces(child.faces.build()).W
+                    block = DiffusionGeometry.from_faces(child.build_faces()).W
                 else:
                     nested = weights(child.locator, retained)
                     if nested is None:
-                        child.faces.build()  # Preserve the actionable missing-child refusal.
+                        child.build_faces()  # Preserve the actionable missing-child refusal.
                         raise AssertionError(
                             "missing faces unexpectedly returned geometry"
                         )

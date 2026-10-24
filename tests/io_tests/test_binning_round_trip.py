@@ -44,7 +44,7 @@ def test_file_round_trip_identical(environment_round_trip):
     np.testing.assert_array_equal(loaded.dimension_ranges, original.dimension_ranges)
 
     expected = replace(
-        original._binning, faces=KnownFaces(original._binning.faces.build())
+        original._binning, faces=KnownFaces(original._binning.build_faces())
     )
     expected_meta, expected_arrays = encode(expected, "binning")
     actual_meta, actual_arrays = encode(loaded._binning, "binning")

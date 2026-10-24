@@ -1285,7 +1285,7 @@ binning = engine.binning()
 # Before: engine.point_to_bin_index(positions[:5])
 bins = binning.locator.locate(positions[:5])
 # Before: engine.finite_volume_geometry()
-faces = binning.faces.build()  # face areas faces.A, cell measures faces.volumes
+faces = binning.build_faces()  # face areas faces.A, cell measures faces.volumes
 # Before: engine.is_grid_compatible
 is_grid = binning.rectilinear is not None
 assert is_grid and bins.min() >= 0

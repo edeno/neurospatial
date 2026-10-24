@@ -1,9 +1,12 @@
 """Geometry records refuse inconsistent states when they are constructed."""
 
+from dataclasses import fields, replace
+
 import networkx as nx
 import numpy as np
 import pytest
 
+from neurospatial import Environment
 from neurospatial.arena import MaskArena, TrackArena
 from neurospatial.binning import (
     BinConnections,
@@ -21,7 +24,7 @@ from neurospatial.binning import (
     TrackLinearization,
     TriangleShapes,
 )
-from neurospatial.geometry import GridIndex, _CombinedArena
+from neurospatial.geometry import GridIndex, NativeFaces, _CombinedArena
 from neurospatial.geometry._codecs import decode, encode
 
 
@@ -285,3 +288,23 @@ def test_binning_codec_refuses_the_two_grid_field_format():
 def test_missing_faces_reason_is_a_string():
     with pytest.raises(TypeError, match="reason"):
         MissingFaces(42)
+
+
+def test_native_faces_follow_the_pairs_of_the_binning_that_holds_them():
+    """A native face recipe keeps no pairs of its own to disagree with."""
+    rng = np.random.default_rng(0)
+    env = Environment.from_samples(rng.uniform(0, 10, (2000, 2)), bin_size=2.0)
+    binning = env.binning
+    assert isinstance(binning.faces, NativeFaces)
+    assert {item.name for item in fields(NativeFaces)}.isdisjoint(
+        {"bins", "connections"}
+    )
+    keep = np.arange(len(binning.connections.pairs)) % 2 == 0
+    closed = replace(
+        binning, connections=binning.connections.closed(keep), face_normals=None
+    )
+    faces = closed.build_faces()
+    np.testing.assert_array_equal(faces.edges, closed.connections.pairs)
+    np.testing.assert_array_equal(faces.volumes, closed.bins.sizes)
+    published = Environment.from_bins(closed, arena=env.arena)
+    np.testing.assert_array_equal(published.edge_pairs, closed.connections.pairs)

@@ -436,8 +436,8 @@ class FacesSource(Protocol):
         """Whether validated finite-volume faces can be built."""
         ...
 
-    def build(self) -> FaceGeometry:
-        """Build validated faces in connectivity pair order, without caching."""
+    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
+        """Build validated faces for ``bins`` in open-pair order, without caching."""
         ...
 
     def missing_error(self, operation: str) -> Exception:
@@ -494,8 +494,8 @@ class KnownFaces(ReadOnlyState):
         """Whether validated face geometry can be obtained."""
         return True
 
-    def build(self) -> FaceGeometry:
-        """Return the stored faces in published pair order."""
+    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
+        """Return the stored faces, which a binning checks against its pairs."""
         return self.faces
 
     def missing_error(self, operation: str) -> NotImplementedError:
@@ -531,7 +531,7 @@ class MissingFaces:
         """Whether validated face geometry can be obtained."""
         return False
 
-    def build(self) -> FaceGeometry:
+    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
         """Refuse construction because valid face geometry is unavailable."""
         raise self.missing_error("This operation")
 
@@ -829,6 +829,21 @@ class Binning:
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
     dimension_ranges: tuple[tuple[float, float], ...] | None = None
+
+    def build_faces(self) -> FaceGeometry:
+        """Build the finite-volume faces of these bins, in open-pair order.
+
+        Returns
+        -------
+        FaceGeometry
+            Faces aligned with ``connections.pairs``, built on each call.
+
+        Raises
+        ------
+        MissingCellGeometryError
+            If the bins have no faces (``MissingFaces``).
+        """
+        return self.faces.build(self.bins, self.connections)
 
     @property
     def rectilinear(self) -> RectilinearGrid | None:

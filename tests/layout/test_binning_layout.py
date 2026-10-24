@@ -28,7 +28,7 @@ from neurospatial.geometry._locators import HexLocator, MeshLocator, Rectilinear
 def _facade(env, *, binning=None):
     source = env._binning if binning is None else binning
     if not isinstance(source.faces, (KnownFaces, MissingFaces)):
-        source = replace(source, faces=KnownFaces(source.faces.build()))
+        source = replace(source, faces=KnownFaces(source.build_faces()))
     return publish_binning(
         source,
         dimension_ranges=env.dimension_ranges,
@@ -103,7 +103,7 @@ def test_facade_rejects_inconsistent_data(grid_env, mismatch):
     env = grid_env
     binning = env._binning
     if mismatch.startswith("face_"):
-        faces = binning.faces.build()
+        faces = binning.build_faces()
         if mismatch == "face_edges":
             faces = faces._replace(edges=faces.edges[::-1])
             pattern = "faces.*edges|face.*pairs"
@@ -239,7 +239,7 @@ def test_facade_accepts_coherent_geometric_bin_permutation(built_environment):
         shapes = replace(shapes, centers=shapes.centers[permutation])
     else:
         shapes = replace(shapes, triangles=shapes.triangles[permutation])
-    faces = original.faces.build()
+    faces = original.build_faces()
     faces = KnownFaces(
         faces._replace(edges=inverse[faces.edges], volumes=faces.volumes[permutation])
     )

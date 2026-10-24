@@ -102,15 +102,15 @@ def test_face_building_stays_lazy_without_native_builder(monkeypatch):
     original = NativeFaces.build
     calls = []
 
-    def record(recipe):
+    def record(recipe, bins, connections):
         calls.append(recipe)
-        return original(recipe)
+        return original(recipe, bins, connections)
 
     monkeypatch.setattr(NativeFaces, "build", record)
     env = publish_environment(layout=source)
     assert not calls
     source.grid_edges[0][:] = -99
-    np.testing.assert_array_equal(env._binning.faces.build().volumes, np.ones(9))
+    np.testing.assert_array_equal(env._binning.build_faces().volumes, np.ones(9))
     assert len(calls) == 1
     assert not hasattr(calls[0], "layout")
 
@@ -128,9 +128,9 @@ def test_polar_provenance_cannot_change_published_faces():
         arena=EgocentricSurround((0.0, 2.0), (-np.pi, np.pi), circular=True),
         _coordinate_kind="polar",
     )
-    expected = env._binning.faces.build().A.copy()
+    expected = env._binning.build_faces().A.copy()
     source._build_params_used["circular_angle"] = False
-    np.testing.assert_array_equal(env._binning.faces.build().A, expected)
+    np.testing.assert_array_equal(env._binning.build_faces().A, expected)
 
 
 def test_polar_faces_come_from_the_layout_not_its_parameters():
@@ -152,7 +152,7 @@ def test_polar_faces_come_from_the_layout_not_its_parameters():
         arena=EgocentricSurround((1.0, 3.0), (-np.pi, np.pi), circular=True),
         _coordinate_kind="polar",
     )
-    faces = env._binning.faces.build()
+    faces = env._binning.build_faces()
     radius = env.bin_centers[env._binning.connections.pairs, 0]
     same_ring = radius[:, 0] == radius[:, 1]
     assert np.count_nonzero(same_ring) == 2

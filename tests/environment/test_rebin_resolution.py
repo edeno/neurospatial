@@ -190,7 +190,7 @@ def test_missing_spec_unknown_arena_and_mutually_exclusive_arguments():
     with pytest.raises(ValueError, match="exactly one"):
         parent.rebin()
     explicit = replace(parent._binning, grid_spec=None)
-    explicit = replace(explicit, faces=KnownFaces(parent._binning.faces.build()))
+    explicit = replace(explicit, faces=KnownFaces(parent._binning.build_faces()))
     with pytest.raises(NotImplementedError, match="do not record"):
         Environment.from_bins(explicit, arena=parent.arena).rebin(bin_size=2)
     with pytest.raises(NotImplementedError, match="known arena"):
@@ -310,7 +310,7 @@ def test_factor_rebin_without_spec_records_the_choice_it_built():
         np.ones((4, 2), dtype=bool), grid_edges=(np.arange(5.0), np.arange(3.0))
     )
     binning = replace(
-        env.binning, faces=KnownFaces(env.binning.faces.build()), grid_spec=None
+        env.binning, faces=KnownFaces(env.binning.build_faces()), grid_spec=None
     )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)

@@ -99,7 +99,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     connections, pair_kept = binning.connections.select(child_of)
     faces: FacesSource = binning.faces
     if faces.available:
-        old_faces = faces.build()
+        old_faces = binning.build_faces()
         faces = KnownFaces(
             FaceGeometry(
                 connections.pairs,
@@ -501,7 +501,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     )
     faces: FacesSource = binning.faces
     if faces.available:
-        old = faces.build()
+        old = binning.build_faces()
         if similarity:
             faces = KnownFaces(
                 FaceGeometry(

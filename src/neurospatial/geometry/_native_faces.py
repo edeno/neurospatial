@@ -25,13 +25,12 @@ from neurospatial.geometry._face_builders import (
 class NativeFaces(ReadOnlyState):
     """Closed native recipe over owned numerical data; materialized on demand.
 
+    The recipe holds no bins or pairs of its own: :meth:`build` evaluates it
+    on the bins and connections of the binning that carries it, so its
+    faces always follow that binning's open pairs.
+
     Parameters
     ----------
-    bins : SpatialBins
-        Centers and physical measures.
-    connections : BinConnections
-        Ordered neighbor pairs and navigation distances; faces follow the
-        open pairs.
     family : {'grid', 'polar', 'hex', 'mesh', 'track'}
         Native formula to evaluate. No construction parameters are replayed.
     arrays : tuple of ndarray
@@ -43,8 +42,6 @@ class NativeFaces(ReadOnlyState):
         Whether polar seam interfaces are joined.
     """
 
-    bins: SpatialBins
-    connections: BinConnections
     family: Literal["grid", "polar", "hex", "mesh", "track"]
     arrays: tuple[NDArray[Any], ...] = ()
     n_angle: int = 0
@@ -61,14 +58,25 @@ class NativeFaces(ReadOnlyState):
         """Native numerical geometry is available without running a builder."""
         return True
 
-    def build(self) -> FaceGeometry:
-        """Evaluate the shared native formula in authoritative pair order."""
-        bins, pairs = self.bins, self.connections.pairs
+    def build(self, bins: SpatialBins, connections: BinConnections) -> FaceGeometry:
+        """Evaluate the native formula on ``bins``, in open-pair order.
+
+        Parameters
+        ----------
+        bins : SpatialBins
+            Centers and physical measures of the binning's bins.
+        connections : BinConnections
+            The binning's neighbor pairs; faces follow the open pairs.
+
+        Returns
+        -------
+        FaceGeometry
+            Faces aligned with ``connections.pairs``.
+        """
+        pairs = connections.pairs
         graph = nx.Graph()
         graph.add_nodes_from(range(bins.n_bins))
-        for (u, v), distance in zip(
-            pairs, self.connections.pair_distances, strict=True
-        ):
+        for (u, v), distance in zip(pairs, connections.pair_distances, strict=True):
             graph.add_edge(int(u), int(v), distance=float(distance))
         if self.family == "grid":
             graph, volumes = grid_geometry(

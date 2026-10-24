@@ -159,7 +159,7 @@ def test_split_pieces_meeting_at_a_corner_on_a_wall_record_that_wall():
 
 def test_from_bins_keeps_supplied_closed_pairs_without_a_wall():
     source = _rooms(CLOSED).binning
-    source = replace(source, faces=KnownFaces(source.faces.build()))
+    source = replace(source, faces=KnownFaces(source.build_faces()))
     env = Environment.from_bins(source, arena=OpenArena(ROOMS))
     np.testing.assert_array_equal(
         env.binning.connections.is_open, source.connections.is_open
@@ -233,7 +233,7 @@ def _declared_closed_distance():
         connections=BinConnections(
             links.all_pairs, distances, links.is_open, links.closed_by
         ),
-        faces=KnownFaces(binning.faces.build()),
+        faces=KnownFaces(binning.build_faces()),
     )
     return Environment.from_bins(declared, arena=env.arena), links.all_pairs[closed]
 
