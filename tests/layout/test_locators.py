@@ -100,7 +100,12 @@ def test_locator_matches_previous_lookup(
         else:
             np.testing.assert_array_equal(actual, locator_parity[f"{prefix}/values"])
         assert actual.dtype == np.intp
-        assert _warnings(caught) == locator_parity[f"{prefix}/warnings"].tolist()
+        expected_warnings = locator_parity[f"{prefix}/warnings"].tolist()
+        if case == "hex" and probe == "nonfinite":
+            # The recording cast infinite coordinates to integers, with
+            # invalid-value warnings; non-finite rows are now screened first.
+            expected_warnings = []
+        assert _warnings(caught) == expected_warnings
     np.testing.assert_array_equal(points, unchanged)
     assert points.flags.writeable
 

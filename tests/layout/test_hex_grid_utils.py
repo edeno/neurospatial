@@ -154,6 +154,29 @@ def test_points_to_hex_bin_ind_nan_handling():
     assert indices[1] == -1 and indices[2] == -1
 
 
+def test_points_to_hex_bin_ind_infinite_points_are_outside():
+    """An infinite coordinate is outside the grid, never a cast-defined bin."""
+    import warnings
+
+    _bin_centers, centers_shape, hex_radius, _, min_x, min_y, _ = hgu._create_hex_grid(
+        np.array([[0, 0], [1, 0]], dtype=np.float64), hexagon_width=1.0
+    )
+    positions = np.array([[0.0, 0.0], [np.inf, 0.0], [0.0, -np.inf], [-np.inf, np.inf]])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # no invalid-cast RuntimeWarning
+        indices = geometry.points_to_hex_bin_ind(
+            positions, min_x, min_y, hex_radius, centers_shape
+        )
+    assert indices[0] >= 0
+    np.testing.assert_array_equal(indices[1:], [-1, -1, -1])
+
+
+@pytest.mark.parametrize("radius", [-1.0, -1e-3, np.nan])
+def test_cartesian_to_cube_refuses_a_radius_that_is_not_positive(radius):
+    with pytest.raises(ValueError, match="hex_radius must be"):
+        geometry.cartesian_to_fractional_cube(np.zeros(1), np.zeros(1), radius)
+
+
 class TestNumericalStabilityHexagonal:
     """Test numerical stability for hexagonal layout edge cases.
 
@@ -173,7 +196,7 @@ class TestNumericalStabilityHexagonal:
 
         # Test hex_radius just below minimum threshold (should raise error)
         # MIN_HEX_RADIUS should be ~1e-10
-        with pytest.raises(ValueError, match="hex_radius too small"):
+        with pytest.raises(ValueError, match="hex_radius must be"):
             geometry.cartesian_to_fractional_cube(points_x, points_y, hex_radius=1e-12)
 
         # Test hex_radius at minimum threshold (should work)
@@ -194,12 +217,12 @@ class TestNumericalStabilityHexagonal:
         points_y = np.array([0.0, 1.0])
 
         # Exact zero should raise error (below MIN_HEX_RADIUS threshold)
-        with pytest.raises(ValueError, match="hex_radius too small"):
+        with pytest.raises(ValueError, match="hex_radius must be"):
             geometry.cartesian_to_fractional_cube(points_x, points_y, hex_radius=0.0)
 
         # Very small value (near-zero but not exactly zero) should also raise error
         very_small = 1e-15
-        with pytest.raises(ValueError, match="hex_radius too small"):
+        with pytest.raises(ValueError, match="hex_radius must be"):
             geometry.cartesian_to_fractional_cube(
                 points_x, points_y, hex_radius=very_small
             )
