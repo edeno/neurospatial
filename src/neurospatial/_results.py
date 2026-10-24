@@ -178,9 +178,6 @@ class ReadOnlyArraysMixin:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore from pickle or deepcopy, keeping the arrays read-only."""
-        if "analysis_settings" in state:
-            state = dict(state)
-            state["_analysis_settings"] = deepcopy(state.pop("analysis_settings"))
         self.__dict__.update(state)
         for value in state.values():
             if isinstance(value, np.ndarray):
