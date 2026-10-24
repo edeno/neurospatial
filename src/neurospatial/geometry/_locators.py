@@ -25,6 +25,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import (
     ReadOnlyState,
     get_centers,
+    mask_active_map,
     owned_active_map,
     owned_grid,
 )
@@ -293,19 +294,16 @@ class RectilinearLocator(ReadOnlyState):
     shape: tuple[int, ...]
     active_mask: NDArray[np.bool_]
     # Active-bin index of each full-grid cell, or -1, from the mask's order.
-    _flat_to_active: NDArray[np.intp] = field(init=False, repr=False)
+    flat_to_active: NDArray[np.intp] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         edges, shape, mask = owned_grid(
             self.edges, self.shape, self.active_mask, name="RectilinearLocator"
         )
-        mapping = np.full(mask.size, -1, dtype=np.intp)
-        mapping[mask.ravel()] = np.arange(np.count_nonzero(mask), dtype=np.intp)
-        mapping.setflags(write=False)
         object.__setattr__(self, "edges", edges)
         object.__setattr__(self, "shape", shape)
         object.__setattr__(self, "active_mask", mask)
-        object.__setattr__(self, "_flat_to_active", mapping)
+        object.__setattr__(self, "flat_to_active", mask_active_map(mask))
 
     def locate(
         self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
@@ -367,7 +365,7 @@ class RectilinearLocator(ReadOnlyState):
             grid_edges=self.edges,
             grid_shape=self.shape,
             active_mask=self.active_mask,
-            inverse_map=self._flat_to_active,
+            inverse_map=self.flat_to_active,
         ).astype(np.intp, copy=False)
 
     def _outline_owner(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
@@ -380,7 +378,7 @@ class RectilinearLocator(ReadOnlyState):
 
     def _active_index(self, flat: NDArray[np.intp]) -> NDArray[np.intp]:
         """Active-bin index of full-grid cells, or -1 for inactive cells."""
-        return self._flat_to_active[flat]
+        return self.flat_to_active[flat]
 
     def active_centers(self) -> NDArray[np.float64]:
         """Midpoints of the active cells, in active-bin (row-major) order.

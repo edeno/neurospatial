@@ -178,11 +178,7 @@ def _logical_cells(locator: object) -> _LogicalCells | None:
 
 @_logical_cells.register
 def _(locator: RectilinearLocator) -> _LogicalCells:
-    mask = locator.active_mask
-    mask = np.ones(locator.shape, dtype=bool) if mask is None else mask
-    mapping = np.full(mask.size, -1, dtype=np.intp)
-    mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-    return _LogicalCells(locator.shape, mapping, hexagonal=False)
+    return _LogicalCells(locator.shape, locator.flat_to_active.copy(), hexagonal=False)
 
 
 @_logical_cells.register
