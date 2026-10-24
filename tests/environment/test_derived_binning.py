@@ -357,6 +357,37 @@ def test_out_and_back_track_rotates_with_its_revisited_bins(angle):
     np.testing.assert_array_equal(moved.bin_at(transform(points)), env.bin_at(points))
 
 
+@pytest.mark.parametrize("angle", [0.3, 2.0])
+def test_out_and_back_linear_position_takes_the_first_leg_under_rotation(angle):
+    """A point on both legs takes the outbound leg, as bin lookup takes the
+    lowest-numbered of tied bins, however the rotation rounds."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    for node, position in enumerate([(0.0, 0.0), (10.0, 0.0), (0.0, 0.0)]):
+        graph.add_node(node, pos=position)
+    graph.add_edge(0, 1)
+    graph.add_edge(1, 2)
+    env = Environment.from_graph(graph, [(0, 1), (1, 2)], bin_size=2, track_width=1)
+    transform = _affine(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    moved = env.apply_transform(transform)
+    along = np.linspace(0.0, 10.0, 101)
+    points = np.column_stack([along, np.zeros_like(along)])
+    points[1::2, 1] = 0.3
+
+    parent_linear = env.to_linear(points)
+    moved_linear = moved.to_linear(transform(points))
+
+    np.testing.assert_allclose(parent_linear, along, atol=1e-12)
+    np.testing.assert_allclose(moved_linear, along, atol=1e-12)
+    np.testing.assert_array_equal(
+        env.bin_at(env.linear_to_nd(parent_linear)), env.bin_at(points)
+    )
+    np.testing.assert_array_equal(moved.bin_at(transform(points)), env.bin_at(points))
+
+
 @pytest.mark.parametrize(
     "built_environment", ["grid8", "hex", "mesh", "track"], indirect=True
 )
