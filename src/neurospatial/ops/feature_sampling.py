@@ -27,7 +27,7 @@ from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
     as_label_array,
-    require_feature_id_sequence,
+    require_label_sequence,
 )
 from neurospatial.geometry import (
     CallIndexes,
@@ -560,7 +560,7 @@ def _validated_feature_ids(
     """Return one unique label per feature, defaulting to ``arange``."""
     if feature_ids is None:
         return np.arange(n_features)
-    require_feature_id_sequence(feature_ids, call=call, example="height")
+    require_label_sequence(feature_ids, name="feature_ids", call=call, example="height")
     ids = as_label_array(feature_ids)
     if ids.shape != (n_features,):
         raise ValueError(

@@ -77,32 +77,57 @@ def as_label_array(labels: Any) -> NDArray[Any]:
     return array
 
 
-def require_feature_id_sequence(feature_ids: Any, *, call: str, example: str) -> None:
-    """Refuse a lone string, bytes or scalar where one label per feature is needed.
+def require_label_sequence(labels: Any, *, name: str, call: str, example: str) -> None:
+    """Refuse a lone string, bytes or scalar where one label per item is needed.
 
     ``list("speed")`` would split a string into characters, and a number is
     not iterable at all.
 
     Parameters
     ----------
-    feature_ids : Any
-        The caller's ``feature_ids`` argument (not ``None``).
+    labels : Any
+        The caller's labels argument (not ``None``).
+    name : str
+        Argument name, ``"feature_ids"`` or ``"unit_ids"``.
     call : str
         Calling function's name, for the message.
     example : str
         One plausible label, shown in the fix (e.g. ``"speed"``).
     """
-    if isinstance(feature_ids, str | bytes) or np.ndim(feature_ids) == 0:
+    if isinstance(labels, str | bytes) or np.ndim(labels) == 0:
+        item = name.removesuffix("_ids")
         raise ValueError(
             _format_error(
-                f"{call} got feature_ids={feature_ids!r}; it must be a sequence "
-                "of labels, one per feature.",
-                why="A single string or number would be split into characters or "
-                "cannot label each feature.",
-                fix=f"Pass a list or array, e.g. feature_ids=[{example!r}] for one "
-                "feature.",
+                f"{call} got {name}={labels!r}; it must be a sequence of "
+                f"labels, one per {item}.",
+                why="Why: a single string or number would be split into "
+                f"characters or cannot label each {item}.",
+                fix=f"Pass a list or array, e.g. {name}=[{example!r}] for one {item}.",
             )
         )
+
+
+def _missing_label_positions(labels: Sequence[Any]) -> list[int]:
+    """Positions of ``None`` or NaN labels."""
+    return [
+        i
+        for i, label in enumerate(labels)
+        if label is None or (isinstance(label, float | np.floating) and np.isnan(label))
+    ]
+
+
+def _same_labels(given: NDArray[Any], carried: NDArray[Any]) -> bool:
+    """Whether two label arrays hold equal labels of the same kind, in order.
+
+    ``1`` and ``1.0`` compare equal but are different labels: shuffle streams
+    and lookups are keyed by the label itself.
+    """
+    if given.shape != carried.shape:
+        return False
+    return all(
+        a == b and np.asarray(a).dtype.kind == np.asarray(b).dtype.kind
+        for a, b in zip(given.tolist(), carried.tolist(), strict=True)
+    )
 
 
 def label_at(unit_ids: Any, index: int) -> Any:
@@ -270,8 +295,8 @@ def resolve_unit_ids(
     Returns a read-only ``ndarray`` of unit identity labels: ``unit_ids`` when
     given, else the labels the spike input carries (``input_ids``), else
     ``np.arange(n_units)``. Validates that there is exactly one label per unit
-    and that no label repeats. The array is a copy, so editing the caller's
-    labels afterwards cannot relabel or duplicate a unit.
+    and that no label repeats or is missing. The array is a copy, so editing
+    the caller's labels afterwards cannot relabel or duplicate a unit.
 
     Parameters
     ----------
@@ -294,21 +319,29 @@ def resolve_unit_ids(
     Raises
     ------
     ValueError
-        If ``unit_ids`` and ``input_ids`` are both given and differ (in length,
-        order or type), if the resolved labels are not 1-D, if their length
-        does not equal ``n_units``, or if any label repeats.
+        If ``unit_ids`` is a single string or number, if ``unit_ids`` and
+        ``input_ids`` are both given and differ in length, order, value or
+        kind (``1`` and ``1.0`` are different labels), if the resolved labels
+        are not 1-D, if their length does not equal ``n_units``, or if any
+        label repeats or is ``None``/NaN.
     """
+    call = context or "This call"
+    if unit_ids is not None:
+        require_label_sequence(unit_ids, name="unit_ids", call=call, example="u1")
     if unit_ids is not None and input_ids is not None:
         given, carried = as_label_array(unit_ids), as_label_array(input_ids)
-        if given.shape != carried.shape or not np.array_equal(given, carried):
+        if not _same_labels(given, carried):
             raise ValueError(
-                f"{context or 'This call'} got unit_ids={given.tolist()}, but the "
-                f"spike input is already labelled {carried.tolist()}.\n"
-                "Why: a labelled input names its own units; a different unit_ids "
-                "would attach another unit's label to each spike train.\n"
-                "Fix: drop unit_ids= to keep the input's labels, or relabel the "
-                "input itself before the call (pynapple: build the TsGroup with "
-                "the labels you want)."
+                _format_error(
+                    f"{call} got unit_ids={given.tolist()}, but the spike input "
+                    f"is already labelled {carried.tolist()}.",
+                    why="Why: a labelled input names its own units; a different "
+                    "unit_ids would attach another unit's label to each spike "
+                    "train.",
+                    fix="drop unit_ids= to keep the input's labels, or relabel "
+                    "the input itself before the call (pynapple: build the "
+                    "TsGroup with the labels you want).",
+                )
             )
     from_input = unit_ids is None and input_ids is not None
     unit_ids = unit_ids if unit_ids is not None else input_ids
@@ -319,78 +352,56 @@ def resolve_unit_ids(
     where = f" in {context}" if context else ""
     if resolved.ndim != 1:
         raise ValueError(
-            f"unit_ids must be 1-D{where}: got shape {resolved.shape}.\n"
-            "  WHY: unit_ids labels one identity per unit (row).\n"
-            "  Fix: pass a 1-D sequence with one entry per unit, or omit it "
-            "to default to np.arange(n_units)."
+            _format_error(
+                f"unit_ids must be 1-D{where}: got shape {resolved.shape}.",
+                why="Why: unit_ids labels one identity per unit (row).",
+                fix="pass a 1-D sequence with one entry per unit, or omit it "
+                "to default to np.arange(n_units).",
+            )
         )
     if resolved.shape[0] != n_units:
         raise ValueError(
             _format_error(
-                f"unit_ids length mismatch{where}: got {resolved.shape[0]} label(s) but there are {n_units} unit(s).",
-                fix=f"pass one label per unit (len(unit_ids) == {n_units}), or omit unit_ids to default to np.arange(n_units)",
-                why="Why: unit_ids must identify every row without shifting unit labels.",
+                f"unit_ids length mismatch{where}: got {resolved.shape[0]} "
+                f"label(s) but there are {n_units} unit(s).",
+                why="Why: unit_ids must identify every row without shifting "
+                "unit labels.",
+                fix=f"pass one label per unit (len(unit_ids) == {n_units}), or "
+                "omit unit_ids to default to np.arange(n_units)",
+            )
+        )
+    labels = resolved.tolist()
+    missing = _missing_label_positions(labels)
+    if missing:
+        raise ValueError(
+            _format_error(
+                f"unit_ids{where} has a missing label (None or NaN) at "
+                f"position(s) {missing[:5]}.",
+                why="Why: results select units by label, and a missing label "
+                "never matches, so that unit could not be selected.",
+                fix="give every unit a label, or omit unit_ids= to number the "
+                "units 0..n-1.",
             )
         )
     # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
     # object array.
-    duplicated = [
-        label for label, count in Counter(resolved.tolist()).items() if count > 1
-    ]
+    duplicated = [label for label, count in Counter(labels).items() if count > 1]
     if duplicated:
         fix = (
-            "Fix: pass each unit once in the spike input (pynapple: check group.index)."
+            "pass each unit once in the spike input (pynapple: check group.index)."
             if from_input
-            else "Fix: pass one distinct label per unit, or omit unit_ids= to "
+            else "pass one distinct label per unit, or omit unit_ids= to "
             "number the units 0..n-1."
         )
         raise ValueError(
-            f"unit_ids must be unique{where}: label(s) {duplicated} are repeated.\n"
-            "Why: results index units by label, so a repeated label would name two "
-            f"spike trains.\n{fix}"
+            _format_error(
+                f"unit_ids must be unique{where}: label(s) {duplicated} are repeated.",
+                why="Why: results index units by label, so a repeated label "
+                "would name two spike trains.",
+                fix=fix,
+            )
         )
     return resolved
-
-
-def validate_unit_table(
-    unit_table: Any,
-    n_units: int,
-    *,
-    context: str = "",
-) -> None:
-    """Validate an optional per-unit metadata table against the unit count.
-
-    Enforces the documented invariant that ``unit_table`` carries exactly one
-    row per unit, aligned to ``unit_ids``. A ``None`` table is always valid
-    (the field is optional). A non-``None`` table whose row count differs from
-    ``n_units`` raises :class:`ValueError`, naming both lengths.
-
-    Parameters
-    ----------
-    unit_table : pandas.DataFrame or None
-        Optional per-unit metadata table. When ``None``, no validation occurs.
-    n_units : int
-        Number of units the table must describe (one row per unit).
-    context : str, optional
-        Caller / class name included in the error message on a mismatch.
-
-    Raises
-    ------
-    ValueError
-        If ``unit_table`` is not ``None`` and ``len(unit_table) != n_units``.
-    """
-    if unit_table is None:
-        return
-    n_rows = len(unit_table)
-    if n_rows != n_units:
-        where = f" in {context}" if context else ""
-        raise ValueError(
-            f"unit_table length mismatch{where}: got {n_rows} row(s) but "
-            f"there are {n_units} unit(s).\n"
-            "  WHY: unit_table must carry exactly one row per unit, aligned "
-            "to unit_ids.\n"
-            "  Fix: pass a unit_table with one row per unit, or omit it."
-        )
 
 
 def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> Any:
@@ -398,15 +409,52 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
 
     A ``unit_id`` column or a non-default/named index declares unit identity.
     Missing, extra or duplicate labels raise instead of selecting another unit.
+
+    Parameters
+    ----------
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata, one row per unit.
+    unit_ids : array-like, shape (n_units,)
+        The units' resolved labels.
+    context : str, optional
+        Caller / class name included in error messages.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        A copy with rows in unit order, or ``None``.
+
+    Raises
+    ------
+    ValueError
+        If ``unit_table`` is not a DataFrame, has a row count other than
+        ``len(unit_ids)``, or labels rows inconsistently, with repeated or
+        missing labels, or with labels other than ``unit_ids``.
     """
     import pandas as pd
 
-    ids = np.asarray(unit_ids)
-    validate_unit_table(unit_table, len(ids), context=context)
     if unit_table is None:
         return None
+    ids = np.asarray(unit_ids)
+    where = f" in {context}" if context else ""
     if not isinstance(unit_table, pd.DataFrame):
-        raise ValueError(f"{context}: unit_table must be a pandas DataFrame.")
+        raise ValueError(
+            _format_error(
+                f"unit_table must be a pandas DataFrame{where}, got "
+                f"{type(unit_table).__name__}.",
+                fix="pass pd.DataFrame(...) with one row per unit, or omit it.",
+            )
+        )
+    if len(unit_table) != len(ids):
+        raise ValueError(
+            _format_error(
+                f"unit_table length mismatch{where}: got {len(unit_table)} "
+                f"row(s) but there are {len(ids)} unit(s).",
+                why="Why: unit_table must carry exactly one row per unit, "
+                "aligned to unit_ids.",
+                fix="pass a unit_table with one row per unit, or omit it.",
+            )
+        )
     positional = (
         isinstance(unit_table.index, pd.RangeIndex)
         and unit_table.index.equals(pd.RangeIndex(len(ids)))
@@ -416,8 +464,10 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
         labels = pd.Index(unit_table["unit_id"], name="unit_id")
         if not positional and not labels.equals(unit_table.index):
             raise ValueError(
-                f"{context}: unit_table index and unit_id column disagree. "
-                "Fix: use one consistent unit identity for each row."
+                _format_error(
+                    f"unit_table index and unit_id column disagree{where}.",
+                    fix="use one consistent unit identity for each row.",
+                )
             )
     elif positional:
         return unit_table.copy()
@@ -425,15 +475,19 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
         labels = unit_table.index
     if not labels.is_unique or labels.hasnans:
         raise ValueError(
-            f"{context}: unit_table labels must be unique and non-missing. "
-            "Fix: provide one metadata row per unit_id."
+            _format_error(
+                f"unit_table labels must be unique and non-missing{where}.",
+                fix="provide one metadata row per unit_id.",
+            )
         )
     order = labels.get_indexer(ids)
     if np.any(order < 0):
         raise ValueError(
-            f"{context}: unit_table labels do not match unit_ids={ids.tolist()}. "
-            "Fix: provide metadata for exactly these units; a plain unnamed "
-            "RangeIndex is accepted only for rows already in spike order."
+            _format_error(
+                f"unit_table labels do not match unit_ids={ids.tolist()}{where}.",
+                fix="provide metadata for exactly these units; a plain unnamed "
+                "RangeIndex is accepted only for rows already in spike order.",
+            )
         )
     aligned = unit_table.iloc[order].copy()
     if positional:
@@ -682,28 +736,23 @@ def build_population_dataset(
     ids = np.asarray(unit_ids)
 
     # Duplicate unit_ids break label-based .sel(unit_id=...); reject loudly.
-    # Use dict counting instead of np.unique so mixed int/string labels never
-    # hit NumPy's object-array sort path.
-    seen: dict[Any, int] = {}
-    dups: list[Any] = []
-    for label in ids.tolist():
-        count = seen.get(label, 0)
-        if count == 1:
-            dups.append(label)
-        seen[label] = count + 1
+    # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
+    # object array.
+    dups = [label for label, count in Counter(ids.tolist()).items() if count > 1]
     if dups:
         raise ValueError(
-            "unit_ids must be unique to build an xarray.Dataset, but these "
-            f"label(s) are duplicated: {dups}.\n"
-            "  WHY: label-based selection .sel(unit_id=...) requires a unique "
-            "index coordinate.\n"
-            "  Fix: deduplicate unit_ids (e.g. when concatenating populations) "
-            "before calling to_xarray()."
+            _format_error(
+                "unit_ids must be unique to build an xarray.Dataset, but these "
+                f"label(s) are duplicated: {dups}.",
+                why="Why: label-based selection .sel(unit_id=...) requires a "
+                "unique index coordinate.",
+                fix="deduplicate unit_ids (e.g. when concatenating populations) "
+                "before calling to_xarray().",
+            )
         )
 
     coords: dict[str, Any] = {"unit_id": ids, "bin": np.arange(n_bins)}
-    if env is not None:
-        coords.update(_bin_center_coords(env, n_bins))
+    coords.update(_bin_center_coords(env, n_bins))
     if bin_centers is not None:
         # bin_centers IS present (passed explicitly, e.g. directional angular
         # centers); a shape disagreement is a real inconsistency, not an

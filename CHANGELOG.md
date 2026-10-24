@@ -35,6 +35,13 @@
   tracking dropouts a large `dt` silently dropped the end of every run and its
   spikes (27% of the observed time in one example at `dt=0.5`). The warning
   names `dt` and `max_gap`; `warn_on_drop=False` silences it.
+- Unit labels are checked the same way everywhere. `unit_ids` refuses a
+  single string (which split `"ab"` into units `a` and `b`), a scalar, and
+  missing (`None` or NaN) labels, which `sel(unit_id=...)` could never find.
+  `unit_ids` that equal a spike group's own labels only in value (`1.0` for
+  `1`, `True` for `1`) now raise, since results key shuffle seeds by the label.
+  `RateComparisonResult` refuses duplicate `unit_ids`, and a `unit_table` that
+  is not a DataFrame is named as such instead of reported as a length mismatch.
 
 ### Spatial geometry review
 
