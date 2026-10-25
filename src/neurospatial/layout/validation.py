@@ -98,3 +98,44 @@ def validate_cell_size(
             )
         )
     return sizes
+
+
+def validate_count_threshold(value: int) -> int:
+    """Check ``bin_count_threshold``: a whole number of samples, at least 0.
+
+    Parameters
+    ----------
+    value : int
+        Fewest position samples a bin must hold to be active.
+
+    Returns
+    -------
+    int
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is negative, fractional or not a number.
+
+    Examples
+    --------
+    >>> validate_count_threshold(3)
+    3
+    """
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, (int, float, np.integer, np.floating))
+        or not np.isfinite(value)
+        or value < 0
+        or value != int(value)
+    ):
+        raise ValueError(
+            _format_error(
+                f"bin_count_threshold must be a non-negative whole number of "
+                f"samples, got {value!r}.",
+                why="Why: a bin is active when it holds at least this many "
+                "position samples.",
+                fix="pass e.g. bin_count_threshold=0 to keep every visited bin",
+            )
+        )
+    return int(value)

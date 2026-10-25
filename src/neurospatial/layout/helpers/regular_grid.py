@@ -32,7 +32,10 @@ from scipy import ndimage
 from neurospatial._exceptions import _format_error
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
 from neurospatial.layout.helpers.utils import get_centers, get_n_bins
-from neurospatial.layout.validation import validate_cell_size
+from neurospatial.layout.validation import (
+    validate_cell_size,
+    validate_count_threshold,
+)
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
 # ``_build_grid_structure`` by ``np.histogramdd`` / ``np.meshgrid`` BEFORE any
@@ -143,6 +146,7 @@ def _infer_active_bins_from_regular_grid(
         considered active or part of the track interior.
 
     """
+    bin_count_threshold = validate_count_threshold(bin_count_threshold)
     pos_clean = positions[~np.any(np.isnan(positions), axis=1)]
 
     if pos_clean.shape[0] == 0:

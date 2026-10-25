@@ -130,6 +130,9 @@
   unexplained mismatch. A `build()` that raises now leaves the engine unbuilt
   (`binning()` raises `LayoutNotBuiltError`) instead of mixing the old bins
   with the new grid.
+- A negative or fractional `bin_count_threshold` is refused with a message
+  naming the value. Grid and hexagonal layouts used to accept it silently, as
+  if it were 0.
 
 ### Spatial geometry review
 

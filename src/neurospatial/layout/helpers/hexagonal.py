@@ -32,7 +32,10 @@ from neurospatial.geometry import (
     points_to_hex_bin_ind,
 )
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
-from neurospatial.layout.validation import validate_cell_size
+from neurospatial.layout.validation import (
+    validate_cell_size,
+    validate_count_threshold,
+)
 
 
 def _create_hex_grid(
@@ -200,6 +203,7 @@ def _infer_active_bins_from_hex_grid(
         bins are found to be active.
 
     """
+    bin_count_threshold = validate_count_threshold(bin_count_threshold)
     bin_ind = points_to_hex_bin_ind(
         points=positions,
         grid_offset_x=min_x,

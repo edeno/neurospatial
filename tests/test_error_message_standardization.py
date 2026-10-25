@@ -10,13 +10,11 @@ caused the error, not just what was expected.
 import numpy as np
 import pytest
 
+from neurospatial import Environment
 from neurospatial.layout.helpers.graph import _get_graph_bins
 from neurospatial.layout.helpers.hexagonal import _create_hex_grid
 from neurospatial.layout.helpers.regular_grid import _create_regular_grid
-from neurospatial.layout.helpers.utils import (
-    _infer_active_elements_from_samples,
-    get_n_bins,
-)
+from neurospatial.layout.helpers.utils import get_n_bins
 from neurospatial.ops.transforms import simple_scale
 
 
@@ -63,21 +61,19 @@ class TestUtilsErrorMessages:
         # Ideally shows which dimension or the actual array
         assert "-2" in error_msg or "negative" in error_msg.lower()
 
-    def test_bin_count_threshold_negative_shows_actual_value(self):
-        """Test that bin_count_threshold validation shows actual value."""
-        candidates = np.array([[0, 0], [1, 1], [2, 2]])
-        samples = np.array([[0.5, 0.5], [1.5, 1.5]])
+    @pytest.mark.parametrize("layout", ["RegularGrid", "Hexagonal"])
+    def test_bin_count_threshold_negative_shows_actual_value(self, layout):
+        """A negative bin_count_threshold is refused, naming the value."""
+        samples = np.random.default_rng(0).uniform(0, 10, (200, 2))
         bad_threshold = -10
 
         with pytest.raises(ValueError) as exc_info:
-            _infer_active_elements_from_samples(
-                candidates, samples, bin_count_threshold=bad_threshold
+            Environment.from_samples(
+                samples, bin_size=2.0, layout=layout, bin_count_threshold=bad_threshold
             )
 
         error_msg = str(exc_info.value)
-        # Should show the actual negative value provided
-        assert str(bad_threshold) in error_msg or f"{bad_threshold}" in error_msg
-        # Should explain constraint
+        assert str(bad_threshold) in error_msg
         assert "non-negative" in error_msg.lower()
 
 
