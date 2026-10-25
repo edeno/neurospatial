@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+### Spike, interval and result inputs
+
+- Spike times must be finite everywhere. Decoding (`bin_spikes_in_time`,
+  `decode_session`, `BayesianDecoder.predict`) silently dropped NaN spike
+  times, biasing counts low, while encoding and peri-event analyses refused
+  them. Now every entry point, including `SpikeTrains`, refuses NaN or
+  infinite spike times and names the unit by its label.
+- A `(n_spikes, 1)` column of spike times (the default `scipy.io.loadmat`
+  shape) was read as n_spikes units of one spike each; it now raises and
+  suggests `spike_times[:, 0]`. A 2-D array whose columns, not rows, are the
+  units now raises and suggests `spike_times.T`, and NaN before a spike in a
+  row is refused instead of being dropped as padding.
+- A pynapple `Ts` or pandas `Series` of spike times is one unit. Before, it was
+  taken for a group of units, with one unit per spike or a cryptic error. A
+  dict of unit id to spike train is a labelled group, and a DataFrame is
+  refused with how to convert it.
+
+- `max_gap` is checked wherever it is used. Encoding accepted `max_gap=-1`,
+  NaN or infinity, excluded every interval and recorded the bad value in
+  `analysis_settings`; every analysis now refuses a `max_gap` that is not a
+  positive finite number of seconds (or `None`), including strings and
+  booleans. A speed gate (`min_speed`) without `speed` now raises instead of
+  being skipped.
+- With `max_gap` equal to the sampling interval, float rounding of the
+  timestamps makes a quarter to a half of the intervals count as gaps. The
+  mask is unchanged, but the warning now names this case and suggests a
+  `max_gap` above the sampling interval, instead of saying (at 1 kHz) that
+  `times` are probably not in seconds or (at 30 Hz) saying nothing.
+- Decoding warns when whole `dt` bins leave more than 10% of the observed
+  time undecoded. Each recording run keeps only whole bins, so with frequent
+  tracking dropouts a large `dt` silently dropped the end of every run and its
+  spikes (27% of the observed time in one example at `dt=0.5`). The warning
+  names `dt` and `max_gap`; `warn_on_drop=False` silences it.
+- Unit labels are checked the same way everywhere. `unit_ids` refuses a
+  single string (which split `"ab"` into units `a` and `b`), a scalar, and
+  missing (`None` or NaN) labels, which `sel(unit_id=...)` could never find.
+  `unit_ids` that equal a spike group's own labels only in value (`1.0` for
+  `1`, `True` for `1`) now raise, since results key shuffle seeds by the label.
+  `RateComparisonResult` refuses duplicate `unit_ids`, and a `unit_table` that
+  is not a DataFrame is named as such instead of reported as a length mismatch.
+- `detect_region_visits`, `DecodingResult.error_against` and the
+  true-position overlay of `DecodingResult.plot` now give the shared
+  excluded-interval warning. With `times` in milliseconds, visits split at
+  every sample and the decoding error was all NaN, with no warning.
+- Result and record classes that hold arrays compare by identity. Comparing
+  two equal-valued copies with `==` raised "truth value of an array is
+  ambiguous"; it now returns `False`, and compare their arrays to test values.
+- Results without a `to_dataframe()` or `plot()` no longer inherit a stub
+  that raises `NotImplementedError`; the method is absent
+  (`AttributeError`), as the API contract says for results such as
+  `ResampledPathResult` and `ContinuousEventResult`. A result's repr names an
+  error raised by its `summary()` instead of showing `ClassName(...)`, and
+  rounds NumPy `float32` metrics like other floats.
+- A `missing_label` that matches no label but differs from one only in case or
+  spaces (`"Rest"` for `"rest"`) warns, since that label would otherwise be
+  kept as a real condition or direction.
+- Every error message built from what/why/fix now labels its reason
+  `Why:`; 80+ messages printed the reason as a bare sentence.
+
 ### Spatial geometry review
 
 - Walls that end on a slanted or curved arena outline now separate the bins

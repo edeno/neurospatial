@@ -48,7 +48,7 @@ _WINDOW_COVERAGES = ("complete", "partial")
 _MEAN_STATUSES = ("defined", "no_support", "undefined_direction", "not_numeric")
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
     """Continuous signals sampled around events, from ``align_continuous_to_events``.
 

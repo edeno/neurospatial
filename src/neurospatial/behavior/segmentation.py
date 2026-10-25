@@ -244,7 +244,7 @@ class Crossing:
     bin_index: int
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Run(ReadOnlyArraysMixin):
     """Run between regions.
 

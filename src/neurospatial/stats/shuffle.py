@@ -957,7 +957,7 @@ def shuffle_posterior_weighted_circular(
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ShuffleTestResult(ReadOnlyArraysMixin):
     """Result container for shuffle-based significance testing.
 

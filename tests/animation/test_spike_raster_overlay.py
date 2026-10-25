@@ -54,7 +54,7 @@ def test_a_raster_that_cannot_be_drawn_is_refused(options, message):
 
 
 def test_spikes_must_be_finite_and_there_must_be_a_unit():
-    with pytest.raises(ValueError, match="Unit 1 has spike times that are NaN"):
+    with pytest.raises(ValueError, match="unit 1 has 1 NaN or infinite"):
         SpikeRasterOverlay([np.array([0.1]), np.array([np.nan])])
     with pytest.raises(ValueError, match="at least one unit"):
         SpikeRasterOverlay([])

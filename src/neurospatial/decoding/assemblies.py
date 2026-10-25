@@ -138,7 +138,7 @@ __all__ = [
 # =============================================================================
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     """
     A detected cell assembly pattern.
@@ -237,7 +237,7 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     """
     Results from cell assembly detection.

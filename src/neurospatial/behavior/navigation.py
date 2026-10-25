@@ -120,8 +120,8 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     break_sample_times,
-    intervals_contain,
     recording_index,
+    times_in_intervals,
 )
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
@@ -171,7 +171,7 @@ __all__ = [  # noqa: RUF022
 # =============================================================================
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     """Path efficiency metrics for a trajectory segment.
 
@@ -267,7 +267,7 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         )
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     """Path efficiency with subgoal decomposition.
 
@@ -328,7 +328,7 @@ class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
 # =============================================================================
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     """Goal-directed navigation metrics for a trajectory.
 
@@ -1040,8 +1040,8 @@ def distance_to_reward(
     distance_to_region : Distance to a target bin or region
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
-    from neurospatial._intervals import as_intervals
-    from neurospatial._observation import validate_break_before, validate_max_gap
+    from neurospatial._intervals import as_intervals, validate_max_gap
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_finite
     from neurospatial.ops.distance import distance_field
 
@@ -1103,9 +1103,7 @@ def distance_to_reward(
     if resolved_epochs is None:
         sample_in_epochs = np.ones(n_samples, dtype=bool)
     else:
-        sample_in_epochs = intervals_contain(
-            resolved_epochs, times, np.nextafter(times, np.inf)
-        )
+        sample_in_epochs = times_in_intervals(resolved_epochs, times)
 
     # Get or interpolate reward positions
     if reward_positions is not None:

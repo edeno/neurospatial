@@ -168,7 +168,9 @@ class BayesianDecoder:
         Forwarded to the encode step (:meth:`fit`) and the decode step
         (:meth:`predict` / :meth:`predict_summary`). When ``True`` (default) a
         single ``UserWarning`` fires if a large fraction of spikes fall outside
-        the decode/encode time window (the seconds-vs-milliseconds footgun).
+        the decode/encode time window (the seconds-vs-milliseconds footgun),
+        and prediction warns when more than 10% of the observed time falls in
+        run remainders shorter than ``dt``, which are not decoded.
         Set ``False`` to silence those warnings on a genuinely sparse session;
         a single knob covers both the fit and predict passes (the default would
         otherwise warn once per pass).
@@ -843,7 +845,8 @@ warn_on_drop
             encoding_models,
             spatial_support=self.spatial_support,
             dt=self.dt,
-            warn_on_drop=self.warn_on_drop,
+            warn_spikes_outside=self.warn_on_drop,
+            warn_partial_bins=self.warn_on_drop,
             dtype=self.dtype,
             max_gap=self.max_gap,
             epochs=epochs,
@@ -936,7 +939,8 @@ warn_on_drop
             encoding_models,
             spatial_support=self.spatial_support,
             dt=self.dt,
-            warn_on_drop=self.warn_on_drop,
+            warn_spikes_outside=self.warn_on_drop,
+            warn_partial_bins=self.warn_on_drop,
             dtype=self.dtype,
             max_gap=self.max_gap,
             epochs=epochs,

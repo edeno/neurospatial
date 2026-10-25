@@ -104,3 +104,42 @@ def test_decode_bounds_do_not_restrict_observed_runs(gap_population):
         r.env, model, unit_ids=np.arange(len(trains))
     ).predict(trains, r.times)
     assert len(result.times) == 7998
+
+
+@pytest.fixture
+def dropout_session():
+    """30 Hz tracking with a 1 s dropout after every 0.7 s of observation."""
+    from neurospatial import Environment
+
+    run = np.arange(22) / 30.0  # 0.7 s observed
+    times = np.concatenate([run + 1.7 * k for k in range(40)])
+    x = 50.0 + 45.0 * np.sin(2 * np.pi * times / 20.0)
+    positions = np.column_stack([x, np.zeros_like(x)])
+    env = Environment.from_samples(positions, bin_size=10.0)
+    rng = np.random.default_rng(3)
+    trains = [np.sort(rng.uniform(times[0], times[-1], 300)) for _ in range(4)]
+    return env, trains, times, positions
+
+
+def test_decoding_warns_when_run_remainders_drop_much_observed_time(
+    dropout_session,
+):
+    env, trains, times, positions = dropout_session
+    with pytest.warns(UserWarning, match=r"29% is not decoded.*smaller dt") as record:
+        decode_session(env, trains, times, positions, method="binned", dt=0.5)
+    assert sum("not decoded" in str(w.message) for w in record) == 1
+    decoder = BayesianDecoder(env, dt=0.5, method="binned").fit(
+        trains, times, positions
+    )
+    with pytest.warns(UserWarning, match="29% is not decoded"):
+        decoder.predict(trains, times)
+
+
+def test_decoding_is_silent_when_bins_fit_the_runs(dropout_session, recwarn):
+    env, trains, times, positions = dropout_session
+    decode_session(env, trains, times, positions, method="binned", dt=0.1)
+    assert not [w for w in recwarn.list if "not decoded" in str(w.message)]
+    decode_session(
+        env, trains, times, positions, method="binned", dt=0.5, warn_on_drop=False
+    )
+    assert not [w for w in recwarn.list if "not decoded" in str(w.message)]

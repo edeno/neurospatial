@@ -140,39 +140,6 @@ def test_restored_rate_settings_are_independent(populations, how):
     assert restored.analysis_settings == expected
 
 
-@pytest.mark.parametrize("family", ["spatial", "directional", "view", "egocentric"])
-@pytest.mark.parametrize("level", ["population", "single"])
-@pytest.mark.parametrize("settings_kind", ["recorded", "none", "missing"])
-def test_legacy_rate_pickles_restore_settings_and_support(
-    populations, family, level, settings_kind
-) -> None:
-    """Old ordinary-field storage remains usable under the settings property."""
-    result = _result(populations, family, level)
-    state = vars(result).copy()
-    recorded = state.pop("_analysis_settings")
-    expected = recorded if settings_kind == "recorded" else None
-    if settings_kind != "missing":
-        state["analysis_settings"] = expected
-    legacy = object.__new__(type(result))
-    vars(legacy).update(state)
-
-    restored = pickle.loads(pickle.dumps(legacy))
-    assert restored.analysis_settings == expected
-    np.testing.assert_array_equal(restored.spatial_support, result.spatial_support)
-    assert "analysis_settings" not in vars(restored)
-    for array in _arrays(restored).values():
-        assert not array.flags.writeable
-    if level == "population":
-        assert restored[0].analysis_settings == expected
-        np.testing.assert_array_equal(
-            restored[0].spatial_support, result[0].spatial_support
-        )
-    if expected is not None:
-        restored.analysis_settings["observed_intervals"][0][0] = -10.0
-        assert restored.analysis_settings == expected
-    assert pickle.loads(pickle.dumps(restored)).analysis_settings == expected
-
-
 def test_decoder_settings_are_independent(populations):
     from neurospatial.decoding import BayesianDecoder
 
@@ -203,3 +170,21 @@ def test_xarray_export_is_an_editable_copy(populations, family):
     dataset = result.to_xarray()
     dataset["firing_rate"][0, 0] = -5.0
     assert np.asarray(result.firing_rates)[0, 0] != -5.0
+
+
+def test_array_records_compare_by_identity_instead_of_raising():
+    from neurospatial._observation import resolve_sample_support
+    from neurospatial.encoding import SpikeTrains
+
+    trains = SpikeTrains([np.array([0.1, 0.2]), np.array([0.3, 0.4])])
+    support = resolve_sample_support(
+        np.arange(4.0),
+        np.ones(4, dtype=bool),
+        max_gap=None,
+        epochs=None,
+        break_before=None,
+        result="empty",
+    )
+    for record in (trains, support):
+        assert record == record
+        assert record != copy.deepcopy(record)  # equal values, no ValueError

@@ -22,6 +22,7 @@ from neurospatial._results import (
     ResultMixin,
     UnitSelectionMixin,
     _copy_analysis_settings,
+    resolve_unit_ids,
 )
 from neurospatial.encoding._base import _to_numpy
 from neurospatial.encoding._comparison_inputs import (
@@ -175,6 +176,12 @@ shape (n_units, n_bins)
     )
 
     def __post_init__(self) -> None:
+        # Two unlabelled singular results compare one unit with no label.
+        if np.asarray(self.unit_ids, dtype=object).tolist() != [None]:
+            unit_ids = resolve_unit_ids(
+                self.unit_ids, np.size(self.unit_ids), context="RateComparisonResult"
+            )
+            object.__setattr__(self, "unit_ids", unit_ids)
         n_units, n_bins = len(self.unit_ids), len(self.bins_a)
         expected = {
             "correlation": (n_units,),

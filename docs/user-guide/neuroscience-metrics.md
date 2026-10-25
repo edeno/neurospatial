@@ -553,6 +553,10 @@ maps. Each snippet assumes spikes were recorded throughout the tracked span;
 replace its `spike_window` with the actual electrophysiology recording
 intervals. The default `max_gap=0.5` excludes longer sampling intervals. NaNs
 and gaps remain missing observations, and each domain has its own support.
+If you set `max_gap` yourself, keep it above the sampling interval, for example
+`max_gap=1.5 / sampling_rate`. Timestamps such as `np.arange(n) / 30` carry
+float rounding, so with `max_gap` equal to the sampling interval a quarter to a
+half of the intervals count as gaps; a warning says when this happens.
 
 ### Spatial maps conditioned on movement direction
 

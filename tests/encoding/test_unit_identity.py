@@ -563,3 +563,98 @@ def test_indexing_population_keeps_mixed_label_types(family):
     }[family]()
     assert [unit.unit_id for unit in rates] == [1, "u"]
     assert type(rates[0].unit_id) is int
+
+
+@pytest.mark.parametrize("bad", ["ab", 5])
+def test_unit_ids_must_be_a_sequence(bad):
+    with pytest.raises(ValueError, match="one per unit"):
+        resolve_unit_ids(bad, 2 if isinstance(bad, str) else 1, context="demo")
+    with pytest.raises(ValueError, match="one per unit"):
+        SpikeTrains([np.array([0.1]), np.array([0.2])], unit_ids=bad)
+
+
+@pytest.mark.parametrize("labels", [[np.nan, np.nan, 3.0], [None, "a", "b"]])
+def test_missing_unit_labels_are_refused(labels):
+    with pytest.raises(ValueError, match=r"missing label \(None or NaN\)"):
+        resolve_unit_ids(labels, 3, context="demo")
+
+
+@pytest.mark.parametrize(
+    "given,carried",
+    [([1.0, 2.0], np.array([1, 2])), ([True, False], np.array([1, 0]))],
+)
+def test_unit_ids_must_match_the_input_labels_in_kind(given, carried):
+    with pytest.raises(ValueError, match="already labelled"):
+        resolve_unit_ids(given, 2, context="demo", input_ids=carried)
+
+
+def test_equal_integer_labels_of_any_width_match():
+    resolved = resolve_unit_ids(
+        [1, 2], 2, context="demo", input_ids=np.array([1, 2], dtype=np.uint16)
+    )
+    assert resolved.tolist() == [1, 2]
+
+
+def test_rate_comparison_refuses_duplicate_unit_ids(trajectory, spike_trains):
+    from dataclasses import replace
+
+    from neurospatial.encoding import compare_spatial_rates
+
+    env, times, positions, _ = trajectory
+    halves = [
+        compute_spatial_rates(
+            env, spike_trains, times, positions, epochs=[w], unit_ids=[5, 6, 7]
+        )
+        for w in ([0.0, 25.0], [25.0, 50.0])
+    ]
+    comparison = compare_spatial_rates(*halves)
+    with pytest.raises(ValueError, match="unique"):
+        replace(comparison, unit_ids=np.array([5, 5, 7]))
+
+
+class TestUnitTableAlignment:
+    """unit_table rows attach to units by identity, never by accident."""
+
+    @pytest.fixture
+    def trains(self):
+        return [np.array([0.1]), np.array([0.2])]
+
+    def test_index_and_unit_id_column_must_agree(self, trains):
+        import pandas as pd
+
+        table = pd.DataFrame(
+            {"unit_id": [10, 20], "region": ["CA1", "CA3"]},
+            index=pd.Index([20, 10], name="unit_id"),
+        )
+        with pytest.raises(ValueError, match="disagree"):
+            SpikeTrains(trains, unit_ids=[10, 20], unit_table=table)
+
+    @pytest.mark.parametrize("index", [[10, 10], [10, np.nan]])
+    def test_labels_must_be_unique_and_present(self, trains, index):
+        import pandas as pd
+
+        table = pd.DataFrame(
+            {"region": ["CA1", "CA3"]}, index=pd.Index(index, name="unit_id")
+        )
+        with pytest.raises(ValueError, match="unique and non-missing"):
+            SpikeTrains(trains, unit_ids=[10, 20], unit_table=table)
+
+    def test_table_must_be_a_dataframe(self, trains):
+        with pytest.raises(ValueError, match="must be a pandas DataFrame"):
+            SpikeTrains(trains, unit_ids=[10, 20], unit_table={"region": [1, 2]})
+
+    def test_labelled_rows_are_reordered_to_the_units(self, trains):
+        import pandas as pd
+
+        table = pd.DataFrame(
+            {"region": ["CA3", "CA1"]}, index=pd.Index([20, 10], name="unit_id")
+        )
+        st = SpikeTrains(trains, unit_ids=[10, 20], unit_table=table)
+        assert st.unit_table["region"].tolist() == ["CA1", "CA3"]
+
+    def test_unnamed_range_index_is_spike_order(self, trains):
+        import pandas as pd
+
+        table = pd.DataFrame({"region": ["CA1", "CA3"]})
+        st = SpikeTrains(trains, unit_ids=[1, 0], unit_table=table)
+        assert st.unit_table["region"].tolist() == ["CA1", "CA3"]

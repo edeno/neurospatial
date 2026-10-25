@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import ragged_arange
 from neurospatial.geometry._regular_lookup import outline_cells
 
 if TYPE_CHECKING:
@@ -193,10 +194,7 @@ def ray_grid_pieces(
         )
         counts = last - first
         owner = np.repeat(rows, counts)
-        offsets = np.arange(counts.sum()) - np.repeat(
-            np.cumsum(counts) - counts, counts
-        )
-        edge = axis_edges[np.repeat(first, counts) + offsets]
+        edge = axis_edges[np.repeat(first, counts) + ragged_arange(counts)]
         t = (edge - starts[moving[owner], axis]) / component[owner]
         inside = (t > 0) & (t < lengths[moving[owner]])
         crossing_interval.append(owner[inside])

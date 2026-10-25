@@ -51,7 +51,7 @@ def _validate_event_indices(
 # --- Result Dataclasses ---
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
     """
     Result from peri-event histogram analysis.
@@ -249,7 +249,7 @@ class PeriEventResult(ResultMixin, ReadOnlyArraysMixin):
         return plot_peri_event_histogram(self, ax=ax, **kwargs)
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class PopulationPeriEventResult(ResultMixin, UnitSelectionMixin):
     """
     Result from population peri-event histogram analysis.

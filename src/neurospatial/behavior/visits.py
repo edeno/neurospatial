@@ -14,7 +14,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import as_intervals, interval_valid_mask, intervals_contain
+from neurospatial._intervals import (
+    as_intervals,
+    interval_valid_mask,
+    times_in_intervals,
+    validate_max_gap,
+    warn_excluded_intervals,
+)
 from neurospatial._observation import validate_break_before
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -203,8 +209,7 @@ def detect_region_visits(
         )
     if not np.isfinite(clock).all() or np.any(np.diff(clock) <= 0):
         raise ValueError("times must be finite and strictly increasing, in seconds.")
-    if max_gap is not None and (not np.isfinite(max_gap) or max_gap <= 0):
-        raise ValueError("max_gap must be a positive finite number of seconds or None.")
+    validate_max_gap(max_gap)
     windows = as_intervals(epochs, name="epochs")
     if isinstance(region_names, str):
         raise TypeError(
@@ -244,18 +249,23 @@ def detect_region_visits(
     valid = (bins >= 0) & (bins < env.n_bins)
     selected = valid.copy()
     if windows is not None:
-        selected &= intervals_contain(windows, clock, np.nextafter(clock, np.inf))
+        selected &= times_in_intervals(windows, clock)
     if not selected.any():
         return []
 
     # A terminal epoch boundary can close exposure, but cannot create an event.
-    continuous = (
-        valid[:-1]
-        & valid[1:]
-        & interval_valid_mask(
-            clock, max_gap=max_gap, epochs=windows, break_before=breaks
-        )
+    gates = interval_valid_mask(
+        clock, max_gap=max_gap, epochs=windows, break_before=breaks
     )
+    warn_excluded_intervals(
+        clock,
+        gates,
+        max_gap=max_gap,
+        epochs=windows,
+        break_before=breaks,
+        result="every visit ends at its first sample",
+    )
+    continuous = valid[:-1] & valid[1:] & gates
     connected = continuous & selected[:-1] & selected[1:]
     starts = np.flatnonzero(selected & np.r_[True, ~connected])
     stops = np.flatnonzero(selected & np.r_[~connected, True]) + 1

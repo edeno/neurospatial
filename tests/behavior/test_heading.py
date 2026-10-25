@@ -192,20 +192,19 @@ def test_heading_rejects_bad_break_before(break_before):
 
 
 @pytest.mark.parametrize(
-    ("times", "labels_why"),
+    "times",
     [
-        (np.array(0.1), True),
-        (np.zeros((3, 1)), True),
-        (np.array([0.0, 0.1]), True),
-        # The shared repeated-timestamp message states why without a label.
-        (np.array([0.0, 0.0, 0.1]), False),
-        (np.array([0.2, 0.1, 0.0]), True),
-        (np.array([0.0, np.nan, 0.2]), True),
-        (np.array([0.0, np.inf, 0.2]), True),
-        (np.array(["zero", "one", "two"]), True),
+        np.array(0.1),
+        np.zeros((3, 1)),
+        np.array([0.0, 0.1]),
+        np.array([0.0, 0.0, 0.1]),
+        np.array([0.2, 0.1, 0.0]),
+        np.array([0.0, np.nan, 0.2]),
+        np.array([0.0, np.inf, 0.2]),
+        np.array(["zero", "one", "two"]),
     ],
 )
-def test_heading_from_velocity_rejects_bad_times(times, labels_why):
+def test_heading_from_velocity_rejects_bad_times(times):
     from neurospatial.behavior import heading_from_velocity
 
     positions = np.c_[[0.0, 1.0, 2.0], np.zeros(3)]
@@ -213,7 +212,7 @@ def test_heading_from_velocity_rejects_bad_times(times, labels_why):
         heading_from_velocity(times, positions)
     message = str(caught.value)
     assert "times" in message
-    assert ("Why:" in message) is labels_why
+    assert "Why:" in message
     assert "Fix:" in message
 
 

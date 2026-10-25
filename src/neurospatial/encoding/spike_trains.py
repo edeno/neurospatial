@@ -48,6 +48,7 @@ from neurospatial._results import (
     read_only_copy,
     resolve_unit_ids,
 )
+from neurospatial._spikes import require_finite_spike_times
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -55,7 +56,7 @@ if TYPE_CHECKING:
 __all__ = ["SpikeTrains"]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class SpikeTrains(UnitSelectionMixin):
     """Immutable container of ragged per-unit spike trains.
 
@@ -153,6 +154,7 @@ class SpikeTrains(UnitSelectionMixin):
         if self.unit_ids is None:
             object.__setattr__(self, "_unit_ids_generated", True)
         resolved = resolve_unit_ids(self.unit_ids, n_units, context="SpikeTrains")
+        require_finite_spike_times(coerced, resolved)
         object.__setattr__(self, "unit_ids", resolved)
 
         object.__setattr__(

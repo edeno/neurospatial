@@ -118,7 +118,7 @@ PLACE_GRID_BORDER_THRESHOLDS = MappingProxyType(
 )
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
 
@@ -695,7 +695,7 @@ def _spatial_summary_frame(
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class SpatialRateResult(SpatialResultMixin):
     """Result of spatial rate computation for a single neuron.
 
@@ -1556,7 +1556,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of spatial rate computation for multiple neurons.
 
@@ -4260,7 +4260,7 @@ default="diffusion_kde"
 # ==============================================================================
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
     """Container for direction-conditioned place field results.
 

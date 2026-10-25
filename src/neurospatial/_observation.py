@@ -1,6 +1,8 @@
 """Resolve which samples and intervals of a trajectory were actually observed.
 
-Shared by the distance, resampling and turning analyses. A sample is valid when
+Shared validation of times, positions and signals, and resolution of observed
+samples, intervals and runs, used by the behavior, event, animation and
+encoding analyses. A sample is valid when
 every coordinate is finite. Interval ``k`` (samples ``k`` and ``k + 1``) is
 usable when both samples are valid, the elapsed time passes the ``max_gap`` and
 ``epochs`` gates, and no recording break is declared before sample ``k + 1``.
@@ -10,6 +12,7 @@ depends on an ``Environment``.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import Any
@@ -18,8 +21,14 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import observed_interval_mask, run_sample_bounds
-from neurospatial._results import ReadOnlyArraysMixin
+from neurospatial._intervals import (
+    observed_interval_mask,
+    ragged_arange,
+    run_sample_bounds,
+    validate_max_gap,
+)
+from neurospatial._results import ReadOnlyArraysMixin, plain_value, read_only_copy
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     times_positions_problems,
     validate_strictly_increasing,
@@ -27,7 +36,7 @@ from neurospatial._validation import (
 )
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class ObservationSupport(ReadOnlyArraysMixin):
     """Valid samples, usable intervals and runs of one trajectory.
 
@@ -71,7 +80,7 @@ class ObservationSupport(ReadOnlyArraysMixin):
 def validate_break_before(
     break_before: Any, n_samples: int, *, call: str
 ) -> NDArray[np.bool_] | None:
-    """Return an owned copy of ``break_before`` as a Boolean array, or None.
+    """Return a read-only copy of ``break_before`` as a Boolean array, or None.
 
     The copy means a result or a shuffle null holding it cannot change when
     the caller edits their array.
@@ -91,18 +100,7 @@ def validate_break_before(
                 ),
             )
         )
-    owned: NDArray[np.bool_] = flags.copy()
-    return owned
-
-
-def validate_max_gap(max_gap: float | None) -> float | None:
-    """Return ``max_gap`` unchanged if None or a positive finite number."""
-    if max_gap is not None and (not np.isfinite(max_gap) or max_gap <= 0):
-        raise ValueError(
-            "max_gap must be a positive finite number of seconds or None "
-            f"(None keeps every interval, however long); got {max_gap!r}."
-        )
-    return max_gap
+    return read_only_copy(flags)
 
 
 def _support_from_gates(
@@ -116,12 +114,8 @@ def _support_from_gates(
     bounds = run_sample_bounds(interval_mask)
     run_ids = np.full(n_samples, -1, dtype=np.intp)
     lengths = bounds[:, 1] - bounds[:, 0] + 1
-    if lengths.size:
-        starts_in_output = np.cumsum(lengths) - lengths
-        samples = np.arange(lengths.sum()) + np.repeat(
-            bounds[:, 0] - starts_in_output, lengths
-        )
-        run_ids[samples] = np.repeat(np.arange(lengths.size, dtype=np.intp), lengths)
+    samples = np.repeat(bounds[:, 0], lengths) + ragged_arange(lengths)
+    run_ids[samples] = np.repeat(np.arange(lengths.size, dtype=np.intp), lengths)
     return ObservationSupport(
         sample_valid=sample_valid,
         interval_gates=gates,
@@ -247,12 +241,11 @@ def label_codes(
     factorized, uniques = pd.factorize(labels, use_na_sentinel=True)
     codes = factorized.astype(np.intp)
     # tolist() already yields Python scalars; object arrays can still hold NumPy ones.
-    values: list[Hashable] = [
-        v.item() if isinstance(v, np.generic) else v
-        for v in np.asarray(uniques).tolist()
-    ]
+    values: list[Hashable] = [plain_value(v) for v in np.asarray(uniques).tolist()]
     if missing_label is not None:
         keep = np.array([not bool(v == missing_label) for v in values], dtype=bool)
+        if keep.all():
+            _warn_near_missing_label(missing_label, values)
         # One extra slot so that code -1 (already missing) stays -1.
         renumber = np.full(len(values) + 1, -1, dtype=np.intp)
         renumber[:-1][keep] = np.arange(np.count_nonzero(keep), dtype=np.intp)
@@ -261,12 +254,28 @@ def label_codes(
     return codes, values
 
 
+def _warn_near_missing_label(missing_label: Hashable, values: list[Hashable]) -> None:
+    """Warn when ``missing_label`` is absent but a label differs only in case."""
+    if not isinstance(missing_label, str):
+        return
+    key = missing_label.strip().casefold()
+    near = [v for v in values if isinstance(v, str) and v.strip().casefold() == key]
+    if near:
+        warnings.warn(
+            f"missing_label={missing_label!r} matches no label, but {near[0]!r} "
+            "differs from it only in case or spaces, so it is kept as a real "
+            f"condition. Fix: pass missing_label={near[0]!r}.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
 def label_runs(
     codes: NDArray[np.intp], interval_mask: NDArray[np.bool_]
 ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.intp]]:
-    """Epochs of consecutive retained intervals sharing a label code.
+    """Runs of consecutive retained intervals sharing a label code.
 
-    An epoch ends at an interval the support resolver rejected, at a missing
+    A run ends at an interval the support resolver rejected, at a missing
     label, or where the label code changes; nothing joins across those.
 
     Parameters
@@ -279,8 +288,8 @@ def label_runs(
 
     Returns
     -------
-    first_interval, last_interval, code : ndarray of intp, shape (n_epochs,)
-        Inclusive first and last interval of each epoch and its label code,
+    first_interval, last_interval, code : ndarray of intp, shape (n_runs,)
+        Inclusive first and last interval of each run and its label code,
         in time order.
 
     Examples
@@ -311,6 +320,19 @@ def validated_observations(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], ObservationSupport]:
     """Validate a ``(times, positions)`` pair and resolve its observation support.
 
+    Parameters
+    ----------
+    times : array-like, shape (n_samples,)
+        Seconds; finite and strictly increasing.
+    positions : array-like, shape (n_samples, n_dims) or (n_samples,)
+        Coordinates; NaN rows are missing samples.
+    call : str
+        Public function name, used in messages.
+    max_gap, epochs, break_before
+        The shared interval gates (``observed_interval_mask``).
+    result : str
+        What an all-excluded selection leaves, for the shared warning.
+
     Returns
     -------
     times : ndarray, shape (n_samples,)
@@ -321,8 +343,10 @@ def validated_observations(
     Raises
     ------
     ValueError
-        If the inputs are malformed or empty (zero samples). One sample is
-        valid input: it has a position but no observed interval.
+        If the inputs are malformed or empty (zero samples), if ``times``
+        are not strictly increasing, or if ``max_gap`` or ``break_before``
+        is invalid. One sample is valid input: it has a position but no
+        observed interval.
     """
     t, p = validate_times_positions(times, positions, call=call)
     if t.size == 0:

@@ -176,7 +176,7 @@ def _view_summary_frame(
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class ViewRateResult(SpatialResultMixin):
     """Result of view rate computation for a single neuron.
 
@@ -573,7 +573,7 @@ class ViewRateResult(SpatialResultMixin):
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
     """Result of view rate computation for multiple neurons.
 

@@ -111,3 +111,11 @@ def test_bins_are_half_open():
         [np.array([0.0, 0.5, 1.0])], dt=0.5, t_start=0, t_stop=1
     )
     np.testing.assert_array_equal(counts, [[1], [1]])
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf])
+def test_non_finite_windows_are_refused_on_every_platform(bad):
+    from neurospatial._time_bins import _time_bins_in_windows
+
+    with pytest.raises(ValueError, match="bounds must be finite"):
+        _time_bins_in_windows(np.array([[0.0, 1.0], [2.0, bad]]), 0.1)

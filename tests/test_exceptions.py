@@ -248,3 +248,15 @@ def test_errors_survive_pickling(make):
     assert type(restored) is type(error)
     assert str(restored) == str(error)
     assert restored.__dict__ == error.__dict__
+
+
+@pytest.mark.parametrize(
+    "why", ["the clock is in seconds.", "Why: the clock is in seconds."]
+)
+def test_format_error_labels_the_reason_once(why):
+    from neurospatial._exceptions import _format_error
+
+    message = _format_error("Bad times.", why=why, fix="convert to seconds.")
+    assert (
+        message == "Bad times.\nWhy: the clock is in seconds.\nFix: convert to seconds."
+    )

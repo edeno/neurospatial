@@ -109,7 +109,7 @@ def _boundary_summary(
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     """Firing rate of one unit by distance and direction to walls.
 
@@ -245,7 +245,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
 
 
 @_copy_analysis_settings
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class BoundaryVectorRatesResult(
     _PolarRateMixin, SpatialResultMixin, UnitSelectionMixin
 ):

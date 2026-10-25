@@ -8,11 +8,15 @@ never shifted, rescaled, or aligned.
 The main function is `as_spike_trains()`, which accepts:
 
 - 1D array (single neuron) → wrapped in list
-- 2D array (n_neurons, max_spikes) with NaN padding → split, NaNs removed
+- 2D array (n_neurons, max_spikes) with trailing NaN padding → split, padding
+  removed
 - list/tuple of scalars (single neuron) → converted to 1D array, wrapped in list
 - list/tuple of 1D arrays (canonical format) → each element converted to array
+- one unit's train (pynapple ``Ts``, pandas ``Series``) → wrapped in list
+- a spike group (pynapple ``TsGroup``, ``SpikeTrains``, dict of trains) →
+  one train per unit
 
-This coercion happens at the entry point of encoding, decoding and peri-event
+Every spike time must be finite. This coercion happens at the entry point of encoding, decoding and peri-event
 functions, ensuring consistent internal handling regardless of how the user
 provides spike data.
 """
@@ -25,7 +29,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._results import resolve_unit_ids
+from neurospatial._exceptions import _format_error
+from neurospatial._results import as_label_array, plain_value, resolve_unit_ids
 
 
 def as_spike_trains(
@@ -39,16 +44,20 @@ def as_spike_trains(
 
     Parameters
     ----------
-    spike_times : array or sequence of arrays
-        Spike times in one of these formats:
+    spike_times : array, sequence of arrays, single train or spike group
+        Spike times in seconds, in one of these formats:
 
         - 1D array (single neuron) → wrapped in list
-        - 2D array (n_neurons, max_spikes) → split along axis 0, NaN padding
-          removed from each row
+        - 2D array (n_neurons, max_spikes) → split along axis 0, trailing NaN
+          padding removed from each row
         - List/tuple of scalars (single neuron) → converted to 1D array,
           wrapped in list (e.g., ``[0.1, 0.5, 1.2]``)
         - List/tuple of 1D arrays (canonical format) → each element converted
           to float64 array
+        - One unit's train (pynapple ``Ts``/``Tsd``, pandas ``Series``) →
+          its timestamps (``.t``) or values, wrapped in list
+        - A spike group (pynapple ``TsGroup``, ``SpikeTrains``, or a dict
+          mapping unit id to train) → one train per unit, in the group's order
 
     Returns
     -------
@@ -59,8 +68,10 @@ def as_spike_trains(
     Raises
     ------
     ValueError
-        If input is a ragged object array, has more than 2 dimensions,
-        or contains elements that are not 1D arrays.
+        If a spike time is NaN or infinite (other than trailing padding of a
+        2D array), if the input is a ragged object array, a DataFrame, a
+        scalar or more than 2D, if a train is not 1D, or if a 2D array is a
+        ``(n, 1)`` column or has its units in columns.
 
     Examples
     --------
@@ -105,74 +116,211 @@ def as_spike_trains(
     >>> as_spike_trains([])
     []
     """
-    # Handle list/tuple explicitly (avoid mypy unreachable code warning)
-    # Check for list/tuple before ndarray to handle sequences differently
+    return _as_spike_trains_with_ids(spike_times)[0]
+
+
+_SPIKE_FORMS = (
+    "a 1-D array for one unit, a list of 1-D arrays (one per unit), a 2-D "
+    "(n_units, max_spikes) array padded with trailing NaN, or a spike group "
+    "(pynapple TsGroup, SpikeTrains, dict of unit id to train)"
+)
+
+
+def _one_d_train(train: Any, unit: int | None) -> NDArray[np.float64]:
+    """Return one train as a 1-D float64 array."""
+    arr = np.asarray(train, dtype=np.float64)
+    if arr.ndim != 1:
+        which = "spike_times" if unit is None else f"spike_times for unit {unit}"
+        raise ValueError(
+            _format_error(
+                f"{which} must be 1-D, got shape {arr.shape}.",
+                why=f"Why: spike input is {_SPIKE_FORMS}.",
+                fix="pass one 1-D array of spike times per unit.",
+            )
+        )
+    return arr
+
+
+def require_finite_spike_times(
+    trains: Sequence[NDArray[np.float64]], unit_ids: NDArray[Any] | None = None
+) -> None:
+    """Refuse NaN or infinite spike times, naming the unit by its label.
+
+    Parameters
+    ----------
+    trains : sequence of ndarray, each shape (n_spikes,)
+        Coerced spike trains, in seconds.
+    unit_ids : ndarray, shape (n_units,), or None
+        Labels used in the message; positions when None.
+    """
+    for i, train in enumerate(trains):
+        bad = np.flatnonzero(~np.isfinite(train))
+        if bad.size:
+            label = i if unit_ids is None else plain_value(unit_ids[i])
+            raise ValueError(
+                _format_error(
+                    f"spike_times for unit {label!r} has {bad.size} NaN or "
+                    f"infinite value(s), first at index {int(bad[0])}.",
+                    why="Why: a spike time is an observed event; a missing one "
+                    "cannot be counted in any time bin, so dropping it "
+                    "silently would bias counts low.",
+                    fix="remove missing spikes before the call, e.g. "
+                    "train[np.isfinite(train)].",
+                )
+            )
+
+
+def _array_spike_trains(spike_times: Any) -> list[NDArray[np.float64]]:
+    """Coerce array or sequence spike input (no unit labels)."""
+    # A list of scalars is one unit, and a ragged list of trains cannot become
+    # a regular array, so read sequences before calling np.asarray.
     if isinstance(spike_times, (list, tuple)):
-        # Empty sequence
         if len(spike_times) == 0:
             return []
+        if isinstance(spike_times[0], (int, float, np.floating, np.integer)):
+            return [_one_d_train(spike_times, None)]
+        return [_one_d_train(row, i) for i, row in enumerate(spike_times)]
 
-        # Check if this is a list of scalars (single neuron's spike times)
-        # This is a common user input pattern: [0.1, 0.5, 1.0]
-        first_elem = spike_times[0]
-        if isinstance(first_elem, (int, float, np.floating, np.integer)):
-            # Treat as single neuron: convert entire list to 1D array
-            arr = np.asarray(spike_times, dtype=np.float64)
-            if arr.ndim != 1:
-                raise ValueError(
-                    f"Expected 1D array from list of scalars, got shape {arr.shape}"
-                )
-            return [arr]
-
-        # Convert each element to 1D float64 array (list of arrays pattern)
-        result: list[NDArray[np.float64]] = []
-        for i, row in enumerate(spike_times):
-            arr = np.asarray(row, dtype=np.float64)
-            if arr.ndim != 1:
-                raise ValueError(
-                    f"Each spike train must be 1D, but element {i} has shape {arr.shape}"
-                )
-            result.append(arr)
-        return result
-
-    # Convert to array for shape inspection
     arr = np.asarray(spike_times)
-
-    # Reject object arrays (ragged input passed as array)
     if arr.dtype == object:
         raise ValueError(
-            "Received ragged array (dtype=object). Pass spike times as a list of "
-            "1D arrays instead, e.g., [np.array([0.1, 0.2]), np.array([0.3])]"
+            _format_error(
+                "Received ragged array (dtype=object).",
+                why=f"Why: spike input is {_SPIKE_FORMS}.",
+                fix="pass spike times as a list of 1D arrays, e.g. "
+                "[np.array([0.1, 0.2]), np.array([0.3])].",
+            )
         )
-
-    # 1D array: single neuron
     if arr.ndim == 1:
-        return [arr.astype(np.float64)]
+        return [_one_d_train(arr, None)]
+    if arr.ndim != 2:
+        raise ValueError(
+            _format_error(
+                f"spike_times must be 1-D or 2-D, got shape {arr.shape}.",
+                why=f"Why: spike input is {_SPIKE_FORMS}.",
+                fix="pass a 1-D array for one unit or a list of 1-D arrays.",
+            )
+        )
+    return _padded_spike_trains(arr.astype(np.float64))
 
-    # 2D array: split along axis 0, remove NaN padding
-    if arr.ndim == 2:
-        return [row[~np.isnan(row)].astype(np.float64) for row in arr]
 
-    raise ValueError(
-        f"spike_times must be 1D array, 2D array, or sequence of arrays, "
-        f"got shape {arr.shape}"
-    )
+def _padded_spike_trains(arr: NDArray[np.float64]) -> list[NDArray[np.float64]]:
+    """Split a 2-D ``(n_units, max_spikes)`` array, removing trailing NaN."""
+    n_rows, n_cols = arr.shape
+    if n_cols == 1 and n_rows > 1:
+        raise ValueError(
+            _format_error(
+                f"spike_times has shape {arr.shape}, a single column of "
+                f"{n_rows} values.",
+                why="Why: a 2-D array is read as one row per unit "
+                f"(n_units, max_spikes), so this would be {n_rows} units with "
+                "one spike each. MATLAB and HDF5 exports often store one "
+                "unit's spike times this way.",
+                fix="for one unit's spike times pass spike_times[:, 0]; for "
+                f"{n_rows} units with at most one spike each pass a list of "
+                "1-D arrays.",
+            )
+        )
+    rows_decrease = bool(np.any(np.diff(arr, axis=1) < 0))
+    if rows_decrease and n_rows > 1 and not np.any(np.diff(arr, axis=0) < 0):
+        raise ValueError(
+            _format_error(
+                f"spike_times of shape {arr.shape} looks transposed: its "
+                "columns increase but its rows do not.",
+                why="Why: a 2-D array is read as one row per unit "
+                "(n_units, max_spikes).",
+                fix="if each column is one unit, pass spike_times.T.",
+            )
+        )
+    present = ~np.isnan(arr)
+    interior = np.flatnonzero((~present[:, :-1] & present[:, 1:]).any(axis=1))
+    if interior.size:
+        raise ValueError(
+            _format_error(
+                f"spike_times row(s) {interior[:5].tolist()} have NaN before a "
+                "spike time.",
+                why="Why: NaN in a 2-D array only pads the end of shorter "
+                "rows; NaN before a spike is missing data, not padding.",
+                fix="remove missing spikes and pass a list of 1-D arrays, or "
+                "move the padding to the end of each row.",
+            )
+        )
+    return [row[keep] for row, keep in zip(arr, present, strict=True)]
+
+
+def _single_train(obj: Any) -> Any | None:
+    """Return the spike times of a one-unit train object, else None.
+
+    A pynapple ``Ts``/``Tsd`` exposes its timestamps as ``.t``; a pandas
+    ``Series`` holds them as values. Both have a non-callable ``.index``
+    (timestamps or row labels), so they must be recognized before a spike
+    group, whose ``.index`` holds unit ids.
+    """
+    if isinstance(obj, Mapping):
+        return None
+    t = getattr(obj, "t", None)
+    if t is not None and np.ndim(t) == 1:
+        return t
+    if getattr(obj, "ndim", None) == 1 and hasattr(obj, "to_numpy"):
+        return obj.to_numpy()
+    return None
 
 
 def _looks_like_spike_group(obj: Any) -> bool:
     """Return whether ``obj`` is a spike group carrying unit ids.
 
-    Duck-typed detection of a real pynapple ``TsGroup`` (or the
-    ``SpikeTrains`` container): an object that is **not** one of the canonical
-    array spike inputs and that exposes a non-callable ``.index`` (the unit
-    ids). A plain ``list`` / ``tuple`` has an ``.index`` *method* (callable), so
-    the callable check keeps the canonical list-of-arrays format on the
-    array path; a NumPy array has no ``.index`` at all.
+    A group is a Mapping from unit id to train (a pynapple ``TsGroup`` or a
+    dict), or another non-array object with a non-callable ``.index`` of unit
+    ids (``SpikeTrains``). A ``list``/``tuple`` has an ``.index`` *method*, and
+    a NumPy array has no ``.index``, so both stay on the array path. One
+    unit's train (``Ts``, ``Series``) is detected first by
+    :func:`_single_train`.
     """
     if isinstance(obj, (list, tuple, np.ndarray)):
         return False
+    if isinstance(obj, Mapping):
+        return True
     index = getattr(obj, "index", None)
     return index is not None and not callable(index)
+
+
+def _coerce_spike_input(
+    spike_times: Any,
+) -> tuple[list[NDArray[np.float64]], NDArray[Any] | None]:
+    """Split spike input into 1-D trains and any unit ids it carries."""
+    single = _single_train(spike_times)
+    if single is not None:
+        return [_one_d_train(single, None)], None
+    if getattr(spike_times, "ndim", None) == 2 and hasattr(spike_times, "columns"):
+        raise ValueError(
+            _format_error(
+                "spike_times is a DataFrame.",
+                why="Why: a table does not say whether its columns are units "
+                "or fields such as unit and time.",
+                fix="pass one array per unit, e.g. "
+                "{c: df[c].dropna().to_numpy() for c in df} for one column per "
+                "unit, or {u: g['time'].to_numpy() for u, g in "
+                "df.groupby('unit')} for a long table.",
+            )
+        )
+    if not _looks_like_spike_group(spike_times):
+        return _array_spike_trains(spike_times), None
+
+    index = getattr(spike_times, "index", None)
+    if isinstance(spike_times, Mapping):
+        keys = index if index is not None and not callable(index) else spike_times
+        unit_ids = as_label_array(list(keys))
+        trains = [
+            _one_d_train(getattr(spike_times[uid], "t", spike_times[uid]), i)
+            for i, uid in enumerate(unit_ids)
+        ]
+    else:
+        unit_ids = as_label_array(list(spike_times.index))
+        trains = [_one_d_train(t, i) for i, t in enumerate(spike_times)]
+    if getattr(spike_times, "_unit_ids_generated", False):
+        # Generated ``arange`` labels are not caller-supplied identity.
+        return trains, None
+    return trains, unit_ids
 
 
 def _as_spike_trains_with_ids(
@@ -180,46 +328,27 @@ def _as_spike_trains_with_ids(
 ) -> tuple[list[NDArray[np.float64]], NDArray[Any] | None]:
     """Coerce spike input to canonical trains AND surface unit ids when present.
 
-    A companion to :func:`as_spike_trains` that additionally extracts per-unit
-    identity labels from a spike group (a real pynapple
-    ``TsGroup``, or the ``SpikeTrains`` container). Its purpose is to keep
-    unit identity from being silently dropped when a group object flows into a
-    batch encoding function.
-
-    :func:`as_spike_trains` keeps its original ``list[NDArray]`` return contract
-    unchanged; this function is the *separate* id-surfacing normalizer.
-
-    Duck-typed, never ``isinstance`` on a third-party *concrete* type: a group is
-    detected by a non-callable ``.index`` (see :func:`_looks_like_spike_group`),
-    and trains are extracted by **indexing each unit id** (``group[uid]``), not
-    by iterating the object. This is essential because a real pynapple
-    ``TsGroup`` is a :class:`collections.abc.Mapping` (a ``UserDict``): iterating
-    it yields the **unit-id keys**, not the per-unit trains. Groups that are
-    Mappings are handled via ``group[uid]`` (whose value exposes ``.t``, the
-    pynapple ``Ts`` timestamp array); the iterate-yields-trains
-    ``SpikeTrains`` container (and simple test doubles) is handled by iterating.
-    The ``isinstance(group, Mapping)`` branch uses a stdlib ABC, which a
-    ``UserDict``/``TsGroup`` satisfies — this is *not* an ``isinstance`` against a
-    pynapple concrete type, so it respects the duck-typing rule and needs no
-    pynapple import.
+    Like :func:`as_spike_trains`, but also returns the unit ids a spike group
+    carries, so identity is not dropped. Mapping groups (pynapple ``TsGroup``,
+    dict) are read by ``group[uid]``, because iterating a Mapping yields its
+    keys; their ids are ``.index`` when present, else the keys. Other groups
+    (``SpikeTrains``) are iterated. Detection is duck-typed and never imports
+    pynapple.
 
     Parameters
     ----------
-    spike_times : array, sequence of arrays, or SpikeTrainsLike
-        Any input :func:`as_spike_trains` accepts (1-D array, 2-D NaN-padded
-        array, or sequence of 1-D arrays), or a group object exposing an
-        ``.index`` of unit ids and indexable by id (``group[uid]`` yielding a
-        per-unit timestamp source with a ``.t`` attribute).
+    spike_times : array, sequence of arrays, single train or spike group
+        Any input :func:`as_spike_trains` accepts.
 
     Returns
     -------
     trains : list[NDArray[np.float64]]
         Per-unit spike-time arrays, exactly as :func:`as_spike_trains` produces.
     unit_ids : NDArray or None
-        Unit ids extracted from the group's ``.index`` (one per train), or
-        ``None`` for a plain array / sequence input (which carries no ids) and
-        for a group whose labels were generated rather than supplied (an object
-        with ``_unit_ids_generated`` set, such as ``SpikeTrains(trains)``).
+        Unit ids carried by a spike group (one per train), or ``None`` for
+        input without ids and for a group whose labels were generated rather
+        than supplied (an object with ``_unit_ids_generated`` set, such as
+        ``SpikeTrains(trains)``).
 
     Examples
     --------
@@ -230,35 +359,13 @@ def _as_spike_trains_with_ids(
     >>> trains, ids = _as_spike_trains_with_ids([np.array([0.1]), np.array([0.2])])
     >>> len(trains), ids
     (2, None)
+    >>> trains, ids = _as_spike_trains_with_ids({"a": [0.1], "b": [0.2, 0.3]})
+    >>> ids.tolist()
+    ['a', 'b']
     """
-    if _looks_like_spike_group(spike_times):
-        # ``.index`` carries the unit ids. Extract trains by INDEXING each id,
-        # never by iterating the object: a real pynapple ``TsGroup`` is a
-        # ``UserDict`` (a ``Mapping``), so iterating it yields the unit-id KEYS,
-        # not the per-unit trains (iterating would silently produce 0-d id
-        # arrays and wrong rates/posterior).
-        from neurospatial._results import as_label_array
-
-        unit_ids = as_label_array(list(spike_times.index))
-        if isinstance(spike_times, Mapping):
-            # TsGroup (UserDict) & dict-like: index -> per-unit ``Ts`` with ``.t``
-            # (fall back to the value itself if it is already a plain array).
-            trains = [
-                np.asarray(
-                    getattr(spike_times[uid], "t", spike_times[uid]),
-                    dtype=np.float64,
-                )
-                for uid in unit_ids
-            ]
-        else:
-            # Iterate-yields-trains container (``SpikeTrains``, test
-            # doubles): iteration yields the per-unit 1-D timestamp arrays.
-            trains = [np.asarray(t, dtype=np.float64) for t in spike_times]
-        if getattr(spike_times, "_unit_ids_generated", False):
-            # Generated ``arange`` labels are not caller-supplied identity.
-            return trains, None
-        return trains, unit_ids
-    return as_spike_trains(spike_times), None
+    trains, unit_ids = _coerce_spike_input(spike_times)
+    require_finite_spike_times(trains, unit_ids)
+    return trains, unit_ids
 
 
 def as_labelled_spike_trains(
@@ -292,7 +399,8 @@ def as_labelled_spike_trains(
     ------
     ValueError
         If the labels do not match the number of trains, are duplicated, or
-        disagree with the labels a spike group carries.
+        disagree with the labels a spike group carries, or if a spike time is
+        NaN or infinite (the message names the unit by its label).
 
     Examples
     --------
@@ -306,8 +414,9 @@ def as_labelled_spike_trains(
     >>> ids.tolist(), supplied
     (['a', 'b'], True)
     """
-    trains, input_ids = _as_spike_trains_with_ids(spike_times)
+    trains, input_ids = _coerce_spike_input(spike_times)
     resolved = resolve_unit_ids(
         unit_ids, len(trains), context=context, input_ids=input_ids
     )
+    require_finite_spike_times(trains, resolved)
     return trains, resolved, unit_ids is not None or input_ids is not None

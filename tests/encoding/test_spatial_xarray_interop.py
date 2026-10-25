@@ -404,3 +404,17 @@ def test_singular_to_xarray_matches_batch_row(rate_family_results, family):
         xr.testing.assert_identical(
             result[i].to_xarray(), result.to_xarray().isel(unit_id=[i])
         )
+
+
+def test_population_dataset_refuses_env_and_bin_centers_together():
+    from neurospatial import Environment
+    from neurospatial._results import build_population_dataset
+
+    env = Environment.from_samples(np.arange(0.0, 20.0, 1.0)[:, None], bin_size=5.0)
+    with pytest.raises(ValueError, match="both env and bin_centers"):
+        build_population_dataset(
+            np.ones((1, env.n_bins)),
+            np.array([0]),
+            env=env,
+            bin_centers=np.zeros(env.n_bins),
+        )

@@ -48,7 +48,7 @@ _SAM2_PACKAGE = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class SegmentationPrompt(ReadOnlyArraysMixin):
     """Foreground/background clicks and an optional bounding box.
 
@@ -101,7 +101,7 @@ class SegmentationPrompt(ReadOnlyArraysMixin):
         self._own_arrays()
 
 
-@dataclass(frozen=True, init=False)
+@dataclass(frozen=True, init=False, eq=False)
 class SegmentationProposal(ReadOnlyArraysMixin):
     """A nonempty mask and optional confidence and JSON provenance.
 

@@ -1,36 +1,17 @@
-"""Unified result-object surface shared across analysis result classes.
+"""Shared result-object surface and unit-identity helpers.
 
-This module defines :class:`ResultMixin`, the base mixin that gives every
-user-facing result object a uniform, discoverable surface so that the verbs
-ending an analysis -- "summarize it", "plot it", "put it in a table" -- always
-have a home rather than dead-ending to manual NumPy.
+:class:`ResultMixin` gives every user-facing result a ``summary()`` of scalar
+headline metrics and a concise ``__repr__``/``_repr_html_`` built from it,
+instead of the default dataclass repr that dumps every array. Results add the
+other terminal verbs they support (``to_dataframe()``, ``summary_table()``,
+``to_xarray()``, ``plot()``); a verb a result does not define is an
+``AttributeError``, not a stub that raises.
 
-The contract is intentionally small:
-
-- ``to_dataframe()`` -- tidy/long-form :class:`pandas.DataFrame`. Tidy/long form
-  is required so that heterogeneous results (a place-field result, a directional
-  result, a decoding result) concatenate without error via a single
-  ``pandas.concat`` into a union schema (columns absent from a given result are
-  filled with ``NaN``); it does not give every result type a shared column
-  vocabulary.
-- ``summary()`` -- a flat ``dict`` of scalar headline metrics suitable for a
-  one-line per-result report or a population table row.
-- ``plot(ax=None, **kwargs)`` -- a sensible default visualization. ``plot()`` is
-  **optional per result type**: the base raises :class:`NotImplementedError`, so
-  a result with no meaningful single visualization is still a valid result.
-  Results that can plot override this and **return the axis** so they compose
-  into multi-panel figures.
-
-``pandas`` and ``matplotlib`` are imported lazily inside the methods that need
-them, keeping both optional at import time.
-
-Notes
------
-The base implementations of ``to_dataframe`` and ``summary`` raise
-:class:`NotImplementedError`. Each concrete result class (or an intermediate
-mixin such as :class:`neurospatial.encoding._base.SpatialResultMixin`) supplies
-the specialization appropriate to its data. This keeps the contract uniform
-without forcing a single tabular shape onto every result.
+The module also holds the pieces results share: read-only array ownership
+(:class:`ReadOnlyArraysMixin`, :func:`read_only_copy`), owned
+``analysis_settings``, unit-label resolution and selection
+(:func:`resolve_unit_ids`, :class:`UnitSelectionMixin`), unit-table alignment
+and the xarray export helpers.
 """
 
 from __future__ import annotations
@@ -39,16 +20,12 @@ import operator
 from collections import Counter
 from collections.abc import Sequence
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-
-if TYPE_CHECKING:
-    import pandas as pd
-    from matplotlib.axes import Axes
 
 
 def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
@@ -65,7 +42,7 @@ def as_label_array(labels: Any) -> NDArray[Any]:
     ``"1"`` (and ``[1, 2.5]`` would turn ``1`` into ``1.0``), changing the
     label a unit is reported, looked up and seeded under. Labels of more than
     one kind are kept in an object array; homogeneous labels keep their
-    natural dtype.
+    natural dtype. An ``ndarray`` is returned as given, without a copy.
     """
     if isinstance(labels, np.ndarray):
         return labels
@@ -77,45 +54,74 @@ def as_label_array(labels: Any) -> NDArray[Any]:
     return array
 
 
-def require_feature_id_sequence(feature_ids: Any, *, call: str, example: str) -> None:
-    """Refuse a lone string, bytes or scalar where one label per feature is needed.
+def require_label_sequence(labels: Any, *, name: str, call: str, example: str) -> None:
+    """Refuse a lone string, bytes or scalar where one label per item is needed.
 
     ``list("speed")`` would split a string into characters, and a number is
     not iterable at all.
 
     Parameters
     ----------
-    feature_ids : Any
-        The caller's ``feature_ids`` argument (not ``None``).
+    labels : Any
+        The caller's labels argument (not ``None``).
+    name : str
+        Argument name, ``"feature_ids"`` or ``"unit_ids"``.
     call : str
         Calling function's name, for the message.
     example : str
         One plausible label, shown in the fix (e.g. ``"speed"``).
     """
-    if isinstance(feature_ids, str | bytes) or np.ndim(feature_ids) == 0:
+    if isinstance(labels, str | bytes) or np.ndim(labels) == 0:
+        item = name.removesuffix("_ids")
         raise ValueError(
             _format_error(
-                f"{call} got feature_ids={feature_ids!r}; it must be a sequence "
-                "of labels, one per feature.",
-                why="A single string or number would be split into characters or "
-                "cannot label each feature.",
-                fix=f"Pass a list or array, e.g. feature_ids=[{example!r}] for one "
-                "feature.",
+                f"{call} got {name}={labels!r}; it must be a sequence of "
+                f"labels, one per {item}.",
+                why="Why: a single string or number would be split into "
+                f"characters or cannot label each {item}.",
+                fix=f"Pass a list or array, e.g. {name}=[{example!r}] for one {item}.",
             )
         )
 
 
+def _missing_label_positions(labels: Sequence[Any]) -> list[int]:
+    """Positions of ``None`` or NaN labels."""
+    return [
+        i
+        for i, label in enumerate(labels)
+        if label is None or (isinstance(label, float | np.floating) and np.isnan(label))
+    ]
+
+
+def _same_labels(given: NDArray[Any], carried: NDArray[Any]) -> bool:
+    """Whether two label arrays hold equal labels of the same kind, in order.
+
+    ``1`` and ``1.0`` compare equal but are different labels: shuffle streams
+    and lookups are keyed by the label itself.
+    """
+    if given.shape != carried.shape:
+        return False
+    return all(
+        a == b and np.asarray(a).dtype.kind == np.asarray(b).dtype.kind
+        for a, b in zip(given.tolist(), carried.tolist(), strict=True)
+    )
+
+
+def plain_value(value: Any) -> Any:
+    """Return a NumPy scalar as a plain Python value; other values unchanged."""
+    return value.item() if isinstance(value, np.generic) else value
+
+
 def label_at(unit_ids: Any, index: int) -> Any:
     """Return one label as a plain Python value, whatever the array's dtype."""
-    value = np.asarray(unit_ids)[index]
-    return value.item() if isinstance(value, np.generic) else value
+    return plain_value(np.asarray(unit_ids)[index])
 
 
 _ResultT = TypeVar("_ResultT")
 
 
 def _copy_analysis_settings(cls: type[_ResultT]) -> type[_ResultT]:
-    """Give a result dataclass independently owned settings on every read.
+    """Give a result dataclass independently owned settings on every read and write.
 
     Apply after ``@dataclass`` so its constructor and field metadata stay intact.
 
@@ -143,6 +149,8 @@ class ReadOnlyArraysMixin:
     Editing an array the result was built from then cannot change it, and
     editing an array read from it raises. Copy with ``np.array(...)`` to
     modify values. JAX arrays are immutable already and are kept as given.
+    Only direct array attributes are copied; a subclass owns arrays it keeps
+    inside containers.
     """
 
     def _own_arrays(self) -> None:
@@ -153,9 +161,6 @@ class ReadOnlyArraysMixin:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore from pickle or deepcopy, keeping the arrays read-only."""
-        if "analysis_settings" in state:
-            state = dict(state)
-            state["_analysis_settings"] = deepcopy(state.pop("analysis_settings"))
         self.__dict__.update(state)
         for value in state.values():
             if isinstance(value, np.ndarray):
@@ -224,7 +229,7 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         except ValueError:
             shown = ", ".join(repr(label) for label in labels[:10])
             more = f", ... ({len(labels)} units)" if len(labels) > 10 else ""
-            missing = unit_id.item() if isinstance(unit_id, np.generic) else unit_id
+            missing = plain_value(unit_id)
             raise KeyError(
                 f"unit_id {missing!r} is not in this {type(self).__name__} "
                 f"(unit_ids: {shown}{more}). Pass one of these labels to "
@@ -238,7 +243,7 @@ class UnitSelectionMixin(ReadOnlyArraysMixin):
         try:
             position = operator.index(index)
         except TypeError:
-            label = index.item() if isinstance(index, np.generic) else index
+            label = plain_value(index)
             raise TypeError(
                 _format_error(
                     f"{name}[{label!r}]: [] selects one unit by integer position.",
@@ -270,8 +275,8 @@ def resolve_unit_ids(
     Returns a read-only ``ndarray`` of unit identity labels: ``unit_ids`` when
     given, else the labels the spike input carries (``input_ids``), else
     ``np.arange(n_units)``. Validates that there is exactly one label per unit
-    and that no label repeats. The array is a copy, so editing the caller's
-    labels afterwards cannot relabel or duplicate a unit.
+    and that no label repeats or is missing. The array is a copy, so editing
+    the caller's labels afterwards cannot relabel or duplicate a unit.
 
     Parameters
     ----------
@@ -294,21 +299,29 @@ def resolve_unit_ids(
     Raises
     ------
     ValueError
-        If ``unit_ids`` and ``input_ids`` are both given and differ (in length,
-        order or type), if the resolved labels are not 1-D, if their length
-        does not equal ``n_units``, or if any label repeats.
+        If ``unit_ids`` is a single string or number, if ``unit_ids`` and
+        ``input_ids`` are both given and differ in length, order, value or
+        kind (``1`` and ``1.0`` are different labels), if the resolved labels
+        are not 1-D, if their length does not equal ``n_units``, or if any
+        label repeats or is ``None``/NaN.
     """
+    call = context or "This call"
+    if unit_ids is not None:
+        require_label_sequence(unit_ids, name="unit_ids", call=call, example="u1")
     if unit_ids is not None and input_ids is not None:
         given, carried = as_label_array(unit_ids), as_label_array(input_ids)
-        if given.shape != carried.shape or not np.array_equal(given, carried):
+        if not _same_labels(given, carried):
             raise ValueError(
-                f"{context or 'This call'} got unit_ids={given.tolist()}, but the "
-                f"spike input is already labelled {carried.tolist()}.\n"
-                "Why: a labelled input names its own units; a different unit_ids "
-                "would attach another unit's label to each spike train.\n"
-                "Fix: drop unit_ids= to keep the input's labels, or relabel the "
-                "input itself before the call (pynapple: build the TsGroup with "
-                "the labels you want)."
+                _format_error(
+                    f"{call} got unit_ids={given.tolist()}, but the spike input "
+                    f"is already labelled {carried.tolist()}.",
+                    why="Why: a labelled input names its own units; a different "
+                    "unit_ids would attach another unit's label to each spike "
+                    "train.",
+                    fix="drop unit_ids= to keep the input's labels, or relabel "
+                    "the input itself before the call (pynapple: build the "
+                    "TsGroup with the labels you want).",
+                )
             )
     from_input = unit_ids is None and input_ids is not None
     unit_ids = unit_ids if unit_ids is not None else input_ids
@@ -319,78 +332,56 @@ def resolve_unit_ids(
     where = f" in {context}" if context else ""
     if resolved.ndim != 1:
         raise ValueError(
-            f"unit_ids must be 1-D{where}: got shape {resolved.shape}.\n"
-            "  WHY: unit_ids labels one identity per unit (row).\n"
-            "  Fix: pass a 1-D sequence with one entry per unit, or omit it "
-            "to default to np.arange(n_units)."
+            _format_error(
+                f"unit_ids must be 1-D{where}: got shape {resolved.shape}.",
+                why="Why: unit_ids labels one identity per unit (row).",
+                fix="pass a 1-D sequence with one entry per unit, or omit it "
+                "to default to np.arange(n_units).",
+            )
         )
     if resolved.shape[0] != n_units:
         raise ValueError(
             _format_error(
-                f"unit_ids length mismatch{where}: got {resolved.shape[0]} label(s) but there are {n_units} unit(s).",
-                fix=f"pass one label per unit (len(unit_ids) == {n_units}), or omit unit_ids to default to np.arange(n_units)",
-                why="Why: unit_ids must identify every row without shifting unit labels.",
+                f"unit_ids length mismatch{where}: got {resolved.shape[0]} "
+                f"label(s) but there are {n_units} unit(s).",
+                why="Why: unit_ids must identify every row without shifting "
+                "unit labels.",
+                fix=f"pass one label per unit (len(unit_ids) == {n_units}), or "
+                "omit unit_ids to default to np.arange(n_units)",
+            )
+        )
+    labels = resolved.tolist()
+    missing = _missing_label_positions(labels)
+    if missing:
+        raise ValueError(
+            _format_error(
+                f"unit_ids{where} has a missing label (None or NaN) at "
+                f"position(s) {missing[:5]}.",
+                why="Why: results select units by label, and a missing label "
+                "never matches, so that unit could not be selected.",
+                fix="give every unit a label, or omit unit_ids= to number the "
+                "units 0..n-1.",
             )
         )
     # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
     # object array.
-    duplicated = [
-        label for label, count in Counter(resolved.tolist()).items() if count > 1
-    ]
+    duplicated = [label for label, count in Counter(labels).items() if count > 1]
     if duplicated:
         fix = (
-            "Fix: pass each unit once in the spike input (pynapple: check group.index)."
+            "pass each unit once in the spike input (pynapple: check group.index)."
             if from_input
-            else "Fix: pass one distinct label per unit, or omit unit_ids= to "
+            else "pass one distinct label per unit, or omit unit_ids= to "
             "number the units 0..n-1."
         )
         raise ValueError(
-            f"unit_ids must be unique{where}: label(s) {duplicated} are repeated.\n"
-            "Why: results index units by label, so a repeated label would name two "
-            f"spike trains.\n{fix}"
+            _format_error(
+                f"unit_ids must be unique{where}: label(s) {duplicated} are repeated.",
+                why="Why: results index units by label, so a repeated label "
+                "would name two spike trains.",
+                fix=fix,
+            )
         )
     return resolved
-
-
-def validate_unit_table(
-    unit_table: Any,
-    n_units: int,
-    *,
-    context: str = "",
-) -> None:
-    """Validate an optional per-unit metadata table against the unit count.
-
-    Enforces the documented invariant that ``unit_table`` carries exactly one
-    row per unit, aligned to ``unit_ids``. A ``None`` table is always valid
-    (the field is optional). A non-``None`` table whose row count differs from
-    ``n_units`` raises :class:`ValueError`, naming both lengths.
-
-    Parameters
-    ----------
-    unit_table : pandas.DataFrame or None
-        Optional per-unit metadata table. When ``None``, no validation occurs.
-    n_units : int
-        Number of units the table must describe (one row per unit).
-    context : str, optional
-        Caller / class name included in the error message on a mismatch.
-
-    Raises
-    ------
-    ValueError
-        If ``unit_table`` is not ``None`` and ``len(unit_table) != n_units``.
-    """
-    if unit_table is None:
-        return
-    n_rows = len(unit_table)
-    if n_rows != n_units:
-        where = f" in {context}" if context else ""
-        raise ValueError(
-            f"unit_table length mismatch{where}: got {n_rows} row(s) but "
-            f"there are {n_units} unit(s).\n"
-            "  WHY: unit_table must carry exactly one row per unit, aligned "
-            "to unit_ids.\n"
-            "  Fix: pass a unit_table with one row per unit, or omit it."
-        )
 
 
 def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> Any:
@@ -398,15 +389,52 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
 
     A ``unit_id`` column or a non-default/named index declares unit identity.
     Missing, extra or duplicate labels raise instead of selecting another unit.
+
+    Parameters
+    ----------
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata, one row per unit.
+    unit_ids : array-like, shape (n_units,)
+        The units' resolved labels.
+    context : str, optional
+        Caller / class name included in error messages.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        A copy with rows in unit order, or ``None``.
+
+    Raises
+    ------
+    ValueError
+        If ``unit_table`` is not a DataFrame, has a row count other than
+        ``len(unit_ids)``, or labels rows inconsistently, with repeated or
+        missing labels, or with labels other than ``unit_ids``.
     """
     import pandas as pd
 
-    ids = np.asarray(unit_ids)
-    validate_unit_table(unit_table, len(ids), context=context)
     if unit_table is None:
         return None
+    ids = np.asarray(unit_ids)
+    where = f" in {context}" if context else ""
     if not isinstance(unit_table, pd.DataFrame):
-        raise ValueError(f"{context}: unit_table must be a pandas DataFrame.")
+        raise ValueError(
+            _format_error(
+                f"unit_table must be a pandas DataFrame{where}, got "
+                f"{type(unit_table).__name__}.",
+                fix="pass pd.DataFrame(...) with one row per unit, or omit it.",
+            )
+        )
+    if len(unit_table) != len(ids):
+        raise ValueError(
+            _format_error(
+                f"unit_table length mismatch{where}: got {len(unit_table)} "
+                f"row(s) but there are {len(ids)} unit(s).",
+                why="Why: unit_table must carry exactly one row per unit, "
+                "aligned to unit_ids.",
+                fix="pass a unit_table with one row per unit, or omit it.",
+            )
+        )
     positional = (
         isinstance(unit_table.index, pd.RangeIndex)
         and unit_table.index.equals(pd.RangeIndex(len(ids)))
@@ -416,8 +444,10 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
         labels = pd.Index(unit_table["unit_id"], name="unit_id")
         if not positional and not labels.equals(unit_table.index):
             raise ValueError(
-                f"{context}: unit_table index and unit_id column disagree. "
-                "Fix: use one consistent unit identity for each row."
+                _format_error(
+                    f"unit_table index and unit_id column disagree{where}.",
+                    fix="use one consistent unit identity for each row.",
+                )
             )
     elif positional:
         return unit_table.copy()
@@ -425,15 +455,19 @@ def align_unit_table(unit_table: Any, unit_ids: Any, *, context: str = "") -> An
         labels = unit_table.index
     if not labels.is_unique or labels.hasnans:
         raise ValueError(
-            f"{context}: unit_table labels must be unique and non-missing. "
-            "Fix: provide one metadata row per unit_id."
+            _format_error(
+                f"unit_table labels must be unique and non-missing{where}.",
+                fix="provide one metadata row per unit_id.",
+            )
         )
     order = labels.get_indexer(ids)
     if np.any(order < 0):
         raise ValueError(
-            f"{context}: unit_table labels do not match unit_ids={ids.tolist()}. "
-            "Fix: provide metadata for exactly these units; a plain unnamed "
-            "RangeIndex is accepted only for rows already in spike order."
+            _format_error(
+                f"unit_table labels do not match unit_ids={ids.tolist()}{where}.",
+                fix="provide metadata for exactly these units; a plain unnamed "
+                "RangeIndex is accepted only for rows already in spike order.",
+            )
         )
     aligned = unit_table.iloc[order].copy()
     if positional:
@@ -451,7 +485,7 @@ def software_version() -> str:
     Returns
     -------
     str
-        The installed version (e.g. ``"0.6.0"``), or ``"unknown"``.
+        The installed version (e.g. ``"1.2.3"``), or ``"unknown"``.
     """
     from importlib.metadata import PackageNotFoundError, version
 
@@ -481,21 +515,16 @@ def units_attr(env: Any) -> dict[str, str]:
         ``{"units": value}`` when units are set, else ``{}``.
     """
     units = getattr(env, "units", None)
-    if units is None:
-        return {}
-    units_str = str(units)
-    if units_str == "":
-        return {}
-    return {"units": units_str}
+    text = "" if units is None else str(units)
+    return {"units": text} if text else {}
 
 
 def env_fingerprint(env: Any) -> str:
     """Return a stable, human-readable identifier for an environment.
 
-    There is no dedicated environment hash in the codebase, so this returns a
-    compact ``repr``-style identifier (name, dimensionality, bin count, layout)
-    suitable for stamping into xarray ``attrs`` for provenance. It is *not* a
-    content hash and must not be relied on for equality checks.
+    Returns a compact ``repr``-style identifier (name, dimensionality, bin
+    count, layout) suitable for stamping into xarray ``attrs`` for provenance.
+    It is *not* a content hash and must not be relied on for equality checks.
 
     Parameters
     ----------
@@ -578,24 +607,27 @@ def _bin_center_coords(
     # optional-coord situation. Raise loudly rather than silently dropping it.
     if bin_centers.ndim != 2:
         raise ValueError(
-            "Environment bin_centers must be 2-D (n_bins, n_dims) to build "
-            f"xarray bin-center coords, but env produced an array with "
-            f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).\n"
-            "  WHY: each bin needs an (x, y, ...) center for the 'bin' "
-            "coordinate.\n"
-            "  Fix: pass an Environment, whose bin_centers have shape "
-            "(n_bins, n_dims)."
+            _format_error(
+                "Environment bin_centers must be 2-D (n_bins, n_dims) to build "
+                "xarray bin-center coords, but env produced an array with "
+                f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).",
+                why="each bin needs an (x, y, ...) center for the 'bin' coordinate.",
+                fix="pass an Environment, whose bin_centers have shape "
+                "(n_bins, n_dims).",
+            )
         )
     if bin_centers.shape[0] != n_bins:
         raise ValueError(
-            "bin_centers length does not match the result's bin count: env "
-            f"bin_centers has {bin_centers.shape[0]} row(s) but the result "
-            f"has {n_bins} bin(s).\n"
-            "  WHY: the 'bin' coordinate must have one center per bin; a "
-            "mismatch would silently produce a structurally-incomplete or "
-            "misaligned Dataset.\n"
-            "  Fix: pass the same environment used to compute the result, or "
-            "recompute the result against this environment."
+            _format_error(
+                "bin_centers length does not match the result's bin count: env "
+                f"bin_centers has {bin_centers.shape[0]} row(s) but the result "
+                f"has {n_bins} bin(s).",
+                why="the 'bin' coordinate must have one center per bin; a "
+                "mismatch would silently produce a structurally-incomplete or "
+                "misaligned Dataset.",
+                fix="pass the same environment used to compute the result, or "
+                "recompute the result against this environment.",
+            )
         )
 
     if getattr(env, "coordinate_kind", "cartesian") == "polar":
@@ -604,15 +636,12 @@ def _bin_center_coords(
             "bin_center_angle": ("bin", bin_centers[:, 1]),
         }
 
+    # x, y, z; axes past the third are bin_center_dim_3, ...
     names = ["bin_center_x", "bin_center_y", "bin_center_z"]
-    n_dims = bin_centers.shape[1]
-    coords: dict[str, tuple[str, NDArray[np.float64]]] = {}
-    for i in range(min(n_dims, 3)):
-        coords[names[i]] = ("bin", bin_centers[:, i])
-    # For >3-D envs, expose remaining axes as bin_center_dim_3, ...
-    for i in range(3, n_dims):
-        coords[f"bin_center_dim_{i}"] = ("bin", bin_centers[:, i])
-    return coords
+    return {
+        (names[i] if i < 3 else f"bin_center_dim_{i}"): ("bin", bin_centers[:, i])
+        for i in range(bin_centers.shape[1])
+    }
 
 
 def build_population_dataset(
@@ -639,8 +668,9 @@ def build_population_dataset(
         Per-unit identity labels. **Must be unique** (label-based
         ``.sel(unit_id=...)`` requires uniqueness).
     env : Any, optional
-        Environment supplying ``bin_center_*`` coords. Mutually used with
-        ``bin_centers``; pass at most one. ``None`` omits Cartesian coords.
+        Environment supplying ``bin_center_*`` coords (Cartesian or polar).
+        Pass either ``env`` or ``bin_centers``, not both. ``None`` adds no
+        environment coords.
     bin_centers : ndarray, optional
         Explicit angular bin centers (radians) for results without an ``env``
         (directional). When given, a ``bin_center_angle`` coord is attached.
@@ -659,7 +689,8 @@ def build_population_dataset(
     Raises
     ------
     ValueError
-        If ``unit_ids`` contains duplicate labels, if ``occupancy`` is
+        If both ``env`` and ``bin_centers`` are given, if ``unit_ids``
+        contains duplicate labels, if ``occupancy`` is
         provided but its length does not equal ``n_bins``, or if
         ``bin_centers`` is provided but is not 1-D of length ``n_bins``.
         (Absent ``occupancy``/``bin_centers`` are simply omitted; only a
@@ -676,34 +707,39 @@ def build_population_dataset(
             "'pip install neurospatial[xarray]' or 'pip install xarray'."
         ) from exc
 
-    # Copies: the Dataset is the caller's to edit, and results are read-only.
+    if env is not None and bin_centers is not None:
+        raise ValueError(
+            _format_error(
+                "build_population_dataset got both env and bin_centers.",
+                why="both would set the bin-center coordinates.",
+                fix="pass env for spatial results or bin_centers for "
+                "directional results.",
+            )
+        )
+    # Copy the rates: the Dataset is the caller's to edit, and results are
+    # read-only.
     rates = np.array(firing_rates, dtype=np.float64)
     n_bins = rates.shape[1]
     ids = np.asarray(unit_ids)
 
     # Duplicate unit_ids break label-based .sel(unit_id=...); reject loudly.
-    # Use dict counting instead of np.unique so mixed int/string labels never
-    # hit NumPy's object-array sort path.
-    seen: dict[Any, int] = {}
-    dups: list[Any] = []
-    for label in ids.tolist():
-        count = seen.get(label, 0)
-        if count == 1:
-            dups.append(label)
-        seen[label] = count + 1
+    # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
+    # object array.
+    dups = [label for label, count in Counter(ids.tolist()).items() if count > 1]
     if dups:
         raise ValueError(
-            "unit_ids must be unique to build an xarray.Dataset, but these "
-            f"label(s) are duplicated: {dups}.\n"
-            "  WHY: label-based selection .sel(unit_id=...) requires a unique "
-            "index coordinate.\n"
-            "  Fix: deduplicate unit_ids (e.g. when concatenating populations) "
-            "before calling to_xarray()."
+            _format_error(
+                "unit_ids must be unique to build an xarray.Dataset, but these "
+                f"label(s) are duplicated: {dups}.",
+                why="Why: label-based selection .sel(unit_id=...) requires a "
+                "unique index coordinate.",
+                fix="deduplicate unit_ids (e.g. when concatenating populations) "
+                "before calling to_xarray().",
+            )
         )
 
     coords: dict[str, Any] = {"unit_id": ids, "bin": np.arange(n_bins)}
-    if env is not None:
-        coords.update(_bin_center_coords(env, n_bins))
+    coords.update(_bin_center_coords(env, n_bins))
     if bin_centers is not None:
         # bin_centers IS present (passed explicitly, e.g. directional angular
         # centers); a shape disagreement is a real inconsistency, not an
@@ -711,12 +747,14 @@ def build_population_dataset(
         bc = np.array(bin_centers, dtype=np.float64)
         if bc.ndim != 1 or bc.shape[0] != n_bins:
             raise ValueError(
-                "bin_centers length does not match the firing-rate bin "
-                f"count: bin_centers has shape {bc.shape} but there are "
-                f"{n_bins} bin(s) (firing_rates.shape[1]).\n"
-                "  WHY: the 'bin' coordinate must have one center per bin; a "
-                "mismatch would silently produce a misaligned Dataset.\n"
-                "  Fix: pass a 1-D bin_centers array of length n_bins."
+                _format_error(
+                    "bin_centers length does not match the firing-rate bin "
+                    f"count: bin_centers has shape {bc.shape} but there are "
+                    f"{n_bins} bin(s) (firing_rates.shape[1]).",
+                    why="the 'bin' coordinate must have one center per bin; a "
+                    "mismatch would silently produce a misaligned Dataset.",
+                    fix="pass a 1-D bin_centers array of length n_bins.",
+                )
             )
         coords["bin_center_angle"] = ("bin", bc)
 
@@ -729,14 +767,16 @@ def build_population_dataset(
         occ = np.array(occupancy, dtype=np.float64)
         if occ.ndim != 1 or occ.shape[0] != n_bins:
             raise ValueError(
-                "occupancy length does not match the firing-rate bin count: "
-                f"occupancy has shape {occ.shape} but there are {n_bins} "
-                "bin(s) (firing_rates.shape[1]).\n"
-                "  WHY: the 'occupancy' data var is indexed by bin; a length "
-                "mismatch would silently produce a structurally-incomplete "
-                "Dataset.\n"
-                "  Fix: pass a 1-D occupancy array of length n_bins, or omit "
-                "it entirely if unavailable."
+                _format_error(
+                    "occupancy length does not match the firing-rate bin count: "
+                    f"occupancy has shape {occ.shape} but there are {n_bins} "
+                    "bin(s) (firing_rates.shape[1]).",
+                    why="the 'occupancy' data var is indexed by bin; a length "
+                    "mismatch would silently produce a structurally-incomplete "
+                    "Dataset.",
+                    fix="pass a 1-D occupancy array of length n_bins, or omit "
+                    "it entirely if unavailable.",
+                )
             )
         data_vars["occupancy"] = (("bin",), occ)
 
@@ -750,35 +790,26 @@ def build_population_dataset(
 def _format_summary_value(value: Any) -> str:
     """Format a scalar ``summary()`` value compactly for repr/HTML.
 
-    Floats (including NumPy floats, which subclass ``float``) are rounded to 4
-    significant figures so a headline metric reads as ``peak_firing_rate=18.48``
-    rather than ``18.480991614424113``; everything else is passed through
-    ``str``. ``.4g`` renders ``nan``/``inf`` correctly.
+    Python and NumPy floats are rounded to 4 significant figures so a
+    headline metric reads as ``peak_firing_rate=18.48`` rather than
+    ``18.480991614424113``; everything else is passed through ``str``.
+    ``.4g`` renders ``nan``/``inf`` correctly.
     """
-    if isinstance(value, float):
+    if isinstance(value, float | np.floating):
         return f"{value:.4g}"
     return str(value)
 
 
 class ResultMixin:
-    """Uniform result-object surface: ``to_dataframe``, ``summary``, ``plot``.
+    """Uniform result-object surface: ``summary`` and a concise repr.
 
-    Mix this into any analysis result class to advertise (and partially
-    fulfill) the three analysis-ending verbs. The base implementations of
-    ``to_dataframe`` and ``summary`` raise :class:`NotImplementedError`,
-    signalling that a concrete result must specialize them. ``plot`` likewise
-    raises by default, because a meaningful default visualization is optional:
-    a result with no single natural plot is still a valid result.
-
-    Notes
-    -----
-    - ``to_dataframe()`` should return **tidy/long form** so heterogeneous
-      results concatenate without error in one :func:`pandas.concat` into a
-      union schema (missing columns filled with ``NaN``).
-    - ``plot(ax=None, **kwargs)`` should accept an optional ``ax`` and
-      **return it**, for composition into multi-panel figures.
-    - ``pandas`` and ``matplotlib`` must be imported lazily inside the methods
-      that use them, never at module scope.
+    Mix this into any analysis result class. ``summary`` must be specialized;
+    the repr shows the class name and its headline scalars. Results define the
+    other terminal verbs they support, following the public API contract:
+    ``to_dataframe()`` returns a **tidy/long-form** frame, and
+    ``plot(ax=None, **kwargs)`` accepts an optional ``ax`` and **returns it**.
+    ``pandas`` and ``matplotlib`` must be imported lazily inside the methods
+    that use them, never at module scope.
 
     Examples
     --------
@@ -790,7 +821,18 @@ class ResultMixin:
     ... except NotImplementedError:
     ...     print("not implemented")
     not implemented
+    >>> Empty()
+    Empty(...)
     """
+
+    def _summary_for_repr(self) -> dict[str, Any] | str:
+        """``summary()``, or a short note when it cannot be shown."""
+        try:
+            return self.summary()
+        except NotImplementedError:
+            return {}
+        except Exception as exc:  # a repr must never raise
+            return f"<summary() failed: {type(exc).__name__}: {exc}>"
 
     def __repr__(self) -> str:
         """Concise one-line repr built from :meth:`summary` scalar metrics.
@@ -800,14 +842,13 @@ class ResultMixin:
         a user simply types the result at a REPL. This shows the class name and
         the headline scalars instead (e.g.
         ``SpatialRateResult(n_bins=121, peak_firing_rate=18.48, ...)``). A
-        ``__repr__`` must never raise, so any failure in ``summary()`` (including
-        ``NotImplementedError``) degrades to ``ClassName(...)``.
+        ``__repr__`` must never raise: a result without ``summary()`` shows
+        ``ClassName(...)``, and a failing ``summary()`` names its error.
         """
         name = type(self).__name__
-        try:
-            summary = self.summary()
-        except Exception:
-            return f"{name}(...)"
+        summary = self._summary_for_repr()
+        if isinstance(summary, str):
+            return f"{name}({summary})"
         if not summary:
             return f"{name}(...)"
         parts = ", ".join(f"{k}={_format_summary_value(v)}" for k, v in summary.items())
@@ -819,16 +860,12 @@ class ResultMixin:
         Jupyter renders this instead of ``__repr__`` when a result is a cell's
         last expression, giving a scannable metric table rather than a wall of
         array values. Falls back to the plain repr when ``summary()`` is
-        unavailable.
+        unavailable or fails.
         """
         import html
 
-        name = type(self).__name__
-        try:
-            summary = self.summary()
-        except Exception:
-            summary = {}
-        if not summary:
+        summary = self._summary_for_repr()
+        if isinstance(summary, str) or not summary:
             return f"<pre>{html.escape(repr(self))}</pre>"
         rows = "".join(
             f"<tr><th style='text-align:right'>{html.escape(str(k))}</th>"
@@ -836,35 +873,8 @@ class ResultMixin:
             for k, v in summary.items()
         )
         return (
-            f"<table><caption style='text-align:left'><b>{html.escape(name)}</b>"
-            f"</caption>{rows}</table>"
-        )
-
-    def to_dataframe(self) -> pd.DataFrame:
-        """Return a tidy/long-form :class:`pandas.DataFrame` of this result.
-
-        Tidy/long form means one observation per row with explicit identifier
-        columns, so that DataFrames from different result types concatenate
-        without error in a single :func:`pandas.concat`. Rate results have one
-        row per ``(unit_id, bin)`` and always a ``unit_id`` column; their
-        coordinate columns depend on the domain (spatial maps use
-        ``bin_center_x``/``bin_center_y``, directional maps
-        ``bin_center_angle``), so the concatenation yields a union schema in
-        which columns absent from a given result are filled with ``NaN``.
-
-        Returns
-        -------
-        pandas.DataFrame
-            Long-form table of the result's contents.
-
-        Raises
-        ------
-        NotImplementedError
-            If the concrete result class does not specialize this method.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement to_dataframe(). "
-            f"to_dataframe() must be specialized per result type."
+            f"<table><caption style='text-align:left'><b>"
+            f"{html.escape(type(self).__name__)}</b></caption>{rows}</table>"
         )
 
     def summary(self) -> dict[str, Any]:
@@ -887,40 +897,4 @@ class ResultMixin:
         raise NotImplementedError(
             f"{type(self).__name__} does not implement summary(). "
             f"summary() must be specialized per result type."
-        )
-
-    def plot(self, *args: Any, **kwargs: Any) -> Axes:
-        """Plot this result, returning the axis for composition.
-
-        ``plot()`` is **optional** per result type: the base implementation
-        raises :class:`NotImplementedError`, so a result with no meaningful
-        single visualization is still valid. Results that can plot override
-        this with a concrete signature, accept an optional ``ax`` keyword, and
-        **return it**. The base is deliberately permissive (``*args, **kwargs``)
-        so both single-result (``plot(ax=None, ...)``) and batch-result
-        (``plot(idx, ax=None, ...)``) specializations are valid overrides.
-
-        Parameters
-        ----------
-        *args
-            Implementation-specific positional arguments. Single-result
-            overrides take an optional leading ``ax``; batch overrides take a
-            leading selector (e.g. a neuron index) followed by ``ax``.
-        **kwargs
-            Implementation-specific plotting options (typically including
-            ``ax``).
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes the result was drawn on.
-
-        Raises
-        ------
-        NotImplementedError
-            If the concrete result class provides no default visualization.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement plot(). "
-            f"A default visualization is optional for this result type."
         )

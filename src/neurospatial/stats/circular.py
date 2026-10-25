@@ -1231,7 +1231,7 @@ def wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class CircularBasisResult(ReadOnlyArraysMixin):
     """
     Result from circular_basis() function.

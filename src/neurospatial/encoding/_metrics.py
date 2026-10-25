@@ -44,7 +44,7 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.encoding._base import _is_jax_array
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, eq=False)
 class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
     """Container for per-neuron batch metric scores plus a per-neuron failure mask.
 
