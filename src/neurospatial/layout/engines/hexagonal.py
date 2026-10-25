@@ -211,18 +211,6 @@ class HexagonalLayout(_NeighborPairsMixin):
             dimension_ranges=self.dimension_ranges,
         )
 
-    @property
-    def is_linearized_track(self) -> bool:
-        """Hexagonal layouts are 2-dimensional.
-
-        Returns
-        -------
-        bool
-            Always False, indicating a 2D layout.
-
-        """
-        return False
-
     def bin_shapes(self) -> HexagonShapes:
         """Return the active hexagons in bin order with owned center coordinates."""
         if self.hex_radius_ is None or self.bin_centers is None:

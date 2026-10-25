@@ -81,6 +81,17 @@ class _NeighborPairsMixin:
             elif value is not None:
                 setattr(self, name, _read_only(value))
 
+    @property
+    def is_linearized_track(self) -> bool:
+        """Whether the bins lie along a linearized track.
+
+        Returns
+        -------
+        bool
+            False; :class:`GraphLayout` overrides it to True.
+        """
+        return False
+
     def binning(self) -> Binning:  # pragma: no cover - every engine overrides it
         raise NotImplementedError
 
@@ -306,22 +317,6 @@ class _GridMixin(_NeighborPairsMixin):
             grid_spec=self._grid_spec,
             dimension_ranges=self.dimension_ranges,
         )
-
-    @property
-    def is_linearized_track(self) -> bool:
-        """Indicate if the grid layout is 1-dimensional.
-
-        Standard grid layouts (RegularGrid, etc.) are generally N-D (N>=1).
-        This mixin's default assumes not strictly 1D in the sense of a
-        linearized track (which GraphLayout would handle).
-
-        Returns
-        -------
-        bool
-            False, as this mixin is for general N-D grids.
-
-        """
-        return False
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """Calculate area/volume for each active bin, assuming a uniform grid.

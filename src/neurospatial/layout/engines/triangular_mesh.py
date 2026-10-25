@@ -202,18 +202,6 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             dimension_ranges=self.dimension_ranges,
         )
 
-    @property
-    def is_linearized_track(self) -> bool:
-        """Always False, as this is a 2D mesh layout.
-
-        Returns
-        -------
-        bool
-            Always False, indicating a 2D layout.
-
-        """
-        return False
-
     def bin_shapes(self) -> TriangleShapes:
         """Return mesh points and the active triangles in bin order."""
         if (
