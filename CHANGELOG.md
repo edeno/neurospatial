@@ -198,6 +198,9 @@
 - `get_n_bins` counts a reversed `(max, min)` range like the grid builder
   does; it returned a negative count. It ignores positions rows with a NaN or
   infinite coordinate, and refuses a range that is not finite.
+- The large-grid memory warning points at your own call, not at a line inside
+  neurospatial, and no longer suggests `infer_active_bins=True`, which cannot
+  shrink the full grid the estimate counts.
 
 ### Spatial geometry review
 

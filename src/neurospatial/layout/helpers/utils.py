@@ -15,6 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import get_centers as get_centers
 from neurospatial.layout.validation import validate_cell_size
 
@@ -451,7 +452,7 @@ def check_grid_size_safety(
     >>> check_grid_size_safety((500, 500))  # doctest: +SKIP
     UserWarning: Creating large grid with shape (500, 500) (250,000 bins). Estimated memory usage: 266.1 MB.
     Why: allocating this grid may consume substantial memory.
-    Fix: increase bin_size; this grid has 250,000 bins. For example, use bin_size=2.0 in the same units as positions, or infer_active_bins=True
+    Fix: increase bin_size; this grid has 250,000 bins. For example, use bin_size=2.0 in the same units as positions, and check that positions has shape (n_samples, n_dims)
 
     See Also
     --------
@@ -465,8 +466,8 @@ def check_grid_size_safety(
             _format_error(
                 f"Creating large grid with shape {grid_shape} ({n_bins:,} bins). Estimated memory usage: {estimated_mb:.1f} MB.",
                 why="Why: allocating this grid may consume substantial memory.",
-                fix=f"increase bin_size; this grid has {n_bins:,} bins. For example, use bin_size=2.0 in the same units as positions, or infer_active_bins=True",
+                fix=f"increase bin_size; this grid has {n_bins:,} bins. For example, use bin_size=2.0 in the same units as positions, and check that positions has shape (n_samples, n_dims)",
             ),
             UserWarning,
-            stacklevel=4,  # The caller of a layout engine's build().
+            stacklevel=_external_stacklevel(),
         )
