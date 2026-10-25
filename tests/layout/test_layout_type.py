@@ -35,6 +35,15 @@ _BUILDS = {
 }
 
 
+@pytest.mark.parametrize("member", list(LayoutType))
+def test_layout_type_prints_as_its_value(member):
+    """str() and f-strings give the label on every supported Python version."""
+    assert str(member) == member.value
+    assert f"{member}" == member.value
+    assert f"{member:>16}" == f"{member.value:>16}"
+    assert format(member) == member.value
+
+
 def test_every_engine_label_is_a_layout_type_value():
     labels = [engine.layout_type for engine in _ENGINES]
     assert all(type(label) is str for label in labels)

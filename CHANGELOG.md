@@ -155,6 +155,10 @@
   type checkers flag `layout.layout_type = ...` on an instance. Assigning it
   relabeled that one engine, and the environment built from it reported the
   wrong layout and rebuild hints; a custom label belongs on a subclass.
+- `str(LayoutType.REGULAR_GRID)` and f-strings give the label
+  (`'RegularGrid'`) on every supported Python version. On Python 3.11 and
+  later they gave `'LayoutType.REGULAR_GRID'`, so messages and file names
+  built from a `LayoutType` differed from those built on 3.10.
 
 ### Spatial geometry review
 

@@ -48,6 +48,10 @@ class LayoutType(str, Enum):
     ... )
     >>> layout.layout_type == LayoutType.REGULAR_GRID
     True
+    >>> str(LayoutType.REGULAR_GRID)
+    'RegularGrid'
+    >>> f"{LayoutType.HEXAGONAL} bins"
+    'Hexagonal bins'
 
     Notes
     -----
@@ -69,6 +73,14 @@ class LayoutType(str, Enum):
     SHAPELY_POLYGON = "ShapelyPolygon"
     POLAR = "Polar"
     COMBINED = "Combined"
+
+    # A str-mixin Enum prints as "LayoutType.REGULAR_GRID" on Python 3.11+
+    # and as the value on 3.10; StrEnum, which prints the value, is 3.11+.
+    def __str__(self) -> str:
+        return self.value
+
+    def __format__(self, format_spec: str) -> str:
+        return format(self.value, format_spec)
 
 
 def _key(name: str) -> str:
