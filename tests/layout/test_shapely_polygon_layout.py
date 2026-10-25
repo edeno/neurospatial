@@ -1,6 +1,7 @@
 """Behavioral tests for ShapelyPolygonLayout driven directly through the engine."""
 
 import numpy as np
+import pytest
 import shapely
 from shapely.geometry import Polygon
 
@@ -75,3 +76,15 @@ def test_irregular_polygon_active_bins_inside(l_shaped_polygon):
     # Explicitly: no active center sits in the missing upper-right block.
     upper_right = (layout.bin_centers[:, 0] > 4.0) & (layout.bin_centers[:, 1] > 4.0)
     assert not bool(np.any(upper_right))
+
+
+@pytest.mark.parametrize(
+    "polygon",
+    [Polygon(), Polygon([(0, 0), (1, 1), (2, 2)])],
+    ids=["empty", "collinear"],
+)
+def test_a_polygon_with_no_area_is_refused_by_name(polygon):
+    """An empty or flat polygon is refused as such, not as a NaN range."""
+    layout = ShapelyPolygonLayout()
+    with pytest.raises(ValueError, match=r"polygon has no area[\s\S]*Fix:"):
+        layout.build(polygon=polygon, bin_size=1.0)

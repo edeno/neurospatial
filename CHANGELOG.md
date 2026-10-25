@@ -206,6 +206,8 @@
   missing sample, as `Environment.from_samples` does. Before, a regular grid
   refused it with a message about a non-finite range and a hexagonal layout
   raised `OverflowError`.
+- `ShapelyPolygonLayout` refuses an empty or flat polygon by name; it failed
+  with a message about a `(nan, nan)` dimension range.
 
 ### Spatial geometry review
 
