@@ -139,6 +139,11 @@
   `GraphLayout.plot` documented; an option a track plot does not take is now
   a `TypeError`. Every layout engine's `plot()` draws the same picture as
   `Environment.plot`, through one shared method.
+- `create_layout` is typed to return the built-in engine it builds, so type
+  checkers accept the documented members (`bin_centers`, `layout_type`,
+  `connectivity`, `bin_sizes()`, `plot()`) on its result. Before, its return
+  type was the bare `LayoutEngine` protocol, which has only `build()` and
+  `binning()`.
 
 ### Spatial geometry review
 

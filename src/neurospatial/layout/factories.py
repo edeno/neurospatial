@@ -1,9 +1,8 @@
 import inspect
-from typing import Any
+from typing import Any, get_args
 
 from neurospatial._exceptions import _format_error
 from neurospatial.layout._labels import LayoutType, _key, find_layout_type
-from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.engines.hexagonal import HexagonalLayout
 from neurospatial.layout.engines.image_mask import ImageMaskLayout
@@ -16,22 +15,27 @@ from neurospatial.layout.engines.triangular_mesh import (
     TriangularMeshLayout,
 )
 
-# The engines ``create_layout`` builds, keyed by their ``layout_type`` label.
-_ENGINES = (
-    RegularGridLayout,
-    MaskedGridLayout,
-    ImageMaskLayout,
-    HexagonalLayout,
-    GraphLayout,
-    TriangularMeshLayout,
-    ShapelyPolygonLayout,
+# The engines ``create_layout`` builds. Every one has the members the
+# ``LayoutEngine`` docstring lists for the built-in engines, such as
+# ``bin_centers``, ``connectivity``, ``bin_sizes()`` and ``plot()``, so the
+# union is the return type and the registry below is derived from it.
+_BuiltinLayout = (
+    RegularGridLayout
+    | MaskedGridLayout
+    | ImageMaskLayout
+    | HexagonalLayout
+    | GraphLayout
+    | TriangularMeshLayout
+    | ShapelyPolygonLayout
 )
-# LayoutEngine is a Protocol, and type[Protocol] does not accept these
-# concrete classes, so the values are typed as Any.
-_LAYOUT_MAP: dict[str, Any] = {engine.layout_type: engine for engine in _ENGINES}
+_ENGINES: tuple[type[_BuiltinLayout], ...] = get_args(_BuiltinLayout)
+# The engines keyed by their ``layout_type`` label.
+_LAYOUT_MAP: dict[str, type[_BuiltinLayout]] = {
+    engine.layout_type: engine for engine in _ENGINES
+}
 
 
-def _engine_class(kind: object, caller: str) -> Any:
+def _engine_class(kind: object, caller: str) -> type[_BuiltinLayout]:
     """Return the engine class that ``kind`` names, or explain the choices."""
     member = find_layout_type(kind)
     engine = None if member is None else _LAYOUT_MAP.get(member.value)
@@ -135,7 +139,7 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
     return params_info
 
 
-def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
+def create_layout(kind: LayoutType | str, **kwargs: Any) -> _BuiltinLayout:
     """Factory for creating and building a spatial-layout engine.
 
     Parameters
@@ -150,8 +154,10 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
 
     Returns
     -------
-    LayoutEngine
-        A fully constructed layout engine.
+    RegularGridLayout or another built-in layout engine
+        The built engine that ``kind`` names. Every built-in engine has
+        ``bin_centers``, ``layout_type``, ``connectivity``, ``bin_sizes()``,
+        ``plot()`` and ``binning()``.
 
     Raises
     ------
@@ -177,7 +183,7 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
 
     """
     engine_cls = _engine_class(kind, "create_layout()")
-    engine: LayoutEngine = engine_cls()
+    engine = engine_cls()
 
     # 3) Validate `kwargs` against `build(...)` signature
     sig = inspect.signature(engine.build)
@@ -190,5 +196,4 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
 
     # 4) Call `build(...)` with validated params
     engine.build(**{k: kwargs[k] for k in allowed if k in kwargs})
-    # At this point, engine is a LayoutEngine (Protocol check happens at runtime)
     return engine
