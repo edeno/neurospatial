@@ -401,3 +401,21 @@ def test_points_to_regular_grid_bin_ind_3d_and_oob():
     assert idxs[0] >= 0
     assert idxs[1] == -1
     assert idxs[2] == -1
+
+
+@pytest.mark.parametrize("offset", [0.0, 1.0e3, 1.0e6])
+def test_grid_is_the_same_wherever_the_range_lies(offset):
+    """Translating a range translates its grid: same cells, same count.
+
+    A zero-span test with np.isclose read a 1-unit range at 1e6 (relative
+    tolerance about 10) as a single point and padded it into 11 cells.
+    """
+    edges, _, shape = _create_regular_grid(
+        positions=None, bin_size=0.1, dimension_range=[(offset, offset + 1.0)]
+    )
+    assert shape == (10,)
+    np.testing.assert_allclose(edges[0] - offset, np.linspace(0.0, 1.0, 11), atol=1e-9)
+
+    samples = offset + np.linspace(0.0, 1.0, 50)[:, None]
+    _, _, inferred = _create_regular_grid(positions=samples, bin_size=0.1)
+    assert inferred == (10,)

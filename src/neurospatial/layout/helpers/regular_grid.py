@@ -274,7 +274,6 @@ def _compute_dimension_ranges(
     samples: NDArray[np.float64] | None,
     dimension_range: Sequence[tuple[float, float]] | None,
     n_dims: int,
-    bin_sizes: NDArray[np.float64],
 ) -> list[tuple[float, float]]:
     """Compute dimension ranges from explicit specification or data samples.
 
@@ -286,13 +285,12 @@ def _compute_dimension_ranges(
         Explicit dimension ranges.
     n_dims : int
         Number of dimensions.
-    bin_sizes : NDArray[np.float64], shape (n_dims,)
-        Bin sizes for each dimension.
 
     Returns
     -------
     ranges : list of (float, float) tuples
-        Computed dimension ranges for each dimension.
+        Computed dimension ranges for each dimension; a zero-span range is
+        kept as is (widening to whole cells gives it one cell).
 
     Raises
     ------
@@ -308,9 +306,7 @@ def _compute_dimension_ranges(
                 f"`dimension_range` length ({len(dimension_range)}) must match n_dims ({n_dims}).",
             )
         ranges = []
-        for i, ((lo, hi), size) in enumerate(
-            zip(dimension_range, bin_sizes, strict=False)
-        ):
+        for i, (lo, hi) in enumerate(dimension_range):
             try:
                 # Sort after converting: min and max drop a NaN silently.
                 lo_f, hi_f = sorted((float(lo), float(hi)))
@@ -330,10 +326,7 @@ def _compute_dimension_ranges(
                         "positions, e.g. dimension_ranges=[(0, 100), (0, 100)]",
                     )
                 )
-            # If user gave a zero-span range (lo == hi), expand by 0.5 * bin_size
-            if np.isclose(lo_f, hi_f):
-                lo_f -= 0.5 * size
-                hi_f += 0.5 * size
+            # A zero-span range becomes one cell when widened to whole cells.
             ranges.append((lo_f, hi_f))
     else:
         # Infer from `samples`
@@ -343,10 +336,6 @@ def _compute_dimension_ranges(
         for dim in range(n_dims):
             dim_vals = samples[:, dim]
             lo_f, hi_f = float(np.nanmin(dim_vals)), float(np.nanmax(dim_vals))
-            if np.isclose(lo_f, hi_f):
-                # If all data is constant, expand by half a bin
-                lo_f -= 0.5 * bin_sizes[dim]
-                hi_f += 0.5 * bin_sizes[dim]
             ranges.append((lo_f, hi_f))
 
     return ranges
@@ -536,7 +525,7 @@ def _create_regular_grid(
     )
 
     # Compute dimension ranges from explicit specification or data
-    ranges = _compute_dimension_ranges(samples, dimension_range, n_dims, bin_sizes)
+    ranges = _compute_dimension_ranges(samples, dimension_range, n_dims)
     # Cells are exactly bin_size wide; a range that is not a whole number of
     # cells is widened evenly past both ends, so every cell center stays
     # inside the range.

@@ -167,23 +167,18 @@ def _infer_dimension_ranges_from_samples(
         d_min, d_max = min_vals[dim_idx], max_vals[dim_idx]
         buffer = buffer_values[dim_idx]
 
-        # Ensure range has some extent if data is point-like or buffer is zero
-        if np.isclose(d_min, d_max):
-            if np.isclose(buffer, 0.0):  # If buffer is also zero, data is a point
-                warnings.warn(
-                    f"Dimension {dim_idx} has zero extent and no buffer specified. "
-                    "Extending it by 0.5 on each side of the point.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                d_min -= 0.5
-                d_max += 0.5
-            else:  # Buffer will create the extent
-                d_min -= buffer
-                d_max += buffer
-        else:  # Data already has extent
-            d_min -= buffer
-            d_max += buffer
+        # Exact comparisons: a tolerance relative to the coordinates would
+        # read a short extent far from the origin as a point.
+        if d_min == d_max and buffer == 0.0:
+            warnings.warn(
+                f"Dimension {dim_idx} has zero extent and no buffer specified. "
+                "Extending it by 0.5 on each side of the point.",
+                UserWarning,
+                stacklevel=2,
+            )
+            buffer = 0.5
+        d_min -= buffer
+        d_max += buffer
 
         inferred_ranges.append((d_min, d_max))
 

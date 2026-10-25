@@ -105,7 +105,10 @@
   with or without an arena: arena bounds that are a whole number of cells
   still put cell edges on the arena's edge. Rebinning by a whole factor of the
   bin size now nests the cells. A NaN or infinite `dimension_ranges` entry is
-  refused instead of silently building one cell.
+  refused instead of silently building one cell. A grid no longer depends on
+  where its range lies: a 1-unit range at 1e6 with `bin_size=0.1` was read
+  as a single point (a relative `np.isclose` tolerance of about 10) and got
+  11 cells instead of 10.
 - Every layout checks its cell size (`bin_size`, `hexagon_width`,
   `point_spacing`, `pixel_size`) the same way, with an `[E1002]` what/why/fix
   message. A NumPy scalar such as `np.float32(2.0)` now works; before,
