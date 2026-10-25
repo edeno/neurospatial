@@ -35,9 +35,6 @@ from neurospatial.layout.validation import validate_cell_size
 if TYPE_CHECKING:
     import matplotlib.axes
 
-_MESH_SKEW_ANGLE_DEG = 30.0
-_MESH_SKEW_FRACTION = 0.05
-
 
 class TriangularMeshLayout(_NeighborPairsMixin):
     """A LayoutEngine that builds a triangular mesh over interior points

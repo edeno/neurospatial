@@ -1,22 +1,18 @@
-"""General utility functions for the neurospatial package.
+"""Helpers shared by the layout engines.
 
-This module provides helper functions used across various components of the
-environment definition and processing, such as calculating bin properties,
-inferring geometric features from data samples, plotting graphs, and
-computing distances.
+Bin counts and ranges for regular grids, the grid of active-bin data, the
+graph plot used by hexagonal layouts, and the grid memory check.
 """
 
 from __future__ import annotations
 
-import contextlib
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial import KDTree
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry import get_centers as get_centers
@@ -91,164 +87,6 @@ def get_n_bins(
     n_bins = n_bins_float.astype(np.int64)
     n_bins[n_bins == 0] = 1  # Handle zero-extent case
     return np.asarray(n_bins, dtype=np.int64)
-
-
-def _infer_active_elements_from_samples(
-    candidate_element_centers: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    bin_count_threshold: int = 0,
-) -> tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.int_]]:
-    """Infer active elements from candidates based on position sample occupancy.
-
-    This function maps `positions` to the nearest `candidate_element_centers`
-    using a KD-tree. Candidates are marked "active" if their occupancy count
-    (number of mapped position samples) exceeds `bin_count_threshold`.
-
-    Parameters
-    ----------
-    candidate_element_centers : NDArray[np.float64], shape (n_candidates, n_dims)
-        N-dimensional coordinates of the centers of all potential elements
-        (e.g., bins, cells).
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        N-dimensional position samples (e.g., recorded positions) used to
-        determine occupancy. NaNs within this array are filtered out.
-    bin_count_threshold : int, optional, default=0
-        Minimum number of position samples that must map to a candidate element
-        for it to be considered active. If 0, any occupancy makes it active.
-
-    Returns
-    -------
-    inferred_1d_mask_on_candidates : NDArray[np.bool_], shape (n_candidates,)
-        A 1D boolean mask. `True` indicates the corresponding candidate
-        element is active.
-    final_active_centers : NDArray[np.float64], shape (n_active_elements, n_dims)
-        The subset of `candidate_element_centers` that were deemed active.
-    source_indices_of_active_centers : NDArray[np.int_], shape (n_active_elements,)
-        Original indices (from `candidate_element_centers`) of the elements
-        that were deemed active.
-
-    Raises
-    ------
-    ValueError
-        If `candidate_element_centers` or `positions` have incompatible
-        dimensions, or if `bin_count_threshold` is negative.
-
-    """
-    if bin_count_threshold < 0:
-        raise ValueError(
-            f"bin_count_threshold must be non-negative (got {bin_count_threshold})."
-        )
-
-    n_candidates, n_dims_candidates = candidate_element_centers.shape
-    _, n_dims_samples = positions.shape
-
-    if n_candidates == 0:
-        warnings.warn(
-            "No candidate element centers provided for interior inference. "
-            "Returning no active elements.",
-            UserWarning,
-            stacklevel=2,
-        )
-        return (
-            np.array([], dtype=bool),
-            np.empty((0, max(0, n_dims_candidates))),
-            np.array([], dtype=int),
-        )
-
-    if n_dims_candidates != n_dims_samples:
-        raise ValueError(
-            f"Dimensionality mismatch: candidate_element_centers have {n_dims_candidates} dims, "
-            f"while positions have {n_dims_samples} dims.",
-        )
-
-    # Filter out NaN positions
-    valid_samples_mask = ~np.any(np.isnan(positions), axis=1)
-    valid_positions = positions[valid_samples_mask]
-
-    if valid_positions.shape[0] == 0:
-        warnings.warn(
-            "No valid (non-NaN) positions provided for interior inference. "
-            "No elements will be marked as active based on occupancy.",
-            UserWarning,
-            stacklevel=2,
-        )
-        # All candidates will be considered non-active by occupancy
-        inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
-        final_active_centers = np.empty((0, n_dims_candidates))
-        source_indices_of_active_centers = np.array([], dtype=int)
-        return (
-            inferred_1d_mask_on_candidates,
-            final_active_centers,
-            source_indices_of_active_centers,
-        )
-
-    # Build KD-tree on candidate centers to map positions
-    try:
-        candidate_kdtree = KDTree(candidate_element_centers)
-    except (
-        Exception
-    ) as e:  # Catch potential QhullError for degenerate candidate_element_centers
-        warnings.warn(
-            f"KDTree construction failed on candidate centers: {e}. "
-            "Cannot infer active elements from samples.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        # Treat as if no elements become active by occupancy
-        inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
-        final_active_centers = np.empty((0, n_dims_candidates))
-        source_indices_of_active_centers = np.array([], dtype=int)
-        return (
-            inferred_1d_mask_on_candidates,
-            final_active_centers,
-            source_indices_of_active_centers,
-        )
-
-    # Query the KD-tree: for each valid position, find the index of the nearest candidate_element_center
-    try:
-        _, assigned_candidate_indices = candidate_kdtree.query(valid_positions)
-    except Exception as e:  # Catch errors if query points have wrong dimension etc.
-        warnings.warn(
-            f"KDTree query failed during active element inference: {e}. "
-            "No elements will be marked as active based on occupancy.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
-        final_active_centers = np.empty((0, n_dims_candidates))
-        source_indices_of_active_centers = np.array([], dtype=int)
-        return (
-            inferred_1d_mask_on_candidates,
-            final_active_centers,
-            source_indices_of_active_centers,
-        )
-
-    # Calculate occupancy counts for each candidate element
-    # assigned_candidate_indices contains indices from 0 to n_candidates-1
-    occupancy_counts = np.bincount(assigned_candidate_indices, minlength=n_candidates)
-
-    # Determine which candidates are active based on the threshold
-    inferred_1d_mask_on_candidates = occupancy_counts > bin_count_threshold
-
-    if not np.any(inferred_1d_mask_on_candidates):
-        warnings.warn(
-            "Inferring active elements resulted in no candidates meeting the "
-            "bin_count_threshold. All elements will be considered non-active "
-            "by this inference step.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    final_active_centers = candidate_element_centers[inferred_1d_mask_on_candidates]
-    source_indices_of_active_centers = np.flatnonzero(
-        inferred_1d_mask_on_candidates,
-    ).astype(int)
-
-    return (
-        inferred_1d_mask_on_candidates,
-        final_active_centers,
-        source_indices_of_active_centers,
-    )
 
 
 def _infer_dimension_ranges_from_samples(
@@ -347,41 +185,33 @@ def _generic_graph_plot(
     ax: matplotlib.axes.Axes | None = None,
     **kwargs,
 ) -> matplotlib.axes.Axes:
-    """Provide a generic plotting function for a NetworkX graph with 2D/3D positions.
-
-    Nodes are expected to have a 'pos' attribute containing their coordinates.
-    The plot can be 2D or 3D based on the dimensionality of these positions.
+    """Draw a graph whose nodes have 2-D ``pos`` coordinates.
 
     Parameters
     ----------
     graph : nx.Graph
-        The NetworkX graph to plot. Nodes must have a 'pos' attribute.
+        The graph to plot. Nodes must have a 2-D ``pos`` attribute.
     name : str
         A name for the graph, used in the plot title.
-    ax : Optional[matplotlib.axes.Axes], optional
-        Matplotlib Axes object to plot on. If None (default), a new figure
-        and axes are created. For 3D plots, if `ax` is provided, it must be
-        a 3D-enabled Axes.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None (default), a new figure and axes are created.
     **kwargs : Any
-        Additional keyword arguments for customization:
-        - `figsize` (Tuple[float, float]): Size of the figure if created.
-        - `node_kwargs` (Dict[str, Any]): Keyword arguments for `nx.draw_networkx_nodes`.
-        - `edge_kwargs` (Dict[str, Any]): Keyword arguments for `nx.draw_networkx_edges`.
+        - ``figsize`` (tuple of float): Size of the figure if created.
+        - ``node_kwargs`` (dict): Keyword arguments for ``nx.draw_networkx_nodes``.
+        - ``edge_kwargs`` (dict): Keyword arguments for ``nx.draw_networkx_edges``.
 
     Returns
     -------
     matplotlib.axes.Axes
-        The Matplotlib Axes object on which the graph was plotted.
+        The Axes on which the graph was plotted.
 
     Raises
     ------
     ValueError
-        If `graph` is empty or None, or if a 3D plot is attempted on a 2D `ax`.
+        If `graph` is empty or None, or its nodes have no ``pos``.
 
     """
     import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
-    from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
     if graph is None or graph.number_of_nodes() == 0:
         raise ValueError("Graph is empty or None. Cannot plot an empty graph.")
@@ -390,302 +220,22 @@ def _generic_graph_plot(
     if not node_positions:  # No 'pos' attributes
         raise ValueError("Nodes in graph are missing 'pos' attribute for plotting.")
 
-    is_3d = len(next(iter(node_positions.values()))) == 3
-
     if ax is None:
-        fig = plt.figure(figsize=kwargs.get("figsize", (7, 7)))
-        ax = fig.add_subplot(111, projection="3d" if is_3d else None)
-    elif is_3d and not isinstance(ax, Axes3D):  # More specific check for 3D axes
-        # Check if it has 'plot_surface' or similar 3D methods
-        if not hasattr(ax, "plot_surface") and not hasattr(ax, "plot3D"):
-            raise ValueError("Provided 'ax' is not a 3D Axes, but data is 3D.")
-
-    default_node_kwargs = {
-        "node_size": 20,
+        _, ax = plt.subplots(figsize=kwargs.get("figsize", (7, 7)))
+    node_kwargs = {"node_size": 20, "ax": ax, **kwargs.get("node_kwargs", {})}
+    nx.draw_networkx_nodes(graph, pos=node_positions, **node_kwargs)
+    edge_kwargs = {
+        "alpha": 0.5,
+        "edge_color": "gray",
+        **kwargs.get("edge_kwargs", {}),
         "ax": ax,
-    }  # Pass ax to networkx draw functions
-    node_kwargs_final = {**default_node_kwargs, **kwargs.get("node_kwargs", {})}
-    nx.draw_networkx_nodes(graph, pos=node_positions, **node_kwargs_final)
-
-    default_edge_kwargs = {"alpha": 0.5}  # edge_color handled below
-    edge_kwargs_final = {**default_edge_kwargs, **kwargs.get("edge_kwargs", {})}
-
-    if is_3d:
-        edge_xyz = np.array(
-            [(node_positions[u], node_positions[v]) for u, v in graph.edges()],
-        )
-        if edge_xyz.size > 0:
-            segments_3d = []
-            for start_node_coords, end_node_coords in edge_xyz:
-                segments_3d.append([start_node_coords, end_node_coords])
-
-            # Extract common MPL LineCollection kwargs, provide defaults
-            edge_color = edge_kwargs_final.pop("edge_color", "gray")
-            linewidths = edge_kwargs_final.pop(
-                "linewidths",
-                edge_kwargs_final.pop("linewidth", 1),
-            )
-            alpha = edge_kwargs_final.pop("alpha", 0.5)
-
-            line_collection = Line3DCollection(
-                segments_3d,
-                colors=edge_color,
-                linewidths=linewidths,
-                alpha=alpha,
-                **edge_kwargs_final,  # Pass remaining specific kwargs
-            )
-            if isinstance(ax, Axes3D):  # Check if ax is indeed a 3D axis
-                ax.add_collection3d(line_collection)
-            else:
-                warnings.warn(
-                    "Attempting to add 3D edges to a non-3D Axes object. Edges may not display correctly.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-
-    else:  # 2D case
-        edge_kwargs_final_2d = {**edge_kwargs_final, "ax": ax}
-        if "edge_color" not in edge_kwargs_final_2d:  # Set default if not provided
-            edge_kwargs_final_2d["edge_color"] = "gray"
-        nx.draw_networkx_edges(graph, pos=node_positions, **edge_kwargs_final_2d)
-        ax.set_aspect("equal", adjustable="box")
-
+    }
+    nx.draw_networkx_edges(graph, pos=node_positions, **edge_kwargs)
+    ax.set_aspect("equal", adjustable="box")
     ax.set_title(f"{name} Graph")
     ax.set_xlabel("Dim 0")
     ax.set_ylabel("Dim 1")
-    if is_3d and isinstance(ax, Axes3D):
-        ax.set_zlabel("Dim 2")
-        # Attempt to set aspect ratio for 3D plots if possible
-        # This is often tricky and depends on Matplotlib version and backend
-        with contextlib.suppress(AttributeError):
-            ax.set_box_aspect([1, 1, 1])  # For newer matplotlib
-        with contextlib.suppress(AttributeError):
-            ax.pbaspect = [1, 1, 1]  # Older attribute
-
-    return cast("matplotlib.axes.Axes", ax)
-
-
-def flat_to_multi_index(
-    flat_indices: int | np.ndarray,
-    grid_shape: tuple[int, ...],
-    graph: nx.Graph,
-) -> tuple[int | float, ...] | tuple[np.ndarray, ...]:
-    """Convert active-bin flat index(es) (0..N-1) to N-D grid index(es).
-
-    Parameters
-    ----------
-    flat_indices : Union[int, np.ndarray]
-        A single active-bin flat index or an array of flat indices. These
-        refer to row indices in the active-bin list (i.e., node IDs).
-    grid_shape : Tuple[int, ...]
-        The shape of the full N-D grid (e.g., (n_rows, n_cols) for 2D).
-    graph : nx.Graph
-        The connectivity graph where each node ID is an active-bin ID,
-        and node attributes include 'original_grid_nd_index' or
-        'source_grid_flat_index'.
-
-    Returns
-    -------
-    Union[Tuple[Union[int, float], ...], Tuple[np.ndarray, ...]]
-        - If `flat_indices` is a single int, return a tuple of N ints or floats: the N-D index.
-          If conversion fails for that index, return a tuple of N `np.nan` (float) values.
-        - If `flat_indices` is an array of ints, return a tuple of N NumPy arrays,
-          each containing that coordinate for each input index. If conversion fails
-          for some index, its coordinate elements are `np.nan`.
-
-    Raises
-    ------
-    ValueError
-        If none of the active_flat_idx values are valid node IDs, or if `grid_shape` is invalid.
-
-    """
-    # Ensure we have a NumPy array for iteration
-    is_scalar = np.isscalar(flat_indices)
-    flat_arr = np.atleast_1d(np.asarray(flat_indices, dtype=int))
-    node_data_lookup: dict[int, dict[str, Any]] = dict(graph.nodes(data=True))
-
-    n_dims = len(grid_shape)
-    # Prepare a list to collect tuples of length n_dims
-    output_nd_list = []
-
-    for active_idx in flat_arr:
-        # Check if this node ID exists in node_data_lookup
-        if active_idx not in node_data_lookup:
-            warnings.warn(
-                f"Active flat index {active_idx} not found in node_data_lookup. "
-                "Returning NaNs for this index.",
-                UserWarning,
-                stacklevel=2,
-            )
-            output_nd_list.append(tuple([np.nan] * n_dims))
-            continue
-
-        data = node_data_lookup[active_idx]
-
-        # If original N-D tuple is directly available, use it
-        original_index_key: str = "original_grid_nd_index"
-        fallback_key: str = "source_grid_flat_index"
-        if original_index_key in data and data[original_index_key] is not None:
-            orig_nd = data[original_index_key]
-            if not (isinstance(orig_nd, (tuple, list)) and len(orig_nd) == n_dims):
-                warnings.warn(
-                    f"Node {active_idx} has invalid '{original_index_key}' attribute. "
-                    "Returning NaNs.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                output_nd_list.append(tuple([np.nan] * n_dims))
-            else:
-                output_nd_list.append(tuple(orig_nd))
-        # Otherwise, attempt to use the fallback full-grid flat index
-        elif fallback_key in data and data[fallback_key] is not None:
-            full_flat = data[fallback_key]
-            try:
-                nd_idx = np.unravel_index(int(full_flat), grid_shape)
-                output_nd_list.append(tuple(int(x) for x in nd_idx))
-            except Exception:
-                warnings.warn(
-                    f"Cannot unravel fallback index {full_flat} for node {active_idx}. "
-                    "Returning NaNs.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                output_nd_list.append(tuple([np.nan] * n_dims))
-        else:
-            warnings.warn(
-                f"Node {active_idx} missing both '{original_index_key}' and '{fallback_key}'. "
-                "Returning NaNs.",
-                UserWarning,
-                stacklevel=2,
-            )
-            output_nd_list.append(tuple([np.nan] * n_dims))
-
-    # Convert list of tuples into tuple of arrays
-    # e.g., output_nd_list = [(r0,c0), (r1,c1), ...] for 2D
-    # then final = (array([r0,r1,...]), array([c0,c1,...]))
-    final = tuple(
-        np.array([item[d] for item in output_nd_list], dtype=float)
-        for d in range(n_dims)
-    )
-
-    if is_scalar:
-        # Return a tuple of scalars (first element of each array)
-        # Returns tuple[int | float, ...] - int when valid, float (np.nan) when invalid
-        result_tuple = tuple(
-            int(val[0]) if not np.isnan(val[0]) else np.nan for val in final
-        )
-        return result_tuple
-    return final
-
-
-def multi_index_to_flat(
-    *nd_idx_per_dim: int | NDArray[np.int_],
-    grid_shape: tuple[int, ...],
-    active_mask: NDArray[np.bool_],
-    source_flat_lookup: dict[int, int],
-) -> int | NDArray[np.int_]:
-    """Convert N-D grid index(es) to active-bin flat index(es) (0..N-1).
-
-    Parameters
-    ----------
-    *nd_idx_per_dim : Union[int, np.ndarray]
-        N separate arguments, one per dimension. Each can be an int (scalar)
-        or a NumPy array of ints (broadcastable). Examples:
-          - (row, col) for a single 2D point
-          - (rows_array, cols_array) for multiple points
-        Alternatively, a single argument that is a list/tuple of length N
-        can be passed, in which case it is interpreted as:
-          - shape (N, n_points) or (n_points, N) or (N,) for a single N-D index.
-    grid_shape : Tuple[int, ...]
-        The shape of the full grid (e.g. (n_rows, n_cols) for 2D).
-    active_mask : np.ndarray
-        An N-D boolean mask of shape=grid_shape, where True indicates the grid
-        cell is active. Inactive cells are not part of the state space.
-    source_flat_lookup : Dict[int, int]
-        A mapping from full-grid flat index → active-bin flat index (state ID).
-        If a grid cell is inactive, it should not appear (or return -1).
-
-    Returns
-    -------
-    Union[int, np.ndarray]
-        - If input implies a single grid point, returns the active-bin ID (int), or -1 if out of bounds or inactive.
-        - If input implies multiple grid points (arrays), returns an array of the same broadcast shape,
-          with each element either the active-bin ID or -1.
-
-    Raises
-    ------
-    ValueError
-        If the number of input arrays does not match len(grid_shape), or if input arrays cannot broadcast.
-
-    """
-    # Expect len(nd_idx_per_dim) == len(grid_shape)
-    if len(nd_idx_per_dim) != len(grid_shape):
-        raise ValueError(
-            f"Expected {len(grid_shape)} index arrays, got {len(nd_idx_per_dim)}.",
-        )
-
-    # Convert each to a NumPy array of dtype int
-    nd_arrays = tuple(
-        np.atleast_1d(np.asarray(idx, dtype=int)) for idx in nd_idx_per_dim
-    )
-
-    # Determine the common broadcast shape
-    try:
-        common_shape = np.broadcast(*nd_arrays).shape
-    except ValueError:
-        raise ValueError("N-D index arrays could not be broadcast together.") from None
-
-    # Initialize output with -1
-    flat_output = np.full(common_shape, -1, dtype=int)
-
-    # Create a mask of indices that lie within the grid bounds
-    in_bounds = np.ones(common_shape, dtype=bool)
-    for dim, arr in enumerate(nd_arrays):
-        in_bounds &= (arr >= 0) & (arr < grid_shape[dim])
-
-    if not np.any(in_bounds):
-        # No in-bounds points; return either scalar -1 or the array of -1s
-        if common_shape == (1,) and all(np.isscalar(idx) for idx in nd_idx_per_dim):
-            return -1
-        return flat_output
-
-    # Extract the valid in-bounds indices for each dimension
-    valid_nd = tuple(arr[in_bounds] for arr in nd_arrays)
-
-    # Check which of those valid N-D indices correspond to active bins
-    try:
-        active_mask_vals = active_mask[valid_nd]
-    except IndexError:
-        # If indices out of range of active_mask, treat them as inactive
-        active_mask_vals = np.zeros(len(valid_nd[0]), dtype=bool)
-
-    if not np.any(active_mask_vals):
-        # None of the in-bounds indices are active
-        if common_shape == (1,) and all(np.isscalar(idx) for idx in nd_idx_per_dim):
-            return -1
-        return flat_output
-
-    # Keep only those indices that are both in-bounds & active
-    truly_active_nd = tuple(dim_arr[active_mask_vals] for dim_arr in valid_nd)
-
-    # Convert these N-D grid coords to full-grid flat indices
-    full_flat_inds = np.ravel_multi_index(truly_active_nd, grid_shape)
-
-    # Map full-grid flat indices to active-bin IDs using source_flat_lookup
-    active_ids = np.array(
-        [source_flat_lookup.get(int(ff), -1) for ff in full_flat_inds],
-        dtype=int,
-    )
-
-    # Place these active IDs back into the correct positions of the output array
-    final_mask = np.zeros(common_shape, dtype=bool)
-    final_mask[in_bounds] = active_mask_vals
-    flat_output[final_mask] = active_ids
-
-    # If this was originally scalar inputs, return a scalar
-    if common_shape == (1,) and all(np.isscalar(idx) for idx in nd_idx_per_dim):
-        return int(flat_output[0])
-    return flat_output
+    return ax
 
 
 def map_active_data_to_grid(

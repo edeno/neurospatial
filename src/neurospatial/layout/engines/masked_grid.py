@@ -29,7 +29,6 @@ class MaskedGridLayout(_GridMixin):
     layout_type: str = LayoutType.MASKED_GRID.value
     size_parameter: ClassVar[str | None] = None
     _build_params_used: dict[str, Any]
-    bin_size_: NDArray[np.float64] | None = None
 
     def __init__(self) -> None:
         """Initialize a MaskedGridLayout engine."""
@@ -39,7 +38,6 @@ class MaskedGridLayout(_GridMixin):
         self.grid_edges = None
         self.grid_shape = None
         self.active_mask = None
-        self.bin_size_ = None
 
     @capture_build_params(data=("active_mask", "grid_edges"))
     def build(
@@ -152,11 +150,6 @@ class MaskedGridLayout(_GridMixin):
         full_grid_bin_centers = np.stack(
             [c.ravel() for c in mesh_centers_list],
             axis=-1,
-        )
-
-        self.bin_size_ = np.array(
-            [np.diff(edge_dim)[0] for edge_dim in self.grid_edges],
-            dtype=np.float64,
         )
 
         self.dimension_ranges = tuple(

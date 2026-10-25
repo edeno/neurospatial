@@ -5,7 +5,6 @@ import pytest
 
 from neurospatial.layout.helpers.utils import (
     _generic_graph_plot,
-    _infer_active_elements_from_samples,
     _infer_dimension_ranges_from_samples,
     get_centers,
     get_n_bins,
@@ -71,56 +70,6 @@ def test_get_n_bins_overflow_guard_raises():
         get_n_bins(dummy_positions, bin_size=1e-300, dimension_range=[(0.0, 1.0)])
 
 
-def test_infer_active_elements_from_samples_basic():
-    candidates = np.array([[0, 0], [1, 1], [2, 2]])
-    samples = np.array([[0.1, 0.1], [1.1, 1.1], [2.1, 2.1]])
-    mask, active, idxs = _infer_active_elements_from_samples(candidates, samples)
-    assert mask.sum() == 3
-    np.testing.assert_array_equal(np.sort(idxs), [0, 1, 2])
-    np.testing.assert_allclose(active, candidates)
-
-
-def test_infer_active_elements_from_samples_threshold():
-    candidates = np.array([[0, 0], [1, 1], [2, 2]])
-    samples = np.array([[0.1, 0.1], [0.2, 0.2], [2.1, 2.1]])
-    mask, _active, idxs = _infer_active_elements_from_samples(
-        candidates, samples, bin_count_threshold=1
-    )
-    assert mask.sum() == 1
-    np.testing.assert_array_equal(idxs, [0])
-
-
-def test_infer_active_elements_from_samples_nan_samples():
-    candidates = np.array([[0, 0], [1, 1]])
-    samples = np.array([[np.nan, 0], [1, 1]])
-    mask, _active, idxs = _infer_active_elements_from_samples(candidates, samples)
-    assert mask.sum() == 1
-    np.testing.assert_array_equal(idxs, [1])
-
-
-def test_infer_active_elements_from_samples_empty_candidates():
-    candidates = np.empty((0, 2))
-    samples = np.array([[1, 1]])
-    mask, active, idxs = _infer_active_elements_from_samples(candidates, samples)
-    assert mask.size == 0
-    assert active.shape == (0, 2)
-    assert idxs.size == 0
-
-
-def test_infer_active_elements_from_samples_dim_mismatch():
-    candidates = np.array([[0, 0]])
-    samples = np.array([[1, 1, 1]])
-    with pytest.raises(ValueError):
-        _infer_active_elements_from_samples(candidates, samples)
-
-
-def test_infer_active_elements_from_samples_negative_threshold():
-    candidates = np.array([[0, 0]])
-    samples = np.array([[0, 0]])
-    with pytest.raises(ValueError):
-        _infer_active_elements_from_samples(candidates, samples, bin_count_threshold=-1)
-
-
 def test_infer_dimension_ranges_from_samples_basic():
     data = np.array([[0, 1], [2, 3], [4, 5]])
     result = _infer_dimension_ranges_from_samples(data)
@@ -176,17 +125,6 @@ def test_generic_graph_plot_2d(monkeypatch):
     monkeypatch.setattr(plt, "figure", lambda *a, **k: plt.Figure())
     ax = _generic_graph_plot(G, "Test2D")
     assert hasattr(ax, "set_aspect")
-
-
-def test_generic_graph_plot_3d(monkeypatch):
-    G = nx.Graph()
-    G.add_node(0, pos=(0, 0, 0))
-    G.add_node(1, pos=(1, 1, 1))
-    G.add_edge(0, 1)
-    # Patch plt.figure to avoid opening a window
-    monkeypatch.setattr(plt, "figure", lambda *a, **k: plt.Figure())
-    ax = _generic_graph_plot(G, "Test3D")
-    assert hasattr(ax, "set_zlabel") or hasattr(ax, "set_box_aspect")
 
 
 def test_generic_graph_plot_empty_graph():

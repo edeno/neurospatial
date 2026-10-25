@@ -130,44 +130,24 @@ class _KDTreeMixin:
 
     _locator: NearestBinLocator | None = None
 
-    def _build_kdtree(
-        self,
-        points_for_tree: NDArray[np.float64],
-        mask_for_points_in_tree: NDArray[np.bool_] | None = None,
-    ) -> None:
-        """Prepare nearest-bin geometry, preserving masked source indices.
+    def _build_kdtree(self, points_for_tree: NDArray[np.float64]) -> None:
+        """Prepare nearest-bin lookup over the bin centers.
 
         Parameters
         ----------
-        points_for_tree : ndarray of float64, shape (n_points, n_dims)
-            Bin coordinates from which the locator is built.
-        mask_for_points_in_tree : ndarray of bool, shape (n_points,), optional
-            Select centers while keeping their original bin indices.
+        points_for_tree : ndarray of float64, shape (n_bins, n_dims)
+            Bin centers, in bin order.
 
         Raises
         ------
         ValueError
-            If the centers or optional mask have an incompatible shape.
+            If the centers are not a 2-D array.
         """
         if points_for_tree.ndim != 2:
             raise ValueError(
                 "points_for_tree must be a 2D array with shape (n_points, n_dims).",
             )
-        if mask_for_points_in_tree is not None:
-            if (
-                mask_for_points_in_tree.ndim != 1
-                or mask_for_points_in_tree.shape[0] != points_for_tree.shape[0]
-            ):
-                raise ValueError(
-                    "mask_for_points_in_tree must be 1D and match the "
-                    "number of rows in points_for_tree.",
-                )
-            centers = points_for_tree[mask_for_points_in_tree]
-            bin_indices = np.flatnonzero(mask_for_points_in_tree).astype(np.intp)
-        else:
-            centers = points_for_tree
-            bin_indices = None
-        self._locator = NearestBinLocator(centers, bin_indices=bin_indices)
+        self._locator = NearestBinLocator(points_for_tree)
 
     def locator(self) -> NearestBinLocator:
         """Return the built layout's owned nearest-bin locator."""
