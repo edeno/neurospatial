@@ -3,8 +3,8 @@ from typing import Any
 import networkx as nx
 import numpy as np
 import pytest
+from shapely.geometry import Point, box
 from shapely.geometry import Polygon as ShapelyPoly
-from shapely.geometry import box
 
 from neurospatial import LayoutNotBuiltError, Regions
 from neurospatial.environment import Environment
@@ -689,3 +689,31 @@ class TestBuildChoices:
         restored = Environment.from_dict(data)
         assert restored.layout_parameters == env.layout_parameters
         np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
+
+
+_EMPTY_BUILDS = {
+    "polygon_with_no_cell_center": lambda: Environment.from_polygon(
+        Point(0, 0).buffer(10).difference(Point(0, 0).buffer(9)), bin_size=25.0
+    ),
+    "all_false_mask": lambda: Environment.from_grid_mask(
+        np.zeros((3, 3), dtype=bool), (np.arange(4.0), np.arange(4.0))
+    ),
+    "hexagons_below_threshold": lambda: Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 20, (200, 2)),
+        bin_size=2.0,
+        layout="Hexagonal",
+        bin_count_threshold=10_000,
+    ),
+}
+
+
+@pytest.mark.parametrize("build", sorted(_EMPTY_BUILDS))
+def test_every_engine_refuses_a_build_with_no_active_bins(build):
+    """An environment with zero bins is refused, never published.
+
+    Zero bins would put every position outside the environment, so
+    occupancy and rate maps would silently come back empty.
+    """
+    with pytest.raises(ValueError, match="has no active bins") as error:
+        _EMPTY_BUILDS[build]()
+    assert "Why:" in str(error.value) and "Fix:" in str(error.value)

@@ -5,7 +5,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial._exceptions import LayoutNotBuiltError, _format_error
 from neurospatial.geometry import (
     Binning,
     GridBinningSpec,
@@ -21,6 +21,18 @@ from neurospatial.layout.helpers.regular_grid import regular_grid_pairs
 
 if TYPE_CHECKING:
     import matplotlib.axes
+
+
+def _no_active_bins_message(engine: str, cause: str, fix: str) -> str:
+    """Return the refusal for a build that leaves no active bins."""
+    return _format_error(
+        f"{engine} has no active bins: {cause}.",
+        why=(
+            "Why: an environment needs at least one bin; with none, every "
+            "position falls outside it and occupancy and rate maps are empty."
+        ),
+        fix=fix,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +226,17 @@ class _GridMixin(_NeighborPairsMixin):
             the grid's binning specification even when no such pair is active.
         """
         assert self.active_mask is not None and self.grid_shape is not None
+        if not self.active_mask.any():
+            raise ValueError(
+                _no_active_bins_message(
+                    type(self).__name__,
+                    f"none of the {self.active_mask.size} cells of its "
+                    f"{self.grid_shape} grid is active",
+                    "Use a smaller bin_size so cell centers fall inside the "
+                    "area, or check that the polygon, mask or positions cover "
+                    "the arena.",
+                )
+            )
         self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
         pairs = regular_grid_pairs(self.active_mask, connect_diagonal=connect_diagonal)
         self._set_neighbor_pairs(

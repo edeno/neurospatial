@@ -25,7 +25,7 @@ from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
 from neurospatial.layout.helpers.utils import (
     check_grid_size_safety,
 )
-from neurospatial.layout.mixins import _NeighborPairsMixin
+from neurospatial.layout.mixins import _NeighborPairsMixin, _no_active_bins_message
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -157,6 +157,17 @@ class HexagonalLayout(_NeighborPairsMixin):
             )
         else:
             active_bin_original_flat_indices = np.arange(len(full_grid_bin_centers))
+        if len(active_bin_original_flat_indices) == 0:
+            raise ValueError(
+                _no_active_bins_message(
+                    type(self).__name__,
+                    f"no hexagon holds at least bin_count_threshold="
+                    f"{bin_count_threshold} samples",
+                    "Lower bin_count_threshold, use a larger hexagon_width so "
+                    "each hexagon collects more samples, or check that the "
+                    "positions are finite and cover the arena.",
+                )
+            )
 
         nd_active_mask = np.zeros(self.grid_shape, dtype=bool).ravel()
         nd_active_mask[active_bin_original_flat_indices] = True

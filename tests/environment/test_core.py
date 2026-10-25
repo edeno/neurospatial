@@ -906,18 +906,6 @@ def env_single_active_cell_3x3() -> Environment:
 
 
 @pytest.fixture
-def env_no_active_cells_nd_mask() -> Environment:
-    """A 2x2 grid with no active cells, created using from_grid_mask."""
-    active_mask = np.array([[False, False], [False, False]], dtype=bool)
-    grid_edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
-    return Environment.from_grid_mask(
-        active_mask=active_mask,
-        grid_edges=grid_edges,
-        name="NoActiveNDMask",
-    )
-
-
-@pytest.fixture
 def env_1d_grid_3bins() -> Environment:
     """A 1D grid with 3 active bins. This will test degree-based logic for 1D grids."""
     active_mask_1d = np.array([True, True, True], dtype=bool)
@@ -970,11 +958,6 @@ def test_boundary_grid_single_active_cell_3x3(env_single_active_cell_3x3: Enviro
     # Single active cell is its own boundary.
     assert boundary_indices.shape[0] == 1
     assert np.array_equal(np.sort(boundary_indices), np.array([0]))
-
-
-def test_boundary_grid_no_active_cells(env_no_active_cells_nd_mask: Environment):
-    boundary_indices = env_no_active_cells_nd_mask.boundary_bins
-    assert boundary_indices.shape[0] == 0
 
 
 @pytest.fixture

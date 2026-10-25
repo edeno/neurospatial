@@ -78,6 +78,11 @@
   ring. The closing step treated space past the grid as empty and eroded the
   border, so on an open field with 10 cm bins 40 of 121 bins and 19% of
   samples were lost along the walls. Closing now only adds bins.
+- Every layout refuses a build that leaves no active bins, with a message
+  that says why and how to fix it. Before, `from_polygon` on a polygon that
+  holds no cell center and `from_grid_mask` with an all-False mask built an
+  environment with zero bins, on which `occupancy` returned an empty array,
+  and hexagonal layouts failed with a NumPy reduction error.
 
 ### Spatial geometry review
 
