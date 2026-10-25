@@ -298,7 +298,7 @@ def map_active_data_to_grid(
     return full_grid_data
 
 
-def estimate_grid_memory(grid_shape: tuple[int, ...], n_dims: int) -> float:
+def estimate_grid_memory(grid_shape: tuple[int, ...]) -> float:
     """Estimate memory usage in MB for a grid of given shape.
 
     This function provides a conservative estimate of memory requirements for
@@ -308,9 +308,8 @@ def estimate_grid_memory(grid_shape: tuple[int, ...], n_dims: int) -> float:
     Parameters
     ----------
     grid_shape : tuple[int, ...]
-        Shape of the N-D grid (e.g., (100, 100) for 2D grid).
-    n_dims : int
-        Number of dimensions.
+        Shape of the N-D grid (e.g., (100, 100) for 2D grid); its length is
+        the number of dimensions.
 
     Returns
     -------
@@ -337,12 +336,12 @@ def estimate_grid_memory(grid_shape: tuple[int, ...], n_dims: int) -> float:
     --------
     >>> from neurospatial.layout.helpers.utils import estimate_grid_memory
     >>> # Estimate memory for 100×100 2D grid
-    >>> mem = estimate_grid_memory((100, 100), n_dims=2)
+    >>> mem = estimate_grid_memory((100, 100))
     >>> mem > 8.0 and mem < 20.0  # Approximately 8-20 MB
     True
 
     >>> # Estimate memory for 100×100×100 3D grid
-    >>> mem = estimate_grid_memory((100, 100, 100), n_dims=3)
+    >>> mem = estimate_grid_memory((100, 100, 100))
     >>> mem > 1000  # At least 1000 MB
     True
 
@@ -351,6 +350,7 @@ def estimate_grid_memory(grid_shape: tuple[int, ...], n_dims: int) -> float:
     check_grid_size_safety : Validate grid size and warn if memory usage is high
     """
     n_bins = int(np.prod(grid_shape))
+    n_dims = len(grid_shape)
 
     # bin_centers: n_bins * n_dims * 8 bytes (float64)
     bin_centers_mb = (n_bins * n_dims * 8) / (1024**2)
@@ -372,7 +372,6 @@ def estimate_grid_memory(grid_shape: tuple[int, ...], n_dims: int) -> float:
 
 def check_grid_size_safety(
     grid_shape: tuple[int, ...],
-    n_dims: int,
     *,
     warn_threshold_mb: float = 100.0,
 ) -> None:
@@ -387,8 +386,6 @@ def check_grid_size_safety(
     ----------
     grid_shape : tuple[int, ...]
         Shape of the N-D grid.
-    n_dims : int
-        Number of dimensions.
     warn_threshold_mb : float, default 100.0
         Memory threshold (MB) for emitting a warning. Set to inf to disable warnings.
 
@@ -421,10 +418,10 @@ def check_grid_size_safety(
     --------
     >>> from neurospatial.layout.helpers.utils import check_grid_size_safety
     >>> # Small grid - no warning
-    >>> check_grid_size_safety((50, 50), n_dims=2)
+    >>> check_grid_size_safety((50, 50))
 
     >>> # Large grid - warning (but creation proceeds)
-    >>> check_grid_size_safety((500, 500), n_dims=2)  # doctest: +SKIP
+    >>> check_grid_size_safety((500, 500))  # doctest: +SKIP
     UserWarning: Creating large grid with shape (500, 500) (250,000 bins).
     Estimated memory usage: 214.8 MB
     Consider increasing bin_size or using infer_active_bins=True.
@@ -434,7 +431,7 @@ def check_grid_size_safety(
     estimate_grid_memory : Estimate memory requirements for a grid
     """
     n_bins = int(np.prod(grid_shape))
-    estimated_mb = estimate_grid_memory(grid_shape, n_dims)
+    estimated_mb = estimate_grid_memory(grid_shape)
 
     if estimated_mb > warn_threshold_mb:
         warnings.warn(

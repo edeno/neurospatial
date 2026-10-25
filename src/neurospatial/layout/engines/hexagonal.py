@@ -123,8 +123,7 @@ class HexagonalLayout(_NeighborPairsMixin):
         self.hex_orientation_ = 0.0  # point-up
 
         # Safety check: warn or error if grid is very large
-        n_dims = 2  # Hexagonal is always 2D
-        check_grid_size_safety(self.grid_shape, n_dims)
+        check_grid_size_safety(self.grid_shape)
 
         if infer_active_bins and positions is not None:
             active_bin_original_flat_indices = _infer_active_bins_from_hex_grid(

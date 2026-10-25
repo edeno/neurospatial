@@ -136,8 +136,7 @@ class RegularGridLayout(_GridMixin):
         )
 
         # Safety check: warn or error if grid is very large
-        n_dims = len(self.grid_shape)
-        check_grid_size_safety(self.grid_shape, n_dims)
+        check_grid_size_safety(self.grid_shape)
 
         if infer_active_bins and positions is not None:
             self.active_mask = _infer_active_bins_from_regular_grid(

@@ -141,8 +141,7 @@ class MaskedGridLayout(_GridMixin):
             )
 
         # Safety check: warn or error if grid is very large
-        n_dims = len(self.grid_shape)
-        check_grid_size_safety(self.grid_shape, n_dims)
+        check_grid_size_safety(self.grid_shape)
 
         # Create full_grid_bin_centers as (N_total_bins, N_dims) array
         centers_per_dim = [get_centers(edge_dim) for edge_dim in self.grid_edges]

@@ -436,7 +436,7 @@ def _rebin_resolution(
             "bin_size produces unrepresentable grid dimensions; use larger bins or recenter coordinates."
         )
     shape = tuple(int(count) for count in counts)
-    check_grid_size_safety(shape, dims)
+    check_grid_size_safety(shape)
     edges = tuple(
         origin + (start + np.arange(count + 1)) * step
         for origin, start, count, step in zip(

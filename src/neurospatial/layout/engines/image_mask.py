@@ -112,8 +112,7 @@ class ImageMaskLayout(_GridMixin):
         self.grid_shape = (n_cols, n_rows)
 
         # Safety check: warn or error if grid is very large
-        n_dims = 2  # ImageMask is always 2D
-        check_grid_size_safety(self.grid_shape, n_dims)
+        check_grid_size_safety(self.grid_shape)
 
         x_edges = np.arange(n_cols + 1) * pixel_size_x
         y_edges = np.arange(n_rows + 1) * pixel_size_y

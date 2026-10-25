@@ -101,8 +101,7 @@ class ShapelyPolygonLayout(_GridMixin):
         )
 
         # Safety check: warn or error if grid is very large
-        n_dims = 2  # ShapelyPolygon is always 2D
-        check_grid_size_safety(self.grid_shape, n_dims)
+        check_grid_size_safety(self.grid_shape)
 
         # 1. Intrinsic mask from Shapely
         pts_to_check = (
