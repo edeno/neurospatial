@@ -89,11 +89,6 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             raise TypeError("boundary_polygon must be a Shapely Polygon.")
         if boundary_polygon.is_empty:
             raise ValueError("boundary_polygon cannot be empty.")
-        if boundary_polygon.geom_type == "MultiPolygon":
-            raise ValueError(
-                "MultiPolygon boundaries are not directly supported. "
-                "Please provide a single Polygon component.",
-            )
         point_spacing = float(
             validate_cell_size(point_spacing, name="point_spacing", scalar_only=True)[0]
         )
@@ -114,11 +109,8 @@ class TriangularMeshLayout(_NeighborPairsMixin):
                 "the polygon is large enough relative to the spacing.",
             )
         exterior_coords = _sample_polygon_boundary(boundary_polygon, point_spacing)
-        # 4) Stack the interior grid points with the boundary vertices.
-        if sample_points.size == 0:
-            sample_points = exterior_coords.copy()
-        else:
-            sample_points = np.vstack([sample_points, exterior_coords])
+        # Stack the interior grid points with the boundary vertices.
+        sample_points = np.vstack([sample_points, exterior_coords])
 
         # 2. Perform Delaunay triangulation
         self._full_delaunay_tri = _triangulate_points(sample_points)
@@ -259,8 +251,6 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         ------
         LayoutNotBuiltError
             If the layout has not been built.
-        ValueError
-            If the dimensionality is less than 1.
 
         """
         if (
@@ -277,23 +267,11 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             self._active_original_simplex_indices
         ]
 
-        if active_simplices_vertex_indices.shape[0] == 0:
-            return np.array([], dtype=float)  # No active simplices
-
         # nsimplex_vertices will have shape:
         # (num_active_simplices, num_vertices_per_simplex, n_dim)
         nsimplex_vertices = all_mesh_points[active_simplices_vertex_indices]
 
         n_dim = all_mesh_points.shape[1]
-
-        if n_dim == 1:
-            # For 1D simplices (line segments), volume is length
-            # Vertices are (n_active, 2, 1)
-            # v0 is (n_active, 1), v1 is (n_active, 1)
-            v0 = nsimplex_vertices[:, 0, :]  # First vertex of each simplex
-            v1 = nsimplex_vertices[:, 1, :]  # Second vertex of each simplex
-            lengths = np.abs(v1 - v0).squeeze(axis=-1)
-            return np.asarray(lengths, dtype=np.float64)
 
         # Select one vertex from each simplex as the origin (v0)
         # v0 will have shape (num_active_simplices, n_dim)

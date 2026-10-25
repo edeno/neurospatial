@@ -351,10 +351,6 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         """
         if self.grid_edges is None or self.active_mask is None:
             raise LayoutNotBuiltError(type(self).__name__, "bin_sizes")
-        if not self.grid_edges or self.grid_edges[0].size <= 1:  # pragma: no cover
-            raise ValueError(
-                "grid_edges (1D) are not properly defined for length calculation.",
-            )
 
         all_1d_bin_lengths = np.diff(self.grid_edges[0])
         return all_1d_bin_lengths[self.active_mask]

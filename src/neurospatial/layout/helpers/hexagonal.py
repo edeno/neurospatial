@@ -214,10 +214,6 @@ def _infer_active_bins_from_hex_grid(
     # Filter out invalid bin indices
     bin_ind = bin_ind[bin_ind >= 0]
 
-    if len(bin_ind) == 0:
-        # No valid bins found, return an empty array
-        return np.array([], dtype=int)
-
     # Count occurrences of each unique bin ind
     bin_ind, bin_count = np.unique(bin_ind, return_counts=True)
 

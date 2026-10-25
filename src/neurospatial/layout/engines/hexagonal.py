@@ -122,26 +122,12 @@ class HexagonalLayout(_NeighborPairsMixin):
             dimension_range=dimension_ranges,
             hexagon_width=self.hexagon_width,
         )
-        if (
-            self.hex_radius_ is None
-            or self.grid_offset_x_ is None
-            or self.grid_offset_y_ is None
-            or self.grid_shape is None
-        ):
-            raise RuntimeError(
-                "Hexagonal grid generation failed; missing geometry parameters."
-            )
 
         # Safety check: warn or error if grid is very large
         n_dims = 2  # Hexagonal is always 2D
         check_grid_size_safety(self.grid_shape, n_dims)
 
         if infer_active_bins and positions is not None:
-            assert (
-                self.hex_radius_ is not None
-                and self.grid_offset_x_ is not None
-                and self.grid_offset_y_ is not None
-            )
             active_bin_original_flat_indices = _infer_active_bins_from_hex_grid(
                 positions=positions,
                 centers_shape=self.grid_shape,

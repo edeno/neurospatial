@@ -342,12 +342,6 @@ class _GridMixin(_NeighborPairsMixin):
         """
         if self.grid_edges is None or self.bin_centers is None:
             raise LayoutNotBuiltError(type(self).__name__, "bin_sizes")
-        if not self.grid_edges or not all(
-            len(e) > 1 for e in self.grid_edges
-        ):  # pragma: no cover
-            raise ValueError(
-                "grid_edges are not properly defined for area/volume calculation.",
-            )
 
         single_bin_measure = np.prod(self._axis_widths())
 
