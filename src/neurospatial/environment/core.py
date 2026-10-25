@@ -2329,7 +2329,7 @@ class Environment(Generic[_C]):
         closest bin center:
 
         >>> env.interpolate(plane_field, query_points, mode="nearest").round(2)
-        array([27.08, 25.25,   nan])
+        array([27.5, 25.5,  nan])
 
         To read a rate map at every tracked position, pass the positions
         array, ``env.interpolate(rate_map, positions, mode="linear")``.
@@ -3221,6 +3221,8 @@ class Environment(Generic[_C]):
             For RegularGrid: length of each square bin side (or per-dimension if sequence).
             For Hexagonal: hexagon width (flat-to-flat distance across hexagon).
             If your data is in centimeters, bin_size=5.0 creates 5cm bins.
+            Grid cells are exactly this size; when the extent is not a whole
+            number of cells, the grid reaches equally past both ends of it.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
@@ -3258,9 +3260,11 @@ class Environment(Generic[_C]):
         dimension_ranges : sequence of (float, float), optional
             ``[(min, max), ...]`` extent to tile on each axis, in the units of
             `positions`. By default the bounds of `arena` when it has a known
-            outline, so cell edges start at the arena's edge and walls on that
-            lattice fall on cell faces; otherwise the extent of the samples
-            plus half a bin on each side.
+            outline, otherwise the extent of the samples plus half a bin on
+            each side. Cells of exactly `bin_size` cover it; when it is a whole
+            number of cells, cell edges start at its ends, so walls on that
+            lattice fall on cell faces (a 100 cm box with 5 cm bins), and
+            otherwise the grid reaches equally past both ends.
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are
             "active." If False, every bin in the extent is active, and the
@@ -3987,9 +3991,10 @@ class Environment(Generic[_C]):
     ) -> Environment[CartesianSystem]:
         """Create a 2D grid Environment masked by a Shapely Polygon.
 
-        A regular grid is formed based on the polygon's bounds and `bin_size`.
-        Only grid cells whose centers are contained within the polygon are
-        considered active.
+        A regular grid of cells exactly `bin_size` wide covers the polygon's
+        bounds, reaching equally past both ends of an axis whose length is not
+        a whole number of cells. Only grid cells whose centers are contained
+        within the polygon are considered active.
 
         Parameters
         ----------

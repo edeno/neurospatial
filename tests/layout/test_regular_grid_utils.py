@@ -74,6 +74,46 @@ def test_infer_active_bins_with_threshold_and_morphology():
         assert mask[i, j]
 
 
+@pytest.mark.parametrize("bin_size", [3.0, 7.0, 2.5, (3.0, 1.7)])
+def test_grid_cells_are_exactly_bin_size(bin_size):
+    """Cells keep the requested width; the extra width splits evenly.
+
+    A 0-100 range is not a whole number of 3, 7 or 1.7 unit cells, so the
+    grid reaches equally past both ends; 2.5 divides it, so the edges start
+    and end on it.
+    """
+    edges, centers, _ = _create_regular_grid(
+        positions=None, bin_size=bin_size, dimension_range=[(0, 100), (0, 100)]
+    )
+    sizes = np.broadcast_to(bin_size, (2,))
+    for axis_edges, size in zip(edges, sizes, strict=True):
+        np.testing.assert_allclose(np.diff(axis_edges), size, rtol=1e-12)
+        below, above = -axis_edges[0], axis_edges[-1] - 100.0
+        np.testing.assert_allclose(below, above, atol=1e-9)
+        assert 0.0 <= below < size / 2
+    assert np.all((centers > 0) & (centers < 100))
+    edges, _, _ = _create_regular_grid(
+        positions=None, bin_size=2.5, dimension_range=[(0, 100)]
+    )
+    assert edges[0][0] == 0.0 and edges[0][-1] == 100.0
+
+
+def test_float_error_in_the_range_adds_no_cell():
+    """4.35 / 1.45 is 3.0000000000000004 in floats: three cells, ending at 4.35."""
+    edges, _, shape = _create_regular_grid(
+        positions=None, bin_size=1.45, dimension_range=[(0, 4.35)]
+    )
+    assert shape == (3,)
+    assert edges[0][0] == 0.0 and edges[0][-1] == 4.35
+
+
+def test_a_non_finite_range_is_refused():
+    with pytest.raises(ValueError, match="not finite"):
+        _create_regular_grid(
+            positions=None, bin_size=1.0, dimension_range=[(0, np.nan), (0, 1)]
+        )
+
+
 def test_close_gaps_keeps_visited_bins_on_the_grid_border():
     """Closing only adds bins: a visited bin on the grid's edge stays active.
 

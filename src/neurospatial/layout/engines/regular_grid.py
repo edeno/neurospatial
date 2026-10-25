@@ -68,10 +68,13 @@ class RegularGridLayout(_GridMixin):
         Parameters
         ----------
         bin_size : Union[float, Sequence[float]]
-            Desired size of bins in each dimension.
+            Width of the cells in each dimension, in the units of `positions`.
+            Cells are exactly this wide.
         dimension_ranges : Optional[Sequence[Tuple[float, float]]], optional
-            Explicit `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]` for the grid.
-            If None, range is inferred from `positions`.
+            Explicit `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]` to cover.
+            If None, the extent of `positions` plus half a bin on each side.
+            A range that is not a whole number of cells is widened equally on
+            both sides; afterwards `dimension_ranges` holds the grid's extent.
         positions : Optional[NDArray[np.float64]], shape (n_samples, n_dims), optional
             Data used to infer `dimension_ranges` (if not provided) and/or to
             infer active bins (if `infer_active_bins` is True).
@@ -128,6 +131,10 @@ class RegularGridLayout(_GridMixin):
             bin_size=bin_size,
             dimension_range=self.dimension_ranges,
             add_boundary_bins=add_boundary_bins,
+        )
+        # The cells span whole bin sizes, so they can reach past the range.
+        self.dimension_ranges = tuple(
+            (float(edges[0]), float(edges[-1])) for edges in self.grid_edges
         )
 
         # Safety check: warn or error if grid is very large

@@ -406,9 +406,10 @@ class TestFFTAutocorrelationLagsArePhysical:
         positions = stimulus.uniform(0.0, 50.0, size=(len(times), 2))
         spike_times = np.sort(np.random.default_rng(8).uniform(0, times[-1], 300))
         env = Environment.from_samples(positions, bin_size=bin_size)
-        # A fitted grid's two cell widths differ slightly.
-        widths = [np.diff(edge)[0] for edge in env.grid_edges]
-        assert widths[0] != widths[1]
+        # Cells are exactly bin_size wide on both axes.
+        np.testing.assert_array_equal(
+            [np.diff(edge)[0] for edge in env.grid_edges], [bin_size, bin_size]
+        )
 
         result = compute_spatial_rate(env, spike_times, times, positions)
 
@@ -420,7 +421,8 @@ class TestFFTAutocorrelationLagsArePhysical:
 
         from neurospatial import compute_spatial_rate
 
-        env = Environment.from_polygon(box(0, 0, 50, 37), bin_size=3.0)
+        # Cell widths that differ by a few percent between the axes.
+        env = Environment.from_polygon(box(0, 0, 50, 37), bin_size=(3.0, 2.9))
         widths = [np.diff(edge)[0] for edge in env.grid_edges]
         assert abs(widths[0] / widths[1] - 1.0) > 0.01
         times = np.arange(6000) / 30.0

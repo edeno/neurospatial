@@ -369,12 +369,24 @@ def _compute_dimension_ranges(
             zip(dimension_range, bin_sizes, strict=False)
         ):
             try:
-                lo_f, hi_f = float(min(lo, hi)), float(max(lo, hi))
+                # Sort after converting: min and max drop a NaN silently.
+                lo_f, hi_f = sorted((float(lo), float(hi)))
             except (TypeError, ValueError) as e:
                 raise TypeError(
                     f"dimension_range must contain numeric tuples of (min, max). "
                     f"Error at dimension {i}: got ({lo!r}, {hi!r})"
                 ) from e
+            if not (np.isfinite(lo_f) and np.isfinite(hi_f)):
+                raise ValueError(
+                    _format_error(
+                        f"dimension_range[{i}] is ({lo!r}, {hi!r}), which is not "
+                        "finite.",
+                        why="Why: cells of bin_size are laid across each range, "
+                        "so both ends must be finite numbers.",
+                        fix="pass finite (min, max) pairs in the units of "
+                        "positions, e.g. dimension_ranges=[(0, 100), (0, 100)]",
+                    )
+                )
             # If user gave a zero-span range (lo == hi), expand by 0.5 * bin_size
             if np.isclose(lo_f, hi_f):
                 lo_f -= 0.5 * size
@@ -395,6 +407,50 @@ def _compute_dimension_ranges(
             ranges.append((lo_f, hi_f))
 
     return ranges
+
+
+# A range within this fraction of a cell of a whole number of cells is
+# taken as whole: float error in extent / bin_size must not add a cell.
+_WHOLE_CELL_TOLERANCE = 1e-9
+
+
+def _whole_cells(lo: float, hi: float, size: float, count: int) -> int:
+    """Return the fewest cells of width ``size`` from ``lo`` that reach ``hi``.
+
+    ``count`` is ``ceil((hi - lo) / size)``; one cell fewer is enough when
+    it falls short of ``hi`` only by float error.
+    """
+    if count > 1 and lo + (count - 1) * size >= hi - _WHOLE_CELL_TOLERANCE * size:
+        return count - 1
+    return count
+
+
+def _whole_cell_ranges(
+    ranges: Sequence[tuple[float, float]], bin_sizes: Sequence[float]
+) -> list[tuple[float, float]]:
+    """Widen each range evenly on both sides to a whole number of cells.
+
+    Cells keep exactly the requested width, and every cell center stays
+    inside the original range.
+
+    Parameters
+    ----------
+    ranges : sequence of (float, float)
+        ``(low, high)`` per axis.
+    bin_sizes : sequence of float
+        Cell width per axis, in the units of ``ranges``.
+
+    Returns
+    -------
+    list of (float, float)
+        Ranges whose span is a whole number of cells.
+    """
+    widened = []
+    for (lo, hi), size in zip(ranges, bin_sizes, strict=True):
+        count = _whole_cells(lo, hi, size, max(int(np.ceil((hi - lo) / size)), 1))
+        pad = max(count * size - (hi - lo), 0.0) / 2.0
+        widened.append((lo - pad, hi + pad))
+    return widened
 
 
 def _build_grid_structure(
@@ -471,22 +527,19 @@ def _build_grid_structure(
             )
         )
 
-    # 5) Generate core edges via np.histogramdd
-    #    Use data_for_bins which is either samples or a dummy point at the center
-    _, core_edges = np.histogramdd(data_for_bins, bins=n_bins, range=ranges)
-
-    # 6) Optionally add boundary bins by extending each edge array
+    # 5) Lay cells of exactly bin_size across each (whole-cell) range.
     final_edges = []
-    for edges_dim, size in zip(core_edges, bin_sizes, strict=False):
-        diff = np.diff(edges_dim)
-        step = size if diff.size == 0 else diff[0]
+    for (lo, hi), size, count in zip(ranges, bin_sizes, n_bins, strict=True):
+        count = _whole_cells(lo, hi, size, int(count))
+        edges_dim = lo + np.arange(count + 1) * size
+        # Within float error of the high end, end on it exactly, so a
+        # position there stays inside the grid.
+        edges_dim[-1] = max(edges_dim[-1], hi)
         if add_boundary_bins:
-            extended = np.concatenate(
-                ([edges_dim[0] - step], edges_dim, [edges_dim[-1] + step]),
+            edges_dim = np.concatenate(
+                ([edges_dim[0] - size], edges_dim, [edges_dim[-1] + size]),
             )
-        else:
-            extended = edges_dim
-        final_edges.append(extended.astype(float))
+        final_edges.append(edges_dim.astype(float))
 
     edges_tuple = tuple(final_edges)
 
@@ -551,6 +604,10 @@ def _create_regular_grid(
 
     # Compute dimension ranges from explicit specification or data
     ranges = _compute_dimension_ranges(samples, dimension_range, n_dims, bin_sizes)
+    # Cells are exactly bin_size wide; a range that is not a whole number of
+    # cells is widened evenly past both ends, so every cell center stays
+    # inside the range.
+    ranges = _whole_cell_ranges(ranges, bin_sizes.tolist())
 
     # Build the grid structure (edges, centers, shape)
     return _build_grid_structure(samples, n_dims, bin_sizes, ranges, add_boundary_bins)

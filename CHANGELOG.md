@@ -95,6 +95,17 @@
   geodesic distance and smoothing passed through the wall. `rebin` no
   longer warns about such pairs across a barrier in the outline: they are
   now closed.
+- Grid cells are exactly `bin_size` wide. Before, the bin count was rounded
+  up and the cells were shrunk to fit the extent, so `bin_size=3` on 0-100 cm
+  gave 2.94 cm cells, `bin_size=7` gave 6.68 x 6.69 cm cells that were not
+  square, and `layout_parameters["bin_size"]` named a size no cell had; `rebin`
+  already made exact cells. Now an extent that is not a whole number of cells
+  is widened equally past both ends, so every cell center stays inside it.
+  This applies to `from_samples`, `from_polygon` and `RegularGridLayout`,
+  with or without an arena: arena bounds that are a whole number of cells
+  still put cell edges on the arena's edge. Rebinning by a whole factor of the
+  bin size now nests the cells. A NaN or infinite `dimension_ranges` entry is
+  refused instead of silently building one cell.
 
 ### Spatial geometry review
 
