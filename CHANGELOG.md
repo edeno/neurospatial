@@ -117,6 +117,9 @@
   `neurospatial.layout.validation` now holds this one check,
   `validate_cell_size`; its unused `validate_bin_size` and
   `validate_dimension_ranges` are removed.
+- Hexagonal field plots draw unvisited (NaN) bins in `nan_color`, as grid,
+  mesh and polygon plots do. They were drawn transparent, so with the default
+  light gray they looked like space outside the arena.
 
 ### Spatial geometry review
 

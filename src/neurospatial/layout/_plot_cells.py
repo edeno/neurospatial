@@ -304,31 +304,22 @@ def _hexagon_field(
     style: _FieldStyle,
     **kwargs: Any,
 ) -> Any:
-    """Plot field on hexagonal layout using PatchCollection."""
+    """Plot field on hexagonal layout using PatchCollection.
+
+    NaN bins are drawn in ``nan_color``, or left transparent when it is None.
+    """
+    import matplotlib.pyplot as plt
     from matplotlib.collections import PatchCollection
 
-    cells = cell_polygons(binning)
-
-    # Note: Unlike grid layouts which use colormap's built-in NaN handling,
-    # PatchCollection requires manual filtering of NaN values to avoid creating
-    # empty patches that matplotlib doesn't handle well.
-    # Skip NaN bins if nan_color is None
-    drawn = (
-        np.ones(len(field), dtype=bool)
-        if style.nan_color is not None
-        else ~np.isnan(field)
-    )
-    if not np.any(drawn):
-        return None
-
-    # Create collection
+    cmap_obj = plt.get_cmap(style.cmap).copy()
+    cmap_obj.set_bad(style.nan_color or "none")
     collection = PatchCollection(
-        _polygon_patches([cells[index] for index in np.flatnonzero(drawn)]),
-        cmap=style.cmap,
+        _polygon_patches(cell_polygons(binning)),
+        cmap=cmap_obj,
         rasterized=style.rasterized,
         **kwargs,
     )
-    collection.set_array(np.asarray(field)[drawn])
+    collection.set_array(np.ma.masked_invalid(field))
     collection.set_clim(style.vmin, style.vmax)
     collection.set_edgecolor("none")
 
