@@ -122,7 +122,10 @@
   light gray they looked like space outside the arena.
 - `GraphLayout.linear_point_to_bin_ind` maps the exact end of the track (a
   reward well at the last node) to the last bin instead of -1, as `bin_at`
-  does.
+  does. A position counts as on a bin edge only to within the edge's float
+  rounding: the gap-start check used a tolerance relative to the linear
+  coordinate, so 1e6 along a track a position up to 10 units into a gap was
+  given the bin before it.
 - A built layout engine owns read-only copies of its arrays (`bin_centers`,
   `active_mask`, `grid_edges`, and a track's linear centers). `MaskedGridLayout`
   kept the caller's mask itself, so editing it after `build()` left the

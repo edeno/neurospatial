@@ -328,3 +328,38 @@ def test_get_graph_bins_and_project_on_T_junction():
     last_edge = float(bin_edges[-1])
     idx_out = _find_bin_for_linear_position(last_edge + 0.1, bin_edges, active_mask)
     assert idx_out == -1
+
+
+def test_track_end_tolerance_does_not_grow_with_the_track_length():
+    """Bins near a far-away track end keep their own positions.
+
+    A relative tolerance on the end coordinate (np.isclose) grows with the
+    linear coordinate: after a 1e6 gap, every bin of the last 10-unit
+    segment fell within it and mapped to the last bin, and positions past
+    the end became valid.
+    """
+    bin_edges = np.r_[np.arange(11.0), 1e6 + 10 + np.arange(11.0)]
+    active_mask = np.r_[np.ones(10, bool), False, np.ones(10, bool)]
+    centers = bin_edges[11:-1] + 0.5
+    np.testing.assert_array_equal(
+        _find_bin_for_linear_position(centers, bin_edges, active_mask),
+        np.arange(11, 21),
+    )
+    end = bin_edges[-1]
+    assert _find_bin_for_linear_position(end, bin_edges, active_mask) == 20
+    assert _find_bin_for_linear_position(end + 1.0, bin_edges, active_mask) == -1
+
+
+def test_gap_start_is_matched_against_its_own_gap_only():
+    """A position at a gap's start goes to the bin before; inside the gap, -1.
+
+    Each position is compared with the start of the gap it falls in, so a
+    position that equals some other edge is not mistaken for a gap start.
+    """
+    bin_edges = np.array([0.0, 1.0, 2.0, 5.0, 6.0, 7.0])
+    active_mask = np.array([True, True, False, True, True])
+    positions = np.array([2.0, 3.0, 4.999, 5.0])
+    np.testing.assert_array_equal(
+        _find_bin_for_linear_position(positions, bin_edges, active_mask),
+        [1, -1, -1, 3],
+    )

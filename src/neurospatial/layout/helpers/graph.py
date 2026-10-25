@@ -337,14 +337,28 @@ def _find_bin_for_linear_position(
 
     bin_ind = np.digitize(linear_positions, bin_edges, right=False) - 1
     # The end of the track belongs to the last bin.
-    bin_ind[np.isclose(linear_positions, bin_edges[-1])] = n_bins - 1
+    bin_ind[_on_edge(linear_positions, bin_edges[-1])] = n_bins - 1
     bin_ind[(bin_ind < 0) | (bin_ind >= n_bins)] = -1
 
     if active_mask is not None:
         in_gap = np.flatnonzero((bin_ind >= 0) & ~active_mask[bin_ind])
-        at_gap_start = np.isclose(
-            linear_positions[in_gap, None], bin_edges[None, 1:]
-        ).any(axis=1)
+        # digitize puts a position on a gap's start edge in the gap bin.
+        at_gap_start = _on_edge(linear_positions[in_gap], bin_edges[bin_ind[in_gap]])
         bin_ind[in_gap[at_gap_start]] -= 1
         bin_ind[in_gap[~at_gap_start]] = -1
     return int(bin_ind[0]) if was_scalar else bin_ind.astype(int)
+
+
+def _on_edge(
+    positions: NDArray[np.float64], edges: float | NDArray[np.float64]
+) -> NDArray[np.bool_]:
+    """Whether each position equals its edge to within the edge's float rounding.
+
+    The allowance is a few units in the last place of the edge, so it does
+    not grow with bin widths or with the distance along the track.
+    """
+    edges = np.asarray(edges, dtype=float)
+    on_edge: NDArray[np.bool_] = np.abs(positions - edges) <= 4 * np.spacing(
+        np.abs(edges)
+    )
+    return on_edge
