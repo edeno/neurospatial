@@ -243,3 +243,26 @@ def test_bins_meeting_only_outside_the_outline_are_not_neighbors(build):
         (min(side, high), max(side, high)),
     } <= pairs
     np.testing.assert_allclose(env.distance_between(bins=[low, high]), 4.0)
+
+
+def test_a_distant_part_of_the_arena_does_not_close_a_local_opening():
+    """Whether two bins meet in the arena depends only on where they meet.
+
+    The outline check allowed rounding of a millionth of the arena's size,
+    so adding a component 1e6 away closed a 0.6-wide opening between two
+    neighboring cells and made them unreachable from each other.
+    """
+    room = box(0, 0, 2, 1).difference(box(0.95, 0.6, 1.05, 1.0))
+    far = box(1e6, 0, 1e6 + 1, 1)
+    distances = []
+    for outline in (room, room.union(far)):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            env = Environment.from_samples(
+                np.array([[0.5, 0.5], [1.5, 0.5]]),
+                bin_size=1.0,
+                arena=OpenArena(outline),
+                dimension_ranges=[(0, 2), (0, 1)],
+            )
+        distances.append(float(np.ravel(env.distance_between(bins=[0, 1]))[0]))
+    np.testing.assert_allclose(distances, [1.0, 1.0])

@@ -905,7 +905,13 @@ def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
     contact = shapely.intersection(
         shapely.boundary(cell_array[u]), shapely.boundary(cell_array[v])
     )
-    tolerance = np.full(len(candidates), _wall_end_slack(domain))
+    # Rounding of the contact itself: a few units in the last place of its
+    # coordinates and a sliver of its length, never the arena's size, so a
+    # distant part of the arena cannot close a local opening.
+    magnitude = np.max(np.abs(shapely.bounds(contact)), axis=1, initial=0.0)
+    tolerance = 64 * np.spacing(np.nan_to_num(magnitude)) + 1e-9 * shapely.length(
+        contact
+    )
     if errors is not None:
         tolerance += errors[u] + errors[v]
     side = shapely.length(contact) > 0
