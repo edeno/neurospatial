@@ -23,6 +23,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.layout.helpers.neighbor_pairs import (
     euclidean_pair_distances,
     order_neighbor_pairs,
@@ -82,7 +83,8 @@ def _get_graph_bins(
     ValueError
         - If `bin_size` is not positive.
         - If `edge_spacing` is a sequence but length != len(edge_order) - 1.
-        - If any node in `edge_order` is missing from `graph`.
+        - If any node in `edge_order` is missing from `graph`, or an entry
+          is not an edge of `graph`.
         - If any node of `graph` lacks a 'pos' attribute.
 
     """
@@ -93,6 +95,19 @@ def _get_graph_bins(
     }
     if missing_nodes:
         raise ValueError(f"Nodes {missing_nodes} in edge_order not found in graph.")
+    not_edges = [edge for edge in edge_order if not graph.has_edge(*edge)]
+    if not_edges:
+        raise ValueError(
+            _format_error(
+                f"edge_order entries {not_edges[:3]}"
+                f"{' ...' if len(not_edges) > 3 else ''} are not an edge of the "
+                "track graph.",
+                why="Why: each edge_order entry is a track segment, the edge "
+                "between its two nodes, so the graph must have that edge.",
+                fix="add the edge to the graph (graph.add_edge(u, v)) or list only "
+                "existing edges, e.g. edge_order=list(graph.edges())",
+            )
+        )
 
     n_edges = len(edge_order)
     if isinstance(edge_spacing, (int, float, np.number)):

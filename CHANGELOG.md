@@ -212,6 +212,9 @@
   example `create_layout("RegularGrid", positions=...)` without `bin_size`)
   names the engine and the missing option, with a fix, instead of Python's
   bare "missing a required argument".
+- A track `edge_order` entry whose two nodes no edge of the graph joins is
+  refused with a message naming it; the build failed later with a bare
+  `KeyError`.
 
 ### Spatial geometry review
 
