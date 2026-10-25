@@ -1,23 +1,18 @@
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 import shapely
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
-from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry import Binning, Outline
 from neurospatial.layout._labels import LayoutType
-from neurospatial.layout._plotting import plot_polygon_grid
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import _create_regular_grid
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
-
-if TYPE_CHECKING:
-    import matplotlib.axes
 
 
 class ShapelyPolygonLayout(_GridMixin):
@@ -123,85 +118,6 @@ class ShapelyPolygonLayout(_GridMixin):
 
         self._assign_cells(
             full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
-        )
-
-    def plot(
-        self,
-        ax: "matplotlib.axes.Axes | None" = None,
-        figsize=(7, 7),
-        cmap: str = "bone_r",
-        alpha: float = 0.7,
-        show_connectivity: bool = True,
-        node_size: float = 20,
-        node_color: str = "blue",
-    ) -> "matplotlib.axes.Axes":
-        """Plot the ShapelyPolygon layout.
-
-        Displays the active grid cells and overlays the defining polygon.
-        Inherits base grid plotting from `_GridMixin.plot` and adds
-        polygon visualization.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            Axes to plot on. If None, new figure and axes are created.
-        figsize : Tuple[float, float], default=(7, 7)
-            Size of the figure if `ax` is None.
-        cmap : str, default="bone_r"
-            Colormap for the grid visualization.
-        alpha : float, default=0.7
-            Transparency level for the grid.
-        show_connectivity : bool, default=True
-            Whether to show connections between bins.
-        node_size : float, default=20
-            Size of nodes in the connectivity graph.
-        node_color : str, default="blue"
-            Color of nodes in the connectivity graph.
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the layout is plotted.
-
-        """
-        if (
-            self.bin_centers is None
-            or self.grid_edges is None
-            or self.active_mask is None
-            or self.grid_shape is None
-        ):
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in (
-                        "bin_centers",
-                        "grid_edges",
-                        "active_mask",
-                        "grid_shape",
-                    )
-                    if getattr(self, name) is None
-                ),
-            )
-        if self.polygon_definition_ is None:
-            raise RuntimeError(
-                "Polygon definition is missing; ensure build() was called successfully."
-            )
-
-        return plot_polygon_grid(
-            ax,
-            title=self.layout_type,
-            bin_centers=self.bin_centers,
-            connectivity=self.connectivity,
-            dimension_ranges=self.dimension_ranges,
-            rectilinear=self.rectilinear_grid(),
-            outline=self.outline(),
-            figsize=figsize,
-            cmap=cmap,
-            alpha=alpha,
-            show_connectivity=show_connectivity,
-            node_size=node_size,
-            node_color=node_color,
         )
 
     def binning(self) -> Binning:

@@ -133,6 +133,12 @@
 - A negative or fractional `bin_count_threshold` is refused with a message
   naming the value. Grid and hexagonal layouts used to accept it silently, as
   if it were 0.
+- Track plots (`env.plot()` on a track, `GraphLayout.plot`) show their title
+  and honor `figsize`. They silently ignored every keyword argument, including
+  the `node_kwargs`, `bin_edge_kwargs` and `show_bin_edges` options
+  `GraphLayout.plot` documented; an option a track plot does not take is now
+  a `TypeError`. Every layout engine's `plot()` draws the same picture as
+  `Environment.plot`, through one shared method.
 
 ### Spatial geometry review
 

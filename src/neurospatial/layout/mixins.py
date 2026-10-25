@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 import numpy as np
@@ -15,7 +15,7 @@ from neurospatial.geometry import (
     graph_from_binning,
 )
 from neurospatial.layout._assembly import assemble_binning
-from neurospatial.layout._plotting import plot_grid
+from neurospatial.layout._plot_cells import _plot_binning
 from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
 from neurospatial.layout.helpers.regular_grid import regular_grid_pairs
 
@@ -54,6 +54,7 @@ class _NeighborPairsMixin:
     access; rebuilding the engine discards it.
     """
 
+    layout_type: str
     _pairs: NDArray[np.intp] | None = None
     _pair_distances: NDArray[np.float64] | None = None
     _connectivity: nx.Graph | None = None
@@ -116,6 +117,36 @@ class _NeighborPairsMixin:
         if self._connectivity is None:
             self._connectivity = graph_from_binning(self.binning())
         return self._connectivity
+
+    def plot(
+        self, ax: "matplotlib.axes.Axes | None" = None, **kwargs: Any
+    ) -> "matplotlib.axes.Axes":
+        """Draw the bins' cells and connectivity graph, as ``Environment.plot`` does.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on; a new figure when None.
+        **kwargs
+            Options of the drawing for this layout's cells. Grids:
+            ``figsize``, ``cmap``, ``alpha``, ``show_connectivity``,
+            ``node_size``, ``node_color``. Hexagons: ``figsize``,
+            ``node_kwargs``, ``edge_kwargs``. Meshes: ``show_triangles``,
+            ``show_centroids``, ``show_connectivity``, ``show_boundary`` and
+            their ``*_kwargs``. Tracks: ``figsize``.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        return _plot_binning(
+            self.binning(), self.connectivity, self.layout_type, ax, **kwargs
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -281,89 +312,6 @@ class _GridMixin(_NeighborPairsMixin):
             rectilinear=self.rectilinear_grid(),
             grid_spec=self._grid_spec,
             dimension_ranges=self.dimension_ranges,
-        )
-
-    def plot(
-        self,
-        ax: "matplotlib.axes.Axes | None" = None,
-        figsize=(7, 7),
-        cmap: str = "bone_r",
-        alpha: float = 0.7,
-        show_connectivity: bool = True,
-        node_size: float = 20,
-        node_color: str = "blue",
-    ) -> "matplotlib.axes.Axes":
-        """Plot the grid-based layout.
-
-        For 2D grids, displays the `active_mask` using `pcolormesh` and
-        optionally overlays the `connectivity`.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            Axes to plot on. If None, new figure and axes are created.
-        figsize : Tuple[float, float], default=(7, 7)
-            Size of the figure if a new one is created.
-        cmap : str, default="bone_r"
-            Colormap for the `active_mask` plot.
-        alpha : float, default=0.7
-            Transparency for the `active_mask` plot.
-        show_connectivity : bool, default=True
-            If True, draw the connectivity graph nodes and edges.
-        node_size : float, default=20
-            Size of nodes if `show_connectivity` is True.
-        node_color : str, default="blue"
-            Color of nodes if `show_connectivity` is True.
-        **kwargs : Any
-            Additional keyword arguments passed to `ax.pcolormesh` or
-            NetworkX drawing functions.
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the layout was plotted.
-
-        Raises
-        ------
-        RuntimeError
-            If layout attributes are not built.
-        NotImplementedError
-            If attempting to plot a non-2D grid layout with this method.
-
-        """
-        if (
-            self.bin_centers is None
-            or self.grid_edges is None
-            or self.active_mask is None
-            or self.grid_shape is None
-        ):
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in (
-                        "bin_centers",
-                        "grid_edges",
-                        "active_mask",
-                        "grid_shape",
-                    )
-                    if getattr(self, name) is None
-                ),
-            )
-
-        return plot_grid(
-            ax,
-            title=self.layout_type,
-            bin_centers=self.bin_centers,
-            connectivity=self.connectivity,
-            dimension_ranges=self.dimension_ranges,
-            rectilinear=self.rectilinear_grid(),
-            figsize=figsize,
-            cmap=cmap,
-            alpha=alpha,
-            show_connectivity=show_connectivity,
-            node_size=node_size,
-            node_color=node_color,
         )
 
     @property

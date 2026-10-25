@@ -792,3 +792,45 @@ def test_a_failed_rebuild_leaves_the_engine_unbuilt():
         )
     with pytest.raises(LayoutNotBuiltError):
         layout.binning()
+
+
+@pytest.mark.parametrize("layout_kind", list_available_layouts())
+def test_every_engine_plots_its_cells_like_environment_plot(
+    layout_kind, simple_graph_for_layout
+):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    params = MINIMAL_BUILD_PARAMS[layout_kind].copy()
+    if layout_kind == "Graph":
+        params["graph_definition"] = simple_graph_for_layout
+        params["edge_order"] = list(simple_graph_for_layout.edges())
+    layout = create_layout(layout_kind, **params)
+    ax = layout.plot()
+    assert layout_kind in ax.get_title()
+    assert ax.collections or ax.lines or ax.patches
+    plt.close(ax.figure)
+
+
+def test_track_plot_honors_figsize_and_refuses_unknown_options(
+    simple_graph_for_layout,
+):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    layout = create_layout(
+        "Graph",
+        graph_definition=simple_graph_for_layout,
+        edge_order=list(simple_graph_for_layout.edges()),
+        edge_spacing=0.0,
+        bin_size=0.5,
+    )
+    ax = layout.plot(figsize=(2, 3))
+    np.testing.assert_allclose(ax.figure.get_size_inches(), (2, 3))
+    plt.close(ax.figure)
+    with pytest.raises(TypeError, match="node_kwargs"):
+        layout.plot(node_kwargs={})

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -19,7 +19,6 @@ from neurospatial.geometry import (
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
-from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
 from neurospatial.layout.helpers.triangular_mesh import (
@@ -31,9 +30,6 @@ from neurospatial.layout.helpers.triangular_mesh import (
 )
 from neurospatial.layout.mixins import _NeighborPairsMixin
 from neurospatial.layout.validation import validate_cell_size
-
-if TYPE_CHECKING:
-    import matplotlib.axes
 
 
 class TriangularMeshLayout(_NeighborPairsMixin):
@@ -250,85 +246,6 @@ class TriangularMeshLayout(_NeighborPairsMixin):
 
         """
         return False
-
-    def plot(
-        self,
-        ax: matplotlib.axes.Axes | None = None,
-        show_triangles: bool = True,
-        show_centroids: bool = True,
-        show_connectivity: bool = True,
-        show_boundary: bool = True,
-        triangle_kwargs: dict[str, Any] | None = None,
-        centroid_kwargs: dict[str, Any] | None = None,
-        connectivity_kwargs: dict[str, Any] | None = None,
-        boundary_kwargs: dict[str, Any] | None = None,
-    ) -> matplotlib.axes.Axes:
-        """Plot the triangular mesh layout.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            Axes to plot on. If None, a new figure and axes are created.
-        show_triangles : bool, optional
-            Whether to draw the filled active triangles. Defaults to True.
-        show_centroids : bool, optional
-            Whether to draw the centroids of active triangles. Defaults to True.
-        show_connectivity : bool, optional
-            Whether to draw edges of the connectivity graph. Defaults to True.
-        show_boundary : bool, optional
-            Whether to draw the original boundary polygon. Defaults to True.
-        triangle_kwargs : Optional[Dict[str, Any]], optional
-            Keyword arguments for `matplotlib.collections.PatchCollection` of triangles.
-        centroid_kwargs : Optional[Dict[str, Any]], optional
-            Keyword arguments for `ax.scatter` plotting centroids.
-        connectivity_kwargs : Optional[Dict[str, Any]], optional
-            Keyword arguments for plotting connectivity edges.
-        boundary_kwargs : Optional[Dict[str, Any]], optional
-            Keyword arguments for plotting the boundary polygon.
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the layout was plotted.
-
-        """
-        if (
-            self._full_delaunay_tri is None
-            or self._active_original_simplex_indices is None
-            or self.bin_centers is None
-            or self.dimension_ranges is None
-        ):
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in (
-                        "_full_delaunay_tri",
-                        "_active_original_simplex_indices",
-                        "bin_centers",
-                        "dimension_ranges",
-                    )
-                    if getattr(self, name) is None
-                ),
-            )
-
-        return plot_triangles(
-            ax,
-            title=self.layout_type,
-            shapes=self.bin_shapes(),
-            outline=self.outline(),
-            connectivity=self.connectivity,
-            dimension_ranges=self.dimension_ranges,
-            bin_centers=self.bin_centers,
-            show_triangles=show_triangles,
-            show_centroids=show_centroids,
-            show_connectivity=show_connectivity,
-            show_boundary=show_boundary,
-            triangle_kwargs=triangle_kwargs,
-            centroid_kwargs=centroid_kwargs,
-            connectivity_kwargs=connectivity_kwargs,
-            boundary_kwargs=boundary_kwargs,
-        )
 
     def bin_shapes(self) -> TriangleShapes:
         """Return mesh points and the active triangles in bin order."""

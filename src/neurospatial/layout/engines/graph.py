@@ -15,7 +15,7 @@ from neurospatial.geometry import (
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
-from neurospatial.layout._plotting import _plot_track_linear, plot_track
+from neurospatial.layout._plotting import _plot_track_linear
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _find_bin_for_linear_position,
@@ -172,46 +172,6 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
 
         """
         return True
-
-    def plot(
-        self,
-        ax: "matplotlib.axes.Axes | None" = None,
-        **kwargs,
-    ) -> "matplotlib.axes.Axes":
-        """Plot the N-D embedding of the graph-based layout.
-
-        Displays the original graph used for definition, the N-D positions of
-        the binned track segments (active bin centers), and their connectivity.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            Axes to plot on. If None, new figure and axes are created.
-        **kwargs : Any
-            Additional keyword arguments:
-            - `figsize` (tuple): Figure size if `ax` is None.
-            - `node_kwargs` (dict): Kwargs for plotting original graph nodes.
-            - `edge_kwargs` (dict): Kwargs for plotting original graph edges.
-            - `bin_node_kwargs` (dict): Kwargs for plotting active bin center nodes.
-            - `bin_edge_kwargs` (dict): Kwargs for plotting connectivity graph edges.
-            - `show_bin_edges` (bool): Whether to project and plot 1D bin edges in N-D.
-
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the layout is plotted.
-
-        """
-        return plot_track(
-            ax,
-            title=self.layout_type,
-            linearization=self.linearization(),
-            bin_centers=self.bin_centers,
-            connectivity=self.connectivity,
-            grid_edges=self.grid_edges,
-            **kwargs,
-        )
 
     def plot_linear_layout(
         self,

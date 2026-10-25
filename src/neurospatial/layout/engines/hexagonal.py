@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -9,12 +9,10 @@ from neurospatial.geometry import (
     Binning,
     HexagonShapes,
     HexLocator,
-    cell_polygons,
     component_extent,
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
-from neurospatial.layout._plotting import plot_hexagons
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
     _create_hex_grid,
@@ -26,9 +24,6 @@ from neurospatial.layout.helpers.utils import (
     check_grid_size_safety,
 )
 from neurospatial.layout.mixins import _NeighborPairsMixin, _no_active_bins_message
-
-if TYPE_CHECKING:
-    import matplotlib.axes
 
 
 class HexagonalLayout(_NeighborPairsMixin):
@@ -252,42 +247,6 @@ class HexagonalLayout(_NeighborPairsMixin):
 
         """
         return False
-
-    def plot(
-        self,
-        ax: "matplotlib.axes.Axes | None" = None,
-        **kwargs,
-    ) -> "matplotlib.axes.Axes":
-        """Plot the hexagonal layout.
-
-        Displays active hexagons and their connectivity graph.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            Axes to plot on. If None, new figure and axes are created.
-        **kwargs : Any
-            Additional keyword arguments:
-            - `show_hexagons` (bool, default=True): Whether to draw hexagon cells.
-            - `hexagon_kwargs` (dict): Kwargs for the cells' `PatchCollection`.
-            - Other kwargs are passed to `_generic_graph_plot` for the graph.
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the layout is plotted.
-
-        """
-        built = self.hex_radius_ is not None and self.bin_centers is not None
-        return plot_hexagons(
-            ax,
-            title=self.layout_type,
-            centers=self.bin_centers,
-            cells=cell_polygons(self.binning()) if built else None,
-            connectivity=self.connectivity,
-            dimension_ranges=self.dimension_ranges,
-            **kwargs,
-        )
 
     def bin_shapes(self) -> HexagonShapes:
         """Return the active hexagons in bin order with owned center coordinates."""
