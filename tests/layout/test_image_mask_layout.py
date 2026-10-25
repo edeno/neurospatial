@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from neurospatial import LayoutNotBuiltError
 from neurospatial.layout.engines.image_mask import ImageMaskLayout
 
 
@@ -107,6 +108,50 @@ def test_image_mask_bin_centers_match_dimension_ranges():
     assert np.all(layout.bin_centers[:, 0] <= x_hi)
     assert np.all(layout.bin_centers[:, 1] >= y_lo)
     assert np.all(layout.bin_centers[:, 1] <= y_hi)
+
+
+_MASK = np.array([[True, False], [True, True]])
+
+
+@pytest.mark.parametrize(
+    ("options", "error", "message"),
+    [
+        (
+            {"image_mask": _MASK.tolist(), "pixel_size": 1.0},
+            TypeError,
+            "must be a numpy array",
+        ),
+        (
+            {"image_mask": np.ones(3, dtype=bool), "pixel_size": 1.0},
+            ValueError,
+            "must be a 2D array",
+        ),
+        (
+            {"image_mask": _MASK.astype(float), "pixel_size": 1.0},
+            ValueError,
+            "must be a boolean array",
+        ),
+        (
+            {"image_mask": np.zeros((2, 2), dtype=bool), "pixel_size": 1.0},
+            ValueError,
+            "at least one True value",
+        ),
+        (
+            {"image_mask": _MASK, "pixel_size": (1.0, 2.0, 3.0)},
+            ValueError,
+            r"pixel_size must be one number per dimension \(2\)",
+        ),
+    ],
+    ids=["list", "one_dimensional", "float", "empty", "three_pixel_sides"],
+)
+def test_image_mask_refuses_an_invalid_mask_or_pixel_size(options, error, message):
+    """Each invalid input is refused by name and leaves no bins behind."""
+    layout = ImageMaskLayout()
+    layout.build(image_mask=_MASK, pixel_size=1.0)
+    with pytest.raises(error, match=message):
+        layout.build(**options)
+    with pytest.raises(LayoutNotBuiltError):
+        layout.binning()
 
 
 def test_image_mask_rejects_removed_bin_size_keyword():
