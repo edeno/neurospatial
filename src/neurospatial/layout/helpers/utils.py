@@ -31,14 +31,15 @@ def get_n_bins(
     """Calculate the number of bins needed for each dimension of a dataset.
 
     Each dimension gets ``ceil(extent / bin_size)`` bins, where the extent is
-    ``max - min`` of `dimension_range` or, without one, of `positions`.
+    the span of `dimension_range` (in either order) or, without one, of the
+    finite rows of `positions`.
 
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         N-dimensional position samples. Used to determine the data extent if
-        `dimension_range` is not provided, and ignored when it is. NaNs are
-        ignored for range calculation.
+        `dimension_range` is not provided, and ignored when it is. Rows with a
+        NaN or infinite coordinate are ignored.
     bin_size : Union[float, Sequence[float]]
         Bin width in the units of the positions. A single number applies to
         every dimension; a sequence gives one width per dimension and must
@@ -60,8 +61,9 @@ def get_n_bins(
         If `bin_size` is not numeric.
     ValueError
         If `bin_size` is not positive and finite, or has the wrong number of
-        entries; if `dimension_range` does not have two values (min, max)
-        per dimension; or if a bin count would exceed the int64 limit.
+        entries; if `dimension_range` does not have two finite values per
+        dimension; if `positions` has no finite row; or if a bin count would
+        exceed the int64 limit.
 
     Examples
     --------
@@ -74,14 +76,34 @@ def get_n_bins(
     array([10,  5])
     """
     if dimension_range is not None:
-        # Ensure dimension_range is numpy array for consistent processing
-        pr = np.asarray(dimension_range)
-        if pr.shape[1] != 2:
+        pr = np.asarray(dimension_range, dtype=float)
+        if pr.ndim != 2 or pr.shape[1] != 2:
             raise ValueError("dimension_range must be sequence of (min, max) pairs.")
-        extent = np.diff(pr, axis=1).squeeze(axis=1)
+        # A (max, min) pair is ordered, as the grid builder orders it.
+        extent = np.abs(np.diff(pr, axis=1).squeeze(axis=1))
+        if not np.all(np.isfinite(extent)):
+            raise ValueError(
+                _format_error(
+                    f"dimension_range {dimension_range!r} is not finite.",
+                    why="Why: the bin count is the extent divided by bin_size, "
+                    "so both ends of every range must be finite numbers.",
+                    fix="pass finite (min, max) pairs in the units of the "
+                    "positions, e.g. dimension_range=[(0, 100), (0, 100)]",
+                )
+            )
     else:
-        # Ignore NaNs when calculating range from data
-        extent = np.nanmax(positions, axis=0) - np.nanmin(positions, axis=0)
+        samples = np.asarray(positions, dtype=float)
+        samples = samples[np.all(np.isfinite(samples), axis=1)]
+        if len(samples) == 0:
+            raise ValueError(
+                _format_error(
+                    "positions has no row without a NaN or infinite coordinate.",
+                    why="Why: the extent of the finite positions sets the bin count.",
+                    fix="drop or interpolate tracking dropouts, or pass "
+                    "dimension_range",
+                )
+            )
+        extent = samples.max(axis=0) - samples.min(axis=0)
 
     bin_size_arr = validate_cell_size(bin_size, n_dims=len(extent))
 

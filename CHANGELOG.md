@@ -195,6 +195,9 @@
   used 1.0 per pixel, so positions in cm were binned as if each pixel were
   1 cm wide, and `layout_parameters["pixel_size"]` recorded None instead of
   the size used.
+- `get_n_bins` counts a reversed `(max, min)` range like the grid builder
+  does; it returned a negative count. It ignores positions rows with a NaN or
+  infinite coordinate, and refuses a range that is not finite.
 
 ### Spatial geometry review
 
