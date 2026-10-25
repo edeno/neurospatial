@@ -23,9 +23,9 @@ from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
 from neurospatial.layout.helpers.triangular_mesh import (
+    _conforming_triangulation,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
-    _sample_polygon_boundary,
     _triangulate_points,
     mesh_pairs,
 )
@@ -119,12 +119,13 @@ class TriangularMeshLayout(_NeighborPairsMixin):
                 "to form any triangle. Try decreasing point_spacing or ensuring "
                 "the polygon is large enough relative to the spacing.",
             )
-        exterior_coords = _sample_polygon_boundary(boundary_polygon, point_spacing)
-        # Stack the interior grid points with the boundary vertices.
-        sample_points = np.vstack([sample_points, exterior_coords])
-
-        # 2. Perform Delaunay triangulation
-        self._full_delaunay_tri = _triangulate_points(sample_points)
+        # 2. Triangulate the lattice with every ring of the polygon as sides
+        self._full_delaunay_tri = _conforming_triangulation(
+            sample_points,
+            boundary_polygon,
+            point_spacing,
+            triangulate=_triangulate_points,
+        )
 
         # 3. Filter active simplices (triangles)
         active_original_indices, all_centroids = _filter_active_simplices_by_centroid(

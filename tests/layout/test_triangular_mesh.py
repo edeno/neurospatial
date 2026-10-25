@@ -73,7 +73,7 @@ class TestSamplePolygonBoundary:
     def test_simple_square(self):
         """Test sampling boundary of a simple square."""
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        boundary_pts = _sample_polygon_boundary(poly, point_spacing=2.0)
+        boundary_pts, _ = _sample_polygon_boundary(poly, point_spacing=2.0)
 
         # Should have multiple points along the boundary
         assert boundary_pts.shape[0] > 4  # More than just the vertices
@@ -82,7 +82,7 @@ class TestSamplePolygonBoundary:
     def test_boundary_includes_vertices(self):
         """Test that boundary sampling includes original vertices."""
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        boundary_pts = _sample_polygon_boundary(poly, point_spacing=15.0)
+        boundary_pts, _ = _sample_polygon_boundary(poly, point_spacing=15.0)
 
         # With large spacing, should at least have the 4 corner vertices
         assert boundary_pts.shape[0] >= 4
@@ -90,7 +90,7 @@ class TestSamplePolygonBoundary:
     def test_deduplication(self):
         """Test that duplicate points are removed."""
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        boundary_pts = _sample_polygon_boundary(poly, point_spacing=5.0)
+        boundary_pts, _ = _sample_polygon_boundary(poly, point_spacing=5.0)
 
         # Check no exact duplicates
         unique_pts = np.unique(boundary_pts, axis=0)
@@ -286,8 +286,12 @@ class TestTriangularMeshLayoutBuild:
         shapely.geometry.Point(0, 0)
         .buffer(20)
         .difference(shapely.geometry.Point(3, 0).buffer(6)),
+        # A hole far thinner than the point spacing.
+        shapely.geometry.box(0, 0, 10, 10).difference(
+            shapely.geometry.box(2, 4.9, 8, 5.1)
+        ),
     ],
-    ids=["square", "L", "square_with_hole", "disk_with_hole"],
+    ids=["square", "L", "square_with_hole", "disk_with_hole", "thin_hole"],
 )
 @pytest.mark.parametrize("point_spacing", [1.0, 3.0])
 def test_mesh_covers_the_polygon_exactly(polygon, point_spacing):

@@ -87,6 +87,9 @@
   Only the outer outline was sampled, so triangles spanned each hole's edge:
   in a 10 x 10 arena with a 4 x 4 hole, 6% of in-arena positions (a ring
   0.5 wide around the hole) got bin -1 and their samples were dropped.
+  Every ring of the polygon is now a chain of triangle sides, so a hole or
+  notch narrower than `point_spacing` is followed too: a 0.2-wide hole in a
+  10 x 10 square was bridged by triangles that covered 97 of its 98.8 area.
 - Bins that meet only outside the arena's outline are no longer neighbors,
   in every environment with a known outline (`from_polygon`,
   `from_samples(arena=...)`, `rebin`, `from_bins`). Their centers can both

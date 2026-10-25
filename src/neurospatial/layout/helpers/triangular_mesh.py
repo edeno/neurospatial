@@ -5,6 +5,8 @@ triangulate them, keep the triangles whose centroid lies in the polygon,
 and pair triangles that share a side.
 """
 
+from collections.abc import Callable
+
 import numpy as np
 import shapely
 from numpy.typing import NDArray
@@ -163,7 +165,7 @@ def mesh_pairs(
 
 def _sample_polygon_boundary(
     poly: Polygon, point_spacing: float
-) -> NDArray[np.float64]:
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Sample every ring of a polygon at about ``point_spacing`` intervals.
 
     The exterior and each hole's ring are sampled, vertices included, so
@@ -178,11 +180,15 @@ def _sample_polygon_boundary(
 
     Returns
     -------
-    ndarray of float64, shape (n_points, 2)
+    points : ndarray of float64, shape (n_points, 2)
         Distinct sample points, sorted.
+    segments : ndarray of intp, shape (n_segments, 2)
+        Consecutive samples along each ring, as ``(lower, higher)`` indices
+        into ``points``.
     """
     samples = []
-    for ring in (poly.exterior, *poly.interiors):
+    ring_of_sample = []
+    for ring_number, ring in enumerate((poly.exterior, *poly.interiors)):
         coords = np.asarray(ring.coords, dtype=np.float64)
         starts, steps = coords[:-1], np.diff(coords, axis=0)
         n_segments = np.maximum(
@@ -194,5 +200,90 @@ def _sample_polygon_boundary(
         # np.linspace's arithmetic: k * (1 / n), with the last sample at 1.
         t = np.where(step == n_segments[edge], 1.0, step * (1.0 / n_segments[edge]))
         samples.append(starts[edge] + t[:, None] * steps[edge])
-    # Consecutive edges share endpoints.
-    return np.unique(np.concatenate(samples), axis=0)
+        ring_of_sample.append(np.full(len(edge), ring_number))
+    # Consecutive edges share endpoints, and each ring ends where it starts.
+    points, order = np.unique(np.concatenate(samples), axis=0, return_inverse=True)
+    order = order.ravel()
+    same_ring = np.diff(np.concatenate(ring_of_sample)) == 0
+    pairs = np.column_stack((order[:-1], order[1:]))[same_ring]
+    pairs = np.sort(pairs[pairs[:, 0] != pairs[:, 1]], axis=1).astype(np.intp)
+    return points, np.unique(pairs, axis=0)
+
+
+def _conforming_triangulation(
+    interior_points: NDArray[np.float64],
+    boundary_polygon: Polygon,
+    point_spacing: float,
+    triangulate: Callable[[NDArray[np.float64]], Delaunay],
+    max_rounds: int = 64,
+) -> Delaunay:
+    """Triangulate so that every ring segment of the polygon is a triangle side.
+
+    A Delaunay triangulation of the lattice and ring samples can bridge a
+    hole or notch narrower than ``point_spacing``: a triangle with corners
+    on both sides then straddles the outline, and keeping triangles by
+    their centroid gets the covered area wrong. Each ring segment missing
+    from the triangulation is split at its midpoint and the points are
+    triangulated again, until every segment is a side. Then every triangle
+    lies inside or outside the polygon, and its centroid tells which.
+
+    Parameters
+    ----------
+    interior_points : ndarray of float64, shape (n_interior, 2)
+        Lattice points inside the polygon.
+    boundary_polygon : shapely.geometry.Polygon
+        Polygon the mesh covers.
+    point_spacing : float
+        Spacing of the ring samples.
+    triangulate : callable
+        Delaunay triangulation of an ``(n_points, 2)`` array.
+    max_rounds : int, default 64
+        Rounds of segment splitting before giving up.
+
+    Returns
+    -------
+    scipy.spatial.Delaunay
+        Triangulation whose sides include every ring segment.
+
+    Raises
+    ------
+    ValueError
+        If segments are still missing after ``max_rounds`` rounds.
+    """
+    ring_points, segments = _sample_polygon_boundary(boundary_polygon, point_spacing)
+    points = np.vstack([interior_points, ring_points])
+    segments = segments + len(interior_points)
+    for _ in range(max_rounds):
+        triangulation = triangulate(points)
+        # Compare points by their first identical copy: Qhull keeps one of
+        # a lattice point and a ring sample at the same place.
+        _, first, inverse = np.unique(
+            points, axis=0, return_index=True, return_inverse=True
+        )
+        same = first[inverse.ravel()]
+        sides = same[triangulation.simplices[:, [[0, 1], [1, 2], [2, 0]]]]
+        sides = np.sort(sides.reshape(-1, 2), axis=1)
+        wanted = np.sort(same[segments], axis=1)
+        n = len(points)
+        missing = ~np.isin(
+            wanted[:, 0] * n + wanted[:, 1], sides[:, 0] * n + sides[:, 1]
+        )
+        if not missing.any():
+            return triangulation
+        low, high = segments[missing].T
+        middles = np.arange(n, n + len(low), dtype=np.intp)
+        points = np.vstack([points, (points[low] + points[high]) / 2])
+        segments = np.vstack(
+            [
+                segments[~missing],
+                np.column_stack((low, middles)),
+                np.column_stack((middles, high)),
+            ]
+        )
+    raise ValueError(
+        f"The polygon's outline could not be followed by the mesh after "
+        f"{max_rounds} rounds of splitting its edges. Why: a very sharp corner "
+        "or a gap far narrower than point_spacing needs ever smaller "
+        "triangles. Fix: use a smaller point_spacing, or simplify the polygon "
+        "(e.g. polygon.simplify(point_spacing / 10))."
+    )
