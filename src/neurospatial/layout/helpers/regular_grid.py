@@ -175,8 +175,13 @@ def _infer_active_bins_from_regular_grid(
         structure = ndimage.generate_binary_structure(n_dims, connectivity=2)
 
         if close_gaps:
-            # Closing operation first (dilation then erosion) to close small gaps
-            active_mask = ndimage.binary_closing(active_mask, structure=structure)
+            # Closing (dilation then erosion) closes small gaps. The erosion
+            # treats cells past the array as inactive, which would erode
+            # visited bins on the grid border; pad by the element's radius so
+            # closing only adds bins.
+            padded = np.pad(active_mask, 1)
+            closed = ndimage.binary_closing(padded, structure=structure)
+            active_mask = closed[(slice(1, -1),) * n_dims]
 
         if fill_holes:
             # Fill larger holes enclosed by occupied bins

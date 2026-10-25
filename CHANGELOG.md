@@ -74,6 +74,10 @@
   bin centers that cuts the corner. Graph distances across a bend or
   junction now match the track faces used for smoothing; at a 90° bend with
   5 cm bins the edge grows from 3.54 to 5.0 cm.
+- `close_gaps=True` no longer drops the visited bins on the grid's outer
+  ring. The closing step treated space past the grid as empty and eroded the
+  border, so on an open field with 10 cm bins 40 of 121 bins and 19% of
+  samples were lost along the walls. Closing now only adds bins.
 
 ### Spatial geometry review
 

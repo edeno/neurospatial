@@ -74,6 +74,22 @@ def test_infer_active_bins_with_threshold_and_morphology():
         assert mask[i, j]
 
 
+def test_close_gaps_keeps_visited_bins_on_the_grid_border():
+    """Closing only adds bins: a visited bin on the grid's edge stays active.
+
+    A grid inferred from positions always has visited bins in its outer
+    ring. Closing erodes after it dilates; treating the space past the
+    array as empty would erode that ring away and drop its samples.
+    """
+    data = np.array([[i + 0.5, j + 0.5] for i in range(4) for j in range(4)])
+    data = data[~((data[:, 0] == 1.5) & (data[:, 1] == 2.5))]  # one-bin gap
+    edges = (np.arange(5.0), np.arange(5.0))
+    visited = _infer_active_bins_from_regular_grid(data, edges)
+    closed = _infer_active_bins_from_regular_grid(data, edges, close_gaps=True)
+    assert np.all(closed[visited])
+    assert closed.all()  # the interior gap is closed too
+
+
 def test_infer_active_bins_boundary_exists():
     # 1D: boundary bins should be set to False
     data = np.array([[0.5], [1.5], [2.5]])
