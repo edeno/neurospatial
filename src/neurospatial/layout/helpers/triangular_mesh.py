@@ -163,6 +163,10 @@ def mesh_pairs(
     return np.column_stack((lower[keep], other[keep]))
 
 
+# Ring segments shorter than this fraction of the point spacing are not split.
+_SHORTEST_SPLIT = 1e-6
+
+
 def _sample_polygon_boundary(
     poly: Polygon, point_spacing: float
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
@@ -197,9 +201,14 @@ def _sample_polygon_boundary(
         edge = np.repeat(np.arange(len(starts)), n_segments + 1)
         first = np.repeat(np.cumsum(n_segments + 1) - (n_segments + 1), n_segments + 1)
         step = np.arange(len(edge)) - first
-        # np.linspace's arithmetic: k * (1 / n), with the last sample at 1.
-        t = np.where(step == n_segments[edge], 1.0, step * (1.0 / n_segments[edge]))
-        samples.append(starts[edge] + t[:, None] * steps[edge])
+        # np.linspace's arithmetic: k * (1 / n). The last sample of an edge
+        # is the polygon vertex itself, so neighboring edges share it exactly.
+        last = step == n_segments[edge]
+        sampled = (
+            starts[edge] + (step * (1.0 / n_segments[edge]))[:, None] * steps[edge]
+        )
+        sampled[last] = coords[edge[last] + 1]
+        samples.append(sampled)
         ring_of_sample.append(np.full(len(edge), ring_number))
     # Consecutive edges share endpoints, and each ring ends where it starts.
     points, order = np.unique(np.concatenate(samples), axis=0, return_inverse=True)
@@ -240,6 +249,13 @@ def _conforming_triangulation(
     max_rounds : int, default 64
         Rounds of segment splitting before giving up.
 
+    Notes
+    -----
+    A missing segment shorter than a millionth of ``point_spacing`` is not
+    split: Qhull merges points that close, so splitting could not add it,
+    and a triangle crossing it misplaces no measurable area. Each segment is
+    therefore halved at most about 20 times.
+
     Returns
     -------
     scipy.spatial.Delaunay
@@ -268,6 +284,10 @@ def _conforming_triangulation(
         missing = ~np.isin(
             wanted[:, 0] * n + wanted[:, 1], sides[:, 0] * n + sides[:, 1]
         )
+        lengths = np.linalg.norm(
+            points[segments[:, 1]] - points[segments[:, 0]], axis=1
+        )
+        missing &= lengths > _SHORTEST_SPLIT * point_spacing
         if not missing.any():
             return triangulation
         low, high = segments[missing].T

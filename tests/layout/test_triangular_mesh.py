@@ -539,3 +539,25 @@ class TestTriangularMeshLayoutPlot:
 
         # Should only show centroids
         plt.close(fig)
+
+
+@pytest.mark.parametrize("angle", [5.0, 17.0, 45.0, 61.5])
+def test_rotated_polygon_mesh_stays_small_and_covers_it(angle):
+    """A rotated outline needs no refinement beyond its ring samples.
+
+    Computing each edge's end separately left a near-duplicate copy of every
+    rotated vertex, a segment Qhull could never keep, so refinement grew
+    without bound (48 to 8,262 points in 12 rounds).
+    """
+    from shapely import affinity
+
+    polygon = affinity.rotate(
+        shapely.geometry.box(0, 0, 10, 10), angle, origin="center"
+    )
+    layout = TriangularMeshLayout()
+    layout.build(boundary_polygon=polygon, point_spacing=2.0)
+    binning = layout.binning()
+    interior = _generate_interior_points_for_mesh(polygon, 2.0)
+    ring, _ = _sample_polygon_boundary(polygon, 2.0)
+    assert len(binning.shapes.points) <= 2 * (len(interior) + len(ring))
+    np.testing.assert_allclose(binning.bins.sizes.sum(), polygon.area, rtol=1e-9)
