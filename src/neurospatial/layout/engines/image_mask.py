@@ -8,6 +8,7 @@ from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
+from neurospatial.layout.validation import validate_cell_size
 
 
 class ImageMaskLayout(_GridMixin):
@@ -94,34 +95,13 @@ class ImageMaskLayout(_GridMixin):
         if not np.issubdtype(image_mask.dtype, np.bool_):
             raise ValueError("image_mask must be a boolean array.")
 
-        # Validate pixel_size. Use an array-safe comparison so that both scalar
-        # and per-axis pixel sizes -- including those deserialized from JSON as
-        # an ndarray (e.g. an anisotropic (3.0, 1.0) round-tripped through
-        # to_dict/from_dict) -- are checked without raising the "truth value of
-        # an array is ambiguous" error.
-        if np.any(np.asarray(pixel_size, dtype=float) <= 0):
-            raise ValueError("pixel_size must be positive.")
+        # One size, or (width, height) of a pixel, also as an ndarray read
+        # back from to_dict.
+        pixel_size_x, pixel_size_y = validate_cell_size(
+            pixel_size, name="pixel_size", n_dims=2
+        ).tolist()
         if not np.any(image_mask):
             raise ValueError("image_mask must contain at least one True value.")
-        if not np.all(np.isfinite(image_mask)):
-            raise ValueError("image_mask must not contain NaN or Inf values.")
-
-        # Determine pixel sizes for x and y (units per pixel)
-        pixel_size_x: float
-        pixel_size_y: float
-        if isinstance(pixel_size, (float, int, np.number)):
-            pixel_size_x = float(pixel_size)
-            pixel_size_y = float(pixel_size)
-        elif isinstance(pixel_size, (list, tuple, np.ndarray)) and len(pixel_size) == 2:
-            pixel_size_x = float(pixel_size[0])  # width of a pixel (x)
-            pixel_size_y = float(pixel_size[1])  # height of a pixel (y)
-        else:
-            raise ValueError(
-                "pixel_size for ImageMaskLayout must be a float or a "
-                "2-element sequence (width, height).",
-            )
-        if pixel_size_x <= 0 or pixel_size_y <= 0:
-            raise ValueError("pixel_size components must be positive.")
 
         n_rows, n_cols = image_mask.shape  # rows = y, cols = x
 

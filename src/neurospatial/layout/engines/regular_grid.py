@@ -17,6 +17,7 @@ from neurospatial.layout.helpers.utils import (
     check_grid_size_safety,
 )
 from neurospatial.layout.mixins import _GridMixin
+from neurospatial.layout.validation import validate_cell_size
 
 
 class RegularGridLayout(_GridMixin):
@@ -107,14 +108,10 @@ class RegularGridLayout(_GridMixin):
                     "dimension_ranges must be provided if positions is None.",
                 )
 
-            # Use a half-bin buffer per axis so the inferred range extends
-            # half a bin beyond the data on each side. For a per-axis sequence
-            # bin_size this must also be halved (a raw sequence would double
-            # the intended buffer on each axis).
+            # Extend the range half a bin beyond the data on each side.
+            half = validate_cell_size(bin_size) / 2.0
             buffer_for_inference: float | list[float] = (
-                bin_size / 2.0
-                if isinstance(bin_size, (float, int, np.number))
-                else [float(b) / 2.0 for b in bin_size]
+                float(half[0]) if np.ndim(bin_size) == 0 else half.tolist()
             )
             # Infer ranges from positions
             self.dimension_ranges = _infer_dimension_ranges_from_samples(

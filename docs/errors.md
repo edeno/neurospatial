@@ -167,16 +167,21 @@ if nan_count > 0:
 
 **Error Message Example:**
 ```
-ValueError: [E1002] bin_size must be positive (got -5.0).
+ValueError: [E1002] bin_size must be positive and finite, got -5.0.
+Why: cell widths must be finite and positive in every spatial dimension.
+Fix: pass e.g. bin_size=2.0, in the same units as the positions
 ```
 
 **What This Means:**
 
-The `bin_size` parameter has an invalid value. Valid bin_size values must be:
+The cell size has an invalid value. Every layout checks its cell size the
+same way: `bin_size`, `hexagon_width`, `point_spacing` and `pixel_size`.
+Valid values must be:
 
-1. **Positive numbers** - Negative or zero bin_size is meaningless
+1. **Positive numbers** - Negative or zero sizes are meaningless
 2. **Finite** - Not NaN or infinity
-3. **Numeric** - Either a single number or sequence of numbers
+3. **Numeric** - A single number (a NumPy scalar works) or one number per
+   dimension; strings and booleans are refused with `TypeError`
 
 **Solutions:**
 

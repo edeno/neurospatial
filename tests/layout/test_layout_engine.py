@@ -717,3 +717,44 @@ def test_every_engine_refuses_a_build_with_no_active_bins(build):
     with pytest.raises(ValueError, match="has no active bins") as error:
         _EMPTY_BUILDS[build]()
     assert "Why:" in str(error.value) and "Fix:" in str(error.value)
+
+
+def _sized_build_params(layout_kind, graph, size):
+    """Minimal build parameters with the engine's cell size set to ``size``."""
+    params = MINIMAL_BUILD_PARAMS[layout_kind].copy()
+    if layout_kind == "Graph":
+        params["graph_definition"] = graph
+        params["edge_order"] = list(graph.edges())
+    params[_size_parameter(layout_kind)] = size
+    return params
+
+
+# A masked grid takes its cell edges, not a size.
+_SIZED_LAYOUTS = [kind for kind in list_available_layouts() if kind != "MaskedGrid"]
+
+
+@pytest.mark.parametrize("layout_kind", _SIZED_LAYOUTS)
+@pytest.mark.parametrize("size", [np.nan, np.inf, 0.0, -1.0, "2"])
+def test_every_engine_refuses_a_bad_cell_size_the_same_way(
+    layout_kind, size, simple_graph_for_layout
+):
+    """NaN, infinite, non-positive and non-numeric sizes get one refusal."""
+    params = _sized_build_params(layout_kind, simple_graph_for_layout, size)
+    error = TypeError if isinstance(size, str) else ValueError
+    with pytest.raises(error, match=r"\[E1002\][\s\S]*Fix:"):
+        create_layout(layout_kind, **params)
+
+
+@pytest.mark.parametrize("layout_kind", _SIZED_LAYOUTS)
+@pytest.mark.parametrize("scalar", [np.float32(0.5), np.int64(1)])
+def test_a_numpy_scalar_cell_size_builds_like_the_python_number(
+    layout_kind, scalar, simple_graph_for_layout
+):
+    expected = create_layout(
+        layout_kind,
+        **_sized_build_params(layout_kind, simple_graph_for_layout, scalar.item()),
+    )
+    layout = create_layout(
+        layout_kind, **_sized_build_params(layout_kind, simple_graph_for_layout, scalar)
+    )
+    np.testing.assert_array_equal(layout.bin_centers, expected.bin_centers)

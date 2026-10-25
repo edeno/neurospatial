@@ -32,6 +32,7 @@ from neurospatial.geometry import (
     points_to_hex_bin_ind,
 )
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
+from neurospatial.layout.validation import validate_cell_size
 
 
 def _create_hex_grid(
@@ -87,11 +88,9 @@ def _create_hex_grid(
         - If `positions` is not a 2D array of shape (n_samples, 2).
 
     """
-    # 1) Validate hexagon_width
-    if hexagon_width <= 0:
-        raise ValueError(
-            f"`hexagon_width` must be a positive float (got {hexagon_width})."
-        )
+    hexagon_width = float(
+        validate_cell_size(hexagon_width, name="hexagon_width", scalar_only=True)[0]
+    )
 
     hex_orientation = 0.0  # point-up
 

@@ -24,6 +24,7 @@ from neurospatial.layout.helpers.graph import (
     track_pairs,
 )
 from neurospatial.layout.mixins import _KDTreeMixin, _NeighborPairsMixin
+from neurospatial.layout.validation import validate_cell_size
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -109,8 +110,7 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             raise TypeError("graph_definition must be a NetworkX graph.")
         if not edge_order:  # Empty edge_order means no path to linearize
             raise ValueError("edge_order must not be empty.")
-        if bin_size <= 0:
-            raise ValueError("bin_size must be positive.")
+        validate_cell_size(bin_size, scalar_only=True)
 
         # track_linearization finds a point's nearest segment by its position in
         # ``graph.edges()`` but looks that segment up by its ``edge_id`` attribute,

@@ -20,6 +20,7 @@ from scipy.spatial import KDTree
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry import get_centers as get_centers
+from neurospatial.layout.validation import validate_cell_size
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -75,32 +76,7 @@ def get_n_bins(
         # Ignore NaNs when calculating range from data
         extent = np.nanmax(positions, axis=0) - np.nanmin(positions, axis=0)
 
-    # Validate and convert bin_size with helpful error messages
-    try:
-        bin_size_arr = np.asarray(bin_size, dtype=float)
-    except (TypeError, ValueError) as e:
-        # Provide helpful error message for type conversion failures
-        actual_type = type(bin_size).__name__
-        raise TypeError(
-            f"bin_size must be a numeric value or sequence of numeric values. "
-            f"Got {actual_type}: {bin_size!r}"
-        ) from e
-
-    # Check for NaN or Inf values separately
-    if np.any(np.isnan(bin_size_arr)):
-        raise ValueError(
-            f"bin_size contains NaN (Not a Number) values (got {bin_size}). "
-            "bin_size must be finite numeric values."
-        )
-    if np.any(np.isinf(bin_size_arr)):
-        raise ValueError(
-            f"bin_size contains infinite values (got {bin_size}). "
-            "bin_size must be finite numeric values."
-        )
-
-    # Ensure bin_size is positive
-    if np.any(bin_size_arr <= 0.0):
-        raise ValueError(f"bin_size must be positive (got {bin_size}).")
+    bin_size_arr = validate_cell_size(bin_size, n_dims=len(extent))
 
     # Calculate number of bins, ensuring at least 1 bin even if extent is 0.
     # Compute in float then cast straight to int64 (never int32) so a large
@@ -326,13 +302,14 @@ def _infer_dimension_ranges_from_samples(
     min_vals = np.min(clean_samples, axis=0)
     max_vals = np.max(clean_samples, axis=0)
 
-    if isinstance(buffer_around_data, (float, int)):
-        buffer_values = np.array([float(buffer_around_data)] * n_dimensions)
-    elif len(buffer_around_data) == n_dimensions:
-        buffer_values = np.asarray(buffer_around_data, dtype=float)
+    buffer_array = np.asarray(buffer_around_data, dtype=float)
+    if buffer_array.ndim == 0:
+        buffer_values = np.full(n_dimensions, float(buffer_array))
+    elif buffer_array.shape == (n_dimensions,):
+        buffer_values = buffer_array
     else:
         raise ValueError(
-            f"buffer_around_data sequence length ({len(buffer_around_data)}) "
+            f"buffer_around_data sequence length ({buffer_array.size}) "
             f"must match number of dimensions ({n_dimensions}).",
         )
 

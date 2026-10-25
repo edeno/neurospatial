@@ -2,197 +2,99 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 from numpy.typing import NDArray
 
-
-def validate_bin_size(
-    bin_size: float | NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Validate and normalize bin_size parameter.
-
-    This function ensures bin_size is positive, finite, and properly formatted.
-    Scalar values are converted to 1-element arrays for uniform processing.
-
-    Parameters
-    ----------
-    bin_size : float | NDArray[np.float64]
-        Bin size specification. Can be:
-        - Scalar: Same size for all dimensions
-        - Array: Per-dimension sizes
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Validated bin_size as an array.
-
-    Raises
-    ------
-    TypeError
-        If bin_size is not numeric.
-    ValueError
-        If bin_size is not positive, finite, or contains invalid values.
-
-    Examples
-    --------
-    >>> validate_bin_size(2.0)
-    array([2.])
-
-    >>> validate_bin_size(np.array([2.0, 3.0]))
-    array([2., 3.])
-
-    >>> validate_bin_size(-1.0)  # doctest: +SKIP
-    ValueError: bin_size must be positive (got -1.0).
-
-    >>> validate_bin_size(np.inf)  # doctest: +SKIP
-    ValueError: bin_size contains infinite values...
-
-    Notes
-    -----
-    This validator is used by layout engines to ensure consistent error
-    messages and prevent common user errors like negative or zero bin sizes.
-
-    See Also
-    --------
-    validate_dimension_ranges : Validates dimension_ranges parameter
-    """
-    # Convert to array for uniform processing
-    bin_size_arr = np.atleast_1d(np.asarray(bin_size, dtype=np.float64))
-
-    # Check for NaN
-    if np.any(np.isnan(bin_size_arr)):
-        raise ValueError(
-            f"bin_size contains NaN values (got {bin_size}). "
-            "bin_size must be finite numeric values."
-        )
-
-    # Check for infinity
-    if np.any(np.isinf(bin_size_arr)):
-        raise ValueError(
-            f"bin_size contains infinite values (got {bin_size}). "
-            "bin_size must be finite numeric values."
-        )
-
-    # Check positivity
-    if np.any(bin_size_arr <= 0.0):
-        raise ValueError(f"bin_size must be positive (got {bin_size}).")
-
-    return bin_size_arr
+from neurospatial._exceptions import _format_error
 
 
-def validate_dimension_ranges(
-    dimension_ranges: list[tuple[float, float]] | tuple[tuple[float, float], ...],
+def validate_cell_size(
+    value: float | Sequence[float] | NDArray[np.floating],
     *,
+    name: str = "bin_size",
     n_dims: int | None = None,
-) -> list[tuple[float, float]]:
-    """Validate and normalize dimension_ranges parameter.
+    scalar_only: bool = False,
+) -> NDArray[np.float64]:
+    """Check a cell-size argument and return one size per dimension.
 
-    Ensures dimension_ranges has correct structure, valid numeric values,
-    and consistent dimensionality if n_dims is provided.
+    Every layout engine checks its cell size here (``bin_size``,
+    ``hexagon_width``, ``point_spacing``, ``pixel_size``), so a bad value
+    gets the same refusal whichever layout is built.
 
     Parameters
     ----------
-    dimension_ranges : list[tuple[float, float]] | tuple[tuple[float, float], ...]
-        Dimension ranges as sequence of (min, max) tuples.
-    n_dims : int | None, optional
-        Expected number of dimensions. If provided, validates length matches.
+    value : float or sequence of float
+        One size for every dimension, or one per dimension. A NumPy scalar
+        counts as one size.
+    name : str, default "bin_size"
+        Argument name shown in errors.
+    n_dims : int, optional
+        Number of dimensions: a single size is repeated to this length, and
+        a sequence must have it.
+    scalar_only : bool, default False
+        Refuse a sequence, for layouts whose cells have one size.
 
     Returns
     -------
-    list[tuple[float, float]]
-        Validated dimension_ranges as list of tuples.
+    ndarray of float64, shape (n_dims,)
+        Positive, finite sizes; shape ``(1,)`` for a single size without
+        ``n_dims``.
 
     Raises
     ------
     TypeError
-        If dimension_ranges is not a sequence or contains non-tuples.
+        If ``value`` is not numeric.
     ValueError
-        If ranges are invalid (min >= max, non-finite values, wrong length).
+        If a size is not finite and positive, or the number of sizes is
+        wrong.
 
     Examples
     --------
-    >>> validate_dimension_ranges([(0, 100), (0, 200)])
-    [(0.0, 100.0), (0.0, 200.0)]
-
-    >>> validate_dimension_ranges([(0, 100), (0, 200)], n_dims=2)
-    [(0.0, 100.0), (0.0, 200.0)]
-
-    >>> validate_dimension_ranges([(100, 0)])  # doctest: +SKIP
-    ValueError: dimension_ranges[0] has min >= max: (100, 0)
-
-    >>> validate_dimension_ranges([(0, 100)], n_dims=2)  # doctest: +SKIP
-    ValueError: dimension_ranges has 1 dimensions, expected 2
-
-    Notes
-    -----
-    This validator is used by layout engines to ensure consistent error
-    messages and prevent common user errors like inverted ranges or
-    mismatched dimensionality.
-
-    See Also
-    --------
-    validate_bin_size : Validates bin_size parameter
+    >>> validate_cell_size(2.0, n_dims=2)
+    array([2., 2.])
+    >>> validate_cell_size(np.float32(2.5))
+    array([2.5])
+    >>> validate_cell_size([2.0, 3.0], n_dims=2)
+    array([2., 3.])
     """
-    # Check type
-    if not isinstance(dimension_ranges, (list, tuple)):
+    raw = np.asarray(value)
+    if raw.dtype.kind not in "iuf":
         raise TypeError(
-            f"dimension_ranges must be a list or tuple, "
-            f"got {type(dimension_ranges).__name__}"
+            _format_error(
+                f"[E1002] {name} must be a number or a sequence of numbers, got "
+                f"{type(value).__name__} {value!r}.",
+                why="Why: it is the cell width in the units of the positions.",
+                fix=f"pass e.g. {name}=2.0",
+            )
         )
-
-    # Check not empty
-    if len(dimension_ranges) == 0:
-        raise ValueError("dimension_ranges cannot be empty")
-
-    # Check dimensionality if specified
-    if n_dims is not None and len(dimension_ranges) != n_dims:
+    if raw.ndim == 0:
+        sizes = np.full(1 if n_dims is None else n_dims, float(raw))
+    elif scalar_only or raw.ndim != 1 or (n_dims is not None and len(raw) != n_dims):
+        expected = (
+            "a single number"
+            if scalar_only
+            else f"one number per dimension ({n_dims})"
+            if n_dims is not None
+            else "a number or a 1-D sequence of numbers"
+        )
         raise ValueError(
-            f"dimension_ranges has {len(dimension_ranges)} dimensions, "
-            f"expected {n_dims}"
+            _format_error(
+                f"[E1002] {name} must be {expected}, got shape {raw.shape}: {value!r}.",
+                why="Why: each cell needs one width per spatial dimension.",
+                fix=f"pass e.g. {name}=2.0",
+            )
         )
-
-    # Validate each range
-    validated_ranges = []
-    for i, range_tuple in enumerate(dimension_ranges):
-        # Check tuple structure
-        if not isinstance(range_tuple, (tuple, list)):
-            raise TypeError(
-                f"dimension_ranges[{i}] must be a tuple or list, "
-                f"got {type(range_tuple).__name__}"
+    else:
+        sizes = raw.astype(np.float64)
+    if not np.all(np.isfinite(sizes) & (sizes > 0)):
+        raise ValueError(
+            _format_error(
+                f"[E1002] {name} must be positive and finite, got {value!r}.",
+                why="Why: cell widths must be finite and positive in every "
+                "spatial dimension.",
+                fix=f"pass e.g. {name}=2.0, in the same units as the positions",
             )
-
-        if len(range_tuple) != 2:
-            raise ValueError(
-                f"dimension_ranges[{i}] must have exactly 2 elements (min, max), "
-                f"got {len(range_tuple)}: {range_tuple}"
-            )
-
-        min_val, max_val = range_tuple
-
-        # Check numeric
-        try:
-            min_float = float(min_val)
-            max_float = float(max_val)
-        except (TypeError, ValueError) as e:
-            raise ValueError(
-                f"dimension_ranges[{i}] contains non-numeric values: {range_tuple}. "
-                f"Error: {e}"
-            ) from e
-
-        # Check finite
-        if not np.isfinite(min_float) or not np.isfinite(max_float):
-            raise ValueError(
-                f"dimension_ranges[{i}] contains non-finite values: "
-                f"({min_float}, {max_float})"
-            )
-
-        # Check min < max
-        if min_float >= max_float:
-            raise ValueError(
-                f"dimension_ranges[{i}] has min >= max: ({min_float}, {max_float}). "
-                f"Ranges must have min < max."
-            )
-
-        validated_ranges.append((min_float, max_float))
-
-    return validated_ranges
+        )
+    return sizes

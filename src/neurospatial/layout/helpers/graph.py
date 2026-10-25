@@ -28,6 +28,7 @@ from neurospatial.layout.helpers.neighbor_pairs import (
     order_neighbor_pairs,
 )
 from neurospatial.layout.helpers.utils import get_centers
+from neurospatial.layout.validation import validate_cell_size
 
 Edge = tuple[Any, Any]
 
@@ -77,9 +78,7 @@ def _get_graph_bins(
         - If any node in `edge_order` is missing from `graph`.
 
     """
-    # 1) Validate bin_size
-    if bin_size <= 0:
-        raise ValueError(f"`bin_size` must be a positive float (got {bin_size}).")
+    bin_size = float(validate_cell_size(bin_size, scalar_only=True)[0])
 
     # 2) Validate edge_order contents
     missing_nodes = {

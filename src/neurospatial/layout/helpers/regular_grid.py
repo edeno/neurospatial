@@ -32,6 +32,7 @@ from scipy import ndimage
 from neurospatial._exceptions import _format_error
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
 from neurospatial.layout.helpers.utils import get_centers, get_n_bins
+from neurospatial.layout.validation import validate_cell_size
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
 # ``_build_grid_structure`` by ``np.histogramdd`` / ``np.meshgrid`` BEFORE any
@@ -274,54 +275,7 @@ def _validate_and_prepare_inputs(
             raise ValueError("dimension_range must be provided when positions is None")
         n_dims = len(dimension_range)
 
-    # 2) Normalize & validate bin_size
-    if isinstance(bin_size, (float, int)):
-        try:
-            bin_sizes = np.full(n_dims, float(bin_size))
-        except (TypeError, ValueError) as e:
-            actual_type = type(bin_size).__name__
-            raise TypeError(
-                f"bin_size must be a numeric value. Got {actual_type}: {bin_size!r}"
-            ) from e
-    else:
-        try:
-            bin_sizes = np.asarray(bin_size, dtype=float)
-        except (TypeError, ValueError) as e:
-            actual_type = type(bin_size).__name__
-            raise TypeError(
-                f"bin_size must be a numeric value or sequence of numeric values. "
-                f"Got {actual_type}: {bin_size!r}"
-            ) from e
-
-        if bin_sizes.ndim != 1 or bin_sizes.shape[0] != n_dims:
-            raise ValueError(f"`bin_size` length must be {n_dims}, got {bin_sizes}.")
-
-    # Check for NaN or Inf values
-    if np.any(np.isnan(bin_sizes)):
-        raise ValueError(
-            _format_error(
-                f"[E1002] bin_size contains NaN (Not a Number) values (got {bin_size}). bin_size must be finite numeric values.",
-                fix="pass bin_size=2.0 (in the same units as positions)",
-                why="Why: grid widths must be finite and positive in every spatial dimension.",
-            )
-        )
-    if np.any(np.isinf(bin_sizes)):
-        raise ValueError(
-            _format_error(
-                f"[E1002] bin_size contains infinite values (got {bin_size}). bin_size must be finite numeric values.",
-                fix="pass bin_size=2.0 (in the same units as positions)",
-                why="Why: grid widths must be finite and positive in every spatial dimension.",
-            )
-        )
-
-    if np.any(bin_sizes <= 0.0):
-        raise ValueError(
-            _format_error(
-                f"[E1002] All elements of `bin_size` must be positive (got {bin_size}).",
-                fix="pass bin_size=2.0 (in the same units as positions)",
-                why="Why: grid widths must be finite and positive in every spatial dimension.",
-            )
-        )
+    bin_sizes = validate_cell_size(bin_size, n_dims=n_dims)
 
     return samples, n_dims, bin_sizes
 

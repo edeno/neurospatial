@@ -106,6 +106,17 @@
   still put cell edges on the arena's edge. Rebinning by a whole factor of the
   bin size now nests the cells. A NaN or infinite `dimension_ranges` entry is
   refused instead of silently building one cell.
+- Every layout checks its cell size (`bin_size`, `hexagon_width`,
+  `point_spacing`, `pixel_size`) the same way, with an `[E1002]` what/why/fix
+  message. A NumPy scalar such as `np.float32(2.0)` now works; before,
+  `from_samples` raised `TypeError: object of type 'numpy.float32' has no
+  len()` and `np.int64(2)` gave "length must be 2, got 2.0". NaN or infinite
+  hexagon widths, mesh spacings and pixel sizes, which failed later with
+  unrelated NumPy or locator errors, are refused up front, and a string or
+  boolean size is a `TypeError` instead of being read as a number.
+  `neurospatial.layout.validation` now holds this one check,
+  `validate_cell_size`; its unused `validate_bin_size` and
+  `validate_dimension_ranges` are removed.
 
 ### Spatial geometry review
 

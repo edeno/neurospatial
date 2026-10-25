@@ -40,14 +40,13 @@ class TestBinSizeTypeValidation:
         assert "str" in error_msg
         assert "number" in error_msg
 
-    def test_bin_size_list_with_numeric_string_succeeds(self):
-        """bin_size as list containing numeric strings should work (NumPy converts)."""
+    def test_bin_size_list_with_numeric_string_raises_type_error(self):
+        """A string in bin_size is refused, not parsed as a number."""
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
 
-        # NumPy can convert numeric strings like "2.0" to floats, so this should work
-        env = Environment.from_samples(data, bin_size=[5.0, "2.0"])
-        assert env.n_bins > 0  # Should successfully create environment
+        with pytest.raises(TypeError, match=r"bin_size must be a number"):
+            Environment.from_samples(data, bin_size=[5.0, "2.0"])
 
     def test_bin_size_none_raises_type_error(self):
         """bin_size as None should raise TypeError (required parameter)."""
@@ -266,19 +265,14 @@ class TestErrorMessageQuality:
 class TestEdgeCases:
     """Test edge cases in type validation."""
 
-    def test_bin_size_boolean_is_handled(self):
-        """bin_size as boolean should either work (coerced to 0/1) or fail clearly."""
+    @pytest.mark.parametrize("flag", [True, False])
+    def test_bin_size_boolean_raises_type_error(self, flag):
+        """A boolean bin_size is refused, not read as 1 or 0 units."""
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
 
-        # Boolean True coerces to 1.0, which is valid
-        # Boolean False coerces to 0.0, which should fail validation (must be positive)
-        with pytest.raises(ValueError) as exc_info:
-            Environment.from_samples(data, bin_size=False)
-
-        # Should fail because 0 is not positive, not because of type
-        error_msg = str(exc_info.value)
-        assert "positive" in error_msg.lower()
+        with pytest.raises(TypeError, match=r"bin_size must be a number"):
+            Environment.from_samples(data, bin_size=flag)
 
     def test_bin_size_complex_number_raises_type_error(self):
         """bin_size as complex number should raise TypeError or ValueError."""

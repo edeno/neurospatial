@@ -30,6 +30,7 @@ from neurospatial.layout.helpers.triangular_mesh import (
     mesh_pairs,
 )
 from neurospatial.layout.mixins import _NeighborPairsMixin
+from neurospatial.layout.validation import validate_cell_size
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -100,8 +101,9 @@ class TriangularMeshLayout(_NeighborPairsMixin):
                 "MultiPolygon boundaries are not directly supported. "
                 "Please provide a single Polygon component.",
             )
-        if point_spacing <= 0:
-            raise ValueError(f"point_spacing must be positive, got {point_spacing}.")
+        point_spacing = float(
+            validate_cell_size(point_spacing, name="point_spacing", scalar_only=True)[0]
+        )
 
         self._boundary_polygon_stored = (
             boundary_polygon  # Store the actual object for use
