@@ -302,3 +302,36 @@ def test_junction_faces_conserve_flux_of_a_balanced_linear_field():
     np.add.at(net, high, -flux)
     interior = np.flatnonzero(np.bincount(faces.edges.ravel()) > 1)
     np.testing.assert_allclose(net[interior], 0.0, atol=1e-12)
+
+
+def test_separate_tracks_crossing_at_one_point_keep_their_junction_faces():
+    """Two tracks that cross at a point are two junctions, not one.
+
+    Grouping junctions by position merged them: adding a second, unconnected
+    track through the same point halved the first track's junction face.
+    """
+    first = nx.Graph()
+    first.add_node("a", pos=(-2.0, 0.0))
+    first.add_node("j1", pos=(0.0, 0.0))
+    first.add_node("b", pos=(0.0, 2.0))
+    first.add_edges_from([("a", "j1"), ("j1", "b")])
+    both = first.copy()
+    both.add_node("c", pos=(2.0, 0.0))
+    both.add_node("j2", pos=(0.0, 0.0))
+    both.add_node("d", pos=(0.0, -2.0))
+    both.add_edges_from([("c", "j2"), ("j2", "d")])
+
+    def junction_faces(graph):
+        layout = GraphLayout()
+        layout.build(
+            graph_definition=graph,
+            edge_order=list(graph.edges()),
+            edge_spacing=0.0,
+            bin_size=1.0,
+        )
+        faces = layout.binning().build_faces()
+        segment = layout._segment_ids
+        return faces.A[segment[faces.edges[:, 0]] != segment[faces.edges[:, 1]]]
+
+    np.testing.assert_allclose(junction_faces(first), [1.0])
+    np.testing.assert_allclose(junction_faces(both), [1.0, 1.0])
