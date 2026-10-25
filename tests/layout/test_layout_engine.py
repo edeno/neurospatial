@@ -472,19 +472,13 @@ def test_layout_engine_protocol_adherence(
             )
             assert "edge_id" in edge_data  # Usually present
 
-    # 4. The owned binning snapshots this layout's own bins and connectivity.
+    # 4. The owned binning snapshots this layout's own bins. Its pair
+    # distances are checked against the geometry in
+    # test_every_geometry_measures_its_pairs_from_its_bin_centers.
     binning = layout.binning()
-    edges = list(layout.connectivity.edges(data=True))
     assert binning.kind == layout.layout_type
     np.testing.assert_array_equal(binning.bins.centers, layout.bin_centers)
     np.testing.assert_array_equal(binning.bins.sizes, layout.bin_sizes())
-    np.testing.assert_array_equal(
-        binning.connections.pairs,
-        np.array([(u, v) for u, v, _ in edges]).reshape(-1, 2),
-    )
-    np.testing.assert_array_equal(
-        binning.connections.pair_distances, [data["distance"] for _, _, data in edges]
-    )
     assert binning.bins.measure_dim == (
         1 if layout.is_linearized_track else layout.bin_centers.shape[1]
     )
@@ -496,6 +490,77 @@ def test_layout_engine_protocol_adherence(
         binning.build_faces().edges, binning.connections.pairs
     )
     assert (binning.linearization is not None) == layout.is_linearized_track
+
+
+def _track_segment_of_each_bin(env: Environment) -> list[tuple]:
+    """The track-graph edge whose straight segment holds each bin center."""
+    graph = env._binning.linearization.graph
+    segments = []
+    for center in env.bin_centers:
+        on = []
+        for u, v in graph.edges():
+            a, b = np.asarray(graph.nodes[u]["pos"]), np.asarray(graph.nodes[v]["pos"])
+            t = np.clip(np.dot(center - a, b - a) / np.dot(b - a, b - a), 0.0, 1.0)
+            if np.linalg.norm(a + t * (b - a) - center) < 1e-9:
+                on.append((u, v))
+        assert len(on) == 1, f"bin center {center} lies on {len(on)} segments"
+        segments.append(on[0])
+    return segments
+
+
+def _expected_pair_distances(env: Environment) -> np.ndarray:
+    """Pair lengths computed from the bin centers and the geometry alone.
+
+    Cartesian pairs are the straight line between centers, except track
+    pairs on two segments, which are measured through the shared node.
+    Polar ``(distance, angle)`` pairs are ``sqrt(Δr² + (r̄·Δθ)²)``, with
+    ``Δθ`` the shorter way round, so angular pairs are the arc ``r̄·Δθ``
+    and radial pairs ``|Δr|``.
+    """
+    centers = env.bin_centers
+    pairs = env._binning.connections.all_pairs
+    first, second = centers[pairs[:, 0]], centers[pairs[:, 1]]
+    if env.coordinate_kind == "polar":
+        d_radius = second[:, 0] - first[:, 0]
+        d_angle = np.angle(np.exp(1j * (second[:, 1] - first[:, 1])))
+        mean_radius = 0.5 * (first[:, 0] + second[:, 0])
+        return np.hypot(d_radius, mean_radius * d_angle)
+    expected = np.linalg.norm(second - first, axis=1)
+    if env.layout_type == "Graph":
+        graph = env._binning.linearization.graph
+        segment = _track_segment_of_each_bin(env)
+        for index, (u, v) in enumerate(pairs):
+            shared = set(segment[u]) & set(segment[v])
+            if segment[u] != segment[v]:
+                assert len(shared) == 1, "track pair joins segments with no node"
+                node = np.asarray(graph.nodes[shared.pop()]["pos"])
+                expected[index] = np.linalg.norm(centers[u] - node) + np.linalg.norm(
+                    centers[v] - node
+                )
+    return expected
+
+
+def test_every_geometry_measures_its_pairs_from_its_bin_centers(built_environment):
+    """Every engine's pairs are ordered, unique, and as long as the geometry says.
+
+    Navigation distances feed geodesic distance, smoothing and gradients, so a
+    pair length that is not the physical distance between its bins (a chord
+    in place of an arc, or a shortcut across a track junction) biases every
+    path-based analysis.
+    """
+    env = built_environment
+    connections = env._binning.connections
+    pairs = connections.all_pairs
+    assert len(pairs) > 0
+    assert np.all(pairs[:, 0] < pairs[:, 1])
+    assert len(np.unique(pairs, axis=0)) == len(pairs)
+    assert np.all(pairs < env.n_bins)
+    np.testing.assert_allclose(
+        connections.all_distances, _expected_pair_distances(env), rtol=1e-12
+    )
+    np.testing.assert_array_equal(env.bin_sizes, env._binning.bins.sizes)
+    low, high = np.asarray(env.dimension_ranges).T
+    assert np.all((env.bin_centers >= low) & (env.bin_centers <= high))
 
 
 @pytest.mark.parametrize("layout_kind", list_available_layouts())
