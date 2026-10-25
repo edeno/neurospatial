@@ -31,7 +31,7 @@ class ShapelyPolygonLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.SHAPELY_POLYGON.value
+    layout_type: ClassVar[str] = LayoutType.SHAPELY_POLYGON.value
     size_parameter: ClassVar[str | None] = "bin_size"
     _build_params_used: dict[str, Any]
 

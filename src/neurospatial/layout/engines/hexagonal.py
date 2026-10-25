@@ -41,7 +41,7 @@ class HexagonalLayout(_NeighborPairsMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.HEXAGONAL.value
+    layout_type: ClassVar[str] = LayoutType.HEXAGONAL.value
     size_parameter: ClassVar[str | None] = "hexagon_width"
     _build_params_used: dict[str, Any]
 

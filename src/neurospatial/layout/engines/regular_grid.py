@@ -35,7 +35,7 @@ class RegularGridLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.REGULAR_GRID.value
+    layout_type: ClassVar[str] = LayoutType.REGULAR_GRID.value
     size_parameter: ClassVar[str | None] = "bin_size"
     _build_params_used: dict[str, Any]
 

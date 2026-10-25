@@ -113,7 +113,9 @@ def test_subclass_engine_label_is_the_environment_label():
 
 
 def test_custom_label_matching_a_layout_type_is_spelled_canonically():
-    layout = MaskedGridLayout()
+    class Relabeled(MaskedGridLayout):
+        layout_type = "masked-grid"
+
+    layout = Relabeled()
     layout.build(**_BUILDS["MaskedGrid"])
-    layout.layout_type = "masked-grid"
     assert Environment.from_layout(layout).layout_type == "MaskedGrid"

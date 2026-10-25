@@ -31,7 +31,7 @@ class ImageMaskLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.IMAGE_MASK.value
+    layout_type: ClassVar[str] = LayoutType.IMAGE_MASK.value
     size_parameter: ClassVar[str | None] = "pixel_size"
     _build_params_used: dict[str, Any]
 

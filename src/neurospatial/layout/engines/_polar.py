@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -29,7 +31,7 @@ class _PolarGridLayout(MaskedGridLayout):
         set by ``build()``.
     """
 
-    layout_type: str = LayoutType.POLAR.value
+    layout_type: ClassVar[str] = LayoutType.POLAR.value
     circular_angle: bool
 
     def __init__(self) -> None:

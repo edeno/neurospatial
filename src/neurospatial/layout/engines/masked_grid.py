@@ -26,7 +26,7 @@ class MaskedGridLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.MASKED_GRID.value
+    layout_type: ClassVar[str] = LayoutType.MASKED_GRID.value
     size_parameter: ClassVar[str | None] = None
     _build_params_used: dict[str, Any]
 

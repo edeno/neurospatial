@@ -219,8 +219,9 @@ class LayoutEngine(Protocol):
     two methods and nothing else.
 
     An environment also reads two optional members when an engine has them:
-    ``layout_type``, a string label (otherwise the binning's ``kind`` is the
-    label), and the build choices that :func:`capture_build_params` records in
+    ``layout_type``, a string label that the built-in engines declare as a
+    ``ClassVar`` (otherwise the binning's ``kind`` is the label; a subclass
+    sets its own), and the build choices that :func:`capture_build_params` records in
     ``_build_params_used`` (otherwise none).
 
     The built-in engines offer more for working with an engine directly:

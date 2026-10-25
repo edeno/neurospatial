@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import networkx as nx
 import numpy as np
@@ -54,7 +54,7 @@ class _NeighborPairsMixin:
     access; rebuilding the engine discards it.
     """
 
-    layout_type: str
+    layout_type: ClassVar[str]
     _pairs: NDArray[np.intp] | None = None
     _pair_distances: NDArray[np.float64] | None = None
     _connectivity: nx.Graph | None = None
@@ -207,7 +207,7 @@ class _GridMixin(_NeighborPairsMixin):
     active_mask: NDArray[np.bool_] | None = None
     bin_centers: NDArray[np.float64] | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
-    layout_type: str
+    layout_type: ClassVar[str]
     _locator: RectilinearLocator | None = None
     _grid_spec: GridBinningSpec | None = None
 

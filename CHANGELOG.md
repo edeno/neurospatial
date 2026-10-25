@@ -151,6 +151,10 @@
 - `get_layout_parameters` marks each build option `'required'`: True or
   False. A required option and one that defaults to None both reported
   `'default': None`, so the two could not be told apart.
+- A built-in layout engine's `layout_type` is typed `ClassVar[str]`, so
+  type checkers flag `layout.layout_type = ...` on an instance. Assigning it
+  relabeled that one engine, and the environment built from it reported the
+  wrong layout and rebuild hints; a custom label belongs on a subclass.
 
 ### Spatial geometry review
 

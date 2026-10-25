@@ -38,7 +38,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
     """
 
-    layout_type: str = LayoutType.TRIANGULAR_MESH.value
+    layout_type: ClassVar[str] = LayoutType.TRIANGULAR_MESH.value
     size_parameter: ClassVar[str | None] = "point_spacing"
     _build_params_used: dict[str, Any]
 
