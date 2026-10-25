@@ -103,18 +103,10 @@ class ShapelyPolygonLayout(_GridMixin):
         # Safety check: warn or error if grid is very large
         check_grid_size_safety(self.grid_shape)
 
-        # 1. Intrinsic mask from Shapely
-        pts_to_check = (
-            full_grid_bin_centers[:, :2]
-            if full_grid_bin_centers.shape[0] > 0
-            else np.empty((0, 2))
-        )
-        shapely_mask_flat = (
-            shapely.contains(polygon, shapely.points(pts_to_check))
-            if pts_to_check.shape[0] > 0
-            else np.array([], dtype=bool)
-        )
-        self.active_mask = shapely_mask_flat.reshape(self.grid_shape)
+        # Cells whose centers lie strictly inside the polygon are active.
+        self.active_mask = shapely.contains_xy(
+            polygon, full_grid_bin_centers[:, 0], full_grid_bin_centers[:, 1]
+        ).reshape(self.grid_shape)
 
         self._assign_cells(
             full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
