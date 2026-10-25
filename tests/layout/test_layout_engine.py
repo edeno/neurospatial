@@ -758,3 +758,37 @@ def test_a_numpy_scalar_cell_size_builds_like_the_python_number(
         layout_kind, **_sized_build_params(layout_kind, simple_graph_for_layout, scalar)
     )
     np.testing.assert_array_equal(layout.bin_centers, expected.bin_centers)
+
+
+def test_a_built_engine_owns_read_only_copies_of_its_inputs():
+    """Editing the caller's mask after build cannot change the engine."""
+    mask = np.array([[True, True], [True, False]])
+    edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
+    layout = create_layout("MaskedGrid", active_mask=mask, grid_edges=edges)
+    mask[0, 0] = False
+    edges[0][0] = -5.0
+    assert layout.active_mask[0, 0]
+    assert layout.grid_edges[0][0] == 0.0
+    for array in (layout.bin_centers, layout.active_mask, *layout.grid_edges):
+        assert not array.flags.writeable
+    assert layout.binning().bins.n_bins == 3
+
+
+def test_a_failed_rebuild_leaves_the_engine_unbuilt():
+    """A build that raises does not leave old bins mixed with new settings."""
+    layout = create_layout(
+        "RegularGrid",
+        bin_size=10.0,
+        dimension_ranges=[(0, 30), (0, 30)],
+        infer_active_bins=False,
+    )
+    outside = np.full((5, 2), 500.0)
+    with pytest.raises(ValueError, match="No active bins"):
+        layout.build(
+            bin_size=5.0,
+            dimension_ranges=[(0, 100), (0, 100)],
+            positions=outside,
+            bin_count_threshold=10,
+        )
+    with pytest.raises(LayoutNotBuiltError):
+        layout.binning()

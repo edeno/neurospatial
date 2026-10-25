@@ -98,6 +98,7 @@ class RegularGridLayout(_GridMixin):
 
         """
 
+        self._begin_build()
         # --- Determine dimension_ranges if not provided ---
         if dimension_ranges is not None:
             self.dimension_ranges = dimension_ranges

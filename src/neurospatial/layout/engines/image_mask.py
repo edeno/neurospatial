@@ -85,6 +85,7 @@ class ImageMaskLayout(_GridMixin):
             or if `pixel_size` is invalid (wrong type/shape or non-positive).
 
         """
+        self._begin_build()
         if pixel_size is None:
             pixel_size = 1.0  # one unit per pixel
 

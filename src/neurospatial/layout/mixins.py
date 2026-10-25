@@ -23,6 +23,13 @@ if TYPE_CHECKING:
     import matplotlib.axes
 
 
+def _read_only(array: NDArray[np.generic]) -> NDArray[np.generic]:
+    """A read-only copy of ``array``."""
+    owned = np.array(array, copy=True)
+    owned.setflags(write=False)
+    return owned
+
+
 def _no_active_bins_message(engine: str, cause: str, fix: str) -> str:
     """Return the refusal for a build that leaves no active bins."""
     return _format_error(
@@ -50,6 +57,28 @@ class _NeighborPairsMixin:
     _pairs: NDArray[np.intp] | None = None
     _pair_distances: NDArray[np.float64] | None = None
     _connectivity: nx.Graph | None = None
+
+    def _begin_build(self) -> None:
+        """Mark the engine unbuilt until ``build()`` sets its pairs again.
+
+        A build that fails partway then leaves ``binning()`` raising
+        :class:`LayoutNotBuiltError`, not mixing old and new state.
+        """
+        self._pairs = self._pair_distances = None
+        self._connectivity = None
+
+    def _own_arrays(self, *names: str) -> None:
+        """Replace the named arrays, or tuples of arrays, with read-only copies.
+
+        A built engine then shares no memory with the caller's inputs, and
+        its arrays cannot drift from the pairs and lookup built from them.
+        """
+        for name in names:
+            value = getattr(self, name)
+            if isinstance(value, tuple):
+                setattr(self, name, tuple(_read_only(array) for array in value))
+            elif value is not None:
+                setattr(self, name, _read_only(value))
 
     def binning(self) -> Binning:  # pragma: no cover - every engine overrides it
         raise NotImplementedError
@@ -242,6 +271,7 @@ class _GridMixin(_NeighborPairsMixin):
         self._set_neighbor_pairs(
             pairs, euclidean_pair_distances(self.bin_centers, pairs)
         )
+        self._own_arrays("bin_centers", "active_mask", "grid_edges")
         self._build_locator(connect_diagonal=connect_diagonal)
 
     def binning(self) -> Binning:

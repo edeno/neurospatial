@@ -315,8 +315,10 @@ def test_from_layout_owns_a_copy_of_the_engine_bins():
     )
     env = Environment.from_layout(engine, name="arena", units="cm")
     centers = env.bin_centers.copy()
-    engine.bin_centers[:] = -1.0
-    engine.active_mask[:] = False
+    for array, value in ((engine.bin_centers, -1.0), (engine.active_mask, False)):
+        assert not array.flags.writeable
+        array.setflags(write=True)
+        array[...] = value
     np.testing.assert_array_equal(env.bin_centers, centers)
     assert (env.name, env.units, env.n_bins) == ("arena", "cm", 6)
 

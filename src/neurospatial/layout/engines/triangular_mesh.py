@@ -92,6 +92,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             used for triangulation.
 
         """
+        self._begin_build()
         if not isinstance(boundary_polygon, Polygon):
             raise TypeError("boundary_polygon must be a Shapely Polygon.")
         if boundary_polygon.is_empty:
@@ -171,6 +172,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         self.active_mask = np.zeros(n_total_delaunay_triangles, dtype=bool)
         self.active_mask[active_original_indices] = True
         # self.grid_edges remains an empty tuple as it's not a rectilinear grid.
+        self._own_arrays("bin_centers", "active_mask")
         self._build_locator()
 
     def _build_locator(self) -> None:

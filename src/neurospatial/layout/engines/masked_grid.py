@@ -74,6 +74,7 @@ class MaskedGridLayout(_GridMixin):
             match the `grid_edges` definition, or if `grid_edges` are invalid.
 
         """
+        self._begin_build()
         if not isinstance(active_mask, np.ndarray):
             raise TypeError(
                 f"active_mask must be a NumPy array, got {type(active_mask).__name__}."

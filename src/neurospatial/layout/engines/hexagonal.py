@@ -113,6 +113,7 @@ class HexagonalLayout(_NeighborPairsMixin):
             `hexagon_width` is not positive.
 
         """
+        self._begin_build()
         self.hexagon_width = hexagon_width
         (
             full_grid_bin_centers,
@@ -186,6 +187,7 @@ class HexagonalLayout(_NeighborPairsMixin):
             source: node_id
             for node_id, source in enumerate(active_bin_original_flat_indices.tolist())
         }
+        self._own_arrays("bin_centers", "active_mask")
         self._build_locator()
 
     def _build_locator(self) -> None:

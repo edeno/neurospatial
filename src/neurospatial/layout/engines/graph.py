@@ -106,6 +106,7 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             edge's 'distance' is not the distance between its nodes.
 
         """
+        self._begin_build()
         if not isinstance(graph_definition, nx.Graph):
             raise TypeError("graph_definition must be a NetworkX graph.")
         if not edge_order:  # Empty edge_order means no path to linearize
@@ -150,7 +151,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             )
         )
 
-        # --- Build KDTree ---
+        self._own_arrays(
+            "bin_centers", "linear_bin_centers_", "active_mask", "grid_edges"
+        )
         self._build_kdtree(points_for_tree=self.bin_centers)
         self._linearization = TrackLinearization(
             track_graph, edge_order, edge_spacing, self.grid_edges, self.active_mask

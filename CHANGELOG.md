@@ -123,6 +123,13 @@
 - `GraphLayout.linear_point_to_bin_ind` maps the exact end of the track (a
   reward well at the last node) to the last bin instead of -1, as `bin_at`
   does.
+- A built layout engine owns read-only copies of its arrays (`bin_centers`,
+  `active_mask`, `grid_edges`, and a track's linear centers). `MaskedGridLayout`
+  kept the caller's mask itself, so editing it after `build()` left the
+  engine with more bins than grid cells and `from_layout` refused it with an
+  unexplained mismatch. A `build()` that raises now leaves the engine unbuilt
+  (`binning()` raises `LayoutNotBuiltError`) instead of mixing the old bins
+  with the new grid.
 
 ### Spatial geometry review
 
