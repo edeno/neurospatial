@@ -349,6 +349,24 @@ class TestInferredRangeBuffer:
         assert np.isclose(y_max, 20.0 + 2.0)
 
 
+def test_boundary_bins_without_inference_stay_inside_dimension_ranges():
+    """Boundary bins widen the reported extent, so no center falls outside it."""
+    layout = RegularGridLayout()
+    layout.build(
+        bin_size=2.0,
+        dimension_ranges=[(0.0, 10.0), (0.0, 6.0)],
+        add_boundary_bins=True,
+        infer_active_bins=False,
+    )
+    # One extra 2-unit bin on each side of each axis, all active.
+    assert layout.dimension_ranges == ((-2.0, 12.0), (-2.0, 8.0))
+    assert layout.bin_centers.shape == (7 * 5, 2)
+    low, high = np.asarray(layout.dimension_ranges).T
+    assert np.all((layout.bin_centers > low) & (layout.bin_centers < high))
+    np.testing.assert_array_equal(layout.bin_centers.min(axis=0), [-1.0, -1.0])
+    np.testing.assert_array_equal(layout.bin_centers.max(axis=0), [11.0, 7.0])
+
+
 class TestRegularGridFromCells:
     """regular_grid_from_cells refuses cells that do not match its edges."""
 

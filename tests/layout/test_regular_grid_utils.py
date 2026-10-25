@@ -51,27 +51,63 @@ def test_infer_active_bins_from_regular_grid_simple():
     assert np.sum(mask) == 3
 
 
-def test_infer_active_bins_with_threshold_and_morphology():
-    # 2D: points in a cross, threshold=1, dilate
-    data = np.array(
-        [
-            [1.5, 0.5],
-            [1.5, 1.5],
-            [1.5, 2.5],  # vertical
-            [0.5, 1.5],
-            [2.5, 1.5],  # horizontal
-        ]
-    )
-    edges = (np.array([0, 1, 2, 3]), np.array([0, 1, 2, 3]))
+def _samples_in(cells):
+    """One position at the center of each (x index, y index) unit cell."""
+    return np.asarray(cells, dtype=float) + 0.5
+
+
+def _mask_of(cells, shape):
+    mask = np.zeros(shape, dtype=bool)
+    mask[tuple(np.asarray(cells).T)] = True
+    return mask
+
+
+_UNIT_EDGES_7 = (np.arange(8.0), np.arange(8.0))
+# Occupied bins around (3, 3), which no sample visits.
+_ANNULUS = [(i, j) for i in range(2, 5) for j in range(2, 5) if (i, j) != (3, 3)]
+# A C opening to +x: its one-bin notch at (2, 2) leads out through (2, 3).
+_C_SHAPE = [(1, 1), (1, 2), (2, 1), (3, 1), (3, 2)]
+_L_SHAPE = [(2, 2), (3, 2), (4, 2), (4, 3), (4, 4)]
+
+
+@pytest.mark.parametrize("fill_holes", [False, True])
+def test_fill_holes_activates_a_bin_enclosed_by_occupied_bins(fill_holes):
+    """An unvisited bin surrounded by visited ones is filled only on request."""
     mask = _infer_active_bins_from_regular_grid(
-        data, edges, bin_count_threshold=0, dilate=True
+        _samples_in(_ANNULUS), _UNIT_EDGES_7, fill_holes=fill_holes
     )
-    # Dilation should expand the cross
-    assert mask.sum() > 5
-    # All original cross points should be active
-    for pt in data:
-        i, j = int(pt[0]), int(pt[1])
-        assert mask[i, j]
+    expected = _mask_of(_ANNULUS, (7, 7))
+    expected[3, 3] = fill_holes
+    np.testing.assert_array_equal(mask, expected)
+
+
+@pytest.mark.parametrize(
+    ("option", "closed"),
+    [(None, False), ("fill_holes", False), ("close_gaps", True)],
+)
+def test_only_close_gaps_closes_a_notch_open_to_the_outside(option, closed):
+    """A one-bin notch is not a hole, so filling leaves it; closing fills it."""
+    options = {} if option is None else {option: True}
+    mask = _infer_active_bins_from_regular_grid(
+        _samples_in(_C_SHAPE), (np.arange(7.0), np.arange(7.0)), **options
+    )
+    expected = _mask_of(_C_SHAPE, (6, 6))
+    expected[2, 2] = closed
+    np.testing.assert_array_equal(mask, expected)
+
+
+def test_dilation_uses_the_eight_neighbor_element():
+    """Dilating an L adds every bin within one step, diagonals included."""
+    mask = _infer_active_bins_from_regular_grid(
+        _samples_in(_L_SHAPE), _UNIT_EDGES_7, dilate=True
+    )
+    rows, cols = np.indices((7, 7))
+    within_one = [
+        np.maximum(np.abs(rows - i), np.abs(cols - j)) <= 1 for i, j in _L_SHAPE
+    ]
+    np.testing.assert_array_equal(mask, np.any(within_one, axis=0))
+    # Diagonal-only neighbors of the L's ends: a 4-neighbor element misses them.
+    assert mask[1, 1] and mask[5, 5] and mask[1, 3]
 
 
 @pytest.mark.parametrize("bin_size", [3.0, 7.0, 2.5, (3.0, 1.7)])
