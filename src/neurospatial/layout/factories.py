@@ -162,8 +162,10 @@ def create_layout(kind: LayoutType | str, **kwargs: Any) -> _BuiltinLayout:
     Raises
     ------
     ValueError
-        - If `kind` is not one of the available layouts.
-        - If any unexpected keyword arguments are passed to `build`.
+        If `kind` is not one of the available layouts.
+    TypeError
+        If a keyword argument is not an option of the engine's ``build()``;
+        the message lists the options it takes.
 
     Examples
     --------
@@ -185,15 +187,22 @@ def create_layout(kind: LayoutType | str, **kwargs: Any) -> _BuiltinLayout:
     engine_cls = _engine_class(kind, "create_layout()")
     engine = engine_cls()
 
-    # 3) Validate `kwargs` against `build(...)` signature
-    sig = inspect.signature(engine.build)
-    allowed = {param for param in sig.parameters if param != "self"}
-    unexpected = set(kwargs) - allowed
+    accepted = list(inspect.signature(engine.build).parameters)
+    unexpected = [name for name in kwargs if name not in accepted]
     if unexpected:
-        raise ValueError(
-            f"Unexpected arguments for {engine_cls.layout_type}.build(): {unexpected}"
+        raise TypeError(
+            _format_error(
+                f"create_layout() got unexpected build options for "
+                f"{engine_cls.layout_type}: {', '.join(map(repr, unexpected))}.",
+                why=(
+                    f"Why: {engine_cls.__name__}.build() takes only "
+                    f"{', '.join(accepted)}."
+                ),
+                fix=(
+                    "check the spelling, or list the options with "
+                    f"get_layout_parameters({engine_cls.layout_type!r})"
+                ),
+            )
         )
-
-    # 4) Call `build(...)` with validated params
-    engine.build(**{k: kwargs[k] for k in allowed if k in kwargs})
+    engine.build(**kwargs)
     return engine

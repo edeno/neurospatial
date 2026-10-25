@@ -144,6 +144,10 @@
   `connectivity`, `bin_sizes()`, `plot()`) on its result. Before, its return
   type was the bare `LayoutEngine` protocol, which has only `build()` and
   `binning()`.
+- `create_layout` with a keyword its engine does not take raises
+  `TypeError`, as Python does for an unexpected keyword, with a message that
+  lists the options the engine's `build()` takes. It raised a bare
+  `ValueError` naming only the unexpected keyword.
 
 ### Spatial geometry review
 

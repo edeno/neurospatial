@@ -252,6 +252,20 @@ def test_create_layout_invalid_kind():
         create_layout("NotARealLayout", foo=1)
 
 
+def test_create_layout_refuses_an_unexpected_keyword():
+    """A misspelled build option is a TypeError that lists the accepted ones."""
+    with pytest.raises(TypeError) as excinfo:
+        create_layout(
+            "RegularGrid", bin_sise=2.0, dimension_ranges=[(0.0, 10.0), (0.0, 10.0)]
+        )
+    message = str(excinfo.value)
+    assert "'bin_sise'" in message
+    assert "\nWhy: " in message
+    assert "\nFix: " in message
+    for name in get_layout_parameters("RegularGrid"):
+        assert name in message
+
+
 def test_get_layout_parameters_invalid():
     with pytest.raises(ValueError):
         get_layout_parameters("NotARealLayout")
