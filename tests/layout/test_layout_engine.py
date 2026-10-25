@@ -59,208 +59,136 @@ def test_get_layout_parameters_tells_required_from_defaulting_to_none():
     }
 
 
-def test_create_layout_regular_grid():
-    rng = np.random.default_rng(42)
-    data = rng.random((100, 2)) * 10
-    layout = create_layout(
-        "RegularGrid",
-        bin_size=2.0,
-        positions=data,
-        infer_active_bins=True,
-        add_boundary_bins=False,
-    )
-    assert hasattr(layout, "bin_centers")
-    assert layout.bin_centers.ndim == 2
-    assert layout.connectivity is not None
-    assert layout.active_mask is not None
-    assert layout.grid_edges is not None
-    assert not layout.is_linearized_track
+def _box_cells(half_widths):
+    """Containment oracle for axis-aligned rectangular cells."""
+
+    def contains(points, centers):
+        return np.all(np.abs(points[:, None] - centers[None]) < half_widths, axis=2)
+
+    return contains
 
 
-def test_regular_grid_locates_points():
-    rng = np.random.default_rng(42)
-    data = rng.random((100, 2)) * 10
-    layout = create_layout(
-        "RegularGrid",
-        bin_size=2.0,
-        positions=data,
-        infer_active_bins=True,
-        add_boundary_bins=False,
-    )
-    points = np.array([[1.0, 1.0], [5.0, 5.0], [100.0, 100.0]])
-    inds = layout.binning().locator.locate(points)
-    assert inds.shape == (3,)
-    assert np.any(inds >= 0)
+def _pointy_top_hexagons(width):
+    """Containment oracle for pointy-top hexagons ``width`` across the flats."""
+
+    def contains(points, centers):
+        dx, dy = np.moveaxis(np.abs(points[:, None] - centers[None]), -1, 0)
+        return (dx <= width / 2) & (0.5 * dx + np.sqrt(3) / 2 * dy <= width / 2)
+
+    return contains
 
 
-def test_regular_grid_bin_area_volume():
-    rng = np.random.default_rng(42)
-    data = rng.random((100, 2)) * 10
-    layout = create_layout(
-        "RegularGrid",
-        bin_size=2.0,
-        positions=data,
-        infer_active_bins=True,
-        add_boundary_bins=False,
-    )
-    areas = layout.bin_sizes()
-    assert np.allclose(areas, areas[0])
-    assert areas.shape[0] == layout.bin_centers.shape[0]
-
-
-def test_create_layout_hexagonal():
-    rng = np.random.default_rng(42)
-    data = rng.random((100, 2)) * 10
-    layout = create_layout(
-        "Hexagonal",
-        hexagon_width=2.0,
-        positions=data,
-        infer_active_bins=True,
-    )
-    assert hasattr(layout, "bin_centers")
-    assert layout.bin_centers.ndim == 2
-    assert layout.connectivity is not None
-    assert not layout.is_linearized_track
-
-
-def test_hexagonal_locates_points():
-    rng = np.random.default_rng(42)
-    data = rng.random((100, 2)) * 10
-    layout = create_layout(
-        "Hexagonal",
-        hexagon_width=2.0,
-        positions=data,
-        infer_active_bins=True,
-    )
-    points = np.array([[1.0, 1.0], [5.0, 5.0], [100.0, 100.0]])
-    inds = layout.binning().locator.locate(points)
-    assert inds.shape == (3,)
-    assert np.any(inds >= 0)
-
-
-def test_hexagonal_bin_area_volume():
-    rng = np.random.default_rng(42)
-    data = rng.random((100, 2)) * 10
-    layout = create_layout(
-        "Hexagonal",
-        hexagon_width=2.0,
-        positions=data,
-        infer_active_bins=True,
-    )
-    areas = layout.bin_sizes()
-    assert np.allclose(areas, areas[0])
-    assert areas.shape[0] == layout.bin_centers.shape[0]
-
-
-def test_create_layout_masked_grid():
-    mask = np.zeros((5, 5), dtype=bool)
-    mask[1:4, 1:4] = True
-    edges = (
-        np.arange(6).astype(float),
-        np.arange(6).astype(float),
-    )  # Ensure float for grid_edges
-    layout = create_layout(
-        "MaskedGrid",
-        active_mask=mask,
-        grid_edges=edges,
-    )
-    assert hasattr(layout, "bin_centers")
-    assert layout.bin_centers.ndim == 2
-    assert layout.bin_centers.shape[0] == np.sum(mask)  # Should be 9
-    assert layout.connectivity is not None
-    assert not layout.is_linearized_track
-
-
-def test_create_layout_image_mask():
-    mask = np.zeros((5, 5), dtype=bool)
-    mask[2, 2] = True
-    layout = create_layout(
-        "ImageMask",
-        image_mask=mask,
-        pixel_size=1.0,
-    )
-    assert hasattr(layout, "bin_centers")
-    assert layout.bin_centers.ndim == 2
-    assert layout.connectivity is not None
-    assert not layout.is_linearized_track
-
-
-def test_image_mask_locates_points():
-    mask = np.zeros((5, 5), dtype=bool)
-    mask[2, 2] = True
-    layout = create_layout(
-        "ImageMask",
-        image_mask=mask,
-        pixel_size=1.0,
-    )
-    points = np.array([[2.5, 2.5], [0.5, 0.5]])
-    inds = layout.binning().locator.locate(points)
-    assert inds.shape == (2,)
-    assert inds[0] >= 0
-
-
-def test_create_layout_graph():
-    G = nx.Graph()
-    G.add_node(0, pos=(0, 0))
-    G.add_node(1, pos=(1, 0))
-    G.add_node(2, pos=(2, 0))
-    G.add_edges_from([(0, 1), (1, 2)])
-    G = add_edge_distances(G)
-    edge_order = [(0, 1), (1, 2)]
-    layout = create_layout(
+def _straight_track():
+    """Two 1-unit segments along the x-axis, binned every 0.5."""
+    graph = nx.Graph()
+    for node in range(3):
+        graph.add_node(node, pos=(float(node), 0.0))
+    graph.add_edges_from([(0, 1), (1, 2)])
+    return create_layout(
         "Graph",
-        graph_definition=G,
-        edge_order=edge_order,
+        graph_definition=add_edge_distances(graph),
+        edge_order=[(0, 1), (1, 2)],
         edge_spacing=0.0,
         bin_size=0.5,
     )
-    assert hasattr(layout, "bin_centers")
-    assert layout.bin_centers.ndim == 2
-    # Graph: 0 --1m-- 1 --1m-- 2. Total length 2m. Bin size 0.5m. Expected 4 bins.
-    assert layout.bin_centers.shape[0] == 4
-    assert layout.connectivity is not None
+
+
+def _points_in_box(low, high):
+    def sample(rng):
+        return rng.uniform(low, high, (500, 2))
+
+    return sample
+
+
+def _points_on_x_axis(rng):
+    return np.column_stack((rng.uniform(0.0, 2.0, 200), np.zeros(200)))
+
+
+# An asymmetric mask with an inactive cell inside its bounding box.
+_HOLED_MASK = np.array(
+    [[True, True, True], [True, False, True], [False, False, True], [True, True, True]]
+)
+
+# layout builder, containment oracle, query points, expected size of every bin
+_CELL_CASES = {
+    "RegularGrid": (
+        lambda: create_layout(
+            "RegularGrid",
+            bin_size=2.0,
+            dimension_ranges=[(0, 10), (0, 10)],
+            infer_active_bins=False,
+        ),
+        _box_cells((1.0, 1.0)),
+        _points_in_box(-3, 13),
+        2.0**2,
+    ),
+    "Hexagonal": (
+        lambda: create_layout(
+            "Hexagonal",
+            hexagon_width=2.0,
+            dimension_ranges=((0, 10), (0, 10)),
+            infer_active_bins=False,
+        ),
+        _pointy_top_hexagons(2.0),
+        _points_in_box(-3, 13),
+        np.sqrt(3) / 2 * 2.0**2,
+    ),
+    "MaskedGrid": (
+        lambda: create_layout(
+            "MaskedGrid",
+            active_mask=_HOLED_MASK,
+            grid_edges=(np.arange(5.0), np.arange(0.0, 7.0, 2.0)),
+        ),
+        _box_cells((0.5, 1.0)),
+        _points_in_box((-1, -1), (5, 7)),
+        1.0 * 2.0,
+    ),
+    "ImageMask": (
+        lambda: create_layout(
+            "ImageMask", image_mask=_HOLED_MASK, pixel_size=(1.0, 2.0)
+        ),
+        _box_cells((0.5, 1.0)),
+        _points_in_box((-1, -1), (4, 9)),
+        1.0 * 2.0,
+    ),
+    "Graph": (
+        _straight_track,
+        lambda points, centers: np.abs(points[:, None, 0] - centers[None, :, 0]) < 0.25,
+        _points_on_x_axis,
+        0.5,
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_CELL_CASES))
+def test_engine_locates_each_point_in_the_cell_that_contains_it(kind):
+    """A point is assigned to the bin whose cell holds it, or -1 outside all cells."""
+    build, contains, sample, _ = _CELL_CASES[kind]
+    layout = build()
+    points = sample(np.random.default_rng(0))
+    inside = contains(points, layout.bin_centers)
+    assert inside.sum(axis=1).max() == 1, "cells of the oracle overlap"
+    expected = np.where(inside.any(axis=1), inside.argmax(axis=1), -1)
+    if kind != "Graph":  # every point on the track is in a bin
+        assert np.any(expected == -1)
+    np.testing.assert_array_equal(layout.binning().locator.locate(points), expected)
+
+
+@pytest.mark.parametrize("kind", sorted(_CELL_CASES))
+def test_engine_bin_sizes_are_the_cell_measure(kind):
+    """Each bin's size is its cell's area (or a track bin's length)."""
+    build, _, _, size = _CELL_CASES[kind]
+    layout = build()
+    np.testing.assert_allclose(layout.bin_sizes(), size, rtol=1e-12)
+
+
+def test_track_bins_tile_the_track_at_their_bin_size():
+    layout = _straight_track()
     assert layout.is_linearized_track
-
-
-def test_graph_locates_points():
-    G = nx.Graph()
-    G.add_node(0, pos=(0, 0))
-    G.add_node(1, pos=(1, 0))
-    G.add_node(2, pos=(2, 0))
-    G.add_edges_from([(0, 1), (1, 2)])
-    G = add_edge_distances(G)
-    edge_order = [(0, 1), (1, 2)]
-    layout = create_layout(
-        "Graph",
-        graph_definition=G,
-        edge_order=edge_order,
-        edge_spacing=0.0,
-        bin_size=0.5,
+    np.testing.assert_allclose(
+        layout.bin_centers, [[0.25, 0], [0.75, 0], [1.25, 0], [1.75, 0]]
     )
-    points = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
-    inds = layout.binning().locator.locate(points)
-    assert inds.shape == (3,)
-    assert np.any(inds >= 0)
-
-
-def test_graph_bin_area_volume():
-    G = nx.Graph()
-    G.add_node(0, pos=(0, 0))
-    G.add_node(1, pos=(1, 0))
-    G.add_node(2, pos=(2, 0))
-    G.add_edges_from([(0, 1), (1, 2)])
-    G = add_edge_distances(G)
-    edge_order = [(0, 1), (1, 2)]
-    layout = create_layout(
-        "Graph",
-        graph_definition=G,
-        edge_order=edge_order,
-        edge_spacing=0.0,
-        bin_size=0.5,
-    )
-    lengths = layout.bin_sizes()
-    assert np.allclose(lengths, lengths[0])
-    assert lengths.shape[0] == layout.bin_centers.shape[0]
+    assert layout.bin_sizes().sum() == pytest.approx(2.0)
 
 
 def test_create_layout_invalid_kind():
