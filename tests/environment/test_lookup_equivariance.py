@@ -35,14 +35,25 @@ MAP_IDS = ["tiny-angle", "rotation", "offset", "far", "reflection"]
 
 
 def face_probes(env):
-    """Midpoints of connected bin centers and every cell corner."""
-    centers = env.bin_centers
-    pairs = env.edge_pairs
-    probes = [(centers[pairs[:, 0]] + centers[pairs[:, 1]]) / 2]
+    """Points on the faces between bins, and every cell corner.
+
+    On a grid, the midpoint of two bin centers lies on their shared face
+    only to within rounding, so the probes are the midpoints of the cells'
+    sides, which lie exactly on an edge coordinate. Elsewhere they are the
+    midpoints of connected bin centers.
+    """
     try:
         cells = materialize_cells(env.binning)
     except (ValueError, NotImplementedError):
         cells = ()  # a track's bins are stretches of centerline, not cells
+    if env.binning.grid is not None:
+        rings = [shapely.get_coordinates(cell) for cell in cells]
+        sides = np.concatenate([(ring[:-1] + ring[1:]) / 2 for ring in rings])
+        probes = [np.unique(sides, axis=0)]
+    else:
+        centers = env.bin_centers
+        pairs = env.edge_pairs
+        probes = [(centers[pairs[:, 0]] + centers[pairs[:, 1]]) / 2]
     if len(cells):
         corners = np.concatenate([shapely.get_coordinates(cell) for cell in cells])
         probes.append(np.unique(corners, axis=0))
