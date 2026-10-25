@@ -1,4 +1,4 @@
-"""Utility functions for graph-based (linearized track) layouts. 📐
+"""Utility functions for graph-based (linearized track) layouts.
 
 This module provides helper functions specifically for environments where the
 spatial layout is defined by a graph structure that is subsequently linearized,
@@ -6,10 +6,10 @@ such as an animal's track in an experiment. These functions handle:
 
 - Discretizing a linearized graph track into 1D bins, accounting for edge
   lengths and specified spacing between segments (`_get_graph_bins`).
+- Giving every edge its straight-line length as ``distance``
+  (`set_straight_distances`).
 - Pairing adjacent bins of these binned segments, along each segment and
   across the track-graph nodes where segments meet (`track_pairs`).
-- Projecting 1D linearized positions back to their corresponding N-D
-  coordinates on the original track graph (`project_1d_to_2d`).
 - Finding the appropriate 1D bin index for a given linear position
   (`_find_bin_for_linear_position`).
 
@@ -44,8 +44,13 @@ def _get_graph_bins(
     NDArray[np.bool_],
     NDArray[np.int_],
 ]:
-    """Discretize each edge of a linearized graph into fixed-length bins, optionally
+    """Discretize each edge of a linearized graph into equal bins, optionally
     inserting inactive "gap" bins between segments.
+
+    An edge of length ``L`` gets ``ceil(L / bin_size)`` bins of length
+    ``L / ceil(L / bin_size)``, so bins are at most ``bin_size`` long and can
+    differ in length between edges. An edge whose nodes coincide gets one
+    zero-length bin. A positive gap becomes one inactive bin.
 
     Parameters
     ----------
@@ -57,14 +62,16 @@ def _get_graph_bins(
         If float: uniform gap length inserted between every consecutive edge.
         If sequence: length must be len(edge_order) - 1, specifying each gap individually.
     bin_size : float
-        Desired length of each bin along the edge; must be positive.
+        Largest bin length along an edge, in the units of the node
+        positions; must be positive.
 
     Returns
     -------
     bin_centers_1d : NDArray[np.float64], shape (n_total_bins,)
         1D coordinates of the center of every bin (including gaps).
     bin_edges_1d_tuple : tuple of one NDArray[np.float64], shape (n_total_bins + 1,)
-        Unique sorted 1D edge coordinates (matches np.histogramdd format).
+        Non-decreasing 1D edge coordinates (matches np.histogramdd format);
+        a zero-length edge repeats a coordinate.
     active_mask_1d : NDArray[np.bool_], shape (n_total_bins,)
         True for bins that lie on an actual graph edge, False for gap bins.
     edge_ids_for_active_bins : NDArray[np.int_], shape (n_active_bins,)
@@ -76,18 +83,17 @@ def _get_graph_bins(
         - If `bin_size` is not positive.
         - If `edge_spacing` is a sequence but length != len(edge_order) - 1.
         - If any node in `edge_order` is missing from `graph`.
+        - If any node of `graph` lacks a 'pos' attribute.
 
     """
     bin_size = float(validate_cell_size(bin_size, scalar_only=True)[0])
 
-    # 2) Validate edge_order contents
     missing_nodes = {
         node for edge in edge_order for node in edge if node not in graph.nodes
     }
     if missing_nodes:
         raise ValueError(f"Nodes {missing_nodes} in edge_order not found in graph.")
 
-    # 3) Build gap array
     n_edges = len(edge_order)
     if isinstance(edge_spacing, (int, float, np.number)):
         gaps = np.full(max(0, n_edges - 1), float(edge_spacing))
@@ -106,13 +112,11 @@ def _get_graph_bins(
             np.zeros((0,), dtype=int),
         )
 
-    # 4) Precompute node positions; raise if any node lacks 'pos'
     node_positions = nx.get_node_attributes(graph, "pos")
     if len(node_positions) < len(graph.nodes):
         raise ValueError("All nodes must have a 'pos' attribute (x,y,…).")
 
-    # 5) Map each (u, v) or (v, u) in graph.edges() to an integer ID
-    #    Normalize edges so (u,v) and (v,u) map to the same ID:
+    # (u, v) and (v, u) map to the same edge ID.
     edge_id_map: dict[frozenset, int] = {
         frozenset(edge): idx for idx, edge in enumerate(graph.edges())
     }
@@ -153,7 +157,6 @@ def _get_graph_bins(
     # After the loop, append final edge
     bin_edges.append(cursor)
 
-    # 6) Convert to arrays and dedupe
     bin_edges_arr: NDArray[np.float64] = np.array(bin_edges, dtype=np.float64)
     bin_centers_1d = get_centers(bin_edges_arr)
 

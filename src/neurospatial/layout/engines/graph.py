@@ -36,9 +36,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
 
     The graph's nodes (with 'pos' attributes) and a specified edge order
     are used to create a linearized representation of the space, which is
-    then binned. Neighbor pairs are derived from this binned structure.
-    Uses `_KDTreeMixin` for point mapping and neighbor finding on the
-    N-D embeddings of the linearized bin centers.
+    then binned. Bins are paired along each segment and, at each node,
+    between the end bins of every two segments that meet there. A KD-tree
+    on the N-D bin centers maps points to their nearest bin.
     """
 
     bin_centers: NDArray[np.float64]
@@ -96,15 +96,21 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             during linearization. If float, same gap for all. If sequence,
             specifies each gap; length must be `len(edge_order) - 1`.
         bin_size : float
-            The desired length of each bin along the linearized space.
+            Largest bin length along the track, in the units of the node
+            positions. Each segment of length ``L`` is split into
+            ``ceil(L / bin_size)`` equal bins of length
+            ``L / ceil(L / bin_size)``, so bins can be shorter than
+            ``bin_size`` and differ in length between segments.
 
         Raises
         ------
         TypeError
             If `graph_definition` is not a NetworkX graph.
         ValueError
-            If `edge_order` is empty, `bin_size` is not positive, or an
-            edge's 'distance' is not the distance between its nodes.
+            If `edge_order` is empty, `bin_size` is not positive, a node of
+            `edge_order` is not in the graph, a node lacks 'pos',
+            `edge_spacing` has the wrong length, or an edge's 'distance' is
+            not the distance between its nodes.
 
         """
         self._begin_build()
@@ -182,8 +188,8 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         """Plot the 1D linearized representation of the graph layout.
 
         Uses `track_linearization.plot_graph_as_1D` to display the track
-        segments and nodes in their 1D linearized positions. Overlays the
-        1D bin edges from `self.grid_edges`.
+        segments and nodes in their 1D linearized positions, and overlays the
+        1D bin edges from `self.grid_edges` as gray dashed lines.
 
         Parameters
         ----------
@@ -191,8 +197,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             Axes to plot on. If None, new figure and axes are created.
         **kwargs : Any
             Additional keyword arguments passed to
-            `track_linearization.plot_graph_as_1D` and for customizing
-            the appearance of bin edge lines.
+            `track_linearization.plot_graph_as_1D` (for example
+            ``node_size`` or ``figsize``). The bin-edge lines are not
+            customizable.
 
         Returns
         -------
@@ -222,8 +229,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         Returns
         -------
         NDArray[np.float64], shape (n_points,)
-            1D linearized coordinates. NaNs may be returned for points
-            far from the track.
+            1D linearized coordinates. Every finite point is projected onto
+            its nearest segment, however far from the track it lies; a row
+            with a non-finite coordinate gives NaN.
 
         """
         return self.linearization().to_linear(data_points)
