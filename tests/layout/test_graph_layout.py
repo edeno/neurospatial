@@ -251,3 +251,19 @@ def test_cross_junction_edges_are_measured_along_the_track(maze):
         expected = np.linalg.norm(centers[a]) + np.linalg.norm(centers[b])
         assert layout.connectivity.edges[a, b]["distance"] == pytest.approx(expected)
         assert face_distance[min(a, b), max(a, b)] == pytest.approx(expected)
+
+
+def test_linear_lookup_agrees_with_bin_at_at_the_track_ends(simple_y_maze_graph):
+    """The track's start and end (e.g. reward wells) get their end bins.
+
+    Node 0 starts the first segment and node 3 ends the last one; an inner
+    segment end shares its linear position with the next segment's start.
+    """
+    graph, edge_order = simple_y_maze_graph
+    env = Environment.from_graph(graph, edge_order, bin_size=1.0, track_width=1.0)
+    layout = _build_graph_layout(simple_y_maze_graph)
+    ends = np.array([graph.nodes[node]["pos"] for node in (0, 3)], dtype=float)
+    linear = layout.to_linear(ends)
+    np.testing.assert_array_equal(
+        layout.linear_point_to_bin_ind(linear), env.bin_at(ends)
+    )

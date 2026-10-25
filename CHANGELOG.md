@@ -120,6 +120,9 @@
 - Hexagonal field plots draw unvisited (NaN) bins in `nan_color`, as grid,
   mesh and polygon plots do. They were drawn transparent, so with the default
   light gray they looked like space outside the arena.
+- `GraphLayout.linear_point_to_bin_ind` maps the exact end of the track (a
+  reward well at the last node) to the last bin instead of -1, as `bin_at`
+  does.
 
 ### Spatial geometry review
 

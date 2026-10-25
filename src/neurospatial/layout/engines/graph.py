@@ -345,10 +345,10 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         Returns
         -------
         NDArray[np.int_], shape (n_points,)
-            Indices of the active 1D bins corresponding to each linear position.
-            Returns -1 for positions outside active bins or in gaps.
-            Note: These are indices relative to the set of *active* 1D bins,
-            not indices into the full `linear_bin_centers_all` array.
+            Bin index (as in ``bin_centers``) of each linear position: bins
+            are half-open, and the end of the track belongs to the last bin.
+            -1 for a position before the start, past the end, inside a gap,
+            or NaN.
 
         """
         if self.grid_edges is None or self.active_mask is None:

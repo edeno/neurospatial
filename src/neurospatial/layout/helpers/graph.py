@@ -295,41 +295,29 @@ def _find_bin_for_linear_position(
 ) -> int | NDArray[np.int_]:
     """Find the 1D bin index for each given linear position.
 
-    Assigns each position in `linear_positions` to a bin defined by
-    `bin_edges_1d`. If `active_mask_1d` is provided, positions falling into
-    inactive bins (gaps) can be handled (e.g., by adjusting to a nearby
-    active bin or returning an invalid index, depending on implementation details).
-    The current implementation maps to bins based on `np.digitize` and handles
-    positions on edges that might fall into inactive bins by shifting them to
-    the preceding active bin.
+    Bins are half-open, ``[bin_edges[i], bin_edges[i + 1])``, except the last,
+    which also holds the end of the track. A position exactly at a gap's start
+    belongs to the bin before the gap.
 
     Parameters
     ----------
-    linear_positions : float | NDArray[np.float64], shape (n_points,)
+    linear_positions : float or ndarray of float64, shape (n_points,)
         Linear position(s) to map to bin indices.
-    bin_edges_1d : NDArray[np.float64], shape (n_total_bins + 1,)
-        1D array of sorted bin edge coordinates for the entire linearized track
-        (including gaps).
-    active_mask_1d : NDArray[np.bool_] | None, shape (n_total_bins,), optional
-        Boolean mask indicating which bins in the `bin_edges_1d` definition
-        are active (on an edge segment) vs. inactive (in a gap). If provided,
-        the function ensures returned indices correspond to active bins or
-        handles points in gaps.
+    bin_edges : ndarray of float64, shape (n_total_bins + 1,)
+        Sorted bin edges of the whole linearized track, gaps included.
+    active_mask : ndarray of bool, shape (n_total_bins,), optional
+        True for bins on a track segment, False for gap bins.
 
     Returns
     -------
-    bin_indices : int | NDArray[np.int_], shape (n_points,)
-        0-based bin index (relative to the full set of bins defined by
-        `bin_edges_1d`) for each input linear position.
-        Returns -1 if a position falls outside the range of `bin_edges_1d`.
-        If `active_mask_1d` is used, logic attempts to assign to an active bin.
+    int or ndarray of int, shape (n_points,)
+        Index into the full bins of ``bin_edges``, or -1 for a position
+        before the start, past the end, inside a gap, or NaN.
 
     Raises
     ------
     ValueError
-        If `active_mask_1d` (if provided) length doesn't match the number of bins.
-        If, after processing, a position maps to an index marked as invalid by
-        `active_mask_1d` (indicating an issue with gap handling logic or input).
+        If ``active_mask`` does not have one entry per bin.
 
     """
     was_scalar = np.isscalar(linear_positions)
@@ -345,23 +333,15 @@ def _find_bin_for_linear_position(
         )
 
     bin_ind = np.digitize(linear_positions, bin_edges, right=False) - 1
-    out_of_bounds_mask = (bin_ind < 0) | (bin_ind >= n_bins)
-    bin_ind[out_of_bounds_mask] = -1
+    # The end of the track belongs to the last bin.
+    bin_ind[np.isclose(linear_positions, bin_edges[-1])] = n_bins - 1
+    bin_ind[(bin_ind < 0) | (bin_ind >= n_bins)] = -1
 
     if active_mask is not None:
-        invalid_bin_ind = np.nonzero(~active_mask)[0]
-    else:
-        invalid_bin_ind = np.array([])
-
-    in_gap_ind = np.nonzero(np.isin(bin_ind, invalid_bin_ind))[0]
-    is_bin_edge = np.asarray(
-        [
-            np.any(np.isclose(bin_edges[1:], lin_pos))
-            for lin_pos in linear_positions[in_gap_ind]
-        ],
-        dtype=bool,
-    )
-    bin_ind[in_gap_ind[is_bin_edge]] = bin_ind[in_gap_ind[is_bin_edge]] - 1
-
-    bin_ind[in_gap_ind[~is_bin_edge]] = -1
+        in_gap = np.flatnonzero((bin_ind >= 0) & ~active_mask[bin_ind])
+        at_gap_start = np.isclose(
+            linear_positions[in_gap, None], bin_edges[None, 1:]
+        ).any(axis=1)
+        bin_ind[in_gap[at_gap_start]] -= 1
+        bin_ind[in_gap[~at_gap_start]] = -1
     return int(bin_ind[0]) if was_scalar else bin_ind.astype(int)

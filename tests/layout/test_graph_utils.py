@@ -172,7 +172,9 @@ def test_find_bin_for_linear_position_scalar():
     assert _find_bin_for_linear_position(0.5, bin_edges) == 0
     assert _find_bin_for_linear_position(1.5, bin_edges) == 1
     assert _find_bin_for_linear_position(-1.0, bin_edges) == -1
-    assert _find_bin_for_linear_position(2.0, bin_edges) == -1
+    # The end of the track belongs to the last bin; past it, to none.
+    assert _find_bin_for_linear_position(2.0, bin_edges) == 1
+    assert _find_bin_for_linear_position(2.5, bin_edges) == -1
 
 
 def test_find_bin_for_linear_position_with_active_mask():
