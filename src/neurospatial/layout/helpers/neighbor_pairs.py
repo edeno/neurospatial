@@ -14,6 +14,8 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry import mask_active_map
+
 
 def order_neighbor_pairs(
     first: NDArray[np.intp],
@@ -65,13 +67,11 @@ def order_neighbor_pairs(
 
 
 def lattice_neighbor_pairs(
-    active_flat: NDArray[np.intp],
-    grid_shape: tuple[int, ...],
-    offsets: NDArray[np.intp],
+    active_mask: NDArray[np.bool_], offsets: NDArray[np.intp]
 ) -> NDArray[np.intp]:
     """Pair each active lattice cell with its active neighbors at given offsets.
 
-    Bins are the active cells numbered in ``active_flat`` order. Each bin
+    Bins are the active cells numbered in row-major order. Each bin
     proposes the cells at ``offsets`` in order; a proposal is kept when the
     cell lies inside the lattice, is active and has a higher bin ID, so every
     pair is proposed once, by its lower bin, and the result is already in
@@ -79,10 +79,8 @@ def lattice_neighbor_pairs(
 
     Parameters
     ----------
-    active_flat : ndarray of int, shape (n_bins,)
-        Increasing row-major flat indices of the active cells.
-    grid_shape : tuple of int
-        Shape of the full lattice, ``(n_0, ..., n_{d-1})``.
+    active_mask : ndarray of bool, shape (n_0, ..., n_{d-1})
+        Active cells of the full lattice.
     offsets : ndarray of int, shape (n_offsets, n_bins or 1, n_dims)
         Index steps from each bin to its candidate neighbors, in proposal
         order; the middle axis broadcasts when every bin uses the same steps.
@@ -94,17 +92,16 @@ def lattice_neighbor_pairs(
 
     Examples
     --------
-    >>> active = np.array([0, 1, 3])  # 2 x 2 lattice without cell 2
+    >>> active = np.array([[True, True], [False, True]])  # no cell (1, 0)
     >>> steps = np.array([[[0, 1]], [[1, 0]]])  # right, then down
-    >>> lattice_neighbor_pairs(active, (2, 2), steps).tolist()
+    >>> lattice_neighbor_pairs(active, steps).tolist()
     [[0, 1], [1, 2]]
     """
-    active_flat = np.asarray(active_flat, dtype=np.intp)
-    n_bins = len(active_flat)
+    grid_shape = active_mask.shape
     shape = np.asarray(grid_shape, dtype=np.intp)
-    bin_of_cell = np.full(int(np.prod(shape)), -1, dtype=np.intp)
-    bin_of_cell[active_flat] = np.arange(n_bins, dtype=np.intp)
-    cells = np.stack(np.unravel_index(active_flat, grid_shape), axis=-1)
+    bin_of_cell = mask_active_map(active_mask)
+    cells = np.argwhere(active_mask)
+    n_bins = len(cells)
     bins = np.arange(n_bins, dtype=np.intp)
     first: list[NDArray[np.intp]] = []
     second: list[NDArray[np.intp]] = []

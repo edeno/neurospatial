@@ -129,12 +129,13 @@ def test_hex_grid_pairs_join_hexagons_one_width_apart():
     bin_centers, centers_shape, _hex_radius, _, _min_x, _min_y, _ = (
         hgu._create_hex_grid(positions, hexagon_width=1.0)
     )
-    active = np.flatnonzero(np.random.default_rng(0).random(len(bin_centers)) < 0.7)
+    keep = np.random.default_rng(0).random(len(bin_centers)) < 0.7
+    active = np.flatnonzero(keep)
     centers = bin_centers[active]
     gaps = np.linalg.norm(centers[:, None] - centers[None], axis=-1)
     expected = {tuple(pair) for pair in np.argwhere(np.triu(np.isclose(gaps, 1.0)))}
 
-    pairs = hgu.hex_grid_pairs(active, centers_shape)
+    pairs = hgu.hex_grid_pairs(keep.reshape(centers_shape))
 
     assert pairs.dtype == np.intp
     assert {tuple(pair) for pair in pairs.tolist()} == expected

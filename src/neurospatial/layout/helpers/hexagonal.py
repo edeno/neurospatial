@@ -227,21 +227,17 @@ def _infer_active_bins_from_hex_grid(
     return bin_ind.astype(int)
 
 
-def hex_grid_pairs(
-    active_flat: NDArray[np.int_], centers_shape: tuple[int, int]
-) -> NDArray[np.intp]:
+def hex_grid_pairs(active_mask: NDArray[np.bool_]) -> NDArray[np.intp]:
     """Pair active hexagons with their adjacent active hexagons.
 
-    Bins are the active hexagons in ``active_flat`` order. Each bin pairs with
-    its higher-numbered active neighbors, visited in the order of
+    Bins are the active hexagons numbered in row-major order. Each bin pairs
+    with its higher-numbered active neighbors, visited in the order of
     :func:`neurospatial.geometry.get_hex_grid_neighbor_deltas` for its row.
 
     Parameters
     ----------
-    active_flat : ndarray of int, shape (n_bins,)
-        Increasing flat indices of the active hexagons in the full lattice.
-    centers_shape : tuple of int
-        Shape ``(n_hex_rows, n_hex_cols)`` of the full lattice.
+    active_mask : ndarray of bool, shape (n_hex_rows, n_hex_cols)
+        Active hexagons of the full lattice.
 
     Returns
     -------
@@ -250,13 +246,12 @@ def hex_grid_pairs(
 
     Examples
     --------
-    >>> hex_grid_pairs(np.arange(4), (2, 2)).tolist()
+    >>> hex_grid_pairs(np.ones((2, 2), dtype=bool)).tolist()
     [[0, 1], [0, 2], [1, 2], [1, 3], [2, 3]]
     """
-    active_flat = np.asarray(active_flat, dtype=np.intp)
-    odd_row = (active_flat // centers_shape[1]) % 2 == 1
+    odd_row = np.nonzero(active_mask)[0] % 2 == 1
     # Deltas are (column, row); lattice indices are (row, column).
     even = np.array(get_hex_grid_neighbor_deltas(False), dtype=np.intp)[:, ::-1]
     odd = np.array(get_hex_grid_neighbor_deltas(True), dtype=np.intp)[:, ::-1]
     offsets = np.where(odd_row[None, :, None], odd[:, None, :], even[:, None, :])
-    return lattice_neighbor_pairs(active_flat, centers_shape, offsets)
+    return lattice_neighbor_pairs(active_mask, offsets)

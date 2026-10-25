@@ -16,6 +16,7 @@ from neurospatial.geometry import (
     Outline,
     TriangleShapes,
     component_extent,
+    mask_active_map,
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
@@ -50,7 +51,6 @@ class TriangularMeshLayout(_NeighborPairsMixin):
 
     # Internal state
     _full_delaunay_tri: Delaunay | None
-    _original_simplex_to_active_idx_map: dict[int, int] | None
     _active_original_simplex_indices: (
         NDArray[np.int_] | None
     )  # Store original indices of active ones
@@ -66,7 +66,6 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         self._build_params_used = {}
 
         self._full_delaunay_tri = None
-        self._original_simplex_to_active_idx_map = None
         self._active_original_simplex_indices = None
         self._boundary_polygon_stored = None
         self._locator = None
@@ -139,27 +138,21 @@ class TriangularMeshLayout(_NeighborPairsMixin):
 
         self._active_original_simplex_indices = active_original_indices
 
-        # 4. Create mapping from original Delaunay simplex index to active triangle index
-        self._original_simplex_to_active_idx_map = {
-            orig_idx: active_idx
-            for active_idx, orig_idx in enumerate(active_original_indices)
-        }
-
-        # 5. Populate core attributes for active triangles
+        # 4. Populate core attributes for active triangles
         self.bin_centers = all_centroids[active_original_indices]
 
-        # 6. Pair active triangles that share a side
+        # 5. Pair active triangles that share a side
         pairs = mesh_pairs(active_original_indices, self._full_delaunay_tri.neighbors)
         self._set_neighbor_pairs(
             pairs, euclidean_pair_distances(self.bin_centers, pairs)
         )
 
-        # 7. Cell extent: the mesh boundary's bounds
+        # 6. Cell extent: the mesh boundary's bounds
         self.dimension_ranges = component_extent(
             outline=self.outline(), shapes=self.bin_shapes()
         )
 
-        # 8. Set grid-related attributes for protocol conformance
+        # 7. Set grid-related attributes for protocol conformance
         # The "conceptual grid" here is the list of all Delaunay triangles.
         self.grid_shape = (n_total_delaunay_triangles,)
         self.active_mask = np.zeros(n_total_delaunay_triangles, dtype=bool)
@@ -170,20 +163,12 @@ class TriangularMeshLayout(_NeighborPairsMixin):
 
     def _build_locator(self) -> None:
         """Snapshot triangulation, active-bin mapping and the boundary."""
-        if (
-            self._full_delaunay_tri is None
-            or self._original_simplex_to_active_idx_map is None
-        ):
+        if self._full_delaunay_tri is None or self.active_mask is None:
             raise LayoutNotBuiltError(type(self).__name__, "locator")
-        simplex_to_active = np.full(
-            len(self._full_delaunay_tri.simplices), -1, dtype=np.intp
-        )
-        for original, active in self._original_simplex_to_active_idx_map.items():
-            simplex_to_active[original] = active
         self._locator = MeshLocator(
             self._full_delaunay_tri.points,
             self._full_delaunay_tri.simplices,
-            simplex_to_active,
+            mask_active_map(self.active_mask),
             self._boundary_polygon_stored,
         )
 

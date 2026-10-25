@@ -10,6 +10,7 @@ from neurospatial.geometry import (
     Binning,
     TrackLinearization,
     component_extent,
+    mask_active_map,
     project_1d_to_2d,
     track_junctions,
 )
@@ -327,9 +328,7 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         # _find_bin_for_linear_position returns indices into the FULL (gap-
         # inclusive) bin list. Remap to active-bin indices: active bins are
         # numbered 0..n_active-1 in mask order; inactive/gap bins -> -1.
-        n_total_bins = self.active_mask.size
-        full_to_active = np.full(n_total_bins, -1, dtype=int)
-        full_to_active[self.active_mask] = np.arange(int(self.active_mask.sum()))
+        full_to_active = mask_active_map(self.active_mask)
 
         active_ind = np.full(full_grid_ind.shape, -1, dtype=int)
         in_range = full_grid_ind >= 0

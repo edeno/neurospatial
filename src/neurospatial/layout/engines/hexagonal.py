@@ -10,6 +10,7 @@ from neurospatial.geometry import (
     HexagonShapes,
     HexLocator,
     component_extent,
+    mask_active_map,
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
@@ -51,7 +52,6 @@ class HexagonalLayout(_NeighborPairsMixin):
     hex_orientation_: float | None = None
     grid_offset_x_: float | None = None
     grid_offset_y_: float | None = None
-    _source_flat_to_active_id_map: dict[int, int] | None = None
     _locator: HexLocator | None = None
 
     def __init__(self) -> None:
@@ -67,7 +67,6 @@ class HexagonalLayout(_NeighborPairsMixin):
         self.hex_orientation_ = None
         self.grid_offset_x_ = None
         self.grid_offset_y_ = None
-        self._source_flat_to_active_id_map = None
         self._locator = None
 
     @capture_build_params(data=("positions", "dimension_ranges"))
@@ -171,17 +170,12 @@ class HexagonalLayout(_NeighborPairsMixin):
 
         self.bin_centers = full_grid_bin_centers[active_bin_original_flat_indices]
 
-        pairs = hex_grid_pairs(active_bin_original_flat_indices, self.grid_shape)
+        pairs = hex_grid_pairs(self.active_mask)
         self._set_neighbor_pairs(
             pairs, euclidean_pair_distances(self.bin_centers, pairs)
         )
         # The extent of the active hexagons, corners included.
         self.dimension_ranges = component_extent(shapes=self.bin_shapes())
-
-        self._source_flat_to_active_id_map = {
-            source: node_id
-            for node_id, source in enumerate(active_bin_original_flat_indices.tolist())
-        }
         self._own_arrays("bin_centers", "active_mask")
         self._build_locator()
 
@@ -192,19 +186,16 @@ class HexagonalLayout(_NeighborPairsMixin):
             or self.grid_offset_y_ is None
             or self.hex_radius_ is None
             or self.grid_shape is None
-            or self._source_flat_to_active_id_map is None
+            or self.active_mask is None
         ):
             raise LayoutNotBuiltError(type(self).__name__, "locator")
         assert len(self.grid_shape) == 2
-        flat_to_active = np.full(np.prod(self.grid_shape), -1, dtype=np.intp)
-        for source, active in self._source_flat_to_active_id_map.items():
-            flat_to_active[source] = active
         self._locator = HexLocator(
             self.grid_offset_x_,
             self.grid_offset_y_,
             self.hex_radius_,
             (self.grid_shape[0], self.grid_shape[1]),
-            flat_to_active,
+            mask_active_map(self.active_mask),
         )
 
     def locator(self) -> HexLocator:

@@ -93,9 +93,7 @@ def regular_grid_pairs(
     # row-major index, so it never proposes a higher-numbered bin.
     forward = [step for step in steps if next(v for v in step if v) > 0]
     offsets = np.array(forward, dtype=np.intp).reshape(len(forward), 1, n_dims)
-    return lattice_neighbor_pairs(
-        np.flatnonzero(active_mask), active_mask.shape, offsets
-    )
+    return lattice_neighbor_pairs(active_mask, offsets)
 
 
 def _infer_active_bins_from_regular_grid(
