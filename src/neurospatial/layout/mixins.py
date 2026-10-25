@@ -207,7 +207,8 @@ class _GridMixin(_NeighborPairsMixin):
 
     Provides common functionality for layouts that are based on an underlying
     N-dimensional grid, such as point lookup from grid definitions,
-    default plotting, and `bin_size` for uniform grids.
+    default plotting, and `bin_sizes()` (the area or volume of each active
+    cell of a uniform grid).
 
     Assumes the inheriting class defines grid-specific attributes like
     `grid_edges`, `grid_shape`, `active_mask` and `bin_centers`.
@@ -226,8 +227,9 @@ class _GridMixin(_NeighborPairsMixin):
         """Snapshot cells and explicit native construction choices together.
 
         ``connect_diagonal`` is supplied by builders, independently of whether
-        the current mask happens to contain any diagonal pair. Legacy locator
-        restoration omits it and does not infer a historical preference.
+        the current mask happens to contain any diagonal pair. ``locator()``
+        building the lookup on first use omits it: the grid spec is then left
+        as it is, never inferred from the mask.
         """
         if self.grid_edges is None or self.grid_shape is None:
             raise LayoutNotBuiltError(type(self).__name__, "locator")

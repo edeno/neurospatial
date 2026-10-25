@@ -47,7 +47,8 @@ def _built_layout_data(
     LayoutNotBuiltError
         If a layout engine has not been built.
     TypeError
-        If the object has no ``binning()`` method and no installed adapter.
+        If the object has no ``binning()`` method and no installed adapter,
+        or its ``binning()`` returns something other than a ``Binning``.
     """
     produce = getattr(layout, "binning", None)
     if not callable(produce):
@@ -66,8 +67,8 @@ def _built_layout_data(
                     "index from the Binning record alone."
                 ),
                 fix=(
-                    "return neurospatial.binning.Binning(kind, bins, locator, "
-                    "faces, ...) built from the engine's state"
+                    "return a neurospatial.binning.Binning(kind, bins, "
+                    "connections, locator, ...) built from the engine's state"
                 ),
             )
         )

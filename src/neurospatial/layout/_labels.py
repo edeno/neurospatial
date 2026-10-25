@@ -13,7 +13,6 @@ from enum import Enum
 class LayoutType(str, Enum):
     """Layout labels: the built-in layout engines and the special builds.
 
-    This enum provides IDE autocomplete and type safety for layout selection.
     Every value is also the ``layout_type`` of the engine, the ``kind`` of the
     binning it builds and the ``layout_type`` of the resulting environment.
 
@@ -24,7 +23,7 @@ class LayoutType(str, Enum):
     MASKED_GRID : str
         Grids with arbitrary active/inactive regions defined by a boolean mask.
     IMAGE_MASK : str
-        Binary image-based layouts where white pixels define active bins.
+        Boolean image-based layouts where True pixels define active bins.
     HEXAGONAL : str
         Hexagonal tessellations with more uniform neighbor distances.
     GRAPH : str

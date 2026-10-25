@@ -80,8 +80,21 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             The polygon defining the boundary. Triangles with centroids
             outside this polygon are discarded.
         point_spacing : float
-            Desired spacing (in same units as polygon) between generated sample points
-            used for triangulation.
+            Spacing of the square lattice of interior sample points, in the
+            units of the polygon coordinates. Every ring of the polygon is
+            also sampled at most this far apart.
+
+        Raises
+        ------
+        TypeError
+            If `boundary_polygon` is not a Shapely Polygon.
+        ValueError
+            If `boundary_polygon` is empty; if `point_spacing` is not a
+            single positive, finite number; if fewer than 3 lattice points
+            fall inside the polygon (checked before the boundary points are
+            added, so a polygon narrower than `point_spacing` is refused);
+            if the points cannot be triangulated; or if no triangle's
+            centroid lies inside the polygon.
 
         """
         self._begin_build()
@@ -93,9 +106,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             validate_cell_size(point_spacing, name="point_spacing", scalar_only=True)[0]
         )
 
-        self._boundary_polygon_stored = (
-            boundary_polygon  # Store the actual object for use
-        )
+        self._boundary_polygon_stored = boundary_polygon
 
         # 1. Generate sample points for triangulation
         sample_points = _generate_interior_points_for_mesh(
@@ -144,12 +155,11 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             outline=self.outline(), shapes=self.bin_shapes()
         )
 
-        # 7. Set grid-related attributes for protocol conformance
-        # The "conceptual grid" here is the list of all Delaunay triangles.
+        # 7. The full "grid" is the list of all Delaunay triangles; the
+        # active mask marks the kept ones.
         self.grid_shape = (n_total_delaunay_triangles,)
         self.active_mask = np.zeros(n_total_delaunay_triangles, dtype=bool)
         self.active_mask[active_original_indices] = True
-        # self.grid_edges remains an empty tuple as it's not a rectilinear grid.
         self._own_arrays("bin_centers", "active_mask")
         self._build_locator()
 
