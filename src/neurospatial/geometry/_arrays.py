@@ -29,6 +29,23 @@ def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
     return bin_edges[:-1] + np.diff(bin_edges) / 2
 
 
+def grid_cell_centers(edges: Sequence[NDArray[np.float64]]) -> NDArray[np.float64]:
+    """Center of every cell of a rectilinear grid, in row-major order.
+
+    Parameters
+    ----------
+    edges : sequence of ndarray of float64
+        Cell edges along each axis; ``edges[d]`` has shape ``(n_d + 1,)``.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_0 * ... * n_{d-1}, n_dims)
+        Cell centers, one row per cell in flat grid order.
+    """
+    axes = np.meshgrid(*(get_centers(edge) for edge in edges), indexing="ij")
+    return np.column_stack([axis.ravel() for axis in axes])
+
+
 def owned_grid(
     edges: Sequence[ArrayLike],
     shape: Sequence[Any] | None,

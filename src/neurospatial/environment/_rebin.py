@@ -35,7 +35,7 @@ from neurospatial.geometry import (
     PolygonCells,
     apply_walls,
     cell_boxes,
-    get_centers,
+    grid_cell_centers,
     prepare_bins,
     transform_binning,
 )
@@ -65,12 +65,6 @@ class RebinCheck:
 
     considered: NDArray[np.bool_] | None
     lost_remedy: str
-
-
-def _grid_centers(edges: tuple[NDArray[np.float64], ...]) -> NDArray[np.float64]:
-    """Centers of every cell of a grid, shape ``(n_cells, n_dims)``, C order."""
-    axes = np.meshgrid(*(get_centers(edge) for edge in edges), indexing="ij")
-    return np.column_stack([axis.ravel() for axis in axes])
 
 
 def warn_rebin_losses(
@@ -449,7 +443,7 @@ def _rebin_resolution(
         raise ValueError(
             "bin_size is too small at this coordinate precision; recenter coordinates or use larger bins."
         )
-    centers = _grid_centers(edges)
+    centers = grid_cell_centers(edges)
     mapped = centers @ spec.forward[:-1, :-1].T + spec.forward[:-1, -1]
     domain = arena.polygonal_domain()
     if domain is not None:
@@ -699,7 +693,7 @@ def _rebin_factor(
 
     # Centers come from the coarse edges, not from the original grid's
     # active bins.
-    coarse_bin_centers = _grid_centers(coarse_edges)
+    coarse_bin_centers = grid_cell_centers(coarse_edges)
 
     # Finalize active cells before constructing the graph or publishing an
     # environment. The original arena remains the continuous authority. Its

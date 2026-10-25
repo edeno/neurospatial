@@ -4,9 +4,10 @@ from typing import Any, ClassVar
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
-from neurospatial.layout.helpers.utils import check_grid_size_safety, get_centers
+from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
 
 
@@ -143,17 +144,10 @@ class MaskedGridLayout(_GridMixin):
         # Safety check: warn or error if grid is very large
         check_grid_size_safety(self.grid_shape)
 
-        # Create full_grid_bin_centers as (N_total_bins, N_dims) array
-        centers_per_dim = [get_centers(edge_dim) for edge_dim in self.grid_edges]
-        mesh_centers_list = np.meshgrid(*centers_per_dim, indexing="ij", sparse=False)
-        full_grid_bin_centers = np.stack(
-            [c.ravel() for c in mesh_centers_list],
-            axis=-1,
-        )
-
         self.dimension_ranges = tuple(
             (edge_dim[0], edge_dim[-1]) for edge_dim in self.grid_edges
         )
         self._assign_cells(
-            full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
+            grid_cell_centers(self.grid_edges),
+            connect_diagonal=connect_diagonal_neighbors,
         )

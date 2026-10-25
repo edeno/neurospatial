@@ -30,8 +30,9 @@ from numpy.typing import NDArray
 from scipy import ndimage
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
-from neurospatial.layout.helpers.utils import get_centers, get_n_bins
+from neurospatial.layout.helpers.utils import get_n_bins
 from neurospatial.layout.validation import (
     validate_cell_size,
     validate_count_threshold,
@@ -498,16 +499,8 @@ def _build_grid_structure(
         final_edges.append(edges_dim.astype(float))
 
     edges_tuple = tuple(final_edges)
-
-    # 7) Compute centers for each dimension
-    centers_per_dim = [get_centers(e) for e in final_edges]
-    centers_shape = tuple(len(c) for c in centers_per_dim)
-
-    # 8) Build the full Cartesian product of centers
-    mesh = np.meshgrid(*centers_per_dim, indexing="ij")
-    bin_centers = np.stack([m.ravel() for m in mesh], axis=-1)
-
-    return edges_tuple, bin_centers, centers_shape
+    centers_shape = tuple(len(edges) - 1 for edges in final_edges)
+    return edges_tuple, grid_cell_centers(edges_tuple), centers_shape
 
 
 def _create_regular_grid(
