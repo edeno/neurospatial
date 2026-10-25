@@ -122,7 +122,7 @@ class HexagonalLayout(_NeighborPairsMixin):
         )
         self.hex_orientation_ = 0.0  # point-up
 
-        # Safety check: warn or error if grid is very large
+        # Warn if the grid is very large.
         check_grid_size_safety(self.grid_shape)
 
         if infer_active_bins and positions is not None:

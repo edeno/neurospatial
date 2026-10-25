@@ -22,6 +22,11 @@ class ImageMaskLayout(_GridMixin):
     (image columns) and dimension 1 is y (image rows). `grid_shape`,
     `grid_edges`, `bin_centers`, and `active_mask` are all expressed in
     (x, y) order, matching `dimension_ranges` and every other grid engine.
+
+    Image row 0 is the lowest y: y increases with the row index. With y
+    drawn upward, the environment therefore appears flipped vertically
+    relative to ``plt.imshow(image_mask)``, which draws row 0 at the top.
+    Pass ``image_mask[::-1]`` if the top of your image should be high y.
     """
 
     bin_centers: NDArray[np.float64]
@@ -48,9 +53,7 @@ class ImageMaskLayout(_GridMixin):
     def build(
         self,
         *,
-        image_mask: NDArray[
-            np.bool_
-        ],  # Defines candidate pixels, shape (n_rows, n_cols)
+        image_mask: NDArray[np.bool_],
         pixel_size: float | tuple[float, float],
         connect_diagonal_neighbors: bool = True,
     ) -> None:
@@ -66,7 +69,8 @@ class ImageMaskLayout(_GridMixin):
         ----------
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
             A 2D boolean array where `True` pixels define active bins. Indexed
-            as ``[row, col]`` == ``[y, x]``.
+            as ``[row, col]`` == ``[y, x]``: row 0 is the lowest y, so pass
+            ``image_mask[::-1]`` for an image whose top row should be high y.
         pixel_size : float or tuple of (float, float)
             The physical size of each pixel, in the units of positions per
             pixel (for example cm per pixel from a calibration). If float:
@@ -79,10 +83,11 @@ class ImageMaskLayout(_GridMixin):
         Raises
         ------
         TypeError
-            If `image_mask` is not a NumPy array.
+            If `image_mask` is not a NumPy array, or `pixel_size` is not
+            numeric.
         ValueError
             If `image_mask` is not 2D, not boolean, contains no True values,
-            or if `pixel_size` is invalid (wrong type/shape or non-positive).
+            or if `pixel_size` is not one or two positive, finite numbers.
 
         """
         self._begin_build()
@@ -111,7 +116,7 @@ class ImageMaskLayout(_GridMixin):
         # other grid engine).
         self.grid_shape = (n_cols, n_rows)
 
-        # Safety check: warn or error if grid is very large
+        # Warn if the grid is very large.
         check_grid_size_safety(self.grid_shape)
 
         x_edges = np.arange(n_cols + 1) * pixel_size_x

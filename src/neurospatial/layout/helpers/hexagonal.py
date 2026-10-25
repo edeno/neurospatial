@@ -2,19 +2,15 @@
 
 This module provides helper functions specifically for environments that use
 hexagonal tiling. These functions cover:
+
 - Generation of hexagonal grid coordinates (`_create_hex_grid`).
-- Conversion between Cartesian and hexagonal (cube/axial) coordinate systems
-  (`cartesian_to_fractional_cube`, `round_fractional_cube_to_integer_axial`,
-  `axial_to_offset_bin_indices`).
-- Mapping continuous 2D points to discrete hexagonal bin indices
-  (`points_to_hex_bin_ind`).
 - Inferring active hexagonal bins based on data sample occupancy
   (`_infer_active_bins_from_hex_grid`).
-- Determining neighbor relationships in the hexagonal grid
-  (`get_hex_grid_neighbor_deltas`).
 - Pairing neighboring active hexagonal bins (`hex_grid_pairs`).
 
-These utilities are primarily used by the `HexagonalLayout` engine.
+Point-to-hexagon lookup and neighbor offsets live in
+:mod:`neurospatial.geometry`. These utilities are primarily used by the
+`HexagonalLayout` engine.
 """
 
 from __future__ import annotations
@@ -24,9 +20,6 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-# Numerical stability constants
-# Minimum hex_radius to prevent division by zero and numerical instability.
-# Values below this threshold are too small for reliable hexagonal coordinate conversion.
 from neurospatial.geometry import (
     get_hex_grid_neighbor_deltas,
     points_to_hex_bin_ind,
@@ -80,8 +73,10 @@ def _create_hex_grid(
     ------
     ValueError
         - If `hexagon_width <= 0`.
-        - If neither `dimension_range` nor `positions` (with valid shape) is provided.
-        - If `dimension_range` is provided but not length 2 or has min > max.
+        - If `dimension_range` is None and `positions` is None or has no
+          row without NaN.
+        - If `dimension_range` is provided but not length 2 (a reversed
+          ``(max, min)`` pair is accepted and sorted).
         - If `positions` is not a 2D array of shape (n_samples, 2).
 
     """
@@ -89,7 +84,6 @@ def _create_hex_grid(
         validate_cell_size(hexagon_width, name="hexagon_width", scalar_only=True)[0]
     )
 
-    # 2) Clean & validate positions
     if positions is not None:
         ds_arr = np.asarray(positions, dtype=float)
         if ds_arr.ndim != 2 or ds_arr.shape[1] != 2:
@@ -99,7 +93,6 @@ def _create_hex_grid(
     else:
         ds_arr = np.empty((0, 2), dtype=float)
 
-    # 3) Determine bounding box
     if dimension_range is not None:
         if len(dimension_range) != 2:
             raise ValueError(
@@ -116,17 +109,15 @@ def _create_hex_grid(
         min_x, max_x = float(min_vals[0]), float(max_vals[0])
         min_y, max_y = float(min_vals[1]), float(max_vals[1])
 
-    # 4) Compute hex geometry constants
     vertical_step = (np.sqrt(3.0) / 2.0) * hexagon_width
     hex_radius = hexagon_width / np.sqrt(3)
 
-    # 5) Compute how many hexes fit in x/y direction (ensure at least one)
+    # At least one hexagon in each direction.
     span_x = max_x - min_x
     span_y = max_y - min_y
     n_hex_cols = max(1, int(np.ceil(span_x / hexagon_width)) + 1)
     n_hex_rows = max(1, int(np.ceil(span_y / vertical_step)) + 1)
 
-    # 6) Create a regular grid of (row, col) indices
     col_idx, row_idx = np.meshgrid(
         np.arange(n_hex_cols),
         np.arange(n_hex_rows),
@@ -135,10 +126,9 @@ def _create_hex_grid(
     col_idx = col_idx.astype(float)
     row_idx = row_idx.astype(float)
 
-    # 7) Shift odd rows horizontally by half‐cell
+    # Odd rows are shifted right by half a hexagon.
     col_idx[1::2, :] += 0.5
 
-    # 8) Scale to physical coordinates, then translate by (min_x, min_y)
     x_coords = col_idx * hexagon_width + min_x
     y_coords = row_idx * vertical_step + min_y
 
@@ -159,8 +149,8 @@ def _infer_active_bins_from_hex_grid(
     """Infer active bins in a hexagonal grid based on data sample occupancy.
 
     Maps `positions` to their respective hexagon bins within the full
-    conceptual grid. Hexagons are marked active if their occupancy count
-    exceeds `bin_count_threshold`.
+    conceptual grid. Hexagons are marked active if they hold at least one
+    sample and at least `bin_count_threshold` samples.
 
     Parameters
     ----------
@@ -175,7 +165,8 @@ def _infer_active_bins_from_hex_grid(
     min_y : float
         Minimum y-coordinate of the grid's effective origin.
     bin_count_threshold : int, optional, default=0
-        Minimum number of samples a hexagon must contain to be considered active.
+        Minimum number of samples a hexagon must contain to be considered
+        active; 0 keeps every visited hexagon.
 
     Returns
     -------

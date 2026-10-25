@@ -3288,7 +3288,10 @@ class Environment(Generic[_C]):
             holes in the active-bin mask.
         close_gaps : bool, default False
             Regular grid only, with ``infer_active_bins=True``. If True, close
-            small gaps between active bins.
+            small gaps between active bins. `close_gaps`, `fill_holes` and
+            `dilate` act only on grids with two or more dimensions, in that
+            order (closing, then hole filling, then dilation); with 1-D
+            positions they have no effect.
         add_boundary_bins : bool, default False
             Regular grid only. If True, add peripheral bins around the
             bounding region of samples.
@@ -4217,6 +4220,10 @@ class Environment(Generic[_C]):
         ----------
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
             A 2D boolean array where ``True`` pixels define active bins.
+            Columns map to x and rows to y, with row 0 at the lowest y: the
+            environment, drawn with y up, is flipped vertically relative to
+            ``plt.imshow(image_mask)``. Pass ``image_mask[::-1]`` if the top
+            of your image should be high y.
         pixel_size : float or tuple of (float, float)
             The spatial size of each pixel in physical units (e.g., cm,
             meters). If a float, pixels are square. If a tuple

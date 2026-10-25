@@ -30,18 +30,20 @@ def get_n_bins(
 ) -> NDArray[np.int_]:
     """Calculate the number of bins needed for each dimension of a dataset.
 
-    The number of bins is determined based on the extent of the data (or a
-    specified `dimension_range`) and the desired `bin_size`.
+    Each dimension gets ``ceil(extent / bin_size)`` bins, where the extent is
+    ``max - min`` of `dimension_range` or, without one, of `positions`.
 
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         N-dimensional position samples. Used to determine the data extent if
-        `dimension_range` is not provided. NaNs are ignored for range calculation.
+        `dimension_range` is not provided, and ignored when it is. NaNs are
+        ignored for range calculation.
     bin_size : Union[float, Sequence[float]]
-        The desired size of the bins. If a float, this size is applied to
-        all dimensions. If a sequence, it specifies the bin size for each
-        dimension and its length must match `n_dims`. Must be positive.
+        Bin width in the units of the positions. A single number applies to
+        every dimension; a sequence gives one width per dimension and must
+        have one entry per dimension (a length-1 sequence only fits 1-D
+        data). Must be positive and finite.
     dimension_range : Optional[Sequence[Tuple[float, float]]], optional
         Explicit range `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]` for
         each dimension. If None (default), the range is calculated from
@@ -49,18 +51,27 @@ def get_n_bins(
 
     Returns
     -------
-    NDArray[np.int_], shape (n_dims,)
-        An array containing the calculated number of bins required for each
-        dimension. Each value is at least 1.
+    NDArray[np.int64], shape (n_dims,)
+        Number of bins in each dimension; a zero extent gives 1 bin.
 
     Raises
     ------
+    TypeError
+        If `bin_size` is not numeric.
     ValueError
-        If `bin_size` is not positive or if its length (if a sequence)
-        does not match the number of dimensions.
-        If `dimension_range` (if provided) does not have two values (min, max)
-        per dimension.
+        If `bin_size` is not positive and finite, or has the wrong number of
+        entries; if `dimension_range` does not have two values (min, max)
+        per dimension; or if a bin count would exceed the int64 limit.
 
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.layout import get_n_bins
+    >>> positions = np.array([[0.0, 0.0], [10.0, 5.0]])
+    >>> get_n_bins(positions, bin_size=2.0)
+    array([5, 3])
+    >>> get_n_bins(positions, bin_size=[2.0, 1.0], dimension_range=[(0, 20), (0, 5)])
+    array([10,  5])
     """
     if dimension_range is not None:
         # Ensure dimension_range is numpy array for consistent processing
@@ -98,7 +109,9 @@ def _infer_dimension_ranges_from_samples(
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position points from which to infer ranges. NaNs are ignored.
+        Position points from which to infer ranges. Rows with a NaN are
+        ignored; infinite values are not, so callers turn them into NaN first
+        (`Environment.from_samples` does).
     buffer_around_data : Union[float, Sequence[float]], default=0.0
         Buffer to add to the min and max of the inferred range in each
         dimension. If a float, applied to all dimensions. If a sequence,
@@ -113,10 +126,8 @@ def _infer_dimension_ranges_from_samples(
     Raises
     ------
     ValueError
-        If `positions` are all NaN, empty after NaN removal, not 2D,
-        or if `buffer_around_data` dimensionality mismatches `positions`.
-    TypeError
-        If `buffer_around_data` is not a float or sequence of floats.
+        If every row of `positions` has a NaN, `positions` is empty or not
+        2D, or `buffer_around_data` dimensionality mismatches `positions`.
 
     """
     if positions.ndim != 2:
@@ -161,11 +172,11 @@ def _infer_dimension_ranges_from_samples(
             if np.isclose(buffer, 0.0):  # If buffer is also zero, data is a point
                 warnings.warn(
                     f"Dimension {dim_idx} has zero extent and no buffer specified. "
-                    "Using a default small buffer of 1.0 around the point.",
+                    "Extending it by 0.5 on each side of the point.",
                     UserWarning,
                     stacklevel=2,
                 )
-                d_min -= 0.5  # Default small extent
+                d_min -= 0.5
                 d_max += 0.5
             else:  # Buffer will create the extent
                 d_min -= buffer
@@ -251,25 +262,29 @@ def map_active_data_to_grid(
 
     Parameters
     ----------
-    active_bin_data : NDArray[np.float64], shape (n_bins,)
-        A 1D array of values, one for each active bin, ordered consistently
-        with `self.bin_centers` (i.e., by active bin index 0 to `n_bins - 1`).
+    grid_shape : tuple of int
+        Shape of the full grid, ``(n_0, ..., n_{d-1})``.
+    active_mask : NDArray[np.bool_], shape grid_shape
+        True for the grid's active cells.
+    active_bin_data : NDArray, shape (n_active_bins,)
+        One value per active bin, in active-bin order: the order of
+        ``active_mask``'s True cells in row-major (C) order, which is the
+        order of the layout's ``bin_centers``.
     fill_value : float, optional
         The value to use for bins in the full grid that are not active,
         by default np.nan.
 
     Returns
     -------
-    NDArray[np.float64], shape (dim0_size, dim1_size, ...)
-        An N-D array with shape `self.grid_shape`. Active bin locations are
-        filled with `active_bin_data`, others with `fill_value`.
+    NDArray, shape grid_shape
+        Active cells hold `active_bin_data`, others `fill_value`. The dtype
+        is the common type of `active_bin_data` and `fill_value`.
 
     Raises
     ------
     ValueError
-        If the environment is not grid-based (missing `grid_shape` or
-        `active_mask`), or if `active_bin_data` has an incorrect shape
-        or incompatible data type.
+        If `grid_shape` or `active_mask` is None, `active_bin_data` is not a
+        1D NumPy array, or its length is not the number of active bins.
 
     """
     if grid_shape is None or active_mask is None:
@@ -301,9 +316,10 @@ def map_active_data_to_grid(
 def estimate_grid_memory(grid_shape: tuple[int, ...]) -> float:
     """Estimate memory usage in MB for a grid of given shape.
 
-    This function provides a conservative estimate of memory requirements for
-    creating an Environment with a grid-based layout. The estimate includes
-    bin_centers array, NetworkX graph nodes, and edges.
+    A rough, approximate figure for an Environment whose every grid cell is
+    a bin: the bin-center array plus the nodes and edges of its NetworkX
+    connectivity graph. It counts the full grid, before active bins are
+    chosen, and is meant only to flag grids too large to build.
 
     Parameters
     ----------
@@ -324,13 +340,13 @@ def estimate_grid_memory(grid_shape: tuple[int, ...]) -> float:
     - **NetworkX graph nodes**: ~500 bytes per node (approximate overhead)
     - **NetworkX graph edges**: ~300 bytes per edge (approximate overhead)
 
-    The graph overhead estimates are conservative approximations based on
-    NetworkX's dict-based storage with required attributes (pos,
-    source_grid_flat_index, original_grid_nd_index for nodes; distance,
-    vector, edge_id for edges).
+    The per-node and per-edge sizes approximate NetworkX's dict-based
+    storage of the node attributes (pos, source_grid_flat_index,
+    original_grid_nd_index) and edge attributes (distance, vector, edge_id).
 
-    Edge count assumes average of 2*n_dims edges per node (e.g., 4 neighbors
-    in 2D, 6 in 3D) for grid connectivity.
+    The edge count assumes 2*n_dims neighbors per cell (4 in 2D, 6 in 3D),
+    as with face-only connectivity. Grid layouts connect diagonal neighbors
+    by default (8 in 2D, 26 in 3D), so the edge term usually undercounts.
 
     Examples
     --------
@@ -355,13 +371,10 @@ def estimate_grid_memory(grid_shape: tuple[int, ...]) -> float:
     # bin_centers: n_bins * n_dims * 8 bytes (float64)
     bin_centers_mb = (n_bins * n_dims * 8) / (1024**2)
 
-    # NetworkX graph overhead (approximate)
-    # Each node: dict with ~5 attributes (~500 bytes conservative estimate)
-    # Each edge: dict with ~4 attributes (~300 bytes conservative estimate)
+    # Approximate NetworkX overhead: ~500 bytes per node, ~300 per edge.
     nodes_mb = (n_bins * 500) / (1024**2)
 
-    # Average edges per node: 2*n_dims for grid connectivity
-    # (e.g., 4 in 2D: up, down, left, right; 6 in 3D; etc.)
+    # Face neighbors only: 2*n_dims per cell.
     avg_edges_per_node = 2 * n_dims
     n_edges = n_bins * avg_edges_per_node / 2  # Divide by 2 (edges counted twice)
     edges_mb = (n_edges * 300) / (1024**2)
@@ -396,23 +409,20 @@ def check_grid_size_safety(
 
     Notes
     -----
-    **Reducing Memory Usage:**
+    The estimate (see `estimate_grid_memory`) counts every cell of the full
+    grid, before active bins are chosen, so only a coarser or smaller grid
+    lowers it: increase ``bin_size``, narrow ``dimension_ranges``, or check
+    that ``positions`` has shape ``(n_samples, n_dims)`` and that
+    ``bin_size`` is in its units.
 
-    If you encounter warnings, consider:
+    The environment factories do not take ``warn_threshold_mb``. To silence
+    the warning for a grid you know is large, filter it::
 
-    - **Increase bin_size** to reduce grid resolution
-    - **Use infer_active_bins=True** to filter out empty bins
-    - **Set bin_count_threshold** to exclude sparse bins
-    - **Process data in spatial chunks** for very large environments
-    - **Use morphological operations** (dilate, fill_holes) to clean up active mask
+        import warnings
 
-    **Disabling Warnings:**
-
-    To disable the warning entirely, set warn_threshold_mb to infinity::
-
-        env = Environment.from_samples(
-            positions, bin_size=1.0, warn_threshold_mb=float("inf")
-        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Creating large grid")
+            env = Environment.from_samples(positions, bin_size=1.0)
 
     Examples
     --------
@@ -422,9 +432,9 @@ def check_grid_size_safety(
 
     >>> # Large grid - warning (but creation proceeds)
     >>> check_grid_size_safety((500, 500))  # doctest: +SKIP
-    UserWarning: Creating large grid with shape (500, 500) (250,000 bins).
-    Estimated memory usage: 214.8 MB
-    Consider increasing bin_size or using infer_active_bins=True.
+    UserWarning: Creating large grid with shape (500, 500) (250,000 bins). Estimated memory usage: 266.1 MB.
+    Why: allocating this grid may consume substantial memory.
+    Fix: increase bin_size; this grid has 250,000 bins. For example, use bin_size=2.0 in the same units as positions, or infer_active_bins=True
 
     See Also
     --------
@@ -441,5 +451,5 @@ def check_grid_size_safety(
                 fix=f"increase bin_size; this grid has {n_bins:,} bins. For example, use bin_size=2.0 in the same units as positions, or infer_active_bins=True",
             ),
             UserWarning,
-            stacklevel=4,  # Adjust stacklevel to point to user code
+            stacklevel=4,  # The caller of a layout engine's build().
         )

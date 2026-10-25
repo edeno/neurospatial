@@ -65,20 +65,22 @@ class ShapelyPolygonLayout(_GridMixin):
             The Shapely Polygon object that defines the boundary of the
             active area.
         bin_size : Union[float, Sequence[float]]
-            The side length(s) of the grid cells. If float, cells are
-            square (or cubic). If sequence (length 2 for 2D), specifies
-            (width, height).
+            The side length(s) of the grid cells, in the units of the polygon
+            coordinates. A float gives square cells; a length-2 sequence
+            gives (width, height).
         connect_diagonal_neighbors : bool, default=True
             If True, connect diagonally adjacent active grid cells in the
             `connectivity`.
 
         Raises
         ------
-        RuntimeError
-            If the 'shapely' package is not installed (should be caught by
-            SHAPELY_AVAILABLE check at class definition).
         TypeError
-            If `polygon` is not a Shapely Polygon.
+            If `polygon` is not a Shapely Polygon, or `bin_size` is not
+            numeric.
+        ValueError
+            If `bin_size` is not positive and finite or has the wrong number
+            of entries, if `polygon` is empty (its bounds are not finite), or
+            if no cell center lies inside the polygon.
 
         """
         self._begin_build()
@@ -100,7 +102,7 @@ class ShapelyPolygonLayout(_GridMixin):
             add_boundary_bins=False,
         )
 
-        # Safety check: warn or error if grid is very large
+        # Warn if the grid is very large.
         check_grid_size_safety(self.grid_shape)
 
         # Cells whose centers lie strictly inside the polygon are active.

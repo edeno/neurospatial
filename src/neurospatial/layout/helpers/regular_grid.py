@@ -11,11 +11,6 @@ This module provides a collection of helper functions used primarily by
   the active area (`_infer_active_bins_from_regular_grid`).
 - Pairing neighboring active grid bins, allowing for orthogonal and
   diagonal connections (`regular_grid_pairs`).
-- Mapping continuous N-D points to their corresponding discrete bin indices
-  within the grid, taking into account active areas (`points_to_regular_grid_bin_ind`).
-
-The module also includes functions for inferring dimensional properties from
-data samples, which might be shared with or used by other utility modules.
 """
 
 from __future__ import annotations
@@ -39,14 +34,14 @@ from neurospatial.layout.validation import (
 )
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
-# ``_build_grid_structure`` by ``np.histogramdd`` / ``np.meshgrid`` BEFORE any
-# active-bin filtering. The Cartesian product of the per-axis bin counts can be
+# ``_build_grid_structure`` by ``grid_cell_centers`` BEFORE any active-bin
+# filtering. The Cartesian product of the per-axis bin counts can be
 # astronomically large even when every axis is modest -- e.g. a transposed
 # ``(2, N)`` trajectory read as N dimensions -- so a per-axis check (as in
 # ``get_n_bins``) is not enough; the product must be preflighted or the
 # allocation OOMs. 8 GiB is far above any realistic dense spatial grid (whose
 # connectivity graph would itself be infeasible well below this) while still
-# catching the catastrophic transpose. Raised as ``float`` bytes for comparison.
+# catching the catastrophic transpose.
 _MAX_GRID_CENTERS_BYTES = 8 * 1024**3
 
 
@@ -111,8 +106,9 @@ def _infer_active_bins_from_regular_grid(
     This function first counts positions in each grid bin defined by `edges`.
     Visited bins with counts at least `bin_count_threshold` are initially active.
     Thresholds 0 and 1 both retain every visited bin; empty bins remain inactive.
-    Optional morphological operations (closing, filling, dilation) can then be
-    applied to refine the active area.
+    Optional morphological operations can then refine the active area. They
+    run only for 2-D and higher grids, in the order closing, hole filling,
+    dilation; a 1-D grid keeps exactly the visited bins.
 
     Parameters
     ----------
@@ -149,10 +145,9 @@ def _infer_active_bins_from_regular_grid(
     pos_clean = positions[~np.any(np.isnan(positions), axis=1)]
 
     if pos_clean.shape[0] == 0:
-        # Handle case with no valid positions
         grid_shape = tuple(len(edge_array) - 1 for edge_array in edges)
         warnings.warn(
-            "infer_active_bins is True, but no positions provided. "
+            "infer_active_bins is True, but positions has no row without NaN. "
             "Returning all bins inactive (no data to infer from).",
             UserWarning,
             stacklevel=2,
@@ -164,18 +159,12 @@ def _infer_active_bins_from_regular_grid(
 
     n_dims = positions.shape[1]
     if n_dims > 1:
-        # Morphological operations use the maximal scipy structuring element
-        # (``connectivity=n_dims``): in 2D this is the full 8-neighbor (3x3)
-        # element, matching the graph's diagonal connectivity exactly. In 3D,
-        # however, ``connectivity=2`` is the 18-neighbor element (faces + edges,
-        # NO corners), whereas the connectivity GRAPH built with
-        # ``connect_diagonal=True`` uses the full 26-neighbor (3x3x3) stencil
-        # including corner diagonals. This mismatch is intentional and
-        # conservative: the 18-neighbor element gives slightly tighter
-        # closing/dilation of the active mask in 3D while the graph still wires
-        # all 26 diagonal neighbors for traversal. (Note: scipy clamps
-        # ``connectivity`` to at most ``n_dims``, so ``connectivity=2`` is the
-        # full element in 2D but the 18-neighbor element in 3D.)
+        # The scipy structuring element with ``connectivity=2``: in 2D the
+        # full 8-neighbor (3x3) element, matching the graph's diagonal
+        # connectivity. In 3D it is the 18-neighbor element (faces and edges,
+        # no corners), while the graph built with ``connect_diagonal=True``
+        # links all 26 neighbors, so closing and dilation of the mask are
+        # slightly tighter than the graph's connectivity.
         structure = ndimage.generate_binary_structure(n_dims, connectivity=2)
 
         if close_gaps:
@@ -248,7 +237,6 @@ def _validate_and_prepare_inputs(
         If inputs have incorrect types.
 
     """
-    # 1) Determine dimensionality
     if positions is None and dimension_range is None:
         raise ValueError("Either `positions` or `dimension_range` must be provided.")
 
@@ -266,7 +254,6 @@ def _validate_and_prepare_inputs(
         if samples.ndim != 2:
             raise ValueError(f"`positions` must be 2D, got shape {samples.shape}.")
         n_dims = samples.shape[1]
-        # Remove NaNs
         samples = samples[~np.isnan(samples).any(axis=1)]
         if samples.size == 0 and dimension_range is None:
             raise ValueError(
@@ -315,7 +302,6 @@ def _compute_dimension_ranges(
         If dimension_range contains non-numeric values.
 
     """
-    # 3) Determine dimension ranges
     if dimension_range is not None:
         if len(dimension_range) != n_dims:
             raise ValueError(
@@ -446,20 +432,15 @@ def _build_grid_structure(
         Number of bins along each dimension.
 
     """
-    # 4) Compute number of bins in each dimension
     data_for_bins = samples if samples is not None else np.zeros((1, n_dims))
-    # Convert bin_sizes to list to match get_n_bins signature
     bin_sizes_list: list[float] = bin_sizes.tolist()
-    # ensures at least 1
     n_bins = get_n_bins(data_for_bins, bin_size=bin_sizes_list, dimension_range=ranges)
 
-    # 4a) Preflight the FULL grid size before allocating anything. get_n_bins
-    #     validates each AXIS against the int64 limit, but np.histogramdd and
-    #     np.meshgrid below allocate the Cartesian PRODUCT of the per-axis
-    #     counts, which can be astronomically large even when every axis is
-    #     modest (e.g. a transposed (2, N) trajectory read as N dimensions).
-    #     Use exact Python-int arithmetic (math.prod on int()s) so the product
-    #     itself cannot overflow, then fail loud instead of OOMing.
+    # Preflight the full grid size before allocating anything. get_n_bins
+    # checks each axis against the int64 limit, but the bin centers are the
+    # Cartesian product of the per-axis counts, which can be astronomically
+    # large even when every axis is modest. Python ints keep the product
+    # itself from overflowing.
     total_bins = math.prod(int(b) for b in n_bins)
     centers_bytes = total_bins * n_dims * 8
     if centers_bytes > _MAX_GRID_CENTERS_BYTES:
@@ -484,7 +465,7 @@ def _build_grid_structure(
             )
         )
 
-    # 5) Lay cells of exactly bin_size across each (whole-cell) range.
+    # Lay cells of exactly bin_size across each (whole-cell) range.
     final_edges = []
     for (lo, hi), size, count in zip(ranges, bin_sizes, n_bins, strict=True):
         count = _whole_cells(lo, hi, size, int(count))
@@ -523,7 +504,10 @@ def _create_regular_grid(
     bin_size : float or sequence of floats, default=2.0
         If float, same bin size along every dimension. If sequence, must match `n_dims`.
     dimension_range : sequence of (min, max) tuples, length `n_dims`, optional
-        Explicit bounding box for each dimension, used if `positions` is None.
+        Explicit bounding box for each dimension. When given, it sets the
+        grid's extent and `positions` is not used for it; otherwise the
+        extent of `positions` is used. A range that is not a whole number of
+        cells is widened evenly past both ends.
     add_boundary_bins : bool, default=False
         If True, extends each axis by one extra bin on both ends.
 

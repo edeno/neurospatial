@@ -141,7 +141,7 @@ class MaskedGridLayout(_GridMixin):
                 f"the shape implied by grid_edges {self.grid_shape}.",
             )
 
-        # Safety check: warn or error if grid is very large
+        # Warn if the grid is very large.
         check_grid_size_safety(self.grid_shape)
 
         self.dimension_ranges = tuple(

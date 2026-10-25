@@ -42,7 +42,6 @@ class RegularGridLayout(_GridMixin):
     def __init__(self) -> None:
         """Initialize a RegularGridLayout engine."""
         self._build_params_used = {}
-        # Initialize all protocol attributes to satisfy type checkers, even if None
         self.bin_centers = np.empty((0, 0))
         self.dimension_ranges = None
         self.grid_edges = None
@@ -96,14 +95,31 @@ class RegularGridLayout(_GridMixin):
         connect_diagonal_neighbors : bool, default=True
             If True, connects diagonal neighbors in the connectivity graph.
 
+        Raises
+        ------
+        TypeError
+            If `bin_size` is not numeric.
+        ValueError
+            If both `dimension_ranges` and `positions` are None, or
+            `dimension_ranges` is None and every row of `positions` has a
+            NaN; if `bin_size` is not positive and finite or has the wrong number of
+            entries ([E1002]); if the full grid's bin centers would need more
+            than 8 GiB (usually transposed `positions` or a `bin_size` in the
+            wrong units); or if no bin is active after inference ([E1001]).
+
+        Notes
+        -----
+        `close_gaps`, `fill_holes` and `dilate` are applied only to grids
+        with two or more dimensions, in that order: closing, then hole
+        filling, then dilation. A 1-D grid keeps exactly the bins that hold
+        at least `bin_count_threshold` samples (and at least one).
+
         """
 
         self._begin_build()
-        # --- Determine dimension_ranges if not provided ---
         if dimension_ranges is not None:
             self.dimension_ranges = dimension_ranges
         else:
-            # Infer ranges from positions
             if positions is None:
                 raise ValueError(
                     "dimension_ranges must be provided if positions is None.",
@@ -114,7 +130,6 @@ class RegularGridLayout(_GridMixin):
             buffer_for_inference: float | list[float] = (
                 float(half[0]) if np.ndim(bin_size) == 0 else half.tolist()
             )
-            # Infer ranges from positions
             self.dimension_ranges = _infer_dimension_ranges_from_samples(
                 positions=positions,
                 buffer_around_data=buffer_for_inference,
@@ -135,7 +150,7 @@ class RegularGridLayout(_GridMixin):
             (float(edges[0]), float(edges[-1])) for edges in self.grid_edges
         )
 
-        # Safety check: warn or error if grid is very large
+        # Warn if the grid is very large.
         check_grid_size_safety(self.grid_shape)
 
         if infer_active_bins and positions is not None:
@@ -155,7 +170,7 @@ class RegularGridLayout(_GridMixin):
         if not np.any(self.active_mask):
             # Build comprehensive error message with diagnostics
             error_lines = ["[E1001] No active bins found after filtering."]
-            error_lines.append("")  # Blank line
+            error_lines.append("")
 
             # Add diagnostic information
             error_lines.append("Diagnostics:")
@@ -196,7 +211,7 @@ class RegularGridLayout(_GridMixin):
             error_lines.append(
                 f"  Morphological operations: dilate={dilate}, fill_holes={fill_holes}, close_gaps={close_gaps}"
             )
-            error_lines.append("")  # Blank line
+            error_lines.append("")
 
             # Explain WHY this happened (common causes)
             error_lines.append("Common causes:")
@@ -207,7 +222,7 @@ class RegularGridLayout(_GridMixin):
             error_lines.append(
                 "  3. Data is too sparse and morphological operations are disabled"
             )
-            error_lines.append("")  # Blank line
+            error_lines.append("")
 
             # Explain HOW to fix (specific suggestions)
             error_lines.append("Suggestions to fix:")
