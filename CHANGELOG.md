@@ -148,6 +148,9 @@
   `TypeError`, as Python does for an unexpected keyword, with a message that
   lists the options the engine's `build()` takes. It raised a bare
   `ValueError` naming only the unexpected keyword.
+- `get_layout_parameters` marks each build option `'required'`: True or
+  False. A required option and one that defaults to None both reported
+  `'default': None`, so the two could not be told apart.
 
 ### Spatial geometry review
 

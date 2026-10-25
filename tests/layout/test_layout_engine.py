@@ -43,6 +43,21 @@ def test_get_layout_parameters_regular_grid():
     assert params["bin_size"]["annotation"] is not None
 
 
+def test_get_layout_parameters_tells_required_from_defaulting_to_none():
+    params = get_layout_parameters("RegularGrid")
+    # bin_size has no default; dimension_ranges defaults to None.
+    assert params["bin_size"]["required"] is True
+    assert params["bin_size"]["default"] is None
+    assert params["dimension_ranges"]["required"] is False
+    assert params["dimension_ranges"]["default"] is None
+    assert params["bin_count_threshold"] == {
+        "annotation": int,
+        "default": 0,
+        "required": False,
+        "kind": "KEYWORD_ONLY",
+    }
+
+
 def test_create_layout_regular_grid():
     rng = np.random.default_rng(42)
     data = rng.random((100, 2)) * 10

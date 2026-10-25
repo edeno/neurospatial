@@ -92,7 +92,7 @@ def list_available_layouts() -> list[str]:
     return sorted(_LAYOUT_MAP)
 
 
-def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
+def get_layout_parameters(layout_type: LayoutType | str) -> dict[str, dict[str, Any]]:
     """Retrieve expected build parameters for a specified layout engine type.
 
     Inspects the `build` method signature of the specified `LayoutEngine`
@@ -106,18 +106,31 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
 
     Returns
     -------
-    Dict[str, Dict[str, Any]]
-        A dictionary where keys are parameter names for the `build` method.
-        Each value is another dictionary containing:
-        - 'annotation': The type annotation of the parameter.
-        - 'default': The default value, or `None` if no default.
-        - 'kind': The parameter kind (e.g., 'keyword-only').
+    dict of str to dict
+        The ``build`` parameters, in signature order. Each value has:
+
+        - ``'annotation'``: the parameter's type annotation, or None when it
+          has none.
+        - ``'default'``: the default value; None for a required parameter,
+          so read ``'required'`` to tell the two apart.
+        - ``'required'``: True when the parameter has no default and must be
+          passed.
+        - ``'kind'``: the ``inspect.Parameter`` kind name, such as
+          ``'KEYWORD_ONLY'`` or ``'POSITIONAL_OR_KEYWORD'``.
 
     Raises
     ------
     ValueError
         If `layout_type` is unknown.
 
+    Examples
+    --------
+    >>> from neurospatial.layout import get_layout_parameters
+    >>> params = get_layout_parameters("RegularGrid")
+    >>> params["bin_size"]["required"], params["dimension_ranges"]["required"]
+    (True, False)
+    >>> params["bin_count_threshold"]["default"], params["bin_size"]["kind"]
+    (0, 'KEYWORD_ONLY')
     """
     engine_class = _engine_class(layout_type, "get_layout_parameters()")
     sig = inspect.signature(engine_class.build)
@@ -134,7 +147,8 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
             "default": (
                 param.default if param.default is not inspect.Parameter.empty else None
             ),
-            "kind": param.kind.name,  # Use .name for Python 3.10+ compatibility
+            "required": param.default is inspect.Parameter.empty,
+            "kind": param.kind.name,
         }
     return params_info
 
