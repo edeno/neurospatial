@@ -1,5 +1,8 @@
 """Behavioral tests for GraphLayout driven directly through the engine."""
 
+import itertools
+
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -153,3 +156,69 @@ def test_numpy_scalar_edge_spacing_matches_python_number(simple_y_maze_graph, sp
         env.to_linear(env.bin_centers), expected.to_linear(expected.bin_centers)
     )
     assert env.layout_parameters == expected.layout_parameters
+
+
+def _star_graph(arm_ends):
+    """Track graph with node 0 at the origin joined to one node per arm end."""
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    for node, end in enumerate(arm_ends, start=1):
+        graph.add_node(node, pos=end)
+        graph.add_edge(0, node)
+    return graph
+
+
+_STAR_MAZES = {
+    "Y": [(0.0, -10.0), (-7.0, 7.0), (7.0, 7.0)],
+    "T": [(0.0, -10.0), (-10.0, 0.0), (10.0, 0.0)],
+    "plus": [(0.0, 10.0), (0.0, -10.0), (10.0, 0.0), (-10.0, 0.0)],
+}
+
+
+def _junction_bins(layout):
+    """Bin nearest the junction (origin) on each arm, keyed by arm node."""
+    segments = layout._segment_ids
+    edges = list(layout.linearization().graph.edges())
+    nearest = {}
+    for segment_id in np.unique(segments):
+        bins = np.flatnonzero(segments == segment_id)
+        arm_node = next(node for node in edges[segment_id] if node != 0)
+        distance = np.linalg.norm(layout.bin_centers[bins], axis=1)
+        nearest[arm_node] = int(bins[np.argmin(distance)])
+    return nearest
+
+
+@pytest.mark.parametrize("maze", sorted(_STAR_MAZES))
+def test_every_segment_end_at_a_junction_is_a_neighbor(maze):
+    """All arm ends meeting at a junction are pairwise neighbors.
+
+    A junction is a single point of the track: an animal at the end of one
+    arm steps straight into any other arm. Chaining the arm ends in
+    ``edge_order`` order instead would route one arm to another through a
+    third arm, so maze distances would depend on the edge order.
+    """
+    arms = _STAR_MAZES[maze]
+    graph = _star_graph(arms)
+    arm_nodes = list(range(1, len(arms) + 1))
+    reference = None
+    for order in itertools.permutations(arm_nodes):
+        layout = GraphLayout()
+        layout.build(
+            graph_definition=graph,
+            edge_order=[(0, node) for node in order],
+            edge_spacing=0.0,
+            bin_size=2.5,
+        )
+        ends = _junction_bins(layout)
+        connectivity = layout.connectivity
+        for a, b in itertools.combinations(arm_nodes, 2):
+            assert connectivity.has_edge(ends[a], ends[b]), (maze, order, a, b)
+        distances = {
+            (a, b): nx.shortest_path_length(
+                connectivity, ends[a], ends[b], weight="distance"
+            )
+            for a, b in itertools.combinations(arm_nodes, 2)
+        }
+        if reference is None:
+            reference = distances
+        assert distances == pytest.approx(reference), (maze, order)

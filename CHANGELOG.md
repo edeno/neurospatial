@@ -61,6 +61,15 @@
 - Every error message built from what/why/fix now labels its reason
   `Why:`; 80+ messages printed the reason as a bare sentence.
 
+### Layout review
+
+- Track arms that meet at a junction are now all adjacent to one another.
+  Before, the arm ends at a node were chained in `edge_order` order, so on
+  T, Y, plus and W mazes one arm reached another only through a third:
+  geodesic distance, smoothing and decoder transitions across the junction
+  were too long for some arm pairs, and which pairs depended on `edge_order`.
+  `env.edge_pairs` gains the missing junction pairs.
+
 ### Spatial geometry review
 
 - Walls that end on a slanted or curved arena outline now separate the bins

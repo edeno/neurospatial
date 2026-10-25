@@ -216,8 +216,9 @@ def track_pairs(
 
     Bins on the same track segment (original graph edge) are paired with the
     next bin along it, segment by segment in order of first appearance. Then,
-    at each track-graph node, the end bins of the segments that meet there
-    are paired in ``edge_order`` order. The proposals are put in
+    at each track-graph node, every two end bins of the segments that meet
+    there are paired, so k segments meeting at a junction give k(k-1)/2
+    pairs and no arm is reached through another. The proposals are put in
     authoritative order by
     :func:`~neurospatial.layout.helpers.neighbor_pairs.order_neighbor_pairs`.
 
@@ -257,11 +258,16 @@ def track_pairs(
     bin_edge_order_arr = np.column_stack((by_segment[starts], by_segment[ends]))
 
     # --- 2. Inter-segment pairs: end bins of the segments meeting at a node ---
-    edge_order_array = np.asarray(edge_order)
-    for node_id in graph.nodes:
-        connections = bin_edge_order_arr[edge_order_array == node_id]
-        first.append(connections[:-1])
-        second.append(connections[1:])
+    # A node is one point of the track, so every two segment ends there are
+    # neighbors.
+    ends_at_node: dict[object, list[int]] = {node: [] for node in graph.nodes}
+    for segment_ends, segment_nodes in zip(bin_edge_order_arr, edge_order, strict=True):
+        for end_bin, node in zip(segment_ends, segment_nodes, strict=True):
+            ends_at_node[node].append(int(end_bin))
+    for ends in ends_at_node.values():
+        low, high = np.triu_indices(len(ends), k=1)
+        first.append(np.asarray(ends, dtype=np.intp)[low])
+        second.append(np.asarray(ends, dtype=np.intp)[high])
 
     lower = np.concatenate(first).astype(np.intp)
     upper = np.concatenate(second).astype(np.intp)

@@ -125,13 +125,12 @@ class TestEnvironmentFromGraph:
         if 0 < idx_on_west_arm < 3:
             assert set(neighbors_on_west) == {idx_on_west_arm - 1, idx_on_west_arm + 1}
 
-        # Bin 3 is the end of the West arm segment (4,0)
-        # Based on current graph_utils, it connects to bin 2 (intra-segment)
-        # and to bin 4 (start of North arm, due to (3,4) inter-segment connection)
+        # Bin 3 is the West arm's bin at the center node. It neighbors bin 2
+        # on its own arm and the center-end bins of the North (4), East (8)
+        # and South (12) arms: every arm end at a junction is adjacent.
         neighbors_of_3 = graph_env.neighbors(bins=3)
         assert isinstance(neighbors_of_3, list)
-        expected_neighbors_of_3 = {2, 4}  # Corrected expectation
-        assert set(neighbors_of_3) == expected_neighbors_of_3
+        assert set(neighbors_of_3) == {2, 4, 8, 12}
 
     def test_distance_between(self, graph_env: Environment):
         """Test manifold distance between points."""
@@ -236,7 +235,8 @@ class TestEnvironmentFromGraph:
 
         df = graph_env.get_edge_attributes()
         assert isinstance(df, pd.DataFrame)
-        assert df.shape[0] == 15
+        # 4 arms x 3 along-arm edges, plus the 6 pairs of arm ends at the center.
+        assert df.shape[0] == 18
         assert "distance" in df.columns
         assert "angle_2d" in df.columns
 
