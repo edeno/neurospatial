@@ -64,13 +64,15 @@ def field_size(
     Returns
     -------
     size : float
-        Field area in squared physical units (e.g., cm^2).
+        Field size: the summed measures of its bins, an area (e.g. cm^2) for
+        2-D environments, a length (e.g. cm) on a track or 1-D grid, and a
+        volume in 3-D.
 
     Notes
     -----
-    Size is computed as the sum of individual bin areas. For regular grids,
-    each bin has area bin_size^2. For irregular graphs, area is estimated
-    from Voronoi cell volumes.
+    Each bin's measure is ``env.bin_sizes``: ``bin_size**2`` on a 2-D grid,
+    the hexagon or triangle area on hexagonal and mesh layouts, and the bin's
+    length along a track.
 
     Examples
     --------

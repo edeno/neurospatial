@@ -195,6 +195,26 @@
   used 1.0 per pixel, so positions in cm were binned as if each pixel were
   1 cm wide, and `layout_parameters["pixel_size"]` recorded None instead of
   the size used.
+- `get_n_bins` counts a reversed `(max, min)` range like the grid builder
+  does; it returned a negative count. It ignores positions rows with a NaN or
+  infinite coordinate, and refuses a range that is not finite.
+- The large-grid memory warning points at your own call, not at a line inside
+  neurospatial, and no longer suggests `infer_active_bins=True`, which cannot
+  shrink the full grid the estimate counts.
+- Layout engines built directly (`create_layout`, `RegularGridLayout`,
+  `HexagonalLayout`) treat a position row with an infinite coordinate as a
+  missing sample, as `Environment.from_samples` does. Before, a regular grid
+  refused it with a message about a non-finite range and a hexagonal layout
+  raised `OverflowError`.
+- `ShapelyPolygonLayout` refuses an empty or flat polygon by name; it failed
+  with a message about a `(nan, nan)` dimension range.
+- A layout engine's `build()` called without a required option (for
+  example `create_layout("RegularGrid", positions=...)` without `bin_size`)
+  names the engine and the missing option, with a fix, instead of Python's
+  bare "missing a required argument".
+- A track `edge_order` entry whose two nodes no edge of the graph joins is
+  refused with a message naming it; the build failed later with a bare
+  `KeyError`.
 
 ### Spatial geometry review
 

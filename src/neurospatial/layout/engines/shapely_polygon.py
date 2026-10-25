@@ -7,7 +7,7 @@ import shapely
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
-from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial._exceptions import LayoutNotBuiltError, _format_error
 from neurospatial.geometry import Binning, Outline
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
@@ -79,13 +79,24 @@ class ShapelyPolygonLayout(_GridMixin):
             numeric.
         ValueError
             If `bin_size` is not positive and finite or has the wrong number
-            of entries, if `polygon` is empty (its bounds are not finite), or
+            of entries, if `polygon` has no area (empty or flat), or
             if no cell center lies inside the polygon.
 
         """
         self._begin_build()
         if not isinstance(polygon, Polygon):
             raise TypeError("polygon must be a Shapely Polygon object.")
+        if polygon.is_empty or not polygon.area > 0:
+            raise ValueError(
+                _format_error(
+                    f"polygon has no area: {polygon.wkt[:80]}.",
+                    why="Why: the grid covers the polygon's bounds and keeps the "
+                    "cells whose centers lie inside it, so an empty or flat "
+                    "polygon has no cells.",
+                    fix="pass the arena outline as a Polygon with at least three "
+                    "vertices that are not all on one line",
+                )
+            )
 
         self.polygon_definition_ = polygon
         minx, miny, maxx, maxy = polygon.bounds

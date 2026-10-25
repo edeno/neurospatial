@@ -56,9 +56,11 @@ class TestCheckGridSizeSafety:
         assert "shape (500, 500)" in warning_msg
         assert "bins" in warning_msg
         assert "Estimated memory usage" in warning_msg
-        # Should contain suggestions
+        # Advice that can shrink the full grid the estimate counts: masking
+        # bins with infer_active_bins cannot.
         assert "bin_size" in warning_msg
-        assert "infer_active_bins" in warning_msg
+        assert "infer_active_bins" not in warning_msg
+        assert "(n_samples, n_dims)" in warning_msg
 
     def test_custom_thresholds(self):
         """Test using custom warning threshold."""
@@ -119,3 +121,14 @@ class TestMemorySafetyIntegration:
             )
 
         assert env.n_bins > 0
+
+
+def test_large_grid_warning_points_at_the_callers_line():
+    """The warning names the user's call, not a line inside neurospatial."""
+    from neurospatial import Environment
+
+    positions = np.random.default_rng(0).uniform(0, 400, (500, 2))
+    with pytest.warns(UserWarning, match="Creating large grid") as record:
+        Environment.from_samples(positions, bin_size=1.0)
+    (warning,) = [w for w in record if "Creating large grid" in str(w.message)]
+    assert warning.filename == __file__

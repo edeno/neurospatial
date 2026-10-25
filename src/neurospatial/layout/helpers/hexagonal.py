@@ -50,7 +50,8 @@ def _create_hex_grid(
     ----------
     positions : ndarray of shape (n_samples, 2), optional
         2D points to infer bounding box if `dimension_range` is None.
-        NaNs are ignored. If None, `dimension_range` must be provided.
+        Rows with a NaN or infinite coordinate are ignored. If None,
+        `dimension_range` must be provided.
     dimension_range : sequence of ((min_x, max_x), (min_y, max_y)), optional
         If provided, must be length 2. Otherwise inferred from `positions`.
     hexagon_width : float, default=1.0
@@ -89,7 +90,7 @@ def _create_hex_grid(
         if ds_arr.ndim != 2 or ds_arr.shape[1] != 2:
             raise ValueError("`positions` must be shape (n_samples, 2).")
         # Remove any rows containing NaNs
-        ds_arr = ds_arr[~np.isnan(ds_arr).any(axis=1)]
+        ds_arr = ds_arr[np.isfinite(ds_arr).all(axis=1)]
     else:
         ds_arr = np.empty((0, 2), dtype=float)
 

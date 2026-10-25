@@ -108,7 +108,8 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             If `graph_definition` is not a NetworkX graph.
         ValueError
             If `edge_order` is empty, `bin_size` is not positive, a node of
-            `edge_order` is not in the graph, a node lacks 'pos',
+            `edge_order` is not in the graph, an entry of `edge_order` is not
+            an edge of the graph, a node lacks 'pos',
             `edge_spacing` has the wrong length, or an edge's 'distance' is
             not the distance between its nodes.
 

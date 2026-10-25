@@ -363,3 +363,20 @@ def test_gap_start_is_matched_against_its_own_gap_only():
         _find_bin_for_linear_position(positions, bin_edges, active_mask),
         [1, -1, -1, 3],
     )
+
+
+def test_get_graph_bins_refuses_an_edge_order_entry_that_is_not_an_edge(simple_graph):
+    """Two nodes of the graph that no edge joins are not a track segment.
+
+    The segment got edge id -1 and the build failed later with a bare
+    KeyError from the linearization.
+    """
+    nodes = list(simple_graph.nodes)
+    pair = next(
+        (u, v)
+        for u in nodes
+        for v in nodes
+        if u != v and not simple_graph.has_edge(u, v)
+    )
+    with pytest.raises(ValueError, match=r"not an edge[\s\S]*Fix:"):
+        _get_graph_bins(simple_graph, [pair], 0.0, 1.0)

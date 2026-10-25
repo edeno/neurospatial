@@ -141,3 +141,33 @@ def test_no_finite_position_says_nan_or_infinite(missing):
     with pytest.raises(ValueError, match="NaN or infinite") as caught:
         Environment.from_samples(np.full((10, 2), missing), bin_size=1.0)
     assert "all 10 rows" in str(caught.value)
+
+
+def test_get_n_bins_counts_a_reversed_range_like_the_grid_does():
+    """A (max, min) pair is ordered, as the grid builder orders it."""
+    forward = get_n_bins(
+        np.zeros((2, 2)), bin_size=2.0, dimension_range=[(0, 10), (0, 6)]
+    )
+    reversed_ = get_n_bins(
+        np.zeros((2, 2)), bin_size=2.0, dimension_range=[(10, 0), (0, 6)]
+    )
+    np.testing.assert_array_equal(reversed_, forward)
+    np.testing.assert_array_equal(forward, [5, 3])
+
+
+def test_get_n_bins_ignores_rows_that_are_not_finite():
+    positions = np.array([[0.0, 0.0], [np.inf, 1.0], [np.nan, 2.0], [10.0, 5.0]])
+    np.testing.assert_array_equal(get_n_bins(positions, bin_size=2.0), [5, 3])
+
+
+@pytest.mark.parametrize(
+    "dimension_range", [[(0, np.inf), (0, 1)], [(np.nan, 1), (0, 1)]]
+)
+def test_get_n_bins_refuses_a_range_that_is_not_finite(dimension_range):
+    with pytest.raises(ValueError, match=r"not finite[\s\S]*Fix:"):
+        get_n_bins(np.zeros((2, 2)), bin_size=1.0, dimension_range=dimension_range)
+
+
+def test_get_n_bins_refuses_positions_with_no_finite_row():
+    with pytest.raises(ValueError, match=r"no row[\s\S]*Fix:"):
+        get_n_bins(np.full((3, 2), np.nan), bin_size=1.0)

@@ -179,7 +179,14 @@ def capture_build_params(
 
         @wraps(method)
         def wrapper(self: Any, *args: Any, **kwargs: Any) -> T:
-            bound = signature.bind(self, *args, **kwargs)
+            try:
+                bound = signature.bind(self, *args, **kwargs)
+            except TypeError as error:
+                raise TypeError(
+                    _build_argument_message(
+                        type(self).__name__, signature, args, kwargs, error
+                    )
+                ) from None
             bound.apply_defaults()
             params: dict[str, Any] = {}
             for name, value in list(bound.arguments.items())[1:]:
@@ -201,6 +208,51 @@ def capture_build_params(
         return wrapper
 
     return decorate if build_method is None else decorate(build_method)
+
+
+def _build_argument_message(
+    engine: str,
+    signature: inspect.Signature,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    error: TypeError,
+) -> str:
+    """Explain build arguments that do not fit ``signature``.
+
+    Names the options a call left out, or else lists the options the
+    engine takes, in place of Python's bare binding error.
+    """
+    options = [
+        name
+        for name, parameter in list(signature.parameters.items())[1:]
+        if parameter.kind
+        not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    ]
+    try:
+        given = signature.bind_partial(None, *args, **kwargs).arguments
+    except TypeError:
+        given = None
+    if given is not None:
+        missing = [
+            name
+            for name in options
+            if signature.parameters[name].default is inspect.Parameter.empty
+            and name not in given
+        ]
+        if missing:
+            return _format_error(
+                f"{engine}.build() is missing required option(s): "
+                f"{', '.join(missing)}.",
+                why="Why: these options have no default, so the call must supply them.",
+                fix=f"pass {', '.join(f'{name}=...' for name in missing)}; "
+                f"neurospatial.layout.get_layout_parameters() lists the options "
+                "of each layout",
+            )
+    return _format_error(
+        f"{engine}.build() cannot take these arguments: {error}.",
+        why=f"Why: {engine}.build() takes only {', '.join(options)}, by keyword.",
+        fix="pass only those options, by keyword",
+    )
 
 
 @runtime_checkable

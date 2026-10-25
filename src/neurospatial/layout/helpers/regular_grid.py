@@ -113,7 +113,8 @@ def _infer_active_bins_from_regular_grid(
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_samples, n_dims)
-        N-dimensional data samples (e.g., positions). NaNs are ignored.
+        N-dimensional data samples (e.g., positions). Rows with a NaN or
+        infinite coordinate are ignored.
     edges : Tuple[NDArray[np.float64], ...]
         A tuple where each element is a 1D array of bin edge positions for
         one dimension of the grid.
@@ -142,7 +143,7 @@ def _infer_active_bins_from_regular_grid(
 
     """
     bin_count_threshold = validate_count_threshold(bin_count_threshold)
-    pos_clean = positions[~np.any(np.isnan(positions), axis=1)]
+    pos_clean = positions[np.all(np.isfinite(positions), axis=1)]
 
     if pos_clean.shape[0] == 0:
         grid_shape = tuple(len(edge_array) - 1 for edge_array in edges)
@@ -254,7 +255,7 @@ def _validate_and_prepare_inputs(
         if samples.ndim != 2:
             raise ValueError(f"`positions` must be 2D, got shape {samples.shape}.")
         n_dims = samples.shape[1]
-        samples = samples[~np.isnan(samples).any(axis=1)]
+        samples = samples[np.isfinite(samples).all(axis=1)]
         if samples.size == 0 and dimension_range is None:
             raise ValueError(
                 "`positions` has no valid points and no `dimension_range` given.",
@@ -280,7 +281,7 @@ def _compute_dimension_ranges(
     Parameters
     ----------
     samples : NDArray[np.float64] or None
-        Cleaned data samples (NaNs already removed).
+        Cleaned data samples (rows that are not finite removed).
     dimension_range : sequence of (min, max) tuples or None
         Explicit dimension ranges.
     n_dims : int
@@ -401,7 +402,7 @@ def _build_grid_structure(
     Parameters
     ----------
     samples : NDArray[np.float64] or None
-        Cleaned data samples (NaNs already removed).
+        Cleaned data samples (rows that are not finite removed).
     n_dims : int
         Number of dimensions.
     bin_sizes : NDArray[np.float64], shape (n_dims,)
@@ -489,7 +490,8 @@ def _create_regular_grid(
     ----------
     positions : ndarray of shape (n_samples, n_dims), optional
         Used to infer dimension ranges if `dimension_range` is None.
-        NaNs are ignored. If None, `dimension_range` must be provided.
+        Rows with a NaN or infinite coordinate are ignored. If None,
+        `dimension_range` must be provided.
     bin_size : float or sequence of floats, default=2.0
         If float, same bin size along every dimension. If sequence, must match `n_dims`.
     dimension_range : sequence of (min, max) tuples, length `n_dims`, optional

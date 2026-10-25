@@ -177,7 +177,7 @@ class RegularGridLayout(_GridMixin):
 
             # Show data range
             if positions is not None:
-                data_clean = positions[~np.any(np.isnan(positions), axis=1)]
+                data_clean = positions[np.all(np.isfinite(positions), axis=1)]
                 if len(data_clean) > 0:
                     # Convert to Python native types for cleaner display
                     data_min = data_clean.min(axis=0).tolist()
@@ -192,7 +192,9 @@ class RegularGridLayout(_GridMixin):
                     error_lines.append(f"  Number of samples: {len(data_clean)}")
                 else:
                     # All data is NaN - inform user clearly
-                    error_lines.append("  Data samples: All NaN (no valid data)")
+                    error_lines.append(
+                        "  Data samples: every row has a NaN or infinite value (no valid data)"
+                    )
                     error_lines.append(
                         f"  Number of samples (including NaN): {len(positions)}"
                     )
