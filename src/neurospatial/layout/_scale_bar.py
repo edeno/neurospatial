@@ -8,9 +8,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, get_args
 
 import numpy as np
+
+from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -24,38 +26,70 @@ __all__ = [
 ]
 
 
+_Position = Literal["lower right", "lower left", "upper right", "upper left"]
+_BoxStyle = Literal["round", "square", None]
+_POSITIONS: tuple[str, ...] = get_args(_Position)
+_BOX_STYLES: tuple[str | None, ...] = get_args(_BoxStyle)
+
+
+def _refuse(option: str, value: object, need: str, why: str, fix: str) -> ValueError:
+    """Return the refusal for a scale-bar option outside its allowed values."""
+    return ValueError(
+        _format_error(
+            f"ScaleBarConfig {option}={value!r} is not allowed: {option} must be "
+            f"{need}.",
+            why=why,
+            fix=fix,
+        )
+    )
+
+
 @dataclass(frozen=True)
 class ScaleBarConfig:
     """Configuration for scale bar rendering.
 
+    ``Environment.plot``, ``Environment.plot_field`` and the animation
+    backends that draw with matplotlib (video, HTML and widget) use every
+    option. The napari backend uses only ``position``, ``color`` and
+    ``font_size``, and sizes and labels its bar from the zoom level. The
+    fastplotlib backend cannot draw a scale bar and refuses ``scale_bar``.
+
     Attributes
     ----------
     length : float | None
-        Scale bar length in environment units. If None, auto-calculated
-        using the 1-2-5 rule to produce aesthetically pleasing values.
-        **Matplotlib-only**: Napari auto-sizes based on layer scale.
+        Scale bar length in environment units; positive and finite. If None,
+        auto-calculated using the 1-2-5 rule to produce aesthetically
+        pleasing values. Napari ignores it.
     position : {"lower right", "lower left", "upper right", "upper left"}
-        Scale bar position. Works on all backends.
+        Scale bar position.
     color : str | None
         Bar and text color. If None, auto-selects for contrast.
-        Works on all backends.
     background : str | None
-        Background box color. None for transparent. **Matplotlib-only**.
+        Background box color. None for transparent. Napari ignores it.
     background_alpha : float
-        Background transparency (0-1). **Matplotlib-only**.
+        Background opacity, from 0 (transparent) to 1 (opaque). Napari
+        ignores it.
     font_size : int
-        Text font size in points. Works on all backends.
+        Text font size in points; positive.
     pad : float
         Padding from axes edge. AnchoredSizeBar uses this as a multiple
-        of font size, not inches. **Matplotlib-only**.
+        of font size, not inches. Napari ignores it.
     sep : float
-        Separation between bar and label in points. **Matplotlib-only**.
+        Separation between bar and label in points. Napari ignores it.
     label_top : bool
-        Label above bar (True) or below (False). **Matplotlib-only**.
+        Label above bar (True) or below (False). Napari ignores it.
     box_style : {"round", "square", None}
-        Background box style. None for no box. **Matplotlib-only**.
+        Background box style. None for no box. Napari ignores it.
     show_label : bool
-        Whether to show "10 cm" text label. Works on all backends.
+        Whether to show "10 cm" text label. Napari ignores it.
+
+    Raises
+    ------
+    ValueError
+        If ``length`` is not None or a positive finite number, ``position``
+        or ``box_style`` is not one of the listed choices,
+        ``background_alpha`` is outside [0, 1], or ``font_size`` is not
+        positive.
 
     Examples
     --------
@@ -71,9 +105,7 @@ class ScaleBarConfig:
     """
 
     length: float | None = None
-    position: Literal["lower right", "lower left", "upper right", "upper left"] = (
-        "lower right"
-    )
+    position: _Position = "lower right"
     color: str | None = None
     background: str | None = "white"
     background_alpha: float = 0.7
@@ -81,8 +113,54 @@ class ScaleBarConfig:
     pad: float = 0.5
     sep: float = 5.0
     label_top: bool = True
-    box_style: Literal["round", "square", None] = "round"
+    box_style: _BoxStyle = "round"
     show_label: bool = True
+
+    def __post_init__(self) -> None:
+        if self.length is not None and not (
+            np.isfinite(self.length) and self.length > 0
+        ):
+            raise _refuse(
+                "length",
+                self.length,
+                "a positive finite number in environment units, or None",
+                "Why: the bar shows a physical length, so a zero, negative or "
+                "non-finite length draws no bar or a wrong one.",
+                "pass a positive length, such as length=10.0, or length=None "
+                "to choose one from the plot's extent",
+            )
+        if self.position not in _POSITIONS:
+            raise _refuse(
+                "position",
+                self.position,
+                f"one of {', '.join(map(repr, _POSITIONS))}",
+                "Why: the bar is anchored in one corner of the axes.",
+                "pass one of those positions",
+            )
+        if not 0 <= self.background_alpha <= 1:
+            raise _refuse(
+                "background_alpha",
+                self.background_alpha,
+                "between 0 (transparent) and 1 (opaque)",
+                "Why: it is the opacity of the box behind the bar.",
+                "pass a value in [0, 1], such as background_alpha=0.7",
+            )
+        if not self.font_size > 0:
+            raise _refuse(
+                "font_size",
+                self.font_size,
+                "a positive size in points",
+                "Why: a label with no size cannot be read.",
+                "pass a positive size, such as font_size=10",
+            )
+        if self.box_style not in _BOX_STYLES:
+            raise _refuse(
+                "box_style",
+                self.box_style,
+                "'round', 'square' or None",
+                "Why: only those box styles are drawn.",
+                "pass one of those, or background=None for no box",
+            )
 
 
 def _compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
@@ -153,7 +231,9 @@ def _format_scale_label(length: float, units: str | None) -> str:
     """Format scale bar label text.
 
     Formats the length value with optional units, using integer display
-    for whole numbers (e.g., "10 cm" not "10.0 cm").
+    for whole numbers (e.g., "10 cm" not "10.0 cm") and at most six
+    significant digits otherwise, so floating-point error does not show
+    (``0.1 + 0.2`` prints as "0.3").
 
     Parameters
     ----------
@@ -180,9 +260,11 @@ def _format_scale_label(length: float, units: str | None) -> str:
 
     >>> _format_scale_label(10, None)
     '10'
+
+    >>> _format_scale_label(0.1 + 0.2, "cm")
+    '0.3 cm'
     """
-    # Integer if whole number
-    length_str = str(int(length)) if length == int(length) else str(length)
+    length_str = str(int(length)) if float(length).is_integer() else f"{length:.6g}"
 
     if units:
         return f"{length_str} {units}"
@@ -261,18 +343,6 @@ def _add_scale_bar_to_axes(
     # Format label
     label = _format_scale_label(length, units) if config.show_label else ""
 
-    # Position mapping to matplotlib loc codes
-    loc_map = {
-        "lower right": "lower right",
-        "lower left": "lower left",
-        "upper right": "upper right",
-        "upper left": "upper left",
-    }
-    loc = loc_map.get(config.position, "lower right")
-
-    # label_top is just config.label_top (bool)
-    label_top = config.label_top
-
     import matplotlib.font_manager as fm
     from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
@@ -284,13 +354,13 @@ def _add_scale_bar_to_axes(
         ax.transData,
         size=length,
         label=label,
-        loc=loc,
+        loc=config.position,
         pad=config.pad,
         color=color,
         # No background color is a transparent bar: there is no box to draw.
         frameon=config.box_style is not None and config.background is not None,
         sep=config.sep,
-        label_top=label_top,
+        label_top=config.label_top,
         fontproperties=fontprops,
     )
 

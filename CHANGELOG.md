@@ -159,6 +159,16 @@
   (`'RegularGrid'`) on every supported Python version. On Python 3.11 and
   later they gave `'LayoutType.REGULAR_GRID'`, so messages and file names
   built from a `LayoutType` differed from those built on 3.10.
+- `ScaleBarConfig` refuses invalid options when it is made, with a message
+  that names the option and the allowed values: a zero, negative or
+  non-finite `length`, a `position` or `box_style` outside the listed
+  choices, a `background_alpha` outside [0, 1] and a non-positive
+  `font_size`. Before, all of these were accepted; an unknown position was
+  silently drawn at the lower right. Scale-bar labels print at most six
+  significant digits, so `length=0.1 + 0.2` reads "0.3 cm", not
+  "0.30000000000000004 cm". Its docstring now says which options napari
+  ignores and that the fastplotlib backend cannot draw a scale bar; it
+  claimed several options worked on all backends.
 
 ### Spatial geometry review
 

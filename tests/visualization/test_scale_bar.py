@@ -30,6 +30,43 @@ class TestScaleBarConfig:
         with pytest.raises(AttributeError):
             config.length = 10.0
 
+    @pytest.mark.parametrize(
+        ("options", "named"),
+        [
+            ({"length": -5.0}, "length"),
+            ({"length": 0.0}, "length"),
+            ({"length": np.nan}, "length"),
+            ({"length": np.inf}, "length"),
+            ({"position": "center"}, "position"),
+            ({"background_alpha": 3.0}, "background_alpha"),
+            ({"background_alpha": -0.1}, "background_alpha"),
+            ({"font_size": 0}, "font_size"),
+            ({"box_style": "circle"}, "box_style"),
+        ],
+    )
+    def test_refuses_invalid_options(self, options, named):
+        """A bad option is refused when the config is made, naming the option."""
+        with pytest.raises(ValueError) as excinfo:
+            ScaleBarConfig(**options)
+        message = str(excinfo.value)
+        assert named in message
+        assert "\nWhy: " in message
+        assert "\nFix: " in message
+
+    @pytest.mark.parametrize(
+        "options",
+        [
+            {"length": None},
+            {"length": 0.5},
+            {"background_alpha": 0.0},
+            {"background_alpha": 1.0},
+            {"box_style": None},
+            {"box_style": "square"},
+        ],
+    )
+    def test_accepts_boundary_options(self, options):
+        ScaleBarConfig(**options)
+
 
 class TestComputeNiceLength:
     """Test nice length computation using 1-2-5 rule."""
@@ -142,6 +179,12 @@ class TestFormatScaleLabel:
         """Non-whole numbers should show decimal."""
         assert format_scale_label(2.5, "cm") == "2.5 cm"
         assert format_scale_label(0.1, "m") == "0.1 m"
+
+    def test_floating_point_noise_is_not_printed(self):
+        """A length off by rounding error prints as the intended number."""
+        assert format_scale_label(0.1 + 0.2, "cm") == "0.3 cm"
+        assert format_scale_label(3 * 0.1 * 10, "cm") == "3 cm"
+        assert format_scale_label(1_000_000.0, "um") == "1000000 um"
 
 
 class TestAddScaleBarToAxes:
