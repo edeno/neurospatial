@@ -277,6 +277,39 @@ class TestTriangularMeshLayoutBuild:
         assert np.sum(layout.active_mask) == layout.bin_centers.shape[0]
 
 
+@pytest.mark.parametrize(
+    "polygon",
+    [
+        shapely.geometry.box(0, 0, 10, 10),
+        Polygon([(0, 0), (10, 0), (10, 4), (4, 4), (4, 10), (0, 10)]),
+        shapely.geometry.box(0, 0, 10, 10).difference(shapely.geometry.box(3, 3, 7, 7)),
+        shapely.geometry.Point(0, 0)
+        .buffer(20)
+        .difference(shapely.geometry.Point(3, 0).buffer(6)),
+    ],
+    ids=["square", "L", "square_with_hole", "disk_with_hole"],
+)
+@pytest.mark.parametrize("point_spacing", [1.0, 3.0])
+def test_mesh_covers_the_polygon_exactly(polygon, point_spacing):
+    """The triangles tile the arena: no arena area unbinned, none in a hole.
+
+    A ring around a hole left without triangles would put real positions
+    there outside every bin, so their samples would be dropped.
+    """
+    layout = TriangularMeshLayout()
+    layout.build(boundary_polygon=polygon, point_spacing=point_spacing)
+    binning = layout.binning()
+    np.testing.assert_allclose(binning.bins.sizes.sum(), polygon.area, rtol=1e-9)
+
+    rng = np.random.default_rng(0)
+    minx, miny, maxx, maxy = polygon.bounds
+    points = rng.uniform((minx, miny), (maxx, maxy), size=(5000, 2))
+    inside = shapely.contains_xy(polygon, points[:, 0], points[:, 1])
+    bins = binning.locator.locate(points)
+    assert np.all(bins[inside] >= 0)
+    assert np.all(bins[~inside] == -1)
+
+
 class TestTriangularMeshLayoutPointLookup:
     """Tests for the point lookup of a TriangularMeshLayout's binning."""
 

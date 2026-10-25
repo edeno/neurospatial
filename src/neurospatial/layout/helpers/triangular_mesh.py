@@ -1,15 +1,8 @@
-"""TriangularMeshLayout: a LayoutEngine that discretizes a 2D corridor region via a Delaunay triangulation.
-Instead of requiring the user to supply sample points, this layout generates a uniform grid of interior points
-(spaced by `point_spacing`) clipped to the provided boundary polygon. Each triangle whose centroid lies
-inside the polygon is kept as an active bin. Connectivity is inferred by shared faces.
+"""Helpers for ``TriangularMeshLayout``.
 
-Conforms to the LayoutEngine protocol:
-  - Attributes:    bin_centers, connectivity (derived), dimension_ranges,
-                   grid_edges, grid_shape, active_mask,
-                   layout_type, _build_params_used
-  - Properties:    is_linearized_track
-  - Methods:       build(boundary_polygon, point_spacing), binning(),
-                   plot(ax, ...), bin_sizes()
+Sample points on a lattice inside a polygon and along each of its rings,
+triangulate them, keep the triangles whose centroid lies in the polygon,
+and pair triangles that share a side.
 """
 
 import numpy as np
@@ -98,9 +91,21 @@ def _filter_active_simplices_by_centroid(
     triangulation: Delaunay,
     boundary_polygon: Polygon,
 ) -> tuple[NDArray[np.int_], NDArray[np.float64]]:
-    """Filter Delaunay simplices by requiring:
-    1) The triangle's centroid lies inside or on the boundary (using `covers`).
-    2) All three vertices lie inside or on the boundary.
+    """Keep the Delaunay triangles whose centroid lies in or on the polygon.
+
+    Parameters
+    ----------
+    triangulation : scipy.spatial.Delaunay
+        Triangulation of the lattice and ring sample points.
+    boundary_polygon : shapely.geometry.Polygon
+        Polygon the mesh covers.
+
+    Returns
+    -------
+    active_indices : ndarray of int, shape (n_active,)
+        Increasing indices of the kept triangles.
+    centroids : ndarray of float64, shape (n_triangles, 2)
+        Centroid of every triangle, kept or not.
     """
     simplices = triangulation.simplices  # shape (M, 3)
     points = triangulation.points  # shape (N, 2)
@@ -159,26 +164,35 @@ def mesh_pairs(
 def _sample_polygon_boundary(
     poly: Polygon, point_spacing: float
 ) -> NDArray[np.float64]:
-    """Given a Shapely Polygon, return an (M,2)-array of points sampled along
-    the exterior boundary (including the vertices) at approximately 'point_spacing' intervals.
+    """Sample every ring of a polygon at about ``point_spacing`` intervals.
+
+    The exterior and each hole's ring are sampled, vertices included, so
+    the triangulation follows the holes' edges as well as the outline.
+
+    Parameters
+    ----------
+    poly : shapely.geometry.Polygon
+        Polygon whose rings are sampled.
+    point_spacing : float
+        Largest distance between consecutive samples along a ring edge.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_points, 2)
+        Distinct sample points, sorted.
     """
-    coords = np.array(poly.exterior.coords)  # shape = (N_vertices+1, 2)
-    boundary_pts: list[list[float]] = []
-    for i in range(len(coords) - 1):
-        x0, y0 = coords[i]
-        x1, y1 = coords[i + 1]
-        edge_len = np.hypot(x1 - x0, y1 - y0)
-        if edge_len == 0:
-            continue
-
-        # How many samples along this edge? 1 point every ~point_spacing (plus both endpoints).
-        n_segs = max(int(np.ceil(edge_len / point_spacing)), 1)
-        # Generate n_segs+1 points equally spaced including both ends.
-        for t in np.linspace(0.0, 1.0, n_segs + 1):
-            px = x0 + t * (x1 - x0)
-            py = y0 + t * (y1 - y0)
-            boundary_pts.append([float(px), float(py)])
-
-    # Deduplicate (because consecutive edges share endpoints):
-    boundary_pts_array = np.unique(np.array(boundary_pts), axis=0)
-    return np.asarray(boundary_pts_array, dtype=np.float64)  # shape = (M, 2)
+    samples = []
+    for ring in (poly.exterior, *poly.interiors):
+        coords = np.asarray(ring.coords, dtype=np.float64)
+        starts, steps = coords[:-1], np.diff(coords, axis=0)
+        n_segments = np.maximum(
+            np.ceil(np.hypot(steps[:, 0], steps[:, 1]) / point_spacing), 1
+        ).astype(int)
+        edge = np.repeat(np.arange(len(starts)), n_segments + 1)
+        first = np.repeat(np.cumsum(n_segments + 1) - (n_segments + 1), n_segments + 1)
+        step = np.arange(len(edge)) - first
+        # np.linspace's arithmetic: k * (1 / n), with the last sample at 1.
+        t = np.where(step == n_segments[edge], 1.0, step * (1.0 / n_segments[edge]))
+        samples.append(starts[edge] + t[:, None] * steps[edge])
+    # Consecutive edges share endpoints.
+    return np.unique(np.concatenate(samples), axis=0)

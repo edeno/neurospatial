@@ -83,6 +83,10 @@
   holds no cell center and `from_grid_mask` with an all-False mask built an
   environment with zero bins, on which `occupancy` returned an empty array,
   and hexagonal layouts failed with a NumPy reduction error.
+- Triangular meshes over a polygon with holes now tile the arena exactly.
+  Only the outer outline was sampled, so triangles spanned each hole's edge:
+  in a 10 x 10 arena with a 4 x 4 hole, 6% of in-arena positions (a ring
+  0.5 wide around the hole) got bin -1 and their samples were dropped.
 
 ### Spatial geometry review
 
