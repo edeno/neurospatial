@@ -554,6 +554,8 @@ def test_rotated_polygon_mesh_stays_small_and_covers_it(angle, offset):
     """
     from shapely import affinity
 
+    from neurospatial import Environment
+
     square = shapely.geometry.box(0, 0, 10, 10)
     polygon = affinity.translate(
         affinity.rotate(square, angle, origin="center"), offset, offset
@@ -561,9 +563,36 @@ def test_rotated_polygon_mesh_stays_small_and_covers_it(angle, offset):
     layout = TriangularMeshLayout()
     layout.build(boundary_polygon=polygon, point_spacing=2.0)
     binning = layout.binning()
+    env = Environment.from_layout(layout)
+    np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(env.n_bins))
     interior = _generate_interior_points_for_mesh(polygon, 2.0)
     ring, _ = _sample_polygon_boundary(polygon, 2.0)
     assert len(binning.shapes.points) <= 2 * (len(interior) + len(ring))
     # Areas computed at 1e8 keep about 1e-7 of their precision.
     rtol = 1e-9 if offset == 0 else 1e-6
     np.testing.assert_allclose(binning.bins.sizes.sum(), polygon.area, rtol=rtol)
+
+
+@pytest.mark.parametrize("offset", [0.0, 1e6, 1e8])
+@pytest.mark.parametrize("point_spacing", [1.0, 2.0])
+def test_translated_mesh_publishes_and_locates_its_bins(offset, point_spacing):
+    """A mesh far from the origin becomes an environment that finds its bins.
+
+    Triangulating near the origin left boundary triangles a rounding error
+    thick in the original coordinates (1.7e-11 at 1e6); they passed a
+    relative flatness test but could not locate their own centers, so
+    publication refused the mesh.
+    """
+    from shapely import affinity
+
+    from neurospatial import Environment
+
+    polygon = affinity.translate(
+        affinity.rotate(shapely.geometry.box(0, 0, 10, 10), 17), offset, offset
+    )
+    layout = TriangularMeshLayout()
+    layout.build(polygon, point_spacing=point_spacing)
+    env = Environment.from_layout(layout)
+    np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(env.n_bins))
+    rtol = 1e-9 if offset == 0 else 1e-6
+    np.testing.assert_allclose(env.bin_sizes.sum(), polygon.area, rtol=rtol)

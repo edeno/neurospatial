@@ -20,9 +20,10 @@ from neurospatial._exceptions import _format_error
 _SHORTEST_SPLIT = 1e-6
 # Refinement may add points up to this multiple of the starting points.
 _MAX_GROWTH = 50
-# A triangle whose doubled area is below this fraction of its longest side
-# squared is flat: its corners are collinear to within rounding.
+# A triangle is flat when its height is below this fraction of its longest
+# side, or below this many units in the last place of its coordinates.
 _FLAT_TRIANGLE = 1e-12
+_FLAT_ULPS = 64
 
 
 @dataclass(frozen=True)
@@ -127,7 +128,8 @@ def _filter_active_simplices_by_centroid(
     """Keep the triangles with area whose centroid lies in or on the polygon.
 
     Collinear samples along the outline can form flat triangles on the
-    triangulation's hull; they cover no area and are not bins.
+    triangulation's hull: their height is within rounding of zero, relative
+    to their size or to their coordinates' precision. They are not bins.
 
     Parameters
     ----------
@@ -155,10 +157,15 @@ def _filter_active_simplices_by_centroid(
         triangle_vertices[:, 1:] - triangle_vertices[:, :1], 1, 0
     )
     doubled_area = np.abs(first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0])
-    sides = np.linalg.norm(
+    longest = np.linalg.norm(
         triangle_vertices - np.roll(triangle_vertices, 1, axis=1), axis=2
-    )
-    flat = doubled_area <= _FLAT_TRIANGLE * sides.max(axis=1) ** 2
+    ).max(axis=1)
+    # Flat: the height is within rounding of the longest side, or within a
+    # few units in the last place of the corners' coordinates, where point
+    # lookup cannot tell the triangle from its neighbors.
+    resolution = _FLAT_ULPS * np.spacing(np.abs(triangle_vertices).max(axis=(1, 2)))
+    height = doubled_area / np.where(longest > 0, longest, 1.0)
+    flat = (height <= _FLAT_TRIANGLE * longest) | (height <= resolution)
     active_mask = ~flat & shapely.covers(
         boundary_polygon, shapely.points(all_centroids)
     )
