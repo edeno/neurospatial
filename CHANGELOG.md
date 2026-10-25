@@ -175,6 +175,11 @@
   (`_full_delaunay_tri`, `hex_radius_`, "hexagonal geometry") or an
   attribute the method read, and `ShapelyPolygonLayout.outline()` raised a
   bare `RuntimeError`.
+- `ImageMaskLayout.build` requires `pixel_size`, as
+  `Environment.from_pixel_mask` already did. Without it the layout silently
+  used 1.0 per pixel, so positions in cm were binned as if each pixel were
+  1 cm wide, and `layout_parameters["pixel_size"]` recorded None instead of
+  the size used.
 
 ### Spatial geometry review
 

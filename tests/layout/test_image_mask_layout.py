@@ -90,7 +90,22 @@ def test_image_mask_bin_centers_match_dimension_ranges():
 def test_image_mask_rejects_removed_bin_size_keyword():
     layout = ImageMaskLayout()
     with pytest.raises(TypeError, match="bin_size"):
-        layout.build(image_mask=np.ones((3, 4), dtype=bool), bin_size=2.0)
+        layout.build(
+            image_mask=np.ones((3, 4), dtype=bool), pixel_size=1.0, bin_size=2.0
+        )
+
+
+def test_image_mask_requires_pixel_size():
+    """A pixel has no physical size without calibration, so none is assumed."""
+    layout = ImageMaskLayout()
+    with pytest.raises(TypeError, match="pixel_size"):
+        layout.build(image_mask=np.ones((3, 4), dtype=bool))
+
+
+def test_image_mask_records_the_pixel_size_used():
+    layout = ImageMaskLayout()
+    layout.build(image_mask=np.ones((3, 4), dtype=bool), pixel_size=0.5)
+    assert layout._build_params_used["pixel_size"] == 0.5
 
 
 def test_image_mask_square_pixel_unchanged():

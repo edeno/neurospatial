@@ -51,7 +51,7 @@ class ImageMaskLayout(_GridMixin):
         image_mask: NDArray[
             np.bool_
         ],  # Defines candidate pixels, shape (n_rows, n_cols)
-        pixel_size: float | tuple[float, float] | None = None,
+        pixel_size: float | tuple[float, float],
         connect_diagonal_neighbors: bool = True,
     ) -> None:
         """Build the layout from a 2D image mask.
@@ -67,12 +67,12 @@ class ImageMaskLayout(_GridMixin):
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
             A 2D boolean array where `True` pixels define active bins. Indexed
             as ``[row, col]`` == ``[y, x]``.
-        pixel_size : float or tuple of (float, float) or None, optional
-            The spatial size of each pixel, in units per pixel.
-            If float: pixels are square (size x size).
-            If tuple (width, height): specifies pixel width (x) and pixel
-            height (y). If None, defaults to 1.0
-            (one unit per pixel).
+        pixel_size : float or tuple of (float, float)
+            The physical size of each pixel, in the units of positions per
+            pixel (for example cm per pixel from a calibration). If float:
+            pixels are square (size x size). If tuple (width, height):
+            specifies pixel width (x) and pixel height (y). Required: a pixel
+            has no physical size until it is calibrated.
         connect_diagonal_neighbors : bool, default=True
             If True, connect diagonally adjacent active pixel-bins.
 
@@ -86,8 +86,6 @@ class ImageMaskLayout(_GridMixin):
 
         """
         self._begin_build()
-        if pixel_size is None:
-            pixel_size = 1.0  # one unit per pixel
 
         if not isinstance(image_mask, np.ndarray):
             raise TypeError("image_mask must be a numpy array.")
