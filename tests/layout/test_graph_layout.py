@@ -267,3 +267,38 @@ def test_linear_lookup_agrees_with_bin_at_at_the_track_ends(simple_y_maze_graph)
     np.testing.assert_array_equal(
         layout.linear_point_to_bin_ind(linear), env.bin_at(ends)
     )
+
+
+def test_junction_faces_conserve_flux_of_a_balanced_linear_field():
+    """At a junction, faces act like each arm meeting the node, not each other.
+
+    On a Y, a field rising linearly from the node along each arm, with
+    slopes summing to zero, is continuous at the node and balanced there:
+    every bin's net diffusive flux must be zero. Giving each pair of arms a
+    unit face, as for two arms, makes the junction 50% too conductive with
+    three equal arms.
+    """
+    graph = _star_graph(_STAR_MAZES["Y"])
+    layout = GraphLayout()
+    layout.build(
+        graph_definition=graph,
+        edge_order=[(0, node) for node in (1, 2, 3)],
+        edge_spacing=0.0,
+        bin_size=2.0,
+    )
+    segments = layout._segment_ids
+    edges = list(layout.linearization().graph.edges())
+    slope = {1: 1.0, 2: -0.25, 3: -0.75}
+    distance_to_node = np.linalg.norm(layout.bin_centers, axis=1)
+    arm = np.array([next(n for n in edges[s] if n != 0) for s in segments])
+    field = np.array([slope[a] for a in arm]) * distance_to_node
+
+    faces = layout.binning().build_faces()
+    conductance = faces.A / faces.distance
+    low, high = faces.edges.T
+    flux = conductance * (field[high] - field[low])
+    net = np.zeros(len(field))
+    np.add.at(net, low, flux)
+    np.add.at(net, high, -flux)
+    interior = np.flatnonzero(np.bincount(faces.edges.ravel()) > 1)
+    np.testing.assert_allclose(net[interior], 0.0, atol=1e-12)

@@ -132,17 +132,42 @@ def track_geometry(
     volumes: NDArray[np.float64],
     junctions: NDArray[np.float64],
 ) -> tuple[nx.Graph, NDArray[np.float64]]:
-    """Compute unit track faces with along-junction flux distances."""
+    """Compute track faces: unit faces along segments, reduced ones at junctions.
+
+    A pair on one segment has a unit face. A pair across a junction has the
+    along-track flux distance through the junction node, ``d_u + d_v``, and
+    the face of the node eliminated from the star of segment ends meeting
+    there: with conductances ``g_b = 1 / d_b`` from each end bin to the
+    node, the pair conducts ``g_u g_v / sum(g)``, so its face measure is
+    ``(g_u + g_v) / sum(g)``. Two segments get a unit face; at a junction of
+    k segments the faces share the node's conductance instead of each
+    carrying a full unit, so diffusion across the junction is not too fast.
+    """
     g = graph.copy()
-    for index, (u, v, data) in enumerate(g.edges(data=True)):
-        data["A"] = 1.0
-        j_pos = junctions[index]
-        if not np.all(np.isfinite(j_pos)):
-            continue
-        d = float(np.linalg.norm(centers[u] - j_pos)) + float(
-            np.linalg.norm(centers[v] - j_pos)
-        )
-        data["distance"] = d
+    edges = list(g.edges())
+    for u, v in edges:
+        g.edges[u, v]["A"] = 1.0
+    across = np.flatnonzero(np.all(np.isfinite(junctions), axis=1))
+    if not len(across):
+        return g, volumes
+    pairs = np.asarray(edges, dtype=np.intp)[across]
+    nodes, node_of = np.unique(junctions[across], axis=0, return_inverse=True)
+    node_of = node_of.ravel()
+    to_node = np.linalg.norm(centers[pairs] - nodes[node_of][:, None], axis=2)
+    conductance = 1.0 / to_node
+    # Each end bin joins its node once, however many pairs it is in.
+    ends, first = np.unique(
+        np.column_stack((node_of[:, None].repeat(2, 1).ravel(), pairs.ravel())),
+        axis=0,
+        return_index=True,
+    )
+    node_total = np.bincount(
+        ends[:, 0], weights=conductance.ravel()[first], minlength=len(nodes)
+    )
+    area = conductance.sum(axis=1) / node_total[node_of]
+    for (u, v), d, a in zip(pairs, to_node.sum(axis=1), area, strict=True):
+        g.edges[int(u), int(v)]["distance"] = float(d)
+        g.edges[int(u), int(v)]["A"] = float(a)
     return g, volumes
 
 

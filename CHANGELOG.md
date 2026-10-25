@@ -68,7 +68,10 @@
   T, Y, plus and W mazes one arm reached another only through a third:
   geodesic distance, smoothing and decoder transitions across the junction
   were too long for some arm pairs, and which pairs depended on `edge_order`.
-  `env.edge_pairs` gains the missing junction pairs.
+  `env.edge_pairs` gains the missing junction pairs. For diffusion, the faces
+  across a junction share the node's conductance (the node eliminated from
+  the star of arm ends), so smoothing across a junction of three or more
+  arms is not faster than along a track.
 - A track edge between two segments now has the along-track length through
   the junction node as its `distance`, not the straight chord between the
   bin centers that cuts the corner. Graph distances across a bend or
