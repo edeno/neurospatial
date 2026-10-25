@@ -132,9 +132,8 @@ def _infer_dimension_ranges_from_samples(
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position points from which to infer ranges. Rows with a NaN are
-        ignored; infinite values are not, so callers turn them into NaN first
-        (`Environment.from_samples` does).
+        Position points from which to infer ranges. Rows with a NaN or
+        infinite coordinate are ignored.
     buffer_around_data : Union[float, Sequence[float]], default=0.0
         Buffer to add to the min and max of the inferred range in each
         dimension. If a float, applied to all dimensions. If a sequence,
@@ -159,7 +158,7 @@ def _infer_dimension_ranges_from_samples(
         )
     n_dimensions = positions.shape[1]
 
-    clean_samples = positions[~np.any(np.isnan(positions), axis=1)]
+    clean_samples = positions[np.all(np.isfinite(positions), axis=1)]
     if clean_samples.shape[0] == 0:
         raise ValueError(
             _format_error(

@@ -201,6 +201,11 @@
 - The large-grid memory warning points at your own call, not at a line inside
   neurospatial, and no longer suggests `infer_active_bins=True`, which cannot
   shrink the full grid the estimate counts.
+- Layout engines built directly (`create_layout`, `RegularGridLayout`,
+  `HexagonalLayout`) treat a position row with an infinite coordinate as a
+  missing sample, as `Environment.from_samples` does. Before, a regular grid
+  refused it with a message about a non-finite range and a hexagonal layout
+  raised `OverflowError`.
 
 ### Spatial geometry review
 
