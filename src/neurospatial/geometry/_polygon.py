@@ -43,6 +43,20 @@ from neurospatial.geometry._polygon_cells import (
 )
 
 
+def has_planar_cells(locator: Locator) -> bool:
+    """Whether :func:`cells_from_locator` can materialize this locator's cells.
+
+    A combined locator answers False: its parts carry their own cells.
+    """
+    if isinstance(locator, ClippedLocator):
+        return True
+    if isinstance(locator, (SubsetLocator, TransformedLocator)):
+        return has_planar_cells(locator.base)
+    if isinstance(locator, RectilinearLocator):
+        return len(locator.shape) == 2
+    return isinstance(locator, (MeshLocator, HexLocator))
+
+
 def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
     """Materialize native cell geometry in a stored locator's current frame."""
 

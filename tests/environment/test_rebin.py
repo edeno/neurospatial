@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from shapely.geometry import Point
+from shapely.geometry import Point, box
 
 from neurospatial import Environment
 from neurospatial.geometry._codecs import encode_arena
@@ -47,11 +47,26 @@ def _assert_coarse_oracle(env, coarse, factor):
     assert _arena_record(coarse.arena) == _arena_record(env.arena)
 
 
+def _meet_inside(domain, edges, a, b):
+    """Whether lattice cells ``a`` and ``b`` share a corner or side in ``domain``."""
+    (x, y), (p, q) = a, b
+    first = box(edges[0][x], edges[1][y], edges[0][x + 1], edges[1][y + 1])
+    second = box(edges[0][p], edges[1][q], edges[0][p + 1], edges[1][q + 1])
+    contact = first.boundary.intersection(second.boundary)
+    if contact.length > 0:
+        return contact.intersection(domain).length > 0
+    return domain.covers(contact)
+
+
 def _assert_masked_connectivity(env, coarse, *, diagonal):
-    """Compare every edge with adjacency of retained full-grid indices."""
+    """Compare every edge with adjacency of retained full-grid indices.
+
+    Lattice neighbors are connected where they meet inside the arena.
+    """
     _assert_coarse_oracle(env, coarse, 2)
-    _, _, active = _coarse_oracle(env, 2)
+    edges, _, active = _coarse_oracle(env, 2)
     indices = np.argwhere(active)
+    domain = env.arena.polygonal_domain()
     expected = {
         (u, v)
         for u, v in combinations(range(len(indices)), 2)
@@ -60,6 +75,7 @@ def _assert_masked_connectivity(env, coarse, *, diagonal):
             if diagonal
             else np.sum(np.abs(indices[u] - indices[v])) == 1
         )
+        and (domain is None or _meet_inside(domain, edges, indices[u], indices[v]))
     }
     assert set(coarse.connectivity.edges) == expected
     # Factor-2 cells merge fine bins: every fine bin inside the (possibly

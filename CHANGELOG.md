@@ -87,6 +87,14 @@
   Only the outer outline was sampled, so triangles spanned each hole's edge:
   in a 10 x 10 arena with a 4 x 4 hole, 6% of in-arena positions (a ring
   0.5 wide around the hole) got bin -1 and their samples were dropped.
+- Bins that meet only outside the arena's outline are no longer neighbors,
+  in every environment with a known outline (`from_polygon`,
+  `from_samples(arena=...)`, `rebin`, `from_bins`). Their centers can both
+  be inside while the corner or side they share lies in a slit or past a
+  concave corner, such as the inner corner of a Y-maze junction, so
+  geodesic distance and smoothing passed through the wall. `rebin` no
+  longer warns about such pairs across a barrier in the outline: they are
+  now closed.
 
 ### Spatial geometry review
 

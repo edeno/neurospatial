@@ -203,3 +203,43 @@ def test_a_wall_dividing_only_the_in_arena_part_of_a_bin_is_fitted(wall_fit):
     env = _build(SLANTED, BENT, wall_fit=wall_fit)
     assert len(_leaking_pairs(env, BENT)) == 0
     assert _separated(env, BENT_LINE)
+
+
+_SLIT = box(0, 0, 4, 4).difference(LineString([(4.0, 0.0), (1.9, 2.1)]).buffer(0.05))
+_SLIT_SAMPLES = np.array([[1.0, 1.0], [1.0, 3.0], [3.0, 3.0], [0.5, 0.5], [3.5, 3.5]])
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Environment.from_polygon(_SLIT, bin_size=2.0),
+        lambda: Environment.from_samples(
+            _SLIT_SAMPLES,
+            bin_size=2.0,
+            arena=OpenArena(_SLIT),
+            dimension_ranges=[(0, 4), (0, 4)],
+        ),
+    ],
+    ids=["from_polygon", "from_samples_arena"],
+)
+def test_bins_meeting_only_outside_the_outline_are_not_neighbors(build):
+    """A diagonal pair whose shared corner lies in a slit of the arena closes.
+
+    Cells (0, 0) and (1, 1) of a 2 x 2 grid both have their centers inside
+    the arena, but the corner they share is inside a slit cut into it: an
+    animal goes around the slit's tip, through cell (0, 1). A direct
+    neighbor pair would let distances and smoothing pass through the wall.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        env = build()
+    centers = env.bin_centers.tolist()
+    assert sorted(centers) == [[1.0, 1.0], [1.0, 3.0], [3.0, 3.0]]
+    low, side, high = (centers.index(c) for c in ([1, 1], [1, 3], [3, 3]))
+    pairs = {tuple(pair) for pair in env.edge_pairs.tolist()}
+    assert (min(low, high), max(low, high)) not in pairs
+    assert {
+        (min(low, side), max(low, side)),
+        (min(side, high), max(side, high)),
+    } <= pairs
+    np.testing.assert_allclose(env.distance_between(bins=[low, high]), 4.0)

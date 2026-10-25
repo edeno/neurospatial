@@ -36,7 +36,6 @@ from neurospatial.geometry import (
     apply_walls,
     cell_boxes,
     get_centers,
-    materialize_cells,
     prepare_bins,
     transform_binning,
 )
@@ -62,13 +61,10 @@ class RebinCheck:
         Source bins whose loss is reported by this check; ``None`` checks all.
     lost_remedy : str
         Mode-specific advice for covering source bins without a new bin.
-    crossing_remedy : str
-        Mode-specific advice for connections that cross an arena barrier.
     """
 
     considered: NDArray[np.bool_] | None
     lost_remedy: str
-    crossing_remedy: str
 
 
 def _grid_centers(edges: tuple[NDArray[np.float64], ...]) -> NDArray[np.float64]:
@@ -83,7 +79,7 @@ def warn_rebin_losses(
     rebinned: Environment[CartesianSystem],
     check: RebinCheck,
 ) -> None:
-    """Warn about source bins and arena barriers the published new bins lose.
+    """Warn about source bins the published new bins lose.
 
     Parameters
     ----------
@@ -100,7 +96,6 @@ def warn_rebin_losses(
     if check.considered is not None:
         lost = check.considered & lost
     _warn_unbinned(binning, arena, lost, check.lost_remedy)
-    _warn_outline_crossings(arena, rebinned, check.crossing_remedy)
 
 
 def _warn_unbinned(
@@ -136,74 +131,6 @@ def _warn_unbinned(
         "new bin, because new bins are kept only where their centers lie in the "
         "arena. Positions in those bins map to -1, so their time and spikes drop "
         f"out of totals on the new bins. {remedy}",
-        UserWarning,
-        stacklevel=_external_stacklevel(),
-    )
-
-
-def _warn_outline_crossings(
-    arena: Arena, rebinned: Environment[CartesianSystem], remedy: str
-) -> None:
-    """Warn when new connections join cells that touch only outside the arena.
-
-    Grid connections join neighboring cells whose centers lie in the arena,
-    without checking where the cells meet. Bins wider than a gap in the
-    outline, such as the barrier between two maze arms, are joined across it,
-    so path lengths, distances and smoothing pass through the barrier. Cells
-    whose shared face (or corner, for diagonal neighbors) lies partly in the
-    arena remain connected through it.
-
-    Parameters
-    ----------
-    arena : Arena
-        The original arena, kept by the new bins.
-    rebinned : Environment
-        The new environment, published with the original arena.
-    remedy : str
-        Mode-specific advice for resolving the barrier.
-    """
-    domain = arena.polygonal_domain()
-    pairs = rebinned._binning.connections.pairs
-    if domain is None or len(pairs) == 0:
-        return
-    centers = rebinned.bin_centers
-    shapely.prepare(domain)
-    # A center link inside the arena already meets the shared face there.
-    candidates = np.flatnonzero(
-        ~shapely.covers(domain, shapely.linestrings(centers[pairs]))
-    )
-    if len(candidates) == 0:
-        return
-    cells = np.asarray(materialize_cells(rebinned._binning), dtype=object)
-    contacts = shapely.intersection(
-        shapely.boundary(cells[pairs[candidates, 0]]),
-        shapely.boundary(cells[pairs[candidates, 1]]),
-    )
-    face = shapely.length(contacts)
-    # Tolerances ignore coordinate rounding along the outline.
-    scale = float(np.sqrt(np.min(rebinned._binning.bins.sizes)))
-    separated = np.where(
-        face > 0,
-        shapely.length(shapely.intersection(contacts, domain)) <= 1e-9 * face,
-        shapely.distance(domain, contacts) > 1e-9 * scale,
-    )
-    crossing = candidates[separated & ~shapely.is_empty(contacts)]
-    if len(crossing) == 0:
-        return
-    u, v = pairs[crossing[0]]
-    count = (
-        "1 connection joins"
-        if len(crossing) == 1
-        else f"{len(crossing)} connections join"
-    )
-    warnings.warn(
-        f"{count} new bins that meet only outside the arena, for example "
-        f"bins {u} at {centers[u].tolist()} and {v} at "
-        f"{centers[v].tolist()}. The bins are wider than a gap in the arena "
-        "outline, such as a barrier between two arms, so path lengths, "
-        f"distances and smoothing pass through it. {remedy} Or declare the "
-        "barrier's edges as internal walls, OpenArena(polygon, walls=...), so "
-        "rebinning removes connections across them or refuses cells they cut.",
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
@@ -564,7 +491,6 @@ def _rebin_resolution(
         None,
         "Use a smaller bin_size, or one that puts cell edges on the arena "
         "boundary, such as a divisor of a rectangular arena's side lengths.",
-        "Use a bin_size smaller than the barrier's width.",
     )
 
 
@@ -825,5 +751,4 @@ def _rebin_factor(
     return derivation, RebinCheck(
         within,
         "Use a smaller factor.",
-        "Use a factor whose bins are narrower than the barrier.",
     )
