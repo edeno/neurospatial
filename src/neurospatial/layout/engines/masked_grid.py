@@ -4,9 +4,10 @@ from typing import Any, ClassVar
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
-from neurospatial.layout.helpers.utils import check_grid_size_safety, get_centers
+from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
 
 
@@ -26,10 +27,9 @@ class MaskedGridLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.MASKED_GRID.value
+    layout_type: ClassVar[str] = LayoutType.MASKED_GRID.value
     size_parameter: ClassVar[str | None] = None
     _build_params_used: dict[str, Any]
-    bin_size_: NDArray[np.float64] | None = None
 
     def __init__(self) -> None:
         """Initialize a MaskedGridLayout engine."""
@@ -39,7 +39,6 @@ class MaskedGridLayout(_GridMixin):
         self.grid_edges = None
         self.grid_shape = None
         self.active_mask = None
-        self.bin_size_ = None
 
     @capture_build_params(data=("active_mask", "grid_edges"))
     def build(
@@ -74,6 +73,7 @@ class MaskedGridLayout(_GridMixin):
             match the `grid_edges` definition, or if `grid_edges` are invalid.
 
         """
+        self._begin_build()
         if not isinstance(active_mask, np.ndarray):
             raise TypeError(
                 f"active_mask must be a NumPy array, got {type(active_mask).__name__}."
@@ -141,26 +141,13 @@ class MaskedGridLayout(_GridMixin):
                 f"the shape implied by grid_edges {self.grid_shape}.",
             )
 
-        # Safety check: warn or error if grid is very large
-        n_dims = len(self.grid_shape)
-        check_grid_size_safety(self.grid_shape, n_dims)
-
-        # Create full_grid_bin_centers as (N_total_bins, N_dims) array
-        centers_per_dim = [get_centers(edge_dim) for edge_dim in self.grid_edges]
-        mesh_centers_list = np.meshgrid(*centers_per_dim, indexing="ij", sparse=False)
-        full_grid_bin_centers = np.stack(
-            [c.ravel() for c in mesh_centers_list],
-            axis=-1,
-        )
-
-        self.bin_size_ = np.array(
-            [np.diff(edge_dim)[0] for edge_dim in self.grid_edges],
-            dtype=np.float64,
-        )
+        # Warn if the grid is very large.
+        check_grid_size_safety(self.grid_shape)
 
         self.dimension_ranges = tuple(
             (edge_dim[0], edge_dim[-1]) for edge_dim in self.grid_edges
         )
         self._assign_cells(
-            full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
+            grid_cell_centers(self.grid_edges),
+            connect_diagonal=connect_diagonal_neighbors,
         )

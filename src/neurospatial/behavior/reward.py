@@ -102,10 +102,10 @@ def region_reward_field(
     >>> from neurospatial.behavior.reward import region_reward_field
     >>> from shapely.geometry import Point
     >>> # Create environment
-    >>> positions = np.random.randn(1000, 2) * 50
+    >>> positions = np.random.default_rng(0).normal(0, 50, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> # Add goal region (use polygon, not point)
-    >>> goal_polygon = Point([0.0, 0.0]).buffer(5.0)
+    >>> goal_polygon = Point([0.0, 0.0]).buffer(10.0)
     >>> from neurospatial.regions import Regions
     >>> regions = Regions(env.regions.values())
     >>> _ = regions.add("goal", polygon=goal_polygon)

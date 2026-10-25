@@ -79,20 +79,17 @@ def _arm_to_arm_path(env):
     [lambda env: env.rebin(bin_size=5.0), lambda env: env.rebin(5)],
     ids=["bin_size", "factor"],
 )
-def test_rebin_reports_connections_across_a_barrier_in_the_outline(rebin):
+def test_rebin_does_not_connect_across_a_barrier_in_the_outline(rebin):
     # 5-unit cells on both sides of the 2-wide barrier have centers inside the
-    # arms, so their grid connection jumps the barrier: the path between the
-    # arm tops shrinks from 37 to 5. The warning names the crossing.
+    # arms, but their shared faces lie in the barrier, so they are not
+    # neighbors: the path between the arm tops goes around the barrier's end.
     fine = _u_maze()
     assert _arm_to_arm_path(fine) == pytest.approx(37.0)
-    with pytest.warns(UserWarning, match="only outside the arena") as record:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
         coarse = rebin(fine)
-    assert _arm_to_arm_path(coarse) == pytest.approx(5.0)
-    (message,) = [
-        str(item.message)
-        for item in record
-        if "only outside the arena" in str(item.message)
-    ]
+    # Down one arm, across below the barrier, up the other: 15 + 5 + 15.
+    assert _arm_to_arm_path(coarse) == pytest.approx(35.0)
     # Count independently: neighbors whose shared face lies in the barrier.
     domain = coarse.arena.polygonal_domain()
     half = coarse.bin_sizes[0] ** 0.5 / 2
@@ -101,9 +98,7 @@ def test_rebin_reports_connections_across_a_barrier_in_the_outline(rebin):
         a, b = (box(*(c - half), *(c + half)) for c in coarse.bin_centers[[u, v]])
         face = a.boundary.intersection(b.boundary)
         crossing += face.length > 0 and face.intersection(domain).length == 0
-    assert crossing > 0
-    assert re.search(rf"\b{crossing} connections\b", message)
-    assert "walls" in message
+    assert crossing == 0
 
 
 def test_rebin_within_the_arms_does_not_report_crossings():

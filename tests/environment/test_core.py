@@ -125,13 +125,12 @@ class TestEnvironmentFromGraph:
         if 0 < idx_on_west_arm < 3:
             assert set(neighbors_on_west) == {idx_on_west_arm - 1, idx_on_west_arm + 1}
 
-        # Bin 3 is the end of the West arm segment (4,0)
-        # Based on current graph_utils, it connects to bin 2 (intra-segment)
-        # and to bin 4 (start of North arm, due to (3,4) inter-segment connection)
+        # Bin 3 is the West arm's bin at the center node. It neighbors bin 2
+        # on its own arm and the center-end bins of the North (4), East (8)
+        # and South (12) arms: every arm end at a junction is adjacent.
         neighbors_of_3 = graph_env.neighbors(bins=3)
         assert isinstance(neighbors_of_3, list)
-        expected_neighbors_of_3 = {2, 4}  # Corrected expectation
-        assert set(neighbors_of_3) == expected_neighbors_of_3
+        assert set(neighbors_of_3) == {2, 4, 8, 12}
 
     def test_distance_between(self, graph_env: Environment):
         """Test manifold distance between points."""
@@ -236,7 +235,8 @@ class TestEnvironmentFromGraph:
 
         df = graph_env.get_edge_attributes()
         assert isinstance(df, pd.DataFrame)
-        assert df.shape[0] == 15
+        # 4 arms x 3 along-arm edges, plus the 6 pairs of arm ends at the center.
+        assert df.shape[0] == 18
         assert "distance" in df.columns
         assert "angle_2d" in df.columns
 
@@ -906,18 +906,6 @@ def env_single_active_cell_3x3() -> Environment:
 
 
 @pytest.fixture
-def env_no_active_cells_nd_mask() -> Environment:
-    """A 2x2 grid with no active cells, created using from_grid_mask."""
-    active_mask = np.array([[False, False], [False, False]], dtype=bool)
-    grid_edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
-    return Environment.from_grid_mask(
-        active_mask=active_mask,
-        grid_edges=grid_edges,
-        name="NoActiveNDMask",
-    )
-
-
-@pytest.fixture
 def env_1d_grid_3bins() -> Environment:
     """A 1D grid with 3 active bins. This will test degree-based logic for 1D grids."""
     active_mask_1d = np.array([True, True, True], dtype=bool)
@@ -970,11 +958,6 @@ def test_boundary_grid_single_active_cell_3x3(env_single_active_cell_3x3: Enviro
     # Single active cell is its own boundary.
     assert boundary_indices.shape[0] == 1
     assert np.array_equal(np.sort(boundary_indices), np.array([0]))
-
-
-def test_boundary_grid_no_active_cells(env_no_active_cells_nd_mask: Environment):
-    boundary_indices = env_no_active_cells_nd_mask.boundary_bins
-    assert boundary_indices.shape[0] == 0
 
 
 @pytest.fixture

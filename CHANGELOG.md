@@ -61,6 +61,141 @@
 - Every error message built from what/why/fix now labels its reason
   `Why:`; 80+ messages printed the reason as a bare sentence.
 
+### Layout review
+
+- Track arms that meet at a junction are now all adjacent to one another.
+  Before, the arm ends at a node were chained in `edge_order` order, so on
+  T, Y, plus and W mazes one arm reached another only through a third:
+  geodesic distance, smoothing and decoder transitions across the junction
+  were too long for some arm pairs, and which pairs depended on `edge_order`.
+  `env.edge_pairs` gains the missing junction pairs. For diffusion, the faces
+  across a junction share the node's conductance (the node eliminated from
+  the star of arm ends), so smoothing across a junction of three or more
+  arms is not faster than along a track.
+- A track edge between two segments now has the along-track length through
+  the junction node as its `distance`, not the straight chord between the
+  bin centers that cuts the corner. Graph distances across a bend or
+  junction now match the track faces used for smoothing; at a 90° bend with
+  5 cm bins the edge grows from 3.54 to 5.0 cm.
+- `close_gaps=True` no longer drops the visited bins on the grid's outer
+  ring. The closing step treated space past the grid as empty and eroded the
+  border, so on an open field with 10 cm bins 40 of 121 bins and 19% of
+  samples were lost along the walls. Closing now only adds bins.
+- Every layout refuses a build that leaves no active bins, with a message
+  that says why and how to fix it. Before, `from_polygon` on a polygon that
+  holds no cell center and `from_grid_mask` with an all-False mask built an
+  environment with zero bins, on which `occupancy` returned an empty array,
+  and hexagonal layouts failed with a NumPy reduction error.
+- Triangular meshes over a polygon with holes now tile the arena exactly.
+  Only the outer outline was sampled, so triangles spanned each hole's edge:
+  in a 10 x 10 arena with a 4 x 4 hole, 6% of in-arena positions (a ring
+  0.5 wide around the hole) got bin -1 and their samples were dropped.
+  Every ring of the polygon is now a chain of triangle sides, so a hole or
+  notch narrower than `point_spacing` is followed too: a 0.2-wide hole in a
+  10 x 10 square was bridged by triangles that covered 97 of its 98.8 area.
+  Meshes are triangulated near the origin (the polygon's lower-left bound),
+  so they no longer depend on where the polygon lies; a mesh away from the
+  origin may pick the other, equally valid diagonal in lattice cells.
+- Bins that meet only outside the arena's outline are no longer neighbors,
+  in every environment with a known outline (`from_polygon`,
+  `from_samples(arena=...)`, `rebin`, `from_bins`). Their centers can both
+  be inside while the corner or side they share lies in a slit or past a
+  concave corner, such as the inner corner of a Y-maze junction, so
+  geodesic distance and smoothing passed through the wall. `rebin` no
+  longer warns about such pairs across a barrier in the outline: they are
+  now closed.
+- Grid cells are exactly `bin_size` wide. Before, the bin count was rounded
+  up and the cells were shrunk to fit the extent, so `bin_size=3` on 0-100 cm
+  gave 2.94 cm cells, `bin_size=7` gave 6.68 x 6.69 cm cells that were not
+  square, and `layout_parameters["bin_size"]` named a size no cell had; `rebin`
+  already made exact cells. Now an extent that is not a whole number of cells
+  is widened equally past both ends, so every cell center stays inside it.
+  This applies to `from_samples`, `from_polygon` and `RegularGridLayout`,
+  with or without an arena: arena bounds that are a whole number of cells
+  still put cell edges on the arena's edge. Rebinning by a whole factor of the
+  bin size now nests the cells. A NaN or infinite `dimension_ranges` entry is
+  refused instead of silently building one cell. A grid no longer depends on
+  where its range lies: a 1-unit range at 1e6 with `bin_size=0.1` was read
+  as a single point (a relative `np.isclose` tolerance of about 10) and got
+  11 cells instead of 10.
+- Every layout checks its cell size (`bin_size`, `hexagon_width`,
+  `point_spacing`, `pixel_size`) the same way, with an `[E1002]` what/why/fix
+  message. A NumPy scalar such as `np.float32(2.0)` now works; before,
+  `from_samples` raised `TypeError: object of type 'numpy.float32' has no
+  len()` and `np.int64(2)` gave "length must be 2, got 2.0". NaN or infinite
+  hexagon widths, mesh spacings and pixel sizes, which failed later with
+  unrelated NumPy or locator errors, are refused up front, and a string or
+  boolean size is a `TypeError` instead of being read as a number.
+  `neurospatial.layout.validation` now holds this one check,
+  `validate_cell_size`; its unused `validate_bin_size` and
+  `validate_dimension_ranges` are removed.
+- Hexagonal field plots draw unvisited (NaN) bins in `nan_color`, as grid,
+  mesh and polygon plots do. They were drawn transparent, so with the default
+  light gray they looked like space outside the arena.
+- `GraphLayout.linear_point_to_bin_ind` maps the exact end of the track (a
+  reward well at the last node) to the last bin instead of -1, as `bin_at`
+  does. A position counts as on a bin edge only to within the edge's float
+  rounding: the gap-start check used a tolerance relative to the linear
+  coordinate, so 1e6 along a track a position up to 10 units into a gap was
+  given the bin before it.
+- A built layout engine owns read-only copies of its arrays (`bin_centers`,
+  `active_mask`, `grid_edges`, and a track's linear centers). `MaskedGridLayout`
+  kept the caller's mask itself, so editing it after `build()` left the
+  engine with more bins than grid cells and `from_layout` refused it with an
+  unexplained mismatch. A `build()` that raises now leaves the engine unbuilt
+  (`binning()` raises `LayoutNotBuiltError`) instead of mixing the old bins
+  with the new grid.
+- A negative or fractional `bin_count_threshold` is refused with a message
+  naming the value. Grid and hexagonal layouts used to accept it silently, as
+  if it were 0.
+- Track plots (`env.plot()` on a track, `GraphLayout.plot`) show their title
+  and honor `figsize`. They silently ignored every keyword argument, including
+  the `node_kwargs`, `bin_edge_kwargs` and `show_bin_edges` options
+  `GraphLayout.plot` documented; an option a track plot does not take is now
+  a `TypeError`. Every layout engine's `plot()` draws the same picture as
+  `Environment.plot`, through one shared method.
+- `create_layout` is typed to return the built-in engine it builds, so type
+  checkers accept the documented members (`bin_centers`, `layout_type`,
+  `connectivity`, `bin_sizes()`, `plot()`) on its result. Before, its return
+  type was the bare `LayoutEngine` protocol, which has only `build()` and
+  `binning()`.
+- `create_layout` with a keyword its engine does not take raises
+  `TypeError`, as Python does for an unexpected keyword, with a message that
+  lists the options the engine's `build()` takes. It raised a bare
+  `ValueError` naming only the unexpected keyword.
+- `get_layout_parameters` marks each build option `'required'`: True or
+  False. A required option and one that defaults to None both reported
+  `'default': None`, so the two could not be told apart.
+- A built-in layout engine's `layout_type` is typed `ClassVar[str]`, so
+  type checkers flag `layout.layout_type = ...` on an instance. Assigning it
+  relabeled that one engine, and the environment built from it reported the
+  wrong layout and rebuild hints; a custom label belongs on a subclass.
+- `str(LayoutType.REGULAR_GRID)` and f-strings give the label
+  (`'RegularGrid'`) on every supported Python version. On Python 3.11 and
+  later they gave `'LayoutType.REGULAR_GRID'`, so messages and file names
+  built from a `LayoutType` differed from those built on 3.10.
+- `ScaleBarConfig` refuses invalid options when it is made, with a message
+  that names the option and the allowed values: a zero, negative or
+  non-finite `length`, a `position` or `box_style` outside the listed
+  choices, a `background_alpha` outside [0, 1] and a non-positive
+  `font_size`. Before, all of these were accepted; an unknown position was
+  silently drawn at the lower right. Scale-bar labels print at most six
+  significant digits, so `length=0.1 + 0.2` reads "0.3 cm", not
+  "0.30000000000000004 cm". Its docstring now says which options napari
+  ignores and that the fastplotlib backend cannot draw a scale bar; it
+  claimed several options worked on all backends.
+- Calling an unbuilt layout engine raises `LayoutNotBuiltError` naming the
+  method that was called, such as `TriangularMeshLayout.binning` or
+  `HexagonalLayout.bin_sizes`. Messages named private state
+  (`_full_delaunay_tri`, `hex_radius_`, "hexagonal geometry") or an
+  attribute the method read, and `ShapelyPolygonLayout.outline()` raised a
+  bare `RuntimeError`.
+- `ImageMaskLayout.build` requires `pixel_size`, as
+  `Environment.from_pixel_mask` already did. Without it the layout silently
+  used 1.0 per pixel, so positions in cm were binned as if each pixel were
+  1 cm wide, and `layout_parameters["pixel_size"]` recorded None instead of
+  the size used.
+
 ### Spatial geometry review
 
 - Walls that end on a slanted or curved arena outline now separate the bins

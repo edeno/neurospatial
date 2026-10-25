@@ -20,6 +20,8 @@ from neurospatial.geometry._arena_fit import fit_walls as fit_walls
 from neurospatial.geometry._arena_fit import infer_arena as infer_arena
 from neurospatial.geometry._arena_fit import validate_arena as validate_arena
 from neurospatial.geometry._arrays import get_centers as get_centers
+from neurospatial.geometry._arrays import grid_cell_centers as grid_cell_centers
+from neurospatial.geometry._arrays import mask_active_map as mask_active_map
 from neurospatial.geometry._binning import BinConnections as BinConnections
 from neurospatial.geometry._binning import Binning as Binning
 from neurospatial.geometry._binning import KnownFaces as KnownFaces

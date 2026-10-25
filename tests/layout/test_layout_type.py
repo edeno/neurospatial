@@ -35,6 +35,15 @@ _BUILDS = {
 }
 
 
+@pytest.mark.parametrize("member", list(LayoutType))
+def test_layout_type_prints_as_its_value(member):
+    """str() and f-strings give the label on every supported Python version."""
+    assert str(member) == member.value
+    assert f"{member}" == member.value
+    assert f"{member:>16}" == f"{member.value:>16}"
+    assert format(member) == member.value
+
+
 def test_every_engine_label_is_a_layout_type_value():
     labels = [engine.layout_type for engine in _ENGINES]
     assert all(type(label) is str for label in labels)
@@ -113,7 +122,9 @@ def test_subclass_engine_label_is_the_environment_label():
 
 
 def test_custom_label_matching_a_layout_type_is_spelled_canonically():
-    layout = MaskedGridLayout()
+    class Relabeled(MaskedGridLayout):
+        layout_type = "masked-grid"
+
+    layout = Relabeled()
     layout.build(**_BUILDS["MaskedGrid"])
-    layout.layout_type = "masked-grid"
     assert Environment.from_layout(layout).layout_type == "MaskedGrid"

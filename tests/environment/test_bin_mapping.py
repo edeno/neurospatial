@@ -336,13 +336,15 @@ def test_offset_lattice_does_not_nest():
         offset.bin_mapping_from(env)
 
 
-def test_rebin_bin_size_off_the_lattice_does_not_nest():
-    """from_samples cells are not exactly 10 cm, so 20 cm edges cut them."""
+def test_rebin_by_a_whole_factor_nests_and_off_the_lattice_does_not():
+    """from_samples cells are exactly 10 cm: 20 cm cells nest, 15 cm cut them."""
     env = Environment.from_samples(_POSITIONS * 2.5, bin_size=10.0, units="cm")
     coarse = _quiet(lambda: env.rebin(bin_size=20.0))
+    assert coarse.bin_mapping_from(env).kind == "many_to_one"
 
+    off_lattice = _quiet(lambda: env.rebin(bin_size=15.0))
     with pytest.raises(ValueError, match="edges cut parent cells"):
-        coarse.bin_mapping_from(env)
+        off_lattice.bin_mapping_from(env)
 
 
 def test_refinement_is_refused_and_the_reverse_direction_works():

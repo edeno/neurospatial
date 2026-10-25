@@ -17,6 +17,7 @@ from neurospatial.layout.helpers.utils import (
     check_grid_size_safety,
 )
 from neurospatial.layout.mixins import _GridMixin
+from neurospatial.layout.validation import validate_cell_size
 
 
 class RegularGridLayout(_GridMixin):
@@ -34,14 +35,13 @@ class RegularGridLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.REGULAR_GRID.value
+    layout_type: ClassVar[str] = LayoutType.REGULAR_GRID.value
     size_parameter: ClassVar[str | None] = "bin_size"
     _build_params_used: dict[str, Any]
 
     def __init__(self) -> None:
         """Initialize a RegularGridLayout engine."""
         self._build_params_used = {}
-        # Initialize all protocol attributes to satisfy type checkers, even if None
         self.bin_centers = np.empty((0, 0))
         self.dimension_ranges = None
         self.grid_edges = None
@@ -68,10 +68,13 @@ class RegularGridLayout(_GridMixin):
         Parameters
         ----------
         bin_size : Union[float, Sequence[float]]
-            Desired size of bins in each dimension.
+            Width of the cells in each dimension, in the units of `positions`.
+            Cells are exactly this wide.
         dimension_ranges : Optional[Sequence[Tuple[float, float]]], optional
-            Explicit `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]` for the grid.
-            If None, range is inferred from `positions`.
+            Explicit `[(min_d0, max_d0), ..., (min_dN-1, max_dN-1)]` to cover.
+            If None, the extent of `positions` plus half a bin on each side.
+            A range that is not a whole number of cells is widened equally on
+            both sides; afterwards `dimension_ranges` holds the grid's extent.
         positions : Optional[NDArray[np.float64]], shape (n_samples, n_dims), optional
             Data used to infer `dimension_ranges` (if not provided) and/or to
             infer active bins (if `infer_active_bins` is True).
@@ -92,28 +95,41 @@ class RegularGridLayout(_GridMixin):
         connect_diagonal_neighbors : bool, default=True
             If True, connects diagonal neighbors in the connectivity graph.
 
+        Raises
+        ------
+        TypeError
+            If `bin_size` is not numeric.
+        ValueError
+            If both `dimension_ranges` and `positions` are None, or
+            `dimension_ranges` is None and every row of `positions` has a
+            NaN; if `bin_size` is not positive and finite or has the wrong number of
+            entries ([E1002]); if the full grid's bin centers would need more
+            than 8 GiB (usually transposed `positions` or a `bin_size` in the
+            wrong units); or if no bin is active after inference ([E1001]).
+
+        Notes
+        -----
+        `close_gaps`, `fill_holes` and `dilate` are applied only to grids
+        with two or more dimensions, in that order: closing, then hole
+        filling, then dilation. A 1-D grid keeps exactly the bins that hold
+        at least `bin_count_threshold` samples (and at least one).
+
         """
 
-        # --- Determine dimension_ranges if not provided ---
+        self._begin_build()
         if dimension_ranges is not None:
             self.dimension_ranges = dimension_ranges
         else:
-            # Infer ranges from positions
             if positions is None:
                 raise ValueError(
                     "dimension_ranges must be provided if positions is None.",
                 )
 
-            # Use a half-bin buffer per axis so the inferred range extends
-            # half a bin beyond the data on each side. For a per-axis sequence
-            # bin_size this must also be halved (a raw sequence would double
-            # the intended buffer on each axis).
+            # Extend the range half a bin beyond the data on each side.
+            half = validate_cell_size(bin_size) / 2.0
             buffer_for_inference: float | list[float] = (
-                bin_size / 2.0
-                if isinstance(bin_size, (float, int, np.number))
-                else [float(b) / 2.0 for b in bin_size]
+                float(half[0]) if np.ndim(bin_size) == 0 else half.tolist()
             )
-            # Infer ranges from positions
             self.dimension_ranges = _infer_dimension_ranges_from_samples(
                 positions=positions,
                 buffer_around_data=buffer_for_inference,
@@ -129,10 +145,13 @@ class RegularGridLayout(_GridMixin):
             dimension_range=self.dimension_ranges,
             add_boundary_bins=add_boundary_bins,
         )
+        # The cells span whole bin sizes, so they can reach past the range.
+        self.dimension_ranges = tuple(
+            (float(edges[0]), float(edges[-1])) for edges in self.grid_edges
+        )
 
-        # Safety check: warn or error if grid is very large
-        n_dims = len(self.grid_shape)
-        check_grid_size_safety(self.grid_shape, n_dims)
+        # Warn if the grid is very large.
+        check_grid_size_safety(self.grid_shape)
 
         if infer_active_bins and positions is not None:
             self.active_mask = _infer_active_bins_from_regular_grid(
@@ -151,7 +170,7 @@ class RegularGridLayout(_GridMixin):
         if not np.any(self.active_mask):
             # Build comprehensive error message with diagnostics
             error_lines = ["[E1001] No active bins found after filtering."]
-            error_lines.append("")  # Blank line
+            error_lines.append("")
 
             # Add diagnostic information
             error_lines.append("Diagnostics:")
@@ -192,7 +211,7 @@ class RegularGridLayout(_GridMixin):
             error_lines.append(
                 f"  Morphological operations: dilate={dilate}, fill_holes={fill_holes}, close_gaps={close_gaps}"
             )
-            error_lines.append("")  # Blank line
+            error_lines.append("")
 
             # Explain WHY this happened (common causes)
             error_lines.append("Common causes:")
@@ -203,7 +222,7 @@ class RegularGridLayout(_GridMixin):
             error_lines.append(
                 "  3. Data is too sparse and morphological operations are disabled"
             )
-            error_lines.append("")  # Blank line
+            error_lines.append("")
 
             # Explain HOW to fix (specific suggestions)
             error_lines.append("Suggestions to fix:")

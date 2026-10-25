@@ -310,3 +310,38 @@ class TestPlotField:
 
 class TestPlotFieldEdgeCases:
     """Test edge cases and error handling for plot_field()."""
+
+
+def _cell_layouts():
+    from shapely.geometry import box
+
+    from neurospatial.layout import create_layout
+
+    samples = np.random.default_rng(3).uniform(0, 20, (2000, 2))
+    return {
+        "hexagonal": lambda: Environment.from_samples(
+            samples, bin_size=4.0, layout="Hexagonal"
+        ),
+        "mesh": lambda: Environment.from_layout(
+            create_layout(
+                "TriangularMesh", boundary_polygon=box(0, 0, 20, 20), point_spacing=5.0
+            )
+        ),
+    }
+
+
+@pytest.mark.parametrize("layout", ["hexagonal", "mesh"])
+def test_missing_bins_are_drawn_in_nan_color(layout):
+    """A NaN bin is painted nan_color, distinct from the colormap and the page."""
+    from matplotlib.colors import to_rgba
+
+    env = _cell_layouts()[layout]()
+    field = np.full(env.n_bins, np.nan)
+    field[0] = 1.0
+    fig, ax = plt.subplots()
+    env.plot_field(field, ax=ax, nan_color="red", colorbar=False)
+    fig.canvas.draw()
+    faces = np.concatenate([c.get_facecolors() for c in ax.collections])
+    red = np.all(np.isclose(faces, to_rgba("red")), axis=1)
+    plt.close(fig)
+    assert np.count_nonzero(red) == env.n_bins - 1

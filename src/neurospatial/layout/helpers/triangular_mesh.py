@@ -1,22 +1,49 @@
-"""TriangularMeshLayout: a LayoutEngine that discretizes a 2D corridor region via a Delaunay triangulation.
-Instead of requiring the user to supply sample points, this layout generates a uniform grid of interior points
-(spaced by `point_spacing`) clipped to the provided boundary polygon. Each triangle whose centroid lies
-inside the polygon is kept as an active bin. Connectivity is inferred by shared faces.
+"""Helpers for ``TriangularMeshLayout``.
 
-Conforms to the LayoutEngine protocol:
-  - Attributes:    bin_centers, connectivity (derived), dimension_ranges,
-                   grid_edges, grid_shape, active_mask,
-                   layout_type, _build_params_used
-  - Properties:    is_linearized_track
-  - Methods:       build(boundary_polygon, point_spacing), binning(),
-                   plot(ax, ...), bin_sizes()
+Sample points on a lattice inside a polygon and along each of its rings,
+triangulate them, keep the triangles whose centroid lies in the polygon,
+and pair triangles that share a side.
 """
+
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 import shapely
 from numpy.typing import NDArray
 from scipy.spatial import Delaunay, QhullError
 from shapely.geometry import Polygon
+
+from neurospatial._exceptions import _format_error
+
+# Ring segments shorter than this fraction of the point spacing are not split.
+_SHORTEST_SPLIT = 1e-6
+# Refinement may add points up to this multiple of the starting points.
+_MAX_GROWTH = 50
+# A triangle is flat when its height is below this fraction of its longest
+# side, or below this many units in the last place of its coordinates.
+_FLAT_TRIANGLE = 1e-12
+_FLAT_ULPS = 64
+
+
+@dataclass(frozen=True)
+class _MeshTriangulation:
+    """Triangles over ``points``: what the mesh engine keeps of a Delaunay.
+
+    Attributes
+    ----------
+    points : ndarray of float64, shape (n_points, 2)
+        Triangle corners, in the polygon's coordinates.
+    simplices : ndarray of int, shape (n_triangles, 3)
+        Corner indices of each triangle.
+    neighbors : ndarray of int, shape (n_triangles, 3)
+        Triangle across each side, -1 on the hull, as in
+        ``scipy.spatial.Delaunay.neighbors``.
+    """
+
+    points: NDArray[np.float64]
+    simplices: NDArray[np.intp]
+    neighbors: NDArray[np.intp]
 
 
 # --------------------------------------------------------------------------
@@ -95,12 +122,28 @@ def _triangulate_points(sample_points: NDArray[np.float64]) -> Delaunay:
 
 
 def _filter_active_simplices_by_centroid(
-    triangulation: Delaunay,
+    triangulation: _MeshTriangulation | Delaunay,
     boundary_polygon: Polygon,
 ) -> tuple[NDArray[np.int_], NDArray[np.float64]]:
-    """Filter Delaunay simplices by requiring:
-    1) The triangle's centroid lies inside or on the boundary (using `covers`).
-    2) All three vertices lie inside or on the boundary.
+    """Keep the triangles with area whose centroid lies in or on the polygon.
+
+    Collinear samples along the outline can form flat triangles on the
+    triangulation's hull: their height is within rounding of zero, relative
+    to their size or to their coordinates' precision. They are not bins.
+
+    Parameters
+    ----------
+    triangulation : _MeshTriangulation or scipy.spatial.Delaunay
+        Triangulation of the lattice and ring sample points.
+    boundary_polygon : shapely.geometry.Polygon
+        Polygon the mesh covers.
+
+    Returns
+    -------
+    active_indices : ndarray of int, shape (n_active,)
+        Increasing indices of the kept triangles.
+    centroids : ndarray of float64, shape (n_triangles, 2)
+        Centroid of every triangle, kept or not.
     """
     simplices = triangulation.simplices  # shape (M, 3)
     points = triangulation.points  # shape (N, 2)
@@ -108,10 +151,24 @@ def _filter_active_simplices_by_centroid(
     if simplices.shape[0] == 0:
         return np.array([], dtype=int), np.empty((0, 2), dtype=float)
 
-    # (1) compute centroids of each triangle
     triangle_vertices = points[simplices]  # (M, 3, 2)
     all_centroids = np.mean(triangle_vertices, axis=1)  # (M, 2)
-    active_mask = shapely.covers(boundary_polygon, shapely.points(all_centroids))
+    first, second = np.moveaxis(
+        triangle_vertices[:, 1:] - triangle_vertices[:, :1], 1, 0
+    )
+    doubled_area = np.abs(first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0])
+    longest = np.linalg.norm(
+        triangle_vertices - np.roll(triangle_vertices, 1, axis=1), axis=2
+    ).max(axis=1)
+    # Flat: the height is within rounding of the longest side, or within a
+    # few units in the last place of the corners' coordinates, where point
+    # lookup cannot tell the triangle from its neighbors.
+    resolution = _FLAT_ULPS * np.spacing(np.abs(triangle_vertices).max(axis=(1, 2)))
+    height = doubled_area / np.where(longest > 0, longest, 1.0)
+    flat = (height <= _FLAT_TRIANGLE * longest) | (height <= resolution)
+    active_mask = ~flat & shapely.covers(
+        boundary_polygon, shapely.points(all_centroids)
+    )
 
     active_original_indices = np.flatnonzero(active_mask)
     return active_original_indices, all_centroids
@@ -158,27 +215,165 @@ def mesh_pairs(
 
 def _sample_polygon_boundary(
     poly: Polygon, point_spacing: float
-) -> NDArray[np.float64]:
-    """Given a Shapely Polygon, return an (M,2)-array of points sampled along
-    the exterior boundary (including the vertices) at approximately 'point_spacing' intervals.
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """Sample every ring of a polygon at about ``point_spacing`` intervals.
+
+    The exterior and each hole's ring are sampled, vertices included, so
+    the triangulation follows the holes' edges as well as the outline.
+
+    Parameters
+    ----------
+    poly : shapely.geometry.Polygon
+        Polygon whose rings are sampled.
+    point_spacing : float
+        Largest distance between consecutive samples along a ring edge.
+
+    Returns
+    -------
+    points : ndarray of float64, shape (n_points, 2)
+        Distinct sample points, sorted.
+    segments : ndarray of intp, shape (n_segments, 2)
+        Consecutive samples along each ring, as ``(lower, higher)`` indices
+        into ``points``.
     """
-    coords = np.array(poly.exterior.coords)  # shape = (N_vertices+1, 2)
-    boundary_pts: list[list[float]] = []
-    for i in range(len(coords) - 1):
-        x0, y0 = coords[i]
-        x1, y1 = coords[i + 1]
-        edge_len = np.hypot(x1 - x0, y1 - y0)
-        if edge_len == 0:
-            continue
+    samples = []
+    ring_of_sample = []
+    for ring_number, ring in enumerate((poly.exterior, *poly.interiors)):
+        coords = np.asarray(ring.coords, dtype=np.float64)
+        starts, steps = coords[:-1], np.diff(coords, axis=0)
+        n_segments = np.maximum(
+            np.ceil(np.hypot(steps[:, 0], steps[:, 1]) / point_spacing), 1
+        ).astype(int)
+        edge = np.repeat(np.arange(len(starts)), n_segments + 1)
+        first = np.repeat(np.cumsum(n_segments + 1) - (n_segments + 1), n_segments + 1)
+        step = np.arange(len(edge)) - first
+        # np.linspace's arithmetic: k * (1 / n). The last sample of an edge
+        # is the polygon vertex itself, so neighboring edges share it exactly.
+        last = step == n_segments[edge]
+        sampled = (
+            starts[edge] + (step * (1.0 / n_segments[edge]))[:, None] * steps[edge]
+        )
+        sampled[last] = coords[edge[last] + 1]
+        samples.append(sampled)
+        ring_of_sample.append(np.full(len(edge), ring_number))
+    # Consecutive edges share endpoints, and each ring ends where it starts.
+    points, order = np.unique(np.concatenate(samples), axis=0, return_inverse=True)
+    order = order.ravel()
+    same_ring = np.diff(np.concatenate(ring_of_sample)) == 0
+    pairs = np.column_stack((order[:-1], order[1:]))[same_ring]
+    pairs = np.sort(pairs[pairs[:, 0] != pairs[:, 1]], axis=1).astype(np.intp)
+    return points, np.unique(pairs, axis=0)
 
-        # How many samples along this edge? 1 point every ~point_spacing (plus both endpoints).
-        n_segs = max(int(np.ceil(edge_len / point_spacing)), 1)
-        # Generate n_segs+1 points equally spaced including both ends.
-        for t in np.linspace(0.0, 1.0, n_segs + 1):
-            px = x0 + t * (x1 - x0)
-            py = y0 + t * (y1 - y0)
-            boundary_pts.append([float(px), float(py)])
 
-    # Deduplicate (because consecutive edges share endpoints):
-    boundary_pts_array = np.unique(np.array(boundary_pts), axis=0)
-    return np.asarray(boundary_pts_array, dtype=np.float64)  # shape = (M, 2)
+def _conforming_triangulation(
+    interior_points: NDArray[np.float64],
+    boundary_polygon: Polygon,
+    point_spacing: float,
+    triangulate: Callable[[NDArray[np.float64]], Delaunay],
+    max_rounds: int = 64,
+) -> _MeshTriangulation:
+    """Triangulate so that every ring segment of the polygon is a triangle side.
+
+    A Delaunay triangulation of the lattice and ring samples can bridge a
+    hole or notch narrower than ``point_spacing``: a triangle with corners
+    on both sides then straddles the outline, and keeping triangles by
+    their centroid gets the covered area wrong. Each ring segment missing
+    from the triangulation is split at its midpoint and the points are
+    triangulated again, until every segment is a side. Then every triangle
+    lies inside or outside the polygon, and its centroid tells which.
+
+    Parameters
+    ----------
+    interior_points : ndarray of float64, shape (n_interior, 2)
+        Lattice points inside the polygon.
+    boundary_polygon : shapely.geometry.Polygon
+        Polygon the mesh covers.
+    point_spacing : float
+        Spacing of the ring samples.
+    triangulate : callable
+        Delaunay triangulation of an ``(n_points, 2)`` array, called on the
+        points shifted so the polygon's lower-left bound is the origin.
+    max_rounds : int, default 64
+        Rounds of segment splitting before giving up.
+
+    Returns
+    -------
+    _MeshTriangulation
+        Triangles over the original (unshifted) points whose sides include
+        every ring segment.
+
+    Raises
+    ------
+    ValueError
+        If refinement makes no progress (Qhull drops a split point), would
+        grow past ``_MAX_GROWTH`` times the starting points, or segments are
+        still missing after ``max_rounds`` rounds.
+
+    Notes
+    -----
+    A missing segment shorter than a millionth of ``point_spacing`` is not
+    split: Qhull merges points that close, so splitting could not add it,
+    and a triangle crossing it misplaces no measurable area. Each segment is
+    therefore halved at most about 20 times.
+    """
+    ring_points, segments = _sample_polygon_boundary(boundary_polygon, point_spacing)
+    points = np.vstack([interior_points, ring_points])
+    segments = segments + len(interior_points)
+    # Triangulate near the origin: far from it, float spacing is too coarse
+    # for Qhull to place the midpoints, and refinement makes no progress.
+    origin = np.asarray(boundary_polygon.bounds[:2], dtype=np.float64)
+    budget = _MAX_GROWTH * len(points)
+    added = np.empty(0, dtype=np.intp)
+    for _ in range(max_rounds):
+        triangulation = triangulate(points - origin)
+        # Compare points by their first identical copy: Qhull keeps one of
+        # a lattice point and a ring sample at the same place.
+        _, first, inverse = np.unique(
+            points, axis=0, return_index=True, return_inverse=True
+        )
+        same = first[inverse.ravel()]
+        vertices = np.zeros(len(points), dtype=bool)
+        vertices[same[triangulation.simplices]] = True
+        if not vertices[same[added]].all():
+            raise ValueError(_unfollowed_outline("a split point was dropped"))
+        sides = same[triangulation.simplices[:, [[0, 1], [1, 2], [2, 0]]]]
+        sides = np.sort(sides.reshape(-1, 2), axis=1)
+        wanted = np.sort(same[segments], axis=1)
+        n = len(points)
+        missing = ~np.isin(
+            wanted[:, 0] * n + wanted[:, 1], sides[:, 0] * n + sides[:, 1]
+        )
+        lengths = np.linalg.norm(
+            points[segments[:, 1]] - points[segments[:, 0]], axis=1
+        )
+        missing &= lengths > _SHORTEST_SPLIT * point_spacing
+        if not missing.any():
+            return _MeshTriangulation(
+                points, triangulation.simplices, triangulation.neighbors
+            )
+        low, high = segments[missing].T
+        if n + len(low) > budget:
+            raise ValueError(
+                _unfollowed_outline(f"it would need more than {budget} points")
+            )
+        added = np.arange(n, n + len(low), dtype=np.intp)
+        points = np.vstack([points, (points[low] + points[high]) / 2])
+        segments = np.vstack(
+            [
+                segments[~missing],
+                np.column_stack((low, added)),
+                np.column_stack((added, high)),
+            ]
+        )
+    raise ValueError(_unfollowed_outline(f"{max_rounds} rounds were not enough"))
+
+
+def _unfollowed_outline(reason: str) -> str:
+    """The refusal for an outline the mesh could not follow."""
+    return _format_error(
+        f"The mesh could not follow the polygon's outline: {reason}.",
+        why="Why: a very sharp corner or a gap far narrower than point_spacing "
+        "needs ever smaller triangles along it.",
+        fix="use a smaller point_spacing, or simplify the polygon, e.g. "
+        "polygon.simplify(point_spacing / 10)",
+    )

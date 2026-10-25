@@ -11,11 +11,6 @@ This module provides a collection of helper functions used primarily by
   the active area (`_infer_active_bins_from_regular_grid`).
 - Pairing neighboring active grid bins, allowing for orthogonal and
   diagonal connections (`regular_grid_pairs`).
-- Mapping continuous N-D points to their corresponding discrete bin indices
-  within the grid, taking into account active areas (`points_to_regular_grid_bin_ind`).
-
-The module also includes functions for inferring dimensional properties from
-data samples, which might be shared with or used by other utility modules.
 """
 
 from __future__ import annotations
@@ -30,18 +25,23 @@ from numpy.typing import NDArray
 from scipy import ndimage
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
-from neurospatial.layout.helpers.utils import get_centers, get_n_bins
+from neurospatial.layout.helpers.utils import get_n_bins
+from neurospatial.layout.validation import (
+    validate_cell_size,
+    validate_count_threshold,
+)
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
-# ``_build_grid_structure`` by ``np.histogramdd`` / ``np.meshgrid`` BEFORE any
-# active-bin filtering. The Cartesian product of the per-axis bin counts can be
+# ``_build_grid_structure`` by ``grid_cell_centers`` BEFORE any active-bin
+# filtering. The Cartesian product of the per-axis bin counts can be
 # astronomically large even when every axis is modest -- e.g. a transposed
 # ``(2, N)`` trajectory read as N dimensions -- so a per-axis check (as in
 # ``get_n_bins``) is not enough; the product must be preflighted or the
 # allocation OOMs. 8 GiB is far above any realistic dense spatial grid (whose
 # connectivity graph would itself be infeasible well below this) while still
-# catching the catastrophic transpose. Raised as ``float`` bytes for comparison.
+# catching the catastrophic transpose.
 _MAX_GRID_CENTERS_BYTES = 8 * 1024**3
 
 
@@ -89,9 +89,7 @@ def regular_grid_pairs(
     # row-major index, so it never proposes a higher-numbered bin.
     forward = [step for step in steps if next(v for v in step if v) > 0]
     offsets = np.array(forward, dtype=np.intp).reshape(len(forward), 1, n_dims)
-    return lattice_neighbor_pairs(
-        np.flatnonzero(active_mask), active_mask.shape, offsets
-    )
+    return lattice_neighbor_pairs(active_mask, offsets)
 
 
 def _infer_active_bins_from_regular_grid(
@@ -108,8 +106,9 @@ def _infer_active_bins_from_regular_grid(
     This function first counts positions in each grid bin defined by `edges`.
     Visited bins with counts at least `bin_count_threshold` are initially active.
     Thresholds 0 and 1 both retain every visited bin; empty bins remain inactive.
-    Optional morphological operations (closing, filling, dilation) can then be
-    applied to refine the active area.
+    Optional morphological operations can then refine the active area. They
+    run only for 2-D and higher grids, in the order closing, hole filling,
+    dilation; a 1-D grid keeps exactly the visited bins.
 
     Parameters
     ----------
@@ -142,13 +141,13 @@ def _infer_active_bins_from_regular_grid(
         considered active or part of the track interior.
 
     """
+    bin_count_threshold = validate_count_threshold(bin_count_threshold)
     pos_clean = positions[~np.any(np.isnan(positions), axis=1)]
 
     if pos_clean.shape[0] == 0:
-        # Handle case with no valid positions
         grid_shape = tuple(len(edge_array) - 1 for edge_array in edges)
         warnings.warn(
-            "infer_active_bins is True, but no positions provided. "
+            "infer_active_bins is True, but positions has no row without NaN. "
             "Returning all bins inactive (no data to infer from).",
             UserWarning,
             stacklevel=2,
@@ -160,23 +159,22 @@ def _infer_active_bins_from_regular_grid(
 
     n_dims = positions.shape[1]
     if n_dims > 1:
-        # Morphological operations use the maximal scipy structuring element
-        # (``connectivity=n_dims``): in 2D this is the full 8-neighbor (3x3)
-        # element, matching the graph's diagonal connectivity exactly. In 3D,
-        # however, ``connectivity=2`` is the 18-neighbor element (faces + edges,
-        # NO corners), whereas the connectivity GRAPH built with
-        # ``connect_diagonal=True`` uses the full 26-neighbor (3x3x3) stencil
-        # including corner diagonals. This mismatch is intentional and
-        # conservative: the 18-neighbor element gives slightly tighter
-        # closing/dilation of the active mask in 3D while the graph still wires
-        # all 26 diagonal neighbors for traversal. (Note: scipy clamps
-        # ``connectivity`` to at most ``n_dims``, so ``connectivity=2`` is the
-        # full element in 2D but the 18-neighbor element in 3D.)
+        # The scipy structuring element with ``connectivity=2``: in 2D the
+        # full 8-neighbor (3x3) element, matching the graph's diagonal
+        # connectivity. In 3D it is the 18-neighbor element (faces and edges,
+        # no corners), while the graph built with ``connect_diagonal=True``
+        # links all 26 neighbors, so closing and dilation of the mask are
+        # slightly tighter than the graph's connectivity.
         structure = ndimage.generate_binary_structure(n_dims, connectivity=2)
 
         if close_gaps:
-            # Closing operation first (dilation then erosion) to close small gaps
-            active_mask = ndimage.binary_closing(active_mask, structure=structure)
+            # Closing (dilation then erosion) closes small gaps. The erosion
+            # treats cells past the array as inactive, which would erode
+            # visited bins on the grid border; pad by the element's radius so
+            # closing only adds bins.
+            padded = np.pad(active_mask, 1)
+            closed = ndimage.binary_closing(padded, structure=structure)
+            active_mask = closed[(slice(1, -1),) * n_dims]
 
         if fill_holes:
             # Fill larger holes enclosed by occupied bins
@@ -239,7 +237,6 @@ def _validate_and_prepare_inputs(
         If inputs have incorrect types.
 
     """
-    # 1) Determine dimensionality
     if positions is None and dimension_range is None:
         raise ValueError("Either `positions` or `dimension_range` must be provided.")
 
@@ -257,7 +254,6 @@ def _validate_and_prepare_inputs(
         if samples.ndim != 2:
             raise ValueError(f"`positions` must be 2D, got shape {samples.shape}.")
         n_dims = samples.shape[1]
-        # Remove NaNs
         samples = samples[~np.isnan(samples).any(axis=1)]
         if samples.size == 0 and dimension_range is None:
             raise ValueError(
@@ -269,54 +265,7 @@ def _validate_and_prepare_inputs(
             raise ValueError("dimension_range must be provided when positions is None")
         n_dims = len(dimension_range)
 
-    # 2) Normalize & validate bin_size
-    if isinstance(bin_size, (float, int)):
-        try:
-            bin_sizes = np.full(n_dims, float(bin_size))
-        except (TypeError, ValueError) as e:
-            actual_type = type(bin_size).__name__
-            raise TypeError(
-                f"bin_size must be a numeric value. Got {actual_type}: {bin_size!r}"
-            ) from e
-    else:
-        try:
-            bin_sizes = np.asarray(bin_size, dtype=float)
-        except (TypeError, ValueError) as e:
-            actual_type = type(bin_size).__name__
-            raise TypeError(
-                f"bin_size must be a numeric value or sequence of numeric values. "
-                f"Got {actual_type}: {bin_size!r}"
-            ) from e
-
-        if bin_sizes.ndim != 1 or bin_sizes.shape[0] != n_dims:
-            raise ValueError(f"`bin_size` length must be {n_dims}, got {bin_sizes}.")
-
-    # Check for NaN or Inf values
-    if np.any(np.isnan(bin_sizes)):
-        raise ValueError(
-            _format_error(
-                f"[E1002] bin_size contains NaN (Not a Number) values (got {bin_size}). bin_size must be finite numeric values.",
-                fix="pass bin_size=2.0 (in the same units as positions)",
-                why="Why: grid widths must be finite and positive in every spatial dimension.",
-            )
-        )
-    if np.any(np.isinf(bin_sizes)):
-        raise ValueError(
-            _format_error(
-                f"[E1002] bin_size contains infinite values (got {bin_size}). bin_size must be finite numeric values.",
-                fix="pass bin_size=2.0 (in the same units as positions)",
-                why="Why: grid widths must be finite and positive in every spatial dimension.",
-            )
-        )
-
-    if np.any(bin_sizes <= 0.0):
-        raise ValueError(
-            _format_error(
-                f"[E1002] All elements of `bin_size` must be positive (got {bin_size}).",
-                fix="pass bin_size=2.0 (in the same units as positions)",
-                why="Why: grid widths must be finite and positive in every spatial dimension.",
-            )
-        )
+    bin_sizes = validate_cell_size(bin_size, n_dims=n_dims)
 
     return samples, n_dims, bin_sizes
 
@@ -325,7 +274,6 @@ def _compute_dimension_ranges(
     samples: NDArray[np.float64] | None,
     dimension_range: Sequence[tuple[float, float]] | None,
     n_dims: int,
-    bin_sizes: NDArray[np.float64],
 ) -> list[tuple[float, float]]:
     """Compute dimension ranges from explicit specification or data samples.
 
@@ -337,13 +285,12 @@ def _compute_dimension_ranges(
         Explicit dimension ranges.
     n_dims : int
         Number of dimensions.
-    bin_sizes : NDArray[np.float64], shape (n_dims,)
-        Bin sizes for each dimension.
 
     Returns
     -------
     ranges : list of (float, float) tuples
-        Computed dimension ranges for each dimension.
+        Computed dimension ranges for each dimension; a zero-span range is
+        kept as is (widening to whole cells gives it one cell).
 
     Raises
     ------
@@ -353,27 +300,33 @@ def _compute_dimension_ranges(
         If dimension_range contains non-numeric values.
 
     """
-    # 3) Determine dimension ranges
     if dimension_range is not None:
         if len(dimension_range) != n_dims:
             raise ValueError(
                 f"`dimension_range` length ({len(dimension_range)}) must match n_dims ({n_dims}).",
             )
         ranges = []
-        for i, ((lo, hi), size) in enumerate(
-            zip(dimension_range, bin_sizes, strict=False)
-        ):
+        for i, (lo, hi) in enumerate(dimension_range):
             try:
-                lo_f, hi_f = float(min(lo, hi)), float(max(lo, hi))
+                # Sort after converting: min and max drop a NaN silently.
+                lo_f, hi_f = sorted((float(lo), float(hi)))
             except (TypeError, ValueError) as e:
                 raise TypeError(
                     f"dimension_range must contain numeric tuples of (min, max). "
                     f"Error at dimension {i}: got ({lo!r}, {hi!r})"
                 ) from e
-            # If user gave a zero-span range (lo == hi), expand by 0.5 * bin_size
-            if np.isclose(lo_f, hi_f):
-                lo_f -= 0.5 * size
-                hi_f += 0.5 * size
+            if not (np.isfinite(lo_f) and np.isfinite(hi_f)):
+                raise ValueError(
+                    _format_error(
+                        f"dimension_range[{i}] is ({lo!r}, {hi!r}), which is not "
+                        "finite.",
+                        why="Why: cells of bin_size are laid across each range, "
+                        "so both ends must be finite numbers.",
+                        fix="pass finite (min, max) pairs in the units of "
+                        "positions, e.g. dimension_ranges=[(0, 100), (0, 100)]",
+                    )
+                )
+            # A zero-span range becomes one cell when widened to whole cells.
             ranges.append((lo_f, hi_f))
     else:
         # Infer from `samples`
@@ -383,13 +336,53 @@ def _compute_dimension_ranges(
         for dim in range(n_dims):
             dim_vals = samples[:, dim]
             lo_f, hi_f = float(np.nanmin(dim_vals)), float(np.nanmax(dim_vals))
-            if np.isclose(lo_f, hi_f):
-                # If all data is constant, expand by half a bin
-                lo_f -= 0.5 * bin_sizes[dim]
-                hi_f += 0.5 * bin_sizes[dim]
             ranges.append((lo_f, hi_f))
 
     return ranges
+
+
+# A range within this fraction of a cell of a whole number of cells is
+# taken as whole: float error in extent / bin_size must not add a cell.
+_WHOLE_CELL_TOLERANCE = 1e-9
+
+
+def _whole_cells(lo: float, hi: float, size: float, count: int) -> int:
+    """Return the fewest cells of width ``size`` from ``lo`` that reach ``hi``.
+
+    ``count`` is ``ceil((hi - lo) / size)``; one cell fewer is enough when
+    it falls short of ``hi`` only by float error.
+    """
+    if count > 1 and lo + (count - 1) * size >= hi - _WHOLE_CELL_TOLERANCE * size:
+        return count - 1
+    return count
+
+
+def _whole_cell_ranges(
+    ranges: Sequence[tuple[float, float]], bin_sizes: Sequence[float]
+) -> list[tuple[float, float]]:
+    """Widen each range evenly on both sides to a whole number of cells.
+
+    Cells keep exactly the requested width, and every cell center stays
+    inside the original range.
+
+    Parameters
+    ----------
+    ranges : sequence of (float, float)
+        ``(low, high)`` per axis.
+    bin_sizes : sequence of float
+        Cell width per axis, in the units of ``ranges``.
+
+    Returns
+    -------
+    list of (float, float)
+        Ranges whose span is a whole number of cells.
+    """
+    widened = []
+    for (lo, hi), size in zip(ranges, bin_sizes, strict=True):
+        count = _whole_cells(lo, hi, size, max(int(np.ceil((hi - lo) / size)), 1))
+        pad = max(count * size - (hi - lo), 0.0) / 2.0
+        widened.append((lo - pad, hi + pad))
+    return widened
 
 
 def _build_grid_structure(
@@ -428,20 +421,15 @@ def _build_grid_structure(
         Number of bins along each dimension.
 
     """
-    # 4) Compute number of bins in each dimension
     data_for_bins = samples if samples is not None else np.zeros((1, n_dims))
-    # Convert bin_sizes to list to match get_n_bins signature
     bin_sizes_list: list[float] = bin_sizes.tolist()
-    # ensures at least 1
     n_bins = get_n_bins(data_for_bins, bin_size=bin_sizes_list, dimension_range=ranges)
 
-    # 4a) Preflight the FULL grid size before allocating anything. get_n_bins
-    #     validates each AXIS against the int64 limit, but np.histogramdd and
-    #     np.meshgrid below allocate the Cartesian PRODUCT of the per-axis
-    #     counts, which can be astronomically large even when every axis is
-    #     modest (e.g. a transposed (2, N) trajectory read as N dimensions).
-    #     Use exact Python-int arithmetic (math.prod on int()s) so the product
-    #     itself cannot overflow, then fail loud instead of OOMing.
+    # Preflight the full grid size before allocating anything. get_n_bins
+    # checks each axis against the int64 limit, but the bin centers are the
+    # Cartesian product of the per-axis counts, which can be astronomically
+    # large even when every axis is modest. Python ints keep the product
+    # itself from overflowing.
     total_bins = math.prod(int(b) for b in n_bins)
     centers_bytes = total_bins * n_dims * 8
     if centers_bytes > _MAX_GRID_CENTERS_BYTES:
@@ -466,34 +454,23 @@ def _build_grid_structure(
             )
         )
 
-    # 5) Generate core edges via np.histogramdd
-    #    Use data_for_bins which is either samples or a dummy point at the center
-    _, core_edges = np.histogramdd(data_for_bins, bins=n_bins, range=ranges)
-
-    # 6) Optionally add boundary bins by extending each edge array
+    # Lay cells of exactly bin_size across each (whole-cell) range.
     final_edges = []
-    for edges_dim, size in zip(core_edges, bin_sizes, strict=False):
-        diff = np.diff(edges_dim)
-        step = size if diff.size == 0 else diff[0]
+    for (lo, hi), size, count in zip(ranges, bin_sizes, n_bins, strict=True):
+        count = _whole_cells(lo, hi, size, int(count))
+        edges_dim = lo + np.arange(count + 1) * size
+        # Within float error of the high end, end on it exactly, so a
+        # position there stays inside the grid.
+        edges_dim[-1] = max(edges_dim[-1], hi)
         if add_boundary_bins:
-            extended = np.concatenate(
-                ([edges_dim[0] - step], edges_dim, [edges_dim[-1] + step]),
+            edges_dim = np.concatenate(
+                ([edges_dim[0] - size], edges_dim, [edges_dim[-1] + size]),
             )
-        else:
-            extended = edges_dim
-        final_edges.append(extended.astype(float))
+        final_edges.append(edges_dim.astype(float))
 
     edges_tuple = tuple(final_edges)
-
-    # 7) Compute centers for each dimension
-    centers_per_dim = [get_centers(e) for e in final_edges]
-    centers_shape = tuple(len(c) for c in centers_per_dim)
-
-    # 8) Build the full Cartesian product of centers
-    mesh = np.meshgrid(*centers_per_dim, indexing="ij")
-    bin_centers = np.stack([m.ravel() for m in mesh], axis=-1)
-
-    return edges_tuple, bin_centers, centers_shape
+    centers_shape = tuple(len(edges) - 1 for edges in final_edges)
+    return edges_tuple, grid_cell_centers(edges_tuple), centers_shape
 
 
 def _create_regular_grid(
@@ -516,7 +493,10 @@ def _create_regular_grid(
     bin_size : float or sequence of floats, default=2.0
         If float, same bin size along every dimension. If sequence, must match `n_dims`.
     dimension_range : sequence of (min, max) tuples, length `n_dims`, optional
-        Explicit bounding box for each dimension, used if `positions` is None.
+        Explicit bounding box for each dimension. When given, it sets the
+        grid's extent and `positions` is not used for it; otherwise the
+        extent of `positions` is used. A range that is not a whole number of
+        cells is widened evenly past both ends.
     add_boundary_bins : bool, default=False
         If True, extends each axis by one extra bin on both ends.
 
@@ -545,7 +525,11 @@ def _create_regular_grid(
     )
 
     # Compute dimension ranges from explicit specification or data
-    ranges = _compute_dimension_ranges(samples, dimension_range, n_dims, bin_sizes)
+    ranges = _compute_dimension_ranges(samples, dimension_range, n_dims)
+    # Cells are exactly bin_size wide; a range that is not a whole number of
+    # cells is widened evenly past both ends, so every cell center stays
+    # inside the range.
+    ranges = _whole_cell_ranges(ranges, bin_sizes.tolist())
 
     # Build the grid structure (edges, centers, shape)
     return _build_grid_structure(samples, n_dims, bin_sizes, ranges, add_boundary_bins)

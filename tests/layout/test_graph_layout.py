@@ -1,5 +1,8 @@
 """Behavioral tests for GraphLayout driven directly through the engine."""
 
+import itertools
+
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -153,3 +156,182 @@ def test_numpy_scalar_edge_spacing_matches_python_number(simple_y_maze_graph, sp
         env.to_linear(env.bin_centers), expected.to_linear(expected.bin_centers)
     )
     assert env.layout_parameters == expected.layout_parameters
+
+
+def _star_graph(arm_ends):
+    """Track graph with node 0 at the origin joined to one node per arm end."""
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    for node, end in enumerate(arm_ends, start=1):
+        graph.add_node(node, pos=end)
+        graph.add_edge(0, node)
+    return graph
+
+
+_STAR_MAZES = {
+    "Y": [(0.0, -10.0), (-7.0, 7.0), (7.0, 7.0)],
+    "T": [(0.0, -10.0), (-10.0, 0.0), (10.0, 0.0)],
+    "plus": [(0.0, 10.0), (0.0, -10.0), (10.0, 0.0), (-10.0, 0.0)],
+}
+
+
+def _junction_bins(layout):
+    """Bin nearest the junction (origin) on each arm, keyed by arm node."""
+    segments = layout._segment_ids
+    edges = list(layout.linearization().graph.edges())
+    nearest = {}
+    for segment_id in np.unique(segments):
+        bins = np.flatnonzero(segments == segment_id)
+        arm_node = next(node for node in edges[segment_id] if node != 0)
+        distance = np.linalg.norm(layout.bin_centers[bins], axis=1)
+        nearest[arm_node] = int(bins[np.argmin(distance)])
+    return nearest
+
+
+@pytest.mark.parametrize("maze", sorted(_STAR_MAZES))
+def test_every_segment_end_at_a_junction_is_a_neighbor(maze):
+    """All arm ends meeting at a junction are pairwise neighbors.
+
+    A junction is a single point of the track: an animal at the end of one
+    arm steps straight into any other arm. Chaining the arm ends in
+    ``edge_order`` order instead would route one arm to another through a
+    third arm, so maze distances would depend on the edge order.
+    """
+    arms = _STAR_MAZES[maze]
+    graph = _star_graph(arms)
+    arm_nodes = list(range(1, len(arms) + 1))
+    reference = None
+    for order in itertools.permutations(arm_nodes):
+        layout = GraphLayout()
+        layout.build(
+            graph_definition=graph,
+            edge_order=[(0, node) for node in order],
+            edge_spacing=0.0,
+            bin_size=2.5,
+        )
+        ends = _junction_bins(layout)
+        connectivity = layout.connectivity
+        for a, b in itertools.combinations(arm_nodes, 2):
+            assert connectivity.has_edge(ends[a], ends[b]), (maze, order, a, b)
+        distances = {
+            (a, b): nx.shortest_path_length(
+                connectivity, ends[a], ends[b], weight="distance"
+            )
+            for a, b in itertools.combinations(arm_nodes, 2)
+        }
+        if reference is None:
+            reference = distances
+        assert distances == pytest.approx(reference), (maze, order)
+
+
+@pytest.mark.parametrize("maze", sorted(_STAR_MAZES))
+def test_cross_junction_edges_are_measured_along_the_track(maze):
+    """An edge between two arms is the path through the junction node.
+
+    The track is the union of its segments, so an animal moving between the
+    arm ends at a junction travels through the node: center to node, then
+    node to center. The same length is the flux distance of the track faces,
+    so the connectivity graph and smoothing agree.
+    """
+    graph = _star_graph(_STAR_MAZES[maze])
+    layout = GraphLayout()
+    layout.build(
+        graph_definition=graph,
+        edge_order=[(0, node) for node in graph.neighbors(0)],
+        edge_spacing=0.0,
+        bin_size=2.5,
+    )
+    ends = list(_junction_bins(layout).values())
+    centers = layout.bin_centers
+    faces = layout.binning().build_faces()
+    face_distance = dict(
+        zip(map(tuple, faces.edges.tolist()), faces.distance, strict=True)
+    )
+    for a, b in itertools.combinations(ends, 2):
+        expected = np.linalg.norm(centers[a]) + np.linalg.norm(centers[b])
+        assert layout.connectivity.edges[a, b]["distance"] == pytest.approx(expected)
+        assert face_distance[min(a, b), max(a, b)] == pytest.approx(expected)
+
+
+def test_linear_lookup_agrees_with_bin_at_at_the_track_ends(simple_y_maze_graph):
+    """The track's start and end (e.g. reward wells) get their end bins.
+
+    Node 0 starts the first segment and node 3 ends the last one; an inner
+    segment end shares its linear position with the next segment's start.
+    """
+    graph, edge_order = simple_y_maze_graph
+    env = Environment.from_graph(graph, edge_order, bin_size=1.0, track_width=1.0)
+    layout = _build_graph_layout(simple_y_maze_graph)
+    ends = np.array([graph.nodes[node]["pos"] for node in (0, 3)], dtype=float)
+    linear = layout.to_linear(ends)
+    np.testing.assert_array_equal(
+        layout.linear_point_to_bin_ind(linear), env.bin_at(ends)
+    )
+
+
+def test_junction_faces_conserve_flux_of_a_balanced_linear_field():
+    """At a junction, faces act like each arm meeting the node, not each other.
+
+    On a Y, a field rising linearly from the node along each arm, with
+    slopes summing to zero, is continuous at the node and balanced there:
+    every bin's net diffusive flux must be zero. Giving each pair of arms a
+    unit face, as for two arms, makes the junction 50% too conductive with
+    three equal arms.
+    """
+    graph = _star_graph(_STAR_MAZES["Y"])
+    layout = GraphLayout()
+    layout.build(
+        graph_definition=graph,
+        edge_order=[(0, node) for node in (1, 2, 3)],
+        edge_spacing=0.0,
+        bin_size=2.0,
+    )
+    segments = layout._segment_ids
+    edges = list(layout.linearization().graph.edges())
+    slope = {1: 1.0, 2: -0.25, 3: -0.75}
+    distance_to_node = np.linalg.norm(layout.bin_centers, axis=1)
+    arm = np.array([next(n for n in edges[s] if n != 0) for s in segments])
+    field = np.array([slope[a] for a in arm]) * distance_to_node
+
+    faces = layout.binning().build_faces()
+    conductance = faces.A / faces.distance
+    low, high = faces.edges.T
+    flux = conductance * (field[high] - field[low])
+    net = np.zeros(len(field))
+    np.add.at(net, low, flux)
+    np.add.at(net, high, -flux)
+    interior = np.flatnonzero(np.bincount(faces.edges.ravel()) > 1)
+    np.testing.assert_allclose(net[interior], 0.0, atol=1e-12)
+
+
+def test_separate_tracks_crossing_at_one_point_keep_their_junction_faces():
+    """Two tracks that cross at a point are two junctions, not one.
+
+    Grouping junctions by position merged them: adding a second, unconnected
+    track through the same point halved the first track's junction face.
+    """
+    first = nx.Graph()
+    first.add_node("a", pos=(-2.0, 0.0))
+    first.add_node("j1", pos=(0.0, 0.0))
+    first.add_node("b", pos=(0.0, 2.0))
+    first.add_edges_from([("a", "j1"), ("j1", "b")])
+    both = first.copy()
+    both.add_node("c", pos=(2.0, 0.0))
+    both.add_node("j2", pos=(0.0, 0.0))
+    both.add_node("d", pos=(0.0, -2.0))
+    both.add_edges_from([("c", "j2"), ("j2", "d")])
+
+    def junction_faces(graph):
+        layout = GraphLayout()
+        layout.build(
+            graph_definition=graph,
+            edge_order=list(graph.edges()),
+            edge_spacing=0.0,
+            bin_size=1.0,
+        )
+        faces = layout.binning().build_faces()
+        segment = layout._segment_ids
+        return faces.A[segment[faces.edges[:, 0]] != segment[faces.edges[:, 1]]]
+
+    np.testing.assert_allclose(junction_faces(first), [1.0])
+    np.testing.assert_allclose(junction_faces(both), [1.0, 1.0])

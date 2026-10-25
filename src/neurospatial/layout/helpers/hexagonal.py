@@ -2,19 +2,15 @@
 
 This module provides helper functions specifically for environments that use
 hexagonal tiling. These functions cover:
+
 - Generation of hexagonal grid coordinates (`_create_hex_grid`).
-- Conversion between Cartesian and hexagonal (cube/axial) coordinate systems
-  (`cartesian_to_fractional_cube`, `round_fractional_cube_to_integer_axial`,
-  `axial_to_offset_bin_indices`).
-- Mapping continuous 2D points to discrete hexagonal bin indices
-  (`points_to_hex_bin_ind`).
 - Inferring active hexagonal bins based on data sample occupancy
   (`_infer_active_bins_from_hex_grid`).
-- Determining neighbor relationships in the hexagonal grid
-  (`get_hex_grid_neighbor_deltas`).
 - Pairing neighboring active hexagonal bins (`hex_grid_pairs`).
 
-These utilities are primarily used by the `HexagonalLayout` engine.
+Point-to-hexagon lookup and neighbor offsets live in
+:mod:`neurospatial.geometry`. These utilities are primarily used by the
+`HexagonalLayout` engine.
 """
 
 from __future__ import annotations
@@ -24,14 +20,15 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-# Numerical stability constants
-# Minimum hex_radius to prevent division by zero and numerical instability.
-# Values below this threshold are too small for reliable hexagonal coordinate conversion.
 from neurospatial.geometry import (
     get_hex_grid_neighbor_deltas,
     points_to_hex_bin_ind,
 )
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
+from neurospatial.layout.validation import (
+    validate_cell_size,
+    validate_count_threshold,
+)
 
 
 def _create_hex_grid(
@@ -42,10 +39,8 @@ def _create_hex_grid(
     NDArray[np.float64],  # bin_centers
     tuple[int, int],  # centers_shape
     float,  # hex_radius
-    float,  # hex_orientation
     float,  # min_x
     float,  # min_y
-    Sequence[tuple[float, float]],  # effective_dimension_range
 ]:
     """Generate a 2D hexagonal grid (pointy-top) that covers either:
     - A user-specified bounding box (`dimension_range`), or
@@ -69,33 +64,26 @@ def _create_hex_grid(
         The 2D shape of the conceptual hex-grid, before flattening.
     hex_radius : float
         Distance from center to any vertex (hexagon side length).
-    hex_orientation : float
-        Orientation in radians (0.0 = point-up).
     min_x : float
         Minimum x coordinate of the bounding box (grid origin).
     min_y : float
         Minimum y coordinate of the bounding box (grid origin).
-    effective_dimension_range : [ (min_x, max_x), (min_y, max_y) ]
-        The actual range used (either user‐provided or inferred).
 
     Raises
     ------
     ValueError
         - If `hexagon_width <= 0`.
-        - If neither `dimension_range` nor `positions` (with valid shape) is provided.
-        - If `dimension_range` is provided but not length 2 or has min > max.
+        - If `dimension_range` is None and `positions` is None or has no
+          row without NaN.
+        - If `dimension_range` is provided but not length 2 (a reversed
+          ``(max, min)`` pair is accepted and sorted).
         - If `positions` is not a 2D array of shape (n_samples, 2).
 
     """
-    # 1) Validate hexagon_width
-    if hexagon_width <= 0:
-        raise ValueError(
-            f"`hexagon_width` must be a positive float (got {hexagon_width})."
-        )
+    hexagon_width = float(
+        validate_cell_size(hexagon_width, name="hexagon_width", scalar_only=True)[0]
+    )
 
-    hex_orientation = 0.0  # point-up
-
-    # 2) Clean & validate positions
     if positions is not None:
         ds_arr = np.asarray(positions, dtype=float)
         if ds_arr.ndim != 2 or ds_arr.shape[1] != 2:
@@ -105,7 +93,6 @@ def _create_hex_grid(
     else:
         ds_arr = np.empty((0, 2), dtype=float)
 
-    # 3) Determine bounding box
     if dimension_range is not None:
         if len(dimension_range) != 2:
             raise ValueError(
@@ -114,7 +101,6 @@ def _create_hex_grid(
         (ux0, ux1), (uy0, uy1) = dimension_range
         min_x, max_x = sorted((float(ux0), float(ux1)))
         min_y, max_y = sorted((float(uy0), float(uy1)))
-        effective_range = [(min_x, max_x), (min_y, max_y)]
     else:
         if ds_arr.shape[0] == 0:
             raise ValueError("`positions` is empty; cannot infer bounding box.")
@@ -122,19 +108,16 @@ def _create_hex_grid(
         max_vals = np.max(ds_arr, axis=0)
         min_x, max_x = float(min_vals[0]), float(max_vals[0])
         min_y, max_y = float(min_vals[1]), float(max_vals[1])
-        effective_range = [(min_x, max_x), (min_y, max_y)]
 
-    # 4) Compute hex geometry constants
     vertical_step = (np.sqrt(3.0) / 2.0) * hexagon_width
     hex_radius = hexagon_width / np.sqrt(3)
 
-    # 5) Compute how many hexes fit in x/y direction (ensure at least one)
+    # At least one hexagon in each direction.
     span_x = max_x - min_x
     span_y = max_y - min_y
     n_hex_cols = max(1, int(np.ceil(span_x / hexagon_width)) + 1)
     n_hex_rows = max(1, int(np.ceil(span_y / vertical_step)) + 1)
 
-    # 6) Create a regular grid of (row, col) indices
     col_idx, row_idx = np.meshgrid(
         np.arange(n_hex_cols),
         np.arange(n_hex_rows),
@@ -143,25 +126,16 @@ def _create_hex_grid(
     col_idx = col_idx.astype(float)
     row_idx = row_idx.astype(float)
 
-    # 7) Shift odd rows horizontally by half‐cell
+    # Odd rows are shifted right by half a hexagon.
     col_idx[1::2, :] += 0.5
 
-    # 8) Scale to physical coordinates, then translate by (min_x, min_y)
     x_coords = col_idx * hexagon_width + min_x
     y_coords = row_idx * vertical_step + min_y
 
     bin_centers = np.column_stack((x_coords.ravel(), y_coords.ravel()))
     centers_shape = (n_hex_rows, n_hex_cols)
 
-    return (
-        bin_centers,
-        centers_shape,
-        hex_radius,
-        hex_orientation,
-        min_x,
-        min_y,
-        effective_range,
-    )
+    return bin_centers, centers_shape, hex_radius, min_x, min_y
 
 
 def _infer_active_bins_from_hex_grid(
@@ -175,8 +149,8 @@ def _infer_active_bins_from_hex_grid(
     """Infer active bins in a hexagonal grid based on data sample occupancy.
 
     Maps `positions` to their respective hexagon bins within the full
-    conceptual grid. Hexagons are marked active if their occupancy count
-    exceeds `bin_count_threshold`.
+    conceptual grid. Hexagons are marked active if they hold at least one
+    sample and at least `bin_count_threshold` samples.
 
     Parameters
     ----------
@@ -191,7 +165,8 @@ def _infer_active_bins_from_hex_grid(
     min_y : float
         Minimum y-coordinate of the grid's effective origin.
     bin_count_threshold : int, optional, default=0
-        Minimum number of samples a hexagon must contain to be considered active.
+        Minimum number of samples a hexagon must contain to be considered
+        active; 0 keeps every visited hexagon.
 
     Returns
     -------
@@ -201,6 +176,7 @@ def _infer_active_bins_from_hex_grid(
         bins are found to be active.
 
     """
+    bin_count_threshold = validate_count_threshold(bin_count_threshold)
     bin_ind = points_to_hex_bin_ind(
         points=positions,
         grid_offset_x=min_x,
@@ -211,10 +187,6 @@ def _infer_active_bins_from_hex_grid(
     # Filter out invalid bin indices
     bin_ind = bin_ind[bin_ind >= 0]
 
-    if len(bin_ind) == 0:
-        # No valid bins found, return an empty array
-        return np.array([], dtype=int)
-
     # Count occurrences of each unique bin ind
     bin_ind, bin_count = np.unique(bin_ind, return_counts=True)
 
@@ -224,21 +196,17 @@ def _infer_active_bins_from_hex_grid(
     return bin_ind.astype(int)
 
 
-def hex_grid_pairs(
-    active_flat: NDArray[np.int_], centers_shape: tuple[int, int]
-) -> NDArray[np.intp]:
+def hex_grid_pairs(active_mask: NDArray[np.bool_]) -> NDArray[np.intp]:
     """Pair active hexagons with their adjacent active hexagons.
 
-    Bins are the active hexagons in ``active_flat`` order. Each bin pairs with
-    its higher-numbered active neighbors, visited in the order of
+    Bins are the active hexagons numbered in row-major order. Each bin pairs
+    with its higher-numbered active neighbors, visited in the order of
     :func:`neurospatial.geometry.get_hex_grid_neighbor_deltas` for its row.
 
     Parameters
     ----------
-    active_flat : ndarray of int, shape (n_bins,)
-        Increasing flat indices of the active hexagons in the full lattice.
-    centers_shape : tuple of int
-        Shape ``(n_hex_rows, n_hex_cols)`` of the full lattice.
+    active_mask : ndarray of bool, shape (n_hex_rows, n_hex_cols)
+        Active hexagons of the full lattice.
 
     Returns
     -------
@@ -247,13 +215,12 @@ def hex_grid_pairs(
 
     Examples
     --------
-    >>> hex_grid_pairs(np.arange(4), (2, 2)).tolist()
+    >>> hex_grid_pairs(np.ones((2, 2), dtype=bool)).tolist()
     [[0, 1], [0, 2], [1, 2], [1, 3], [2, 3]]
     """
-    active_flat = np.asarray(active_flat, dtype=np.intp)
-    odd_row = (active_flat // centers_shape[1]) % 2 == 1
+    odd_row = np.nonzero(active_mask)[0] % 2 == 1
     # Deltas are (column, row); lattice indices are (row, column).
     even = np.array(get_hex_grid_neighbor_deltas(False), dtype=np.intp)[:, ::-1]
     odd = np.array(get_hex_grid_neighbor_deltas(True), dtype=np.intp)[:, ::-1]
     offsets = np.where(odd_row[None, :, None], odd[:, None, :], even[:, None, :])
-    return lattice_neighbor_pairs(active_flat, centers_shape, offsets)
+    return lattice_neighbor_pairs(active_mask, offsets)

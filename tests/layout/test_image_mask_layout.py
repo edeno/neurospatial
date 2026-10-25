@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from neurospatial import LayoutNotBuiltError
 from neurospatial.layout.engines.image_mask import ImageMaskLayout
 
 
@@ -27,14 +28,36 @@ def test_point_outside_image_bounds_returns_negative_one(synthetic_16x16_mask):
     assert result[0] == -1
 
 
-def test_point_in_active_pixel_returns_valid_bin(synthetic_16x16_mask):
-    """A point inside an active (True) pixel returns a valid bin index."""
-    layout = ImageMaskLayout()
-    layout.build(image_mask=synthetic_16x16_mask, pixel_size=1.0)
+def test_point_lookup_returns_the_pixel_that_holds_it():
+    """A point maps to the active pixel it falls in, or -1 on an inactive one.
 
-    # The disk is centered, so the image center (7.5, 7.5) is active.
-    result = layout.binning().locator.locate(np.array([[7.5, 7.5]]))
-    assert result[0] >= 0
+    Pixel ``[r, c]`` spans ``[c * px, (c + 1) * px) x [r * py, (r + 1) * py)``.
+    The mask and pixels are asymmetric, so swapping rows and columns or the
+    two pixel sides puts points in the wrong bin.
+    """
+    image_mask = np.array(
+        [
+            [True, True, False, False],
+            [False, True, True, True],
+            [True, False, True, False],
+        ]
+    )
+    px, py = 1.0, 2.0
+    layout = ImageMaskLayout()
+    layout.build(image_mask=image_mask, pixel_size=(px, py))
+
+    points = np.random.default_rng(0).uniform((0, 0), (4 * px, 3 * py), (400, 2))
+    rows = np.floor(points[:, 1] / py).astype(int)
+    cols = np.floor(points[:, 0] / px).astype(int)
+    active = image_mask[rows, cols]
+    assert active.any() and not active.all()
+
+    result = layout.binning().locator.locate(points)
+    np.testing.assert_array_equal(result[~active], -1)
+    np.testing.assert_array_equal(
+        layout.bin_centers[result[active]],
+        np.column_stack(((cols + 0.5) * px, (rows + 0.5) * py))[active],
+    )
 
 
 def test_pixel_size_scaling(synthetic_16x16_mask):
@@ -87,28 +110,90 @@ def test_image_mask_bin_centers_match_dimension_ranges():
     assert np.all(layout.bin_centers[:, 1] <= y_hi)
 
 
+_MASK = np.array([[True, False], [True, True]])
+
+
+@pytest.mark.parametrize(
+    ("options", "error", "message"),
+    [
+        (
+            {"image_mask": _MASK.tolist(), "pixel_size": 1.0},
+            TypeError,
+            "must be a numpy array",
+        ),
+        (
+            {"image_mask": np.ones(3, dtype=bool), "pixel_size": 1.0},
+            ValueError,
+            "must be a 2D array",
+        ),
+        (
+            {"image_mask": _MASK.astype(float), "pixel_size": 1.0},
+            ValueError,
+            "must be a boolean array",
+        ),
+        (
+            {"image_mask": np.zeros((2, 2), dtype=bool), "pixel_size": 1.0},
+            ValueError,
+            "at least one True value",
+        ),
+        (
+            {"image_mask": _MASK, "pixel_size": (1.0, 2.0, 3.0)},
+            ValueError,
+            r"pixel_size must be one number per dimension \(2\)",
+        ),
+    ],
+    ids=["list", "one_dimensional", "float", "empty", "three_pixel_sides"],
+)
+def test_image_mask_refuses_an_invalid_mask_or_pixel_size(options, error, message):
+    """Each invalid input is refused by name and leaves no bins behind."""
+    layout = ImageMaskLayout()
+    layout.build(image_mask=_MASK, pixel_size=1.0)
+    with pytest.raises(error, match=message):
+        layout.build(**options)
+    with pytest.raises(LayoutNotBuiltError):
+        layout.binning()
+
+
 def test_image_mask_rejects_removed_bin_size_keyword():
     layout = ImageMaskLayout()
     with pytest.raises(TypeError, match="bin_size"):
-        layout.build(image_mask=np.ones((3, 4), dtype=bool), bin_size=2.0)
+        layout.build(
+            image_mask=np.ones((3, 4), dtype=bool), pixel_size=1.0, bin_size=2.0
+        )
 
 
-def test_image_mask_square_pixel_unchanged():
-    """Regression guard: square mask + scalar pixel_size matches known values.
-
-    The square / scalar case was correct by symmetry before the (x, y) fix, so
-    bin counts, centers, and connectivity edge counts are pinned here.
-    """
-    image_mask = np.array([[True, True], [True, False]], dtype=bool)  # 2x2, one hole
+def test_image_mask_requires_pixel_size():
+    """A pixel has no physical size without calibration, so none is assumed."""
     layout = ImageMaskLayout()
-    layout.build(image_mask=image_mask, pixel_size=1.0)
+    with pytest.raises(TypeError, match="pixel_size"):
+        layout.build(image_mask=np.ones((3, 4), dtype=bool))
 
-    assert layout.bin_centers.shape[0] == 3
-    # Active pixels (row, col): (0,0), (0,1), (1,0) -> (x, y) centers.
-    expected = np.array([[0.5, 0.5], [0.5, 1.5], [1.5, 0.5]])
-    np.testing.assert_allclose(
-        np.sort(layout.bin_centers, axis=0), np.sort(expected, axis=0)
-    )
-    # Diagonal connections on by default: all three active pixels are mutually
-    # adjacent (two orthogonal + one diagonal) -> 3 edges.
-    assert layout.connectivity.number_of_edges() == 3
+
+def test_image_mask_records_the_pixel_size_used():
+    layout = ImageMaskLayout()
+    layout.build(image_mask=np.ones((3, 4), dtype=bool), pixel_size=0.5)
+    assert layout._build_params_used["pixel_size"] == 0.5
+
+
+def test_image_mask_pixel_centers_in_bin_order():
+    """Pixel ``[r, c]`` becomes the bin centered at ``((c + .5) px, (r + .5) py)``.
+
+    Bins are numbered x-major, like every grid engine: by column, then by
+    row. The mask is not symmetric under a transpose or a flip, so the
+    unsorted rows pin both the coordinates and the order.
+    """
+    image_mask = np.array([[True, True, False], [False, True, True]])
+    layout = ImageMaskLayout()
+    layout.build(image_mask=image_mask, pixel_size=(1.0, 2.0))
+
+    # Active (row, col), column by column: (0,0), (0,1), (1,1), (1,2).
+    expected = np.array([[0.5, 1.0], [1.5, 1.0], [1.5, 3.0], [2.5, 3.0]])
+    np.testing.assert_array_equal(layout.bin_centers, expected)
+    # With diagonal neighbors: three side-sharing pairs and two corner pairs.
+    assert sorted(layout.connectivity.edges()) == [
+        (0, 1),
+        (0, 2),
+        (1, 2),
+        (1, 3),
+        (2, 3),
+    ]

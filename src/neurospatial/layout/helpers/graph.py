@@ -1,4 +1,4 @@
-"""Utility functions for graph-based (linearized track) layouts. 📐
+"""Utility functions for graph-based (linearized track) layouts.
 
 This module provides helper functions specifically for environments where the
 spatial layout is defined by a graph structure that is subsequently linearized,
@@ -6,10 +6,10 @@ such as an animal's track in an experiment. These functions handle:
 
 - Discretizing a linearized graph track into 1D bins, accounting for edge
   lengths and specified spacing between segments (`_get_graph_bins`).
+- Giving every edge its straight-line length as ``distance``
+  (`set_straight_distances`).
 - Pairing adjacent bins of these binned segments, along each segment and
   across the track-graph nodes where segments meet (`track_pairs`).
-- Projecting 1D linearized positions back to their corresponding N-D
-  coordinates on the original track graph (`project_1d_to_2d`).
 - Finding the appropriate 1D bin index for a given linear position
   (`_find_bin_for_linear_position`).
 
@@ -28,6 +28,7 @@ from neurospatial.layout.helpers.neighbor_pairs import (
     order_neighbor_pairs,
 )
 from neurospatial.layout.helpers.utils import get_centers
+from neurospatial.layout.validation import validate_cell_size
 
 Edge = tuple[Any, Any]
 
@@ -43,8 +44,13 @@ def _get_graph_bins(
     NDArray[np.bool_],
     NDArray[np.int_],
 ]:
-    """Discretize each edge of a linearized graph into fixed-length bins, optionally
+    """Discretize each edge of a linearized graph into equal bins, optionally
     inserting inactive "gap" bins between segments.
+
+    An edge of length ``L`` gets ``ceil(L / bin_size)`` bins of length
+    ``L / ceil(L / bin_size)``, so bins are at most ``bin_size`` long and can
+    differ in length between edges. An edge whose nodes coincide gets one
+    zero-length bin. A positive gap becomes one inactive bin.
 
     Parameters
     ----------
@@ -56,14 +62,16 @@ def _get_graph_bins(
         If float: uniform gap length inserted between every consecutive edge.
         If sequence: length must be len(edge_order) - 1, specifying each gap individually.
     bin_size : float
-        Desired length of each bin along the edge; must be positive.
+        Largest bin length along an edge, in the units of the node
+        positions; must be positive.
 
     Returns
     -------
     bin_centers_1d : NDArray[np.float64], shape (n_total_bins,)
         1D coordinates of the center of every bin (including gaps).
     bin_edges_1d_tuple : tuple of one NDArray[np.float64], shape (n_total_bins + 1,)
-        Unique sorted 1D edge coordinates (matches np.histogramdd format).
+        Non-decreasing 1D edge coordinates (matches np.histogramdd format);
+        a zero-length edge repeats a coordinate.
     active_mask_1d : NDArray[np.bool_], shape (n_total_bins,)
         True for bins that lie on an actual graph edge, False for gap bins.
     edge_ids_for_active_bins : NDArray[np.int_], shape (n_active_bins,)
@@ -75,20 +83,17 @@ def _get_graph_bins(
         - If `bin_size` is not positive.
         - If `edge_spacing` is a sequence but length != len(edge_order) - 1.
         - If any node in `edge_order` is missing from `graph`.
+        - If any node of `graph` lacks a 'pos' attribute.
 
     """
-    # 1) Validate bin_size
-    if bin_size <= 0:
-        raise ValueError(f"`bin_size` must be a positive float (got {bin_size}).")
+    bin_size = float(validate_cell_size(bin_size, scalar_only=True)[0])
 
-    # 2) Validate edge_order contents
     missing_nodes = {
         node for edge in edge_order for node in edge if node not in graph.nodes
     }
     if missing_nodes:
         raise ValueError(f"Nodes {missing_nodes} in edge_order not found in graph.")
 
-    # 3) Build gap array
     n_edges = len(edge_order)
     if isinstance(edge_spacing, (int, float, np.number)):
         gaps = np.full(max(0, n_edges - 1), float(edge_spacing))
@@ -107,13 +112,11 @@ def _get_graph_bins(
             np.zeros((0,), dtype=int),
         )
 
-    # 4) Precompute node positions; raise if any node lacks 'pos'
     node_positions = nx.get_node_attributes(graph, "pos")
     if len(node_positions) < len(graph.nodes):
         raise ValueError("All nodes must have a 'pos' attribute (x,y,…).")
 
-    # 5) Map each (u, v) or (v, u) in graph.edges() to an integer ID
-    #    Normalize edges so (u,v) and (v,u) map to the same ID:
+    # (u, v) and (v, u) map to the same edge ID.
     edge_id_map: dict[frozenset, int] = {
         frozenset(edge): idx for idx, edge in enumerate(graph.edges())
     }
@@ -154,7 +157,6 @@ def _get_graph_bins(
     # After the loop, append final edge
     bin_edges.append(cursor)
 
-    # 6) Convert to arrays and dedupe
     bin_edges_arr: NDArray[np.float64] = np.array(bin_edges, dtype=np.float64)
     bin_centers_1d = get_centers(bin_edges_arr)
 
@@ -216,8 +218,9 @@ def track_pairs(
 
     Bins on the same track segment (original graph edge) are paired with the
     next bin along it, segment by segment in order of first appearance. Then,
-    at each track-graph node, the end bins of the segments that meet there
-    are paired in ``edge_order`` order. The proposals are put in
+    at each track-graph node, every two end bins of the segments that meet
+    there are paired, so k segments meeting at a junction give k(k-1)/2
+    pairs and no arm is reached through another. The proposals are put in
     authoritative order by
     :func:`~neurospatial.layout.helpers.neighbor_pairs.order_neighbor_pairs`.
 
@@ -238,7 +241,9 @@ def track_pairs(
     pairs : ndarray of intp, shape (n_pairs, 2)
         Pairs ``(lower, higher)`` of bin IDs in authoritative order.
     distances : ndarray of float64, shape (n_pairs,)
-        Euclidean distance between the n-D centers of each pair.
+        Along-track distance between the centers of each pair: the straight
+        distance on one segment, and the distance from each center to the
+        shared node, summed, across a junction.
 
     """
     # --- 1. Intra-segment pairs: consecutive bins on the same original edge ---
@@ -256,19 +261,33 @@ def track_pairs(
     ends = np.r_[starts[1:] - 1, len(by_segment) - 1]
     bin_edge_order_arr = np.column_stack((by_segment[starts], by_segment[ends]))
 
-    # --- 2. Inter-segment pairs: end bins of the segments meeting at a node ---
-    edge_order_array = np.asarray(edge_order)
-    for node_id in graph.nodes:
-        connections = bin_edge_order_arr[edge_order_array == node_id]
-        first.append(connections[:-1])
-        second.append(connections[1:])
+    distances = [
+        euclidean_pair_distances(bin_centers_nd, np.column_stack((first[0], second[0])))
+    ]
 
-    lower = np.concatenate(first).astype(np.intp)
-    upper = np.concatenate(second).astype(np.intp)
+    # --- 2. Inter-segment pairs: end bins of the segments meeting at a node ---
+    # A node is one point of the track, so every two segment ends there are
+    # neighbors, and the path between them runs through the node.
+    ends_at_node: dict[object, list[int]] = {node: [] for node in graph.nodes}
+    for segment_ends, segment_nodes in zip(bin_edge_order_arr, edge_order, strict=True):
+        for end_bin, node in zip(segment_ends, segment_nodes, strict=True):
+            ends_at_node[node].append(int(end_bin))
+    node_positions = nx.get_node_attributes(graph, "pos")
+    for node, ends in ends_at_node.items():
+        ends_arr = np.asarray(ends, dtype=np.intp)
+        to_node = np.linalg.norm(
+            bin_centers_nd[ends_arr] - np.asarray(node_positions[node], dtype=float),
+            axis=1,
+        )
+        low, high = np.triu_indices(len(ends), k=1)
+        first.append(ends_arr[low])
+        second.append(ends_arr[high])
+        distances.append(to_node[low] + to_node[high])
+
     return order_neighbor_pairs(
-        lower,
-        upper,
-        euclidean_pair_distances(bin_centers_nd, np.column_stack((lower, upper))),
+        np.concatenate(first).astype(np.intp),
+        np.concatenate(second).astype(np.intp),
+        np.concatenate(distances),
     )
 
 
@@ -279,41 +298,29 @@ def _find_bin_for_linear_position(
 ) -> int | NDArray[np.int_]:
     """Find the 1D bin index for each given linear position.
 
-    Assigns each position in `linear_positions` to a bin defined by
-    `bin_edges_1d`. If `active_mask_1d` is provided, positions falling into
-    inactive bins (gaps) can be handled (e.g., by adjusting to a nearby
-    active bin or returning an invalid index, depending on implementation details).
-    The current implementation maps to bins based on `np.digitize` and handles
-    positions on edges that might fall into inactive bins by shifting them to
-    the preceding active bin.
+    Bins are half-open, ``[bin_edges[i], bin_edges[i + 1])``, except the last,
+    which also holds the end of the track. A position exactly at a gap's start
+    belongs to the bin before the gap.
 
     Parameters
     ----------
-    linear_positions : float | NDArray[np.float64], shape (n_points,)
+    linear_positions : float or ndarray of float64, shape (n_points,)
         Linear position(s) to map to bin indices.
-    bin_edges_1d : NDArray[np.float64], shape (n_total_bins + 1,)
-        1D array of sorted bin edge coordinates for the entire linearized track
-        (including gaps).
-    active_mask_1d : NDArray[np.bool_] | None, shape (n_total_bins,), optional
-        Boolean mask indicating which bins in the `bin_edges_1d` definition
-        are active (on an edge segment) vs. inactive (in a gap). If provided,
-        the function ensures returned indices correspond to active bins or
-        handles points in gaps.
+    bin_edges : ndarray of float64, shape (n_total_bins + 1,)
+        Sorted bin edges of the whole linearized track, gaps included.
+    active_mask : ndarray of bool, shape (n_total_bins,), optional
+        True for bins on a track segment, False for gap bins.
 
     Returns
     -------
-    bin_indices : int | NDArray[np.int_], shape (n_points,)
-        0-based bin index (relative to the full set of bins defined by
-        `bin_edges_1d`) for each input linear position.
-        Returns -1 if a position falls outside the range of `bin_edges_1d`.
-        If `active_mask_1d` is used, logic attempts to assign to an active bin.
+    int or ndarray of int, shape (n_points,)
+        Index into the full bins of ``bin_edges``, or -1 for a position
+        before the start, past the end, inside a gap, or NaN.
 
     Raises
     ------
     ValueError
-        If `active_mask_1d` (if provided) length doesn't match the number of bins.
-        If, after processing, a position maps to an index marked as invalid by
-        `active_mask_1d` (indicating an issue with gap handling logic or input).
+        If ``active_mask`` does not have one entry per bin.
 
     """
     was_scalar = np.isscalar(linear_positions)
@@ -329,23 +336,29 @@ def _find_bin_for_linear_position(
         )
 
     bin_ind = np.digitize(linear_positions, bin_edges, right=False) - 1
-    out_of_bounds_mask = (bin_ind < 0) | (bin_ind >= n_bins)
-    bin_ind[out_of_bounds_mask] = -1
+    # The end of the track belongs to the last bin.
+    bin_ind[_on_edge(linear_positions, bin_edges[-1])] = n_bins - 1
+    bin_ind[(bin_ind < 0) | (bin_ind >= n_bins)] = -1
 
     if active_mask is not None:
-        invalid_bin_ind = np.nonzero(~active_mask)[0]
-    else:
-        invalid_bin_ind = np.array([])
-
-    in_gap_ind = np.nonzero(np.isin(bin_ind, invalid_bin_ind))[0]
-    is_bin_edge = np.asarray(
-        [
-            np.any(np.isclose(bin_edges[1:], lin_pos))
-            for lin_pos in linear_positions[in_gap_ind]
-        ],
-        dtype=bool,
-    )
-    bin_ind[in_gap_ind[is_bin_edge]] = bin_ind[in_gap_ind[is_bin_edge]] - 1
-
-    bin_ind[in_gap_ind[~is_bin_edge]] = -1
+        in_gap = np.flatnonzero((bin_ind >= 0) & ~active_mask[bin_ind])
+        # digitize puts a position on a gap's start edge in the gap bin.
+        at_gap_start = _on_edge(linear_positions[in_gap], bin_edges[bin_ind[in_gap]])
+        bin_ind[in_gap[at_gap_start]] -= 1
+        bin_ind[in_gap[~at_gap_start]] = -1
     return int(bin_ind[0]) if was_scalar else bin_ind.astype(int)
+
+
+def _on_edge(
+    positions: NDArray[np.float64], edges: float | NDArray[np.float64]
+) -> NDArray[np.bool_]:
+    """Whether each position equals its edge to within the edge's float rounding.
+
+    The allowance is a few units in the last place of the edge, so it does
+    not grow with bin widths or with the distance along the track.
+    """
+    edges = np.asarray(edges, dtype=float)
+    on_edge: NDArray[np.bool_] = np.abs(positions - edges) <= 4 * np.spacing(
+        np.abs(edges)
+    )
+    return on_edge

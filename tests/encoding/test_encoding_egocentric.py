@@ -46,8 +46,8 @@ def sample_env() -> Environment:
             positions[idx, 0] = i * 5.0  # distance
             positions[idx, 1] = -np.pi + j * (2 * np.pi / n_direction)  # direction
 
-    # Create environment from samples
-    env = Environment.from_samples(positions, bin_size=5.0)
+    # 5 cm distance bins and 30-degree direction bins, one per sample.
+    env = Environment.from_samples(positions, bin_size=(5.0, 2 * np.pi / n_direction))
     return env
 
 
@@ -909,10 +909,8 @@ class TestObjectVectorRateResultPreferredDirection:
     ) -> None:
         """Test that preferred_direction() is in [-pi, pi] range.
 
-        Note: The sample_env fixture creates positions from -pi to slightly
-        past +pi to cover 12 direction bins. After binning, bin_centers may
-        slightly exceed [-pi, pi] range. We allow a 1.0 radian margin to
-        account for this.
+        The sample_env fixture's 12 direction bins are centered on the
+        sampled directions, from -pi to pi - pi/6.
         """
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
@@ -927,10 +925,7 @@ class TestObjectVectorRateResultPreferredDirection:
         )
 
         direction = result.preferred_direction()
-        # Should be in valid angle range (allowing margin for bin centers from fixture)
-        # Fixture creates directions from -pi to +pi with 12 bins, bin_centers may be offset
-        assert direction >= -np.pi - 1.0
-        assert direction <= np.pi + 1.0
+        assert -np.pi - 1e-9 <= direction <= np.pi
 
     def test_preferred_direction_corresponds_to_peak_bin(
         self,

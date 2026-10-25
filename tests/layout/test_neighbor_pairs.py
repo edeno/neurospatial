@@ -63,7 +63,7 @@ def test_lattice_pairs_are_already_in_authoritative_order():
         [[[-1, 1]], [[0, 1]], [[1, -1]], [[1, 0]], [[1, 1]]], dtype=np.intp
     )
 
-    pairs = lattice_neighbor_pairs(active, mask.shape, steps)
+    pairs = lattice_neighbor_pairs(mask, steps)
 
     reordered, _ = order_neighbor_pairs(pairs[:, 1], pairs[:, 0], np.zeros(len(pairs)))
     np.testing.assert_array_equal(reordered, pairs)

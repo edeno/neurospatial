@@ -12,9 +12,9 @@ The design intent is in the "Environment architecture" section of
 `docs/contributing.md`. These steps fail silently when skipped:
 
 - A new built-in layout engine needs a `LayoutType` member in
-  `layout/_labels.py`, the class attribute `layout_type =
+  `layout/_labels.py`, the class attribute `layout_type: ClassVar[str] =
   LayoutType.<MEMBER>.value` (its `binning()` passes `kind=self.layout_type`),
-  a place in `_ENGINES` in `layout/factories.py` (the `create_layout`
+  a place in `_BuiltinLayout` in `layout/factories.py` (the `create_layout`
   registry is derived from it), the class attribute `size_parameter` naming
   the build option that sets its cell size (or `None`), an export from `layout/__init__.py`,
   `@capture_build_params(data=(...))` on `build` naming its data arguments

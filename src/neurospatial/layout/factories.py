@@ -1,9 +1,8 @@
 import inspect
-from typing import Any
+from typing import Any, get_args
 
 from neurospatial._exceptions import _format_error
 from neurospatial.layout._labels import LayoutType, _key, find_layout_type
-from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.engines.hexagonal import HexagonalLayout
 from neurospatial.layout.engines.image_mask import ImageMaskLayout
@@ -16,22 +15,27 @@ from neurospatial.layout.engines.triangular_mesh import (
     TriangularMeshLayout,
 )
 
-# The engines ``create_layout`` builds, keyed by their ``layout_type`` label.
-_ENGINES = (
-    RegularGridLayout,
-    MaskedGridLayout,
-    ImageMaskLayout,
-    HexagonalLayout,
-    GraphLayout,
-    TriangularMeshLayout,
-    ShapelyPolygonLayout,
+# The engines ``create_layout`` builds. Every one has the members the
+# ``LayoutEngine`` docstring lists for the built-in engines, such as
+# ``bin_centers``, ``connectivity``, ``bin_sizes()`` and ``plot()``, so the
+# union is the return type and the registry below is derived from it.
+_BuiltinLayout = (
+    RegularGridLayout
+    | MaskedGridLayout
+    | ImageMaskLayout
+    | HexagonalLayout
+    | GraphLayout
+    | TriangularMeshLayout
+    | ShapelyPolygonLayout
 )
-# LayoutEngine is a Protocol, and type[Protocol] does not accept these
-# concrete classes, so the values are typed as Any.
-_LAYOUT_MAP: dict[str, Any] = {engine.layout_type: engine for engine in _ENGINES}
+_ENGINES: tuple[type[_BuiltinLayout], ...] = get_args(_BuiltinLayout)
+# The engines keyed by their ``layout_type`` label.
+_LAYOUT_MAP: dict[str, type[_BuiltinLayout]] = {
+    engine.layout_type: engine for engine in _ENGINES
+}
 
 
-def _engine_class(kind: object, caller: str) -> Any:
+def _engine_class(kind: object, caller: str) -> type[_BuiltinLayout]:
     """Return the engine class that ``kind`` names, or explain the choices."""
     member = find_layout_type(kind)
     engine = None if member is None else _LAYOUT_MAP.get(member.value)
@@ -88,7 +92,7 @@ def list_available_layouts() -> list[str]:
     return sorted(_LAYOUT_MAP)
 
 
-def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
+def get_layout_parameters(layout_type: LayoutType | str) -> dict[str, dict[str, Any]]:
     """Retrieve expected build parameters for a specified layout engine type.
 
     Inspects the `build` method signature of the specified `LayoutEngine`
@@ -102,18 +106,31 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
 
     Returns
     -------
-    Dict[str, Dict[str, Any]]
-        A dictionary where keys are parameter names for the `build` method.
-        Each value is another dictionary containing:
-        - 'annotation': The type annotation of the parameter.
-        - 'default': The default value, or `None` if no default.
-        - 'kind': The parameter kind (e.g., 'keyword-only').
+    dict of str to dict
+        The ``build`` parameters, in signature order. Each value has:
+
+        - ``'annotation'``: the parameter's type annotation, or None when it
+          has none.
+        - ``'default'``: the default value; None for a required parameter,
+          so read ``'required'`` to tell the two apart.
+        - ``'required'``: True when the parameter has no default and must be
+          passed.
+        - ``'kind'``: the ``inspect.Parameter`` kind name, such as
+          ``'KEYWORD_ONLY'`` or ``'POSITIONAL_OR_KEYWORD'``.
 
     Raises
     ------
     ValueError
         If `layout_type` is unknown.
 
+    Examples
+    --------
+    >>> from neurospatial.layout import get_layout_parameters
+    >>> params = get_layout_parameters("RegularGrid")
+    >>> params["bin_size"]["required"], params["dimension_ranges"]["required"]
+    (True, False)
+    >>> params["bin_count_threshold"]["default"], params["bin_size"]["kind"]
+    (0, 'KEYWORD_ONLY')
     """
     engine_class = _engine_class(layout_type, "get_layout_parameters()")
     sig = inspect.signature(engine_class.build)
@@ -130,12 +147,13 @@ def get_layout_parameters(layout_type: str) -> dict[str, dict[str, Any]]:
             "default": (
                 param.default if param.default is not inspect.Parameter.empty else None
             ),
-            "kind": param.kind.name,  # Use .name for Python 3.10+ compatibility
+            "required": param.default is inspect.Parameter.empty,
+            "kind": param.kind.name,
         }
     return params_info
 
 
-def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
+def create_layout(kind: LayoutType | str, **kwargs: Any) -> _BuiltinLayout:
     """Factory for creating and building a spatial-layout engine.
 
     Parameters
@@ -150,14 +168,18 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
 
     Returns
     -------
-    LayoutEngine
-        A fully constructed layout engine.
+    RegularGridLayout or another built-in layout engine
+        The built engine that ``kind`` names. Every built-in engine has
+        ``bin_centers``, ``layout_type``, ``connectivity``, ``bin_sizes()``,
+        ``plot()`` and ``binning()``.
 
     Raises
     ------
     ValueError
-        - If `kind` is not one of the available layouts.
-        - If any unexpected keyword arguments are passed to `build`.
+        If `kind` is not one of the available layouts.
+    TypeError
+        If a keyword argument is not an option of the engine's ``build()``;
+        the message lists the options it takes.
 
     Examples
     --------
@@ -177,18 +199,24 @@ def create_layout(kind: LayoutType | str, **kwargs) -> LayoutEngine:
 
     """
     engine_cls = _engine_class(kind, "create_layout()")
-    engine: LayoutEngine = engine_cls()
+    engine = engine_cls()
 
-    # 3) Validate `kwargs` against `build(...)` signature
-    sig = inspect.signature(engine.build)
-    allowed = {param for param in sig.parameters if param != "self"}
-    unexpected = set(kwargs) - allowed
+    accepted = list(inspect.signature(engine.build).parameters)
+    unexpected = [name for name in kwargs if name not in accepted]
     if unexpected:
-        raise ValueError(
-            f"Unexpected arguments for {engine_cls.layout_type}.build(): {unexpected}"
+        raise TypeError(
+            _format_error(
+                f"create_layout() got unexpected build options for "
+                f"{engine_cls.layout_type}: {', '.join(map(repr, unexpected))}.",
+                why=(
+                    f"Why: {engine_cls.__name__}.build() takes only "
+                    f"{', '.join(accepted)}."
+                ),
+                fix=(
+                    "check the spelling, or list the options with "
+                    f"get_layout_parameters({engine_cls.layout_type!r})"
+                ),
+            )
         )
-
-    # 4) Call `build(...)` with validated params
-    engine.build(**{k: kwargs[k] for k in allowed if k in kwargs})
-    # At this point, engine is a LayoutEngine (Protocol check happens at runtime)
+    engine.build(**kwargs)
     return engine

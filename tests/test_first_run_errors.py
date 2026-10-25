@@ -472,7 +472,7 @@ def test_large_grid_warning_is_visible():
     from neurospatial.layout.helpers.utils import check_grid_size_safety
 
     with pytest.warns(UserWarning) as caught:
-        check_grid_size_safety((500, 500), n_dims=2)
+        check_grid_size_safety((500, 500))
     assert "250,000" in str(caught[0].message)
     assert "Fix:" in str(caught[0].message)
 

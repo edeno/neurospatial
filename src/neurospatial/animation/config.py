@@ -266,7 +266,7 @@ def configure_napari_scale_bar(
         )
         return
     scale_bar.visible = True
-    scale_bar.position = position_map.get(config.position, "bottom_right")
+    scale_bar.position = position_map[config.position]
     scale_bar.font_size = config.font_size
 
     if units and getattr(viewer, "canvas", None) is None:

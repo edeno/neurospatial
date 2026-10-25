@@ -73,7 +73,7 @@ class TestSamplePolygonBoundary:
     def test_simple_square(self):
         """Test sampling boundary of a simple square."""
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        boundary_pts = _sample_polygon_boundary(poly, point_spacing=2.0)
+        boundary_pts, _ = _sample_polygon_boundary(poly, point_spacing=2.0)
 
         # Should have multiple points along the boundary
         assert boundary_pts.shape[0] > 4  # More than just the vertices
@@ -82,7 +82,7 @@ class TestSamplePolygonBoundary:
     def test_boundary_includes_vertices(self):
         """Test that boundary sampling includes original vertices."""
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        boundary_pts = _sample_polygon_boundary(poly, point_spacing=15.0)
+        boundary_pts, _ = _sample_polygon_boundary(poly, point_spacing=15.0)
 
         # With large spacing, should at least have the 4 corner vertices
         assert boundary_pts.shape[0] >= 4
@@ -90,7 +90,7 @@ class TestSamplePolygonBoundary:
     def test_deduplication(self):
         """Test that duplicate points are removed."""
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        boundary_pts = _sample_polygon_boundary(poly, point_spacing=5.0)
+        boundary_pts, _ = _sample_polygon_boundary(poly, point_spacing=5.0)
 
         # Check no exact duplicates
         unique_pts = np.unique(boundary_pts, axis=0)
@@ -277,23 +277,75 @@ class TestTriangularMeshLayoutBuild:
         assert np.sum(layout.active_mask) == layout.bin_centers.shape[0]
 
 
+@pytest.mark.parametrize(
+    "polygon",
+    [
+        shapely.geometry.box(0, 0, 10, 10),
+        Polygon([(0, 0), (10, 0), (10, 4), (4, 4), (4, 10), (0, 10)]),
+        shapely.geometry.box(0, 0, 10, 10).difference(shapely.geometry.box(3, 3, 7, 7)),
+        shapely.geometry.Point(0, 0)
+        .buffer(20)
+        .difference(shapely.geometry.Point(3, 0).buffer(6)),
+        # A hole far thinner than the point spacing.
+        shapely.geometry.box(0, 0, 10, 10).difference(
+            shapely.geometry.box(2, 4.9, 8, 5.1)
+        ),
+    ],
+    ids=["square", "L", "square_with_hole", "disk_with_hole", "thin_hole"],
+)
+@pytest.mark.parametrize("point_spacing", [1.0, 3.0])
+def test_mesh_covers_the_polygon_exactly(polygon, point_spacing):
+    """The triangles tile the arena: no arena area unbinned, none in a hole.
+
+    A ring around a hole left without triangles would put real positions
+    there outside every bin, so their samples would be dropped.
+    """
+    layout = TriangularMeshLayout()
+    layout.build(boundary_polygon=polygon, point_spacing=point_spacing)
+    binning = layout.binning()
+    np.testing.assert_allclose(binning.bins.sizes.sum(), polygon.area, rtol=1e-9)
+
+    rng = np.random.default_rng(0)
+    minx, miny, maxx, maxy = polygon.bounds
+    points = rng.uniform((minx, miny), (maxx, maxy), size=(5000, 2))
+    inside = shapely.contains_xy(polygon, points[:, 0], points[:, 1])
+    bins = binning.locator.locate(points)
+    assert np.all(bins[inside] >= 0)
+    assert np.all(bins[~inside] == -1)
+
+
 class TestTriangularMeshLayoutPointLookup:
     """Tests for the point lookup of a TriangularMeshLayout's binning."""
 
-    def test_points_inside_triangles(self):
-        """Test mapping points that fall inside triangles."""
+    def test_points_map_to_the_triangle_that_contains_them(self):
+        """Each point gets the bin of the active triangle holding it, else -1."""
         layout = TriangularMeshLayout()
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         layout.build(poly, point_spacing=3.0)
+        shapes = layout.binning().shapes
+        corners = shapes.points[shapes.triangles]  # (n_bins, 3, 2)
+        np.testing.assert_allclose(corners.mean(axis=1), layout.bin_centers)
 
-        # Points inside the polygon
-        test_points = np.array([[5.0, 5.0], [2.0, 2.0], [8.0, 8.0]])
-        bin_indices = layout.binning().locator.locate(test_points)
+        points = np.random.default_rng(0).uniform(-2.0, 12.0, (500, 2))
+        # Barycentric coordinates of every point in every triangle.
+        origin, edge_1, edge_2 = (
+            corners[:, 0],
+            corners[:, 1] - corners[:, 0],
+            corners[:, 2] - corners[:, 0],
+        )
+        basis = np.stack((edge_1, edge_2), axis=-1)  # (n_bins, 2, 2)
+        offsets = points[:, None] - origin[None]  # (n_points, n_bins, 2)
+        weights = np.einsum("bij,pbj->pbi", np.linalg.inv(basis), offsets)
+        inside = np.all(weights > 1e-9, axis=2) & (weights.sum(axis=2) < 1 - 1e-9)
+        on_an_edge = ~inside.any(axis=1) & shapely.contains_xy(
+            poly, points[:, 0], points[:, 1]
+        )
+        assert inside.sum(axis=1).max() == 1
+        assert not on_an_edge.any()
+        expected = np.where(inside.any(axis=1), inside.argmax(axis=1), -1)
+        assert np.any(expected == -1)
 
-        assert bin_indices.shape[0] == 3
-        # All points should map to valid bins (not -1)
-        assert np.all(bin_indices >= 0)
-        assert np.all(bin_indices < layout.bin_centers.shape[0])
+        np.testing.assert_array_equal(layout.binning().locator.locate(points), expected)
 
     def test_points_outside_polygon(self):
         """Test that points outside polygon map to -1."""
@@ -307,21 +359,6 @@ class TestTriangularMeshLayoutPointLookup:
 
         assert bin_indices.shape[0] == 2
         assert np.all(bin_indices == -1)
-
-    def test_mixed_inside_outside_points(self):
-        """Test mixture of points inside and outside."""
-        layout = TriangularMeshLayout()
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        layout.build(poly, point_spacing=3.0)
-
-        test_points = np.array([[5.0, 5.0], [20.0, 20.0], [2.0, 2.0]])
-        bin_indices = layout.binning().locator.locate(test_points)
-
-        assert bin_indices.shape[0] == 3
-        # First and third should be valid, second should be -1
-        assert bin_indices[0] >= 0
-        assert bin_indices[1] == -1
-        assert bin_indices[2] >= 0
 
     def test_points_on_the_outline_belong_to_a_bin(self):
         """The outline is part of the arena, so its points have a bin."""
@@ -343,16 +380,17 @@ class TestTriangularMeshLayoutPointLookup:
         np.testing.assert_array_equal(env.bin_at(beyond), -1)
 
     def test_single_point_input(self):
-        """Test point lookup with a single point."""
+        """A single (2,) point is looked up like a one-row (1, 2) array."""
         layout = TriangularMeshLayout()
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         layout.build(poly, point_spacing=3.0)
 
-        test_point = np.array([5.0, 5.0])
-        bin_index = layout.binning().locator.locate(test_point)
+        locator = layout.binning().locator
+        bin_index = locator.locate(np.array([5.3, 4.1]))
 
         assert bin_index.shape == (1,)
         assert bin_index[0] >= 0
+        np.testing.assert_array_equal(bin_index, locator.locate(np.array([[5.3, 4.1]])))
 
     def test_unbuild_layout_raises_error(self):
         """Test that asking an unbuilt layout for its binning raises RuntimeError."""
@@ -501,3 +539,60 @@ class TestTriangularMeshLayoutPlot:
 
         # Should only show centroids
         plt.close(fig)
+
+
+@pytest.mark.parametrize("offset", [0.0, 1e8])
+@pytest.mark.parametrize("angle", [5.0, 17.0, 45.0, 61.5])
+def test_rotated_polygon_mesh_stays_small_and_covers_it(angle, offset):
+    """A rotated outline needs no refinement beyond its ring samples.
+
+    Computing each edge's end separately left a near-duplicate copy of every
+    rotated vertex, a segment Qhull could never keep, so refinement grew
+    without bound (48 to 8,262 points in 12 rounds). Far from the origin,
+    Qhull could not place the split points either (46 to 5,146 points in 9
+    rounds at 1e8), so the points are triangulated near the origin.
+    """
+    from shapely import affinity
+
+    from neurospatial import Environment
+
+    square = shapely.geometry.box(0, 0, 10, 10)
+    polygon = affinity.translate(
+        affinity.rotate(square, angle, origin="center"), offset, offset
+    )
+    layout = TriangularMeshLayout()
+    layout.build(boundary_polygon=polygon, point_spacing=2.0)
+    binning = layout.binning()
+    env = Environment.from_layout(layout)
+    np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(env.n_bins))
+    interior = _generate_interior_points_for_mesh(polygon, 2.0)
+    ring, _ = _sample_polygon_boundary(polygon, 2.0)
+    assert len(binning.shapes.points) <= 2 * (len(interior) + len(ring))
+    # Areas computed at 1e8 keep about 1e-7 of their precision.
+    rtol = 1e-9 if offset == 0 else 1e-6
+    np.testing.assert_allclose(binning.bins.sizes.sum(), polygon.area, rtol=rtol)
+
+
+@pytest.mark.parametrize("offset", [0.0, 1e6, 1e8])
+@pytest.mark.parametrize("point_spacing", [1.0, 2.0])
+def test_translated_mesh_publishes_and_locates_its_bins(offset, point_spacing):
+    """A mesh far from the origin becomes an environment that finds its bins.
+
+    Triangulating near the origin left boundary triangles a rounding error
+    thick in the original coordinates (1.7e-11 at 1e6); they passed a
+    relative flatness test but could not locate their own centers, so
+    publication refused the mesh.
+    """
+    from shapely import affinity
+
+    from neurospatial import Environment
+
+    polygon = affinity.translate(
+        affinity.rotate(shapely.geometry.box(0, 0, 10, 10), 17), offset, offset
+    )
+    layout = TriangularMeshLayout()
+    layout.build(polygon, point_spacing=point_spacing)
+    env = Environment.from_layout(layout)
+    np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(env.n_bins))
+    rtol = 1e-9 if offset == 0 else 1e-6
+    np.testing.assert_allclose(env.bin_sizes.sum(), polygon.area, rtol=rtol)

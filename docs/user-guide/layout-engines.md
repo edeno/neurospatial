@@ -67,27 +67,40 @@ env = Environment.from_graph(
 ```
 
 **Key feature**: Converts 2D positions to 1D linear coordinates with `env.to_linear()`.
+Each segment is split into equal bins no longer than `bin_size` (a 50 cm segment
+with `bin_size=3.0` gets 17 bins of about 2.94 cm), so bin lengths can differ
+between segments. Where segments meet at a node, the end bins of every two of
+them are neighbors, and the distance between them is measured through the node.
 Pass the corridor's measured `track_width` so that `bin_at`, `occupancy` and the
 rate maps can tell positions on the track from positions off it (bin `-1`);
 without it they refuse.
 
 ### MaskedGridLayout
-**Grid with active/inactive regions** - automatically used when `infer_active_bins=True`.
+**Grid with active/inactive cells that you supply** as a boolean mask, built by
+`Environment.from_grid_mask()`.
 
-**When to use**: Sparse data, need to exclude walls/unvisited areas
+**When to use**: You already know which cells are usable, for example a map of
+the arena with walls or obstacles removed
 **Performance**: ⭐⭐⭐⭐ (fast)
 **Memory**: ⭐⭐⭐⭐⭐ (very efficient for sparse environments)
-**Setup complexity**: ⭐⭐⭐ (automatic with parameter tuning)
+**Setup complexity**: ⭐⭐⭐ (need a mask and its grid edges)
 
+<!-- docs-test: run -->
 ```python
-env = Environment.from_samples(
-    positions,
-    bin_size=2.5,
-    infer_active_bins=True,
-    dilate=True,
-    fill_holes=True
-)
+import numpy as np
+from neurospatial import Environment
+
+mask = np.ones((20, 20), dtype=bool)
+mask[8:12, 8:12] = False  # a central pillar
+edges = np.arange(0.0, 50.5, 2.5)  # 20 cells of 2.5 cm
+env = Environment.from_grid_mask(mask, grid_edges=(edges, edges), units="cm")
+assert env.n_bins == mask.sum()
 ```
+
+`Environment.from_samples()` does not use this engine: with
+`infer_active_bins=True` (the default) it builds a `RegularGridLayout` whose
+active cells are the visited ones. On 2-D and higher grids, `close_gaps`,
+`fill_holes` and `dilate` then refine that mask, in that order.
 
 ### ShapelyPolygonLayout
 **Grid bounded by polygon** for geometric arenas.
@@ -217,7 +230,7 @@ What's your environment?
 └─ Sparse data with walls/obstacles
    ├─ Have binary image → ImageMask
    ├─ Have polygon boundary → Polygon
-   └─ Just position data → Masked (infer_active_bins=True)
+   └─ Just position data → Regular (infer_active_bins=True, the default)
 ```
 
 ## Common Patterns
@@ -225,7 +238,7 @@ What's your environment?
 ### Pattern 1: Let neurospatial choose
 
 ```python
-# Simplest - neurospatial picks appropriate engine
+# Simplest - a regular grid whose active bins are the visited ones
 env = Environment.from_samples(positions, bin_size=2.5)
 ```
 

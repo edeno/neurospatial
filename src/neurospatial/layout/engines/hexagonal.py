@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -9,12 +9,11 @@ from neurospatial.geometry import (
     Binning,
     HexagonShapes,
     HexLocator,
-    cell_polygons,
     component_extent,
+    mask_active_map,
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
-from neurospatial.layout._plotting import plot_hexagons
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
     _create_hex_grid,
@@ -25,10 +24,7 @@ from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
 from neurospatial.layout.helpers.utils import (
     check_grid_size_safety,
 )
-from neurospatial.layout.mixins import _NeighborPairsMixin
-
-if TYPE_CHECKING:
-    import matplotlib.axes
+from neurospatial.layout.mixins import _NeighborPairsMixin, _no_active_bins_message
 
 
 class HexagonalLayout(_NeighborPairsMixin):
@@ -46,7 +42,7 @@ class HexagonalLayout(_NeighborPairsMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.HEXAGONAL.value
+    layout_type: ClassVar[str] = LayoutType.HEXAGONAL.value
     size_parameter: ClassVar[str | None] = "hexagon_width"
     _build_params_used: dict[str, Any]
 
@@ -56,7 +52,6 @@ class HexagonalLayout(_NeighborPairsMixin):
     hex_orientation_: float | None = None
     grid_offset_x_: float | None = None
     grid_offset_y_: float | None = None
-    _source_flat_to_active_id_map: dict[int, int] | None = None
     _locator: HexLocator | None = None
 
     def __init__(self) -> None:
@@ -72,7 +67,6 @@ class HexagonalLayout(_NeighborPairsMixin):
         self.hex_orientation_ = None
         self.grid_offset_x_ = None
         self.grid_offset_y_ = None
-        self._source_flat_to_active_id_map = None
         self._locator = None
 
     @capture_build_params(data=("positions", "dimension_ranges"))
@@ -113,40 +107,25 @@ class HexagonalLayout(_NeighborPairsMixin):
             `hexagon_width` is not positive.
 
         """
+        self._begin_build()
         self.hexagon_width = hexagon_width
         (
             full_grid_bin_centers,
             self.grid_shape,
             self.hex_radius_,
-            self.hex_orientation_,
             self.grid_offset_x_,
             self.grid_offset_y_,
-            _,
         ) = _create_hex_grid(
             positions=positions,
             dimension_range=dimension_ranges,
             hexagon_width=self.hexagon_width,
         )
-        if (
-            self.hex_radius_ is None
-            or self.grid_offset_x_ is None
-            or self.grid_offset_y_ is None
-            or self.grid_shape is None
-        ):
-            raise RuntimeError(
-                "Hexagonal grid generation failed; missing geometry parameters."
-            )
+        self.hex_orientation_ = 0.0  # point-up
 
-        # Safety check: warn or error if grid is very large
-        n_dims = 2  # Hexagonal is always 2D
-        check_grid_size_safety(self.grid_shape, n_dims)
+        # Warn if the grid is very large.
+        check_grid_size_safety(self.grid_shape)
 
         if infer_active_bins and positions is not None:
-            assert (
-                self.hex_radius_ is not None
-                and self.grid_offset_x_ is not None
-                and self.grid_offset_y_ is not None
-            )
             active_bin_original_flat_indices = _infer_active_bins_from_hex_grid(
                 positions=positions,
                 centers_shape=self.grid_shape,
@@ -157,6 +136,17 @@ class HexagonalLayout(_NeighborPairsMixin):
             )
         else:
             active_bin_original_flat_indices = np.arange(len(full_grid_bin_centers))
+        if len(active_bin_original_flat_indices) == 0:
+            raise ValueError(
+                _no_active_bins_message(
+                    type(self).__name__,
+                    f"no hexagon holds at least bin_count_threshold="
+                    f"{bin_count_threshold} samples",
+                    "Lower bin_count_threshold, use a larger hexagon_width so "
+                    "each hexagon collects more samples, or check that the "
+                    "positions are finite and cover the arena.",
+                )
+            )
 
         nd_active_mask = np.zeros(self.grid_shape, dtype=bool).ravel()
         nd_active_mask[active_bin_original_flat_indices] = True
@@ -164,17 +154,13 @@ class HexagonalLayout(_NeighborPairsMixin):
 
         self.bin_centers = full_grid_bin_centers[active_bin_original_flat_indices]
 
-        pairs = hex_grid_pairs(active_bin_original_flat_indices, self.grid_shape)
+        pairs = hex_grid_pairs(self.active_mask)
         self._set_neighbor_pairs(
             pairs, euclidean_pair_distances(self.bin_centers, pairs)
         )
         # The extent of the active hexagons, corners included.
         self.dimension_ranges = component_extent(shapes=self.bin_shapes())
-
-        self._source_flat_to_active_id_map = {
-            source: node_id
-            for node_id, source in enumerate(active_bin_original_flat_indices.tolist())
-        }
+        self._own_arrays("bin_centers", "active_mask")
         self._build_locator()
 
     def _build_locator(self) -> None:
@@ -184,19 +170,16 @@ class HexagonalLayout(_NeighborPairsMixin):
             or self.grid_offset_y_ is None
             or self.hex_radius_ is None
             or self.grid_shape is None
-            or self._source_flat_to_active_id_map is None
+            or self.active_mask is None
         ):
-            raise LayoutNotBuiltError(type(self).__name__, "hexagonal geometry")
+            raise LayoutNotBuiltError(type(self).__name__, "locator")
         assert len(self.grid_shape) == 2
-        flat_to_active = np.full(np.prod(self.grid_shape), -1, dtype=np.intp)
-        for source, active in self._source_flat_to_active_id_map.items():
-            flat_to_active[source] = active
         self._locator = HexLocator(
             self.grid_offset_x_,
             self.grid_offset_y_,
             self.hex_radius_,
             (self.grid_shape[0], self.grid_shape[1]),
-            flat_to_active,
+            mask_active_map(self.active_mask),
         )
 
     def locator(self) -> HexLocator:
@@ -228,58 +211,10 @@ class HexagonalLayout(_NeighborPairsMixin):
             dimension_ranges=self.dimension_ranges,
         )
 
-    @property
-    def is_linearized_track(self) -> bool:
-        """Hexagonal layouts are 2-dimensional.
-
-        Returns
-        -------
-        bool
-            Always False, indicating a 2D layout.
-
-        """
-        return False
-
-    def plot(
-        self,
-        ax: "matplotlib.axes.Axes | None" = None,
-        **kwargs,
-    ) -> "matplotlib.axes.Axes":
-        """Plot the hexagonal layout.
-
-        Displays active hexagons and their connectivity graph.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            Axes to plot on. If None, new figure and axes are created.
-        **kwargs : Any
-            Additional keyword arguments:
-            - `show_hexagons` (bool, default=True): Whether to draw hexagon cells.
-            - `hexagon_kwargs` (dict): Kwargs for the cells' `PatchCollection`.
-            - Other kwargs are passed to `_generic_graph_plot` for the graph.
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the layout is plotted.
-
-        """
-        built = self.hex_radius_ is not None and self.bin_centers is not None
-        return plot_hexagons(
-            ax,
-            title=self.layout_type,
-            centers=self.bin_centers,
-            cells=cell_polygons(self.binning()) if built else None,
-            connectivity=self.connectivity,
-            dimension_ranges=self.dimension_ranges,
-            **kwargs,
-        )
-
     def bin_shapes(self) -> HexagonShapes:
         """Return the active hexagons in bin order with owned center coordinates."""
         if self.hex_radius_ is None or self.bin_centers is None:
-            raise LayoutNotBuiltError(type(self).__name__, "hex_radius_")
+            raise LayoutNotBuiltError(type(self).__name__, "bin_shapes")
         return HexagonShapes(
             self.bin_centers,
             self.hex_radius_,
@@ -298,19 +233,12 @@ class HexagonalLayout(_NeighborPairsMixin):
 
         Raises
         ------
-        RuntimeError
-            If `hex_radius_` or `bin_centers` is not populated.
+        LayoutNotBuiltError
+            If the layout has not been built.
 
         """
-        if self.hex_radius_ is None or self.bin_centers is None:  # pragma: no cover
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("hex_radius_", "bin_centers")
-                    if getattr(self, name) is None
-                ),
-            )
+        if self.hex_radius_ is None or self.bin_centers is None:
+            raise LayoutNotBuiltError(type(self).__name__, "bin_sizes")
 
         # Area of a regular hexagon: (3 * sqrt(3) / 2) * side_length^2
         # For pointy-top hexagons, side_length (s) is equal to hex_radius_ (R, center to vertex).

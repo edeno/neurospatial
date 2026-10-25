@@ -269,14 +269,15 @@ def test_sigma_recovery_polar():
 
 def test_sigma_recovery_graph():
     """Linear track with a junction: sigma recovered across bin sizes; the
-    junction edge is corrected to the true along-track distance (not the chord),
-    so a source near the junction is not oversmoothed."""
+    junction edge is the along-track distance through the node (not the
+    chord), so a source near the junction is not oversmoothed."""
     bandwidth = 5.0
     for bin_size in (1.0, 2.0):
         env = built_from(lambda size=bin_size: build_track(size, straight=False))
         graph_fv, _ = face_graph(env._binning)
-        # Junction (inter-segment) edges: the FV along-track distance must exceed
-        # the raw Euclidean chord (which cuts the corner and would oversmooth).
+        # Junction (inter-segment) edges: the FV and connectivity distances are
+        # the along-track distance, longer than the Euclidean chord (which cuts
+        # the corner and would oversmooth).
         junction_edges = [
             (u, v)
             for u, v in graph_fv.edges()
@@ -285,10 +286,10 @@ def test_sigma_recovery_graph():
         ]
         assert junction_edges, "L-track must have at least one junction edge"
         for u, v in junction_edges:
-            assert (
-                graph_fv.edges[u, v]["distance"]
-                > env.connectivity.edges[u, v]["distance"]
-            ), "junction edge distance must be corrected upward from the chord"
+            chord = np.linalg.norm(env.bin_centers[u] - env.bin_centers[v])
+            along = graph_fv.edges[u, v]["distance"]
+            assert along > chord, "junction edge must not cut the corner"
+            assert env.connectivity.edges[u, v]["distance"] == pytest.approx(along)
 
         coords = track_coords_1d(env)
         kernel = diffusion_kernel(env, bandwidth, mode="transition")

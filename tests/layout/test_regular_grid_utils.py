@@ -51,27 +51,119 @@ def test_infer_active_bins_from_regular_grid_simple():
     assert np.sum(mask) == 3
 
 
-def test_infer_active_bins_with_threshold_and_morphology():
-    # 2D: points in a cross, threshold=1, dilate
-    data = np.array(
-        [
-            [1.5, 0.5],
-            [1.5, 1.5],
-            [1.5, 2.5],  # vertical
-            [0.5, 1.5],
-            [2.5, 1.5],  # horizontal
-        ]
-    )
-    edges = (np.array([0, 1, 2, 3]), np.array([0, 1, 2, 3]))
+def _samples_in(cells):
+    """One position at the center of each (x index, y index) unit cell."""
+    return np.asarray(cells, dtype=float) + 0.5
+
+
+def _mask_of(cells, shape):
+    mask = np.zeros(shape, dtype=bool)
+    mask[tuple(np.asarray(cells).T)] = True
+    return mask
+
+
+_UNIT_EDGES_7 = (np.arange(8.0), np.arange(8.0))
+# Occupied bins around (3, 3), which no sample visits.
+_ANNULUS = [(i, j) for i in range(2, 5) for j in range(2, 5) if (i, j) != (3, 3)]
+# A C opening to +x: its one-bin notch at (2, 2) leads out through (2, 3).
+_C_SHAPE = [(1, 1), (1, 2), (2, 1), (3, 1), (3, 2)]
+_L_SHAPE = [(2, 2), (3, 2), (4, 2), (4, 3), (4, 4)]
+
+
+@pytest.mark.parametrize("fill_holes", [False, True])
+def test_fill_holes_activates_a_bin_enclosed_by_occupied_bins(fill_holes):
+    """An unvisited bin surrounded by visited ones is filled only on request."""
     mask = _infer_active_bins_from_regular_grid(
-        data, edges, bin_count_threshold=0, dilate=True
+        _samples_in(_ANNULUS), _UNIT_EDGES_7, fill_holes=fill_holes
     )
-    # Dilation should expand the cross
-    assert mask.sum() > 5
-    # All original cross points should be active
-    for pt in data:
-        i, j = int(pt[0]), int(pt[1])
-        assert mask[i, j]
+    expected = _mask_of(_ANNULUS, (7, 7))
+    expected[3, 3] = fill_holes
+    np.testing.assert_array_equal(mask, expected)
+
+
+@pytest.mark.parametrize(
+    ("option", "closed"),
+    [(None, False), ("fill_holes", False), ("close_gaps", True)],
+)
+def test_only_close_gaps_closes_a_notch_open_to_the_outside(option, closed):
+    """A one-bin notch is not a hole, so filling leaves it; closing fills it."""
+    options = {} if option is None else {option: True}
+    mask = _infer_active_bins_from_regular_grid(
+        _samples_in(_C_SHAPE), (np.arange(7.0), np.arange(7.0)), **options
+    )
+    expected = _mask_of(_C_SHAPE, (6, 6))
+    expected[2, 2] = closed
+    np.testing.assert_array_equal(mask, expected)
+
+
+def test_dilation_uses_the_eight_neighbor_element():
+    """Dilating an L adds every bin within one step, diagonals included."""
+    mask = _infer_active_bins_from_regular_grid(
+        _samples_in(_L_SHAPE), _UNIT_EDGES_7, dilate=True
+    )
+    rows, cols = np.indices((7, 7))
+    within_one = [
+        np.maximum(np.abs(rows - i), np.abs(cols - j)) <= 1 for i, j in _L_SHAPE
+    ]
+    np.testing.assert_array_equal(mask, np.any(within_one, axis=0))
+    # Diagonal-only neighbors of the L's ends: a 4-neighbor element misses them.
+    assert mask[1, 1] and mask[5, 5] and mask[1, 3]
+
+
+@pytest.mark.parametrize("bin_size", [3.0, 7.0, 2.5, (3.0, 1.7)])
+def test_grid_cells_are_exactly_bin_size(bin_size):
+    """Cells keep the requested width; the extra width splits evenly.
+
+    A 0-100 range is not a whole number of 3, 7 or 1.7 unit cells, so the
+    grid reaches equally past both ends; 2.5 divides it, so the edges start
+    and end on it.
+    """
+    edges, centers, _ = _create_regular_grid(
+        positions=None, bin_size=bin_size, dimension_range=[(0, 100), (0, 100)]
+    )
+    sizes = np.broadcast_to(bin_size, (2,))
+    for axis_edges, size in zip(edges, sizes, strict=True):
+        np.testing.assert_allclose(np.diff(axis_edges), size, rtol=1e-12)
+        below, above = -axis_edges[0], axis_edges[-1] - 100.0
+        np.testing.assert_allclose(below, above, atol=1e-9)
+        assert 0.0 <= below < size / 2
+    assert np.all((centers > 0) & (centers < 100))
+    edges, _, _ = _create_regular_grid(
+        positions=None, bin_size=2.5, dimension_range=[(0, 100)]
+    )
+    assert edges[0][0] == 0.0 and edges[0][-1] == 100.0
+
+
+def test_float_error_in_the_range_adds_no_cell():
+    """4.35 / 1.45 is 3.0000000000000004 in floats: three cells, ending at 4.35."""
+    edges, _, shape = _create_regular_grid(
+        positions=None, bin_size=1.45, dimension_range=[(0, 4.35)]
+    )
+    assert shape == (3,)
+    assert edges[0][0] == 0.0 and edges[0][-1] == 4.35
+
+
+def test_a_non_finite_range_is_refused():
+    with pytest.raises(ValueError, match="not finite"):
+        _create_regular_grid(
+            positions=None, bin_size=1.0, dimension_range=[(0, np.nan), (0, 1)]
+        )
+
+
+def test_close_gaps_keeps_visited_bins_on_the_grid_border():
+    """Closing only adds bins: a visited bin on the grid's edge stays active.
+
+    A grid inferred from positions always has visited bins in its outer
+    ring. Closing erodes after it dilates; treating the space past the
+    array as empty would erode that ring away and drop its samples.
+    """
+    data = np.array([[i + 0.5, j + 0.5] for i in range(4) for j in range(4)])
+    data = data[~((data[:, 0] == 1.5) & (data[:, 1] == 2.5))]  # one-bin gap
+    edges = (np.arange(5.0), np.arange(5.0))
+    visited = _infer_active_bins_from_regular_grid(data, edges)
+    closed = _infer_active_bins_from_regular_grid(data, edges, close_gaps=True)
+    assert np.all(closed[visited])
+    assert closed.all()  # the interior gap is closed too
 
 
 def test_infer_active_bins_boundary_exists():
@@ -309,3 +401,21 @@ def test_points_to_regular_grid_bin_ind_3d_and_oob():
     assert idxs[0] >= 0
     assert idxs[1] == -1
     assert idxs[2] == -1
+
+
+@pytest.mark.parametrize("offset", [0.0, 1.0e3, 1.0e6])
+def test_grid_is_the_same_wherever_the_range_lies(offset):
+    """Translating a range translates its grid: same cells, same count.
+
+    A zero-span test with np.isclose read a 1-unit range at 1e6 (relative
+    tolerance about 10) as a single point and padded it into 11 cells.
+    """
+    edges, _, shape = _create_regular_grid(
+        positions=None, bin_size=0.1, dimension_range=[(offset, offset + 1.0)]
+    )
+    assert shape == (10,)
+    np.testing.assert_allclose(edges[0] - offset, np.linspace(0.0, 1.0, 11), atol=1e-9)
+
+    samples = offset + np.linspace(0.0, 1.0, 50)[:, None]
+    _, _, inferred = _create_regular_grid(positions=samples, bin_size=0.1)
+    assert inferred == (10,)

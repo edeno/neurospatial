@@ -13,7 +13,6 @@ from enum import Enum
 class LayoutType(str, Enum):
     """Layout labels: the built-in layout engines and the special builds.
 
-    This enum provides IDE autocomplete and type safety for layout selection.
     Every value is also the ``layout_type`` of the engine, the ``kind`` of the
     binning it builds and the ``layout_type`` of the resulting environment.
 
@@ -24,7 +23,7 @@ class LayoutType(str, Enum):
     MASKED_GRID : str
         Grids with arbitrary active/inactive regions defined by a boolean mask.
     IMAGE_MASK : str
-        Binary image-based layouts where white pixels define active bins.
+        Boolean image-based layouts where True pixels define active bins.
     HEXAGONAL : str
         Hexagonal tessellations with more uniform neighbor distances.
     GRAPH : str
@@ -48,6 +47,10 @@ class LayoutType(str, Enum):
     ... )
     >>> layout.layout_type == LayoutType.REGULAR_GRID
     True
+    >>> str(LayoutType.REGULAR_GRID)
+    'RegularGrid'
+    >>> f"{LayoutType.HEXAGONAL} bins"
+    'Hexagonal bins'
 
     Notes
     -----
@@ -69,6 +72,14 @@ class LayoutType(str, Enum):
     SHAPELY_POLYGON = "ShapelyPolygon"
     POLAR = "Polar"
     COMBINED = "Combined"
+
+    # A str-mixin Enum prints as "LayoutType.REGULAR_GRID" on Python 3.11+
+    # and as the value on 3.10; StrEnum, which prints the value, is 3.11+.
+    def __str__(self) -> str:
+        return self.value
+
+    def __format__(self, format_spec: str) -> str:
+        return format(self.value, format_spec)
 
 
 def _key(name: str) -> str:

@@ -8,6 +8,7 @@ from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
+from neurospatial.layout.validation import validate_cell_size
 
 
 class ImageMaskLayout(_GridMixin):
@@ -21,6 +22,11 @@ class ImageMaskLayout(_GridMixin):
     (image columns) and dimension 1 is y (image rows). `grid_shape`,
     `grid_edges`, `bin_centers`, and `active_mask` are all expressed in
     (x, y) order, matching `dimension_ranges` and every other grid engine.
+
+    Image row 0 is the lowest y: y increases with the row index. With y
+    drawn upward, the environment therefore appears flipped vertically
+    relative to ``plt.imshow(image_mask)``, which draws row 0 at the top.
+    Pass ``image_mask[::-1]`` if the top of your image should be high y.
     """
 
     bin_centers: NDArray[np.float64]
@@ -30,7 +36,7 @@ class ImageMaskLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.IMAGE_MASK.value
+    layout_type: ClassVar[str] = LayoutType.IMAGE_MASK.value
     size_parameter: ClassVar[str | None] = "pixel_size"
     _build_params_used: dict[str, Any]
 
@@ -47,10 +53,8 @@ class ImageMaskLayout(_GridMixin):
     def build(
         self,
         *,
-        image_mask: NDArray[
-            np.bool_
-        ],  # Defines candidate pixels, shape (n_rows, n_cols)
-        pixel_size: float | tuple[float, float] | None = None,
+        image_mask: NDArray[np.bool_],
+        pixel_size: float | tuple[float, float],
         connect_diagonal_neighbors: bool = True,
     ) -> None:
         """Build the layout from a 2D image mask.
@@ -65,27 +69,28 @@ class ImageMaskLayout(_GridMixin):
         ----------
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
             A 2D boolean array where `True` pixels define active bins. Indexed
-            as ``[row, col]`` == ``[y, x]``.
-        pixel_size : float or tuple of (float, float) or None, optional
-            The spatial size of each pixel, in units per pixel.
-            If float: pixels are square (size x size).
-            If tuple (width, height): specifies pixel width (x) and pixel
-            height (y). If None, defaults to 1.0
-            (one unit per pixel).
+            as ``[row, col]`` == ``[y, x]``: row 0 is the lowest y, so pass
+            ``image_mask[::-1]`` for an image whose top row should be high y.
+        pixel_size : float or tuple of (float, float)
+            The physical size of each pixel, in the units of positions per
+            pixel (for example cm per pixel from a calibration). If float:
+            pixels are square (size x size). If tuple (width, height):
+            specifies pixel width (x) and pixel height (y). Required: a pixel
+            has no physical size until it is calibrated.
         connect_diagonal_neighbors : bool, default=True
             If True, connect diagonally adjacent active pixel-bins.
 
         Raises
         ------
         TypeError
-            If `image_mask` is not a NumPy array.
+            If `image_mask` is not a NumPy array, or `pixel_size` is not
+            numeric.
         ValueError
             If `image_mask` is not 2D, not boolean, contains no True values,
-            or if `pixel_size` is invalid (wrong type/shape or non-positive).
+            or if `pixel_size` is not one or two positive, finite numbers.
 
         """
-        if pixel_size is None:
-            pixel_size = 1.0  # one unit per pixel
+        self._begin_build()
 
         if not isinstance(image_mask, np.ndarray):
             raise TypeError("image_mask must be a numpy array.")
@@ -94,34 +99,13 @@ class ImageMaskLayout(_GridMixin):
         if not np.issubdtype(image_mask.dtype, np.bool_):
             raise ValueError("image_mask must be a boolean array.")
 
-        # Validate pixel_size. Use an array-safe comparison so that both scalar
-        # and per-axis pixel sizes -- including those deserialized from JSON as
-        # an ndarray (e.g. an anisotropic (3.0, 1.0) round-tripped through
-        # to_dict/from_dict) -- are checked without raising the "truth value of
-        # an array is ambiguous" error.
-        if np.any(np.asarray(pixel_size, dtype=float) <= 0):
-            raise ValueError("pixel_size must be positive.")
+        # One size, or (width, height) of a pixel, also as an ndarray read
+        # back from to_dict.
+        pixel_size_x, pixel_size_y = validate_cell_size(
+            pixel_size, name="pixel_size", n_dims=2
+        ).tolist()
         if not np.any(image_mask):
             raise ValueError("image_mask must contain at least one True value.")
-        if not np.all(np.isfinite(image_mask)):
-            raise ValueError("image_mask must not contain NaN or Inf values.")
-
-        # Determine pixel sizes for x and y (units per pixel)
-        pixel_size_x: float
-        pixel_size_y: float
-        if isinstance(pixel_size, (float, int, np.number)):
-            pixel_size_x = float(pixel_size)
-            pixel_size_y = float(pixel_size)
-        elif isinstance(pixel_size, (list, tuple, np.ndarray)) and len(pixel_size) == 2:
-            pixel_size_x = float(pixel_size[0])  # width of a pixel (x)
-            pixel_size_y = float(pixel_size[1])  # height of a pixel (y)
-        else:
-            raise ValueError(
-                "pixel_size for ImageMaskLayout must be a float or a "
-                "2-element sequence (width, height).",
-            )
-        if pixel_size_x <= 0 or pixel_size_y <= 0:
-            raise ValueError("pixel_size components must be positive.")
 
         n_rows, n_cols = image_mask.shape  # rows = y, cols = x
 
@@ -132,9 +116,8 @@ class ImageMaskLayout(_GridMixin):
         # other grid engine).
         self.grid_shape = (n_cols, n_rows)
 
-        # Safety check: warn or error if grid is very large
-        n_dims = 2  # ImageMask is always 2D
-        check_grid_size_safety(self.grid_shape, n_dims)
+        # Warn if the grid is very large.
+        check_grid_size_safety(self.grid_shape)
 
         x_edges = np.arange(n_cols + 1) * pixel_size_x
         y_edges = np.arange(n_rows + 1) * pixel_size_y

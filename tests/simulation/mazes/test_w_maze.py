@@ -240,8 +240,10 @@ class TestWMazeTrackGraph:
 
         dims = WMazeDims()
         track = make_w_maze(dims=dims, bin_size=1.0).env_track
+        assert nx.is_tree(track.binning.linearization.graph)
+        # The arm ends meeting at the middle junction are pairwise adjacent,
+        # so the bin graph has one triangle there and is not itself a tree.
         graph = track.connectivity
-        assert nx.is_tree(graph)
 
         leaves = sorted(n for n in graph.nodes if graph.degree(n) == 1)
         assert len(leaves) == 3

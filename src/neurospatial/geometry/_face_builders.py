@@ -5,6 +5,8 @@ from __future__ import annotations
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 
 _MESH_SKEW_ANGLE_DEG = 30.0
 _MESH_SKEW_FRACTION = 0.05
@@ -132,18 +134,81 @@ def track_geometry(
     volumes: NDArray[np.float64],
     junctions: NDArray[np.float64],
 ) -> tuple[nx.Graph, NDArray[np.float64]]:
-    """Compute unit track faces with along-junction flux distances."""
+    """Compute track faces: unit faces along segments, reduced ones at junctions.
+
+    A pair on one segment has a unit face. A pair across a junction has the
+    along-track flux distance through the junction node, ``d_u + d_v``, and
+    the face of the node eliminated from the star of segment ends meeting
+    there: with conductances ``g_b = 1 / d_b`` from each end bin to the
+    node, the pair conducts ``g_u g_v / sum(g)``, so its face measure is
+    ``(g_u + g_v) / sum(g)``. Two segments get a unit face; at a junction of
+    k segments the faces share the node's conductance instead of each
+    carrying a full unit, so diffusion across the junction is not too fast.
+    """
     g = graph.copy()
-    for index, (u, v, data) in enumerate(g.edges(data=True)):
-        data["A"] = 1.0
-        j_pos = junctions[index]
-        if not np.all(np.isfinite(j_pos)):
-            continue
-        d = float(np.linalg.norm(centers[u] - j_pos)) + float(
-            np.linalg.norm(centers[v] - j_pos)
-        )
-        data["distance"] = d
+    edges = list(g.edges())
+    for u, v in edges:
+        g.edges[u, v]["A"] = 1.0
+    across = np.flatnonzero(np.all(np.isfinite(junctions), axis=1))
+    if not len(across):
+        return g, volumes
+    pairs = np.asarray(edges, dtype=np.intp)[across]
+    positions = junctions[across]
+    node_of = _junction_nodes(pairs, positions, len(centers))
+    to_node = np.linalg.norm(centers[pairs] - positions[:, None], axis=2)
+    conductance = 1.0 / to_node
+    # Each end bin joins its node once, however many pairs it is in.
+    ends, first = np.unique(
+        np.column_stack((node_of[:, None].repeat(2, 1).ravel(), pairs.ravel())),
+        axis=0,
+        return_index=True,
+    )
+    node_total = np.bincount(
+        ends[:, 0], weights=conductance.ravel()[first], minlength=node_of.max() + 1
+    )
+    area = conductance.sum(axis=1) / node_total[node_of]
+    for (u, v), d, a in zip(pairs, to_node.sum(axis=1), area, strict=True):
+        g.edges[int(u), int(v)]["distance"] = float(d)
+        g.edges[int(u), int(v)]["A"] = float(a)
     return g, volumes
+
+
+def _junction_nodes(
+    pairs: NDArray[np.intp], positions: NDArray[np.float64], n_bins: int
+) -> NDArray[np.intp]:
+    """Number the junction node of each cross-segment pair.
+
+    Pairs meet at the same node when they share its position and are
+    linked through their end bins: two separate tracks that cross at one
+    point have two nodes there.
+
+    Parameters
+    ----------
+    pairs : ndarray of intp, shape (n_pairs, 2)
+        Bin pairs on different segments.
+    positions : ndarray of float64, shape (n_pairs, n_dims)
+        Position of each pair's shared node.
+    n_bins : int
+        Number of bins.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_pairs,)
+        Junction node number of each pair.
+    """
+    _, place = np.unique(positions, axis=0, return_inverse=True)
+    place = place.ravel()
+    # An end bin at one place is a graph node; a pair joins two of them.
+    ends = place[:, None] * n_bins + pairs
+    labels, node_ids = np.unique(ends, return_inverse=True)
+    node_ids = node_ids.reshape(ends.shape)
+    graph = coo_matrix(
+        (np.ones(len(pairs)), (node_ids[:, 0], node_ids[:, 1])),
+        shape=(len(labels), len(labels)),
+    )
+    _, component = connected_components(graph, directed=False)
+    node_of: NDArray[np.intp] = component[node_ids[:, 0]].astype(np.intp)
+    return node_of
 
 
 def track_junctions(

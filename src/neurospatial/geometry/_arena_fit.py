@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Literal
 
@@ -31,7 +31,7 @@ from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import TransformedLocator
-from neurospatial.geometry._polygon import materialize_cells
+from neurospatial.geometry._polygon import has_planar_cells, materialize_cells
 from neurospatial.geometry._polygon_cells import WRAPPER_LOCATORS, PolygonCells
 from neurospatial.geometry._validation import _polygon_area_allowance
 from neurospatial.geometry._wall_frame import wall_source_frame
@@ -699,9 +699,11 @@ def _closing_walls(
 
 
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
-    """Close the neighbor pairs whose shared edge walls block completely.
+    """Close the neighbor pairs whose shared edge walls or the outline block.
 
-    Only the part of a shared edge inside the arena counts: a bin at a slanted
+    Cells that touch only outside the arena's outline, across a slit or a
+    concave corner, are closed first. Only the part of a shared edge inside
+    the arena counts: a bin at a slanted
     outline sticks out past it, where no wall can be. Cells that meet only at
     a corner close when the corner touches a wall or the line between their
     centers crosses one. A closed pair stays listed in ``binning.connections``
@@ -715,6 +717,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         # its independently rounded global polygons loses the native source frame.
         # New bridge crossings are checked when constructing/validating the root.
         return binning
+    binning = _close_outside_outline(binning, arena)
     links = binning.connections
     if not arena.walls:
         if np.all(links.closed_by < 0):
@@ -808,19 +811,36 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     )
     if np.all(keep) and np.all(open_share == 1.0):
         return replace(binning, connections=connections)
+
+    def narrowed(area: NDArray[np.float64]) -> None:
+        # The open length in the published coordinates; taking the minimum
+        # keeps a face that was already narrowed unchanged when the
+        # environment is published again.
+        for index in np.flatnonzero(open_share < 1.0):
+            u, v = pairs[index]
+            full = published_contact(u, v)
+            area[index] = min(area[index], open_share[index] * full)
+
+    return _with_closed_pairs(binning, connections, keep, narrowed)
+
+
+def _with_closed_pairs(
+    binning: Binning,
+    connections: BinConnections,
+    keep: NDArray[np.bool_],
+    narrow: Callable[[NDArray[np.float64]], None] | None = None,
+) -> Binning:
+    """``binning`` with ``connections``, its faces and normals kept to ``keep``.
+
+    ``keep`` flags the open pairs of ``binning.connections`` that stay open;
+    ``narrow`` may shrink face measures in place before the closed ones go.
+    """
     faces = binning.faces
     if faces.available:
         source = binning.build_faces()
         area = source.A.copy()
-        partial = np.flatnonzero(open_share < 1.0)
-        if len(partial):
-            # The open length in the published coordinates; taking the
-            # minimum keeps a face that was already narrowed unchanged when
-            # the environment is published again.
-            for index in partial:
-                u, v = pairs[index]
-                full = published_contact(u, v)
-                area[index] = min(area[index], open_share[index] * full)
+        if narrow is not None:
+            narrow(area)
         faces = KnownFaces(
             FaceGeometry(
                 connections.pairs,
@@ -835,3 +855,73 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         else None
     )
     return replace(binning, connections=connections, faces=faces, face_normals=normals)
+
+
+def _outline_is_the_grid(binning: Binning, arena: Arena) -> bool:
+    """Whether ``arena`` is the mask of the grid's own active cells.
+
+    Its outline is then the union of the cells, which every two touching
+    cells meet on, so no pair crosses it.
+    """
+    if binning.grid is None or binning.outline is not None:
+        return False
+    try:
+        return same_encoded_arena(arena, infer_arena(binning))
+    except ValueError:  # an arena without a codec is not the inferred mask
+        return False
+
+
+def _close_outside_outline(binning: Binning, arena: Arena) -> Binning:
+    """Close the pairs whose cells touch only outside the arena's outline.
+
+    Two bins whose centers are inside can meet across a slit or a concave
+    corner of the outline, where an animal cannot pass. A pair stays open
+    when part of its shared side, longer than rounding, lies inside the
+    arena, or when the arena reaches its shared corner. Pairs whose cells do
+    not touch at all, such as bridges between parts of a combined
+    environment, are left to the rules that made them.
+    """
+    if (
+        binning.bins.n_dims != 2
+        or not binning.bins.has_measure_dim(2)
+        or not has_planar_cells(binning.locator)
+        or not len(binning.connections.pairs)
+        or _outline_is_the_grid(binning, arena)
+        or arena.polygonal_domain() is None
+    ):
+        return binning
+    cells, _, _, domain, errors = _wall_geometry(binning, arena)
+    if domain is None:
+        return binning
+    cell_array = np.asarray(cells, dtype=object)
+    shapely.prepare(domain)
+    pairs = binning.connections.pairs
+    # A pair of cells the arena covers meets inside it.
+    covered = shapely.covers(domain, cell_array)
+    candidates = np.flatnonzero(~(covered[pairs[:, 0]] & covered[pairs[:, 1]]))
+    if not len(candidates):
+        return binning
+    u, v = pairs[candidates].T
+    contact = shapely.intersection(
+        shapely.boundary(cell_array[u]), shapely.boundary(cell_array[v])
+    )
+    # Rounding of the contact itself: a few units in the last place of its
+    # coordinates and a sliver of its length, never the arena's size, so a
+    # distant part of the arena cannot close a local opening.
+    magnitude = np.max(np.abs(shapely.bounds(contact)), axis=1, initial=0.0)
+    tolerance = 64 * np.spacing(np.nan_to_num(magnitude)) + 1e-9 * shapely.length(
+        contact
+    )
+    if errors is not None:
+        tolerance += errors[u] + errors[v]
+    side = shapely.length(contact) > 0
+    inside = np.where(
+        side,
+        shapely.length(shapely.intersection(contact, domain)) > tolerance,
+        shapely.distance(contact, domain) <= tolerance,
+    )
+    keep = np.ones(len(pairs), dtype=bool)
+    keep[candidates] = inside | shapely.is_empty(contact)
+    if keep.all():
+        return binning
+    return _with_closed_pairs(binning, binning.connections.closed(keep), keep)

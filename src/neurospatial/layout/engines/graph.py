@@ -10,12 +10,13 @@ from neurospatial.geometry import (
     Binning,
     TrackLinearization,
     component_extent,
+    mask_active_map,
     project_1d_to_2d,
     track_junctions,
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
-from neurospatial.layout._plotting import _plot_track_linear, plot_track
+from neurospatial.layout._plotting import _plot_track_linear
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _find_bin_for_linear_position,
@@ -24,6 +25,7 @@ from neurospatial.layout.helpers.graph import (
     track_pairs,
 )
 from neurospatial.layout.mixins import _KDTreeMixin, _NeighborPairsMixin
+from neurospatial.layout.validation import validate_cell_size
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -34,9 +36,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
 
     The graph's nodes (with 'pos' attributes) and a specified edge order
     are used to create a linearized representation of the space, which is
-    then binned. Neighbor pairs are derived from this binned structure.
-    Uses `_KDTreeMixin` for point mapping and neighbor finding on the
-    N-D embeddings of the linearized bin centers.
+    then binned. Bins are paired along each segment and, at each node,
+    between the end bins of every two segments that meet there. A KD-tree
+    on the N-D bin centers maps points to their nearest bin.
     """
 
     bin_centers: NDArray[np.float64]
@@ -46,7 +48,7 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    layout_type: str = LayoutType.GRAPH.value
+    layout_type: ClassVar[str] = LayoutType.GRAPH.value
     size_parameter: ClassVar[str | None] = "bin_size"
     _build_params_used: dict[str, Any]
 
@@ -94,23 +96,29 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             during linearization. If float, same gap for all. If sequence,
             specifies each gap; length must be `len(edge_order) - 1`.
         bin_size : float
-            The desired length of each bin along the linearized space.
+            Largest bin length along the track, in the units of the node
+            positions. Each segment of length ``L`` is split into
+            ``ceil(L / bin_size)`` equal bins of length
+            ``L / ceil(L / bin_size)``, so bins can be shorter than
+            ``bin_size`` and differ in length between segments.
 
         Raises
         ------
         TypeError
             If `graph_definition` is not a NetworkX graph.
         ValueError
-            If `edge_order` is empty, `bin_size` is not positive, or an
-            edge's 'distance' is not the distance between its nodes.
+            If `edge_order` is empty, `bin_size` is not positive, a node of
+            `edge_order` is not in the graph, a node lacks 'pos',
+            `edge_spacing` has the wrong length, or an edge's 'distance' is
+            not the distance between its nodes.
 
         """
+        self._begin_build()
         if not isinstance(graph_definition, nx.Graph):
             raise TypeError("graph_definition must be a NetworkX graph.")
         if not edge_order:  # Empty edge_order means no path to linearize
             raise ValueError("edge_order must not be empty.")
-        if bin_size <= 0:
-            raise ValueError("bin_size must be positive.")
+        validate_cell_size(bin_size, scalar_only=True)
 
         # track_linearization finds a point's nearest segment by its position in
         # ``graph.edges()`` but looks that segment up by its ``edge_id`` attribute,
@@ -150,7 +158,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             )
         )
 
-        # --- Build KDTree ---
+        self._own_arrays(
+            "bin_centers", "linear_bin_centers_", "active_mask", "grid_edges"
+        )
         self._build_kdtree(points_for_tree=self.bin_centers)
         self._linearization = TrackLinearization(
             track_graph, edge_order, edge_spacing, self.grid_edges, self.active_mask
@@ -170,46 +180,6 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         """
         return True
 
-    def plot(
-        self,
-        ax: "matplotlib.axes.Axes | None" = None,
-        **kwargs,
-    ) -> "matplotlib.axes.Axes":
-        """Plot the N-D embedding of the graph-based layout.
-
-        Displays the original graph used for definition, the N-D positions of
-        the binned track segments (active bin centers), and their connectivity.
-
-        Parameters
-        ----------
-        ax : Optional[matplotlib.axes.Axes], optional
-            Axes to plot on. If None, new figure and axes are created.
-        **kwargs : Any
-            Additional keyword arguments:
-            - `figsize` (tuple): Figure size if `ax` is None.
-            - `node_kwargs` (dict): Kwargs for plotting original graph nodes.
-            - `edge_kwargs` (dict): Kwargs for plotting original graph edges.
-            - `bin_node_kwargs` (dict): Kwargs for plotting active bin center nodes.
-            - `bin_edge_kwargs` (dict): Kwargs for plotting connectivity graph edges.
-            - `show_bin_edges` (bool): Whether to project and plot 1D bin edges in N-D.
-
-
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes on which the layout is plotted.
-
-        """
-        return plot_track(
-            ax,
-            title=self.layout_type,
-            linearization=self.linearization(),
-            bin_centers=self.bin_centers,
-            connectivity=self.connectivity,
-            grid_edges=self.grid_edges,
-            **kwargs,
-        )
-
     def plot_linear_layout(
         self,
         ax: "matplotlib.axes.Axes | None" = None,
@@ -218,8 +188,8 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         """Plot the 1D linearized representation of the graph layout.
 
         Uses `track_linearization.plot_graph_as_1D` to display the track
-        segments and nodes in their 1D linearized positions. Overlays the
-        1D bin edges from `self.grid_edges`.
+        segments and nodes in their 1D linearized positions, and overlays the
+        1D bin edges from `self.grid_edges` as gray dashed lines.
 
         Parameters
         ----------
@@ -227,8 +197,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             Axes to plot on. If None, new figure and axes are created.
         **kwargs : Any
             Additional keyword arguments passed to
-            `track_linearization.plot_graph_as_1D` and for customizing
-            the appearance of bin edge lines.
+            `track_linearization.plot_graph_as_1D` (for example
+            ``node_size`` or ``figsize``). The bin-edge lines are not
+            customizable.
 
         Returns
         -------
@@ -258,8 +229,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         Returns
         -------
         NDArray[np.float64], shape (n_points,)
-            1D linearized coordinates. NaNs may be returned for points
-            far from the track.
+            1D linearized coordinates. Every finite point is projected onto
+            its nearest segment, however far from the track it lies; a row
+            with a non-finite coordinate gives NaN.
 
         """
         return self.linearization().to_linear(data_points)
@@ -345,21 +317,14 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         Returns
         -------
         NDArray[np.int_], shape (n_points,)
-            Indices of the active 1D bins corresponding to each linear position.
-            Returns -1 for positions outside active bins or in gaps.
-            Note: These are indices relative to the set of *active* 1D bins,
-            not indices into the full `linear_bin_centers_all` array.
+            Bin index (as in ``bin_centers``) of each linear position: bins
+            are half-open, and the end of the track belongs to the last bin.
+            -1 for a position before the start, past the end, inside a gap,
+            or NaN.
 
         """
         if self.grid_edges is None or self.active_mask is None:
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("grid_edges", "active_mask")
-                    if getattr(self, name) is None
-                ),
-            )
+            raise LayoutNotBuiltError(type(self).__name__, "linear_point_to_bin_ind")
 
         full_grid_ind = _find_bin_for_linear_position(
             data_points,
@@ -371,9 +336,7 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         # _find_bin_for_linear_position returns indices into the FULL (gap-
         # inclusive) bin list. Remap to active-bin indices: active bins are
         # numbered 0..n_active-1 in mask order; inactive/gap bins -> -1.
-        n_total_bins = self.active_mask.size
-        full_to_active = np.full(n_total_bins, -1, dtype=int)
-        full_to_active[self.active_mask] = np.arange(int(self.active_mask.sum()))
+        full_to_active = mask_active_map(self.active_mask)
 
         active_ind = np.full(full_grid_ind.shape, -1, dtype=int)
         in_range = full_grid_ind >= 0
@@ -390,23 +353,12 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
 
         Raises
         ------
-        RuntimeError
-            If `grid_edges` or `active_mask` is not populated.
+        LayoutNotBuiltError
+            If the layout has not been built.
 
         """
-        if self.grid_edges is None or self.active_mask is None:  # pragma: no cover
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("grid_edges", "active_mask")
-                    if getattr(self, name) is None
-                ),
-            )
-        if not self.grid_edges or self.grid_edges[0].size <= 1:  # pragma: no cover
-            raise ValueError(
-                "grid_edges (1D) are not properly defined for length calculation.",
-            )
+        if self.grid_edges is None or self.active_mask is None:
+            raise LayoutNotBuiltError(type(self).__name__, "bin_sizes")
 
         all_1d_bin_lengths = np.diff(self.grid_edges[0])
         return all_1d_bin_lengths[self.active_mask]

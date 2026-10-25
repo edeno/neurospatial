@@ -80,7 +80,7 @@ area = field_size(env, fields[0])
 # Returns: area in squared physical units (e.g., cm²)
 ```
 
-Field size is computed as the sum of individual bin areas. For regular grids, each bin has area ≈ `bin_size²`. For irregular graphs, areas are estimated from Voronoi cell volumes.
+Field size is the sum of the field's bin sizes, `env.bin_sizes`. On a regular grid each bin has area `bin_size²`; hexagonal and triangular-mesh bins use their own cell areas.
 
 ### Field Centroid
 

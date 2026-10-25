@@ -420,13 +420,14 @@ def plot_track(
     bin_centers: NDArray[np.float64],
     connectivity: nx.Graph,
     grid_edges: tuple[NDArray[np.float64], ...] | None,
-    **kwargs: Any,
+    figsize: tuple[float, float] = (7, 7),
 ) -> Axes:
     """Draw the track graph, active bin centers and projected linear bin edges."""
     import matplotlib.pyplot as plt
 
     if ax is None:
-        _, ax = plt.subplots(figsize=(7, 7))
+        _, ax = plt.subplots(figsize=figsize)
+    ax.set_title(f"{title} Layout")
     original_node_pos = nx.get_node_attributes(linearization.graph, "pos")
     nx.draw_networkx_nodes(
         linearization.graph,
@@ -482,8 +483,15 @@ def _plot_track_linear(
         **kwargs,
     )
     if grid_edges is not None:
-        for grid_line in grid_edges[0]:
-            ax.axvline(grid_line, color="gray", linestyle="--", alpha=0.5)
+        ax.vlines(
+            grid_edges[0],
+            0,
+            1,
+            transform=ax.get_xaxis_transform(),
+            colors="gray",
+            linestyles="--",
+            alpha=0.5,
+        )
     ax.set_title(f"{title} Layout")
     ax.set_xlabel("Linearized Position")
     ax.set_ylabel("Bin Index")
