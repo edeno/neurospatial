@@ -6,12 +6,43 @@ and pair triangles that share a side.
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 import shapely
 from numpy.typing import NDArray
 from scipy.spatial import Delaunay, QhullError
 from shapely.geometry import Polygon
+
+from neurospatial._exceptions import _format_error
+
+# Ring segments shorter than this fraction of the point spacing are not split.
+_SHORTEST_SPLIT = 1e-6
+# Refinement may add points up to this multiple of the starting points.
+_MAX_GROWTH = 50
+# A triangle whose doubled area is below this fraction of its longest side
+# squared is flat: its corners are collinear to within rounding.
+_FLAT_TRIANGLE = 1e-12
+
+
+@dataclass(frozen=True)
+class _MeshTriangulation:
+    """Triangles over ``points``: what the mesh engine keeps of a Delaunay.
+
+    Attributes
+    ----------
+    points : ndarray of float64, shape (n_points, 2)
+        Triangle corners, in the polygon's coordinates.
+    simplices : ndarray of int, shape (n_triangles, 3)
+        Corner indices of each triangle.
+    neighbors : ndarray of int, shape (n_triangles, 3)
+        Triangle across each side, -1 on the hull, as in
+        ``scipy.spatial.Delaunay.neighbors``.
+    """
+
+    points: NDArray[np.float64]
+    simplices: NDArray[np.intp]
+    neighbors: NDArray[np.intp]
 
 
 # --------------------------------------------------------------------------
@@ -90,14 +121,17 @@ def _triangulate_points(sample_points: NDArray[np.float64]) -> Delaunay:
 
 
 def _filter_active_simplices_by_centroid(
-    triangulation: Delaunay,
+    triangulation: _MeshTriangulation | Delaunay,
     boundary_polygon: Polygon,
 ) -> tuple[NDArray[np.int_], NDArray[np.float64]]:
-    """Keep the Delaunay triangles whose centroid lies in or on the polygon.
+    """Keep the triangles with area whose centroid lies in or on the polygon.
+
+    Collinear samples along the outline can form flat triangles on the
+    triangulation's hull; they cover no area and are not bins.
 
     Parameters
     ----------
-    triangulation : scipy.spatial.Delaunay
+    triangulation : _MeshTriangulation or scipy.spatial.Delaunay
         Triangulation of the lattice and ring sample points.
     boundary_polygon : shapely.geometry.Polygon
         Polygon the mesh covers.
@@ -115,10 +149,19 @@ def _filter_active_simplices_by_centroid(
     if simplices.shape[0] == 0:
         return np.array([], dtype=int), np.empty((0, 2), dtype=float)
 
-    # (1) compute centroids of each triangle
     triangle_vertices = points[simplices]  # (M, 3, 2)
     all_centroids = np.mean(triangle_vertices, axis=1)  # (M, 2)
-    active_mask = shapely.covers(boundary_polygon, shapely.points(all_centroids))
+    first, second = np.moveaxis(
+        triangle_vertices[:, 1:] - triangle_vertices[:, :1], 1, 0
+    )
+    doubled_area = np.abs(first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0])
+    sides = np.linalg.norm(
+        triangle_vertices - np.roll(triangle_vertices, 1, axis=1), axis=2
+    )
+    flat = doubled_area <= _FLAT_TRIANGLE * sides.max(axis=1) ** 2
+    active_mask = ~flat & shapely.covers(
+        boundary_polygon, shapely.points(all_centroids)
+    )
 
     active_original_indices = np.flatnonzero(active_mask)
     return active_original_indices, all_centroids
@@ -161,10 +204,6 @@ def mesh_pairs(
     lower = np.broadcast_to(np.arange(n_bins, dtype=np.intp)[:, None], other.shape)
     keep = other > lower
     return np.column_stack((lower[keep], other[keep]))
-
-
-# Ring segments shorter than this fraction of the point spacing are not split.
-_SHORTEST_SPLIT = 1e-6
 
 
 def _sample_polygon_boundary(
@@ -225,7 +264,7 @@ def _conforming_triangulation(
     point_spacing: float,
     triangulate: Callable[[NDArray[np.float64]], Delaunay],
     max_rounds: int = 64,
-) -> Delaunay:
+) -> _MeshTriangulation:
     """Triangulate so that every ring segment of the polygon is a triangle side.
 
     A Delaunay triangulation of the lattice and ring samples can bridge a
@@ -245,9 +284,23 @@ def _conforming_triangulation(
     point_spacing : float
         Spacing of the ring samples.
     triangulate : callable
-        Delaunay triangulation of an ``(n_points, 2)`` array.
+        Delaunay triangulation of an ``(n_points, 2)`` array, called on the
+        points shifted so the polygon's lower-left bound is the origin.
     max_rounds : int, default 64
         Rounds of segment splitting before giving up.
+
+    Returns
+    -------
+    _MeshTriangulation
+        Triangles over the original (unshifted) points whose sides include
+        every ring segment.
+
+    Raises
+    ------
+    ValueError
+        If refinement makes no progress (Qhull drops a split point), would
+        grow past ``_MAX_GROWTH`` times the starting points, or segments are
+        still missing after ``max_rounds`` rounds.
 
     Notes
     -----
@@ -255,28 +308,27 @@ def _conforming_triangulation(
     split: Qhull merges points that close, so splitting could not add it,
     and a triangle crossing it misplaces no measurable area. Each segment is
     therefore halved at most about 20 times.
-
-    Returns
-    -------
-    scipy.spatial.Delaunay
-        Triangulation whose sides include every ring segment.
-
-    Raises
-    ------
-    ValueError
-        If segments are still missing after ``max_rounds`` rounds.
     """
     ring_points, segments = _sample_polygon_boundary(boundary_polygon, point_spacing)
     points = np.vstack([interior_points, ring_points])
     segments = segments + len(interior_points)
+    # Triangulate near the origin: far from it, float spacing is too coarse
+    # for Qhull to place the midpoints, and refinement makes no progress.
+    origin = np.asarray(boundary_polygon.bounds[:2], dtype=np.float64)
+    budget = _MAX_GROWTH * len(points)
+    added = np.empty(0, dtype=np.intp)
     for _ in range(max_rounds):
-        triangulation = triangulate(points)
+        triangulation = triangulate(points - origin)
         # Compare points by their first identical copy: Qhull keeps one of
         # a lattice point and a ring sample at the same place.
         _, first, inverse = np.unique(
             points, axis=0, return_index=True, return_inverse=True
         )
         same = first[inverse.ravel()]
+        vertices = np.zeros(len(points), dtype=bool)
+        vertices[same[triangulation.simplices]] = True
+        if not vertices[same[added]].all():
+            raise ValueError(_unfollowed_outline("a split point was dropped"))
         sides = same[triangulation.simplices[:, [[0, 1], [1, 2], [2, 0]]]]
         sides = np.sort(sides.reshape(-1, 2), axis=1)
         wanted = np.sort(same[segments], axis=1)
@@ -289,21 +341,32 @@ def _conforming_triangulation(
         )
         missing &= lengths > _SHORTEST_SPLIT * point_spacing
         if not missing.any():
-            return triangulation
+            return _MeshTriangulation(
+                points, triangulation.simplices, triangulation.neighbors
+            )
         low, high = segments[missing].T
-        middles = np.arange(n, n + len(low), dtype=np.intp)
+        if n + len(low) > budget:
+            raise ValueError(
+                _unfollowed_outline(f"it would need more than {budget} points")
+            )
+        added = np.arange(n, n + len(low), dtype=np.intp)
         points = np.vstack([points, (points[low] + points[high]) / 2])
         segments = np.vstack(
             [
                 segments[~missing],
-                np.column_stack((low, middles)),
-                np.column_stack((middles, high)),
+                np.column_stack((low, added)),
+                np.column_stack((added, high)),
             ]
         )
-    raise ValueError(
-        f"The polygon's outline could not be followed by the mesh after "
-        f"{max_rounds} rounds of splitting its edges. Why: a very sharp corner "
-        "or a gap far narrower than point_spacing needs ever smaller "
-        "triangles. Fix: use a smaller point_spacing, or simplify the polygon "
-        "(e.g. polygon.simplify(point_spacing / 10))."
+    raise ValueError(_unfollowed_outline(f"{max_rounds} rounds were not enough"))
+
+
+def _unfollowed_outline(reason: str) -> str:
+    """The refusal for an outline the mesh could not follow."""
+    return _format_error(
+        f"The mesh could not follow the polygon's outline: {reason}.",
+        why="Why: a very sharp corner or a gap far narrower than point_spacing "
+        "needs ever smaller triangles along it.",
+        fix="use a smaller point_spacing, or simplify the polygon, e.g. "
+        "polygon.simplify(point_spacing / 10)",
     )

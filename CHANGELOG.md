@@ -93,6 +93,9 @@
   Every ring of the polygon is now a chain of triangle sides, so a hole or
   notch narrower than `point_spacing` is followed too: a 0.2-wide hole in a
   10 x 10 square was bridged by triangles that covered 97 of its 98.8 area.
+  Meshes are triangulated near the origin (the polygon's lower-left bound),
+  so they no longer depend on where the polygon lies; a mesh away from the
+  origin may pick the other, equally valid diagonal in lattice cells.
 - Bins that meet only outside the arena's outline are no longer neighbors,
   in every environment with a known outline (`from_polygon`,
   `from_samples(arena=...)`, `rebin`, `from_bins`). Their centers can both

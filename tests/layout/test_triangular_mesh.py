@@ -541,18 +541,22 @@ class TestTriangularMeshLayoutPlot:
         plt.close(fig)
 
 
+@pytest.mark.parametrize("offset", [0.0, 1e8])
 @pytest.mark.parametrize("angle", [5.0, 17.0, 45.0, 61.5])
-def test_rotated_polygon_mesh_stays_small_and_covers_it(angle):
+def test_rotated_polygon_mesh_stays_small_and_covers_it(angle, offset):
     """A rotated outline needs no refinement beyond its ring samples.
 
     Computing each edge's end separately left a near-duplicate copy of every
     rotated vertex, a segment Qhull could never keep, so refinement grew
-    without bound (48 to 8,262 points in 12 rounds).
+    without bound (48 to 8,262 points in 12 rounds). Far from the origin,
+    Qhull could not place the split points either (46 to 5,146 points in 9
+    rounds at 1e8), so the points are triangulated near the origin.
     """
     from shapely import affinity
 
-    polygon = affinity.rotate(
-        shapely.geometry.box(0, 0, 10, 10), angle, origin="center"
+    square = shapely.geometry.box(0, 0, 10, 10)
+    polygon = affinity.translate(
+        affinity.rotate(square, angle, origin="center"), offset, offset
     )
     layout = TriangularMeshLayout()
     layout.build(boundary_polygon=polygon, point_spacing=2.0)
@@ -560,4 +564,6 @@ def test_rotated_polygon_mesh_stays_small_and_covers_it(angle):
     interior = _generate_interior_points_for_mesh(polygon, 2.0)
     ring, _ = _sample_polygon_boundary(polygon, 2.0)
     assert len(binning.shapes.points) <= 2 * (len(interior) + len(ring))
-    np.testing.assert_allclose(binning.bins.sizes.sum(), polygon.area, rtol=1e-9)
+    # Areas computed at 1e8 keep about 1e-7 of their precision.
+    rtol = 1e-9 if offset == 0 else 1e-6
+    np.testing.assert_allclose(binning.bins.sizes.sum(), polygon.area, rtol=rtol)

@@ -6,7 +6,6 @@ from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
@@ -26,6 +25,7 @@ from neurospatial.layout.helpers.triangular_mesh import (
     _conforming_triangulation,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
+    _MeshTriangulation,
     _triangulate_points,
     mesh_pairs,
 )
@@ -50,7 +50,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
     active_mask: NDArray[np.bool_] | None
 
     # Internal state
-    _full_delaunay_tri: Delaunay | None
+    _full_delaunay_tri: _MeshTriangulation | None
     _active_original_simplex_indices: (
         NDArray[np.int_] | None
     )  # Store original indices of active ones
