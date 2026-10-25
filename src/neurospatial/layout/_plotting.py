@@ -427,7 +427,7 @@ def plot_track(
 
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
-    ax.set_title(title)
+    ax.set_title(f"{title} Layout")
     original_node_pos = nx.get_node_attributes(linearization.graph, "pos")
     nx.draw_networkx_nodes(
         linearization.graph,
