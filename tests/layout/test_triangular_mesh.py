@@ -313,20 +313,35 @@ def test_mesh_covers_the_polygon_exactly(polygon, point_spacing):
 class TestTriangularMeshLayoutPointLookup:
     """Tests for the point lookup of a TriangularMeshLayout's binning."""
 
-    def test_points_inside_triangles(self):
-        """Test mapping points that fall inside triangles."""
+    def test_points_map_to_the_triangle_that_contains_them(self):
+        """Each point gets the bin of the active triangle holding it, else -1."""
         layout = TriangularMeshLayout()
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         layout.build(poly, point_spacing=3.0)
+        shapes = layout.binning().shapes
+        corners = shapes.points[shapes.triangles]  # (n_bins, 3, 2)
+        np.testing.assert_allclose(corners.mean(axis=1), layout.bin_centers)
 
-        # Points inside the polygon
-        test_points = np.array([[5.0, 5.0], [2.0, 2.0], [8.0, 8.0]])
-        bin_indices = layout.binning().locator.locate(test_points)
+        points = np.random.default_rng(0).uniform(-2.0, 12.0, (500, 2))
+        # Barycentric coordinates of every point in every triangle.
+        origin, edge_1, edge_2 = (
+            corners[:, 0],
+            corners[:, 1] - corners[:, 0],
+            corners[:, 2] - corners[:, 0],
+        )
+        basis = np.stack((edge_1, edge_2), axis=-1)  # (n_bins, 2, 2)
+        offsets = points[:, None] - origin[None]  # (n_points, n_bins, 2)
+        weights = np.einsum("bij,pbj->pbi", np.linalg.inv(basis), offsets)
+        inside = np.all(weights > 1e-9, axis=2) & (weights.sum(axis=2) < 1 - 1e-9)
+        on_an_edge = ~inside.any(axis=1) & shapely.contains_xy(
+            poly, points[:, 0], points[:, 1]
+        )
+        assert inside.sum(axis=1).max() == 1
+        assert not on_an_edge.any()
+        expected = np.where(inside.any(axis=1), inside.argmax(axis=1), -1)
+        assert np.any(expected == -1)
 
-        assert bin_indices.shape[0] == 3
-        # All points should map to valid bins (not -1)
-        assert np.all(bin_indices >= 0)
-        assert np.all(bin_indices < layout.bin_centers.shape[0])
+        np.testing.assert_array_equal(layout.binning().locator.locate(points), expected)
 
     def test_points_outside_polygon(self):
         """Test that points outside polygon map to -1."""
@@ -340,21 +355,6 @@ class TestTriangularMeshLayoutPointLookup:
 
         assert bin_indices.shape[0] == 2
         assert np.all(bin_indices == -1)
-
-    def test_mixed_inside_outside_points(self):
-        """Test mixture of points inside and outside."""
-        layout = TriangularMeshLayout()
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        layout.build(poly, point_spacing=3.0)
-
-        test_points = np.array([[5.0, 5.0], [20.0, 20.0], [2.0, 2.0]])
-        bin_indices = layout.binning().locator.locate(test_points)
-
-        assert bin_indices.shape[0] == 3
-        # First and third should be valid, second should be -1
-        assert bin_indices[0] >= 0
-        assert bin_indices[1] == -1
-        assert bin_indices[2] >= 0
 
     def test_points_on_the_outline_belong_to_a_bin(self):
         """The outline is part of the arena, so its points have a bin."""
@@ -376,16 +376,17 @@ class TestTriangularMeshLayoutPointLookup:
         np.testing.assert_array_equal(env.bin_at(beyond), -1)
 
     def test_single_point_input(self):
-        """Test point lookup with a single point."""
+        """A single (2,) point is looked up like a one-row (1, 2) array."""
         layout = TriangularMeshLayout()
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         layout.build(poly, point_spacing=3.0)
 
-        test_point = np.array([5.0, 5.0])
-        bin_index = layout.binning().locator.locate(test_point)
+        locator = layout.binning().locator
+        bin_index = locator.locate(np.array([5.3, 4.1]))
 
         assert bin_index.shape == (1,)
         assert bin_index[0] >= 0
+        np.testing.assert_array_equal(bin_index, locator.locate(np.array([[5.3, 4.1]])))
 
     def test_unbuild_layout_raises_error(self):
         """Test that asking an unbuilt layout for its binning raises RuntimeError."""

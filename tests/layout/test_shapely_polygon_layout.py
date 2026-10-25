@@ -9,14 +9,16 @@ from neurospatial.layout.engines.shapely_polygon import (
 )
 
 
-def test_point_inside_polygon():
-    """A point in the interior of a convex polygon maps to a valid bin."""
+def test_point_inside_polygon_maps_to_its_containing_cell():
+    """A point in a convex polygon maps to the unit cell that holds it."""
     poly = Polygon([(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)])
     layout = ShapelyPolygonLayout()
     layout.build(polygon=poly, bin_size=1.0)
 
-    result = layout.binning().locator.locate(np.array([[5.0, 5.0]]))
-    assert result[0] >= 0
+    points = np.random.default_rng(0).uniform(0.0, 10.0, (200, 2))
+    result = layout.binning().locator.locate(points)
+    assert np.all(result >= 0)
+    np.testing.assert_array_equal(layout.bin_centers[result], np.floor(points) + 0.5)
 
 
 def test_point_outside_polygon_returns_negative_one():
