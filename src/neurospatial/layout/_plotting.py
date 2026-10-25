@@ -483,8 +483,15 @@ def _plot_track_linear(
         **kwargs,
     )
     if grid_edges is not None:
-        for grid_line in grid_edges[0]:
-            ax.axvline(grid_line, color="gray", linestyle="--", alpha=0.5)
+        ax.vlines(
+            grid_edges[0],
+            0,
+            1,
+            transform=ax.get_xaxis_transform(),
+            colors="gray",
+            linestyles="--",
+            alpha=0.5,
+        )
     ax.set_title(f"{title} Layout")
     ax.set_xlabel("Linearized Position")
     ax.set_ylabel("Bin Index")
