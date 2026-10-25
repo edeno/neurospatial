@@ -46,10 +46,8 @@ def _create_hex_grid(
     NDArray[np.float64],  # bin_centers
     tuple[int, int],  # centers_shape
     float,  # hex_radius
-    float,  # hex_orientation
     float,  # min_x
     float,  # min_y
-    Sequence[tuple[float, float]],  # effective_dimension_range
 ]:
     """Generate a 2D hexagonal grid (pointy-top) that covers either:
     - A user-specified bounding box (`dimension_range`), or
@@ -73,14 +71,10 @@ def _create_hex_grid(
         The 2D shape of the conceptual hex-grid, before flattening.
     hex_radius : float
         Distance from center to any vertex (hexagon side length).
-    hex_orientation : float
-        Orientation in radians (0.0 = point-up).
     min_x : float
         Minimum x coordinate of the bounding box (grid origin).
     min_y : float
         Minimum y coordinate of the bounding box (grid origin).
-    effective_dimension_range : [ (min_x, max_x), (min_y, max_y) ]
-        The actual range used (either user‐provided or inferred).
 
     Raises
     ------
@@ -94,8 +88,6 @@ def _create_hex_grid(
     hexagon_width = float(
         validate_cell_size(hexagon_width, name="hexagon_width", scalar_only=True)[0]
     )
-
-    hex_orientation = 0.0  # point-up
 
     # 2) Clean & validate positions
     if positions is not None:
@@ -116,7 +108,6 @@ def _create_hex_grid(
         (ux0, ux1), (uy0, uy1) = dimension_range
         min_x, max_x = sorted((float(ux0), float(ux1)))
         min_y, max_y = sorted((float(uy0), float(uy1)))
-        effective_range = [(min_x, max_x), (min_y, max_y)]
     else:
         if ds_arr.shape[0] == 0:
             raise ValueError("`positions` is empty; cannot infer bounding box.")
@@ -124,7 +115,6 @@ def _create_hex_grid(
         max_vals = np.max(ds_arr, axis=0)
         min_x, max_x = float(min_vals[0]), float(max_vals[0])
         min_y, max_y = float(min_vals[1]), float(max_vals[1])
-        effective_range = [(min_x, max_x), (min_y, max_y)]
 
     # 4) Compute hex geometry constants
     vertical_step = (np.sqrt(3.0) / 2.0) * hexagon_width
@@ -155,15 +145,7 @@ def _create_hex_grid(
     bin_centers = np.column_stack((x_coords.ravel(), y_coords.ravel()))
     centers_shape = (n_hex_rows, n_hex_cols)
 
-    return (
-        bin_centers,
-        centers_shape,
-        hex_radius,
-        hex_orientation,
-        min_x,
-        min_y,
-        effective_range,
-    )
+    return bin_centers, centers_shape, hex_radius, min_x, min_y
 
 
 def _infer_active_bins_from_hex_grid(

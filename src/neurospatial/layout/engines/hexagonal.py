@@ -113,15 +113,14 @@ class HexagonalLayout(_NeighborPairsMixin):
             full_grid_bin_centers,
             self.grid_shape,
             self.hex_radius_,
-            self.hex_orientation_,
             self.grid_offset_x_,
             self.grid_offset_y_,
-            _,
         ) = _create_hex_grid(
             positions=positions,
             dimension_range=dimension_ranges,
             hexagon_width=self.hexagon_width,
         )
+        self.hex_orientation_ = 0.0  # point-up
 
         # Safety check: warn or error if grid is very large
         n_dims = 2  # Hexagonal is always 2D
