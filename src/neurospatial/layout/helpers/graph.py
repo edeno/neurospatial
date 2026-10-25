@@ -239,7 +239,9 @@ def track_pairs(
     pairs : ndarray of intp, shape (n_pairs, 2)
         Pairs ``(lower, higher)`` of bin IDs in authoritative order.
     distances : ndarray of float64, shape (n_pairs,)
-        Euclidean distance between the n-D centers of each pair.
+        Along-track distance between the centers of each pair: the straight
+        distance on one segment, and the distance from each center to the
+        shared node, summed, across a junction.
 
     """
     # --- 1. Intra-segment pairs: consecutive bins on the same original edge ---
@@ -257,24 +259,33 @@ def track_pairs(
     ends = np.r_[starts[1:] - 1, len(by_segment) - 1]
     bin_edge_order_arr = np.column_stack((by_segment[starts], by_segment[ends]))
 
+    distances = [
+        euclidean_pair_distances(bin_centers_nd, np.column_stack((first[0], second[0])))
+    ]
+
     # --- 2. Inter-segment pairs: end bins of the segments meeting at a node ---
     # A node is one point of the track, so every two segment ends there are
-    # neighbors.
+    # neighbors, and the path between them runs through the node.
     ends_at_node: dict[object, list[int]] = {node: [] for node in graph.nodes}
     for segment_ends, segment_nodes in zip(bin_edge_order_arr, edge_order, strict=True):
         for end_bin, node in zip(segment_ends, segment_nodes, strict=True):
             ends_at_node[node].append(int(end_bin))
-    for ends in ends_at_node.values():
+    node_positions = nx.get_node_attributes(graph, "pos")
+    for node, ends in ends_at_node.items():
+        ends_arr = np.asarray(ends, dtype=np.intp)
+        to_node = np.linalg.norm(
+            bin_centers_nd[ends_arr] - np.asarray(node_positions[node], dtype=float),
+            axis=1,
+        )
         low, high = np.triu_indices(len(ends), k=1)
-        first.append(np.asarray(ends, dtype=np.intp)[low])
-        second.append(np.asarray(ends, dtype=np.intp)[high])
+        first.append(ends_arr[low])
+        second.append(ends_arr[high])
+        distances.append(to_node[low] + to_node[high])
 
-    lower = np.concatenate(first).astype(np.intp)
-    upper = np.concatenate(second).astype(np.intp)
     return order_neighbor_pairs(
-        lower,
-        upper,
-        euclidean_pair_distances(bin_centers_nd, np.column_stack((lower, upper))),
+        np.concatenate(first).astype(np.intp),
+        np.concatenate(second).astype(np.intp),
+        np.concatenate(distances),
     )
 
 

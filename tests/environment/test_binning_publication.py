@@ -226,7 +226,10 @@ def test_faces_match_layout_and_cache_lifetime(
     np.testing.assert_array_equal(faces.edges, env._binning.connections.pairs)
     np.testing.assert_array_equal(faces.volumes, env.bin_sizes)
     if env.is_linearized_track:
-        assert np.any(faces.distance != env._binning.connections.pair_distances)
+        # Both measure along the track, through the junction node.
+        np.testing.assert_allclose(
+            faces.distance, env._binning.connections.pair_distances
+        )
     assert env._binning.build_faces() is not env._binning.build_faces()
 
     field = np.arange(env.n_bins, dtype=float)

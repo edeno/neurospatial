@@ -222,3 +222,32 @@ def test_every_segment_end_at_a_junction_is_a_neighbor(maze):
         if reference is None:
             reference = distances
         assert distances == pytest.approx(reference), (maze, order)
+
+
+@pytest.mark.parametrize("maze", sorted(_STAR_MAZES))
+def test_cross_junction_edges_are_measured_along_the_track(maze):
+    """An edge between two arms is the path through the junction node.
+
+    The track is the union of its segments, so an animal moving between the
+    arm ends at a junction travels through the node: center to node, then
+    node to center. The same length is the flux distance of the track faces,
+    so the connectivity graph and smoothing agree.
+    """
+    graph = _star_graph(_STAR_MAZES[maze])
+    layout = GraphLayout()
+    layout.build(
+        graph_definition=graph,
+        edge_order=[(0, node) for node in graph.neighbors(0)],
+        edge_spacing=0.0,
+        bin_size=2.5,
+    )
+    ends = list(_junction_bins(layout).values())
+    centers = layout.bin_centers
+    faces = layout.binning().build_faces()
+    face_distance = dict(
+        zip(map(tuple, faces.edges.tolist()), faces.distance, strict=True)
+    )
+    for a, b in itertools.combinations(ends, 2):
+        expected = np.linalg.norm(centers[a]) + np.linalg.norm(centers[b])
+        assert layout.connectivity.edges[a, b]["distance"] == pytest.approx(expected)
+        assert face_distance[min(a, b), max(a, b)] == pytest.approx(expected)

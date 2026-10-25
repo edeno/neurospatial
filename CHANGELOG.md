@@ -69,6 +69,11 @@
   geodesic distance, smoothing and decoder transitions across the junction
   were too long for some arm pairs, and which pairs depended on `edge_order`.
   `env.edge_pairs` gains the missing junction pairs.
+- A track edge between two segments now has the along-track length through
+  the junction node as its `distance`, not the straight chord between the
+  bin centers that cuts the corner. Graph distances across a bend or
+  junction now match the track faces used for smoothing; at a 90° bend with
+  5 cm bins the edge grows from 3.54 to 5.0 cm.
 
 ### Spatial geometry review
 
