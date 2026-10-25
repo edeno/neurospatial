@@ -7,6 +7,7 @@ import shapely
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
+from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry import Binning, Outline
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
@@ -125,9 +126,13 @@ class ShapelyPolygonLayout(_GridMixin):
         return replace(super().binning(), outline=self.outline())
 
     def outline(self) -> Outline:
-        """Return the defining polygon, including any interior rings."""
+        """Return the defining polygon, including any interior rings.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
         if self.polygon_definition_ is None:
-            raise RuntimeError(
-                "Polygon definition is missing; ensure build() was called successfully."
-            )
+            raise LayoutNotBuiltError(type(self).__name__, "outline")
         return Outline(self.polygon_definition_)

@@ -185,7 +185,7 @@ class _KDTreeMixin:
         if self._locator is None:
             centers = getattr(self, "bin_centers", None)
             if centers is None or len(centers) == 0:
-                raise LayoutNotBuiltError(type(self).__name__, "bin_centers")
+                raise LayoutNotBuiltError(type(self).__name__, "locator")
             self._build_kdtree(centers)
         assert self._locator is not None
         return self._locator
@@ -219,14 +219,7 @@ class _GridMixin(_NeighborPairsMixin):
         restoration omits it and does not infer a historical preference.
         """
         if self.grid_edges is None or self.grid_shape is None:
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("grid_edges", "grid_shape")
-                    if getattr(self, name) is None
-                ),
-            )
+            raise LayoutNotBuiltError(type(self).__name__, "locator")
         self._locator = RectilinearLocator(
             self.grid_edges,
             self.grid_shape,
@@ -343,19 +336,12 @@ class _GridMixin(_NeighborPairsMixin):
 
         Raises
         ------
-        RuntimeError
-            If `grid_edges` or `bin_centers` is not populated.
+        LayoutNotBuiltError
+            If the layout has not been built.
 
         """
-        if self.grid_edges is None or self.bin_centers is None:  # pragma: no cover
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("grid_edges", "bin_centers")
-                    if getattr(self, name) is None
-                ),
-            )
+        if self.grid_edges is None or self.bin_centers is None:
+            raise LayoutNotBuiltError(type(self).__name__, "bin_sizes")
         if not self.grid_edges or not all(
             len(e) > 1 for e in self.grid_edges
         ):  # pragma: no cover

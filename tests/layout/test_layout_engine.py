@@ -11,6 +11,7 @@ from neurospatial.environment import Environment
 from neurospatial.geometry import graph_from_binning
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import (
+    _ENGINES,
     _size_parameter,
     create_layout,
     get_layout_parameters,
@@ -863,3 +864,39 @@ def test_track_plot_honors_figsize_and_refuses_unknown_options(
     plt.close(ax.figure)
     with pytest.raises(TypeError, match="node_kwargs"):
         layout.plot(node_kwargs={})
+
+
+_UNBUILT_CALLS = [
+    (engine, method)
+    for engine in _ENGINES
+    for method in (
+        "binning",
+        "bin_sizes",
+        "bin_shapes",
+        "outline",
+        "locator",
+        "linear_point_to_bin_ind",
+    )
+    if hasattr(engine, method)
+    # An unbuilt mesh has no outline yet: outline() returns None.
+    and (engine.__name__, method) != ("TriangularMeshLayout", "outline")
+]
+
+
+@pytest.mark.parametrize(
+    ("engine", "method"),
+    _UNBUILT_CALLS,
+    ids=[f"{engine.__name__}.{method}" for engine, method in _UNBUILT_CALLS],
+)
+def test_an_unbuilt_engine_names_the_method_called(engine, method):
+    """Calling an unbuilt engine raises LayoutNotBuiltError naming that method.
+
+    The message names what the caller can act on, not private state such as
+    ``_full_delaunay_tri`` or ``hex_radius_``.
+    """
+    call = getattr(engine(), method)
+    args = (np.zeros(1),) if method == "linear_point_to_bin_ind" else ()
+    with pytest.raises(LayoutNotBuiltError) as excinfo:
+        call(*args)
+    assert excinfo.value.layout_name == engine.__name__
+    assert excinfo.value.attribute == method

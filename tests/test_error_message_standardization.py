@@ -266,19 +266,21 @@ class TestMixinsErrorMessages:
 
     def test_grid_not_built_error_shows_helpful_message(self):
         """Test that accessing grid methods before building shows helpful error."""
+        from neurospatial import LayoutNotBuiltError
         from neurospatial.layout.mixins import _GridMixin
 
         # Create a minimal instance
         mixin = _GridMixin()
 
-        with pytest.raises(RuntimeError) as exc_info:
+        with pytest.raises(LayoutNotBuiltError) as exc_info:
             mixin.locator()
 
         error_msg = str(exc_info.value)
-        # Should mention that grid is not built
-        assert "not built" in error_msg.lower() or "missing" in error_msg.lower()
-        # Should mention what's missing (edges or shape)
-        assert ("edges" in error_msg.lower()) or ("shape" in error_msg.lower())
+        # Should mention that the layout is not built
+        assert "not built" in error_msg.lower()
+        # Should name the method called and how to build the layout
+        assert "_GridMixin.locator" in error_msg
+        assert "build()" in error_msg
 
     def test_points_for_tree_not_2d_shows_actual_shape(self):
         """Test that _build_kdtree with wrong shape shows actual shape."""

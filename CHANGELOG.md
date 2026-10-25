@@ -169,6 +169,12 @@
   "0.30000000000000004 cm". Its docstring now says which options napari
   ignores and that the fastplotlib backend cannot draw a scale bar; it
   claimed several options worked on all backends.
+- Calling an unbuilt layout engine raises `LayoutNotBuiltError` naming the
+  method that was called, such as `TriangularMeshLayout.binning` or
+  `HexagonalLayout.bin_sizes`. Messages named private state
+  (`_full_delaunay_tri`, `hex_radius_`, "hexagonal geometry") or an
+  attribute the method read, and `ShapelyPolygonLayout.outline()` raised a
+  bare `RuntimeError`.
 
 ### Spatial geometry review
 

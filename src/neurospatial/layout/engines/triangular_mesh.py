@@ -174,17 +174,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             self._full_delaunay_tri is None
             or self._original_simplex_to_active_idx_map is None
         ):
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in (
-                        "_full_delaunay_tri",
-                        "_original_simplex_to_active_idx_map",
-                    )
-                    if getattr(self, name) is None
-                ),
-            )
+            raise LayoutNotBuiltError(type(self).__name__, "locator")
         simplex_to_active = np.full(
             len(self._full_delaunay_tri.simplices), -1, dtype=np.intp
         )
@@ -214,7 +204,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         """
         tri = self._full_delaunay_tri
         if tri is None or self._active_original_simplex_indices is None:
-            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
+            raise LayoutNotBuiltError(type(self).__name__, "binning")
         pairs, distances = self._neighbor_pairs()
         return assemble_binning(
             pairs,
@@ -253,7 +243,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
             self._full_delaunay_tri is None
             or self._active_original_simplex_indices is None
         ):
-            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
+            raise LayoutNotBuiltError(type(self).__name__, "bin_shapes")
         return TriangleShapes(
             self._full_delaunay_tri.points,
             self._full_delaunay_tri.simplices[self._active_original_simplex_indices],
@@ -282,9 +272,8 @@ class TriangularMeshLayout(_NeighborPairsMixin):
 
         Raises
         ------
-        RuntimeError
-            If the layout is not built (e.g., `_full_delaunay_tri` or
-            `_active_original_simplex_indices` is None).
+        LayoutNotBuiltError
+            If the layout has not been built.
         ValueError
             If the dimensionality is less than 1.
 
@@ -292,18 +281,8 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         if (
             self._full_delaunay_tri is None
             or self._active_original_simplex_indices is None
-        ):  # pragma: no cover
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in (
-                        "_full_delaunay_tri",
-                        "_active_original_simplex_indices",
-                    )
-                    if getattr(self, name) is None
-                ),
-            )
+        ):
+            raise LayoutNotBuiltError(type(self).__name__, "bin_sizes")
 
         # Get the vertices of all active N-simplices
         # .points has shape (total_points, n_dim)

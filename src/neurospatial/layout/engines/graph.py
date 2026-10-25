@@ -315,14 +315,7 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
 
         """
         if self.grid_edges is None or self.active_mask is None:
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("grid_edges", "active_mask")
-                    if getattr(self, name) is None
-                ),
-            )
+            raise LayoutNotBuiltError(type(self).__name__, "linear_point_to_bin_ind")
 
         full_grid_ind = _find_bin_for_linear_position(
             data_points,
@@ -353,19 +346,12 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
 
         Raises
         ------
-        RuntimeError
-            If `grid_edges` or `active_mask` is not populated.
+        LayoutNotBuiltError
+            If the layout has not been built.
 
         """
-        if self.grid_edges is None or self.active_mask is None:  # pragma: no cover
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("grid_edges", "active_mask")
-                    if getattr(self, name) is None
-                ),
-            )
+        if self.grid_edges is None or self.active_mask is None:
+            raise LayoutNotBuiltError(type(self).__name__, "bin_sizes")
         if not self.grid_edges or self.grid_edges[0].size <= 1:  # pragma: no cover
             raise ValueError(
                 "grid_edges (1D) are not properly defined for length calculation.",

@@ -194,7 +194,7 @@ class HexagonalLayout(_NeighborPairsMixin):
             or self.grid_shape is None
             or self._source_flat_to_active_id_map is None
         ):
-            raise LayoutNotBuiltError(type(self).__name__, "hexagonal geometry")
+            raise LayoutNotBuiltError(type(self).__name__, "locator")
         assert len(self.grid_shape) == 2
         flat_to_active = np.full(np.prod(self.grid_shape), -1, dtype=np.intp)
         for source, active in self._source_flat_to_active_id_map.items():
@@ -251,7 +251,7 @@ class HexagonalLayout(_NeighborPairsMixin):
     def bin_shapes(self) -> HexagonShapes:
         """Return the active hexagons in bin order with owned center coordinates."""
         if self.hex_radius_ is None or self.bin_centers is None:
-            raise LayoutNotBuiltError(type(self).__name__, "hex_radius_")
+            raise LayoutNotBuiltError(type(self).__name__, "bin_shapes")
         return HexagonShapes(
             self.bin_centers,
             self.hex_radius_,
@@ -270,19 +270,12 @@ class HexagonalLayout(_NeighborPairsMixin):
 
         Raises
         ------
-        RuntimeError
-            If `hex_radius_` or `bin_centers` is not populated.
+        LayoutNotBuiltError
+            If the layout has not been built.
 
         """
-        if self.hex_radius_ is None or self.bin_centers is None:  # pragma: no cover
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("hex_radius_", "bin_centers")
-                    if getattr(self, name) is None
-                ),
-            )
+        if self.hex_radius_ is None or self.bin_centers is None:
+            raise LayoutNotBuiltError(type(self).__name__, "bin_sizes")
 
         # Area of a regular hexagon: (3 * sqrt(3) / 2) * side_length^2
         # For pointy-top hexagons, side_length (s) is equal to hex_radius_ (R, center to vertex).
