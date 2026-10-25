@@ -9,6 +9,7 @@ from shapely.geometry import Polygon as ShapelyPoly
 from neurospatial import LayoutNotBuiltError, Regions
 from neurospatial.environment import Environment
 from neurospatial.geometry import graph_from_binning
+from neurospatial.layout import ImageMaskLayout
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import (
     _ENGINES,
@@ -910,3 +911,23 @@ def test_an_infinite_position_row_is_a_missing_sample(layout_kind, size):
     expected = create_layout(layout_kind, positions=positions, **{size: 2.0})
     layout = create_layout(layout_kind, positions=with_inf, **{size: 2.0})
     np.testing.assert_array_equal(layout.bin_centers, expected.bin_centers)
+
+
+@pytest.mark.parametrize(
+    ("build", "missing"),
+    [
+        (lambda: create_layout("RegularGrid", positions=np.zeros((3, 2))), "bin_size"),
+        (
+            lambda: ImageMaskLayout().build(image_mask=np.ones((2, 2), dtype=bool)),
+            "pixel_size",
+        ),
+    ],
+    ids=["create_layout", "engine_build"],
+)
+def test_a_missing_build_option_is_named_with_a_fix(build, missing):
+    """Python's bare 'missing a required argument' names neither the engine nor a fix."""
+    with pytest.raises(
+        TypeError, match=rf"build\(\) is missing[^\n]*{missing}"
+    ) as error:
+        build()
+    assert "Why:" in str(error.value) and "Fix:" in str(error.value)

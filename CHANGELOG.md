@@ -208,6 +208,10 @@
   raised `OverflowError`.
 - `ShapelyPolygonLayout` refuses an empty or flat polygon by name; it failed
   with a message about a `(nan, nan)` dimension range.
+- A layout engine's `build()` called without a required option (for
+  example `create_layout("RegularGrid", positions=...)` without `bin_size`)
+  names the engine and the missing option, with a fix, instead of Python's
+  bare "missing a required argument".
 
 ### Spatial geometry review
 
