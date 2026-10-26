@@ -1,15 +1,9 @@
-"""Tests for neurospatial.ops.alignment module.
-
-These tests verify the new import path `neurospatial.ops.alignment` works correctly.
-The module provides probability mapping and similarity transforms between
-spatial environments.
-"""
+"""Tests for probability mapping and similarity transforms between environments."""
 
 import numpy as np
 import pytest
 from scipy.spatial import cKDTree
 
-# Test imports from the new location
 from neurospatial.environment import CartesianSystem
 from neurospatial.ops.alignment import (
     IDW_MIN_DISTANCE,
