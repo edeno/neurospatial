@@ -109,14 +109,13 @@ from neurospatial.ops.distance import (
 )
 
 # Egocentric operations
+from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 from neurospatial.ops.egocentric import (
-    EgocentricFrame,
     allocentric_to_egocentric,
     compute_egocentric_bearing,
     compute_egocentric_distance,
     egocentric_to_allocentric,
 )
-from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 
 # Feature maps sampled at positions
 from neurospatial.ops.feature_sampling import (
@@ -215,7 +214,6 @@ __all__ = [
     "neighbors_within",
     "pairwise_distances",
     # Egocentric
-    "EgocentricFrame",
     "allocentric_to_egocentric",
     "compute_egocentric_bearing",
     "compute_egocentric_distance",

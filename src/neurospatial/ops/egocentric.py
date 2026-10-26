@@ -69,7 +69,6 @@ References
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -82,106 +81,11 @@ if TYPE_CHECKING:
     from neurospatial.ops._protocols import GraphLookupConsumer
 
 __all__ = [
-    "EgocentricFrame",
     "allocentric_to_egocentric",
     "compute_egocentric_bearing",
     "compute_egocentric_distance",
     "egocentric_to_allocentric",
 ]
-
-
-@dataclass(frozen=True)
-class EgocentricFrame:
-    """Egocentric reference frame at a single timepoint.
-
-    Attributes
-    ----------
-    position : NDArray, shape (2,)
-        Animal position in allocentric coordinates.
-    heading : float
-        Animal heading in radians (0=East, pi/2=North in allocentric frame).
-
-    Coordinate Conventions
-    ----------------------
-    **Allocentric (world-centered)**:
-    - 0 radians = East (+x direction)
-    - pi/2 radians = North (+y direction)
-    - Standard mathematical convention
-
-    **Egocentric (animal-centered)**:
-    - Origin at animal's position
-    - +x axis = forward (heading direction)
-    - +y axis = left (90 degrees counterclockwise from heading)
-    - Angles: 0=ahead, pi/2=left, -pi/2=right, +/-pi=behind
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.ops.egocentric import EgocentricFrame
-
-    Animal at origin facing East (heading=0):
-
-    >>> frame = EgocentricFrame(position=np.array([0.0, 0.0]), heading=0.0)
-    >>> # Point 10 units East is 10 units ahead
-    >>> frame.to_egocentric(np.array([[10.0, 0.0]]))
-    array([[10.,  0.]])
-
-    Animal at origin facing North (heading=pi/2):
-
-    >>> frame = EgocentricFrame(position=np.array([0.0, 0.0]), heading=np.pi / 2)
-    >>> # Point 10 units East is now 10 units to the right
-    >>> result = frame.to_egocentric(np.array([[10.0, 0.0]]))
-    >>> np.allclose(result, [[0.0, -10.0]])
-    True
-
-    Round-trip preserves coordinates:
-
-    >>> allocentric = np.array([[5.0, 3.0]])
-    >>> egocentric = frame.to_egocentric(allocentric)
-    >>> recovered = frame.to_allocentric(egocentric)
-    >>> np.allclose(allocentric, recovered)
-    True
-    """
-
-    position: NDArray[np.float64]
-    heading: float
-
-    def to_egocentric(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Transform allocentric points to egocentric coordinates.
-
-        Parameters
-        ----------
-        points : NDArray, shape (n_points, 2)
-            Points in allocentric coordinates.
-
-        Returns
-        -------
-        NDArray, shape (n_points, 2)
-            Points in egocentric coordinates.
-        """
-        centered = points - self.position
-        cos_h, sin_h = np.cos(-self.heading), np.sin(-self.heading)
-        rotation = np.array([[cos_h, -sin_h], [sin_h, cos_h]])
-        result: NDArray[np.float64] = centered @ rotation.T
-        return result
-
-    def to_allocentric(self, ego_points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Transform egocentric points to allocentric coordinates.
-
-        Parameters
-        ----------
-        ego_points : NDArray, shape (n_points, 2)
-            Points in egocentric coordinates.
-
-        Returns
-        -------
-        NDArray, shape (n_points, 2)
-            Points in allocentric coordinates.
-        """
-        cos_h, sin_h = np.cos(self.heading), np.sin(self.heading)
-        rotation = np.array([[cos_h, -sin_h], [sin_h, cos_h]])
-        result: NDArray[np.float64] = (ego_points @ rotation.T) + self.position
-        return result
 
 
 def allocentric_to_egocentric(
