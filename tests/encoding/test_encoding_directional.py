@@ -4439,3 +4439,40 @@ class TestDegreeDefaults:
         )[0]
         rad = head_direction_cell_significance([spikes], times, headings, **kwargs)[0]
         assert deg.observed_score == pytest.approx(rad.observed_score)
+
+
+@pytest.mark.parametrize(
+    ("rate", "occupancy"),
+    [(np.full(12, np.nan), np.zeros(12)), (np.zeros(12), np.ones(12))],
+    ids=["never-visited", "silent"],
+)
+def test_undefined_tuning_metrics_are_nan(rate, occupancy) -> None:
+    """A map with no finite or no positive rate has undefined tuning, not an error."""
+    from neurospatial.encoding.directional import (
+        DirectionalRateResult,
+        DirectionalRatesResult,
+    )
+
+    centers = np.linspace(-np.pi, np.pi, 12, endpoint=False) + np.pi / 12
+    result = DirectionalRateResult(
+        firing_rate=rate,
+        occupancy=occupancy,
+        bin_centers=centers,
+        bin_size=np.pi / 6,
+        bandwidth=None,
+    )
+    assert np.isnan(result.preferred_direction())
+    assert np.isnan(result.preferred_direction_deg())
+    assert np.isnan(result.tuning_width())
+    assert np.isnan(result.tuning_width_deg())
+    assert "undefined" in result.interpretation()
+    population = DirectionalRatesResult(
+        firing_rates=np.vstack([rate, 1.0 + np.cos(centers)]),
+        occupancy=occupancy,
+        bin_centers=centers,
+        bin_size=np.pi / 6,
+        bandwidth=None,
+    )
+    widths = population.tuning_widths()
+    assert np.isnan(widths[0])
+    assert np.isnan(population.summary_table()["tuning_width"].iloc[0])

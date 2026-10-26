@@ -272,8 +272,10 @@ def _tuning_pvalues(
 
 
 def _directional_tuning_width(rates: NDArray, bin_size: float) -> float:
-    """Shared circular metric with the existing valid-bin/count rules."""
+    """Half-width at half-maximum in radians; NaN for a map with no finite rate."""
     rates = np.asarray(rates, dtype=np.float64)
+    if not np.any(np.isfinite(rates)):
+        return float(np.nan)
 
     # Find peak
     peak_idx = int(np.nanargmax(rates))
@@ -389,12 +391,7 @@ def _directional_summary_frame(
     )
     mvls = np.array([_directional_mean_vector_length(row, centers) for row in rates])
     widths = np.array(
-        [
-            _directional_tuning_width(row, result.bin_size)
-            if np.any(np.isfinite(row))
-            else np.nan
-            for row in rates
-        ]
+        [_directional_tuning_width(row, result.bin_size) for row in rates]
     )
     columns = {
         "peak_rate": np.atleast_1d(result.peak_firing_rate()),
@@ -1256,12 +1253,16 @@ class DirectionalRateResult(SpatialResultMixin):
             lines.append(f"Tuning test: p = {pval:.4f}")
         else:
             lines.append("Not classified as HD cell")
-            if not mvl >= min_mvl:
+            if np.isnan(mvl):
+                lines.append(
+                    "  - Mean vector length undefined: no firing in visited "
+                    "heading bins"
+                )
+            elif mvl < min_mvl:
                 lines.append(f"  - Mean vector length too low: {mvl:.3f} < {min_mvl}")
                 lines.append(
-                    f"    {min_mvl} is a screening cutoff (0.4 is a common "
-                    "convention); check it against the MVL distribution of "
-                    "your recordings."
+                    "    The cutoff is a screening convention; check it against "
+                    "the MVL distribution of your recordings."
                 )
             if np.isnan(pval):
                 lines.append(
