@@ -4388,3 +4388,54 @@ class TestHeadingCoverage:
             warnings.simplefilter("error")
             result.is_head_direction_cell()
             result.summary_table()
+
+
+class TestDegreeDefaults:
+    """The default bin width is 6° whatever unit the headings use."""
+
+    @pytest.fixture(scope="class")
+    def session(self):
+        times = np.arange(0.0, 300.0, 1 / 30)
+        headings = np.random.default_rng(0).uniform(-np.pi, np.pi, times.size)
+        rate = 0.5 + 10.0 * np.exp(3.0 * (np.cos(headings - 1.0) - 1.0))
+        return times, headings, _frame_poisson_spikes(times, rate, seed=9)
+
+    def test_rate_default_bin_size_matches_radians(self, session) -> None:
+        from neurospatial.encoding.directional import (
+            compute_directional_rate,
+            compute_directional_rates,
+        )
+
+        times, headings, spikes = session
+        rad = compute_directional_rate(spikes, times, headings)
+        deg = compute_directional_rate(
+            spikes, times, np.degrees(headings), angle_unit="deg"
+        )
+        assert len(rad.firing_rate) == len(deg.firing_rate) == 60
+        np.testing.assert_allclose(deg.firing_rate, rad.firing_rate)
+        assert deg.tuning_width() == pytest.approx(rad.tuning_width())
+        rates = compute_directional_rates(
+            [spikes], times, np.degrees(headings), angle_unit="deg"
+        )
+        np.testing.assert_allclose(rates.firing_rates[0], rad.firing_rate)
+
+    def test_predicates_default_bin_size_matches_radians(self, session) -> None:
+        from neurospatial.encoding.directional import (
+            head_direction_cell_significance,
+            is_head_direction_cell,
+        )
+
+        times, headings, spikes = session
+        assert is_head_direction_cell(spikes, times, headings) is True
+        assert (
+            is_head_direction_cell(
+                spikes, times, np.degrees(headings), angle_unit="deg"
+            )
+            is True
+        )
+        kwargs = {"n_shuffles": 9, "min_shift": 20.0, "rng": 0}
+        deg = head_direction_cell_significance(
+            [spikes], times, np.degrees(headings), angle_unit="deg", **kwargs
+        )[0]
+        rad = head_direction_cell_significance([spikes], times, headings, **kwargs)[0]
+        assert deg.observed_score == pytest.approx(rad.observed_score)

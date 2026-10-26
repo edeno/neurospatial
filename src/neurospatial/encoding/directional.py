@@ -1996,7 +1996,7 @@ def _count_directional(
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    bin_size: float,
+    bin_size: float | None,
     bandwidth: float | None,
     angle_unit: Literal["rad", "deg"],
     max_gap: float | None,
@@ -2016,8 +2016,8 @@ def _count_directional(
         Trajectory timestamps in seconds.
     headings : ndarray of shape (n_time,)
         Heading at each timestamp, in ``angle_unit``.
-    bin_size : float
-        Requested bin size, in ``angle_unit``.
+    bin_size : float or None
+        Requested bin size, in ``angle_unit``; None means 6°.
     bandwidth : float or None
         Requested smoothing bandwidth, in ``angle_unit``; ``None`` records
         an unsmoothed (binned) analysis.
@@ -2093,7 +2093,7 @@ def compute_directional_rate(
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    bin_size: float = np.pi / 30,
+    bin_size: float | None = None,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
@@ -2143,9 +2143,10 @@ def compute_directional_rate(
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
         methodological mislabel — keep the two distinct.
-    bin_size : float, default=π/30 (6 degrees)
-        Width of angular bins. Units match ``angle_unit``.
-        Default produces 60 bins (6° resolution).
+    bin_size : float or None, default=None
+        Width of angular bins, in ``angle_unit``. None means 6° (π/30 rad,
+        60 bins) in either unit. The bin count is rounded to tile the circle,
+        and ``result.bin_size`` records the width used, in radians.
     bandwidth : float or None, default=None
         Gaussian smoothing bandwidth for the tuning curve. Units match
         ``angle_unit``. If None, no smoothing is applied.
@@ -2355,7 +2356,7 @@ def compute_directional_rates(
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    bin_size: float = np.pi / 30,
+    bin_size: float | None = None,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
@@ -2414,9 +2415,10 @@ def compute_directional_rates(
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
         methodological mislabel — keep the two distinct.
-    bin_size : float, default=π/30 (6 degrees)
-        Width of angular bins. Units match ``angle_unit``.
-        Default produces 60 bins (6° resolution).
+    bin_size : float or None, default=None
+        Width of angular bins, in ``angle_unit``. None means 6° (π/30 rad,
+        60 bins) in either unit. The bin count is rounded to tile the circle,
+        and ``result.bin_size`` records the width used, in radians.
     bandwidth : float or None, default=None
         Gaussian smoothing bandwidth for the tuning curves. Units match
         ``angle_unit``. If None, no smoothing is applied.
@@ -2723,7 +2725,7 @@ def is_head_direction_cell(
     min_shift: float | None = None,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
-    bin_size: float = np.pi / 30,
+    bin_size: float | None = None,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
@@ -2755,9 +2757,10 @@ def is_head_direction_cell(
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
         methodological mislabel — keep the two distinct.
-    bin_size : float, default=π/30 (6 degrees)
-        Width of angular bins. Units match ``angle_unit``.
-        Default produces 60 bins (6° resolution).
+    bin_size : float or None, default=None
+        Width of angular bins, in ``angle_unit``. None means 6° (π/30 rad,
+        60 bins) in either unit. The bin count is rounded to tile the circle,
+        and ``result.bin_size`` records the width used, in radians.
     bandwidth : float or None, default=None
         Gaussian smoothing bandwidth for the tuning curve. Units match
         ``angle_unit``. If None, no smoothing is applied.
@@ -3080,7 +3083,7 @@ def head_direction_cell_significance(
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    bin_size: float = np.pi / 30,
+    bin_size: float | None = None,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
@@ -3132,9 +3135,10 @@ def head_direction_cell_significance(
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
         methodological mislabel — keep the two distinct.
-    bin_size : float, default=π/30 (6 degrees)
-        Width of angular bins. Units match ``angle_unit``.
-        Default produces 60 bins (6° resolution).
+    bin_size : float or None, default=None
+        Width of angular bins, in ``angle_unit``. None means 6° (π/30 rad,
+        60 bins) in either unit. The bin count is rounded to tile the circle,
+        and ``result.bin_size`` records the width used, in radians.
     bandwidth : float or None, default=None
         Gaussian smoothing bandwidth for the tuning curves. Units match
         ``angle_unit``. If None, no smoothing is applied.

@@ -192,9 +192,12 @@ def compute_directional_occupancy(
     return occupancy, bin_centers
 
 
+DEFAULT_HEADING_BIN_SIZE_DEG = 6.0
+
+
 def directional_frame_bins(
     headings: NDArray[np.float64],
-    bin_size: float,
+    bin_size: float | None,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
 ) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
@@ -202,10 +205,17 @@ def directional_frame_bins(
 
     Any finite angle is accepted and wrapped to [-π, π); bins tile [-π, π)
     and their centers are returned in radians. A 0 to 2π heading and the
-    same heading minus 2π fall in the same bin.
+    same heading minus 2π fall in the same bin. ``bin_size=None`` means 6°
+    expressed in ``angle_unit``.
     """
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
+    if bin_size is None:
+        bin_size = (
+            DEFAULT_HEADING_BIN_SIZE_DEG
+            if angle_unit == "deg"
+            else float(np.radians(DEFAULT_HEADING_BIN_SIZE_DEG))
+        )
 
     if bin_size <= 0:
         raise ValueError(
@@ -343,7 +353,7 @@ def bin_directional_spike_train(
 def prepare_directional_binning(
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
-    bin_size: float,
+    bin_size: float | None,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
