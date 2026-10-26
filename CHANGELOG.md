@@ -6,6 +6,12 @@
 
 Results that change:
 
+- A NaN bandwidth, wavelet scale, `max_distance_factor`, scale-bar length,
+  `max_distance`, distance `cutoff` or `neighbors_within` radius is refused.
+  A sign check alone (`value <= 0`) let NaN through, so a NaN bandwidth made
+  every basis function NaN and a NaN `max_distance` marked no point outside.
+  Infinite bandwidths, scales, factors and lengths are refused too; an
+  infinite cutoff, radius or `max_distance` still means no limit.
 - `env.nearest_bin` breaks ties with the same rule as `env.bin_at` on
   nearest-center layouts (tracks): centers equally near within rounding at
   the coordinates' magnitude, lowest bin index. The former fixed 1e-10

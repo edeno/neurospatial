@@ -568,7 +568,7 @@ def distance_field(
     from scipy.spatial import cKDTree
 
     _require_metric(metric)
-    if cutoff is not None and cutoff < 0:
+    if cutoff is not None and not cutoff >= 0:  # NaN is no distance
         raise ValueError(
             f"cutoff must be non-negative, got {cutoff}. "
             f"Use cutoff=None for no distance limit, or provide a positive value."
@@ -786,7 +786,7 @@ def neighbors_within(
     from scipy.spatial import cKDTree
 
     _require_metric(metric)
-    if radius < 0:
+    if not radius >= 0:  # NaN is no distance
         raise ValueError(
             f"radius must be non-negative, got {radius}. "
             f"Provide a positive radius value or 0 for only center nodes."

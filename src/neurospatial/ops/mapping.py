@@ -131,12 +131,15 @@ def _validate_nearest_options(
             "Choose one distance threshold method."
         )
 
-    if max_distance is not None and max_distance < 0:
+    if max_distance is not None and not max_distance >= 0:  # NaN is no distance
         raise ValueError(f"max_distance must be non-negative, got {max_distance}")
 
-    if max_distance_factor is not None and max_distance_factor <= 0:
+    if max_distance_factor is not None and not (
+        np.isfinite(max_distance_factor) and max_distance_factor > 0
+    ):
         raise ValueError(
-            f"max_distance_factor must be positive, got {max_distance_factor}"
+            f"max_distance_factor must be positive and finite, got "
+            f"{max_distance_factor}"
         )
 
     if tie_break not in _TIE_BREAKS:
@@ -636,8 +639,8 @@ def resample_field(
                 "bandwidth must be provided when method='diffuse'. "
                 "Specify bandwidth parameter (in spatial units)."
             )
-        if bandwidth <= 0:
-            raise ValueError(f"bandwidth must be positive (got {bandwidth})")
+        if not (np.isfinite(bandwidth) and bandwidth > 0):
+            raise ValueError(f"bandwidth must be positive and finite (got {bandwidth})")
 
     # Check dimension compatibility
     if src_centers.shape[1] != dst_centers.shape[1]:

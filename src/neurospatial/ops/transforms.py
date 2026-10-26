@@ -508,10 +508,11 @@ def calibrate_from_scale_bar(
     >>> point_cm = transform(point_px)
     """
     # Validate inputs
-    if known_length_cm <= 0:
+    if not (np.isfinite(known_length_cm) and known_length_cm > 0):
         raise ValueError(
-            f"WHAT: known_length_cm must be positive (got {known_length_cm}).\n"
-            f"WHY: A scale bar must have positive real-world length.\n"
+            f"WHAT: known_length_cm must be positive and finite (got "
+            f"{known_length_cm}).\n"
+            f"WHY: A scale bar must have a positive, finite real-world length.\n"
             f"Fix: Provide a positive value for known_length_cm."
         )
 

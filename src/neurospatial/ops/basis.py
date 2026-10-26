@@ -657,10 +657,11 @@ def geodesic_rbf_basis(
 
     # Handle bandwidth and validate
     bandwidths = np.atleast_1d(bandwidth).astype(np.float64)
-    if np.any(bandwidths <= 0):
-        invalid = bandwidths[bandwidths <= 0]
+    invalid_mask = ~(np.isfinite(bandwidths) & (bandwidths > 0))
+    if np.any(invalid_mask):
+        invalid = bandwidths[invalid_mask]
         raise ValueError(
-            f"bandwidth values must be positive, got: {invalid}.\n"
+            f"bandwidth values must be positive and finite, got: {invalid}.\n"
             "\n"
             "bandwidth controls spatial spread of basis functions:\n"
             "  - bandwidth=5.0: ~10cm diameter coverage\n"
@@ -865,10 +866,11 @@ def heat_kernel_wavelet_basis(
 
     # Validate scales
     scales_arr = np.asarray(scales, dtype=np.float64)
-    if np.any(scales_arr <= 0):
-        invalid = scales_arr[scales_arr <= 0]
+    invalid_mask = ~(np.isfinite(scales_arr) & (scales_arr > 0))
+    if np.any(invalid_mask):
+        invalid = scales_arr[invalid_mask]
         raise ValueError(
-            f"scales values must be positive, got: {invalid}.\n"
+            f"scales values must be positive and finite, got: {invalid}.\n"
             "\n"
             "scales controls diffusion time (spatial spread):\n"
             "  - scale=0.5: standard deviation 1 bin\n"
