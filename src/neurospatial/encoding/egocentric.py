@@ -3025,51 +3025,75 @@ def _mean_resultant_length(
 
 
 def object_vector_score(
-    tuning_curve: NDArray[np.float64],
+    rate_map: ObjectVectorRateResult | ArrayLike,
     *,
     max_distance_selectivity: float = 10.0,
 ) -> float:
-    """Compute combined object-vector selectivity score.
+    """Combined distance and direction selectivity of an object-vector map.
 
-    The score combines distance selectivity and direction selectivity
-    following the formula:
+    .. math::
 
-        s_OV = ((s_d - 1) / (s_d* - 1)) * s_theta
+        s_{OV} = \\mathrm{clip}\\left(\\frac{s_d - 1}{s_d^* - 1}, 0, 1\\right)
+        \\, s_\\theta
 
-    where:
-    - s_d = peak / mean (distance selectivity)
-    - s_d* = max_distance_selectivity (normalization constant)
-    - s_theta = mean resultant length (direction selectivity)
+    - The distance profile is each ring's mean rate over its direction bins;
+      :math:`s_d` is its peak divided by its mean.
+    - The direction profile is each direction bin's mean rate over the
+      complete rings, those with a rate in every direction bin;
+      :math:`s_\\theta` is its mean resultant length.
+    - :math:`s_d^*` is ``max_distance_selectivity``.
+
+    A map tuned to direction alone has a flat distance profile and scores
+    0, as does a map tuned to distance alone. Means skip unvisited (NaN)
+    bins, so missing coverage is not read as silence, and the direction
+    profile compares directions over the same rings, so a ring the animal
+    never reached behind the object does not make the rear look quiet.
 
     Parameters
     ----------
-    tuning_curve : NDArray[np.float64], shape (n_dist, n_dir)
-        2D firing rate tuning curve in egocentric polar coordinates.
+    rate_map : ObjectVectorRateResult or array-like
+        A single-unit result, or its firing rate reshaped distance-major to
+        shape ``(n_distance_bins, n_direction_bins)``:
+        ``result.firing_rate.reshape(result.n_distance_bins,
+        result.n_direction_bins)``. An array's direction bins are taken to
+        span [-pi, pi) evenly, as the encoders build them.
     max_distance_selectivity : float, default=10.0
-        Maximum expected distance selectivity for normalization.
-        Must be > 1.
+        Distance selectivity that maps to a distance factor of 1. Must be > 1.
 
     Returns
     -------
     float
-        Object-vector score in [0, 1]. Higher scores indicate sharper
-        tuning to a specific distance and direction.
+        Score in [0, 1]; higher means sharper tuning to one distance and
+        one direction. NaN when no bin has a rate, when the map is silent
+        (peak / mean is 0 / 0), or when no ring has a rate in every
+        direction bin: a mean resultant length over an arc of directions
+        reads even flat firing as directional. An object near a wall
+        often leaves no complete ring; widen the coverage or choose a
+        shorter ``distance_range``.
 
     Raises
     ------
     ValueError
-        If max_distance_selectivity <= 1.
+        If ``max_distance_selectivity <= 1``, or ``rate_map`` is not 2-D.
+
+    Notes
+    -----
+    This is a descriptive score with no null distribution; compare it with
+    shuffled spike trains before calling a cell object-vector tuned.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding.egocentric import object_vector_score
-    >>> # Sharp tuning at one location
-    >>> tc = np.zeros((10, 12)) + 0.1
+    >>> # One sharp (distance, direction) bin over a low baseline
+    >>> tc = np.full((10, 12), 0.01)
     >>> tc[5, 6] = 20.0
-    >>> score = object_vector_score(tc)
-    >>> score > 0.5
+    >>> bool(object_vector_score(tc) > 0.8)
     True
+    >>> # Tuned to direction alone: no distance selectivity
+    >>> by_direction = np.tile(np.linspace(1.0, 5.0, 12), (10, 1))
+    >>> float(object_vector_score(by_direction))
+    0.0
 
     See Also
     --------
@@ -3081,50 +3105,55 @@ def object_vector_score(
             f"max_distance_selectivity must be > 1, got {max_distance_selectivity}"
         )
 
-    tuning_curve = np.asarray(tuning_curve, dtype=np.float64)
-
-    # Handle NaN values
-    valid_mask = np.isfinite(tuning_curve)
-    if not np.any(valid_mask):
-        return float(np.nan)
-
-    valid_rates = tuning_curve[valid_mask]
-
-    # Compute distance selectivity
-    peak_rate = float(np.max(valid_rates))
-    mean_rate = float(np.mean(valid_rates))
-
-    if mean_rate == 0:
-        return 0.0
-
-    distance_selectivity = peak_rate / mean_rate
-
-    # Normalize distance selectivity to [0, 1]
-    normalized_dist_sel = (distance_selectivity - 1.0) / (
-        max_distance_selectivity - 1.0
-    )
-    normalized_dist_sel = float(np.clip(normalized_dist_sel, 0.0, 1.0))
-
-    # Compute direction selectivity (mean resultant length)
-    n_dir = tuning_curve.shape[1]
-    direction_bins = np.linspace(-np.pi, np.pi, n_dir + 1)
-    dir_bin_centers = (direction_bins[:-1] + direction_bins[1:]) / 2
-
-    # Marginalize over distance
-    direction_tuning = np.nansum(tuning_curve, axis=0)
-    total = np.sum(direction_tuning)
-
-    if total == 0:
-        direction_selectivity = 0.0
+    if isinstance(rate_map, ObjectVectorRateResult):
+        tuning_curve = np.asarray(
+            _to_numpy(rate_map.firing_rate), dtype=np.float64
+        ).reshape(rate_map.n_distance_bins, rate_map.n_direction_bins)
+        edges = np.asarray(rate_map.env.grid_edges[1], dtype=np.float64)
+        dir_bin_centers = (edges[:-1] + edges[1:]) / 2
     else:
-        direction_selectivity = _mean_resultant_length(
-            dir_bin_centers, weights=direction_tuning
+        tuning_curve = np.asarray(rate_map, dtype=np.float64)
+        if tuning_curve.ndim != 2:
+            raise ValueError(
+                _format_error(
+                    "object_vector_score needs a (distance, direction) rate map "
+                    f"of shape (n_distance_bins, n_direction_bins); got shape "
+                    f"{tuning_curve.shape}.",
+                    fix="pass the ObjectVectorRateResult itself, or "
+                    "result.firing_rate.reshape(result.n_distance_bins, "
+                    "result.n_direction_bins)",
+                )
+            )
+        n_dir = tuning_curve.shape[1]
+        direction_edges = np.linspace(-np.pi, np.pi, n_dir + 1)
+        dir_bin_centers = (direction_edges[:-1] + direction_edges[1:]) / 2
+
+    finite = np.isfinite(tuning_curve)
+    if not finite.any():
+        return float("nan")
+    # Mean over observed bins only; a NaN bin was not measured.
+    observed = np.where(finite, tuning_curve, 0.0)
+    complete = finite.all(axis=1)
+    if not complete.any():
+        return float("nan")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        distance_profile = observed.sum(axis=1) / finite.sum(axis=1)
+    direction_profile = tuning_curve[complete].mean(axis=0)
+
+    rings = distance_profile[np.isfinite(distance_profile)]
+    mean_rate = float(np.mean(rings))
+    if mean_rate == 0:
+        return float("nan")
+    distance_selectivity = float(np.max(rings)) / mean_rate
+    normalized_dist_sel = float(
+        np.clip(
+            (distance_selectivity - 1.0) / (max_distance_selectivity - 1.0), 0.0, 1.0
         )
-
-    # Combined score
-    score = normalized_dist_sel * direction_selectivity
-
-    return float(np.clip(score, 0.0, 1.0))
+    )
+    direction_selectivity = _mean_resultant_length(
+        dir_bin_centers, weights=direction_profile
+    )
+    return float(np.clip(normalized_dist_sel * direction_selectivity, 0.0, 1.0))
 
 
 def is_object_vector_cell(

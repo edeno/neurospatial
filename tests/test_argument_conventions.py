@@ -212,7 +212,7 @@ REQUIRED_DATA_NAMES = {
     *("firing_rate", "firing_rate_1", "firing_rate_2"),
     *("firing_rates", "firing_rates_1", "firing_rates_2"),
     *("rate_map_1", "rate_map_2", "rates_a", "rates_b", "all_place_fields"),
-    *("occupancy", "joint_counts", "autocorr_2d", "tuning_curve"),
+    *("occupancy", "joint_counts", "autocorr_2d", "rate_map"),
     *("field_bins", "field_bins_1", "field_bins_2", "field_bins_i", "field_bins_j"),
     *("encoding_models", "models", "pattern", "posterior", "log_likelihood"),
     *("source_probs", "decoded_positions", "actual_positions", "actual_bins"),

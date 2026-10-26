@@ -1,9 +1,9 @@
 """Behavioral tests for the public ``object_vector_score`` function.
 
-``object_vector_score(tuning_curve)`` takes a 2D egocentric polar tuning curve
-of shape ``(n_dist, n_dir)`` and returns a scalar in ``[0, 1]`` combining
-distance selectivity and direction selectivity. These tests drive the function
-directly on hand-built tuning curves rather than constructing results, so the
+``object_vector_score`` takes an object-vector result, or its rate map shaped
+``(n_distance_bins, n_direction_bins)``, and returns a scalar in ``[0, 1]``:
+distance selectivity of the distance profile times direction selectivity of
+the direction profile. Most tests drive it on hand-built maps so the
 assertions exercise the score math itself.
 """
 
@@ -37,14 +37,10 @@ class TestObjectVectorScore:
     """Score is high for concentrated tuning, low for diffuse tuning."""
 
     def test_concentrated_tuning_scores_high(self):
-        # Sharp bin over a small uniform baseline. The baseline forms a pedestal
-        # in the direction marginal that limits the MRL, so the score lands well
-        # above the uniform case but below 1. This matches the documented
-        # example in object_vector_score's docstring (asserts > 0.5).
-        tc = np.full((N_DIST, N_DIR), 0.1)
+        # One sharp bin over a low baseline: both profiles peak sharply.
+        tc = np.full((N_DIST, N_DIR), 0.01)
         tc[5, 6] = 20.0
-        score = object_vector_score(tc)
-        assert score > 0.5
+        assert object_vector_score(tc) > 0.8
 
     def test_uniform_tuning_low_score(self):
         # Constant tuning: distance selectivity s_d = 1 -> normalized term = 0.
@@ -80,10 +76,10 @@ class TestObjectVectorScore:
         tc_delta[5, 6] = 1.0
         assert object_vector_score(tc_delta) == pytest.approx(1.0, abs=1e-10)
 
-    def test_all_zero_tuning_curve_returns_zero(self):
-        # Documented behavior (egocentric.py): mean_rate == 0 -> returns 0.0.
+    def test_silent_map_is_nan(self):
+        # Peak / mean is 0 / 0 for a silent cell: undefined, not untuned.
         tc = np.zeros((N_DIST, N_DIR))
-        assert object_vector_score(tc) == 0.0
+        assert np.isnan(object_vector_score(tc))
 
     def test_all_nan_tuning_curve_returns_nan(self):
         # Documented behavior: no finite values -> returns NaN.
@@ -95,3 +91,72 @@ class TestObjectVectorScore:
         tc[5, 6] = 20.0
         with pytest.raises(ValueError, match="max_distance_selectivity"):
             object_vector_score(tc, max_distance_selectivity=1.0)
+
+
+def _von_mises(n: int, center: int, kappa: float = 4.0) -> np.ndarray:
+    angles = 2 * np.pi * (np.arange(n) - center) / n
+    return np.exp(kappa * (np.cos(angles) - 1))
+
+
+class TestObjectVectorScoreProfiles:
+    """Each factor reads its own profile of the map."""
+
+    def test_direction_only_tuning_has_no_distance_selectivity(self):
+        # Rate depends on direction alone: the distance profile is flat, so
+        # this is a head-direction-like map, not an object-vector one.
+        tc = np.tile(0.1 + 10 * _von_mises(N_DIR, 6), (N_DIST, 1))
+        assert object_vector_score(tc) == pytest.approx(0.0, abs=1e-12)
+
+    def test_distance_only_tuning_has_no_direction_selectivity(self):
+        tc = np.tile((0.1 + 10 * _von_mises(N_DIST, 4))[:, None], (1, N_DIR))
+        assert object_vector_score(tc) == pytest.approx(0.0, abs=1e-10)
+
+    def test_unvisited_bins_are_not_counted_as_silent(self):
+        # Ring tuning with no direction preference, but the preferred ring was
+        # never visited behind the animal. Summing over rings would make the
+        # rear directions look quiet, i.e. invent a forward preference.
+        tc = np.tile((0.1 + 10 * _von_mises(N_DIST, 4))[:, None], (1, N_DIR))
+        tc[3:6, :3] = np.nan
+        assert object_vector_score(tc) == pytest.approx(0.0, abs=1e-10)
+
+    def test_partial_direction_coverage_is_nan(self):
+        # Only a quarter of the directions observed (an object in a corner):
+        # an arc of flat rates would look directional.
+        tc = np.full((N_DIST, N_DIR), np.nan)
+        tc[:, :3] = 5.0
+        tc[3, 1] = 6.0
+        assert np.isnan(object_vector_score(tc))
+
+    def test_flat_rate_map_input_raises_with_reshape_guidance(self):
+        with pytest.raises(ValueError, match="reshape"):
+            object_vector_score(np.ones(N_DIST * N_DIR))
+
+
+def test_result_input_matches_its_reshaped_rate_map():
+    """A result is scored on its own grid, distance-major."""
+    from neurospatial.encoding import compute_object_vector_rate
+
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 300, 1 / 30)
+    positions = rng.uniform(5, 95, (len(times), 2))
+    obj = np.array([[50.0, 50.0]])
+    delta = positions - obj
+    distance = np.hypot(*delta.T)
+    direction = np.arctan2(delta[:, 1], delta[:, 0]) + np.pi  # animal to object
+    rate = 0.2 + 15 * np.exp(-0.5 * ((distance - 20) / 4) ** 2) * np.exp(
+        3 * (np.cos(direction) - 1)
+    )
+    from neurospatial.simulation import generate_poisson_spikes
+
+    spikes = generate_poisson_spikes(rate, times, seed=11)
+    untuned = generate_poisson_spikes(np.full(len(times), rate.mean()), times, seed=12)
+    settings = {"distance_range": (0.0, 50.0)}
+    result = compute_object_vector_rate(None, spikes, times, positions, obj, **settings)
+    grid = np.asarray(result.firing_rate).reshape(
+        result.n_distance_bins, result.n_direction_bins
+    )
+    assert object_vector_score(result) == pytest.approx(object_vector_score(grid))
+    control = compute_object_vector_rate(
+        None, untuned, times, positions, obj, **settings
+    )
+    assert object_vector_score(result) > 5 * object_vector_score(control)
