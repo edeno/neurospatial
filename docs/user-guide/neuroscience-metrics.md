@@ -561,6 +561,7 @@ measurement of where the head or eyes point.
 | Is firing associated with a vector to an object? | Object distance and allocentric or egocentric bearing | `compute_object_vector_rate`, `compute_egocentric_rate` |
 | Is firing associated with a vector to a wall? | Wall distance and allocentric or egocentric direction | `compute_boundary_vector_rate` |
 | Is firing associated with a viewed location? | Projected gaze location in the arena | `compute_view_rate` |
+| Does spike theta phase advance across a place field? | Distance travelled into one field, per spike | `compute_phase_precession` |
 
 Keep the same analysis epochs and known spike-recording window across related
 maps. Each snippet assumes spikes were recorded throughout the tracked span;
@@ -794,11 +795,110 @@ the scientific interpretation to the head/eye measurements and gaze model.
 The plural `compute_*_rates` APIs share preprocessing across a population and
 preserve supplied unit labels.
 
+### Theta phase precession on a linear track
+
+A place cell precesses when its spikes come at earlier theta phases as the
+animal moves through the field (O'Keefe & Recce, 1993). The test fits a line
+to spike phase against position by circular-linear regression, one field and
+one running direction at a time, in a coordinate that increases along the
+run: the distance travelled into the field. Precession is then a negative
+slope whichever way the animal ran.
+
+The example simulates back-and-forth laps over one field, with an 8 Hz LFP
+standing in for the recording. Replace the simulated block with your LFP
+channel, its sampling rate, the spike times, the linearized track position
+and the field bounds from the rate map.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.encoding import compute_phase_precession, theta_phase
+from neurospatial.simulation import generate_poisson_spikes
+
+# --- Simulated session; replace with your recording ---
+lfp_rate = 1000.0  # Hz
+lfp_times = np.arange(0, 400, 1 / lfp_rate)  # s
+lfp = np.cos(2 * np.pi * 8.0 * lfp_times)  # 8 Hz theta
+times = lfp_times[::20]  # 50 Hz tracking
+track_position = 200 * np.abs((times / 10 + 1) % 2 - 1)  # cm, 10 s per run
+field_start, field_end = 86.0, 114.0  # field bounds from the rate map, cm
+x = np.interp(lfp_times, times, track_position)
+rightward = np.gradient(x, lfp_times) > 0
+crossed = np.where(rightward, x - field_start, field_end - x) / (field_end - field_start)
+preferred_phase = 5.5 - 5.0 * crossed  # rad: falls by 5 rad across the field
+theta_locking = np.exp(2.0 * (np.cos(2 * np.pi * 8.0 * lfp_times - preferred_phase) - 1))
+rate = 40.0 * ((x > field_start) & (x < field_end)) * theta_locking  # Hz
+spike_times = generate_poisson_spikes(rate, lfp_times, seed=1)
+# ---
+
+# Theta phase at each spike: interpolate the unwrapped phase, then re-wrap.
+phase = theta_phase(lfp, sampling_rate=lfp_rate)  # 0 = peak of the filtered LFP
+spike_phases = np.mod(np.interp(spike_times, lfp_times, np.unwrap(phase)), 2 * np.pi)
+
+# Position and running direction at each spike.
+spike_positions = np.interp(spike_times, times, track_position)
+spike_velocity = np.interp(spike_times, times, np.gradient(track_position, times))
+in_field = (spike_positions >= field_start) & (spike_positions <= field_end)
+field_width = field_end - field_start
+
+runs = {"rightward": spike_velocity > 0, "leftward": spike_velocity < 0}
+for direction, running in runs.items():
+    keep = in_field & running
+    if direction == "rightward":
+        distance_into_field = spike_positions[keep] - field_start  # cm
+    else:
+        distance_into_field = field_end - spike_positions[keep]  # cm
+    result = compute_phase_precession(
+        distance_into_field, spike_phases[keep],
+        position_range=(0.0, field_width), rng=0,
+    )
+    print(f"{direction}: slope {result.slope:.3f} rad/cm, "
+          f"{result.normalized_slope:.1f} rad across the field, p = {result.p_value:.3f}")
+```
+
+Both directions give a slope near -0.18 rad/cm, a fall of about 5 rad (a
+little less than one theta cycle) across the 28 cm field, with p = 0.001,
+the smallest p-value 1000 shuffles can give. `slope` is in radians per cm;
+`normalized_slope` is the phase change across `position_range`. The
+p-value comes from shuffling which phase goes with which position and
+re-fitting the slope each time, and it is calibrated: on simulated spikes
+with no phase-position relationship it fell below 0.05 in 2-5% of cells
+for 10 to 200 spikes. `result.correlation` and `result.mean_resultant_length`
+describe how tightly the spikes follow the line; neither has a cutoff.
+
+Choices that change the answer:
+
+- **Direction of travel.** With raw track positions, the leftward runs give
+  +0.18 rad/cm, which reads as recession. Pooling both directions in raw
+  positions mixes the two slopes and the correlation drops to near zero.
+- **One field, its own range.** Spikes from two fields, or from the whole
+  track with the default range (the spike extent), give a slope pinned at
+  the search bound of one theta cycle across the range, several times too
+  shallow, and still a small p-value. A warning flags any fit whose best
+  slope lies on the bound, and `result.slope_at_bound` records it for
+  batch analyses. Pass one field's spikes with
+  `position_range=(field_start, field_end)` in the same coordinate.
+- **Fields cut by the end of the track.** The spikes cover only part of the
+  field, so with the default range `normalized_slope` is the phase change
+  across that part. `slope` is unaffected; compare cells by `slope`, or pass
+  the field's full extent as `position_range`.
+- **Theta reference.** Phase 0 is the peak of the theta-filtered LFP on the
+  channel you used. Theta reverses polarity across hippocampal layers, so
+  phase offsets compare between recordings only on the same reference;
+  slopes do not depend on it.
+
+`has_phase_precession` screens many cells with the same test: it returns
+`True` when `p_value < alpha` and the slope is negative, so untuned cells pass
+at about `alpha / 2`. `plot_phase_precession(distance_into_field,
+spike_phases[keep], result)` draws the spikes twice, at phase and phase +
+2π, with the fitted line.
+
 ## References and Cross-References
 
 ### Scientific References
 
 **Place Field Analysis:**
+- O'Keefe, J., & Recce, M. L. (1993). Phase relationship between hippocampal place units and the EEG theta rhythm. Hippocampus, 3(3), 317-330.
 - O'Keefe, J., & Dostrovsky, J. (1971). The hippocampus as a spatial map. Brain Research, 34(1), 171-175.
 - Muller, R. U., & Kubie, J. L. (1989). The effects of changes in the environment on the spatial firing of hippocampal complex-spike cells. Journal of Neuroscience, 9(1), 137-154.
 - Skaggs, W. E., McNaughton, B. L., Wilson, M. A., & Barnes, C. A. (1996). Theta phase precession in hippocampal neuronal populations and the compression of temporal sequences. Hippocampus, 6(2), 149-172.
