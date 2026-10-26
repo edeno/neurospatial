@@ -340,3 +340,41 @@ def test_refuses_a_threshold_that_disagrees_with_the_record(population: Any) -> 
         population, analysis_settings=settings, min_occupancy=0.5
     )
     assert agreeing.min_occupancy == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Per-unit metadata ownership
+# ---------------------------------------------------------------------------
+
+
+def test_unit_table_edits_through_the_result_do_not_change_it(
+    family: str, recording: dict[str, Any]
+) -> None:
+    """In-place DataFrame edits cannot break the table's alignment to units."""
+    import pandas as pd
+
+    table = pd.DataFrame({"unit_id": ["a", "b", "c"], "region": ["CA1", "CA1", "CA3"]})
+    labelled = FAMILIES[family](recording, unit_ids=["a", "b", "c"])
+    result = dataclasses.replace(labelled, unit_table=table)
+    result.unit_table.drop(index=result.unit_table.index[0], inplace=True)
+    result.unit_table.loc[:, "region"] = "V1"
+    table.loc[:, "region"] = "PFC"
+    assert result.unit_table["unit_id"].tolist() == ["a", "b", "c"]
+    assert result.unit_table["region"].tolist() == ["CA1", "CA1", "CA3"]
+    assert result.unit_table is not result.unit_table
+    restored = dataclasses.replace(result)
+    assert restored.unit_table["region"].tolist() == ["CA1", "CA1", "CA3"]
+
+
+def test_spike_trains_unit_table_is_copied_on_read() -> None:
+    import pandas as pd
+
+    from neurospatial.encoding import SpikeTrains
+
+    trains = SpikeTrains(
+        [np.array([0.1]), np.array([0.2])],
+        unit_ids=[7, 9],
+        unit_table=pd.DataFrame({"unit_id": [7, 9], "depth": [10.0, 20.0]}),
+    )
+    trains.unit_table.drop(index=0, inplace=True)
+    assert trains.unit_table["depth"].tolist() == [10.0, 20.0]

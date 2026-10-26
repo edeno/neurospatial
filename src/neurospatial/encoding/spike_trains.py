@@ -44,6 +44,7 @@ from numpy.typing import NDArray
 
 from neurospatial._results import (
     UnitSelectionMixin,
+    _copy_unit_table,
     align_unit_table,
     read_only_copy,
     resolve_unit_ids,
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
 __all__ = ["SpikeTrains"]
 
 
+@_copy_unit_table
 @dataclass(frozen=True, eq=False)
 class SpikeTrains(UnitSelectionMixin):
     """Immutable container of ragged per-unit spike trains.

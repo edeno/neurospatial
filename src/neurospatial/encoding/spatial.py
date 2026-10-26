@@ -59,6 +59,7 @@ from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
     _copy_analysis_settings,
+    _copy_unit_table,
     read_only_copy,
 )
 from neurospatial.encoding._base import (
@@ -1588,6 +1589,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         return self.spatial_information() >= min_info
 
 
+@_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
 class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):

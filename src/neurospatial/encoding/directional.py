@@ -73,7 +73,7 @@ from neurospatial._intervals import (
     run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._results import _copy_analysis_settings
+from neurospatial._results import _copy_analysis_settings, _copy_unit_table
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import (
     BandwidthRule,
@@ -1363,6 +1363,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
         return "\n".join(lines)
 
 
+@_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
 class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):

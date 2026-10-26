@@ -59,7 +59,7 @@ from neurospatial._intervals import (
     run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._results import _copy_analysis_settings
+from neurospatial._results import _copy_analysis_settings, _copy_unit_table
 from neurospatial.encoding._base import (
     PopulationRateMixin,
     SingleUnitRateMixin,
@@ -676,6 +676,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         )
 
 
+@_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
 class ObjectVectorRatesResult(
