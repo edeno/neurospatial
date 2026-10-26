@@ -25,8 +25,8 @@ Which Basis Should I Use?
 **Not sure?** Start with `geodesic_rbf_basis(env, n_centers=50, bandwidth=10.0)`.
 You can always switch later—all three work the same way in GLMs.
 
-**Want automatic parameter selection?** Use `spatial_basis()`:
-    >>> basis = spatial_basis(env)  # Automatic, sensible defaults  # doctest: +SKIP
+**Want automatic parameter selection?** Use ``spatial_basis(env)``, which
+picks centers and bandwidths from the environment's size.
 
 Scale Parameters Across Bases
 ------------------------------
@@ -46,48 +46,59 @@ For example, with 2cm bins and 10cm desired spatial extent:
 
 Quick Start
 -----------
->>> from neurospatial import Environment  # doctest: +SKIP
->>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
->>>
->>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
->>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=5.0)  # doctest: +SKIP
->>>
->>> # Create GLM design matrix
->>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
->>> X = basis[:, bin_indices].T  # Shape: (n_times, n_basis)  # doctest: +SKIP
+A GLM needs one design-matrix row per time bin, aligned with the spike counts
+of that time bin. Look up the bin of every position sample with
+``env.bin_at`` (not ``env.bin_sequence``, which drops repeated bins) and keep
+the samples inside the environment: ``bin_at`` marks the others with -1,
+which as an index would select the last bin.
+
+>>> import numpy as np
+>>> from neurospatial import Environment
+>>> from neurospatial.ops import geodesic_rbf_basis
+>>> rng = np.random.default_rng(0)
+>>> positions = rng.uniform(0, 100, size=(2000, 2))  # (n_time, 2), cm
+>>> env = Environment.from_samples(positions, bin_size=5.0)
+>>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=10.0, rng=0)
+>>> bins = env.bin_at(positions)  # (n_time,), -1 outside the environment
+>>> inside = bins >= 0
+>>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
+>>> X.shape == (int(inside.sum()), 50)
+True
 
 Full GLM Workflow
 -----------------
->>> from neurospatial import Environment  # doctest: +SKIP
->>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
->>> import numpy as np  # doctest: +SKIP
+Fit a simulated place cell (field at (30, 60) cm) with a Poisson GLM and
+project the coefficients back to a rate map.
+
+>>> import numpy as np
+>>> from sklearn.linear_model import PoissonRegressor
+>>> from neurospatial import Environment
+>>> from neurospatial.ops import geodesic_rbf_basis
+>>> rng = np.random.default_rng(0)
+>>> dt = 0.02  # s per time bin
+>>> positions = rng.uniform(0, 100, size=(5000, 2))  # one row per time bin, cm
+>>> distance_sq = np.sum((positions - [30.0, 60.0]) ** 2, axis=1)
+>>> rate = 1.0 + 20.0 * np.exp(-distance_sq / (2 * 10.0**2))  # Hz
+>>> spike_counts = rng.poisson(rate * dt)  # (n_time,)
 >>>
->>> # 1. Create environment and basis
->>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
->>> basis = geodesic_rbf_basis(
-...     env, n_centers=50, bandwidth=[5.0, 10.0]
-... )  # doctest: +SKIP
+>>> # 1. Environment and a two-scale basis
+>>> env = Environment.from_samples(positions, bin_size=5.0)
+>>> basis = geodesic_rbf_basis(env, n_centers=30, bandwidth=[10.0, 20.0], rng=0)
 >>>
->>> # 2. Create design matrix from trajectory
->>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
->>> X_spatial = basis[:, bin_indices].T  # (n_times, n_basis)  # doctest: +SKIP
+>>> # 2. Design matrix, one row per time bin inside the environment
+>>> bins = env.bin_at(positions)
+>>> inside = bins >= 0
+>>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
+>>> y = spike_counts[inside]
 >>>
->>> # 3. Combine with other features (optional)
->>> speed = compute_speed(times, positions)  # doctest: +SKIP
->>> X = np.column_stack([X_spatial, speed[:, None]])  # doctest: +SKIP
+>>> # 3. Fit the GLM
+>>> model = PoissonRegressor(alpha=1e-4, max_iter=1000).fit(X, y)
 >>>
->>> # 4. Fit GLM (example with statsmodels)
->>> import statsmodels.api as sm  # doctest: +SKIP
->>> X = sm.add_constant(X)  # doctest: +SKIP
->>> model = sm.GLM(spike_counts, X, family=sm.families.Poisson())  # doctest: +SKIP
->>> result = model.fit()  # doctest: +SKIP
->>>
->>> # 5. Visualize fitted place field
->>> beta_spatial = result.params[
-...     1 : len(basis) + 1
-... ]  # Spatial coefficients  # doctest: +SKIP
->>> place_field = beta_spatial @ basis  # Project back to space  # doctest: +SKIP
->>> env.plot_field(place_field, title="Fitted Place Field")  # doctest: +SKIP
+>>> # 4. Fitted rate in every bin (Hz); plot it with env.plot_field
+>>> fitted_rate = np.exp(model.intercept_ + basis.T @ model.coef_) / dt
+>>> peak = env.bin_centers[np.argmax(fitted_rate)]
+>>> bool(np.linalg.norm(peak - [30.0, 60.0]) < 5.0)
+True
 
 References
 ----------
@@ -190,12 +201,17 @@ def select_basis_centers(
 
     Examples
     --------
-    >>> centers = select_basis_centers(
-    ...     env, n_centers=50, method="kmeans"
-    ... )  # doctest: +SKIP
-    >>> basis = geodesic_rbf_basis(
-    ...     env, centers=centers, bandwidth=5.0
-    ... )  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import geodesic_rbf_basis, select_basis_centers
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> centers = select_basis_centers(env, n_centers=50, method="kmeans", rng=0)
+    >>> centers.shape
+    (50,)
+    >>> basis = geodesic_rbf_basis(env, centers=centers, bandwidth=5.0)
+    >>> basis.shape == (50, env.n_bins)
+    True
     """
     # Input validation
     if n_centers < 1:
@@ -495,9 +511,9 @@ def geodesic_rbf_basis(
             Row 4: center 2, bandwidth=5
             Row 5: center 2, bandwidth=10
 
-        To create GLM design matrix from trajectory:
-        >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
-        >>> X = basis[:, bin_indices].T  # (n_timepoints, n_basis)  # doctest: +SKIP
+        ``basis[:, bins].T`` with ``bins = env.bin_at(positions)`` restricted
+        to ``bins >= 0`` is a GLM design matrix with one row per time bin
+        (see Examples).
 
     Raises
     ------
@@ -532,21 +548,35 @@ def geodesic_rbf_basis(
 
     Examples
     --------
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>>
-    >>> # Single scale
-    >>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=5.0)  # doctest: +SKIP
-    >>> basis.shape  # doctest: +SKIP
-    (50, n_bins)
-    >>>
-    >>> # Multi-scale (recommended)
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import geodesic_rbf_basis
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+
+    Single scale:
+
+    >>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=10.0, rng=0)
+    >>> basis.shape == (50, env.n_bins)
+    True
+
+    Multi-scale (recommended), 30 centers x 3 bandwidths:
+
     >>> basis = geodesic_rbf_basis(
-    ...     env, n_centers=30, bandwidth=[5.0, 10.0, 20.0]
-    ... )  # doctest: +SKIP
-    >>> basis.shape  # doctest: +SKIP
-    (90, n_bins)  # 30 centers * 3 scales
+    ...     env, n_centers=30, bandwidth=[5.0, 10.0, 20.0], rng=0
+    ... )
+    >>> basis.shape == (90, env.n_bins)
+    True
+
+    GLM design matrix, one row per position sample (time bin). ``bin_at``
+    marks samples outside the environment with -1; drop them, and the same
+    time bins from the spike counts:
+
+    >>> bins = env.bin_at(positions)
+    >>> inside = bins >= 0
+    >>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
+    >>> X.shape == (int(inside.sum()), 90)
+    True
 
     See Also
     --------
@@ -770,11 +800,16 @@ def heat_kernel_wavelet_basis(
 
     Examples
     --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import heat_kernel_wavelet_basis
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> basis = heat_kernel_wavelet_basis(
-    ...     env, n_centers=30, scales=[0.5, 1, 2, 4]
-    ... )  # doctest: +SKIP
-    >>> basis.shape  # doctest: +SKIP
-    (120, n_bins)  # 30 centers * 4 scales
+    ...     env, n_centers=30, scales=[0.5, 1, 2, 4], rng=0
+    ... )
+    >>> basis.shape == (120, env.n_bins)  # 30 centers x 4 scales
+    True
 
     References
     ----------
@@ -975,11 +1010,14 @@ def chebyshev_filter_basis(
 
     Examples
     --------
-    >>> basis = chebyshev_filter_basis(
-    ...     env, n_centers=40, max_degree=5
-    ... )  # doctest: +SKIP
-    >>> basis.shape  # doctest: +SKIP
-    (240, n_bins)  # 40 centers * 6 degrees (0 through 5)
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import chebyshev_filter_basis
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> basis = chebyshev_filter_basis(env, n_centers=40, max_degree=5, rng=0)
+    >>> basis.shape == (240, env.n_bins)  # 40 centers x 6 degrees (0 to 5)
+    True
 
     References
     ----------
@@ -1199,15 +1237,19 @@ def spatial_basis(
 
     Examples
     --------
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.ops.basis import spatial_basis  # doctest: +SKIP
-    >>>
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>> basis = spatial_basis(env)  # Automatic defaults  # doctest: +SKIP
-    >>>
-    >>> # Use in GLM immediately
-    >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
-    >>> X = basis[:, bin_indices].T  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import spatial_basis
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> basis = spatial_basis(env, rng=0)  # automatic defaults
+    >>> basis.shape == (102, env.n_bins)  # 34 centers x 3 bandwidths
+    True
+
+    GLM design matrix, one row per time bin inside the environment:
+
+    >>> bins = env.bin_at(positions)
+    >>> X = basis[:, bins[bins >= 0]].T  # (n_time_inside, n_basis)
 
     Notes
     -----
@@ -1308,11 +1350,19 @@ def plot_basis_functions(
 
     Examples
     --------
+    >>> import matplotlib.pyplot as plt
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import geodesic_rbf_basis, plot_basis_functions
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> basis = geodesic_rbf_basis(
-    ...     env, n_centers=50, bandwidth=[5, 10, 20]
-    ... )  # doctest: +SKIP
-    >>> fig = plot_basis_functions(env, basis, n_examples=9)  # doctest: +SKIP
-    >>> fig.savefig("basis_functions.png")  # doctest: +SKIP
+    ...     env, n_centers=20, bandwidth=[5.0, 10.0, 20.0], rng=0
+    ... )
+    >>> fig = plot_basis_functions(env, basis, indices=[0, 1, 2])
+    >>> len(fig.axes) >= 3
+    True
+    >>> plt.close(fig)
 
     Notes
     -----
