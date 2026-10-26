@@ -766,6 +766,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         own scalar values and ``penalty_selected_by_reml`` its provenance
         (``False`` = pooled-``λ`` fallback zero-spike unit); ``pooled`` records
         the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
     n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
         Each unit's spikes outside the analyzed time intervals
         (``analysis_settings["observed_intervals"]``), which are in no rate:
@@ -1698,6 +1702,10 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         provided. A unit_id column or named/non-default index aligns rows
         by identity; an unnamed default RangeIndex uses unit order.
         Mismatched or duplicate labels raise ValueError.
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
     n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
         Each unit's spikes outside the analyzed time intervals
         (``analysis_settings["observed_intervals"]``), which are in no rate:
