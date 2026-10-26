@@ -889,7 +889,7 @@ def heat_kernel_wavelet_basis(
 
 
 def chebyshev_filter_basis(
-    env: BasisCentersConsumer,
+    env: WaveletBasisConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
     max_degree: int = 5,
@@ -899,24 +899,26 @@ def chebyshev_filter_basis(
     rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.float64]:
     """
-    Compute Chebyshev polynomial filter basis on graph Laplacian.
+    Compute Chebyshev polynomial filter basis on the diffusion generator.
 
     For each center c and polynomial degree k, computes:
         B(j) = [T_k(L_scaled)]_{j,c}
 
     where T_k is the Chebyshev polynomial of degree k and L_scaled is the
-    Laplacian rescaled to have eigenvalues in [-1, 1].
+    finite-volume diffusion generator of ``env.smooth`` rescaled to have
+    eigenvalues in [-1, 1].
 
     Parameters
     ----------
     env : Environment
-        Environment with connectivity graph.
+        Environment with finite-volume cell geometry.
     centers : NDArray[np.int_] or None
         Bin indices (0 to ``n_bins - 1``) for filter centers. If None, auto-select.
     max_degree : int, default=5
         Maximum polynomial degree, which controls spatial extent.
         A degree-k basis function is nonzero only for bins within k
-        steps of its center (where each "step" is a bin-to-bin connection).
+        steps of its center, where each step crosses a face shared by two
+        bins (bins that touch only at a corner are not one step apart).
 
         **Choosing max_degree**:
 
@@ -953,17 +955,22 @@ def chebyshev_filter_basis(
         marker -1.
     TypeError
         If centers is not an integer array.
+    NotImplementedError
+        If the layout has no finite-volume geometry builder.
 
     Notes
     -----
-    The operator is the connectivity graph's Laplacian with ``distance``
-    edge weights, rescaled by its spectral radius. It defines hop locality
-    only and is not a physical diffusion; use ``heat_kernel_wavelet_basis``
-    for bin-size-independent spread.
+    The operator is ``L = M**-1 (Deg - W)``, the generator ``env.smooth`` and
+    ``heat_kernel_wavelet_basis`` diffuse with: ``W = A / d`` is the shared-face
+    measure over the center distance and ``M`` the cell volume. It is rescaled
+    by its largest eigenvalue, so the filters do not depend on ``bin_size``.
+    Neighbors across a face of the same size are coupled equally, and bins
+    that only touch at a corner, or sit on opposite sides of a wall, are not
+    coupled.
 
     **Strict locality guarantee**: A degree-k polynomial of L depends only
-    on nodes within k hops. This is stronger than heat kernel or RBF bases,
-    which have infinite (though decaying) support.
+    on bins within k shared-face steps. This is stronger than heat kernel or
+    RBF bases, which have infinite (though decaying) support.
 
     **No eigendecomposition needed**: Computed via Chebyshev recurrence:
 
@@ -1003,8 +1010,9 @@ def chebyshev_filter_basis(
         https://pygsp.readthedocs.io/
     """
 
-    import networkx as nx
     from scipy import sparse
+
+    from neurospatial.ops.diffusion import _symmetric_conjugate
 
     # Handle centers
     if centers is None:
@@ -1041,14 +1049,19 @@ def chebyshev_filter_basis(
     n_bins = env.n_bins
     n_degrees = max_degree + 1
 
-    # Get graph Laplacian (sparse)
-    laplacian = nx.laplacian_matrix(
-        env.connectivity, nodelist=range(n_bins), weight="distance"
-    )
-    laplacian = laplacian.tocsr()  # Ensure CSR for efficient matrix-vector products
+    # Name this analysis, not "smoothing", if the layout has no cell faces.
+    faces = env.binning.faces
+    if isinstance(faces, MissingFaces):
+        raise faces.missing_error("chebyshev_filter_basis")
+    geometry = env.get_diffusion_geometry()
+    # L = M^-1 (Deg - W) is not symmetric on unequal volumes; its symmetric
+    # conjugate S = M^-1/2 (Deg - W) M^-1/2 has the same eigenvalues.
+    symmetric = _symmetric_conjugate(geometry.W, geometry.volumes)
+    degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
+    laplacian = (sparse.diags(1.0 / geometry.volumes) @ (degree - geometry.W)).tocsr()
 
     # Estimate largest eigenvalue for rescaling
-    lambda_max = _estimate_spectral_radius(laplacian)
+    lambda_max = _estimate_spectral_radius(symmetric)
 
     # Rescale Laplacian to [-1, 1]: L_scaled = 2*L/lambda_max - I
     laplacian_scaled = (2.0 / lambda_max) * laplacian - sparse.identity(
@@ -1101,15 +1114,15 @@ def chebyshev_filter_basis(
 
 def _estimate_spectral_radius(laplacian: Any) -> float:
     """
-    Estimate largest eigenvalue of graph Laplacian.
+    Estimate largest eigenvalue of a symmetric positive semi-definite Laplacian.
 
     Uses scipy.sparse.linalg.eigsh for efficiency. Falls back to
     max-degree bound if eigsh fails.
 
     Parameters
     ----------
-    laplacian : sparse matrix
-        Graph Laplacian matrix.
+    laplacian : sparse matrix, shape (n_bins, n_bins)
+        Symmetric Laplacian, e.g. ``M**-1/2 (Deg - W) M**-1/2``.
 
     Returns
     -------
@@ -1133,8 +1146,9 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
         return float(eigenvalues[0])
     except (ArpackNoConvergence, ArpackError) as e:
         # ARPACK failed to converge on the largest eigenvalue. Fall back to the
-        # exact upper bound lambda_max <= 2 * max_degree (diagonal of the graph
-        # Laplacian holds node degrees). Any *other* exception (malformed matrix,
+        # Gershgorin upper bound lambda_max <= 2 * max(diagonal): the diagonal
+        # Deg_i / M_i equals the off-diagonal row sum of M^-1 (Deg - W), which
+        # has the same eigenvalues. Any *other* exception (malformed matrix,
         # wrong dtype) is a real bug and propagates.
         max_degree_bound = 2.0 * float(np.max(laplacian.diagonal()))
         warnings.warn(

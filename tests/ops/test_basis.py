@@ -74,9 +74,14 @@ def test_heat_kernel_uses_faces_after_nwb_round_trip(graph_environment_round_tri
     )
 
 
-def test_heat_kernel_raises_without_finite_volume_geometry(missing_faces_env):
-    with pytest.raises(NotImplementedError, match="heat_kernel_wavelet_basis") as exc:
-        heat_kernel_wavelet_basis(missing_faces_env, centers=np.array([0]))
+@pytest.mark.parametrize(
+    "basis_function", [heat_kernel_wavelet_basis, chebyshev_filter_basis]
+)
+def test_diffusion_bases_raise_without_finite_volume_geometry(
+    missing_faces_env, basis_function
+):
+    with pytest.raises(NotImplementedError, match=basis_function.__name__) as exc:
+        basis_function(missing_faces_env, centers=np.array([0]))
     assert "\nFix:" in str(exc.value)
 
 
@@ -622,24 +627,91 @@ class TestEstimateSpectralRadius:
         assert radius == pytest.approx(expected_bound)
 
 
-def test_chebyshev_hop_locality_unchanged(uniform_grid):
-    """Pin the pre-change filter and verify support stays within k graph hops."""
-    from pathlib import Path
+def _face_hops(env, source):
+    """Hop count from ``source`` across shared cell faces (conductance > 0)."""
+    from scipy.sparse.csgraph import shortest_path
 
-    import networkx as nx
+    W = env.get_diffusion_geometry().W.tocsr(copy=True)
+    W.eliminate_zeros()
+    return shortest_path(W, unweighted=True, indices=source)
 
-    env = uniform_grid(1.0, n=4)
-    basis = chebyshev_filter_basis(
-        env, centers=np.array([5]), max_degree=3, normalize="none"
+
+@pytest.mark.parametrize("spacing", [1.0, 2.5])
+def test_chebyshev_couples_face_neighbors_only(uniform_grid, spacing):
+    """On a square grid, T1 is equal at the 4 face neighbors and 0 at corners.
+
+    Corner-touching bins share no face, so no diffusion crosses between them,
+    although the connectivity graph links them (2.83 cm apart for 2 cm bins).
+    """
+    env = uniform_grid(spacing, n=10)
+    center = int(np.argmin(np.linalg.norm(env.bin_centers - 5 * spacing, axis=1)))
+    neighbors = np.array(list(env.connectivity.neighbors(center)))
+    offsets = np.linalg.norm(
+        env.bin_centers[neighbors] - env.bin_centers[center], axis=1
     )
-    expected = np.load(Path(__file__).parent / "data" / "chebyshev_uniform_grid.npy")
-    assert_allclose(basis, expected, rtol=1e-12, atol=1e-12)
+    face = neighbors[np.isclose(offsets, spacing)]
+    corner = neighbors[np.isclose(offsets, spacing * np.sqrt(2))]
+    assert face.size == 4
+    assert corner.size == 4
+
+    basis = chebyshev_filter_basis(
+        env, centers=np.array([center]), max_degree=1, normalize="none"
+    )
+    assert_allclose(basis[1, face], basis[1, face[0]], rtol=1e-12)
+    assert basis[1, face[0]] < 0
+    assert_allclose(basis[1, corner], 0.0, atol=1e-15)
+
+
+def test_chebyshev_filter_is_bin_size_independent(uniform_grid):
+    """The rescaled operator, and so every filter, is the same at any bin size."""
+    small, large = uniform_grid(1.0, n=8), uniform_grid(2.5, n=8)
+    kwargs = {"centers": np.array([0, 27]), "max_degree": 4, "normalize": "none"}
+    assert_allclose(
+        chebyshev_filter_basis(small, **kwargs),
+        chebyshev_filter_basis(large, **kwargs),
+        rtol=1e-10,
+        atol=1e-12,
+    )
+
+
+def test_chebyshev_uses_the_diffusion_generator(fv_env):
+    """T_k of the rescaled finite-volume generator M^-1 (Deg - W), as env.smooth.
+
+    On grid, hex and a W-maze with junctions, degree 1 is (2 / lambda_max) L - I
+    and the recurrence gives the higher degrees.
+    """
+    from scipy import sparse
+
+    geometry = fv_env.get_diffusion_geometry()
+    W = sparse.csr_matrix(geometry.W)
+    generator = (
+        sparse.diags(1.0 / geometry.volumes)
+        @ (sparse.diags(np.asarray(W.sum(axis=1)).ravel()) - W)
+    ).toarray()
+    lambda_max = np.max(np.linalg.eigvals(generator).real)
+    scaled = 2.0 * generator / lambda_max - np.eye(fv_env.n_bins)
+
+    center = fv_env.n_bins // 2
+    delta = np.zeros(fv_env.n_bins)
+    delta[center] = 1.0
+    expected = [delta, scaled @ delta]
+    for _ in range(2, 4):
+        expected.append(2.0 * scaled @ expected[-1] - expected[-2])
+
+    basis = chebyshev_filter_basis(
+        fv_env, centers=np.array([center]), max_degree=3, normalize="none"
+    )
+    assert_allclose(basis, np.array(expected), rtol=1e-8, atol=1e-10)
+
+
+def test_chebyshev_support_stays_within_k_face_hops(uniform_grid):
+    """A degree-k filter is zero beyond k shared-face steps from its center."""
     env = uniform_grid(1.0, n=10)
     center = 55
     basis = chebyshev_filter_basis(
         env, centers=np.array([center]), max_degree=3, normalize="none"
     )
-    hops = nx.single_source_shortest_path_length(env.connectivity, center)
+    hops = _face_hops(env, center)
     for degree, row in enumerate(basis):
-        outside = [node for node, distance in hops.items() if distance > degree]
-        assert_allclose(row[outside], 0, atol=1e-12)
+        assert_allclose(row[hops > degree], 0, atol=1e-12)
+        assert np.all(row[hops == degree] != 0)
