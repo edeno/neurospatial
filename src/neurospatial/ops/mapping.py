@@ -17,7 +17,12 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
-from neurospatial.geometry import CallIndexes, region_bin_masks, require_cartesian
+from neurospatial.geometry import (
+    CallIndexes,
+    _nearest_lowest_index,
+    region_bin_masks,
+    require_cartesian,
+)
 
 if TYPE_CHECKING:
     from neurospatial.geometry import Arena, Binning
@@ -43,96 +48,27 @@ TieBreakStrategy: TypeAlias = Literal["lowest_index", "closest_center"]
 _TIE_BREAKS: tuple[TieBreakStrategy, ...] = ("lowest_index", "closest_center")
 
 
-def _estimate_typical_bin_spacing(
-    kdtree: cKDTree, bin_centers: NDArray[np.float64]
-) -> float:
-    """Estimate typical bin spacing using deterministic quantile-based sampling.
-
-    Parameters
-    ----------
-    kdtree : cKDTree
-        KD-tree built from bin centers.
-    bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
-        Coordinates of all bin centers.
-
-    Returns
-    -------
-    typical_spacing : float
-        Median nearest-neighbor distance, estimated from sample of bins.
-        Returns np.inf if there is only one bin.
-
-    Notes
-    -----
-    Uses deterministic quantile-based sampling for reproducibility, selecting
-    up to 100 evenly-spaced bin indices.
-    """
-    if len(bin_centers) <= 1:
-        return np.inf
-
-    sample_size = min(100, len(bin_centers))
-    # Deterministic quantile-based sampling (not random)
-    sample_indices = np.linspace(0, len(bin_centers) - 1, sample_size, dtype=int)
-    sample_centers = bin_centers[sample_indices]
-    nn_dists, _ = kdtree.query(sample_centers, k=2, workers=-1)
-    return float(np.median(nn_dists[:, 1]))
-
-
-def _typical_bin_spacing(
-    bin_centers: NDArray[np.float64],
-    bin_sizes: NDArray[np.float64],
-    *,
-    is_linearized_track: bool,
-    tree: cKDTree,
-) -> float:
-    """Typical distance between neighbouring bins, measured along the space.
-
-    On a linearized track this is the median bin length along the track
-    (``bin_sizes``): Euclidean nearest neighbours can lie on another arm
-    of the track. Otherwise it is the median nearest-neighbour distance
-    between bin centres, which equals ``bin_size`` on a regular grid.
-
-    Parameters
-    ----------
-    bin_centers : ndarray of float64, shape (n_bins, n_dims)
-        Bin centers, ``env.bin_centers``.
-    bin_sizes : ndarray of float64, shape (n_bins,)
-        Bin measures, ``env.bin_sizes``.
-    is_linearized_track : bool
-        Whether the bins lie along a linearized track,
-        ``env.is_linearized_track``.
-    tree : scipy.spatial.cKDTree
-        KD-tree over ``bin_centers``, ``env.bin_center_tree()``.
-
-    Returns
-    -------
-    float
-        The spacing; ``np.inf`` for a single-bin environment that is not a
-        track.
-    """
-    if is_linearized_track:
-        return float(np.median(bin_sizes))
-    return _estimate_typical_bin_spacing(tree, bin_centers)
-
-
 def _validate_nearest_options(
     tie_break: TieBreakStrategy,
     max_distance: float | None,
     max_distance_factor: float | None,
-) -> TieBreakStrategy:
+) -> None:
     """Validate the tie-break name and the distance controls."""
-    # Validate parameters
     if max_distance is not None and max_distance_factor is not None:
         raise ValueError(
             "Cannot specify both max_distance and max_distance_factor. "
             "Choose one distance threshold method."
         )
 
-    if max_distance is not None and max_distance < 0:
+    if max_distance is not None and not max_distance >= 0:  # NaN is no distance
         raise ValueError(f"max_distance must be non-negative, got {max_distance}")
 
-    if max_distance_factor is not None and max_distance_factor <= 0:
+    if max_distance_factor is not None and not (
+        np.isfinite(max_distance_factor) and max_distance_factor > 0
+    ):
         raise ValueError(
-            f"max_distance_factor must be positive, got {max_distance_factor}"
+            f"max_distance_factor must be positive and finite, got "
+            f"{max_distance_factor}"
         )
 
     if tie_break not in _TIE_BREAKS:
@@ -141,155 +77,56 @@ def _validate_nearest_options(
             f"{list(_TIE_BREAKS)}"
         )
 
-    return tie_break
-
-
-def _lowest_tied_index(
-    bin_centers: NDArray[np.float64],
-    kdtree: cKDTree,
-    points: NDArray[np.float64],
-    nearest: NDArray[np.float64],
-) -> NDArray[np.int64]:
-    """Lowest index among the centers equidistant (within 1e-10) to each point.
-
-    Only the centers in a ball just wider than each point's nearest distance
-    can tie, so their distances are computed instead of all centers'.
-
-    Parameters
-    ----------
-    bin_centers : ndarray, shape (n_bins, n_dims)
-    kdtree : scipy.spatial.cKDTree
-        Tree over ``bin_centers``.
-    points : ndarray, shape (n_points, n_dims)
-    nearest : ndarray, shape (n_points,)
-        Distance from each point to its nearest center, from ``kdtree``.
-
-    Returns
-    -------
-    ndarray of int64, shape (n_points,)
-    """
-    # The margin covers the tie tolerance and rounding differences between
-    # the tree's distances and np.linalg.norm.
-    radius = nearest * (1.0 + 1e-12) + 2e-10
-    candidates = kdtree.query_ball_point(
-        points, radius, workers=-1, return_sorted=False
-    )
-    counts = np.fromiter(map(len, candidates), dtype=np.intp, count=len(points))
-    index = np.concatenate(candidates).astype(np.int64)
-    row = np.repeat(np.arange(len(points)), counts)
-    starts = np.r_[0, np.cumsum(counts)[:-1]]
-    distance = np.linalg.norm(bin_centers[index] - points[row], axis=1)
-    row_min = np.minimum.reduceat(distance, starts)
-    tied = np.abs(distance - row_min[row]) < 1e-10
-    return np.minimum.reduceat(np.where(tied, index, np.iinfo(np.int64).max), starts)
-
 
 @overload
 def _nearest_bin_query(
-    bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
     points: NDArray[np.float64],
     *,
     tie_break: TieBreakStrategy = ...,
     return_dist: Literal[False] = ...,
     max_distance: float | None = ...,
-    max_distance_factor: float | None = ...,
 ) -> NDArray[np.int64]: ...
 @overload
 def _nearest_bin_query(
-    bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
     points: NDArray[np.float64],
     *,
     tie_break: TieBreakStrategy = ...,
     return_dist: bool,
     max_distance: float | None = ...,
-    max_distance_factor: float | None = ...,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
 def _nearest_bin_query(
-    bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
     points: NDArray[np.float64],
     *,
     tie_break: TieBreakStrategy = "lowest_index",
     return_dist: bool = False,
     max_distance: float | None = None,
-    max_distance_factor: float | None = None,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
-    """Query explicit centers and their tree using validated distance controls.
+    """Query a tree of bin centers using validated distance controls.
 
     Parameters
     ----------
-    bin_centers : ndarray, shape (n_bins, n_dims)
-        Coordinates indexed by the already constructed kdtree.
     kdtree : scipy.spatial.cKDTree
-        Tree over bin_centers; its lifetime belongs to the caller.
+        Tree over the bin centers, indexed by bin; its lifetime belongs to the
+        caller.
     points : ndarray, shape (n_points, n_dims)
         Query coordinates in the same stored coordinate columns.
     """
     # Query KD-tree
     if tie_break == "closest_center":
-        # Fast path: just use nearest neighbor
         distances, indices = kdtree.query(points, k=1, workers=-1)
         bin_indices: NDArray[np.int64] = indices.astype(np.int64)
-
-    elif tie_break == "lowest_index":
-        # Deterministic path: find all ties and pick lowest index.
-        # We first query only the k=10 nearest candidates as a fast approximation:
-        # the lowest-index winner almost always lies among the nearest few. If a
-        # tie is *detected* among those candidates (see ``tied_rows`` below), we
-        # fall back to an exact all-center distance computation for just those
-        # rows, so >10 equidistant bins are still resolved correctly. The k=10
-        # cap only bounds the cheap first pass; it is not an upper bound on the
-        # number of ties that can be resolved exactly.
-        max_neighbors = min(10, len(bin_centers))
-        distances_kn, indices_kn = kdtree.query(points, k=max_neighbors, workers=-1)
-
-        # Handle k=1 case (single bin environment)
-        if max_neighbors == 1:
-            distances = np.atleast_1d(distances_kn)
-            bin_indices = np.atleast_1d(indices_kn).astype(np.int64)
-        else:
-            distances = distances_kn[:, 0]
-            # Vectorized tie resolution: for each point, find minimum index among ties
-            # Create mask of tied neighbors (within tolerance of minimum distance)
-            min_dists = distances_kn[:, 0:1]  # Keep dims for broadcasting
-            is_tied = np.abs(distances_kn - min_dists) < 1e-10  # (n_points, k)
-
-            # For each point, find minimum index among tied neighbors
-            # Set non-tied indices to large value so they're ignored in min
-            tied_indices = np.where(is_tied, indices_kn, np.iinfo(np.intp).max)
-            bin_indices = np.min(tied_indices, axis=1).astype(np.int64)
-
-            # cKDTree only returns max_neighbors candidates above. For exact ties
-            # involving more candidates, compute all-center distances only for
-            # rows where a tie was detected.
-            tied_rows = np.flatnonzero(np.count_nonzero(is_tied, axis=1) > 1)
-            if tied_rows.size:
-                bin_indices[tied_rows] = _lowest_tied_index(
-                    bin_centers, kdtree, points[tied_rows], distances[tied_rows]
-                )
-
     else:
-        raise ValueError(
-            f"Invalid tie_break mode: {tie_break!r}. "
-            f"Must be 'lowest_index' or 'closest_center'."
-        )
+        # The same tie rule as bin_at on a nearest-center layout: equal within
+        # rounding at the coordinates' magnitude, in any length unit.
+        nearest, distances = _nearest_lowest_index(kdtree, points)
+        bin_indices = nearest.astype(np.int64)
 
-    # Check if any points are outside the environment based on distance threshold
-    if max_distance is not None or max_distance_factor is not None:
-        # Explicit distance threshold provided
-        if max_distance is not None:
-            threshold = max_distance
-        else:
-            # Estimate typical bin spacing and apply factor
-            # assert: max_distance_factor is not None (checked above)
-            assert max_distance_factor is not None  # for mypy
-            typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, bin_centers)
-            threshold = max_distance_factor * typical_bin_spacing
-
-        # Mark points beyond threshold as outside
-        bin_indices[distances > threshold] = -1
+    # Points farther than max_distance from every center are outside.
+    if max_distance is not None:
+        bin_indices[distances > max_distance] = -1
 
     if return_dist:
         # Set distance to inf for points outside environment
@@ -565,6 +402,8 @@ def resample_field(
     ------
     ValueError
         If field size doesn't match source environment,
+        if the field has an infinite value (NaN marks a missing bin; an
+        infinite value has no defined nearest or average value),
         if method is invalid,
         if bandwidth is missing/invalid for diffuse method,
         or if environments have different dimensions.
@@ -617,10 +456,10 @@ def resample_field(
     smooth(valid)``. Only bins covered by the source contribute weight, so
     covered bins adjacent to an uncovered region are **not** biased toward zero,
     and a ``NaN`` in the source field is interpolated rather than propagating.
-    The heat kernel has full support across each connected diffusion component,
-    so any bin in a component that contains at least one valid bin is filled
-    (weighted by distance — near valid bins dominate). A bin is left ``NaN`` only
-    if it is outside the source or lies in a component with no valid bin at all.
+    Near valid bins dominate each average. A bin is left ``NaN`` if it is
+    outside the source, or if the valid weight reaching it is below the
+    truncation-noise floor of ``dst_env.smooth(..., mode="average")``, as for a
+    bin many ``bandwidth`` away from every valid bin.
 
     **Dimension requirements**: Both environments must have the same number
     of dimensions (e.g., both 2D).
@@ -711,8 +550,8 @@ def resample_field(
                 "bandwidth must be provided when method='diffuse'. "
                 "Specify bandwidth parameter (in spatial units)."
             )
-        if bandwidth <= 0:
-            raise ValueError(f"bandwidth must be positive (got {bandwidth})")
+        if not (np.isfinite(bandwidth) and bandwidth > 0):
+            raise ValueError(f"bandwidth must be positive and finite (got {bandwidth})")
 
     # Check dimension compatibility
     if src_centers.shape[1] != dst_centers.shape[1]:
@@ -722,20 +561,12 @@ def resample_field(
             f"destination has {dst_centers.shape[1]}D."
         )
 
-    # A destination bin is outside the source when its center lies in no
-    # source bin, by the source's own containment rule (Environment.bin_at);
-    # a distance-to-nearest-center threshold would let bins well outside the
-    # source copy its edge values. Inside, a bin takes the value of the nearest
-    # source bin center, as Environment.interpolate(mode="nearest") does. The
-    # source caches its KD-tree, so repeated resampling does not rebuild it.
-    outside_source = src_env.bin_at(dst_centers) < 0
-    nearest_source_bins = _nearest_bin_query(
-        src_centers,
-        src_env.bin_center_tree(),
-        dst_centers,
-        tie_break="lowest_index",
-    )
-    resampled = _pull_back_nearest(field, nearest_source_bins, outside_source)
+    # Each destination bin reads the nearest source bin center's value, NaN
+    # where its center lies in no source bin by the source's own containment
+    # rule; a distance-to-nearest-center threshold would let bins well outside
+    # the source copy its edge values. The source caches its KD-tree, so
+    # repeated resampling does not rebuild it.
+    resampled = src_env.interpolate(field, dst_centers, mode="nearest")
     if method == "nearest":
         return resampled
     assert bandwidth is not None  # Already validated above
@@ -749,34 +580,5 @@ def resample_field(
         dst_env.diffuse(resampled, bandwidth=bandwidth, mode="average"),
         dtype=np.float64,
     )
-    smoothed[outside_source] = np.nan
+    smoothed[src_env.bin_at(dst_centers) < 0] = np.nan
     return smoothed
-
-
-def _pull_back_nearest(
-    field: NDArray[np.float64],
-    nearest_source_bins: NDArray[np.int64],
-    outside_source: NDArray[np.bool_],
-) -> NDArray[np.float64]:
-    """Give each destination bin the value of its nearest source bin center.
-
-    Parameters
-    ----------
-    field : ndarray of float64, shape (n_src_bins,)
-        Values on the source bins.
-    nearest_source_bins : ndarray of int64, shape (n_dst_bins,)
-        Nearest source bin of each destination bin center.
-    outside_source : ndarray of bool, shape (n_dst_bins,)
-        Destination bins whose centers lie in no source bin.
-
-    Returns
-    -------
-    ndarray of float64, shape (n_dst_bins,)
-        Pulled-back values; NaN where the source value is NaN or the
-        destination bin is outside the source.
-    """
-    resampled: NDArray[np.float64] = field[nearest_source_bins].astype(
-        np.float64, copy=True
-    )
-    resampled[outside_source] = np.nan
-    return resampled

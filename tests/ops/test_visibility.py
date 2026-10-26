@@ -1078,7 +1078,7 @@ class TestVisibilityOccupancySupport:
 
     def test_headings_must_match_times(self, open_square, walk):
         times, positions, headings = walk
-        with pytest.raises(ValueError, match=r"one heading per timestamp"):
+        with pytest.raises(ValueError, match=r"one heading per position"):
             self._seen(open_square, times, positions, headings[:-1])
 
     @pytest.mark.parametrize(

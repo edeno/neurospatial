@@ -224,8 +224,7 @@ def test_compatibility_functions_need_only_the_public_analysis_surface():
         get_diffusion_geometry=env.get_diffusion_geometry,
         diffusion_accuracy=env.diffusion_accuracy,
         compute_gaussian_kernel=env.compute_gaussian_kernel,
-        bin_centers=env.bin_centers,
-        bin_center_tree=env.bin_center_tree,
+        bin_spacing=env.bin_spacing,
         binning=env.binning,
     )
     np.testing.assert_array_equal(
@@ -235,10 +234,6 @@ def test_compatibility_functions_need_only_the_public_analysis_surface():
         _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(bandwidth=1.0)
     )
     np.testing.assert_array_equal(
-        _diffusion_generator(
-            host.bin_centers, host.bin_center_tree(), host.get_diffusion_geometry()
-        ).toarray(),
-        _diffusion_generator(
-            env.bin_centers, env.bin_center_tree(), env.get_diffusion_geometry()
-        ).toarray(),
+        _diffusion_generator(host.get_diffusion_geometry(), host.bin_spacing).toarray(),
+        _diffusion_generator(env.get_diffusion_geometry(), env.bin_spacing).toarray(),
     )

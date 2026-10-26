@@ -76,7 +76,7 @@ class TestAllocentricToEgocentric:
         positions = np.array([[0.0, 0.0], [1.0, 1.0]])  # 2 timepoints
         headings = np.array([0.0])  # 1 timepoint
 
-        with pytest.raises(ValueError, match=r"Headings/positions length mismatch"):
+        with pytest.raises(ValueError, match=r"one heading per position"):
             allocentric_to_egocentric(positions, headings, points)
 
     @pytest.mark.parametrize("n_rows", [1, 3])
@@ -162,7 +162,7 @@ class TestEgocentricToAllocentric:
         positions = np.array([[0.0, 0.0], [1.0, 1.0]])  # 2 timepoints
         headings = np.array([0.0])  # 1 timepoint
 
-        with pytest.raises(ValueError, match=r"Headings/positions length mismatch"):
+        with pytest.raises(ValueError, match=r"one heading per position"):
             egocentric_to_allocentric(positions, headings, ego_points)
 
 
@@ -601,17 +601,7 @@ class TestEgocentricDistance3DTargets:
 
 
 class TestWrapAngleAntipode:
-    """_wrap_bearing keeps the antipode at +pi per the documented (-pi, pi]."""
-
-    def test_wrap_angle_antipode_is_plus_pi(self):
-        """+/- pi and odd multiples wrap to +pi; interior values are unchanged."""
-        from neurospatial.ops.egocentric import _wrap_bearing
-
-        antipodes = _wrap_bearing(np.array([np.pi, -np.pi, 3 * np.pi, -3 * np.pi]))
-        assert_allclose(antipodes, np.pi)
-
-        interior = np.array([0.3, -1.2, 0.0, 2.0])
-        assert_allclose(_wrap_bearing(interior), interior)
+    """Egocentric bearings keep the antipode at +pi per the documented (-pi, pi]."""
 
     def test_egocentric_bearing_directly_behind_is_plus_pi(self):
         """A target directly behind the animal returns bearing +pi, not -pi."""

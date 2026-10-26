@@ -22,7 +22,7 @@ visibility : Viewshed, gaze, line-of-sight
 basis : GLM spatial basis functions
 """
 
-# Alignment operations
+# Occupancy allocation and transition helpers for Environment
 from neurospatial.ops._linear_allocation import (
     _linear_grid_occupancy as _linear_grid_occupancy,
 )
@@ -43,11 +43,9 @@ from neurospatial.ops._transitions import (
     _random_walk_transitions as _random_walk_transitions,
 )
 from neurospatial.ops._types import KernelMode
-from neurospatial.ops.alignment import (
-    apply_similarity_transform,
-    get_2d_rotation_matrix,
-    map_probabilities,
-)
+
+# Alignment operations
+from neurospatial.ops.alignment import map_probabilities
 
 # Basis functions (GLM spatial basis)
 from neurospatial.ops.basis import (
@@ -108,7 +106,6 @@ from neurospatial.ops.distance import (
 )
 
 # Egocentric operations
-from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 from neurospatial.ops.egocentric import (
     allocentric_to_egocentric,
     compute_egocentric_bearing,
@@ -133,7 +130,6 @@ from neurospatial.ops.graph import (
 from neurospatial.ops.mapping import TieBreakStrategy, regions_to_mask, resample_field
 from neurospatial.ops.mapping import _nearest_bin_query as _nearest_bin_query
 from neurospatial.ops.mapping import _regions_mask as _regions_mask
-from neurospatial.ops.mapping import _typical_bin_spacing as _typical_bin_spacing
 from neurospatial.ops.mapping import (
     _validate_nearest_options as _validate_nearest_options,
 )
@@ -164,6 +160,7 @@ from neurospatial.ops.transforms import (
     from_rotation_matrix,
     identity,
     identity_nd,
+    rotate_2d,
     scale_2d,
     scale_3d,
     simple_scale,
@@ -189,8 +186,6 @@ from neurospatial.ops.visibility import (
 __all__ = [
     "MRFBasis",
     # Alignment
-    "apply_similarity_transform",
-    "get_2d_rotation_matrix",
     "map_probabilities",
     # Binning
     "TieBreakStrategy",
@@ -237,6 +232,7 @@ __all__ = [
     # Transforms - 2D factories
     "flip_y",
     "identity",
+    "rotate_2d",
     "scale_2d",
     "translate",
     # Transforms - 3D factories

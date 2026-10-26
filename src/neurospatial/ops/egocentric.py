@@ -74,6 +74,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry import CallIndexes, locate, require_cartesian
 
@@ -158,27 +159,12 @@ def allocentric_to_egocentric(
             f"3. Verify you're passing an array of points, not a single point"
         )
 
-    if positions.ndim != 2 or positions.shape[1] != 2:
-        raise ValueError(
-            f"Cannot transform: invalid positions shape {positions.shape}.\n\n"
-            f"WHAT: positions must have shape (n_time, 2)\n"
-            f"WHY: Need (x, y) position at each timepoint for the transform origin\n\n"
-            f"Fix:\n"
-            f"1. Reshape: positions.reshape(-1, 2)\n"
-            f"2. For single position: positions.reshape(1, 2)"
-        )
-
-    if headings.ndim != 1 or len(headings) != len(positions):
-        raise ValueError(
-            f"Headings/positions length mismatch.\n\n"
-            f"WHAT: headings shape {headings.shape} != positions length {len(positions)}\n"
-            f"WHY: Need one heading per timepoint for coordinate rotation\n\n"
-            f"Fix:\n"
-            f"1. Ensure headings and positions are aligned to same timepoints\n"
-            f"2. Check for off-by-one errors in slicing\n"
-            f"3. Interpolate headings to match positions if sampled differently"
-        )
-
+    _check_pose(
+        "allocentric_to_egocentric()",
+        positions,
+        headings,
+        why="each time's points are rotated about its position by its heading.",
+    )
     n_time = len(positions)
 
     if points.ndim > 3:
@@ -216,26 +202,11 @@ def allocentric_to_egocentric(
     if points.ndim == 2:
         points = np.broadcast_to(points, (n_time, points.shape[0], 2))
 
-    # Center points around animal position
-    # positions: (n_time, 2) -> (n_time, 1, 2) for broadcasting
+    # Center points on the animal, then rotate by -heading into its frame.
     centered = points - positions[:, np.newaxis, :]
-
-    # Build rotation matrices for each timepoint
-    # Rotate by -heading to transform from allocentric to egocentric
-    cos_h = np.cos(-headings)
-    sin_h = np.sin(-headings)
-
-    # Rotation matrices: (n_time, 2, 2)
-    rot = np.zeros((n_time, 2, 2), dtype=np.float64)
-    rot[:, 0, 0] = cos_h
-    rot[:, 0, 1] = -sin_h
-    rot[:, 1, 0] = sin_h
-    rot[:, 1, 1] = cos_h
-
-    # Apply rotation: (n_time, n_points, 2) @ (n_time, 2, 2).T
-    # Use einsum for vectorized rotation
-    result: NDArray[np.float64] = np.einsum("tij,tpj->tpi", rot, centered)
-
+    result: NDArray[np.float64] = np.einsum(
+        "tij,tpj->tpi", _rotations(-headings), centered
+    )
     return result
 
 
@@ -303,47 +274,56 @@ def egocentric_to_allocentric(
             f"Got shape: {ego_points.shape}"
         )
 
+    _check_pose(
+        "egocentric_to_allocentric()",
+        positions,
+        headings,
+        why="each time's points are rotated by its heading about its position.",
+    )
+    # Rotate by +heading (the inverse of allocentric_to_egocentric), then
+    # move the origin back to the animal.
+    rotated = np.einsum("tij,tpj->tpi", _rotations(headings), ego_points)
+    result: NDArray[np.float64] = rotated + positions[:, np.newaxis, :]
+    return result
+
+
+def _check_pose(
+    call: str,
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    why: str,
+) -> None:
+    """Require positions ``(n_time, 2)`` and one heading per position.
+
+    ``call`` names the public function and ``why`` says what each heading
+    is used for, in the error messages.
+    """
     if positions.ndim != 2 or positions.shape[1] != 2:
         raise ValueError(
-            f"Cannot transform: invalid positions shape {positions.shape}.\n\n"
-            f"WHAT: positions must have shape (n_time, 2)\n"
-            f"WHY: Need (x, y) position at each timepoint for the transform origin\n\n"
-            f"Fix:\n"
-            f"1. Reshape: positions.reshape(-1, 2)\n"
-            f"2. For single position: positions.reshape(1, 2)"
+            _format_error(
+                f"{call} needs positions of shape (n_time, 2); got {positions.shape}.",
+                fix="pass one (x, y) row per sample",
+            )
         )
-
-    if headings.ndim != 1 or len(headings) != len(positions):
+    if headings.shape != (len(positions),):
         raise ValueError(
-            f"Headings/positions length mismatch.\n\n"
-            f"WHAT: headings shape {headings.shape} != positions length {len(positions)}\n"
-            f"WHY: Need one heading per timepoint for coordinate rotation\n\n"
-            f"Fix:\n"
-            f"1. Ensure headings and positions are aligned to same timepoints\n"
-            f"2. Check for off-by-one errors in slicing\n"
-            f"3. Interpolate headings to match positions if sampled differently"
+            _format_error(
+                f"{call} needs one heading per position, shape "
+                f"({len(positions)},); got {headings.shape}.",
+                why=why,
+                fix="pass headings with the same length as positions (NaN marks "
+                "a missing heading)",
+            )
         )
 
-    n_time = len(positions)
 
-    # Build rotation matrices for each timepoint
-    # Rotate by +heading (inverse of -heading used in allocentric_to_egocentric)
-    cos_h = np.cos(headings)
-    sin_h = np.sin(headings)
-
-    rot = np.zeros((n_time, 2, 2), dtype=np.float64)
-    rot[:, 0, 0] = cos_h
-    rot[:, 0, 1] = -sin_h
-    rot[:, 1, 0] = sin_h
-    rot[:, 1, 1] = cos_h
-
-    # Apply rotation
-    rotated: NDArray[np.float64] = np.einsum("tij,tpj->tpi", rot, ego_points)
-
-    # Add animal position
-    result: NDArray[np.float64] = rotated + positions[:, np.newaxis, :]
-
-    return result
+def _rotations(angles: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Counterclockwise rotation matrix by each angle, shape (n, 2, 2)."""
+    cos, sin = np.cos(angles), np.sin(angles)
+    return np.stack(
+        [np.stack([cos, -sin], axis=-1), np.stack([sin, cos], axis=-1)], axis=-2
+    )
 
 
 def compute_egocentric_bearing(
@@ -405,28 +385,9 @@ def compute_egocentric_bearing(
     bearing = np.arctan2(ego[..., 1], ego[..., 0])
 
     # Wrap to (-pi, pi]
-    bearing = _wrap_bearing(bearing)
+    bearing = wrap_angle(bearing)
 
     return bearing
-
-
-def _wrap_bearing(angle: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Wrap angles to (-pi, pi].
-
-    Parameters
-    ----------
-    angle : NDArray
-        Angles in radians.
-
-    Returns
-    -------
-    NDArray
-        Angles wrapped to the half-open interval (-pi, pi] (a target directly
-        behind the animal returns +pi, never -pi).
-    """
-    # x % (-2π) lies in (-2π, 0], so shifting by -π then +π gives (-π, π].
-    wrapped = (angle - np.pi) % (-2 * np.pi) + np.pi
-    return wrapped
 
 
 def compute_egocentric_distance(
@@ -559,7 +520,7 @@ def compute_egocentric_distance(
         distances = np.sqrt(np.sum(diff**2, axis=-1))
 
     else:  # geodesic
-        from neurospatial.ops.distance import distance_field as compute_distance_field
+        from neurospatial.ops.distance import _geodesic_pair_distances
 
         # env is guaranteed non-None here (validated above)
         assert env is not None
@@ -594,25 +555,13 @@ def compute_egocentric_distance(
             time_varying=targets.ndim == 3,
         )
 
-        # Cache distance fields by target bin: static targets recompute once;
-        # time-varying targets pay only for unique target bins.
-        distance_field_cache: dict[int, NDArray[np.float64]] = {}
-
-        for t in range(n_time):
-            pos_bin = int(pos_bins[t])
-            if pos_bin < 0:
-                # Position outside environment - row stays NaN
-                continue
-            for i in range(n_targets):
-                target_bin = int(target_bins[t, i])
-                if target_bin < 0:
-                    # Missing (NaN) target position - cell stays NaN
-                    continue
-                if target_bin not in distance_field_cache:
-                    distance_field_cache[target_bin] = compute_distance_field(
-                        graph, sources=[target_bin]
-                    )
-                distances[t, i] = distance_field_cache[target_bin][pos_bin]
+        # A position outside the environment or a missing (NaN) target
+        # leaves its cell NaN. Dijkstra runs once per distinct target bin.
+        position_bins = np.broadcast_to(pos_bins[:, np.newaxis], target_bins.shape)
+        measured = (position_bins >= 0) & (target_bins >= 0)
+        distances[measured] = _geodesic_pair_distances(
+            graph, target_bins[measured], position_bins[measured], operation=call
+        )
 
     return distances
 

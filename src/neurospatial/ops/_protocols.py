@@ -3,9 +3,10 @@
 A public ops function that takes an environment reads the components it
 needs once, through these members, and computes from those components. The
 only methods it calls are queries the environment answers from a structure it
-caches (``bin_at``, ``bin_center_tree``, ``diffuse``), so repeated calls do
-not rebuild it, and the environment's own renderer (``plot_field``); it calls
-them at the boundary, never from inside the computation.
+caches (``bin_at``, ``bin_center_tree``, ``interpolate``, ``diffuse``), so
+repeated calls do not rebuild it, and the environment's own renderer
+(``plot_field``); it calls them at the boundary, never from inside the
+computation.
 
 Each base protocol names one to three members. A composite protocol combines
 bases and may add a member that only its own functions read; a member that
@@ -15,7 +16,7 @@ two composites need becomes a base.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -134,6 +135,19 @@ class CenterTreeConsumer(Protocol):
     def bin_center_tree(self) -> cKDTree: ...
 
 
+class BinSpacingConsumer(Protocol):
+    """The environment's typical distance between neighboring bins."""
+
+    @property
+    def bin_spacing(self) -> float: ...
+
+
+class BinLookupConsumer(Protocol):
+    """The bin each point lies in, -1 outside, by the environment's own rule."""
+
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
+
+
 class FieldPlotConsumer(Protocol):
     """Draw one value per bin on an Axes, through the environment's renderer."""
 
@@ -200,32 +214,46 @@ class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
     def bin_sizes(self) -> NDArray[np.float64]: ...
 
 
-class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Protocol):
-    """Diffusion geometry, cell faces and graph for heat-kernel and Chebyshev bases."""
+class WaveletBasisConsumer(
+    BasisCentersConsumer, DiffusionGeometryConsumer, BinSpacingConsumer, Protocol
+):
+    """Diffusion geometry, cell faces, graph and bin spacing for wavelet bases."""
 
     @property
     def binning(self) -> Binning: ...
 
 
-class ProbabilityTargetConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol):
+class ProbabilityTargetConsumer(
+    CartesianBinsConsumer,
+    CenterTreeConsumer,
+    BinLookupConsumer,
+    BinSpacingConsumer,
+    Protocol,
+):
     """Cartesian bins that receive probabilities from their nearest centers.
 
-    ``map_probabilities`` reads ``bin_center_tree`` once, at its boundary, and
-    ``bin_at`` for source centers farther than one bin spacing from every
-    target center, to tell whether they still lie inside a target bin.
+    ``map_probabilities`` reads ``bin_center_tree`` and ``bin_spacing`` once,
+    at its boundary, and ``bin_at`` for source centers farther than that
+    limit from every target center, to tell whether they still lie inside a
+    target bin.
     """
 
-    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
+class ResampleSourceConsumer(CartesianBinsConsumer, BinLookupConsumer, Protocol):
+    """Cartesian bins whose field is read at the destination bin centers.
 
-class ResampleSourceConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol):
-    """Cartesian bins whose field is pulled back by nearest bin center.
-
-    ``resample_field`` reads ``bin_at`` to tell which destination bins lie in
-    the source, and ``bin_center_tree`` to find their nearest source centers.
+    ``resample_field`` reads the field with ``interpolate(mode="nearest")``,
+    which gives each point the nearest source bin center's value, NaN outside
+    the source, and ``bin_at`` to keep the diffused field NaN outside it.
     """
 
-    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
+    def interpolate(
+        self,
+        field: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        mode: Literal["nearest", "linear"] = ...,
+    ) -> NDArray[np.float64]: ...
 
 
 class ResampleTargetConsumer(CartesianConsumer, BinCentersConsumer, Protocol):

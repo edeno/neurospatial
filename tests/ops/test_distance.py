@@ -462,6 +462,43 @@ class TestEdgeWeightMustExist:
         assert_allclose(distance_field(graph, [0]), [0.0, 2.5, 5.0])
 
 
+def _reciprocal_digraph() -> nx.DiGraph:
+    graph = nx.DiGraph()
+    graph.add_edge(0, 1, distance=2.0)
+    graph.add_edge(1, 0, distance=2.0)
+    graph.add_edge(1, 2, distance=2.0)
+    return graph
+
+
+def _path_multigraph() -> nx.MultiGraph:
+    graph = nx.MultiGraph()
+    graph.add_edge(0, 1, distance=2.0)
+    graph.add_edge(1, 2, distance=2.0)
+    return graph
+
+
+class TestOnlyUndirectedSimpleGraphs:
+    """Reciprocal or parallel edges would double or misread connection lengths."""
+
+    @pytest.mark.parametrize(
+        "graph", [_reciprocal_digraph(), _path_multigraph()], ids=["di", "multi"]
+    )
+    @pytest.mark.parametrize(
+        "compute",
+        [
+            lambda graph: geodesic_distance_matrix(graph),
+            lambda graph: distance_field(graph, [0]),
+            lambda graph: distance_field(graph, [0], weight=None),
+            lambda graph: pairwise_distances(graph, [0, 2]),
+            lambda graph: neighbors_within(graph, [2], radius=3.0),
+        ],
+        ids=["matrix", "field", "field-hops", "pairwise", "neighbors"],
+    )
+    def test_directed_or_multigraph_is_refused(self, graph, compute):
+        with pytest.raises(ValueError, match=r"undirected simple nx\.Graph"):
+            compute(graph)
+
+
 _LINE_CENTERS = np.arange(5, dtype=float)[:, None]
 
 _BIN_QUERIES = {

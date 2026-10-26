@@ -5,11 +5,9 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial import cKDTree
 
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
-from neurospatial.ops import _typical_bin_spacing
 from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
 from neurospatial.simulation.models.base import geodesic_lookup_bins
@@ -219,15 +217,8 @@ class PlaceCellModel:
 
         # Set width
         if width is None:
-            # 3 bin spacings. Off a track ``env.bin_sizes`` is a per-bin volume
-            # (an area in 2-D), not a length, so use the neighbour spacing.
-            places = self._embed(env.bin_centers)
-            spacing = _typical_bin_spacing(
-                places,
-                env.bin_sizes,
-                is_linearized_track=env.is_linearized_track,
-                tree=cKDTree(places) if polar else env.bin_center_tree(),
-            )
+            # 3 bin spacings, measured between places like the field itself.
+            spacing = env.bin_spacing
             if not np.isfinite(spacing):
                 raise ValueError(
                     f"Cannot choose a default place-field width: the environment "

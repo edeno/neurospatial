@@ -173,9 +173,6 @@ def neighbor_reduce(
                 f"weights are only supported for 'sum' and 'mean' operations, got '{op}'"
             )
 
-    # Initialize result array
-    result = np.full(env.n_bins, np.nan, dtype=np.float64)
-
     # ``sum`` and ``mean`` are linear over the neighborhood and can be expressed
     # as a sparse matrix-vector product against the (binary) adjacency matrix.
     # ``max``/``min``/``std`` are not linear, so they keep the loop fallback.
@@ -184,6 +181,7 @@ def neighbor_reduce(
             env, field, op=op, weights=weights, include_self=include_self
         )
 
+    result = np.full(env.n_bins, np.nan, dtype=np.float64)
     # Loop fallback for non-linear reductions (max, min, std).
     for bin_id in range(env.n_bins):
         # Get neighbors from connectivity graph
@@ -248,49 +246,30 @@ def _neighbor_reduce_linear(
     a sparse matrix-vector product ``A @ x`` where ``A`` is the binary adjacency
     matrix (with the diagonal added when ``include_self`` is True).
     """
-    import networkx as nx
     import scipy.sparse as sp
 
-    n_bins = env.n_bins
+    from neurospatial.ops.distance import _bin_adjacency
 
-    # Binary adjacency matrix ordered by node id 0..n_bins-1.
-    adjacency = nx.to_scipy_sparse_array(
-        env.connectivity,
-        nodelist=range(n_bins),
-        weight=None,
-        format="csr",
-        dtype=np.float64,
+    n_bins = env.n_bins
+    adjacency = _bin_adjacency(
+        env.connectivity, weight=None, operation="neighbor_reduce()"
     )
     if include_self:
         adjacency = adjacency + sp.eye(n_bins, format="csr", dtype=np.float64)
 
-    # Number of contributing neighbors per bin (row sums of the adjacency).
-    neighbor_counts = np.asarray(adjacency.sum(axis=1)).ravel()
-    empty = neighbor_counts == 0
-
+    # Unweighted is weighted by ones: ``adjacency @ ones`` is the neighbor
+    # count, so ``weight_sum > 0`` marks exactly the non-empty neighborhoods.
     if weights is None:
-        numerator = adjacency @ field
-        if op == "sum":
-            result = numerator
-            result[empty] = np.nan
-            return np.asarray(result, dtype=np.float64)
-        # mean: divide neighbor sum by neighbor count
-        result = np.full(n_bins, np.nan, dtype=np.float64)
-        valid = ~empty
-        result[valid] = numerator[valid] / neighbor_counts[valid]
-        return result
-
-    # Weighted operations.
-    weighted_numerator = adjacency @ (field * weights)
+        weights = np.ones(n_bins, dtype=np.float64)
+    numerator = np.asarray(adjacency @ (field * weights), dtype=np.float64)
     if op == "sum":
-        result = np.asarray(weighted_numerator, dtype=np.float64)
-        result[empty] = np.nan
-        return result
-    # Weighted mean: sum(w * v) / sum(w) over neighbors.
+        numerator[np.asarray(adjacency.sum(axis=1)).ravel() == 0] = np.nan
+        return numerator
+    # Mean: sum(w * v) / sum(w) over neighbors.
     weight_sum = adjacency @ weights
     result = np.full(n_bins, np.nan, dtype=np.float64)
     valid = weight_sum > 0
-    result[valid] = weighted_numerator[valid] / weight_sum[valid]
+    result[valid] = numerator[valid] / weight_sum[valid]
     return result
 
 
@@ -470,14 +449,14 @@ def graph_convolve(
     field_clean = np.where(missing, 0.0, field)
 
     if normalize:
-        # Nadaraya-Watson: average over the observed source bins only.
-        observed_weights = kernel_matrix * ~missing[np.newaxis, :]
-        weight_sums = observed_weights.sum(axis=1)
+        # Nadaraya-Watson: average over the observed source bins only. The
+        # missing bins are zero in field_clean, so two matrix-vector products
+        # give the observed numerator and weight without an n_bins² copy.
+        weight_sums = kernel_matrix @ (~missing).astype(np.float64)
+        numerator = kernel_matrix @ field_clean
         supported = weight_sums > 0
         result: NDArray[np.float64] = np.full(env.n_bins, np.nan, dtype=np.float64)
-        result[supported] = (
-            observed_weights[supported] @ field_clean / weight_sums[supported]
-        )
+        result[supported] = numerator[supported] / weight_sums[supported]
         return result
 
     # A raw weighted sum is unknown wherever a nonzero weight meets a missing

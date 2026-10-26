@@ -150,19 +150,19 @@ class _DiffusionEigenbasis:
         far: a truncated basis below ``dense_fraction * n_bins`` modes, or the
         full ``(n_bins, n_bins)`` basis once any bandwidth needed it. None before
         the first solve.
-    resolved : mapping of (float, float) to int or "dense"
-        Rank resolved for each ``(sigma, tol)``; ``"dense"`` marks a bandwidth
-        applied with the full basis.
+    resolved : mapping of float to int or "dense"
+        Rank resolved for each ``sigma`` at ``_HEAT_KERNEL_RANK_TOL``;
+        ``"dense"`` marks a bandwidth applied with the full basis.
     """
 
     basis: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None
-    resolved: Mapping[tuple[float, float], int | Literal["dense"]] = field(
+    resolved: Mapping[float, int | Literal["dense"]] = field(
         default_factory=lambda: MappingProxyType({})
     )
 
     def with_rank(
         self,
-        key: tuple[float, float],
+        key: float,
         rank: int | Literal["dense"],
         basis: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
     ) -> _DiffusionEigenbasis:
@@ -253,16 +253,32 @@ def _raw_heat_operator(
     NDArray[np.float64], shape (n_bins, n_bins)
         Dense raw heat operator ``H``.
     """
-    degree = np.asarray(W.sum(axis=1)).ravel()
-    inv_mass = scipy.sparse.diags(1.0 / volumes)
-    # CSC so scipy.sparse.linalg.expm's internal solves stay in their preferred
-    # format (avoids a SparseEfficiencyWarning).
-    laplacian = (inv_mass @ (scipy.sparse.diags(degree) - W)).tocsc()  # M^-1 (D - W)
     t = sigma**2 / 2.0
-    kernel = scipy.sparse.linalg.expm(-t * laplacian)
-    if hasattr(kernel, "toarray"):
-        kernel = kernel.toarray()
+    # The heat kernel fills in completely, so the dense expm is far cheaper than
+    # the sparse one, whose intermediate products become dense anyway.
+    kernel = scipy.linalg.expm(-t * _generator(W, volumes).toarray())
     return np.asarray(kernel, dtype=np.float64)
+
+
+def _generator(
+    W: scipy.sparse.spmatrix, volumes: NDArray[np.float64]
+) -> scipy.sparse.csr_matrix:
+    """Finite-volume diffusion generator ``L = M^-1 (D - W)`` (sparse).
+
+    Parameters
+    ----------
+    W : scipy.sparse matrix, shape (n_bins, n_bins)
+        Symmetric finite-volume weight matrix.
+    volumes : NDArray[np.float64], shape (n_bins,)
+        Per-bin cell volumes ``M`` (strictly positive).
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix, shape (n_bins, n_bins)
+        ``M^-1 (D - W)``, where ``D`` holds the row sums of ``W``.
+    """
+    degree = scipy.sparse.diags(np.asarray(W.sum(axis=1)).ravel())
+    return (scipy.sparse.diags(1.0 / volumes) @ (degree - W)).tocsr()
 
 
 def _warn_dense_kernel(n_bins: int) -> None:
@@ -552,8 +568,6 @@ def _ensure_global_modes(
     S: scipy.sparse.spmatrix,
     labels: NDArray[np.int_],
     needed_G: int,
-    *,
-    dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
 ) -> tuple[
     _MRFEigenbasis, tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]]
 ]:
@@ -568,7 +582,8 @@ def _ensure_global_modes(
     any nonzero row, recovering the mode -> component map WITHOUT touching the
     eigensolver.
 
-    Past ``dense_fraction * n`` the resolved basis is the full ``n x n`` matrix.
+    Past ``_HEAT_KERNEL_DENSE_FRACTION * n`` the resolved basis is the full
+    ``n x n`` matrix.
     It is kept like a truncated one, so repeated fits reuse a single dense
     solve; ``env.clear_cache()`` releases it.
 
@@ -582,8 +597,6 @@ def _ensure_global_modes(
         W-component label per bin.
     needed_G : int
         Minimum number of global modes required.
-    dense_fraction : float, optional
-        Fraction of ``n`` at or above which a dense solve is used.
 
     Returns
     -------
@@ -599,7 +612,7 @@ def _ensure_global_modes(
     if needed_G <= holder.G:  # cache hit -- no eigensolve
         return holder, (holder.Q, holder.Lam, holder.mode_comp)
     G = min(needed_G, n)
-    dense = dense_fraction * n <= G
+    dense = _HEAT_KERNEL_DENSE_FRACTION * n <= G
     Lam, Q = _symmetric_eigenbasis(S, None if dense else G)
     # Each eigenvector is nonzero on exactly one W-component (bit-exact 0
     # elsewhere from _symmetric_eigenbasis's per-component solve + zero padding),
@@ -650,12 +663,12 @@ def _live_components(
 
 
 def _target_live_rank(
-    labels: NDArray[np.int_], occupancy: NDArray[np.float64], rank: int | None
+    n_live_components: int, n_live_bins: int, rank: int | None
 ) -> int:
-    """Effective rank ``r_eff = max(n_live_components, min(n_live_bins, R))``."""
-    live = _live_components(labels, occupancy)
-    n_live_components = int(live.size)
-    n_live_bins = int(np.isin(labels, live).sum())
+    """Effective rank ``r_eff = max(n_live_components, min(n_live_bins, R))``.
+
+    ``R`` is ``rank``, or ``_DEFAULT_MAX_RANK`` when ``rank`` is None.
+    """
     R = _DEFAULT_MAX_RANK if rank is None else int(rank)
     return max(n_live_components, min(n_live_bins, R))
 
@@ -797,8 +810,7 @@ def _select_live_basis(
     if live_bins.size == 0:  # zero total occupancy -> the empty basis
         return MRFBasis(np.zeros((0, 0)), np.zeros((0,)), live_bins, 0)
 
-    R = _DEFAULT_MAX_RANK if rank is None else int(rank)
-    r_eff = max(n_live_components, min(live_bins.size, R))
+    r_eff = _target_live_rank(n_live_components, live_bins.size, rank)
     n_fill = r_eff - n_live_components
     inv_sqrt_vol = 1.0 / np.sqrt(volumes)  # M^{-1/2}; fills are B = M^{-1/2}Q
 
@@ -1018,24 +1030,23 @@ def _resolve_basis(
     volumes: NDArray[np.float64],
     n_components: int,
     sigma: float,
-    *,
-    tol: float = _HEAT_KERNEL_RANK_TOL,
-    dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
 ) -> tuple[_DiffusionEigenbasis, tuple[NDArray[np.float64], NDArray[np.float64]]]:
     """Return the holder to keep and ``(Q, Lam)`` for ``sigma``.
 
     ``holder`` is the environment's cached :class:`_DiffusionEigenbasis`; it is
     never changed. It holds ONE basis -- the max rank requested so far -- plus
-    the resolved rank per ``(sigma, tol)`` so repeat calls at a bandwidth (every
+    the resolved rank per ``sigma`` so repeat calls at a bandwidth (every
     neuron) skip the adaptive probe. A request that needs more is answered with
     a replacement holder, which the caller stores in place of ``holder``.
 
-    A request whose rank would reach ``dense_fraction * n`` (a near-full-rank
-    ``env.diffuse``) solves the full dense basis once and keeps it, so shuffles,
-    folds and every later bandwidth reuse that one ``(n, n)`` solve.
+    A request whose rank would reach ``_HEAT_KERNEL_DENSE_FRACTION * n`` (a
+    near-full-rank ``env.diffuse``) solves the full dense basis once and keeps
+    it, so shuffles, folds and every later bandwidth reuse that one ``(n, n)``
+    solve.
     """
     n = int(volumes.shape[0])
-    key = (float(sigma), float(tol))
+    key = float(sigma)
+    tol = _HEAT_KERNEL_RANK_TOL
     t = sigma**2 / 2.0
 
     # Fast path: rank already resolved for this bandwidth.
@@ -1062,14 +1073,18 @@ def _resolve_basis(
                     max(heat_kernel_rank(Lamc, sigma, tol), n_components), Lamc.shape[0]
                 )
             )
-            if full and r >= dense_fraction * n:
+            if full and r >= _HEAT_KERNEL_DENSE_FRACTION * n:
                 return holder.with_rank(key, "dense"), holder.basis
             return holder.with_rank(key, r), (Qc[:, :r], Lamc[:r])
 
     # Otherwise probe (and possibly grow the single cached basis).
     S = _symmetric_conjugate(W, volumes)
     rank, eigvals, eigvecs = _adaptive_symmetric_basis(
-        S, sigma, tol=tol, dense_fraction=dense_fraction, n_components=n_components
+        S,
+        sigma,
+        tol=tol,
+        dense_fraction=_HEAT_KERNEL_DENSE_FRACTION,
+        n_components=n_components,
     )
     if rank is None:
         _warn_large_dense_basis(n)
@@ -1153,7 +1168,7 @@ def _diffusion_apply_rtol(
     holder: _DiffusionEigenbasis, n_bins: int, sigma: float
 ) -> float:
     """Relative accuracy of an apply at ``sigma``, from its resolved rank."""
-    rank = holder.resolved.get((float(sigma), _HEAT_KERNEL_RANK_TOL))
+    rank = holder.resolved.get(float(sigma))
     if rank == "dense" or (isinstance(rank, int) and rank >= n_bins):
         return _FULL_BASIS_APPLY_RTOL
     return _HEAT_KERNEL_RANK_TOL

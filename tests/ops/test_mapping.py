@@ -172,14 +172,10 @@ class TestMapPointsToBinsBehavior:
         assert bins_accept[0] >= 0
 
     def test_max_distance_factor_relative_to_bin_spacing(self, regular_grid_env):
-        """max_distance_factor=0.5 equals max_distance = 0.5 * typical spacing."""
-        from scipy.spatial import cKDTree
-
+        """max_distance_factor=0.5 equals max_distance = 0.5 * env.bin_spacing."""
         from neurospatial import Environment
-        from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
-        kdtree = cKDTree(regular_grid_env.bin_centers)
-        spacing = _estimate_typical_bin_spacing(kdtree, regular_grid_env.bin_centers)
+        spacing = regular_grid_env.bin_spacing
 
         x = np.arange(0.0, 21.0, 1.0)
         y = np.arange(0.0, 21.0, 1.0)
@@ -215,14 +211,12 @@ class TestMapPointsToBinsBehavior:
         with pytest.raises(ValueError, match=r"positive|non-negative"):
             regular_grid_env.nearest_bin(point, max_distance=-1.0)
 
-    def test_distance_factor_multiplies_typical_spacing(self, monkeypatch):
-        """max_distance_factor rejects points beyond factor x typical spacing.
+    def test_distance_factor_multiplies_typical_spacing(self):
+        """max_distance_factor rejects points beyond factor x env.bin_spacing.
 
-        Monkeypatch the spacing estimator to a known K; with a factor of 10 a
-        point at 9.5*K is kept and one at 10.5*K is rejected. Without a factor
-        there is no cutoff.
+        With a factor of 10 a point at 9.5 spacings is kept and one at 10.5 is
+        rejected. Without a factor there is no cutoff.
         """
-        import neurospatial.ops.mapping as mapping
         from neurospatial import Environment
 
         x = np.arange(0.0, 21.0, 1.0)
@@ -230,12 +224,8 @@ class TestMapPointsToBinsBehavior:
         xx, yy = np.meshgrid(x, y)
         data = np.column_stack([xx.ravel(), yy.ravel()])
 
-        K = 1.0
-        monkeypatch.setattr(
-            mapping, "_estimate_typical_bin_spacing", lambda kdtree, bc: K
-        )
-
         env_in = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
+        K = env_in.bin_spacing
         point_in = np.array([[20.0 + 9.5 * K, 0.0]])  # dist 9.5*K from (20, 0)
         bins_in = env_in.nearest_bin(point_in, max_distance_factor=10.0)
         assert bins_in[0] >= 0
@@ -460,3 +450,19 @@ class TestResampleFieldDiffuseNaN:
 
         assert not np.any(np.isnan(diffuse))
         assert np.isfinite(diffuse.sum())
+
+
+class TestResampleFieldInfiniteValues:
+    """An infinite value has no nearest or average reading, so it is refused."""
+
+    @pytest.mark.parametrize("value", [np.inf, -np.inf])
+    @pytest.mark.parametrize("method", ["nearest", "diffuse"])
+    def test_infinite_field_value_is_refused(self, value, method):
+        from neurospatial.ops.mapping import resample_field
+
+        src_env, dst_env = _src_and_extending_dst_envs()
+        field = np.ones(src_env.n_bins)
+        field[3] = value
+
+        with pytest.raises(ValueError, match="infinite values"):
+            resample_field(field, src_env, dst_env, method=method, bandwidth=2.0)

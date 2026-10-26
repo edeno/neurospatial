@@ -467,7 +467,7 @@ def test_nearest_lookup_failure_is_raised_not_reported_as_outside(monkeypatch):
     """A failed KD-tree query is an error, never "every point is outside"."""
 
     class FailingTree:
-        def query(self, points, k=1):
+        def query(self, points, k=1, **options):
             raise MemoryError("query buffer")
 
     locator = NearestBinLocator(np.array([[0.0, 0.0], [2.0, 0.0]]))

@@ -306,17 +306,9 @@ def cell_mesh(env: Environment) -> Cells | None:
 def bin_spacing(env: Environment) -> float:
     """Typical distance between neighboring bins, for point sizes.
 
-    The package's typical bin spacing; 1 for a single bin, which has no
-    neighbor.
+    ``env.bin_spacing``; 1 for a single bin, which has no neighbor.
     """
-    from neurospatial.ops import _typical_bin_spacing
-
-    spacing = _typical_bin_spacing(
-        env.bin_centers,
-        env.bin_sizes,
-        is_linearized_track=env.is_linearized_track,
-        tree=env.bin_center_tree(),
-    )
+    spacing = env.bin_spacing
     return spacing if np.isfinite(spacing) and spacing > 0 else 1.0
 
 

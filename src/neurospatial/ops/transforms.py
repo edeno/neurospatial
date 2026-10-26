@@ -1,8 +1,8 @@
 """Coordinate transforms and video calibration.
 
 `AffineND` is one composable, homogeneous affine transform for points of any
-dimension. Build one with a factory (`translate`, `scale_2d`, `flip_y`,
-`identity`, `translate_3d`, `scale_3d`, `from_rotation_matrix`,
+dimension. Build one with a factory (`translate`, `scale_2d`, `rotate_2d`,
+`flip_y`, `identity`, `translate_3d`, `scale_3d`, `from_rotation_matrix`,
 `identity_nd`), estimate one from landmark pairs with `estimate_transform`, or
 calibrate video pixels to centimeters with `calibrate_from_scale_bar`,
 `calibrate_from_landmarks` and `VideoCalibration`. Compose transforms with
@@ -15,7 +15,6 @@ conversion in one call and return the converted array.
 # ruff: noqa: N806  - uppercase matrix names (A, R, X) follow mathematical convention
 from __future__ import annotations
 
-import numbers
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -23,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_positive_integer
 from neurospatial.geometry import ReadOnlyState, _check_homogeneous
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
@@ -34,6 +34,7 @@ __all__ = [
     # 2D factory functions
     "flip_y",
     "identity",
+    "rotate_2d",
     "scale_2d",
     "translate",
     # 3D factory functions
@@ -412,6 +413,61 @@ def translate(tx: float = 0.0, ty: float = 0.0) -> AffineND:
     return AffineND(np.array([[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]]))
 
 
+def rotate_2d(
+    angle: float, *, center: tuple[float, float] | NDArray[np.float64] | None = None
+) -> AffineND:
+    """Create a counter-clockwise rotation by ``angle`` radians.
+
+    Parameters
+    ----------
+    angle : float
+        Rotation angle in radians. Positive turns counter-clockwise (from
+        East toward North).
+    center : (x, y) or None, default=None
+        Point the rotation turns about. None turns about the coordinate
+        origin; to turn an arena in place, pass its center.
+
+    Returns
+    -------
+    AffineND
+        Rotation transformation.
+
+    Raises
+    ------
+    ValueError
+        If ``angle`` is not finite or ``center`` is not two finite numbers.
+
+    Examples
+    --------
+    A quarter turn about the origin:
+
+    >>> transform = rotate_2d(np.pi / 2)
+    >>> np.allclose(transform(np.array([[1.0, 0.0]])), [[0.0, 1.0]])
+    True
+
+    A half turn about an arena center (50, 50) keeps the center in place:
+
+    >>> transform = rotate_2d(np.pi, center=(50.0, 50.0))
+    >>> np.allclose(
+    ...     transform(np.array([[50.0, 50.0], [60.0, 50.0]])), [[50, 50], [40, 50]]
+    ... )
+    True
+
+    """
+    if not np.isfinite(angle):
+        raise ValueError(f"angle must be a finite number of radians, got {angle!r}.")
+    cos, sin = np.cos(angle), np.sin(angle)
+    A = np.array([[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]])
+    if center is not None:
+        pivot = np.asarray(center, dtype=np.float64)
+        if pivot.shape != (2,) or not np.isfinite(pivot).all():
+            raise ValueError(
+                f"center must be two finite coordinates (x, y), got {center!r}."
+            )
+        A[:2, 2] = pivot - A[:2, :2] @ pivot
+    return AffineND(A)
+
+
 def flip_y(frame_height_px: float) -> AffineND:
     """Flip the *y*-axis of pixel coordinates so that origin moves
     from top-left to bottom-left.
@@ -508,10 +564,11 @@ def calibrate_from_scale_bar(
     >>> point_cm = transform(point_px)
     """
     # Validate inputs
-    if known_length_cm <= 0:
+    if not (np.isfinite(known_length_cm) and known_length_cm > 0):
         raise ValueError(
-            f"WHAT: known_length_cm must be positive (got {known_length_cm}).\n"
-            f"WHY: A scale bar must have positive real-world length.\n"
+            f"WHAT: known_length_cm must be positive and finite (got "
+            f"{known_length_cm}).\n"
+            f"WHY: A scale bar must have a positive, finite real-world length.\n"
             f"Fix: Provide a positive value for known_length_cm."
         )
 
@@ -649,8 +706,8 @@ def calibrate_from_landmarks(
     # Apply Y-flip to pixel coordinates before estimation
     # This converts from video coords (origin top-left) to standard coords
     _, frame_height = frame_size_px
-    landmarks_px_flipped = landmarks_px.copy()
-    landmarks_px_flipped[:, 1] = frame_height - landmarks_px[:, 1]
+    to_cartesian = flip_y(frame_height)
+    landmarks_px_flipped = to_cartesian(landmarks_px)
 
     # Check for collinear/degenerate landmarks before estimation
     # Use singular values of centered points to detect if they span 2D
@@ -679,15 +736,7 @@ def calibrate_from_landmarks(
 
     # The fit accepts flipped pixels; compose the flip so callers can supply
     # raw image pixels, as they do for calibrate_from_scale_bar.
-    return result @ flip_y(frame_height)
-
-
-def _is_positive_integer(value: object) -> bool:
-    return (
-        not isinstance(value, (bool, np.bool_))
-        and isinstance(value, (numbers.Integral, np.integer))
-        and int(value) > 0
-    )
+    return result @ to_cartesian
 
 
 @dataclass(frozen=True, eq=False)
@@ -773,7 +822,7 @@ class VideoCalibration:
                 )
             )
         size: tuple[object, ...] = tuple(self.frame_size_px)
-        if len(size) != 2 or not all(_is_positive_integer(n) for n in size):
+        if len(size) != 2 or not all(is_positive_integer(n) for n in size):
             raise ValueError(
                 _format_error(
                     "frame_size_px must be two positive integers (width, height), "

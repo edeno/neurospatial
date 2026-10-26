@@ -130,6 +130,9 @@ from neurospatial.geometry._locators import NearestBinLocator as NearestBinLocat
 from neurospatial.geometry._locators import RectilinearLocator as RectilinearLocator
 from neurospatial.geometry._locators import SubsetLocator as SubsetLocator
 from neurospatial.geometry._locators import TransformedLocator as TransformedLocator
+from neurospatial.geometry._locators import (
+    _nearest_lowest_index as _nearest_lowest_index,
+)
 from neurospatial.geometry._lookup import locate as locate
 from neurospatial.geometry._lookup import (
     locate_outline_points as locate_outline_points,

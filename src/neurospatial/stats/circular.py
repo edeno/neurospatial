@@ -115,6 +115,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import chi2
 
+from neurospatial._angles import wrap_angle
 from neurospatial._results import ReadOnlyArraysMixin
 
 if TYPE_CHECKING:
@@ -1195,35 +1196,6 @@ def mean_resultant_length(
         )
 
     return _mean_resultant_length(angles, weights=weights)
-
-
-# =============================================================================
-# Public API - Angle Utilities
-# =============================================================================
-
-
-def wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
-    """
-    Wrap angle to (-π, π].
-
-    Parameters
-    ----------
-    angle : NDArray[np.float64]
-        Angles in radians.
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Angles wrapped to (-π, π].
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.stats.circular import wrap_angle
-    >>> wrap_angle(np.array([3 * np.pi / 2]))
-    array([-1.57079633])
-    """
-    return (angle + np.pi) % (2 * np.pi) - np.pi
 
 
 # =============================================================================

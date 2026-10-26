@@ -172,6 +172,77 @@ def _coordinate_roundoff(
     return np.asarray(64 * np.finfo(np.float64).eps * scale, dtype=np.float64)
 
 
+# A KD-tree query of fewer points runs faster on one thread: starting the
+# worker pool costs about 0.6 ms, which about 2,000 ball queries or 3,000
+# two-neighbor queries outweigh.
+_PARALLEL_QUERY_POINTS = 2048
+
+
+def _query_workers(n_points: int) -> int:
+    return -1 if n_points >= _PARALLEL_QUERY_POINTS else 1
+
+
+def _nearest_lowest_index(
+    tree: cKDTree,
+    points: NDArray[np.float64],
+    slack: NDArray[np.float64] | float = 0.0,
+    labels: NDArray[np.intp] | None = None,
+) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
+    """Nearest center of each point, the lowest label among tied centers.
+
+    Every center as near as the nearest one, within ``slack`` and the
+    rounding of distances at the coordinates' magnitude, ties, so the tie
+    rule holds in any length unit and far from the origin.
+
+    Parameters
+    ----------
+    tree : scipy.spatial.cKDTree
+        Tree over at least one center.
+    points : ndarray of float64, shape (n_points, n_dims)
+        Finite query points.
+    slack : ndarray of float64, shape (n_points,), or float, default=0.0
+        Extra distance within which a center still ties, such as twice a
+        point's known position error.
+    labels : ndarray of intp, shape (n_centers,), or None
+        Label of each center; None labels centers by their tree index.
+
+    Returns
+    -------
+    nearest_labels : ndarray of intp, shape (n_points,)
+        Lowest label among each point's tied nearest centers.
+    distances : ndarray of float64, shape (n_points,)
+        Distance from each point to its nearest center.
+    """
+    # The second-nearest center shows whether the nearest one is tied.
+    nearest, indices = tree.query(points, k=2, workers=_query_workers(len(points)))
+    distances = nearest[:, 0]
+    labels = np.arange(tree.n, dtype=np.intp) if labels is None else labels
+    nearest_labels = labels[indices[:, 0]]
+    reference = float(np.max(np.abs(tree.data)))
+    slack = np.broadcast_to(np.asarray(slack, dtype=np.float64), distances.shape)
+    # No row rounds more than the largest coordinate does, so that bound
+    # finds the rows that may tie; only they get their own tolerance.
+    largest = max(
+        float(np.max(points, initial=0.0)), -float(np.min(points, initial=0.0))
+    )
+    bound = _coordinate_roundoff(np.array([[largest]]), reference)
+    rows = np.flatnonzero(nearest[:, 1] <= distances + slack + bound)
+    tolerance = slack[rows] + _coordinate_roundoff(points[rows], reference)
+    may_tie = nearest[rows, 1] <= distances[rows] + tolerance
+    rows, tolerance = rows[may_tie], tolerance[may_tie]
+    if len(rows):
+        tied = tree.query_ball_point(
+            points[rows],
+            distances[rows] + tolerance,
+            workers=_query_workers(len(rows)),
+        )
+        counts = np.fromiter(map(len, tied), dtype=np.intp, count=len(rows))
+        starts = np.r_[0, np.cumsum(counts)[:-1]]
+        members = labels[np.concatenate(tied).astype(np.intp)]
+        nearest_labels[rows] = np.minimum.reduceat(members, starts)
+    return nearest_labels, distances
+
+
 class CallIndexes:
     """Search structures kept for one computation over a binning.
 
@@ -1153,24 +1224,13 @@ class NearestBinLocator(ReadOnlyState):
         finite_rows = np.all(np.isfinite(query_points), axis=1)
         if not np.any(finite_rows):
             return final_bin_indices
-        tree = self.kdtree(indexes)
-        finite_points = query_points[finite_rows]
-        # The second-nearest center shows whether the nearest one is tied.
-        nearest, nearest_indices = tree.query(finite_points, k=2)
-        distances = nearest[:, 0]
-        kdtree_internal_indices = nearest_indices[:, 0]
-        assert self.bin_indices is not None
-        mapped = self.bin_indices[kdtree_internal_indices]
         radius = _error_radius(np.asarray(error)[finite_rows])
-        tolerance = 2 * radius + _coordinate_roundoff(
-            finite_points, float(np.max(np.abs(self.centers)))
+        mapped, distances = _nearest_lowest_index(
+            self.kdtree(indexes),
+            query_points[finite_rows],
+            2 * radius,
+            self.bin_indices,
         )
-        rows = np.flatnonzero(nearest[:, 1] <= distances + tolerance)
-        if len(rows):
-            tied = tree.query_ball_point(
-                finite_points[rows], distances[rows] + tolerance[rows]
-            )
-            mapped[rows] = [int(np.min(self.bin_indices[group])) for group in tied]
         if self.max_distance is not None:
             mapped = np.where(distances <= self.max_distance + radius, mapped, -1)
         final_bin_indices[finite_rows] = mapped

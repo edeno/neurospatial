@@ -23,7 +23,7 @@ neighbors_within
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, NoReturn
 
 import networkx as nx
@@ -89,8 +89,8 @@ def geodesic_distance_matrix(
     Raises
     ------
     ValueError
-        If the nodes of ``G`` are not exactly ``0 .. n_bins - 1``, or an edge
-        lacks the ``weight`` attribute.
+        If ``G`` is directed or a multigraph, its nodes are not exactly
+        ``0 .. n_bins - 1``, or an edge lacks the ``weight`` attribute.
 
     Notes
     -----
@@ -201,15 +201,29 @@ def _raise_missing_nodes(missing: list[int], operation: str) -> NoReturn:
 
 
 def _require_bin_graph(G: nx.Graph, operation: str) -> int:
-    """Refuse a graph whose nodes are not exactly the bins ``0 .. n - 1``.
+    """Refuse a graph that is not an undirected simple graph of bins ``0 .. n - 1``.
 
-    Distance arrays are indexed by bin, so row ``i`` must be node ``i``.
+    Distance arrays are indexed by bin, so row ``i`` must be node ``i``; each
+    edge is one connection between two bins, with one length.
 
     Returns
     -------
     int
         The number of bins, ``G.number_of_nodes()``.
     """
+    if G.is_directed() or G.is_multigraph():
+        raise ValueError(
+            _format_error(
+                f"{operation}: the graph must be an undirected simple nx.Graph, "
+                f"got {type(G).__name__}.",
+                why="bin distances are undirected and each pair of bins has one "
+                "connection length, so reciprocal or parallel edges would be "
+                "counted twice or read inconsistently.",
+                fix="pass env.connectivity, or collapse the graph with "
+                "nx.Graph(G) after keeping one edge (the shortest) per pair of "
+                "bins",
+            )
+        )
     n_bins: int = G.number_of_nodes()
     if all(node in G for node in range(n_bins)):
         return n_bins
@@ -271,24 +285,143 @@ def _bin_adjacency(G: nx.Graph, *, weight: str | None, operation: str) -> csr_ar
 
     Returns
     -------
-    scipy.sparse.csr_array, shape (n_bins, n_bins)
-        Edge lengths, for ``scipy.sparse.csgraph`` with ``directed=False``.
+    scipy.sparse.csr_array of float64, shape (n_bins, n_bins)
+        Symmetric edge lengths (1.0 per edge when ``weight`` is None), for
+        ``scipy.sparse.csgraph`` with ``directed=False``.
 
     Raises
     ------
     ValueError
-        If the nodes are not ``0 .. n_bins - 1`` or an edge lacks ``weight``.
+        If ``G`` is directed or a multigraph, its nodes are not
+        ``0 .. n_bins - 1``, or an edge lacks ``weight``.
     """
     from scipy.sparse import csr_array
 
     n_bins = _require_bin_graph(G, operation)
-    if n_bins == 0:
-        return csr_array((0, 0), dtype=np.float64)
-    _require_edge_weight(G, weight, operation)
-    adjacency: csr_array = nx.to_scipy_sparse_array(
-        G, nodelist=range(n_bins), weight=weight, format="csr"
+    n_edges = G.number_of_edges()
+    if weight is None:
+        pairs = np.fromiter(
+            (node for edge in G.edges for node in edge),
+            dtype=np.intp,
+            count=2 * n_edges,
+        ).reshape(n_edges, 2)
+        lengths = np.ones(n_edges)
+    else:
+        # One pass reads each edge as (u, v, length); a missing length reads
+        # as NaN, told apart from a stored NaN only on that rare path.
+        rows = np.fromiter(
+            (value for edge in G.edges(data=weight, default=np.nan) for value in edge),
+            dtype=np.float64,
+            count=3 * n_edges,
+        ).reshape(n_edges, 3)
+        if np.isnan(rows[:, 2]).any():
+            _require_edge_weight(G, weight, operation)
+        pairs, lengths = rows[:, :2].astype(np.intp), rows[:, 2]
+    u, v = pairs[:, 0], pairs[:, 1]
+    mirror = u != v  # a self-loop is one entry, as in nx.to_scipy_sparse_array
+    return csr_array(
+        (
+            np.concatenate([lengths, lengths[mirror]]),
+            (np.concatenate([u, v[mirror]]), np.concatenate([v, u[mirror]])),
+        ),
+        shape=(n_bins, n_bins),
     )
-    return adjacency
+
+
+# Dijkstra runs per block of source bins: (block, n_bins) float64 rows stay
+# near 160 MB however large the environment.
+_DIJKSTRA_BLOCK_VALUES = 20_000_000
+
+
+def _dijkstra_blocks(
+    adjacency: csr_array, sources: NDArray[np.intp], *, limit: float = np.inf
+) -> Iterator[tuple[int, NDArray[np.float64]]]:
+    """Shortest-path rows from each source, in memory-bounded blocks.
+
+    Yields
+    ------
+    start : int
+        Position in ``sources`` of the block's first source.
+    lengths : ndarray of float64, shape (n_block, n_bins)
+        Path length from each source in the block to every bin; ``inf`` when
+        unreachable or farther than ``limit``.
+    """
+    from scipy.sparse.csgraph import dijkstra
+
+    block = max(1, _DIJKSTRA_BLOCK_VALUES // max(adjacency.shape[0], 1))
+    for start in range(0, len(sources), block):
+        lengths = dijkstra(
+            adjacency,
+            directed=False,
+            indices=sources[start : start + block],
+            limit=limit,
+        )
+        yield start, lengths
+
+
+def _geodesic_pair_distances(
+    G: nx.Graph,
+    sources: NDArray[np.intp],
+    targets: NDArray[np.intp],
+    *,
+    operation: str,
+    weight: str | None = "distance",
+) -> NDArray[np.float64]:
+    """Shortest-path length along ``G`` for each ``(source, target)`` bin pair.
+
+    Runs Dijkstra only from the distinct source bins, in blocks, instead of
+    building the dense ``(n_bins, n_bins)`` all-pairs matrix.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Graph whose nodes are the bins ``0 .. n_bins - 1``.
+    sources, targets : NDArray[np.intp], shape (n_pairs,)
+        Bin index pairs, each in ``0 .. n_bins - 1``.
+    operation : str
+        Calling function, named in errors.
+    weight : str or None, default="distance"
+        Edge attribute holding each edge's length; None counts edges.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_pairs,)
+        Path length per pair; ``inf`` between disconnected components.
+    """
+    adjacency = _bin_adjacency(G, weight=weight, operation=operation)
+    unique_sources, source_row = np.unique(sources, return_inverse=True)
+    out = np.empty(len(sources), dtype=np.float64)
+    for start, lengths in _dijkstra_blocks(adjacency, unique_sources):
+        in_block = (source_row >= start) & (source_row < start + len(lengths))
+        out[in_block] = lengths[source_row[in_block] - start, targets[in_block]]
+    return out
+
+
+def _require_metric(metric: str) -> None:
+    if metric not in ("geodesic", "euclidean"):
+        raise ValueError(
+            f"metric must be 'geodesic' or 'euclidean', got '{metric}'. "
+            f"Use metric='geodesic' for graph-based distances or "
+            f"metric='euclidean' for coordinate-based distances."
+        )
+
+
+def _require_bin_centers(
+    bin_centers: NDArray[np.float64] | None, n_nodes: int
+) -> NDArray[np.float64]:
+    """Return ``bin_centers`` for a Euclidean query, refusing a missing or short one."""
+    if bin_centers is None:
+        raise ValueError(
+            "bin_centers parameter is required when metric='euclidean'. "
+            "Provide an array of node coordinates with shape (n_nodes, n_dims)."
+        )
+    if bin_centers.shape[0] != n_nodes:
+        raise ValueError(
+            f"bin_centers size {bin_centers.shape[0]} must match "
+            f"number of nodes in graph ({n_nodes}). "
+            f"Ensure bin_centers.shape[0] == G.number_of_nodes()."
+        )
+    return bin_centers
 
 
 def _as_bin_indices(
@@ -385,8 +518,9 @@ def distance_field(
         If bin_centers shape doesn't match number of graph nodes. Ensure
         bin_centers.shape[0] == G.number_of_nodes().
     ValueError
-        If the nodes of ``G`` are not the bins ``0 .. n_bins - 1``, or
-        (geodesic) an edge lacks the ``weight`` attribute.
+        If ``G`` is directed or a multigraph, its nodes are not the bins
+        ``0 .. n_bins - 1``, or (geodesic) an edge lacks the ``weight``
+        attribute.
     TypeError
         If ``sources`` are not integers.
     networkx.NodeNotFound
@@ -433,15 +567,8 @@ def distance_field(
     from scipy.sparse.csgraph import dijkstra
     from scipy.spatial import cKDTree
 
-    # Validate inputs
-    if metric not in ("geodesic", "euclidean"):
-        raise ValueError(
-            f"metric must be 'geodesic' or 'euclidean', got '{metric}'. "
-            f"Use metric='geodesic' for graph-based distances or "
-            f"metric='euclidean' for coordinate-based distances."
-        )
-
-    if cutoff is not None and cutoff < 0:
+    _require_metric(metric)
+    if cutoff is not None and not cutoff >= 0:  # NaN is no distance
         raise ValueError(
             f"cutoff must be non-negative, got {cutoff}. "
             f"Use cutoff=None for no distance limit, or provide a positive value."
@@ -458,24 +585,12 @@ def distance_field(
             "Provide a non-empty list or array of source node indices."
         )
 
-    # Euclidean metric requires bin_centers
     if metric == "euclidean":
-        if bin_centers is None:
-            raise ValueError(
-                "bin_centers parameter is required when metric='euclidean'. "
-                "Provide an array of node coordinates with shape (n_nodes, n_dims)."
-            )
-        if bin_centers.shape[0] != n_nodes:
-            raise ValueError(
-                f"bin_centers size {bin_centers.shape[0]} must match "
-                f"number of nodes in graph ({n_nodes}). "
-                f"Ensure bin_centers.shape[0] == G.number_of_nodes()."
-            )
-
+        coords = _require_bin_centers(bin_centers, n_nodes)
         # A KD-tree over the sources is O(N log M) time and O(N + M) memory,
         # however many sources there are.
-        tree = cKDTree(bin_centers[sources_array])
-        distances, _ = tree.query(bin_centers, k=1)
+        tree = cKDTree(coords[sources_array])
+        distances, _ = tree.query(coords, k=1)
 
         # Apply cutoff
         if cutoff is not None:
@@ -484,23 +599,15 @@ def distance_field(
         return np.asarray(distances, dtype=np.float64)
 
     adjacency = _bin_adjacency(G, weight=weight, operation="distance_field()")
-
-    # Run Dijkstra from all sources at once (vectorized)
-    # Returns shape (n_sources, n_nodes)
-    dist_from_sources = dijkstra(
+    # One Dijkstra from all sources together gives each bin its nearest
+    # source's distance directly, without an (n_sources, n_nodes) array.
+    distances = dijkstra(
         csgraph=adjacency,
         directed=False,
         indices=sources_array,
         limit=cutoff if cutoff is not None else np.inf,
-        return_predecessors=False,
+        min_only=True,
     )
-
-    # Take minimum distance across all sources (vectorized)
-    if len(sources_array) == 1:
-        distances = dist_from_sources.ravel()
-    else:
-        distances = np.min(dist_from_sources, axis=0)
-
     return np.asarray(distances, dtype=np.float64)
 
 
@@ -533,8 +640,8 @@ def pairwise_distances(
     Raises
     ------
     ValueError
-        If the nodes of ``G`` are not the bins ``0 .. n_bins - 1``, or an
-        edge lacks the ``weight`` attribute.
+        If ``G`` is directed or a multigraph, its nodes are not the bins
+        ``0 .. n_bins - 1``, or an edge lacks the ``weight`` attribute.
     TypeError
         If ``nodes`` are not integers.
     networkx.NodeNotFound
@@ -638,8 +745,9 @@ def neighbors_within(
         If bin_centers shape doesn't match number of graph nodes. Ensure
         bin_centers.shape[0] == G.number_of_nodes().
     ValueError
-        If the nodes of ``G`` are not the bins ``0 .. n_bins - 1``, or
-        (geodesic) an edge lacks the ``weight`` attribute.
+        If ``G`` is directed or a multigraph, its nodes are not the bins
+        ``0 .. n_bins - 1``, or (geodesic) an edge lacks the ``weight``
+        attribute.
     TypeError
         If ``centers`` are not integers.
     networkx.NodeNotFound
@@ -662,8 +770,8 @@ def neighbors_within(
 
     Notes
     -----
-    **Geodesic mode**: Uses single-source Dijkstra per center with
-    ``cutoff=radius`` for efficiency. Complexity per center is
+    **Geodesic mode**: Runs Dijkstra from the centers, in memory-bounded
+    blocks, stopping each search at ``radius``. Complexity per center is
     O((V + E) log V) but early termination typically makes it faster.
 
     **Euclidean mode**: Uses KD-tree ball query over ``bin_centers``.
@@ -677,15 +785,8 @@ def neighbors_within(
     """
     from scipy.spatial import cKDTree
 
-    # Validate inputs
-    if metric not in ("geodesic", "euclidean"):
-        raise ValueError(
-            f"metric must be 'geodesic' or 'euclidean', got '{metric}'. "
-            f"Use metric='geodesic' for graph-based distances or "
-            f"metric='euclidean' for coordinate-based distances."
-        )
-
-    if radius < 0:
+    _require_metric(metric)
+    if not radius >= 0:  # NaN is no distance
         raise ValueError(
             f"radius must be non-negative, got {radius}. "
             f"Provide a positive radius value or 0 for only center nodes."
@@ -696,50 +797,23 @@ def neighbors_within(
     if len(centers_array) == 0:
         return []
 
-    # Euclidean metric
     if metric == "euclidean":
-        if bin_centers is None:
-            raise ValueError(
-                "bin_centers parameter is required when metric='euclidean'. "
-                "Provide an array of node coordinates with shape (n_nodes, n_dims)."
+        coords = _require_bin_centers(bin_centers, n_nodes)
+        neighborhoods = [
+            np.asarray(neigh_list, dtype=np.int_)
+            for neigh_list in cKDTree(coords).query_ball_point(
+                coords[centers_array], r=radius
             )
-        if bin_centers.shape[0] != n_nodes:
-            raise ValueError(
-                f"bin_centers size {bin_centers.shape[0]} must match "
-                f"number of nodes in graph ({n_nodes}). "
-                f"Ensure bin_centers.shape[0] == G.number_of_nodes()."
-            )
-
-        # Build KD-tree once
-        tree = cKDTree(bin_centers)
-
-        # Query neighborhoods
-        center_coords = bin_centers[centers_array]
-        neighborhoods_list = tree.query_ball_point(center_coords, r=radius)
-
-        # Convert to numpy arrays and optionally exclude centers
-        result = []
-        for c, neigh_list in zip(centers_array, neighborhoods_list, strict=True):
-            arr = np.asarray(neigh_list, dtype=np.int_)
-            if not include_center:
-                arr = arr[arr != c]
-            result.append(arr)
-
-        return result
-
-    _require_edge_weight(G, weight, "neighbors_within()")
-    result = []
-    for c in centers_array:
-        # Dijkstra from center with cutoff
-        lengths = nx.single_source_dijkstra_path_length(
-            G, source=int(c), cutoff=radius, weight=weight
-        )
-
-        neigh = np.fromiter(lengths.keys(), dtype=np.int_, count=len(lengths))
-
-        if not include_center:
-            neigh = neigh[neigh != c]
-
-        result.append(neigh)
-
-    return result
+        ]
+    else:
+        adjacency = _bin_adjacency(G, weight=weight, operation="neighbors_within()")
+        neighborhoods = [
+            np.flatnonzero(np.isfinite(row)).astype(np.int_)
+            for _, lengths in _dijkstra_blocks(adjacency, centers_array, limit=radius)
+            for row in lengths
+        ]
+    if include_center:
+        return neighborhoods
+    return [
+        neigh[neigh != c] for c, neigh in zip(centers_array, neighborhoods, strict=True)
+    ]

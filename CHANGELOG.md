@@ -6,6 +6,38 @@
 
 Results that change:
 
+- A NaN bandwidth, wavelet scale, `max_distance_factor`, scale-bar length,
+  `max_distance`, distance `cutoff` or `neighbors_within` radius is refused.
+  A sign check alone (`value <= 0`) let NaN through, so a NaN bandwidth made
+  every basis function NaN and a NaN `max_distance` marked no point outside.
+  Infinite bandwidths, scales, factors and lengths are refused too; an
+  infinite cutoff, radius or `max_distance` still means no limit.
+- `env.nearest_bin` breaks ties with the same rule as `env.bin_at` on
+  nearest-center layouts (tracks): centers equally near within rounding at
+  the coordinates' magnitude, lowest bin index. The former fixed 1e-10
+  tolerance missed ties far from the origin, so a point midway between two
+  bins of a track at 3.7 km, or of a grid in millimeters at 1 km, could take
+  the higher bin.
+- `resample_field` reads the source field with `env.interpolate(mode="nearest")`
+  instead of its own copy of that lookup, so it refuses a field with an
+  infinite value, for both methods, as `interpolate` does. Finite fields
+  resample to identical values.
+- New `Environment.bin_spacing`: the typical distance between neighboring
+  bins, in the environment's units, computed once over every bin and cached.
+  On a linearized track it is the median bin length along the track; on an
+  egocentric polar environment it is measured between places in the animal's
+  plane. Every default scaled by "a bin spacing" now reads it:
+  `nearest_bin(max_distance_factor=)`, `map_probabilities`' default limit,
+  the heat-kernel wavelet basis, simulated place-field widths and
+  `validate_simulation`'s `max_center_error`. On a polar environment
+  `validate_simulation`, the track-animation warning and fastplotlib point
+  sizes measured (distance, angle) rows, so the angle bin in radians (0.39
+  for a pi/8 bin) stood in for a length; on a track `max_distance_factor`
+  and the wavelet basis used straight-line neighbors, which can lie on
+  another arm.
+- `stats.wrap_angle` returns its documented (-π, π]: a half-turn either way
+  is now +π, not -π. Egocentric bearings use the same function, so the
+  value just above π, which rounded to -π, now also stays at +π.
 - Viewsheds are exact. `compute_viewshed`, `compute_view_field`,
   `compute_viewshed_trajectory` and `visibility_occupancy` sampled each of 360
   rays at 100 points, so bins smaller than the sample spacing were skipped:
@@ -66,14 +98,23 @@ Breaking API changes:
 - `convert_to_cm` and `convert_to_pixels` require `cm_per_px` (it defaulted to
   1, labelling pixels as cm). `from_rotation_matrix` refuses matrices that
   are not rotations.
-- `get_2d_rotation_matrix(angle)` takes radians, like every other angle.
-- `map_probabilities` refuses to map when more than 1e-6 of the probability
-  sits on source bins whose centers land outside every target bin and more
-  than one target bin spacing from every target bin center (a smaller share,
-  such as a posterior's far tail, goes to its nearest bin); `max_distance`
-  sets a distance instead, and `math.inf` keeps the old nearest-bin
-  assignment. It also refuses non-finite
-  probabilities and `eps <= 0`. `ProbabilityMappingParams` is removed.
+- `map_probabilities` takes the source alignment as one `AffineND`,
+  `source_transform=`, instead of `source_scale`, `source_rotation_matrix`
+  and `source_translation_vector`, so `estimate_transform(source_landmarks,
+  target_landmarks)` passes straight in. `get_2d_rotation_matrix` and
+  `apply_similarity_transform` are removed; the new `rotate_2d(angle, *,
+  center=None)` builds a rotation in radians, about `center` when given, so
+  turning an arena about its center no longer needs `c - s * R @ c`.
+- `map_probabilities` refuses to map when more than `max_outside_fraction`
+  (new, default 1e-6) of the probability lies outside the target: on source
+  bins whose centers are in no target bin and farther than `max_distance`
+  (default `target_env.bin_spacing`) from every target bin center. One rule
+  covers both limits, so an explicit `max_distance` also keeps centers that
+  lie inside a coarser target bin. A smaller share, such as a posterior's far
+  tail, goes to its nearest bin; raise `max_outside_fraction` to accept a
+  known mismatch, and `max_distance=math.inf` keeps the old nearest-bin
+  assignment. It also refuses non-finite probabilities and `eps <= 0`.
+  `ProbabilityMappingParams` is removed.
 - `compute_diffusion_kernels` and `geodesic_rbf_basis` take `bandwidth=`
   instead of `sigma=`.
 - `geodesic_distance_matrix` loses `n_states`. `distance_field`,
@@ -3175,6 +3216,31 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- Dense diffusion kernels (`env.compute_kernel`, `compute_diffusion_kernels`
+  and the `"gaussian_kde"` method) use the dense matrix exponential, since
+  the heat kernel has no zero entries: a 2,601-bin kernel takes 1.0 s instead
+  of 29 s. Values agree to within 1e-15.
+- Graph distances run one multi-source shortest-path search and build the
+  bin adjacency in one pass over the edges. `distance_field` from 1,000
+  sources on a 10,404-bin grid takes 14 ms instead of 0.9 s; geodesic
+  `compute_egocentric_distance` to moving targets (20,000 samples) takes
+  1.5 s instead of 55 s; geodesic `neighbors_within` for 463 centers takes
+  25 ms instead of 0.2 s and returns each neighborhood sorted. Distances are
+  bit-identical, and geodesic `decoding_error` shares the same search.
+- `graph_convolve(normalize=True)` normalizes with two matrix-vector
+  products instead of copying the kernel matrix twice: on 4,615 bins, peak
+  memory drops from 341 MB to 0.2 MB and time from 19 ms to 2.4 ms.
+- Linear time allocation (`time_allocation="linear"`) locates every
+  trajectory piece in one call instead of one call per sample: 20,000
+  samples on a 2-D grid, hexagonal or polygon environment take about half
+  the time, with bit-identical occupancy.
+- Every bin-graph operation (geodesic basis functions, `neighbor_reduce` and
+  random-walk transitions included) reads the graph through one adjacency
+  builder, so all of them refuse a graph whose nodes are not the bins
+  `0 .. n_bins - 1` or whose edges lack the distance attribute, instead of
+  silently counting edges. They also refuse a directed graph or a
+  multigraph: `distance_field` ignored edge direction while
+  `neighbors_within` followed it, and parallel edges summed their lengths.
 - Position lookup in a polygon arena (`from_polygon`) or a masked triangular
   mesh tests points against a prepared polygon: containment of a million
   points in a 257-vertex arena takes 0.045 s instead of 0.30 s, with

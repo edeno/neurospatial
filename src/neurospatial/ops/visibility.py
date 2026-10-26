@@ -73,6 +73,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
@@ -80,6 +81,7 @@ from neurospatial.geometry import (
     batch_line_of_sight_clear,
     boundary_view,
 )
+from neurospatial.ops.egocentric import _check_pose
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -355,7 +357,7 @@ class FieldOfView:
         False
         """
         angle = np.asarray(angle)
-        wrapped = _wrap_egocentric(angle)
+        wrapped = wrap_angle(angle)
         in_bounds = (wrapped <= self.left_angle) & (wrapped >= self.right_angle)
         # Wrapping sends -pi to +pi; a field whose right edge is -pi still
         # reaches that direction, straight behind.
@@ -398,15 +400,10 @@ class FieldOfView:
             return np.zeros_like(angle, dtype=bool) if np.ndim(angle) > 0 else False
 
         angle = np.asarray(angle)
-        in_binocular = np.abs(_wrap_egocentric(angle)) <= self.binocular_half_angle
+        in_binocular = np.abs(wrap_angle(angle)) <= self.binocular_half_angle
         if angle.ndim == 0:
             return bool(in_binocular)
         return in_binocular
-
-
-def _wrap_egocentric(angle: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Wrap egocentric angles to (-pi, pi], so directly behind is +pi."""
-    return np.asarray((angle - np.pi) % (-2 * np.pi) + np.pi)
 
 
 @dataclass(frozen=True, eq=False)
@@ -679,7 +676,12 @@ def compute_viewed_location(
         )
     if method == "ray_cast" and env is None:
         raise ValueError("env is required when method='ray_cast'")
-    _check_samples("compute_viewed_location", positions, headings)
+    _check_pose(
+        "compute_viewed_location()",
+        positions,
+        headings,
+        why="each sample's gaze starts at its position and points along its heading.",
+    )
     gaze_direction = headings
     if gaze_offsets is not None:
         gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64)
@@ -715,31 +717,6 @@ def compute_viewed_location(
         boundary_source,
         CallIndexes(),
     )
-
-
-def _check_samples(
-    call: str, positions: NDArray[np.float64], headings: NDArray[np.float64]
-) -> None:
-    """Require positions ``(n_time, 2)`` and one heading per position."""
-    if positions.ndim != 2 or positions.shape[1] != 2:
-        raise ValueError(
-            _format_error(
-                f"{call}() needs positions of shape (n_time, 2); got "
-                f"{positions.shape}.",
-                fix="pass one (x, y) row per sample",
-            )
-        )
-    if headings.shape != (len(positions),):
-        raise ValueError(
-            _format_error(
-                f"{call}() needs one heading per position, shape "
-                f"({len(positions)},); got {headings.shape}.",
-                why="Why: each sample's gaze starts at its position and points "
-                "along its heading.",
-                fix="pass headings with the same length as positions (NaN marks "
-                "a missing heading)",
-            )
-        )
 
 
 def compute_viewshed(
@@ -936,7 +913,7 @@ def _in_view(
     in_fov : ndarray of bool, shape (n_targets,)
     """
     offsets = targets - position
-    bearings = _wrap_egocentric(np.arctan2(offsets[:, 1], offsets[:, 0]) - heading)
+    bearings = wrap_angle(np.arctan2(offsets[:, 1], offsets[:, 0]) - heading)
     if fov is None:
         return bearings, np.ones(len(targets), dtype=bool)
     in_fov = np.asarray(fov.contains_angle(bearings), dtype=bool)
@@ -1245,7 +1222,12 @@ def compute_viewshed_trajectory(
     """
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
-    _check_samples("compute_viewshed_trajectory", positions, headings)
+    _check_pose(
+        "compute_viewshed_trajectory()",
+        positions,
+        headings,
+        why="each sample's gaze starts at its position and points along its heading.",
+    )
 
     binning, arena = env.binning, env.arena
     indexes = CallIndexes()
@@ -1387,25 +1369,12 @@ def visibility_occupancy(
     )
     headings = np.asarray(headings, dtype=np.float64)
     n_time = len(times)
-    if positions.shape != (n_time, 2):
-        raise ValueError(
-            _format_error(
-                "visibility_occupancy() needs positions of shape (n_time, 2); "
-                f"got {positions.shape}.",
-                why="Why: each viewshed is cast from a 2-D (x, y) position.",
-                fix="pass one (x, y) row per timestamp",
-            )
-        )
-    if headings.shape != (n_time,):
-        raise ValueError(
-            _format_error(
-                "visibility_occupancy() needs one heading per timestamp, shape "
-                f"({n_time},); got {headings.shape}.",
-                why="Why: each sample's field of view is centered on its heading.",
-                fix="pass headings with the same length as times (NaN marks a "
-                "missing heading)",
-            )
-        )
+    _check_pose(
+        "visibility_occupancy()",
+        positions,
+        headings,
+        why="each sample's field of view is centered on its heading.",
+    )
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, n_time, call="visibility_occupancy")
     resolved_epochs = as_intervals(epochs, name="epochs")

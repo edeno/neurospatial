@@ -402,7 +402,10 @@ def retained_linear_intervals(
         np.any(wall_segments[:, 0] != wall_segments[:, 1], axis=1)
     ]
     wall_tree = STRtree(shapely.linestrings(wall_segments))
-    retained = []
+    # Each piece's bin is looked up once, for all pieces, after the loop.
+    piece_index: list[int] = []
+    piece_bounds: list[NDArray[np.float64]] = []
+    piece_queries: list[NDArray[np.float64]] = []
     arrival = None
     previous_index = -2
     for index in np.flatnonzero(valid_mask):
@@ -416,9 +419,9 @@ def retained_linear_intervals(
             continue
         delta = stop - start
         if np.all(delta == 0):
-            owner = int(owner_of(start[None, :])[0])
-            if owner >= 0:
-                retained.append(_RetainedLinearInterval(int(index), 0.0, 1.0, owner))
+            piece_index.append(int(index))
+            piece_bounds.append(np.array([0.0, 1.0]))
+            piece_queries.append(start[None, :])
             continue
         segment = LineString([start, stop])
         if len(wall_segments):
@@ -442,18 +445,21 @@ def retained_linear_intervals(
             breaks.extend(((coordinates[:, axis] - start[axis]) / delta[axis]).tolist())
         fractions = np.unique(np.clip(breaks, 0.0, 1.0))
         midpoints = (fractions[:-1] + fractions[1:]) / 2
-        queries = start + midpoints[:, None] * delta
-        owners = owner_of(queries)
-        for left, right, owner in zip(
-            fractions[:-1], fractions[1:], owners, strict=True
-        ):
-            if owner >= 0:
-                retained.append(
-                    _RetainedLinearInterval(
-                        int(index), float(left), float(right), int(owner)
-                    )
-                )
-    return tuple(retained)
+        piece_index.extend([int(index)] * len(midpoints))
+        piece_bounds.append(fractions)
+        piece_queries.append(start + midpoints[:, None] * delta)
+    if not piece_index:
+        return ()
+    owners = owner_of(np.concatenate(piece_queries))
+    lefts = np.concatenate([bounds[:-1] for bounds in piece_bounds])
+    rights = np.concatenate([bounds[1:] for bounds in piece_bounds])
+    return tuple(
+        _RetainedLinearInterval(index, float(left), float(right), int(owner))
+        for index, left, right, owner in zip(
+            piece_index, lefts, rights, owners, strict=True
+        )
+        if owner >= 0
+    )
 
 
 def _polygon_linear_occupancy(
@@ -561,7 +567,10 @@ def _retained_box_intervals(
         -1, binning.bins.n_dims
     )
     offset_array = np.asarray(offsets, dtype=np.float64)
-    intervals = []
+    # Each piece's bin is looked up once, for all pieces, after the loop.
+    piece_sample: list[int] = []
+    piece_bounds: list[NDArray[np.float64]] = []
+    piece_queries: list[NDArray[np.float64]] = []
     for sample in np.flatnonzero(valid_mask):
         start, stop = positions[sample], positions[sample + 1]
         if not np.all(np.isfinite([start, stop])):
@@ -577,17 +586,24 @@ def _retained_box_intervals(
         midpoints = start + ((fractions[:-1] + fractions[1:]) / 2)[:, None] * (
             stop - start
         )
-        if frame is None:
-            bins = locate(binning, arena, midpoints, indexes, call=_LINEAR_CALL)
-        else:
-            bins = source_locator.locate(midpoints, indexes)
-            if arena.domain_known:
-                bins[~arena.contains(frame.to_world(midpoints))] = -1
-        for left, right, index in zip(fractions[:-1], fractions[1:], bins, strict=True):
-            if index >= 0 and right > left:
-                intervals.append(
-                    _RetainedLinearInterval(
-                        int(sample), float(left), float(right), int(index)
-                    )
-                )
-    return tuple(intervals)
+        piece_sample.extend([int(sample)] * len(midpoints))
+        piece_bounds.append(fractions)
+        piece_queries.append(midpoints)
+    if not piece_sample:
+        return ()
+    queries = np.concatenate(piece_queries)
+    if frame is None:
+        bins = locate(binning, arena, queries, indexes, call=_LINEAR_CALL)
+    else:
+        bins = source_locator.locate(queries, indexes)
+        if arena.domain_known:
+            bins[~arena.contains(frame.to_world(queries))] = -1
+    lefts = np.concatenate([bounds[:-1] for bounds in piece_bounds])
+    rights = np.concatenate([bounds[1:] for bounds in piece_bounds])
+    return tuple(
+        _RetainedLinearInterval(sample, float(left), float(right), int(index))
+        for sample, left, right, index in zip(
+            piece_sample, lefts, rights, bins, strict=True
+        )
+        if index >= 0 and right > left
+    )
