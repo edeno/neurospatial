@@ -77,10 +77,6 @@ def _generate_interior_points_for_mesh(
 
     xv, yv = np.meshgrid(xs, ys, indexing="xy")
     candidates = np.column_stack((xv.ravel(), yv.ravel()))
-
-    if candidates.shape[0] == 0:
-        return np.empty((0, 2), dtype=np.float64)
-
     mask_pts = shapely.covers(boundary_polygon, shapely.points(candidates))
     return np.asarray(candidates[mask_pts], dtype=np.float64)
 
