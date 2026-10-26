@@ -1,13 +1,10 @@
 """
 Grid cell analysis.
 
-This module provides tools for analyzing grid cells: spatial autocorrelation
-(2D FFT for regular grids, 1D radial profile for irregular topologies), grid
-score (hexagonal periodicity), grid scale (spacing), grid orientation (folded
-into ``GridProperties`` since v0.4), and periodicity score for
-irregular topologies.
-
-Implements spatial autocorrelation and grid score (Sargolini et al., 2006).
+This module provides tools for analyzing grid cells: the 2D spatial
+autocorrelogram of a rate map on a regular grid of rectangular cells, and the
+grid score (hexagonal periodicity), spacing and orientation read from it. For
+other layouts it provides a 1D distance-correlation profile.
 
 Imports
 -------
@@ -29,8 +26,11 @@ Or via the encoding package:
 Functions
 ---------
 spatial_autocorrelation
-    Compute the 2D FFT autocorrelogram of a firing rate map (requires a
-    regular 2D grid environment).
+    Compute the 2D autocorrelogram of a firing rate map (requires a regular
+    2D grid of rectangular cells).
+autocorrelation_pixel_size
+    Physical side of the autocorrelogram's pixels, the ``bin_size`` for
+    :func:`grid_scale` and :func:`grid_properties`.
 spatial_autocorrelation_radial
     Compute the 1D distance-binned autocorrelation profile via the
     connectivity graph (works on any topology).
@@ -53,10 +53,6 @@ Sargolini, F., Fyhn, M., Hafting, T., McNaughton, B. L., Witter, M. P., Moser, M
     & Moser, E. I. (2006). Conjunctive representation of position, direction, and
     velocity in entorhinal cortex. Science, 312(5774), 758-762.
     https://doi.org/10.1126/science.1125572
-
-Brandon, M. P., Bogaard, A. R., Libby, C. P., Connerney, M. A., Guber, K., &
-    Bhattarai, B. (2011). Reduction of theta rhythm dissociates grid cell
-    spatial periodicity from directional tuning. Science, 332(6029), 595-599.
 """
 
 from __future__ import annotations
@@ -421,9 +417,8 @@ def _square_lags(
     for n, c, width in zip(shape, centers, widths, strict=True):
         below = int(np.floor(c * width / side + 1e-9))
         above = int(np.floor((n - 1 - c) * width / side + 1e-9))
-        # Keep the parity of the computed map, so zero lag sits where
-        # fftshift put it: index size // 2, with one more lag below zero
-        # than above it on an even axis.
+        # Keep the parity of the map, so zero lag stays at index size // 2,
+        # with one more lag below zero than above it on an even axis.
         odd = n % 2
         reach = min(below, above + 1 - odd)
         lags = np.arange(-reach, reach + odd)
@@ -444,8 +439,9 @@ def spatial_autocorrelation_radial(
 
     For each distance bin, computes the Pearson correlation between firing
     rates of bin pairs separated by that geodesic distance. Use this on
-    irregular topologies (graphs, masked grids) where the FFT-based
-    :func:`spatial_autocorrelation` is undefined.
+    layouts without a regular grid of rectangular cells (graphs, tracks,
+    hexagonal bins), where the 2D :func:`spatial_autocorrelation` is
+    undefined. A radial profile does not test for sixfold symmetry.
 
     Parameters
     ----------
@@ -475,7 +471,7 @@ def spatial_autocorrelation_radial(
 
     See Also
     --------
-    spatial_autocorrelation : 2D FFT-based autocorrelogram for regular grids.
+    spatial_autocorrelation : 2D autocorrelogram for regular grids.
     """
     _validate_autocorr_input(env, firing_rate)
 
@@ -876,7 +872,7 @@ def _zero_lag_centered(autocorr_2d: NDArray[np.float64]) -> NDArray[np.float64]:
     ----------
     autocorr_2d : ndarray of float64, shape (n_0, n_1)
         Lag map with zero lag at index ``n // 2`` along each axis, as
-        ``scipy.fft.fftshift`` and :func:`spatial_autocorrelation` place it.
+        :func:`spatial_autocorrelation` places it.
 
     Returns
     -------

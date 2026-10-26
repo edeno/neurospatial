@@ -40,7 +40,7 @@ Concrete exceptions inherit their standard Python type first, followed by `Neuro
 Two kinds of environment cannot run some analyses, and each kind has one error type:
 
 - A **polar** environment (`from_polar_egocentric`) raises `CartesianOnlyError` for every operation that reads its `(distance, angle)` bins as Cartesian positions, for example `subset`, `interpolate`, wall-based border scores or `time_allocation="linear"`. Containment lookups such as `bin_at` and `contains` read `(distance, angle)` rows and work on polar environments.
-- An environment whose **geometry lacks what the computation needs** raises `NotImplementedError`: for example the FFT `spatial_autocorrelation` on a hexagonal, mesh, track or 3-D environment, wall geometry outside 2-D, `bin_at()`, `contains()` and the other position lookups on a track built without `track_width`, or `rebin` on bins that are not a rectangular grid. The message names an alternative that works on that environment.
+- An environment whose **geometry lacks what the computation needs** raises `NotImplementedError`: for example the 2D `spatial_autocorrelation` and grid scores on a hexagonal, mesh, track or 3-D environment, wall geometry outside 2-D, `bin_at()`, `contains()` and the other position lookups on a track built without `track_width`, or `rebin` on bins that are not a rectangular grid. The message names an alternative that works on that environment.
 
 Graph-query indices previously raised `IndexError`; catch `BinIndexOutOfRangeError` or `ValueError` for those calls. Ordinary input validation can also raise standard `TypeError` or `ValueError` directly.
 
