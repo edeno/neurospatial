@@ -1157,11 +1157,18 @@ def estimate_transform(
 
     Notes
     -----
-    Works in any dimensionality.
+    All three kinds minimize the summed squared distance between the
+    transformed src landmarks and the dst landmarks, in any dimensionality.
     Rigid and similarity fits find the rotation with the Kabsch SVD solution
     and its determinant sign-correction, so the rotation is always proper
-    (det = +1), even when the landmarks are coplanar or reflected. Affine
-    fits solve the linear least-squares problem directly.
+    (det = +1), even when the landmarks are coplanar or reflected. The
+    similarity scale is the least-squares scale for that rotation
+    (Umeyama 1991). Affine fits solve the linear least-squares problem
+    directly.
+
+    Umeyama, S. (1991). Least-squares estimation of transformation parameters
+    between two point patterns. IEEE Transactions on Pattern Analysis and
+    Machine Intelligence, 13(4), 376-380.
 
     For cross-session alignment, collect 3-4 landmark points (e.g., corners
     of arena) in both sessions and use this function to compute the alignment.
@@ -1261,8 +1268,9 @@ def estimate_transform(
         if kind == "rigid":
             scale = 1.0
         else:
-            # Ratio of RMS distances from the centroids.
-            scale = float(np.sqrt(np.sum(dst_centered**2) / np.sum(src_centered**2)))
+            # Least-squares scale for that rotation (Umeyama 1991):
+            # trace(diag(S) @ D) / sum ||src_centered||^2.
+            scale = float(S @ np.diag(D)) / float(np.sum(src_centered**2))
 
         # T(x) = scale * R @ x + t, with t mapping the src centroid onto
         # the dst centroid.

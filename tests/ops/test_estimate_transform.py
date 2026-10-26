@@ -164,6 +164,41 @@ class TestEstimateTransformRefusesUndeterminedFits:
             estimate_transform(landmarks["src"], landmarks["dst"], kind=kind)
 
 
+def test_similarity_scale_minimizes_squared_landmark_error():
+    """The fitted scale is the least-squares scale for noisy landmarks.
+
+    The ratio of RMS spreads, which the scale used to be, absorbs the noise
+    in dst as extra spread; changing the least-squares scale either way, with
+    the translation refit, can only increase the summed squared error.
+    """
+    rng = np.random.default_rng(3)
+    angle = 0.4
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    src = rng.uniform(0, 600, (6, 2))
+    dst = 0.5 * src @ rotation.T + [10.0, -4.0] + rng.normal(0, 5, (6, 2))
+    transform = estimate_transform(src, dst, kind="similarity")
+    scale = np.sqrt(np.linalg.det(transform.A[:2, :2]))
+    unit = transform.A[:2, :2] / scale
+
+    def squared_error(candidate):
+        shift = dst.mean(axis=0) - candidate * unit @ src.mean(axis=0)
+        return np.sum((src @ (candidate * unit).T + shift - dst) ** 2)
+
+    best = squared_error(scale)
+    assert best < squared_error(scale * 1.001)
+    assert best < squared_error(scale * 0.999)
+    np.testing.assert_allclose(
+        transform(src),
+        src @ (scale * unit).T + (dst.mean(axis=0) - scale * unit @ src.mean(axis=0)),
+    )
+    spread_ratio = np.sqrt(
+        np.sum((dst - dst.mean(axis=0)) ** 2) / np.sum((src - src.mean(axis=0)) ** 2)
+    )
+    assert best < squared_error(spread_ratio)
+
+
 class TestEstimateTransformKabsch:
     """Rigid/similarity fits must return a proper rotation (det = +1)."""
 
