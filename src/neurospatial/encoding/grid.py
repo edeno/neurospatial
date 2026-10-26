@@ -69,7 +69,7 @@ from numpy.typing import NDArray
 from scipy import fft, ndimage
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -97,62 +97,47 @@ _HEX_PERIOD = np.pi / 3
 _AXIS_FLIP_THRESHOLD = _HEX_PERIOD / 4
 
 
-@dataclass(repr=False)
-class GridProperties(ResultMixin):
+@dataclass(frozen=True, repr=False)
+class GridProperties(ReadOnlyArraysMixin, ResultMixin):
     """
-    Container for grid cell metrics extracted from autocorrelogram.
+    Grid cell metrics read from a 2D autocorrelogram.
 
     Attributes
     ----------
     score : float
-        Standard grid score in range [-2, 2]. Higher values indicate stronger
-        hexagonal periodicity. Computed as min(r60, r120) - max(r30, r90, r150).
+        Grid score in range [-2, 2]; see :func:`grid_score`. Higher values
+        indicate stronger hexagonal periodicity.
     scale : float
-        Grid spacing (distance between fields) in the same units as bin_size.
-        Computed as median distance from center to 6 nearest peaks.
+        Grid spacing (distance between neighboring fields), in the
+        environment's units: the median distance from zero lag to the peaks
+        in ``peak_coords``. NaN when fewer than 3 peaks were found.
     orientation : float
         Grid orientation in radians, range [0, pi/3): the angle of the field
         lattice in the environment's allocentric frame, from +x (East)
         counterclockwise toward +y (North), modulo pi/3, the period of a
-        hexagonal lattice.
+        hexagonal lattice. NaN when fewer than 3 peaks were found.
     orientation_std : float
         Standard deviation of the orientation estimates of the peaks, in
         radians. Lower values indicate a more consistent orientation.
-    peak_coords : NDArray[np.float64]
-        Coordinates of detected peaks relative to autocorrelogram center,
-        shape (n_peaks, 2) where columns are ``(x_offset, y_offset)`` in
-        pixels of the autocorrelogram, along the environment's x and y
-        (axis 0 and axis 1 of the map). Typically 6 peaks for a well-formed
-        grid.
-
-        .. note::
-
-           **Breaking change in v0.4**: this attribute previously held
-           ``(row_offset, col_offset)`` (image-array convention with the
-           y-axis flipped). It now matches the rest of the package's
-           Cartesian ``(x, y)`` convention. Downstream code that read
-           ``peak_coords[:, 0]`` as a row index must swap to
-           ``peak_coords[:, 1]`` (``y``).
-    n_peaks : int
-        Number of peaks detected. Grid cells typically have 6.
-
-    Notes
-    -----
-    All metrics are computed from a single peak detection pass for efficiency.
-    If fewer than 3 peaks are detected, scale and orientation will be NaN.
+    peak_coords : NDArray[np.float64], shape (n_peaks, 2)
+        Autocorrelogram peaks nearest zero lag, as ``(x_offset, y_offset)``
+        from zero lag in the environment's units (the same units as
+        ``scale``), along the environment's x and y. Six for a well-formed
+        grid; sorted by distance from zero lag. Read-only.
 
     Examples
     --------
-    >>> from neurospatial.encoding.grid import (
-    ...     grid_properties,
-    ...     spatial_autocorrelation,
-    ... )  # doctest: +SKIP
-    >>> autocorr = spatial_autocorrelation(env, firing_rate)  # doctest: +SKIP
-    >>> props = grid_properties(autocorr, bin_size=2.0)  # doctest: +SKIP
-    >>> print(
-    ...     f"Score: {props.score:.2f}, Scale: {props.scale:.1f} cm"
-    ... )  # doctest: +SKIP
-    Score: 0.85, Scale: 42.3 cm  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial.encoding.grid import GridProperties
+    >>> props = GridProperties(
+    ...     score=1.2,
+    ...     scale=40.0,
+    ...     orientation=0.0,
+    ...     orientation_std=0.0,
+    ...     peak_coords=np.array([[40.0, 0.0], [-40.0, 0.0], [20.0, 34.6]]),
+    ... )
+    >>> props.n_peaks
+    3
     """
 
     score: float
@@ -160,7 +145,15 @@ class GridProperties(ResultMixin):
     orientation: float
     orientation_std: float
     peak_coords: NDArray[np.float64]
-    n_peaks: int
+
+    def __post_init__(self) -> None:
+        """Own a read-only copy of the peak coordinates."""
+        self._own_arrays()
+
+    @property
+    def n_peaks(self) -> int:
+        """Number of peaks in ``peak_coords``; 6 for a well-formed grid."""
+        return len(self.peak_coords)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -1275,15 +1268,13 @@ def grid_properties(
     peak_coords = _find_autocorr_peaks(
         autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
     )
-    n_detected = len(peak_coords)
-    if n_detected < 3:
+    if len(peak_coords) < 3:
         return GridProperties(
             score=score,
             scale=np.nan,
             orientation=np.nan,
             orientation_std=np.nan,
-            peak_coords=peak_coords,
-            n_peaks=n_detected,
+            peak_coords=peak_coords * bin_size,
         )
 
     scale = float(np.median(np.hypot(peak_coords[:, 0], peak_coords[:, 1]))) * bin_size
@@ -1319,6 +1310,5 @@ def grid_properties(
         scale=scale,
         orientation=orientation,
         orientation_std=orientation_std,
-        peak_coords=peak_coords,
-        n_peaks=n_detected,
+        peak_coords=peak_coords * bin_size,
     )

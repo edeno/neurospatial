@@ -1217,23 +1217,25 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             - score : float
                 Grid score in range [-2, 2]
             - scale : float
-                Grid spacing in physical units (same as bin_size)
+                Grid spacing in the environment's units
             - orientation : float
                 Lattice angle in radians [0, pi/3), from +x (East)
                 counterclockwise toward +y (North), modulo pi/3
             - orientation_std : float
                 Standard deviation of orientation estimates, in radians
-            - peak_coords : NDArray
-                Detected peak coordinates (n_peaks, 2)
+            - peak_coords : NDArray, shape (n_peaks, 2)
+                Autocorrelogram peaks as ``(x, y)`` offsets from zero lag,
+                in the environment's units
             - n_peaks : int
-                Number of peaks detected
+                Number of peaks found
+
+        Raises
+        ------
+        NotImplementedError
+            If the environment has no regular 2D grid of rectangular cells.
 
         Notes
         -----
-        This method is more efficient than calling ``grid_score()`` separately
-        when you need multiple grid metrics, as it performs peak detection
-        only once.
-
         Delegates to ``neurospatial.encoding.grid.grid_properties()``.
 
         References

@@ -623,6 +623,23 @@ class TestGridProperties:
         assert props.peak_coords.ndim == 2
         assert props.peak_coords.shape[1] == 2
 
+    def test_grid_properties_is_frozen_and_owns_read_only_peaks(self):
+        """Peaks are in the scale's units, read-only, and counted by n_peaks."""
+        import dataclasses
+
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _create_hexagonal_autocorr(size=101, radius=20.0)
+        props = grid_properties(autocorr, bin_size=2.0)
+        distances = np.hypot(props.peak_coords[:, 0], props.peak_coords[:, 1])
+
+        assert props.n_peaks == len(props.peak_coords) == 6
+        np.testing.assert_allclose(np.median(distances), props.scale)
+        with pytest.raises(ValueError, match="read-only"):
+            props.peak_coords[0, 0] = 1.0
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            props.score = 0.0  # type: ignore[misc]
+
     def test_grid_properties_matches_individual_functions(self):
         """Test grid_properties matches individual function outputs."""
         from neurospatial.encoding.grid import (
