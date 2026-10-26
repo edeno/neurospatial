@@ -663,12 +663,12 @@ def _live_components(
 
 
 def _target_live_rank(
-    labels: NDArray[np.int_], occupancy: NDArray[np.float64], rank: int | None
+    n_live_components: int, n_live_bins: int, rank: int | None
 ) -> int:
-    """Effective rank ``r_eff = max(n_live_components, min(n_live_bins, R))``."""
-    live = _live_components(labels, occupancy)
-    n_live_components = int(live.size)
-    n_live_bins = int(np.isin(labels, live).sum())
+    """Effective rank ``r_eff = max(n_live_components, min(n_live_bins, R))``.
+
+    ``R`` is ``rank``, or ``_DEFAULT_MAX_RANK`` when ``rank`` is None.
+    """
     R = _DEFAULT_MAX_RANK if rank is None else int(rank)
     return max(n_live_components, min(n_live_bins, R))
 
@@ -810,8 +810,7 @@ def _select_live_basis(
     if live_bins.size == 0:  # zero total occupancy -> the empty basis
         return MRFBasis(np.zeros((0, 0)), np.zeros((0,)), live_bins, 0)
 
-    R = _DEFAULT_MAX_RANK if rank is None else int(rank)
-    r_eff = max(n_live_components, min(live_bins.size, R))
+    r_eff = _target_live_rank(n_live_components, live_bins.size, rank)
     n_fill = r_eff - n_live_components
     inv_sqrt_vol = 1.0 / np.sqrt(volumes)  # M^{-1/2}; fills are B = M^{-1/2}Q
 

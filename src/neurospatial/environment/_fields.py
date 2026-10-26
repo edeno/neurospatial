@@ -677,7 +677,7 @@ def _mrf_basis(
     S = _symmetric_conjugate(_W, volumes)  # cheap; the eigensolve is the cost
     live = _live_components(labels, occupancy)
     n_live_components = int(live.size)
-    r_eff = _target_live_rank(labels, occupancy, rank)
+    r_eff = _target_live_rank(n_live_components, int(np.isin(labels, live).sum()), rank)
     n_fill = r_eff - n_live_components
 
     def grow(
