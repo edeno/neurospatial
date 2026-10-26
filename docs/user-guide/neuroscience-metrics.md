@@ -852,7 +852,7 @@ near `alpha` for untuned cells under uneven heading sampling when spikes are
 independent given heading.
 
 `has_place_field()` preserves field detection. `is_place_cell()` requires
-`criterion="spatial_info"` (screen) or `"shuffle"` (circular-shift verdict).
+`criterion="threshold"` (screen) or `"shuffle"` (circular-shift verdict).
 The other four cell predicates default to `criterion="threshold"` and allow
 opt-in `"shuffle"`. Result methods and batch `classify()` offer threshold
 screens; results keep no raw input arrays. Threshold comparisons are inclusive;
@@ -912,7 +912,7 @@ print(f"Sparsity: {sparse:.3f}")
 
 # 5. Explicit fast screen (biased at low counts)
 from neurospatial.encoding import is_place_cell
-candidate = is_place_cell(env, spike_times, times, positions, criterion="spatial_info")
+candidate = is_place_cell(env, spike_times, times, positions, criterion="threshold")
 print(f"Place candidate: {candidate}")
 # For publication: criterion="shuffle" on these raw arrays.
 ```

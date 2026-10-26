@@ -196,11 +196,7 @@ def check_mode_keywords(
     offending = {name: value for name, value in wrong.items() if value is not None}
     if offending:
         values = ", ".join(f"{name}={value!r}" for name, value in offending.items())
-        alternate = (
-            "shuffle"
-            if criterion != "shuffle"
-            else ("spatial_info" if call.endswith("is_place_cell") else "threshold")
-        )
+        alternate = "shuffle" if criterion != "shuffle" else "threshold"
         raise ValueError(
             _format_error(
                 f"{call}(criterion={criterion!r}) got {values}, which apply only with criterion={alternate!r}.",

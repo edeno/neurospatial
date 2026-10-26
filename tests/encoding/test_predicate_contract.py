@@ -31,9 +31,9 @@ def test_is_place_cell_requires_criterion(significance_recording):
         assert parameter.default is inspect.Parameter.empty
         with pytest.raises(TypeError, match="criterion"):
             function(*args)
-    with pytest.raises(ValueError, match=r"spatial_info.*shuffle") as exc:
+    with pytest.raises(ValueError, match=r"threshold.*shuffle") as exc:
         encoding.is_place_cell(
-            r.env, r.trains[0], r.times, r.positions, criterion="threshold"
+            r.env, r.trains[0], r.times, r.positions, criterion="spatial_info"
         )
     assert "has_place_field" in str(exc.value)
 
@@ -45,7 +45,7 @@ def test_threshold_free_method_classify_agree(
     free_name, method_name = _names(f)
     predicate = getattr(f.module, free_name)
     single = getattr(f.module, f.compute_name[:-1])
-    criteria = {"criterion": "spatial_info" if f.name == "place" else "threshold"}
+    criteria = {"criterion": "threshold"}
     method_kw = criteria if f.name == "place" else {}
     rates = f.compute(*f.args(r), **f.defaults)
     for i, train in enumerate(r.trains):
@@ -81,7 +81,7 @@ def test_mode_keywords_raise(significance_family, significance_recording):
     with pytest.raises(ValueError, match="Fix:") as exc:
         predicate(*args, criterion="shuffle", **{threshold: 0.3})
     assert threshold in str(exc.value)
-    criterion = "spatial_info" if f.name == "place" else "threshold"
+    criterion = "threshold"
     bad = {"n_shuffles": 10, "min_shift": 1, "rng": 0, "unit_id": 3}
     if f.name != "head_direction":
         bad["alpha"] = 0.1
@@ -101,7 +101,7 @@ def test_free_predicates_raise_on_bad_input(
     args = list(f.args(r, r.trains[0]))
     offset = 1 if f.name == "head_direction" else 2
     args[offset], args[offset + 1] = args[offset + 1], args[offset]
-    kwargs = {"criterion": "spatial_info"} if f.name == "place" else {}
+    kwargs = {"criterion": "threshold"} if f.name == "place" else {}
     with pytest.raises(ValueError):
         predicate(*args, **kwargs)
 
@@ -123,7 +123,7 @@ def test_threshold_constants_are_the_defaults(
     free_name, method_name = _names(f)
     predicate = getattr(f.module, free_name)
     rates = f.compute(*f.args(r), **f.defaults)
-    criteria = {"criterion": "spatial_info"} if f.name == "place" else {}
+    criteria = {"criterion": "threshold"} if f.name == "place" else {}
     for fn in [predicate, getattr(rates[0], method_name), rates.classify]:
         for name in constant:
             parameter = inspect.signature(fn).parameters[name]
@@ -313,20 +313,20 @@ def test_results_do_not_retain_inputs(significance_family, significance_recordin
     np.testing.assert_array_equal(plural.classify(), flags)
 
 
-def test_is_place_cell_spatial_info(ou_2min_env, ou_2min, noise_trains):
+def test_is_place_cell_threshold(ou_2min_env, ou_2min, noise_trains):
     t, p, _ = ou_2min
     trains = noise_trains(120)
     rates = encoding.compute_spatial_rates(ou_2min_env, trains, t, p, bandwidth=5.0)
     flags = [
         encoding.is_place_cell(
-            ou_2min_env, tr, t, p, criterion="spatial_info", bandwidth=5.0
+            ou_2min_env, tr, t, p, criterion="threshold", bandwidth=5.0
         )
         for tr in trains
     ]
     np.testing.assert_array_equal(flags, rates.classify())
     assert sum(flags) == 14
     assert all(
-        rates[i].is_place_cell(criterion="spatial_info") == flags[i] for i in range(20)
+        rates[i].is_place_cell(criterion="threshold") == flags[i] for i in range(20)
     )
 
 

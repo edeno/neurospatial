@@ -1547,11 +1547,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         return len(fields) > 0
 
     def is_place_cell(
-        self, *, criterion: Literal["spatial_info"], min_info: float | None = None
+        self, *, criterion: Literal["threshold"], min_info: float | None = None
     ) -> bool:
         """Classify one neuron using an explicitly chosen criterion.
 
-        There is no default criterion. ``criterion="spatial_info"`` thresholds
+        There is no default criterion. ``criterion="threshold"`` thresholds
         plug-in spatial information, which flagged 19/20 and 14/20 untuned
         0.5 Hz Poisson units at 1 and 2 minutes. ``criterion="shuffle"`` tests
         it against circularly shifted spike trains. Use the shuffle when the
@@ -1561,7 +1561,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         Parameters
         ----------
-        criterion : {"spatial_info"}
+        criterion : {"threshold"}
             Required screen. Shuffle verdicts require the raw-array free function.
         min_info : float or None, default=None
             Inclusive information cutoff; None resolves to 0.5 bits/spike.
@@ -1594,7 +1594,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
                 )
             )
         check_criterion(
-            criterion, ("spatial_info",), call="SpatialRateResult.is_place_cell"
+            criterion, ("threshold",), call="SpatialRateResult.is_place_cell"
         )
         min_info = (
             PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
@@ -5498,7 +5498,7 @@ def is_place_cell(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    criterion: Literal["spatial_info", "shuffle"],
+    criterion: Literal["threshold", "shuffle"],
     min_info: float | None = None,
     alpha: float | None = None,
     n_shuffles: int | None = None,
@@ -5523,7 +5523,7 @@ def is_place_cell(
 ) -> bool:
     """Classify one neuron using an explicitly chosen criterion.
 
-    There is no default criterion. ``criterion="spatial_info"`` thresholds
+    There is no default criterion. ``criterion="threshold"`` thresholds
     plug-in spatial information, which flagged 19/20 and 14/20 untuned
     0.5 Hz Poisson units at 1 and 2 minutes. ``criterion="shuffle"`` tests
     it against circularly shifted spike trains. Use the shuffle when the
@@ -5544,10 +5544,10 @@ def is_place_cell(
     positions : ndarray, shape (n_samples, n_dims)
         Raw animal coordinates aligned with times, in environment units.
 
-    criterion : {"spatial_info", "shuffle"}
+    criterion : {"threshold", "shuffle"}
         Screen the observed statistic or test circular-shift significance.
     min_info : float or None, default=None
-        Inclusive spatial-information cutoff for ``criterion="spatial_info"``
+        Inclusive spatial-information cutoff for ``criterion="threshold"``
         (bits/spike); None is 0.5 bits/spike.
     alpha : float or None, default=None
         P-value level for ``criterion="shuffle"``; None resolves to 0.05.
@@ -5759,12 +5759,12 @@ def is_place_cell(
     >>> times = np.linspace(0, 40, 1000)
     >>> spike_times = np.sort(rng.uniform(0, 40, 50))
     >>> result = is_place_cell(
-    ...     env, spike_times, times, positions, criterion="spatial_info"
+    ...     env, spike_times, times, positions, criterion="threshold"
     ... )
     >>> type(result)
     <class 'bool'>
     """
-    check_criterion(criterion, ("spatial_info", "shuffle"), call="is_place_cell")
+    check_criterion(criterion, ("threshold", "shuffle"), call="is_place_cell")
     check_mode_keywords(
         criterion,
         threshold={"min_info": min_info},
@@ -5830,7 +5830,7 @@ def is_place_cell(
         backend=backend,
         warn_on_drop=warn_on_drop,
     )
-    return result.is_place_cell(criterion="spatial_info", min_info=min_info)
+    return result.is_place_cell(criterion="threshold", min_info=min_info)
 
 
 def _rises_toward_a_neighbor(
