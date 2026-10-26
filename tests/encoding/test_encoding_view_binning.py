@@ -867,21 +867,21 @@ class TestViewBinningEdgeCases:
             boundary_source="analysis",
         )
 
-        # Should have high occupancy in bins east of center
-        # Viewed location is at (60, 50) for view_distance=10
-        assert np.any(occupancy > 0)
+        # Every sample views (60, 50), 10 cm east of the animal.
+        viewed_bin = simple_env.bin_at(np.array([[60.0, 50.0]]))[0]
+        assert occupancy[viewed_bin] == pytest.approx(times[-1] - times[0])
+        assert np.count_nonzero(occupancy) == 1
 
-    def test_view_outside_environment(
+    def test_gaze_toward_the_edge_stops_at_the_edge(
         self,
         simple_env: Environment,
     ) -> None:
-        """Views outside environment should not contribute to occupancy."""
+        """A gaze that would leave the environment views its edge instead."""
         from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.linspace(0, 10.0, 1000)
-        # Animal at edge, looking outward
-        positions = np.tile([5, 50], (1000, 1))
-        headings = np.ones(1000) * np.pi  # Looking west (outside)
+        positions = np.tile([5.0, 50.0], (1000, 1))
+        headings = np.full(1000, np.pi)  # West; 20 cm ahead is outside
 
         occupancy = compute_occupancy(
             simple_env,
@@ -890,12 +890,16 @@ class TestViewBinningEdgeCases:
             headings,
             gaze_model="fixed_distance",
             view_distance=20.0,
-            boundary_source="analysis",  # Would be at (-15, 50) - outside env
+            boundary_source="analysis",
         )
 
-        # Total occupancy should be less than duration due to invalid views
-        total_duration = times[-1] - times[0]
-        assert np.sum(occupancy) < total_duration * 0.5
+        viewed = simple_env.bin_centers[occupancy > 0]
+        assert len(viewed) == 1
+        np.testing.assert_allclose(
+            viewed[0],
+            simple_env.bin_centers[simple_env.bin_at(np.array([[0.0, 50.0]]))[0]],
+        )
+        assert np.sum(occupancy) == pytest.approx(times[-1] - times[0])
 
     def test_all_spikes_at_same_viewed_location(
         self,

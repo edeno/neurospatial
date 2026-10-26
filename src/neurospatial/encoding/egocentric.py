@@ -18,7 +18,9 @@ Examples
 >>> times = np.arange(0, 40, 0.04)
 >>> positions = rng.uniform(10, 90, (len(times), 2))
 >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
->>> result = compute_object_vector_rate(None, spikes, times, positions, [[50, 50]])
+>>> result = compute_object_vector_rate(
+...     None, spikes, times, positions, [[50, 50]], distance_range=(0.0, 50.0)
+... )
 >>> result.direction_frame
 'allocentric'
 
@@ -59,7 +61,12 @@ from neurospatial._intervals import (
 from neurospatial._observation import validate_break_before
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
-from neurospatial.encoding._polar_results import _PolarRateMixin, polar_summary_frame
+from neurospatial.encoding._polar_results import (
+    _PolarRateMixin,
+    polar_summary_frame,
+    require_known_bandwidth,
+    resolve_distance_range,
+)
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
@@ -178,13 +185,6 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         The polar environment used for the computation. This is
         typically created via ``Environment.from_polar_egocentric()`` and
         represents the (distance, direction) space indexing distance and direction to objects.
-    distance_range : tuple[float, float]
-        Range of distances (min, max) covered by the polar environment.
-    n_distance_bins : int
-        Number of distance bins in the polar grid.
-    n_direction_bins : int
-        Number of direction bins in the polar grid.
-
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
@@ -198,11 +198,11 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     env : Environment
         The egocentric polar environment.
     distance_range : tuple[float, float]
-        Distance range (min, max).
+        (min, max) distance covered by the bins; read from ``env``.
     n_distance_bins : int
-        Number of distance bins.
+        Number of distance bins; read from ``env``.
     n_direction_bins : int
-        Number of direction bins.
+        Number of direction bins; read from ``env``.
     unit_id : int or str or None
         Identifier for this unit. Set automatically when indexing/iterating a
         population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
@@ -243,7 +243,13 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     >>> object_positions = np.array([[50.0, 50.0]])
     >>> spike_times = np.sort(rng.uniform(0, 100, 100))
     >>> result = compute_egocentric_rate(
-    ...     None, spike_times, times, positions, headings, object_positions
+    ...     None,
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
     ... )
 
     >>> # Access fields
@@ -261,9 +267,6 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     firing_rate: ArrayLike
     occupancy: ArrayLike
     env: PolarEnvironment
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     unit_id: int | str | None = None
 
@@ -311,7 +314,13 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         ...     np.sort(rng.uniform(0, 100, 50)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> table = result[0].summary_table()
         >>> len(table)
@@ -383,15 +392,14 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         Returns
         -------
         float
-            Distance to object at peak firing rate, in the same units as
-            the environment (typically cm). Uses nanargmax to handle NaN
-            values in the firing rate map.
+            Distance to the object at the peak firing rate, in the
+            environment's length units; NaN when no bin has a rate.
 
         Notes
         -----
         For object-vector cells, this represents the preferred distance to
-        the object. A cell with preferred_distance=20 fires most when the
-        object is 20 cm away from the animal.
+        the object. With positions in cm, a cell with preferred_distance=20
+        fires most when the object is 20 cm away from the animal.
 
         The distance is extracted from the polar environment's bin
         centers. The first component (index 0) represents distance.
@@ -407,7 +415,13 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = np.sort(rng.uniform(0, 100, 100))
         >>> result = compute_egocentric_rate(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> dist = result.preferred_distance()
         >>> print(f"Preferred distance: {dist:.1f} cm")
@@ -418,10 +432,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         preferred_direction : Get direction component of peak response
         plot : Visualize the object-vector rate map
         """
-        firing_rate = _to_numpy(self.firing_rate)
-        peak_bin = np.nanargmax(firing_rate)
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-        return float(bin_centers[peak_bin, 0])
+        return float(self._peak_coordinates(0)[0])
 
     def preferred_direction(self) -> float:
         """Direction from the animal to the object at peak firing rate.
@@ -433,7 +444,8 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         Returns
         -------
         float
-            Peak animal-to-object direction in radians, in the recorded frame.
+            Peak animal-to-object direction in radians, in the recorded
+            frame; NaN when no bin has a rate.
 
         Examples
         --------
@@ -446,7 +458,13 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = np.sort(rng.uniform(0, 100, 100))
         >>> result = compute_egocentric_rate(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> direction = result.preferred_direction()
         >>> print(f"Preferred direction: {np.degrees(direction):.1f}")
@@ -457,10 +475,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         preferred_distance : Get distance component of peak response
         plot : Visualize the object-vector rate map
         """
-        firing_rate = _to_numpy(self.firing_rate)
-        peak_bin = np.nanargmax(firing_rate)
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-        return float(bin_centers[peak_bin, 1])
+        return float(self._peak_coordinates(1)[0])
 
     def spatial_information(self) -> float:
         """Compute spatial information in the recorded frame (bits per spike).
@@ -486,11 +501,10 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         :math:`r_i` is firing rate in that bin, and :math:`\\bar{r}` is mean
         firing rate.
 
-        **Interpretation**:
-
-        - Object-vector cells typically have 0.5-2.0+ bits/spike
-        - Higher values indicate more selective tuning to distance/direction
-        - Zero means uniform firing (no distance/direction selectivity)
+        **Interpretation**: higher values mean more selective tuning to
+        distance and direction; zero means the same rate in every bin.
+        Plug-in information is biased upward for few spikes, so compare it
+        with a circular-shift test before calling a cell tuned.
 
         This metric uses polar occupancy in the recorded frame (time spent
         at each distance/direction combination), which differs from standard spatial
@@ -507,7 +521,13 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = np.sort(rng.uniform(0, 100, 100))
         >>> result = compute_egocentric_rate(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> info = result.spatial_information()
         >>> print(f"Egocentric spatial info: {info:.2f} bits/spike")
@@ -591,7 +611,13 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         >>> object_positions = np.array([[50.0, 50.0]])
         >>> spike_times = np.sort(rng.uniform(0, 100, 100))
         >>> result = compute_egocentric_rate(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> result.is_object_vector_cell()
         True
@@ -612,6 +638,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         ...     criterion="shuffle",
         ...     n_shuffles=50,
         ...     rng=0,
+        ...     distance_range=(0.0, 50.0),
         ... )
         False
 
@@ -652,13 +679,6 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         (and thus polar occupancy in the recorded frame) is the same for all neurons.
     env : Environment
         The polar environment used for the computation.
-    distance_range : tuple[float, float]
-        Range of distances (min, max) covered by the polar environment.
-    n_distance_bins : int
-        Number of distance bins in the polar grid.
-    n_direction_bins : int
-        Number of direction bins in the polar grid.
-
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
@@ -672,11 +692,11 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     env : Environment
         The egocentric polar environment.
     distance_range : tuple[float, float]
-        Distance range (min, max).
+        (min, max) distance covered by the bins; read from ``env``.
     n_distance_bins : int
-        Number of distance bins.
+        Number of distance bins; read from ``env``.
     n_direction_bins : int
-        Number of direction bins.
+        Number of direction bins; read from ``env``.
     unit_ids : NDArray, shape (n_units,)
         Identifier for each unit (row), e.g. from ``read_units`` or passed via
         ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
@@ -729,7 +749,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     ...     np.sort(rng.uniform(0, 100, 50)),
     ... ]
     >>> result = compute_egocentric_rates(
-    ...     None, spike_times, times, positions, headings, object_positions
+    ...     None,
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
     ... )
 
     >>> # Access fields
@@ -752,9 +778,6 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     firing_rates: ArrayLike
     occupancy: ArrayLike
     env: PolarEnvironment
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
@@ -808,7 +831,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ...     np.sort(rng.uniform(0, 100, 50)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> len(result)
         3
@@ -843,7 +872,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ...     np.sort(rng.uniform(0, 100, 150)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> single = result[0]
         >>> isinstance(single, ObjectVectorRateResult)
@@ -854,9 +889,6 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,
             env=self.env,
-            distance_range=self.distance_range,
-            n_distance_bins=self.n_distance_bins,
-            n_direction_bins=self.n_direction_bins,
             unit_id=label_at(self.unit_ids, idx),
             spike_window=self.spike_window,
             analysis_settings=self._analysis_attrs()["analysis_settings"],
@@ -885,7 +917,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ...     np.sort(rng.uniform(0, 100, 150)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> peaks = [float(single.firing_rate.max()) for single in result]
         >>> len(peaks)
@@ -954,14 +992,14 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         Returns
         -------
         ndarray, shape (n_neurons,)
-            Distance to object at peak firing rate for each neuron, in the
-            same units as the environment (typically cm).
+            Distance to the object at each neuron's peak firing rate, in
+            the environment's length units; NaN for a unit with no rate.
 
         Notes
         -----
         For object-vector cells, this represents the preferred distance to
-        the object. A cell with preferred_distance=20 fires most when the
-        object is 20 cm away from the animal.
+        the object. With positions in cm, a cell with preferred_distance=20
+        fires most when the object is 20 cm away from the animal.
 
         Examples
         --------
@@ -978,7 +1016,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ...     np.sort(rng.uniform(0, 100, 50)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> distances = result.preferred_distances()
         >>> distances.shape
@@ -991,14 +1035,7 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ObjectVectorRateResult.preferred_distance : Single-neuron version
         preferred_directions : Get direction preferences for all neurons
         """
-        firing_rates = _to_numpy(self.firing_rates)
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-
-        # Peak (max-firing) bin per neuron, ignoring NaNs; then read off the
-        # distance component (column 0 of bin_centers).
-        peak_idx = np.nanargmax(firing_rates, axis=1)
-        distances: NDArray[np.float64] = bin_centers[peak_idx, 0]
-        return distances
+        return self._peak_coordinates(0)
 
     def preferred_directions(self) -> NDArray[np.float64]:
         """Directions from the animal to the object at peak firing rate.
@@ -1010,7 +1047,8 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         Returns
         -------
         NDArray[np.float64], shape (n_neurons,)
-            Peak animal-to-object direction in radians, in the recorded frame.
+            Peak animal-to-object direction in radians, in the recorded
+            frame; NaN for a unit with no rate.
 
         Examples
         --------
@@ -1027,7 +1065,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ...     np.sort(rng.uniform(0, 100, 50)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> directions = result.preferred_directions()
         >>> directions.shape
@@ -1040,14 +1084,7 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ObjectVectorRateResult.preferred_direction : Single-neuron version
         preferred_distances : Get distance preferences for all neurons
         """
-        firing_rates = _to_numpy(self.firing_rates)
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-
-        # Peak (max-firing) bin per neuron, ignoring NaNs; then read off the
-        # direction component (column 1 of bin_centers).
-        peak_idx = np.nanargmax(firing_rates, axis=1)
-        directions: NDArray[np.float64] = bin_centers[peak_idx, 1]
-        return directions
+        return self._peak_coordinates(1)
 
     def spatial_information(self) -> NDArray[np.float64]:
         """Spatial information in the recorded frame for all neurons (bits per spike).
@@ -1083,7 +1120,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ...     np.sort(rng.uniform(0, 100, 50)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> info = result.spatial_information()
         >>> info.shape
@@ -1158,7 +1201,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ...     np.sort(rng.uniform(0, 100, 50)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> is_object_vector_cell = result.classify()
         >>> print(f"Found {is_object_vector_cell.sum()} OVCs")
@@ -1201,11 +1250,14 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         pd.DataFrame
             One row per unit, indexed by ``unit_id``, with columns:
 
-            - preferred_distance: preferred distance to object (cm)
-            - preferred_direction: preferred direction to object (radians in result.direction_frame)
-            - preferred_direction_deg: preferred direction (degrees in the same frame)
             - peak_rate: maximum firing rate (Hz)
-            - is_object_vector_cell: whether classified as OVC (using default threshold)
+            - preferred_distance: preferred distance to the object, in the
+              environment's length units (``df.attrs["units"]``)
+            - preferred_direction_deg: preferred direction (degrees in
+              ``result.direction_frame``)
+            - preferred_direction: preferred direction (radians, same frame)
+            - is_object_vector_cell: whether the default threshold screen
+              passes
 
         Raises
         ------
@@ -1248,7 +1300,13 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ...     np.sort(rng.uniform(0, 100, 50)),
         ... ]
         >>> result = compute_egocentric_rates(
-        ...     None, spike_times, times, positions, headings, object_positions
+        ...     None,
+        ...     spike_times,
+        ...     times,
+        ...     positions,
+        ...     headings,
+        ...     object_positions,
+        ...     distance_range=(0.0, 50.0),
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
@@ -1405,7 +1463,7 @@ def compute_egocentric_rate(
     headings: NDArray[np.float64],
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -1420,16 +1478,19 @@ def compute_egocentric_rate(
 ) -> ObjectVectorRateResult:
     """Compute egocentric firing rate for one neuron.
 
-    This function computes a smoothed firing rate map in egocentric polar
+    This function computes a firing rate map in egocentric polar
     coordinates (distance and direction to nearest object). This is the key
     metric for identifying object-vector cells (OVCs).
 
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -1453,9 +1514,11 @@ def compute_egocentric_rate(
         closest edge rather than its center; names are recorded in the
         result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for egocentric binning. Distances outside
-        this range are not included in the rate map.
+    distance_range : tuple of float or None, default=None
+        (min, max) distance to the object, in the positions' length units.
+        Distances outside it are not included in the rate map. None uses
+        0-50 cm converted to ``env.units``; with no env, or units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins in the egocentric polar grid.
     n_direction_bins : int, default=12
@@ -1495,17 +1558,20 @@ def compute_egocentric_rate(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for egocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units. The polar environment inherits ``env.units``
-        when an environment is supplied. Unused for ``method="binned"``.
+        Kernel width in the positions' length units. None uses 5 cm
+        converted to ``env.units``; with no env, or units that are not a
+        known length, a kernel method needs it explicitly. Unused for
+        ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -1545,14 +1611,9 @@ def compute_egocentric_rate(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
-
-    The function uses the egocentric binning layer (``_egocentric_counts.py``)
-    to convert spike times to spike counts based on distance and direction to
-    the nearest object, then the smoothing layer (``_smoothing.py``) to compute
-    the smoothed firing rate.
 
     **Algorithm**:
 
@@ -1560,7 +1621,8 @@ def compute_egocentric_rate(
        at each behavioral frame
     2. Bin spikes by egocentric coordinates at spike time
     3. Compute egocentric occupancy (time spent at each distance/direction)
-    4. Apply smoothing (method-dependent, see ``_smoothing.py``)
+    4. Divide spike counts by occupancy in each bin; the kernel methods
+       smooth counts and occupancy first
 
     **Coordinate convention**: Direction uses egocentric (animal-centered)
     coordinates where 0=ahead, +π/2=left, -π/2=right.
@@ -1592,6 +1654,7 @@ def compute_egocentric_rate(
     ...     positions,
     ...     headings,
     ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
     ... )
 
     >>> # Access results
@@ -1649,7 +1712,7 @@ def compute_object_vector_rate(
     positions: NDArray[np.float64],
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -1664,16 +1727,19 @@ def compute_object_vector_rate(
 ) -> ObjectVectorRateResult:
     """Compute allocentric firing rate for one neuron.
 
-    This function computes a smoothed firing rate map in allocentric polar
+    This function computes a firing rate map in allocentric polar
     coordinates (distance and direction to nearest object). This is the key
     metric for identifying object-vector cells (OVCs).
 
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -1691,9 +1757,11 @@ def compute_object_vector_rate(
         closest edge rather than its center; names are recorded in the
         result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for allocentric binning. Distances outside
-        this range are not included in the rate map.
+    distance_range : tuple of float or None, default=None
+        (min, max) distance to the object, in the positions' length units.
+        Distances outside it are not included in the rate map. None uses
+        0-50 cm converted to ``env.units``; with no env, or units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins in the allocentric polar grid.
     n_direction_bins : int, default=12
@@ -1733,17 +1801,20 @@ def compute_object_vector_rate(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for allocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units. The polar environment inherits ``env.units``
-        when an environment is supplied. Unused for ``method="binned"``.
+        Kernel width in the positions' length units. None uses 5 cm
+        converted to ``env.units``; with no env, or units that are not a
+        known length, a kernel method needs it explicitly. Unused for
+        ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -1783,14 +1854,9 @@ def compute_object_vector_rate(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
-
-    The function uses the allocentric binning layer (``_egocentric_counts.py``)
-    to convert spike times to spike counts based on distance and direction to
-    the nearest object, then the smoothing layer (``_smoothing.py``) to compute
-    the smoothed firing rate.
 
     **Algorithm**:
 
@@ -1798,7 +1864,8 @@ def compute_object_vector_rate(
        at each behavioral frame
     2. Bin spikes by allocentric coordinates at spike time
     3. Compute allocentric occupancy (time spent at each distance/direction)
-    4. Apply smoothing (method-dependent, see ``_smoothing.py``)
+    4. Divide spike counts by occupancy in each bin; the kernel methods
+       smooth counts and occupancy first
 
     **Coordinate convention**: Direction uses allocentric (world-centered)
     coordinates where 0=East, +π/2=North, -π/2=South.
@@ -1818,7 +1885,9 @@ def compute_object_vector_rate(
     >>> positions = rng.uniform(10, 90, (len(times), 2))
     >>> objects = np.array([[50.0, 50.0]])
     >>> train = np.sort(rng.uniform(0, 39.9, 100))
-    >>> result = compute_object_vector_rate(None, train, times, positions, objects)
+    >>> result = compute_object_vector_rate(
+    ...     None, train, times, positions, objects, distance_range=(0.0, 50.0)
+    ... )
     >>> result.direction_frame
     'allocentric'
     >>> result.firing_rate.shape
@@ -1875,6 +1944,44 @@ def _validate_object_vector_metric(
         )
 
 
+def _require_planar_env(env: Environment, operation: str, *, measures: str) -> None:
+    """Refuse a polar, 1-D or 3-D environment for a map built from (x, y) positions.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment passed with the positions.
+    operation : str
+        The refused call, e.g. ``"compute_object_vector_rate()"``.
+    measures : str
+        What the map measures from the positions, e.g. ``"distance and
+        direction to the nearest object"``.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    ValueError
+        If ``env`` is not two-dimensional.
+    """
+    from neurospatial.geometry import require_cartesian
+
+    require_cartesian(
+        env.coordinate_system,
+        operation,
+        why=f"It measures {measures} from the animal's allocentric positions.",
+        fix="pass the allocentric environment the positions were recorded in",
+    )
+    if env.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"{operation} needs a 2-D environment; got a {env.n_dims}-D one.",
+                why=f"Why: {measures} are measured in the plane, from (x, y) positions",
+                fix="build the environment from the animal's 2-D (x, y) positions",
+            )
+        )
+
+
 def _check_object_vector_env(
     env: Environment | None, headings: NDArray[np.float64] | None, *, context: str
 ) -> None:
@@ -1897,6 +2004,10 @@ def _check_object_vector_env(
     ------
     TypeError
         If ``env`` is given and is not an environment.
+    CartesianOnlyError
+        If ``env`` is polar.
+    ValueError
+        If ``env`` is not two-dimensional.
     """
     from neurospatial.encoding._validation import _validate_env_argument
 
@@ -1909,6 +2020,11 @@ def _check_object_vector_env(
                 if headings is None
                 else "spike_times, times, positions, headings, object_positions"
             ),
+        )
+        _require_planar_env(
+            env,
+            f"{context}()",
+            measures="distance and direction to the nearest object",
         )
 
 
@@ -2048,7 +2164,7 @@ def _object_vector_rate(
     headings: NDArray[np.float64] | None,
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -2085,6 +2201,9 @@ def _object_vector_rate(
     resolved_backend = validate_and_resolve_backend(backend)
 
     _validate_object_vector_metric(env, metric, context=context)
+    units = env.units if env is not None else None
+    distance_range = resolve_distance_range(units, distance_range, context=context)
+    require_known_bandwidth(units, bandwidth, method, context=context)
 
     _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
 
@@ -2160,9 +2279,6 @@ def _object_vector_rate(
         firing_rate=firing_rate,
         occupancy=occupancy_out,
         env=counts.polar_env,
-        distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )
@@ -2176,7 +2292,7 @@ def compute_egocentric_rates(
     headings: NDArray[np.float64],
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -2193,7 +2309,7 @@ def compute_egocentric_rates(
 ) -> ObjectVectorRatesResult:
     """Compute egocentric firing rates for multiple neurons.
 
-    This is the batch version of ``compute_egocentric_rate(None)`` that efficiently
+    This is the batch version of ``compute_egocentric_rate`` that efficiently
     processes multiple neurons with shared trajectory data. It precomputes
     shared quantities (egocentric coordinates, occupancy) once and optionally
     parallelizes spike counting with joblib.
@@ -2201,9 +2317,12 @@ def compute_egocentric_rates(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -2236,9 +2355,11 @@ def compute_egocentric_rates(
         closest edge rather than its center; names are recorded in the
         result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for egocentric binning. Distances outside
-        this range are not included in the rate map.
+    distance_range : tuple of float or None, default=None
+        (min, max) distance to the object, in the positions' length units.
+        Distances outside it are not included in the rate map. None uses
+        0-50 cm converted to ``env.units``; with no env, or units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins in the egocentric polar grid.
     n_direction_bins : int, default=12
@@ -2278,17 +2399,20 @@ def compute_egocentric_rates(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for egocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units. The polar environment inherits ``env.units``
-        when an environment is supplied. Unused for ``method="binned"``.
+        Kernel width in the positions' length units. None uses 5 cm
+        converted to ``env.units``; with no env, or units that are not a
+        known length, a kernel method needs it explicitly. Unused for
+        ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -2350,11 +2474,11 @@ def compute_egocentric_rates(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    **Efficiency advantages over calling ``compute_egocentric_rate(None)`` in a loop**:
+    **Efficiency advantages over calling ``compute_egocentric_rate`` in a loop**:
 
     1. Egocentric coordinates (distance, bearing to nearest object) are
        computed once and shared across all neurons
@@ -2400,7 +2524,8 @@ def compute_egocentric_rates(
     ...     positions,
     ...     headings,
     ...     object_positions,
-    ...     n_jobs=2,  # Parallel spike binning
+    ...     n_jobs=2,  # Parallel spike binning,
+    ...     distance_range=(0.0, 50.0),
     ... )
 
     >>> # Access results
@@ -2435,7 +2560,13 @@ def compute_egocentric_rates(
     ...     ]
     ... )
     >>> result2 = compute_egocentric_rates(
-    ...     None, spike_times_2d, times, positions, headings, object_positions
+    ...     None,
+    ...     spike_times_2d,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
     ... )
     >>> len(result2)
     2
@@ -2486,7 +2617,7 @@ def compute_object_vector_rates(
     positions: NDArray[np.float64],
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -2511,9 +2642,12 @@ def compute_object_vector_rates(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -2540,9 +2674,11 @@ def compute_object_vector_rates(
         closest edge rather than its center; names are recorded in the
         result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for allocentric binning. Distances outside
-        this range are not included in the rate map.
+    distance_range : tuple of float or None, default=None
+        (min, max) distance to the object, in the positions' length units.
+        Distances outside it are not included in the rate map. None uses
+        0-50 cm converted to ``env.units``; with no env, or units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins in the allocentric polar grid.
     n_direction_bins : int, default=12
@@ -2582,17 +2718,20 @@ def compute_object_vector_rates(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for allocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units. The polar environment inherits ``env.units``
-        when an environment is supplied. Unused for ``method="binned"``.
+        Kernel width in the positions' length units. None uses 5 cm
+        converted to ``env.units``; with no env, or units that are not a
+        known length, a kernel method needs it explicitly. Unused for
+        ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -2654,8 +2793,8 @@ def compute_object_vector_rates(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
     **Efficiency advantages over calling ``compute_object_vector_rate(None)`` in a loop**:
@@ -2687,7 +2826,12 @@ def compute_object_vector_rates(
     >>> objects = np.array([[50.0, 50.0]])
     >>> train = np.sort(rng.uniform(0, 39.9, 100))
     >>> result = compute_object_vector_rates(
-    ...     None, [train, train], times, positions, objects
+    ...     None,
+    ...     [train, train],
+    ...     times,
+    ...     positions,
+    ...     objects,
+    ...     distance_range=(0.0, 50.0),
     ... )
     >>> result.direction_frame
     'allocentric'
@@ -2733,7 +2877,7 @@ def _object_vector_rates(
     headings: NDArray[np.float64] | None,
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -2782,6 +2926,9 @@ def _object_vector_rates(
     _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
 
     _validate_object_vector_metric(env, metric, context=context)
+    units = env.units if env is not None else None
+    distance_range = resolve_distance_range(units, distance_range, context=context)
+    require_known_bandwidth(units, bandwidth, method, context=context)
 
     # Normalize spike times to canonical list-of-arrays format and resolve the
     # per-unit identity labels (defaults to arange). A labelled input keeps its
@@ -2891,9 +3038,6 @@ def _object_vector_rates(
         firing_rates=firing_rates,
         occupancy=occupancy_out,
         env=counts.polar_env,
-        distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
         unit_ids=resolved_unit_ids,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
@@ -2934,51 +3078,75 @@ def _mean_resultant_length(
 
 
 def object_vector_score(
-    tuning_curve: NDArray[np.float64],
+    rate_map: ObjectVectorRateResult | ArrayLike,
     *,
     max_distance_selectivity: float = 10.0,
 ) -> float:
-    """Compute combined object-vector selectivity score.
+    """Combined distance and direction selectivity of an object-vector map.
 
-    The score combines distance selectivity and direction selectivity
-    following the formula:
+    .. math::
 
-        s_OV = ((s_d - 1) / (s_d* - 1)) * s_theta
+        s_{OV} = \\mathrm{clip}\\left(\\frac{s_d - 1}{s_d^* - 1}, 0, 1\\right)
+        \\, s_\\theta
 
-    where:
-    - s_d = peak / mean (distance selectivity)
-    - s_d* = max_distance_selectivity (normalization constant)
-    - s_theta = mean resultant length (direction selectivity)
+    - The distance profile is each ring's mean rate over its direction bins;
+      :math:`s_d` is its peak divided by its mean.
+    - The direction profile is each direction bin's mean rate over the
+      complete rings, those with a rate in every direction bin;
+      :math:`s_\\theta` is its mean resultant length.
+    - :math:`s_d^*` is ``max_distance_selectivity``.
+
+    A map tuned to direction alone has a flat distance profile and scores
+    0, as does a map tuned to distance alone. Means skip unvisited (NaN)
+    bins, so missing coverage is not read as silence, and the direction
+    profile compares directions over the same rings, so a ring the animal
+    never reached behind the object does not make the rear look quiet.
 
     Parameters
     ----------
-    tuning_curve : NDArray[np.float64], shape (n_dist, n_dir)
-        2D firing rate tuning curve in egocentric polar coordinates.
+    rate_map : ObjectVectorRateResult or array-like
+        A single-unit result, or its firing rate reshaped distance-major to
+        shape ``(n_distance_bins, n_direction_bins)``:
+        ``result.firing_rate.reshape(result.n_distance_bins,
+        result.n_direction_bins)``. An array's direction bins are taken to
+        span [-pi, pi) evenly, as the encoders build them.
     max_distance_selectivity : float, default=10.0
-        Maximum expected distance selectivity for normalization.
-        Must be > 1.
+        Distance selectivity that maps to a distance factor of 1. Must be > 1.
 
     Returns
     -------
     float
-        Object-vector score in [0, 1]. Higher scores indicate sharper
-        tuning to a specific distance and direction.
+        Score in [0, 1]; higher means sharper tuning to one distance and
+        one direction. NaN when no bin has a rate, when the map is silent
+        (peak / mean is 0 / 0), or when no ring has a rate in every
+        direction bin: a mean resultant length over an arc of directions
+        reads even flat firing as directional. An object near a wall
+        often leaves no complete ring; widen the coverage or choose a
+        shorter ``distance_range``.
 
     Raises
     ------
     ValueError
-        If max_distance_selectivity <= 1.
+        If ``max_distance_selectivity <= 1``, or ``rate_map`` is not 2-D.
+
+    Notes
+    -----
+    This is a descriptive score with no null distribution; compare it with
+    shuffled spike trains before calling a cell object-vector tuned.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding.egocentric import object_vector_score
-    >>> # Sharp tuning at one location
-    >>> tc = np.zeros((10, 12)) + 0.1
+    >>> # One sharp (distance, direction) bin over a low baseline
+    >>> tc = np.full((10, 12), 0.01)
     >>> tc[5, 6] = 20.0
-    >>> score = object_vector_score(tc)
-    >>> score > 0.5
+    >>> bool(object_vector_score(tc) > 0.8)
     True
+    >>> # Tuned to direction alone: no distance selectivity
+    >>> by_direction = np.tile(np.linspace(1.0, 5.0, 12), (10, 1))
+    >>> float(object_vector_score(by_direction))
+    0.0
 
     See Also
     --------
@@ -2990,50 +3158,55 @@ def object_vector_score(
             f"max_distance_selectivity must be > 1, got {max_distance_selectivity}"
         )
 
-    tuning_curve = np.asarray(tuning_curve, dtype=np.float64)
-
-    # Handle NaN values
-    valid_mask = np.isfinite(tuning_curve)
-    if not np.any(valid_mask):
-        return float(np.nan)
-
-    valid_rates = tuning_curve[valid_mask]
-
-    # Compute distance selectivity
-    peak_rate = float(np.max(valid_rates))
-    mean_rate = float(np.mean(valid_rates))
-
-    if mean_rate == 0:
-        return 0.0
-
-    distance_selectivity = peak_rate / mean_rate
-
-    # Normalize distance selectivity to [0, 1]
-    normalized_dist_sel = (distance_selectivity - 1.0) / (
-        max_distance_selectivity - 1.0
-    )
-    normalized_dist_sel = float(np.clip(normalized_dist_sel, 0.0, 1.0))
-
-    # Compute direction selectivity (mean resultant length)
-    n_dir = tuning_curve.shape[1]
-    direction_bins = np.linspace(-np.pi, np.pi, n_dir + 1)
-    dir_bin_centers = (direction_bins[:-1] + direction_bins[1:]) / 2
-
-    # Marginalize over distance
-    direction_tuning = np.nansum(tuning_curve, axis=0)
-    total = np.sum(direction_tuning)
-
-    if total == 0:
-        direction_selectivity = 0.0
+    if isinstance(rate_map, ObjectVectorRateResult):
+        tuning_curve = np.asarray(
+            _to_numpy(rate_map.firing_rate), dtype=np.float64
+        ).reshape(rate_map.n_distance_bins, rate_map.n_direction_bins)
+        edges = np.asarray(rate_map.env.grid_edges[1], dtype=np.float64)
+        dir_bin_centers = (edges[:-1] + edges[1:]) / 2
     else:
-        direction_selectivity = _mean_resultant_length(
-            dir_bin_centers, weights=direction_tuning
+        tuning_curve = np.asarray(rate_map, dtype=np.float64)
+        if tuning_curve.ndim != 2:
+            raise ValueError(
+                _format_error(
+                    "object_vector_score needs a (distance, direction) rate map "
+                    f"of shape (n_distance_bins, n_direction_bins); got shape "
+                    f"{tuning_curve.shape}.",
+                    fix="pass the ObjectVectorRateResult itself, or "
+                    "result.firing_rate.reshape(result.n_distance_bins, "
+                    "result.n_direction_bins)",
+                )
+            )
+        n_dir = tuning_curve.shape[1]
+        direction_edges = np.linspace(-np.pi, np.pi, n_dir + 1)
+        dir_bin_centers = (direction_edges[:-1] + direction_edges[1:]) / 2
+
+    finite = np.isfinite(tuning_curve)
+    if not finite.any():
+        return float("nan")
+    # Mean over observed bins only; a NaN bin was not measured.
+    observed = np.where(finite, tuning_curve, 0.0)
+    complete = finite.all(axis=1)
+    if not complete.any():
+        return float("nan")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        distance_profile = observed.sum(axis=1) / finite.sum(axis=1)
+    direction_profile = tuning_curve[complete].mean(axis=0)
+
+    rings = distance_profile[np.isfinite(distance_profile)]
+    mean_rate = float(np.mean(rings))
+    if mean_rate == 0:
+        return float("nan")
+    distance_selectivity = float(np.max(rings)) / mean_rate
+    normalized_dist_sel = float(
+        np.clip(
+            (distance_selectivity - 1.0) / (max_distance_selectivity - 1.0), 0.0, 1.0
         )
-
-    # Combined score
-    score = normalized_dist_sel * direction_selectivity
-
-    return float(np.clip(score, 0.0, 1.0))
+    )
+    direction_selectivity = _mean_resultant_length(
+        dir_bin_centers, weights=direction_profile
+    )
+    return float(np.clip(normalized_dist_sel * direction_selectivity, 0.0, 1.0))
 
 
 def is_object_vector_cell(
@@ -3050,7 +3223,7 @@ def is_object_vector_cell(
     min_shift: float | None = None,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -3068,9 +3241,12 @@ def is_object_vector_cell(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -3087,9 +3263,11 @@ def is_object_vector_cell(
         closest edge rather than its center; names are recorded in the
         result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for allocentric binning. Distances outside
-        this range are not included in the rate map.
+    distance_range : tuple of float or None, default=None
+        (min, max) distance to the object, in the positions' length units.
+        Distances outside it are not included in the rate map. None uses
+        0-50 cm converted to ``env.units``; with no env, or units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins in the allocentric polar grid.
     n_direction_bins : int, default=12
@@ -3122,23 +3300,24 @@ def is_object_vector_cell(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for allocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units. The polar environment inherits ``env.units``
-        when an environment is supplied. Unused for ``method="binned"``.
+        Kernel width in the positions' length units. None uses 5 cm
+        converted to ``env.units``; with no env, or units that are not a
+        known length, a kernel method needs it explicitly. Unused for
+        ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3188,6 +3367,8 @@ def is_object_vector_cell(
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
+    The shuffled statistic is the polar map's Skaggs information in this
+    frame (``spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
     Compare p_value < alpha; a significant association alone does not establish
@@ -3209,7 +3390,9 @@ def is_object_vector_cell(
     >>> positions = rng.uniform(10, 90, (len(times), 2))
     >>> objects = np.array([[50.0, 50.0]])
     >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
-    >>> result = is_object_vector_cell(None, spikes, times, positions, objects)
+    >>> result = is_object_vector_cell(
+    ...     None, spikes, times, positions, objects, distance_range=(0.0, 50.0)
+    ... )
     >>> type(result)
     <class 'bool'>
     """
@@ -3293,7 +3476,7 @@ def is_egocentric_object_vector_cell(
     min_shift: float | None = None,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -3311,9 +3494,12 @@ def is_egocentric_object_vector_cell(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -3336,9 +3522,11 @@ def is_egocentric_object_vector_cell(
         closest edge rather than its center; names are recorded in the
         result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for egocentric binning. Distances outside
-        this range are not included in the rate map.
+    distance_range : tuple of float or None, default=None
+        (min, max) distance to the object, in the positions' length units.
+        Distances outside it are not included in the rate map. None uses
+        0-50 cm converted to ``env.units``; with no env, or units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins in the egocentric polar grid.
     n_direction_bins : int, default=12
@@ -3371,23 +3559,24 @@ def is_egocentric_object_vector_cell(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for egocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units. The polar environment inherits ``env.units``
-        when an environment is supplied. Unused for ``method="binned"``.
+        Kernel width in the positions' length units. None uses 5 cm
+        converted to ``env.units``; with no env, or units that are not a
+        known length, a kernel method needs it explicitly. Unused for
+        ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3437,6 +3626,8 @@ def is_egocentric_object_vector_cell(
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
+    The shuffled statistic is the polar map's Skaggs information in this
+    frame (``spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
     Compare p_value < alpha; a significant association alone does not establish
@@ -3460,7 +3651,13 @@ def is_egocentric_object_vector_cell(
     >>> objects = np.array([[50.0, 50.0]])
     >>> spikes = np.sort(rng.uniform(0, 39.9, 100))
     >>> result = is_egocentric_object_vector_cell(
-    ...     None, spikes, times, positions, headings, objects
+    ...     None,
+    ...     spikes,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     objects,
+    ...     distance_range=(0.0, 50.0),
     ... )
     >>> type(result)
     <class 'bool'>
@@ -3655,7 +3852,7 @@ def _object_vector_significance(
     *,
     context: str,
     direction_frame: Literal["allocentric", "egocentric"],
-    distance_range: tuple[float, float],
+    distance_range: tuple[float, float] | None,
     n_distance_bins: int,
     n_direction_bins: int,
     metric: DistanceMetric,
@@ -3699,9 +3896,8 @@ def _object_vector_significance(
     from neurospatial._results import resolve_unit_ids
     from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._egocentric_counts import (
-        _compute_object_coords,
-        _coords_to_flat_bin_idx,
         _create_egocentric_environment,
+        object_frame_bins,
         resolve_object_positions,
     )
     from neurospatial.encoding._significance import (
@@ -3755,24 +3951,33 @@ def _object_vector_significance(
             context=context,
             arguments=arguments,
         )
+        _require_planar_env(
+            env,
+            f"{context}()",
+            measures="distance and direction to the nearest object",
+        )
     validate_trajectory(times, positions=positions, headings=headings, context=context)
     for train in trains:
         validate_spike_times(train, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
     options["break_before"] = breaks
     _validate_object_vector_metric(env, metric, context=context)
+    units = env.units if env is not None else None
+    distance_range = resolve_distance_range(units, distance_range, context=context)
+    require_known_bandwidth(units, bandwidth, method, context=context)
+    options["distance_range"] = distance_range
     object_positions, _ = resolve_object_positions(
         object_positions, env=env, positions=positions, metric=metric
     )
-    distances, bearings = _compute_object_coords(
-        positions, headings, object_positions, metric=metric, env=env
-    )
-    frame_bins = _coords_to_flat_bin_idx(
-        distances.ravel(),
-        bearings.ravel(),
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
+    frame_bins = object_frame_bins(
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        env=env,
     )
     mask = interval_valid_mask(
         times,
@@ -3827,7 +4032,7 @@ def object_vector_cell_significance(
     positions: NDArray[np.float64],
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -3847,6 +4052,8 @@ def object_vector_cell_significance(
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test object vector tuning against circular spike-time shifts.
 
+    The statistic is each unit's Skaggs information, in bits per spike, of
+    its polar rate map (``ObjectVectorRatesResult.spatial_information()``).
     Recompute the population map for the supplied arrays and for each shifted
     train, using exactly the observed map's valid intervals. Shuffles preserve
     counts on the compressed analyzed clock and never enter recording gaps.
@@ -3856,9 +4063,12 @@ def object_vector_cell_significance(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -3884,9 +4094,11 @@ def object_vector_cell_significance(
         closest edge rather than its center; names are recorded in the
         result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for allocentric binning. Distances outside
-        this range are not included in the rate map.
+    distance_range : tuple of float or None, default=None
+        (min, max) distance to the object, in the positions' length units.
+        Distances outside it are not included in the rate map. None uses
+        0-50 cm converted to ``env.units``; with no env, or units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins in the allocentric polar grid.
     n_direction_bins : int, default=12
@@ -3918,22 +4130,23 @@ def object_vector_cell_significance(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for allocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units. The polar environment inherits ``env.units``
-        when an environment is supplied. Unused for ``method="binned"``.
+        Kernel width in the positions' length units. None uses 5 cm
+        converted to ``env.units``; with no env, or units that are not a
+        known length, a kernel method needs it explicitly. Unused for
+        ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -3971,8 +4184,8 @@ def object_vector_cell_significance(
     Raises
     ------
     ValueError
-        For invalid inputs/settings, duplicate/conflicting unit labels,
-        insufficient analyzed time, or unsupported method="glm".
+        For invalid inputs/settings, duplicate/conflicting unit labels, or
+        insufficient analyzed time.
 
     Examples
     --------
@@ -3982,7 +4195,9 @@ def object_vector_cell_significance(
     >>> rng = np.random.default_rng(7)
     >>> times = np.arange(0.0, 60.0, 0.1)
     >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
-    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> env = Environment.from_samples(
+    ...     np.c_[xx.ravel(), yy.ravel()], bin_size=5.0, units="cm"
+    ... )
     >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
     >>> headings = np.sin(times / 5)
     >>> objects = np.array([[50.0, 50.0]])
@@ -4032,7 +4247,7 @@ def egocentric_object_vector_cell_significance(
     headings: NDArray[np.float64],
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: DistanceMetric = "euclidean",
@@ -4052,6 +4267,8 @@ def egocentric_object_vector_cell_significance(
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test egocentric object vector tuning against circular spike-time shifts.
 
+    The statistic is each unit's Skaggs information, in bits per spike, of
+    its polar rate map (``ObjectVectorRatesResult.spatial_information()``).
     Recompute the population map for the supplied arrays and for each shifted
     train, using exactly the observed map's valid intervals. Shuffles preserve
     counts on the compressed analyzed clock and never enter recording gaps.
@@ -4061,9 +4278,12 @@ def egocentric_object_vector_cell_significance(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -4095,9 +4315,11 @@ def egocentric_object_vector_cell_significance(
         closest edge rather than its center; names are recorded in the
         result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    distance_range : tuple of float, default=(0.0, 50.0)
-        (min_distance, max_distance) for egocentric binning. Distances outside
-        this range are not included in the rate map.
+    distance_range : tuple of float or None, default=None
+        (min, max) distance to the object, in the positions' length units.
+        Distances outside it are not included in the rate map. None uses
+        0-50 cm converted to ``env.units``; with no env, or units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins in the egocentric polar grid.
     n_direction_bins : int, default=12
@@ -4129,22 +4351,23 @@ def egocentric_object_vector_cell_significance(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for egocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
     bandwidth : float or None, default=None
-        Physical smoothing length in environment units. None uses 5 cm
-        converted to declared metric units, or 2.5 median graph-edge lengths
-        for unspecified/custom units. The polar environment inherits ``env.units``
-        when an environment is supplied. Unused for ``method="binned"``.
+        Kernel width in the positions' length units. None uses 5 cm
+        converted to ``env.units``; with no env, or units that are not a
+        known length, a kernel method needs it explicitly. Unused for
+        ``method="binned"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
@@ -4182,8 +4405,8 @@ def egocentric_object_vector_cell_significance(
     Raises
     ------
     ValueError
-        For invalid inputs/settings, duplicate/conflicting unit labels,
-        insufficient analyzed time, or unsupported method="glm".
+        For invalid inputs/settings, duplicate/conflicting unit labels, or
+        insufficient analyzed time.
 
     Examples
     --------
@@ -4193,7 +4416,9 @@ def egocentric_object_vector_cell_significance(
     >>> rng = np.random.default_rng(7)
     >>> times = np.arange(0.0, 60.0, 0.1)
     >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
-    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> env = Environment.from_samples(
+    ...     np.c_[xx.ravel(), yy.ravel()], bin_size=5.0, units="cm"
+    ... )
     >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
     >>> headings = np.sin(times / 5)
     >>> objects = np.array([[50.0, 50.0]])

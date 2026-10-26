@@ -33,7 +33,11 @@ def rate_family(request):
         kwargs.update(method="diffusion_kde", bandwidth=2.0, min_occupancy=0.4)
         if family == "view":
             data += (headings,)
-            kwargs.update(view_distance=2.0)
+            kwargs.update(
+                gaze_model="fixed_distance",
+                view_distance=2.0,
+                boundary_source="analysis",
+            )
         elif family in ("object_vector", "egocentric"):
             if family == "egocentric":
                 data += (headings,)
@@ -157,7 +161,11 @@ def test_physical_bandwidth_default_is_invariant_under_unit_conversion(
         kwargs = {"method": method}
         if family == "view":
             args += (headings,)
-            kwargs["view_distance"] = 2.0 * scale
+            kwargs.update(
+                gaze_model="fixed_distance",
+                view_distance=2.0 * scale,
+                boundary_source="analysis",
+            )
         else:
             if family == "egocentric":
                 args += (headings,)
@@ -167,6 +175,16 @@ def test_physical_bandwidth_default_is_invariant_under_unit_conversion(
                 n_distance_bins=4,
                 n_direction_bins=8,
             )
+        if not declared_units and family != "view":
+            # A polar grid's edges mix rings and arcs; without length units
+            # there is no default kernel width to infer.
+            with pytest.raises(ValueError, match="needs a bandwidth"):
+                getattr(encoding, f"compute_{family}_rates")(*args, **kwargs)
+            explicit = getattr(encoding, f"compute_{family}_rates")(
+                *args, **kwargs, bandwidth=2.0 * scale
+            )
+            assert explicit.analysis_settings["bandwidth"] == pytest.approx(2.0 * scale)
+            continue
         result = getattr(encoding, f"compute_{family}_rates")(*args, **kwargs)
         if declared_units:
             assert result.analysis_settings["bandwidth"] == pytest.approx(5.0 * scale)

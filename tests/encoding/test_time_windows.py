@@ -287,9 +287,7 @@ def direct_rate_result_factory(continuous_recording):
                 distance_bin_size=25.0,
                 angle_bin_size=np.pi / 2,
             )
-            kwargs.update(
-                env=env, distance_range=(0, 50), n_distance_bins=2, n_direction_bins=4
-            )
+            kwargs.update(env=env)
         elif family == "directional":
             kwargs.update(
                 bin_centers=np.linspace(-np.pi, np.pi, env.n_bins, endpoint=False),

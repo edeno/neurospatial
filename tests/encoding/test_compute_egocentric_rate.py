@@ -34,7 +34,7 @@ def simple_env() -> Environment:
     y = np.linspace(0, 100, 11)
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(positions, bin_size=10.0)
+    return Environment.from_samples(positions, bin_size=10.0, units="cm")
 
 
 @pytest.fixture
@@ -132,6 +132,7 @@ class TestComputeEgocentricRateReturnsResult:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         assert isinstance(result, ObjectVectorRateResult)
 
@@ -152,6 +153,7 @@ class TestComputeEgocentricRateReturnsResult:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         assert np.asarray(result.firing_rate).ndim == 1
         assert np.asarray(result.firing_rate).shape == (result.env.n_bins,)
@@ -173,6 +175,7 @@ class TestComputeEgocentricRateReturnsResult:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         assert np.asarray(result.occupancy).shape == (result.env.n_bins,)
 
@@ -193,6 +196,7 @@ class TestComputeEgocentricRateReturnsResult:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         from neurospatial import Environment
 
@@ -210,16 +214,84 @@ class TestComputeEgocentricRateReturnsResult:
 class TestComputeEgocentricRateDistanceRange:
     """Test distance_range parameter."""
 
-    def test_default_distance_range(
+    @pytest.mark.parametrize(("units", "scale"), [("cm", 1.0), ("m", 0.01)])
+    @pytest.mark.parametrize("frame", ["allocentric", "egocentric"])
+    def test_default_distance_range_is_50_cm_in_env_units(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
+        units: str,
+        scale: float,
+        frame: str,
     ) -> None:
-        """Default distance_range should be (0.0, 50.0)."""
+        from neurospatial.encoding import (
+            compute_egocentric_rate,
+            compute_object_vector_rate,
+        )
+
+        times, positions, headings = trajectory_data
+        env = Environment.from_samples(positions * scale, bin_size=5.0 * scale)
+        env = env.with_metadata(units=units)
+        if frame == "allocentric":
+            result = compute_object_vector_rate(
+                env, spike_times, times, positions * scale, object_positions * scale
+            )
+        else:
+            result = compute_egocentric_rate(
+                env,
+                spike_times,
+                times,
+                positions * scale,
+                headings,
+                object_positions * scale,
+            )
+        assert result.distance_range == pytest.approx((0.0, 50.0 * scale))
+
+    @pytest.mark.parametrize("units", [None, "pixels"])
+    def test_unknown_units_need_an_explicit_distance_range(
+        self,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        object_positions: np.ndarray,
+        spike_times: np.ndarray,
+        units: str | None,
+    ) -> None:
+        """50 has no meaning without a length scale, with or without an env."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
+        envs = [Environment.from_samples(positions, bin_size=5.0, units=units)]
+        if units is None:
+            envs.append(None)
+        for env in envs:
+            with pytest.raises(ValueError, match="distance_range is required"):
+                compute_egocentric_rate(
+                    env, spike_times, times, positions, headings, object_positions
+                )
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde"])
+    def test_unknown_units_need_an_explicit_kernel_bandwidth(
+        self,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        object_positions: np.ndarray,
+        spike_times: np.ndarray,
+        method: str,
+    ) -> None:
+        """No kernel width can be inferred from polar edges of mixed length."""
+        from neurospatial.encoding.egocentric import compute_egocentric_rate
+
+        times, positions, headings = trajectory_data
+        settings = {"distance_range": (0.0, 50.0), "method": method}
+        with pytest.raises(ValueError, match="needs a bandwidth"):
+            compute_egocentric_rate(
+                None,
+                spike_times,
+                times,
+                positions,
+                headings,
+                object_positions,
+                **settings,
+            )
         result = compute_egocentric_rate(
             None,
             spike_times,
@@ -227,8 +299,10 @@ class TestComputeEgocentricRateDistanceRange:
             positions,
             headings,
             object_positions,
+            bandwidth=5.0,
+            **settings,
         )
-        assert result.distance_range == (0.0, 50.0)
+        assert result.analysis_settings["bandwidth"] == 5.0
 
     def test_custom_distance_range(
         self,
@@ -272,6 +346,7 @@ class TestComputeEgocentricRateBinCounts:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         assert result.n_distance_bins == 10
 
@@ -292,6 +367,7 @@ class TestComputeEgocentricRateBinCounts:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         assert result.n_direction_bins == 12
 
@@ -313,6 +389,7 @@ class TestComputeEgocentricRateBinCounts:
             headings,
             object_positions,
             n_distance_bins=20,
+            distance_range=(0.0, 50.0),
         )
         assert result.n_distance_bins == 20
 
@@ -334,6 +411,7 @@ class TestComputeEgocentricRateBinCounts:
             headings,
             object_positions,
             n_direction_bins=24,
+            distance_range=(0.0, 50.0),
         )
         assert result.n_direction_bins == 24
 
@@ -358,6 +436,7 @@ class TestComputeEgocentricRateBinCounts:
             object_positions,
             n_distance_bins=n_dist,
             n_direction_bins=n_dir,
+            distance_range=(0.0, 50.0),
         )
         assert result.env.n_bins == n_dist * n_dir
 
@@ -388,6 +467,7 @@ class TestComputeEgocentricRateDistanceMetric:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         assert isinstance(result.firing_rate, np.ndarray) or hasattr(
             result.firing_rate, "__array__"
@@ -411,6 +491,7 @@ class TestComputeEgocentricRateDistanceMetric:
             headings,
             object_positions,
             metric="euclidean",
+            distance_range=(0.0, 50.0),
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
 
@@ -433,6 +514,7 @@ class TestComputeEgocentricRateDistanceMetric:
                 headings,
                 object_positions,
                 metric="geodesic",
+                distance_range=(0.0, 50.0),
             )
 
     def test_geodesic_with_env(
@@ -475,7 +557,8 @@ class TestComputeEgocentricRateDistanceMetric:
                 positions,
                 headings,
                 object_positions,
-                metric="manhattan",  # type: ignore[arg-type]
+                metric="manhattan",  # type: ignore[arg-type],
+                distance_range=(0.0, 50.0),
             )
 
 
@@ -507,6 +590,8 @@ class TestComputeEgocentricRateSmoothing:
             headings,
             object_positions,
             method=method,
+            distance_range=(0.0, 50.0),
+            bandwidth=5.0,
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
 
@@ -527,6 +612,7 @@ class TestComputeEgocentricRateSmoothing:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         explicit_result = compute_egocentric_rate(
             None,
@@ -536,6 +622,7 @@ class TestComputeEgocentricRateSmoothing:
             headings,
             object_positions,
             method="binned",
+            distance_range=(0.0, 50.0),
         )
 
         np.testing.assert_allclose(
@@ -575,6 +662,7 @@ class TestComputeEgocentricRateSmoothing:
             object_positions,
             method="gaussian_kde",
             bandwidth=10.0,
+            distance_range=(0.0, 50.0),
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
         assert captured == {"method": "gaussian_kde", "bandwidth": 10.0}
@@ -605,6 +693,7 @@ class TestComputeEgocentricRateEmptySpikes:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         firing_rate = np.asarray(result.firing_rate)
         # All non-NaN values should be zero
@@ -627,6 +716,7 @@ class TestComputeEgocentricRateEmptySpikes:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         occupancy = np.asarray(result.occupancy)
         assert np.sum(occupancy) > 0
@@ -700,6 +790,7 @@ class TestComputeEgocentricRateCorrectness:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         firing_rate = np.asarray(result.firing_rate)
         # Exclude NaN values
@@ -723,6 +814,7 @@ class TestComputeEgocentricRateCorrectness:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         occupancy = np.asarray(result.occupancy)
         assert np.all(occupancy >= 0)
@@ -745,6 +837,7 @@ class TestComputeEgocentricRateCorrectness:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         occupancy = np.asarray(result.occupancy)
         total_occupancy = np.sum(occupancy)
@@ -778,6 +871,7 @@ class TestComputeObjectVectorRateResultMethods:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         import matplotlib.pyplot as plt
 
@@ -802,6 +896,7 @@ class TestComputeObjectVectorRateResultMethods:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         dist = result.preferred_distance()
         assert isinstance(dist, float)
@@ -823,6 +918,7 @@ class TestComputeObjectVectorRateResultMethods:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         direction = result.preferred_direction()
         assert isinstance(direction, float)
@@ -844,6 +940,7 @@ class TestComputeObjectVectorRateResultMethods:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         info = result.spatial_information()
         assert isinstance(info, float)
@@ -865,6 +962,7 @@ class TestComputeObjectVectorRateResultMethods:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         is_egocentric_object_vector_cell = result.is_object_vector_cell()
         assert isinstance(is_egocentric_object_vector_cell, (bool, np.bool_))
@@ -878,42 +976,28 @@ class TestComputeObjectVectorRateResultMethods:
 class TestComputeEgocentricRateMinOccupancy:
     """Test min_occupancy parameter."""
 
-    def test_min_occupancy_threshold(
+    @pytest.mark.parametrize("method", ["binned", "diffusion_kde", "gaussian_kde"])
+    def test_nan_exactly_where_occupancy_is_below_min_occupancy(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
+        method: str,
     ) -> None:
-        """Higher min_occupancy should produce more NaN bins."""
+        """min_occupancy is seconds per bin: below it the rate is unmeasured."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
-
-        # Compute with high min_occupancy threshold
-        result_high = compute_egocentric_rate(
-            None,
-            spike_times,
-            times,
-            positions,
-            headings,
-            object_positions,
-            min_occupancy=5.0,  # High threshold
+        settings = {"distance_range": (0.0, 50.0), "method": method, "bandwidth": 5.0}
+        args = (None, spike_times, times, positions, headings, object_positions)
+        occupancy = np.asarray(compute_egocentric_rate(*args, **settings).occupancy)
+        threshold = float(np.median(occupancy[occupancy > 0]))
+        result = compute_egocentric_rate(*args, min_occupancy=threshold, **settings)
+        unsupported = (occupancy == 0) | (occupancy < threshold)
+        assert unsupported.any() and not unsupported.all()
+        np.testing.assert_array_equal(
+            np.isnan(np.asarray(result.firing_rate)), unsupported
         )
-        # Compute with no threshold
-        result_low = compute_egocentric_rate(
-            None,
-            spike_times,
-            times,
-            positions,
-            headings,
-            object_positions,
-            min_occupancy=0.0,  # No threshold
-        )
-
-        # High threshold should have more NaNs (or equal)
-        high_nan_count = np.sum(np.isnan(np.asarray(result_high.firing_rate)))
-        low_nan_count = np.sum(np.isnan(np.asarray(result_low.firing_rate)))
-        assert high_nan_count >= low_nan_count
 
     def test_default_min_occupancy_zero(
         self,
@@ -933,6 +1017,7 @@ class TestComputeEgocentricRateMinOccupancy:
             positions,
             headings,
             object_positions,
+            distance_range=(0.0, 50.0),
         )
         # With min_occupancy=0, bins with occupancy>0 should have values
         occupancy = np.asarray(result.occupancy)
@@ -971,6 +1056,7 @@ class TestComputeEgocentricRateInputValidation:
                 positions,
                 headings,
                 object_positions,
+                distance_range=(0.0, 50.0),
             )
 
     def test_mismatched_times_headings_raises(
@@ -994,6 +1080,7 @@ class TestComputeEgocentricRateInputValidation:
                 positions,
                 headings,
                 object_positions,
+                distance_range=(0.0, 50.0),
             )
 
 
@@ -1155,79 +1242,66 @@ class TestEgocentricRateConvention:
 
 
 class TestEgocentricRateNaNHandling:
-    """NaN positions/headings are treated as missing data, not errors.
-
-    Per the compute_egocentric_rate docstring contract, NaN samples (tracking
-    dropouts) are excluded rather than raising or corrupting the map.
-    """
-
-    @pytest.fixture(scope="class")
-    def session(self):
-        from neurospatial import Environment
-        from neurospatial.behavior import heading_from_velocity
-        from neurospatial.simulation import (
-            generate_poisson_spikes,
-            simulate_trajectory_ou,
-        )
-        from neurospatial.simulation.models.object_vector_cells import (
-            ObjectVectorCellModel,
-        )
-
-        samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
-        env = Environment.from_samples(samples, bin_size=2.0)
-        env = env.with_metadata(units="cm")
-        positions, times = simulate_trajectory_ou(
-            env, duration=400.0, speed_units="cm", seed=42
-        )
-        # The cell fires on the movement direction at every sample; the
-        # analysis sees a heading only where the animal moves at >= 2 cm/s.
-        movement = heading_from_velocity(times, positions)
-        headings = heading_from_velocity(times, positions, min_speed=2.0)
-        object_positions = np.array([[20.0, 20.0]])
-        model = ObjectVectorCellModel(
-            direction_frame="egocentric",
-            env=env,
-            object_positions=object_positions,
-            preferred_distance=10.0,
-            distance_width=4.0,
-            preferred_direction=0.0,
-            direction_kappa=4.0,
-            max_rate=25.0,
-            baseline_rate=0.1,
-            metric="euclidean",
-        )
-        spike_times = generate_poisson_spikes(
-            model.firing_rate(positions, headings=movement), times, seed=7
-        )
-        return env, spike_times, times, positions, headings, object_positions
+    """NaN positions/headings are missing samples: dropped, not errors."""
 
     @pytest.mark.parametrize("nan_field", ["positions", "headings"])
-    def test_nan_inputs_excluded_not_raised(self, session, nan_field):
+    def test_nan_samples_drop_exactly_their_intervals(
+        self, ou_2min, ou_2min_env, noise_trains, nan_field
+    ):
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
-        env, spike_times, times, positions, headings, object_positions = session
-        rng = np.random.default_rng(5)
-        drop_idx = rng.choice(len(times), size=len(times) // 10, replace=False)
-        positions_in = positions.copy()
-        headings_in = headings.copy()
-        if nan_field == "positions":
-            positions_in[drop_idx] = np.nan
-        else:
-            headings_in[drop_idx] = np.nan
-
+        times, positions, headings = ou_2min
+        # Every sample of the 100 cm box is within 80 cm of its center.
+        settings = {"distance_range": (0.0, 80.0), "metric": "euclidean"}
+        obj = np.array([[50.0, 50.0]])
+        drop = np.random.default_rng(5).choice(len(times), len(times) // 10, False)
+        data = {"positions": positions.copy(), "headings": headings.copy()}
+        data[nan_field][drop] = np.nan
+        spikes = noise_trains(120)[0]
         result = compute_egocentric_rate(
-            env,
-            spike_times,
+            ou_2min_env,
+            spikes,
             times,
-            positions_in,
-            headings_in,
-            object_positions,
-            metric="euclidean",
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            data["positions"],
+            data["headings"],
+            obj,
+            **settings,
         )
-
-        # Did not raise; produced a usable (not all-NaN) map with a finite peak.
-        assert not np.isnan(result.firing_rate).all()
+        kept = np.ones(len(times) - 1, dtype=bool)
+        kept[drop[drop < len(times) - 1]] = False
+        assert np.sum(result.occupancy) == pytest.approx(np.diff(times)[kept].sum())
         assert np.isfinite(np.nanmax(result.firing_rate))
+
+
+@pytest.mark.parametrize(
+    ("side", "bearing"), [("left", np.pi / 2), ("right", -np.pi / 2)]
+)
+def test_an_object_on_the_left_is_at_plus_pi_over_2(side, bearing):
+    """Egocentric bearing: 0 ahead, +pi/2 left, -pi/2 right.
+
+    The expected bearing is computed here from first principles, the
+    direction to the object minus the heading, independently of
+    ``compute_egocentric_bearing`` and the simulation models.
+    """
+    from neurospatial.encoding.egocentric import compute_egocentric_rate
+    from neurospatial.simulation import generate_poisson_spikes
+
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 300, 1 / 30)
+    positions = rng.uniform(0, 100, (len(times), 2))
+    headings = rng.uniform(-np.pi, np.pi, len(times))
+    obj = np.array([[50.0, 50.0]])
+    delta = obj - positions
+    to_object = np.arctan2(delta[:, 1], delta[:, 0]) - headings
+    distance = np.hypot(delta[:, 0], delta[:, 1])
+    rate = 0.2 + 20 * np.exp(2 * (np.cos(to_object - bearing) - 1)) * np.exp(
+        -0.5 * ((distance - 20) / 5) ** 2
+    )
+    spikes = generate_poisson_spikes(rate, times, seed=1)
+
+    result = compute_egocentric_rate(
+        None, spikes, times, positions, headings, obj, distance_range=(0.0, 50.0)
+    )
+    error = np.angle(np.exp(1j * (result.preferred_direction() - bearing)))
+    assert abs(error) <= np.pi / 12 + 1e-12, side  # within one 30 degree bin
+    assert 15.0 <= result.preferred_distance() <= 25.0

@@ -1393,7 +1393,7 @@ def _oversized_bandwidth_calls():
     times = np.arange(0, 20, 0.05)
     positions = rng.uniform(0, 20, (len(times), 2))
     headings = rng.uniform(-np.pi, np.pi, len(times))
-    env = Environment.from_samples(positions, bin_size=4.0)
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
     spikes = np.sort(np.random.default_rng(1).uniform(0.1, 19, 30))
     objects = np.array([[10.0, 10.0]])
     ov = {"method": "diffusion_kde", "bandwidth": 1000.0}
@@ -1414,10 +1414,22 @@ def _oversized_bandwidth_calls():
             env, [spikes], times, positions, bandwidth=100.0
         ),
         "view": lambda: compute_view_rate(
-            env, spikes, times, positions, headings, bandwidth=100.0
+            env,
+            spikes,
+            times,
+            positions,
+            headings,
+            bandwidth=100.0,
+            boundary_source="analysis",
         ),
         "view-population": lambda: compute_view_rates(
-            env, [spikes], times, positions, headings, bandwidth=100.0
+            env,
+            [spikes],
+            times,
+            positions,
+            headings,
+            bandwidth=100.0,
+            boundary_source="analysis",
         ),
         "object-vector": lambda: compute_object_vector_rate(
             env, spikes, times, positions, objects, **ov

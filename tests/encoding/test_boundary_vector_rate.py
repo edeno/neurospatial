@@ -53,11 +53,17 @@ def _tuned_spikes(times, distance, preferred=15.0, width=4.0, seed=100):
     return generate_poisson_spikes(rate, times, seed=seed)
 
 
-def test_a_boundary_vector_cell_is_recovered(env, session):
-    """A cell firing for a wall 15 cm to the East peaks East at about 15 cm."""
+@pytest.mark.parametrize(
+    ("wall", "angle"), [("East", 0.0), ("North", np.pi / 2), ("South", -np.pi / 2)]
+)
+def test_a_boundary_vector_cell_is_recovered(env, session, wall, angle):
+    """A cell firing for a wall 15 cm away in one room direction peaks there.
+
+    North and South pin the sign of the y axis; East alone would not.
+    """
     times, positions, _ = session
-    east = _wall_distance(positions, np.zeros(len(positions)))
-    spikes = _tuned_spikes(times, east)
+    distance = _wall_distance(positions, np.full(len(positions), angle))
+    spikes = _tuned_spikes(times, distance)
 
     result = compute_boundary_vector_rate(
         env,
@@ -70,7 +76,8 @@ def test_a_boundary_vector_cell_is_recovered(env, session):
     )
 
     sector = np.pi / 24  # half a direction bin
-    assert abs(result.preferred_direction()) <= sector + 1e-12
+    error = np.angle(np.exp(1j * (result.preferred_direction() - angle)))
+    assert abs(error) <= sector + 1e-12, wall
     assert 10.0 <= result.preferred_distance() <= 20.0
 
 
@@ -101,7 +108,7 @@ def test_an_egocentric_boundary_cell_is_recovered(env, session):
         direction_frame="allocentric",
         n_direction_bins=24,
     )
-    assert allocentric.spatial_information() < result.spatial_information()
+    assert allocentric.distance_information() < result.distance_information()
 
 
 def test_every_ray_reaching_a_wall_adds_the_sample_time(env, session):
@@ -247,9 +254,79 @@ def test_the_direction_frame_must_match_the_headings(env, session):
 
 def test_an_environment_without_known_walls_is_refused(session):
     times, positions, _ = session
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
 
     with pytest.raises(NotImplementedError, match="Physical walls are unknown"):
         compute_boundary_vector_rate(
             env, np.array([1.0]), times, positions, direction_frame="allocentric"
         )
+
+
+@pytest.mark.parametrize(("units", "scale"), [("cm", 1.0), ("m", 0.01)])
+def test_length_defaults_are_converted_from_cm(units, scale):
+    """The 0-50 cm range and 5 cm kernel follow the environment's units."""
+    env = Environment.from_polygon(
+        box(0, 0, SIDE * scale, SIDE * scale), bin_size=5.0 * scale, units=units
+    )
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 60, DT)
+    positions = rng.uniform(2, SIDE - 2, (len(times), 2)) * scale
+    result = compute_boundary_vector_rate(
+        env,
+        [],
+        times,
+        positions,
+        direction_frame="allocentric",
+        method="diffusion_kde",
+    )
+    assert result.distance_range == pytest.approx((0.0, 50.0 * scale))
+    assert result.analysis_settings["bandwidth"] == pytest.approx(5.0 * scale)
+
+
+def test_unknown_units_need_explicit_lengths(session):
+    times, positions, _ = session
+    env = Environment.from_polygon(box(0, 0, SIDE, SIDE), bin_size=5.0)
+    with pytest.raises(ValueError, match="distance_range is required"):
+        compute_boundary_vector_rate(
+            env, [], times, positions, direction_frame="allocentric"
+        )
+    with pytest.raises(ValueError, match="needs a bandwidth"):
+        compute_boundary_vector_rate(
+            env,
+            [],
+            times,
+            positions,
+            direction_frame="allocentric",
+            distance_range=(0.0, 50.0),
+            method="gaussian_kde",
+        )
+
+
+def test_distance_information_is_skaggs_information_along_the_preferred_ray(
+    env, session
+):
+    """Each ray partitions time by wall distance; the whole map does not."""
+    from neurospatial.encoding import spatial_information
+
+    times, positions, _ = session
+    east = _wall_distance(positions, np.zeros(len(positions)))
+    result = compute_boundary_vector_rate(
+        env, _tuned_spikes(times, east), times, positions, direction_frame="allocentric"
+    )
+    duration = times[-1] - times[0]
+    occupancy = np.asarray(result.occupancy).reshape(
+        result.n_distance_bins, result.n_direction_bins
+    )
+    assert np.all(occupancy.sum(axis=0) <= duration + 1e-9)
+    assert occupancy.sum() > 2 * duration  # summed over rays: not a partition
+
+    rates = np.asarray(result.firing_rate).reshape(occupancy.shape)
+    edges = result.env.grid_edges[1]
+    centers = (edges[:-1] + edges[1:]) / 2
+    column = int(np.argmin(np.abs(centers - result.preferred_direction())))
+    assert abs(centers[column]) <= np.pi / 12 + 1e-12  # one of the two East rays
+    expected = spatial_information(rates[:, column], occupancy[:, column])
+    assert result.distance_information() == pytest.approx(expected)
+    assert result.summary_table()["distance_information"].iloc[0] == pytest.approx(
+        expected
+    )

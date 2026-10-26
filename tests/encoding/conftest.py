@@ -152,13 +152,14 @@ def strong_field_spikes(ou_2min_env, ou_2min, obj):
 def significance_recording():
     from types import SimpleNamespace
 
+    from shapely.geometry import box
+
     from neurospatial import Environment
 
     rng = np.random.default_rng(7)
     times = np.arange(0, 60, 0.1)
-    xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
     return SimpleNamespace(
-        env=Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5),
+        env=Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm"),
         times=times,
         positions=np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)],
         headings=np.sin(times / 5),
@@ -272,7 +273,15 @@ def frame_family(request):
     )
     kernel_defaults = {}
     if name == "view":
-        defaults["view_distance"] = kernel_defaults["view_distance"] = 5.0
+        # Gaze geometry is not under test here: a short fixed gaze that stops
+        # at the edge of the binned area.
+        gaze = {
+            "gaze_model": "fixed_distance",
+            "view_distance": 5.0,
+            "boundary_source": "analysis",
+        }
+        defaults.update(gaze)
+        kernel_defaults.update(gaze)
     if name == "egocentric":
         defaults["distance_range"] = kernel_defaults["distance_range"] = (0, 100)
     return SimpleNamespace(
@@ -845,7 +854,7 @@ def ovc_session() -> tuple[
     headings = (theta + np.pi / 2) % (2 * np.pi)
     headings = np.arctan2(np.sin(headings), np.cos(headings))
 
-    env = Environment.from_samples(positions, bin_size=2.0)
+    env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     # Concentrate spikes over short bursts at regular phase intervals so the
     # egocentric polar rate map has a clear, informative peak.

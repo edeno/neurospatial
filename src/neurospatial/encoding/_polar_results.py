@@ -23,17 +23,30 @@ if TYPE_CHECKING:
 class _PolarRateMixin:
     """Bin centers, export metadata and peak coordinates of a polar rate map.
 
-    Hosts declare ``env`` (the polar environment), ``direction_frame``,
-    ``distance_range``, ``n_distance_bins`` and ``n_direction_bins``, and
-    inherit :class:`~neurospatial.encoding._base.SpatialResultMixin` after
-    this class.
+    Hosts declare ``env`` (the polar environment) and ``direction_frame``,
+    and inherit :class:`~neurospatial.encoding._base.SpatialResultMixin`
+    after this class. The grid's extent and shape are read from ``env``, the
+    one record of them, so they cannot disagree with the bins.
     """
 
     env: Any
     direction_frame: str
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
+
+    @property
+    def distance_range(self) -> tuple[float, float]:
+        """(min, max) distance covered by the bins, in the environment's units."""
+        edges = self.env.grid_edges[0]
+        return (float(edges[0]), float(edges[-1]))
+
+    @property
+    def n_distance_bins(self) -> int:
+        """Number of distance bins (rings) of the polar grid."""
+        return int(self.env.grid_shape[0])
+
+    @property
+    def n_direction_bins(self) -> int:
+        """Number of direction bins of the polar grid."""
+        return int(self.env.grid_shape[1])
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -71,6 +84,99 @@ class _PolarRateMixin:
             peak_bins = np.nanargmax(rates[observed], axis=1)
             peaks[observed] = self._bin_centers[peak_bins, column]
         return peaks
+
+
+def _unknown_units(units: str | None) -> str:
+    """Why a length default cannot be converted, for error messages."""
+    if units is None:
+        return "the length units are unknown (no env, or env.units is unset)"
+    return f"env.units={units!r} is not a known length unit"
+
+
+def resolve_distance_range(
+    units: str | None,
+    distance_range: tuple[float, float] | None,
+    *,
+    context: str,
+) -> tuple[float, float]:
+    """The polar grid's distance range, defaulting to 0-50 cm.
+
+    Parameters
+    ----------
+    units : str or None
+        Length units of the positions (``env.units``), or None when unknown.
+    distance_range : tuple of float or None
+        The caller's range, in those units; None for the default.
+    context : str
+        Public function name for error messages.
+
+    Returns
+    -------
+    tuple of float
+        ``(min, max)`` in the positions' units.
+
+    Raises
+    ------
+    ValueError
+        If ``distance_range`` is None and ``units`` is not a known length
+        unit: 50 has no meaning without a scale.
+    """
+    from neurospatial._exceptions import _format_error
+    from neurospatial._units import units_per_centimeter
+
+    if distance_range is not None:
+        low, high = distance_range
+        return (float(low), float(high))
+    per_cm = units_per_centimeter(units)
+    if per_cm is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: distance_range is required because "
+                f"{_unknown_units(units)}.",
+                why="Why: the default 0-50 cm range cannot be converted to "
+                "coordinates of unknown scale",
+                fix="pass distance_range=(0.0, max_distance) in the units of "
+                "positions, or an env with units='cm' (or 'mm', 'm')",
+            )
+        )
+    return (0.0, 50.0 * per_cm)
+
+
+def require_known_bandwidth(
+    units: str | None,
+    bandwidth: float | None,
+    method: str,
+    *,
+    context: str,
+) -> None:
+    """Refuse a default kernel bandwidth that has no physical length.
+
+    The default is 5 cm converted to ``units``. A polar grid's graph edges
+    mix radial steps with arcs that grow with distance, so no length can be
+    inferred from them; without known units the caller must choose.
+
+    Raises
+    ------
+    ValueError
+        If a kernel method has no ``bandwidth`` and ``units`` is not a known
+        length unit.
+    """
+    from neurospatial._exceptions import _format_error
+    from neurospatial._units import units_per_centimeter
+
+    if method == "binned" or bandwidth is not None:
+        return
+    if units_per_centimeter(units) is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: method={method!r} needs a bandwidth because "
+                f"{_unknown_units(units)}.",
+                why="Why: the default 5 cm kernel cannot be converted to "
+                "coordinates of unknown scale",
+                fix="pass bandwidth in the units of positions, an env with "
+                "units='cm' (or 'mm', 'm'), or method='binned'",
+            )
+        )
 
 
 def polar_summary_frame(

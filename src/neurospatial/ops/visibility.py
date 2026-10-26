@@ -15,9 +15,9 @@ Common Use Cases
 Which Function Should I Use?
 ----------------------------
 **Computing viewed location from gaze direction?**
-    Use ``compute_viewed_location()`` with method="fixed_distance" for a
-    point at fixed distance, or method="ray_cast" for the first wall along
-    the gaze.
+    Use ``compute_viewed_location()`` with method="ray_cast" for the first
+    wall along the gaze, or method="fixed_distance" for a point at a fixed
+    distance that stops at a nearer wall.
 
 **Need full visibility analysis from a position?**
     Use ``compute_viewshed()`` to get the visible bins and cues. A bin is
@@ -80,6 +80,7 @@ from neurospatial.geometry import (
     CallIndexes,
     batch_line_of_sight_clear,
     boundary_view,
+    valid_observers,
 )
 from neurospatial.ops.egocentric import _check_pose
 
@@ -609,7 +610,9 @@ def compute_viewed_location(
     method : {"fixed_distance", "ray_cast"}, default "fixed_distance"
         Method for computing viewed location:
 
-        - "fixed_distance": the point ``view_distance`` ahead along the gaze.
+        - "fixed_distance": the point ``view_distance`` ahead along the gaze,
+          or the first wall when one is nearer. Without ``env`` the walls are
+          unknown and the point is not stopped.
         - "ray_cast": the first wall the gaze ray reaches.
     view_distance : float, default 10.0
         Distance in environment units (e.g. cm) for the fixed_distance method.
@@ -618,7 +621,8 @@ def compute_viewed_location(
         (0 = ahead, + = left, - = right), e.g. from eye tracking. If None,
         gaze is aligned with heading.
     env : Environment, optional
-        Required for the ray_cast method.
+        Supplies the walls. Required for the ray_cast method; with
+        fixed_distance it stops the gaze at the first wall.
     max_distance : float or None, default None
         Longest gaze ray for the ray_cast method, in environment units.
         ``None`` searches far enough to reach every wall: twice the diagonal
@@ -626,14 +630,14 @@ def compute_viewed_location(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. Unused without ``env``.
 
     Returns
     -------
     NDArray[np.float64], shape (n_time, 2)
         Viewed location in allocentric coordinates. NaN for a missing
-        observation and, with ray_cast, where no wall lies within
-        ``max_distance`` or the observer is outside the walls.
+        observation and, with ``env``, for an observer outside the walls;
+        with ray_cast also where no wall lies within ``max_distance``.
 
     Raises
     ------
@@ -666,6 +670,53 @@ def compute_viewed_location(
     ...     np.array([[10.0, 150.0]]), np.array([0.0]), method="ray_cast", env=env
     ... )
     array([[300., 150.]])
+
+    A fixed-distance gaze stops at a nearer wall instead of passing through it:
+
+    >>> compute_viewed_location(
+    ...     np.array([[295.0, 150.0]]),
+    ...     np.array([0.0]),
+    ...     method="fixed_distance",
+    ...     view_distance=10.0,
+    ...     env=env,
+    ... )
+    array([[300., 150.]])
+    """
+    viewed, _at_wall = gaze_points(
+        positions,
+        headings,
+        method=method,
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
+        env=env,
+        max_distance=max_distance,
+        boundary_source=boundary_source,
+    )
+    return viewed
+
+
+def gaze_points(
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    method: Literal["fixed_distance", "ray_cast"],
+    view_distance: float | None,
+    gaze_offsets: NDArray[np.float64] | None,
+    env: BinningConsumer | None,
+    max_distance: float | None,
+    boundary_source: BoundarySource,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Viewed points, and which of them lie on a wall.
+
+    The arguments are those of :func:`compute_viewed_location`.
+
+    Returns
+    -------
+    viewed : NDArray[np.float64], shape (n_time, 2)
+        As returned by :func:`compute_viewed_location`.
+    at_wall : NDArray[np.bool_], shape (n_time,)
+        True where the gaze stopped at a wall: every finite ray-cast point,
+        and each fixed-distance point a nearer wall cut short.
     """
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
@@ -696,9 +747,32 @@ def compute_viewed_location(
         gaze_direction = headings + gaze_offsets
 
     if method == "fixed_distance":
-        return positions + view_distance * np.column_stack(
+        if view_distance is None:
+            raise ValueError("view_distance is required when method='fixed_distance'")
+        fixed = positions + view_distance * np.column_stack(
             (np.cos(gaze_direction), np.sin(gaze_direction))
         )
+        if env is None:
+            return fixed, np.zeros(len(positions), dtype=np.bool_)
+        # The first wall within view_distance; NaN where none is nearer or
+        # the observer is outside the walls.
+        indexes = CallIndexes()
+        hits = boundary_view(
+            env.binning,
+            env.arena,
+            positions,
+            gaze_direction,
+            float(view_distance),
+            boundary_source,
+            indexes,
+        )
+        at_wall = np.all(np.isfinite(hits), axis=1)
+        viewed = np.where(at_wall[:, None], hits, fixed)
+        observed = valid_observers(
+            env.binning, env.arena, positions, boundary_source, indexes
+        )
+        viewed[~observed] = np.nan
+        return viewed, at_wall
 
     from neurospatial.geometry import boundary_geometry, search_distance
 
@@ -708,7 +782,7 @@ def compute_viewed_location(
         max_distance = search_distance(
             boundary_geometry(binning, arena, boundary_source), positions
         )
-    return boundary_view(
+    viewed = boundary_view(
         binning,
         arena,
         positions,
@@ -717,6 +791,7 @@ def compute_viewed_location(
         boundary_source,
         CallIndexes(),
     )
+    return viewed, np.all(np.isfinite(viewed), axis=1)
 
 
 def compute_viewshed(

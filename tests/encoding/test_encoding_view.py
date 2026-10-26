@@ -1453,13 +1453,13 @@ class TestViewRatesResultSummaryTable:
         df = result.summary_table()
         assert len(df) == n_neurons
 
-    def test_summary_table_has_unit_id_column(
+    def test_summary_table_columns_in_order(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() should be indexed by unit_id."""
+        """Primary metrics first, peak coordinates, classification last."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1474,116 +1474,13 @@ class TestViewRatesResultSummaryTable:
 
         df = result.summary_table()
         assert df.index.name == "unit_id"
-
-    def test_summary_table_has_peak_x_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have peak_x column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "peak_x" in df.columns
-
-    def test_summary_table_has_peak_y_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have peak_y column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "peak_y" in df.columns
-
-    def test_summary_table_has_peak_rate_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have peak_rate column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "peak_rate" in df.columns
-
-    def test_summary_table_has_view_spatial_info_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have view_spatial_info column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "view_spatial_info" in df.columns
-
-    def test_summary_table_has_is_view_cell_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have is_spatial_view_cell column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "is_spatial_view_cell" in df.columns
+        assert list(df.columns) == [
+            "peak_rate",
+            "view_spatial_info",
+            "peak_x",
+            "peak_y",
+            "is_spatial_view_cell",
+        ]
 
     def test_summary_table_default_unit_ids(
         self,
@@ -1872,7 +1769,7 @@ class TestIsSpatialViewCellParamOrder:
             times,
             positions,
             headings,
-            gaze_model="ray_cast",
+            gaze_model="fixed_distance",
             view_distance=15.0,
             boundary_source="analysis",
         )
