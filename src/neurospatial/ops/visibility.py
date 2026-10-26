@@ -357,6 +357,10 @@ class FieldOfView:
         angle = np.asarray(angle)
         wrapped = _wrap_egocentric(angle)
         in_bounds = (wrapped <= self.left_angle) & (wrapped >= self.right_angle)
+        # Wrapping sends -pi to +pi; a field whose right edge is -pi still
+        # reaches that direction, straight behind.
+        if self.right_angle == -np.pi:
+            in_bounds |= wrapped == np.pi
         if angle.ndim == 0:
             return bool(in_bounds)
         return in_bounds

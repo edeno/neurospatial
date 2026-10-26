@@ -121,6 +121,35 @@ class TestFieldOfView:
         # Outside binocular zone
         assert not fov.is_binocular(np.pi / 3)  # 60 degrees
 
+    @pytest.mark.parametrize(
+        ("left", "right"), [(0.0, -np.pi), (np.pi, 0.0)], ids=["right", "left"]
+    )
+    def test_a_half_field_ending_behind_includes_directly_behind(self, left, right):
+        """-pi and +pi are the same direction, so either bound reaches it.
+
+        Wrapping sends -pi to +pi, which fell outside [-pi, 0] for the right
+        half; a cue straight behind must be visible to either half.
+        """
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+        from neurospatial.ops.visibility import FieldOfView, visible_cues
+
+        fov = FieldOfView(left_angle=left, right_angle=right)
+        assert fov.contains_angle(np.pi)
+        assert fov.contains_angle(-np.pi)
+        np.testing.assert_array_equal(
+            fov.contains_angle(np.array([-np.pi, np.pi])), [True, True]
+        )
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
+        behind = np.array([[10.0, 50.0]])
+        seen, distance, _ = visible_cues(
+            env, np.array([50.0, 50.0]), 0.0, behind, fov=fov
+        )
+        assert seen.tolist() == [True]
+        assert_allclose(distance, [40.0])
+
     def test_rat_blind_spot_is_the_range_behind_the_edges(self):
         """The rat's 40-degree blind spot is the gap between its edges."""
         from neurospatial.ops.visibility import FieldOfView
