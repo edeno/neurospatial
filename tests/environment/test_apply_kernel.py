@@ -129,8 +129,8 @@ class TestApplyKernelAdjoint:
 class TestApplyKernelDensityMode:
     """Test density mode with mass-weighted adjoint."""
 
-    def test_density_mode_with_bin_sizes(self):
-        """Test forward density mode with bin sizes."""
+    def test_forward_mode_refuses_bin_sizes(self):
+        """bin_sizes only weight the adjoint; forward is K @ field without them."""
         rng = np.random.default_rng(42)
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
@@ -144,9 +144,9 @@ class TestApplyKernelDensityMode:
         # Create density field
         field = rng.random(env.n_bins)
 
-        result = apply_kernel(field, K, mode="forward", bin_sizes=bin_sizes)
-
-        assert result.shape == (env.n_bins,)
+        with pytest.raises(ValueError, match="bin_sizes") as exc:
+            apply_kernel(field, K, mode="forward", bin_sizes=bin_sizes)
+        assert 'mode="adjoint"' in str(exc.value)
 
     def test_adjoint_density_mode_with_bin_sizes(self):
         """Test adjoint for density mode is mass-weighted."""
@@ -282,7 +282,7 @@ class TestApplyKernelMathematicalProperties:
         y = rng.random(env.n_bins)
 
         # Forward
-        Kx = apply_kernel(x, K, mode="forward", bin_sizes=bin_sizes)
+        Kx = apply_kernel(x, K, mode="forward")
 
         # Adjoint
         KTy = apply_kernel(y, K, mode="adjoint", bin_sizes=bin_sizes)

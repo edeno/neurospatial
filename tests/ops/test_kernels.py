@@ -462,12 +462,26 @@ class TestApplyKernel:
             np.dot(ku * bin_sizes_3, v), np.dot(u * bin_sizes_3, kstar_v), rtol=1e-10
         )
 
-    def test_bin_sizes_allowed_in_forward_mode(
+    def test_bin_sizes_refused_in_forward_mode(
         self, simple_kernel, simple_field, bin_sizes_3
     ):
+        """Forward mode has no use for bin_sizes; silently ignoring them hides a
+        caller who meant the mass-weighted adjoint."""
         from neurospatial.ops.smoothing import apply_kernel
 
-        result = apply_kernel(
-            simple_field, simple_kernel, mode="forward", bin_sizes=bin_sizes_3
-        )
-        np.testing.assert_allclose(result, simple_kernel @ simple_field, rtol=1e-10)
+        with pytest.raises(ValueError, match="bin_sizes"):
+            apply_kernel(
+                simple_field, simple_kernel, mode="forward", bin_sizes=bin_sizes_3
+            )
+
+    @pytest.mark.parametrize("mode", ["forward", "adjoint"])
+    @pytest.mark.parametrize("bad", [np.nan, np.inf])
+    def test_non_finite_field_is_refused(self, simple_kernel, mode, bad):
+        """One missing bin would make every output bin NaN, even in other
+        components; env.smooth treats NaN as missing instead."""
+        from neurospatial.ops.smoothing import apply_kernel
+
+        field = np.array([1.0, bad, 3.0])
+        with pytest.raises(ValueError, match="1 non-finite") as exc:
+            apply_kernel(field, simple_kernel, mode=mode)
+        assert "env.smooth" in str(exc.value)

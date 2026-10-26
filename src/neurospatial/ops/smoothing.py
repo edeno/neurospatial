@@ -50,6 +50,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import DiffusionGeometry
 from neurospatial.ops._types import KernelMode
 from neurospatial.ops.diffusion import heat_kernel_from_W
@@ -174,8 +175,8 @@ def compute_diffusion_kernels(
       method build a dense kernel.
     - Reduce the number of bins by increasing ``bin_size`` when constructing the
       environment.
-    - For population decoding at scale, the memory-safe paths this release are
-      float32 rate maps and the summary decode
+    - For population decoding at scale, the memory-safe paths are float32 rate
+      maps and the summary decode
       (:func:`~neurospatial.decoding.posterior.decode_position_summary`), which
       avoid materializing a full dense posterior.
     """
@@ -200,7 +201,10 @@ def apply_kernel(
     Parameters
     ----------
     field : NDArray[np.float64], shape (n_bins,)
-        Input field to transform.
+        Input field to transform. Must be finite: the kernel mixes every bin
+        into every other, so one NaN would make every output bin NaN. Smooth a
+        field with missing (NaN) bins with ``env.smooth`` or ``env.diffuse``,
+        which leave missing bins out.
     kernel : NDArray[np.float64], shape (n_bins, n_bins)
         Diffusion kernel matrix (from compute_kernel or compute_diffusion_kernels).
     mode : "forward" | "adjoint", default="forward"
@@ -209,7 +213,7 @@ def apply_kernel(
         - "adjoint": Transpose operation with optional mass weighting
     bin_sizes : NDArray[np.float64], shape (n_bins,), optional
         Bin sizes (areas/volumes) for mass-weighted adjoint in density mode.
-        Typically obtained from ``env.bin_sizes``.
+        Typically obtained from ``env.bin_sizes``. Adjoint mode only.
         - If None: adjoint is simple transpose (K.T @ field)
         - If provided: adjoint is mass-weighted (M^{-1} K.T M @ field)
           where M = diag(bin_sizes)
@@ -227,6 +231,8 @@ def apply_kernel(
     ValueError
         If mode is not 'forward' or 'adjoint'.
         If field size doesn't match kernel dimensions.
+        If field contains NaN or Inf.
+        If bin_sizes is given with mode='forward'.
         If bin_sizes size doesn't match field size.
         If bin_sizes has non-positive values (adjoint mode only).
         If kernel is not square.
@@ -351,6 +357,31 @@ def apply_kernel(
     if field.shape != (n_bins,):
         raise ValueError(
             f"Field size {field.shape[0]} does not match kernel size {n_bins}"
+        )
+
+    non_finite = ~np.isfinite(field)
+    if non_finite.any():
+        raise ValueError(
+            _format_error(
+                f"field has {int(non_finite.sum())} non-finite value(s) (NaN or Inf).",
+                why="The kernel mixes every bin into every other, so one NaN "
+                "would make every output bin NaN, even in parts of the "
+                "environment the missing bin does not touch.",
+                fix="smooth a field with missing bins with env.smooth(field, "
+                "bandwidth=..., mode=...) or env.diffuse(field, bandwidth=..., "
+                'mode="average"), which leave NaN bins out, or fill them first',
+            )
+        )
+
+    if bin_sizes is not None and mode == "forward":
+        raise ValueError(
+            _format_error(
+                'apply_kernel() got bin_sizes with mode="forward".',
+                why="Forward mode is K @ field; bin_sizes only weight the "
+                "adjoint, M^-1 K^T M @ field.",
+                fix='drop bin_sizes, or pass mode="adjoint" for the '
+                "mass-weighted adjoint of a density kernel",
+            )
         )
 
     # Check bin_sizes size and validate positive values if provided
