@@ -649,8 +649,8 @@ def calibrate_from_landmarks(
     # Apply Y-flip to pixel coordinates before estimation
     # This converts from video coords (origin top-left) to standard coords
     _, frame_height = frame_size_px
-    landmarks_px_flipped = landmarks_px.copy()
-    landmarks_px_flipped[:, 1] = frame_height - landmarks_px[:, 1]
+    to_cartesian = flip_y(frame_height)
+    landmarks_px_flipped = to_cartesian(landmarks_px)
 
     # Check for collinear/degenerate landmarks before estimation
     # Use singular values of centered points to detect if they span 2D
@@ -679,7 +679,7 @@ def calibrate_from_landmarks(
 
     # The fit accepts flipped pixels; compose the flip so callers can supply
     # raw image pixels, as they do for calibrate_from_scale_bar.
-    return result @ flip_y(frame_height)
+    return result @ to_cartesian
 
 
 @dataclass(frozen=True, eq=False)
