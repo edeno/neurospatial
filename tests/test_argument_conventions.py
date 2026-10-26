@@ -198,7 +198,6 @@ REQUIRED_DATA_NAMES = {
     *("targets", "ego_points", "object_positions", "cue_positions"),
     *("goal", "goal_bins", "start", "subgoals", "regions", "region_names"),
     *("angles", "angles1", "angles2", "angle", "linear_values", "phases"),
-    *("distances", "correlations"),
     # Events, intervals, trials and labels.
     *("event_times", "events", "reference_events", "start_events", "stop_events"),
     *("event_types", "entry_time", "reward_times", "lap_times", "crossing_times"),

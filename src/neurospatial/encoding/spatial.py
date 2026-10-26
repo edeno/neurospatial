@@ -655,15 +655,19 @@ def _spatial_summary_frame(
     occupancy = _to_numpy(result.occupancy)
     peaks = np.atleast_2d(result.peak_location())
     info = np.asarray(batch_spatial_information(rates, occupancy))
-    grid = batch_grid_scores(result.env, rates).scores
-    border_unavailable = None
+    unavailable: dict[str, str] = {}
+    try:
+        grid = batch_grid_scores(result.env, rates).scores
+    except NotImplementedError as exc:
+        grid = np.full(len(rates), np.nan)
+        unavailable["grid_score"] = str(exc)
     try:
         border = batch_border_scores(
             result.env, rates, boundary_source=boundary_source
         ).scores
     except NotImplementedError as exc:
         border = np.full(len(rates), np.nan)
-        border_unavailable = str(exc)
+        unavailable["border_score"] = str(exc)
     columns: dict[str, Any] = {
         "peak_rate": np.atleast_1d(result.peak_firing_rate()),
         "spatial_info": info,
@@ -676,16 +680,16 @@ def _spatial_summary_frame(
     }
     if include_classification:
         labels = _label_from_scores(info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS)
-        if border_unavailable is not None:
-            # Without a border score, a tuned non-grid cell may be a border
-            # cell; do not report it as a place cell.
+        if unavailable:
+            # Without a grid or border score, a tuned cell may be a grid or
+            # border cell; do not report it as a place cell.
             labels[labels == "place"] = "undetermined"
         columns["cell_type"] = labels
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["border_boundary_source"] = boundary_source
     df.attrs["border_field_minimum"] = _border_field_minimum(result.env)
-    if border_unavailable is not None:
-        df.attrs["unavailable_metrics"] = {"border_score": border_unavailable}
+    if unavailable:
+        df.attrs["unavailable_metrics"] = unavailable
     df.attrs["method"] = result.method
     df.attrs["units"] = {
         "peak_rate": "Hz",
@@ -873,7 +877,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             remain available. The source is recorded in table attributes.
             When the border score is unavailable, a cell that passes the
             information gate but not the grid threshold is labeled
-            ``"undetermined"``: it could be a place or a border cell.
+            ``"undetermined"``: it could be a place or a border cell. The
+            grid score is unavailable, and recorded there too, on layouts
+            without a regular grid of rectangular cells (hexagonal, track,
+            mesh); a cell that passes the information gate is then
+            ``"undetermined"`` unless it is labeled a border cell.
 
         Returns
         -------
@@ -1133,18 +1141,26 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             - score > 0.4: Strong hexagonal grid (typical threshold)
             - score ≈ 0: No hexagonal structure
             - score < 0: Anti-hexagonal structure (rare)
-            Returns NaN if grid score cannot be computed (e.g., non-2D grid).
+            NaN when the map is all NaN or constant, or its autocorrelogram
+            has no central peak bounded inside the map.
+
+        Raises
+        ------
+        NotImplementedError
+            If the environment has no regular 2D grid of rectangular cells
+            (hexagonal, mesh, track or 3D layouts); use
+            ``spatial_autocorrelation_radial`` there.
 
         Notes
         -----
         Computes the spatial autocorrelation of the firing rate map and
-        extracts the grid score based on rotational symmetry.
+        extracts the grid score based on rotational symmetry:
 
-        Uses the Sargolini et al. (2006) algorithm:
-
-        1. Compute 2D spatial autocorrelation via FFT
-        2. Rotate by 30°, 60°, 90°, 120°, 150°
-        3. Grid score = min(r60, r120) - max(r30, r90, r150)
+        1. Compute the 2D spatial autocorrelogram
+        2. Rotate it by 30°, 60°, 90°, 120°, 150° and correlate it with
+           each rotation in annuli growing outward from the central peak
+        3. Grid score = min(r60, r120) - max(r30, r90, r150), the best mean
+           over three consecutive annulus radii
 
         This method delegates to ``neurospatial.encoding.grid.grid_score()``.
 
@@ -1163,32 +1179,31 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> from neurospatial.encoding.spatial import compute_spatial_rate
-        >>> rng = np.random.default_rng(0)
-        >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> times = np.linspace(0, 50, 500)
-        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
-        >>> result = compute_spatial_rate(
-        ...     env, spike_times, times, positions, bandwidth=10.0
+        >>> from neurospatial.simulation import GridCellModel, generate_poisson_spikes
+        >>> times = np.arange(0.0, 900.0, 1 / 30)
+        >>> # A Lissajous path covers a 100 cm box smoothly.
+        >>> positions = 50 + 49 * np.column_stack(
+        ...     [np.sin(0.31 * times), np.sin(0.47 * times + 0.4)]
         ... )
-        >>> score = result.grid_score()
-        >>> bool(-2.0 <= score <= 2.0)
+        >>> env = Environment.from_samples(positions, bin_size=4.0)
+        >>> cell = GridCellModel(env, grid_spacing=40.0, max_rate=20.0)
+        >>> rate = cell.firing_rate(positions)
+        >>> spike_times = generate_poisson_spikes(rate, times, seed=1)
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=5.0
+        ... )
+        >>> bool(result.grid_score() > 0.4)
         True
         """
         from neurospatial.encoding.grid import grid_score as gs_func
         from neurospatial.encoding.grid import spatial_autocorrelation
 
         firing_rate = _to_numpy(self.firing_rate)
-
-        try:
-            autocorr = spatial_autocorrelation(self.env, firing_rate)
-            return gs_func(autocorr)
-        except (ValueError, RuntimeError):
-            # Irregular env, constant firing, or all-NaN: grid_score is
-            # undefined. Return NaN; callers using batch_grid_scores can
-            # see the same NaN with the failures mask separating
-            # legitimate-NaN from caught failures.
+        finite = firing_rate[np.isfinite(firing_rate)]
+        if finite.size == 0 or np.all(finite == finite[0]):
+            # No spatial structure to autocorrelate: the score is undefined.
             return np.nan
+        return gs_func(spatial_autocorrelation(self.env, firing_rate))
 
     def grid_properties(self) -> GridProperties:
         """Full grid cell metrics (score, scale, orientation).
@@ -1204,23 +1219,25 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             - score : float
                 Grid score in range [-2, 2]
             - scale : float
-                Grid spacing in physical units (same as bin_size)
+                Grid spacing in the environment's units
             - orientation : float
                 Lattice angle in radians [0, pi/3), from +x (East)
                 counterclockwise toward +y (North), modulo pi/3
             - orientation_std : float
                 Standard deviation of orientation estimates, in radians
-            - peak_coords : NDArray
-                Detected peak coordinates (n_peaks, 2)
+            - peak_coords : NDArray, shape (n_peaks, 2)
+                Autocorrelogram peaks as ``(x, y)`` offsets from zero lag,
+                in the environment's units
             - n_peaks : int
-                Number of peaks detected
+                Number of peaks found
+
+        Raises
+        ------
+        NotImplementedError
+            If the environment has no regular 2D grid of rectangular cells.
 
         Notes
         -----
-        This method is more efficient than calling ``grid_score()`` separately
-        when you need multiple grid metrics, as it performs peak detection
-        only once.
-
         Delegates to ``neurospatial.encoding.grid.grid_properties()``.
 
         References
@@ -1241,17 +1258,22 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> from neurospatial.encoding.spatial import compute_spatial_rate
-        >>> rng = np.random.default_rng(0)
-        >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> times = np.linspace(0, 50, 500)
-        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> from neurospatial.simulation import GridCellModel, generate_poisson_spikes
+        >>> times = np.arange(0.0, 900.0, 1 / 30)
+        >>> # A Lissajous path covers a 100 cm box smoothly.
+        >>> positions = 50 + 49 * np.column_stack(
+        ...     [np.sin(0.31 * times), np.sin(0.47 * times + 0.4)]
+        ... )
+        >>> env = Environment.from_samples(positions, bin_size=4.0)
+        >>> cell = GridCellModel(env, grid_spacing=40.0, max_rate=20.0)
+        >>> rate = cell.firing_rate(positions)
+        >>> spike_times = generate_poisson_spikes(rate, times, seed=1)
         >>> result = compute_spatial_rate(
-        ...     env, spike_times, times, positions, bandwidth=10.0
+        ...     env, spike_times, times, positions, bandwidth=5.0
         ... )
         >>> props = result.grid_properties()
-        >>> type(props).__name__
-        'GridProperties'
+        >>> round(float(props.scale) / 4.0)  # spacing in 4 cm pixels, 40 cm
+        10
         """
         from neurospatial.encoding.grid import (
             autocorrelation_pixel_size,
@@ -1263,7 +1285,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         autocorr = spatial_autocorrelation(self.env, firing_rate)
         # The autocorrelogram's square pixel side, a length; ``env.bin_sizes``
         # holds cell areas off a track.
-        return gp_func(autocorr, bin_size=autocorrelation_pixel_size(self.env))
+        return gp_func(autocorr, pixel_size=autocorrelation_pixel_size(self.env))
 
     def border_score(
         self,
@@ -2180,16 +2202,18 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             converted to NaN). Use ``result.scores`` for the raw array if
             your downstream code expects a plain ndarray.
 
+        Raises
+        ------
+        NotImplementedError
+            If the environment has no regular 2D grid of rectangular cells
+            (hexagonal, mesh, track or 3D layouts). :meth:`summary_table`
+            records the score as unavailable instead.
+
         Notes
         -----
         For each neuron, computes the spatial autocorrelation and extracts
-        the grid score based on rotational symmetry.
-
-        Uses the Sargolini et al. (2006) algorithm:
-
-        1. Compute 2D spatial autocorrelation via FFT
-        2. Rotate by 30°, 60°, 90°, 120°, 150°
-        3. Grid score = min(r60, r120) - max(r30, r90, r150)
+        the grid score based on rotational symmetry, as
+        :meth:`SpatialRateResult.grid_score` does.
 
         Delegates to ``neurospatial.encoding._metrics.batch_grid_scores()``.
 
@@ -2355,6 +2379,11 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             - "border": Border cell (high border score, passes spatial info threshold)
             - "place": Place cell (high spatial info, not grid or border)
             - "unclassified": Does not meet criteria for any spatial cell type
+            - "undetermined": Passes the information gate but the grid score
+              is unavailable (layouts without a regular grid of rectangular
+              cells: hexagonal, track, mesh), so it may be a grid cell. A
+              ``UserWarning`` gives the reason, as ``summary_table()``
+              records it in ``attrs['unavailable_metrics']``.
 
         Notes
         -----
@@ -2441,8 +2470,13 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         )
         n_neurons = len(self)
         spatial_info = self.spatial_information()
+        grid_unavailable = None
         if grid_scores is None:
-            grid_scores_arr = self.grid_scores().scores
+            try:
+                grid_scores_arr = self.grid_scores().scores
+            except NotImplementedError as exc:
+                grid_scores_arr = np.full(n_neurons, np.nan)
+                grid_unavailable = str(exc)
         else:
             grid_scores_arr = np.asarray(grid_scores, dtype=np.float64)
             if grid_scores_arr.ndim != 1 or grid_scores_arr.shape[0] != n_neurons:
@@ -2459,7 +2493,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
                 raise ValueError(
                     f"border_scores must be a 1-D array of length {n_neurons} (one per neuron), got shape {border_scores_arr.shape}"
                 )
-        return _label_from_scores(
+        labels = _label_from_scores(
             spatial_info,
             grid_scores_arr,
             border_scores_arr,
@@ -2467,6 +2501,19 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             min_grid_score=min_grid_score,
             min_border_score=min_border_score,
         )
+        if grid_unavailable is not None:
+            # Without a grid score, a tuned cell may be a grid cell; do not
+            # report it as a place cell, as summary_table() does.
+            labels[labels == "place"] = "undetermined"
+            warnings.warn(
+                "label_cell_types: the grid score is unavailable on this "
+                "environment, so spatially tuned cells that are not border "
+                "cells are labeled 'undetermined' rather than 'place'. "
+                f"Reason: {grid_unavailable}",
+                UserWarning,
+                stacklevel=2,
+            )
+        return labels
 
     def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as place cells (single-type boolean predicate).
@@ -2573,7 +2620,11 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             remain available. The source is recorded in table attributes.
             When the border score is unavailable, a cell that passes the
             information gate but not the grid threshold is labeled
-            ``"undetermined"``: it could be a place or a border cell.
+            ``"undetermined"``: it could be a place or a border cell. The
+            grid score is unavailable, and recorded there too, on layouts
+            without a regular grid of rectangular cells (hexagonal, track,
+            mesh); a cell that passes the information gate is then
+            ``"undetermined"`` unless it is labeled a border cell.
 
         Returns
         -------
@@ -2589,7 +2640,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             - border_score: border score (boundary proximity tuning)
             - cell_type: classification label (if include_classification=True):
               a ``label_cell_types()`` label, or ``"undetermined"`` when the
-              border score needed to decide place versus border is unavailable
+              grid or border score needed to rule out a grid or border cell
+              is unavailable
             - method: estimator used to compute the rate map
 
         Notes

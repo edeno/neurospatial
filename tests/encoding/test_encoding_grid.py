@@ -57,12 +57,6 @@ class TestEncodingGridImports:
 
         assert callable(grid_properties)
 
-    def test_import_periodicity_score(self) -> None:
-        """periodicity_score should be importable from encoding.grid."""
-        from neurospatial.encoding.grid import periodicity_score
-
-        assert callable(periodicity_score)
-
 
 class TestEncodingGridFromEncodingInit:
     """Test all imports from neurospatial.encoding (via __init__.py)."""
@@ -146,7 +140,7 @@ class TestEncodingGridFunctionality:
         result = spatial_autocorrelation(env, firing_rate)
 
         assert result.ndim == 2
-        assert result.shape == env.grid_shape
+        assert result.shape == tuple(2 * n - 1 for n in env.grid_shape)
 
     def test_spatial_autocorrelation_graph_runs(self, env_and_data) -> None:
         """spatial_autocorrelation (graph) should run and return tuple."""
@@ -178,7 +172,7 @@ class TestEncodingGridFunctionality:
         from neurospatial.encoding.grid import grid_scale
 
         autocorr = _create_hexagonal_autocorr()
-        scale = grid_scale(autocorr, bin_size=2.0)
+        scale = grid_scale(autocorr, pixel_size=2.0)
 
         assert isinstance(scale, float)
         assert scale > 0
@@ -188,32 +182,18 @@ class TestEncodingGridFunctionality:
         from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
-        props = grid_properties(autocorr, bin_size=1.0)
+        props = grid_properties(autocorr, pixel_size=1.0)
 
         assert isinstance(props.orientation, float)
         assert isinstance(props.orientation_std, float)
         assert 0.0 <= props.orientation < np.pi / 3
-
-    def test_periodicity_score_runs(self) -> None:
-        """periodicity_score should run and return float."""
-        from neurospatial.encoding.grid import periodicity_score
-
-        # Create perfect sinusoidal correlation profile
-        distances = np.linspace(0, 100, 200)
-        period = 20.0
-        correlations = 0.5 * np.sin(2 * np.pi * distances / period) + 0.5
-
-        score = periodicity_score(distances, correlations, min_peaks=2)
-
-        assert isinstance(score, float)
-        assert 0.0 <= score <= 1.0
 
     def test_grid_properties_runs(self) -> None:
         """grid_properties should run and return GridProperties dataclass."""
         from neurospatial.encoding.grid import GridProperties, grid_properties
 
         autocorr = _create_hexagonal_autocorr()
-        props = grid_properties(autocorr, bin_size=2.0)
+        props = grid_properties(autocorr, pixel_size=2.0)
 
         assert isinstance(props, GridProperties)
         assert hasattr(props, "score")
@@ -266,31 +246,74 @@ class TestFFTAutocorrelationNeedsRectangularCells:
         distances, correlations = spatial_autocorrelation_radial(env, rate)
         assert distances.shape == correlations.shape
 
-    def test_summary_table_reports_no_grid_score_on_a_hexagonal_layout(
+    def test_result_grid_score_refuses_a_hexagonal_layout(
         self, hexagonal_env_and_rate
     ) -> None:
         from neurospatial import compute_spatial_rate
 
         env, _ = hexagonal_env_and_rate
-        stimulus = np.random.default_rng(3)
         times = np.arange(6000) / 30.0
-        positions = stimulus.uniform(-20, 20, size=(len(times), 2))
+        positions = np.random.default_rng(3).uniform(-20, 20, size=(len(times), 2))
         spike_times = np.sort(np.random.default_rng(4).uniform(0, times[-1], 400))
+        result = compute_spatial_rate(env, spike_times, times, positions)
 
-        table = compute_spatial_rate(env, spike_times, times, positions).summary_table()
+        with pytest.raises(NotImplementedError, match="spatial_autocorrelation_radial"):
+            result.grid_score()
 
+    def test_summary_table_reports_no_grid_score_on_a_hexagonal_layout(
+        self, hexagonal_env_and_rate
+    ) -> None:
+        from neurospatial import compute_spatial_rate, compute_spatial_rates
+        from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+
+        env, _ = hexagonal_env_and_rate
+        times = np.arange(0.0, 600.0, 1 / 30)
+        positions = 20 * np.column_stack(
+            [np.sin(0.31 * times), np.sin(0.47 * times + 0.4)]
+        )
+        model = PlaceCellModel(env, center=[5.0, -5.0], width=5.0, max_rate=15.0)
+        spike_times = generate_poisson_spikes(
+            model.firing_rate(positions), times, seed=5
+        )
+        result = compute_spatial_rate(env, spike_times, times, positions)
+
+        table = result.summary_table(boundary_source="analysis")
+
+        # The cell is spatially tuned, but without a grid score it may be a
+        # grid cell: it is undetermined, not a place cell.
+        assert table["spatial_info"].iloc[0] >= 0.5
         assert np.isnan(table["grid_score"]).all()
+        assert "Hexagonal" in table.attrs["unavailable_metrics"]["grid_score"]
+        assert table["cell_type"].iloc[0] == "undetermined"
 
-    def test_sparse_grid_is_refused_with_the_same_error(self) -> None:
+        # label_cell_types agrees with the table and says why.
+        population = compute_spatial_rates(env, [spike_times], times, positions)
+        with pytest.warns(UserWarning, match="grid score is unavailable") as caught:
+            labels = population.label_cell_types(boundary_source="analysis")
+        assert "Hexagonal" in str(caught[0].message)
+        np.testing.assert_array_equal(labels, ["undetermined"])
+
+    def test_inactive_cells_are_left_out_like_unvisited_bins(self) -> None:
         from neurospatial.encoding.grid import spatial_autocorrelation
 
+        # Most of the grid is inactive, as for a narrow arena inside its
+        # bounding box; those cells are missing bins, not silent ones.
         mask = np.zeros((10, 10), dtype=bool)
         mask[:3, :] = True
         env = Environment.from_grid_mask(mask, grid_edges=(np.arange(11.0),) * 2)
         rate = np.random.default_rng(2).random(env.n_bins)
+        strip = Environment.from_grid_mask(
+            np.ones((3, 10), dtype=bool),
+            grid_edges=(np.arange(4.0), np.arange(11.0)),
+        )
 
-        with pytest.raises(NotImplementedError, match="only 30 of its 100"):
-            spatial_autocorrelation(env, rate)
+        autocorr = spatial_autocorrelation(env, rate)
+        expected = spatial_autocorrelation(strip, rate)
+
+        assert autocorr.shape == (19, 19)
+        # Shifts past the strip's three rows have no overlap at all.
+        assert np.isnan(autocorr[:7]).all() and np.isnan(autocorr[12:]).all()
+        np.testing.assert_allclose(autocorr[7:12], expected, atol=1e-12)
 
 
 class TestFFTAutocorrelationLagsArePhysical:
@@ -364,7 +387,7 @@ class TestFFTAutocorrelationLagsArePhysical:
 
         autocorr = spatial_autocorrelation(env, rate)
 
-        assert autocorr.shape == env.grid_shape
+        assert autocorr.shape == tuple(2 * n - 1 for n in env.grid_shape)
 
     @pytest.mark.parametrize(
         ("x_width", "y_width"), [(2.0, 2.0), (2.0, 3.0), (3.0, 2.0), (2.0, 2.6)]
@@ -391,7 +414,7 @@ class TestFFTAutocorrelationLagsArePhysical:
 
         autocorr = spatial_autocorrelation(env, rate)
         pixel = autocorrelation_pixel_size(env)
-        properties = grid_properties(autocorr, bin_size=pixel)
+        properties = grid_properties(autocorr, pixel_size=pixel)
 
         assert pixel == min(x_width, y_width)
         assert properties.score > 0.9
@@ -448,7 +471,7 @@ class TestFFTAutocorrelationLagsArePhysical:
         result = compute_spatial_rate(env, spike_times, times, positions)
         expected = grid_properties(
             spatial_autocorrelation(env, np.asarray(result.firing_rate)),
-            bin_size=autocorrelation_pixel_size(env),
+            pixel_size=autocorrelation_pixel_size(env),
         )
 
         np.testing.assert_equal(result.grid_properties().scale, expected.scale)
@@ -494,11 +517,6 @@ def _pixel_size_cases():
             )
         )
 
-    def sparse():
-        mask = np.zeros((10, 10), dtype=bool)
-        mask[:3, :] = True
-        return Environment.from_grid_mask(mask, grid_edges=(np.arange(11.0),) * 2)
-
     grid = np.stack(np.meshgrid(np.linspace(0, 40, 41), np.linspace(0, 40, 41)), -1)
     return {
         "hexagonal": lambda: Environment.from_samples(
@@ -508,7 +526,6 @@ def _pixel_size_cases():
             endpoints=[(0.0, 0.0), (40.0, 0.0)], bin_size=2.0
         ),
         "uneven": uneven,
-        "sparse": sparse,
         "polar": lambda: Environment.from_polar_egocentric(
             distance_range=(0.0, 30.0),
             angle_range=(-np.pi, np.pi),
@@ -582,7 +599,7 @@ class TestGridMetricsOnHexagonalMaps:
 
         for angle, phase in self.CASES:
             properties = grid_properties(
-                self._hexagonal(n_cells, angle, phase)[2], bin_size=2.0
+                self._hexagonal(n_cells, angle, phase)[2], pixel_size=2.0
             )
             # The field lattice lies 30 degrees from the wave directions.
             expected = np.radians(angle + 30.0) % (np.pi / 3)
@@ -612,7 +629,7 @@ class TestGridMetricsOnHexagonalMaps:
 
         for angle, phase in self.CASES:
             properties = grid_properties(
-                self._hexagonal(n_cells, angle, phase)[2], bin_size=2.0
+                self._hexagonal(n_cells, angle, phase)[2], pixel_size=2.0
             )
             # Well above the 0.4 grid-cell threshold; a perfect lattice on a
             # 120 cm arena scores about 1.
@@ -701,7 +718,9 @@ class TestGridOrientationInEnvironmentFrame:
 
         env = self._environment(grid)
         autocorr = spatial_autocorrelation(env, self._lattice_rate(env, lattice_deg))
-        properties = grid_properties(autocorr, bin_size=autocorrelation_pixel_size(env))
+        properties = grid_properties(
+            autocorr, pixel_size=autocorrelation_pixel_size(env)
+        )
 
         period = np.pi / 3
         assert 0.0 <= properties.orientation < period
@@ -710,3 +729,94 @@ class TestGridOrientationInEnvironmentFrame:
         assert abs(properties.scale - self.SPACING) < 2 * autocorrelation_pixel_size(
             env
         )
+
+
+def _box(sides, bin_size):
+    """Fully active rectangular arena with square cells of ``bin_size`` cm."""
+    edges = tuple(np.arange(0.0, side + bin_size / 2, bin_size) for side in sides)
+    mask = np.ones(tuple(len(edge) - 1 for edge in edges), dtype=bool)
+    return Environment.from_grid_mask(mask, grid_edges=edges)
+
+
+def _lattice_rate(points, spacing, lattice_deg, phase):
+    """Hexagonal field lattice: three plane waves 30 degrees off the lattice."""
+    wavenumber = 4 * np.pi / (np.sqrt(3) * spacing)
+    total = np.zeros(len(points))
+    for offset in (-30.0, 30.0, 90.0):
+        angle = np.radians(lattice_deg + offset)
+        direction = np.array([np.cos(angle), np.sin(angle)])
+        total += np.cos(wavenumber * (points - phase) @ direction)
+    return np.exp(0.6 * (total + 1.5)) - 1.0
+
+
+def _lattice_properties(
+    sides, bin_size, spacing, lattice_deg, phase, *, transpose=False
+):
+    from neurospatial.encoding.grid import (
+        autocorrelation_pixel_size,
+        grid_properties,
+        spatial_autocorrelation,
+    )
+
+    env = _box(sides[::-1] if transpose else sides, bin_size)
+    # Transposing swaps x and y for both the arena and the lattice.
+    points = env.bin_centers[:, ::-1] if transpose else env.bin_centers
+    rate = _lattice_rate(points, spacing, lattice_deg, phase)
+    return grid_properties(
+        spatial_autocorrelation(env, rate), pixel_size=autocorrelation_pixel_size(env)
+    )
+
+
+class TestIdealHexagonalLattices:
+    """Ideal grid cells score as grid cells whatever the arena and spacing."""
+
+    @pytest.mark.parametrize("sides", [(100, 100), (160, 80), (80, 160), (120, 120)])
+    @pytest.mark.parametrize("spacing", [30.0, 40.0, 50.0, 60.0])
+    def test_score_scale_and_orientation(self, sides, spacing) -> None:
+        rng = np.random.default_rng([sides[0], sides[1], int(spacing)])
+        lattice_deg = rng.uniform(0.0, 60.0)
+        phase = rng.uniform(0.0, 60.0, 2)
+        bin_size = 2.5
+
+        properties = _lattice_properties(sides, bin_size, spacing, lattice_deg, phase)
+        transposed = _lattice_properties(
+            sides, bin_size, spacing, lattice_deg, phase, transpose=True
+        )
+
+        assert properties.score > 0.4
+        assert abs(properties.scale - spacing) <= bin_size
+        error = abs(np.degrees(properties.orientation) - lattice_deg) % 60.0
+        assert min(error, 60.0 - error) < 3.0
+        np.testing.assert_allclose(transposed.score, properties.score, atol=1e-6)
+
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 3.0, 4.0, 5.0])
+    def test_scale_does_not_depend_on_the_bin_size(self, bin_size) -> None:
+        spacing = 30.0
+        properties = _lattice_properties((120, 120), bin_size, spacing, 17.0, (5, 9))
+
+        assert properties.score > 0.4
+        assert abs(properties.scale - spacing) <= bin_size
+
+
+class TestPeakArguments:
+    """Invalid peak-search arguments raise instead of returning no peaks."""
+
+    @pytest.mark.parametrize(
+        ("kwargs", "error", "match"),
+        [
+            ({"n_peaks": 2}, ValueError, "n_peaks must be >= 3"),
+            ({"n_peaks": 6.5}, TypeError, "n_peaks must be an integer"),
+            ({"threshold_rel": -1.0}, ValueError, r"threshold_rel must be in \[0, 1\)"),
+            ({"threshold_rel": 1.0}, ValueError, r"threshold_rel must be in \[0, 1\)"),
+            ({"pixel_size": 0.0}, ValueError, "autocorrelation_pixel_size"),
+        ],
+    )
+    def test_invalid_arguments_raise(self, kwargs, error, match) -> None:
+        from neurospatial.encoding.grid import grid_properties, grid_scale
+
+        autocorr = _create_hexagonal_autocorr(size=101)
+        arguments = {"pixel_size": 2.0, **kwargs}
+        with pytest.raises(error, match=match):
+            grid_scale(autocorr, **arguments)
+        with pytest.raises(error, match=match):
+            grid_properties(autocorr, **arguments)

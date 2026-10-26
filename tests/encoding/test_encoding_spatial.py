@@ -926,8 +926,11 @@ class TestSpatialRateResultGridProperties:
         grid_cell_firing_rate: NDArray[np.float64],
     ) -> None:
         """grid_properties() should delegate to grid.grid_properties()."""
+        from neurospatial.encoding.grid import (
+            autocorrelation_pixel_size,
+            spatial_autocorrelation,
+        )
         from neurospatial.encoding.grid import grid_properties as gp_func
-        from neurospatial.encoding.grid import spatial_autocorrelation
         from neurospatial.encoding.spatial import SpatialRateResult
 
         occ = np.ones(regular_grid_env.n_bins, dtype=np.float64)
@@ -941,11 +944,13 @@ class TestSpatialRateResultGridProperties:
 
         # Compute expected value using direct call to grid module
         autocorr = spatial_autocorrelation(regular_grid_env, grid_cell_firing_rate)
-        bin_size = float(np.min(regular_grid_env.bin_sizes))
-        expected = gp_func(autocorr, bin_size=bin_size)
+        expected = gp_func(
+            autocorr, pixel_size=autocorrelation_pixel_size(regular_grid_env)
+        )
 
         props = result.grid_properties()
         assert props.score == pytest.approx(expected.score)
+        assert props.scale == pytest.approx(expected.scale, nan_ok=True)
 
 
 class TestSpatialRateResultBorderScore:

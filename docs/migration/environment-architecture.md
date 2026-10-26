@@ -1340,11 +1340,13 @@ assert set(arm[east]) == {1}
 
 ## Grid analyses on layouts without square lags raise `NotImplementedError`
 
-The FFT autocorrelogram behind grid scores needs a 2-D grid of rectangular
+The autocorrelogram behind grid scores needs a 2-D grid of rectangular
 cells, one width along each axis. `spatial_autocorrelation` used to raise
-`ValueError` for tracks, meshes and sparse grids, and accepted hexagonal
-environments with wrong results. It now raises `NotImplementedError` for all
-of them, naming `spatial_autocorrelation_radial`, which works on every layout.
+`ValueError` for tracks and meshes, and accepted hexagonal environments with
+wrong results. It now raises `NotImplementedError` for all of them, naming
+`spatial_autocorrelation_radial`, which works on every layout. Grids with
+many inactive cells are accepted: inactive cells are left out of each lag
+like unvisited bins.
 Polar environments raise `CartesianOnlyError` (a `TypeError`), here and for
 wall-based measures such as `border_score`:
 
@@ -1364,8 +1366,11 @@ except NotImplementedError:
     distances, correlations = spatial_autocorrelation_radial(track, rate)
 ```
 
-Rate-map `grid_score()` and `summary_table()` report NaN on these
-environments, as before for tracks and meshes.
+Rate-map `grid_score()`, `grid_scores()` and `batch_grid_scores()` raise the
+same `NotImplementedError` on these environments. `summary_table()` reports a
+NaN grid score, explains it in `attrs["unavailable_metrics"]["grid_score"]`,
+and labels a spatially tuned cell `"undetermined"` rather than `"place"`,
+since it could be a grid cell.
 
 ## Grid orientation is in radians, in the environment's frame
 
@@ -1392,7 +1397,7 @@ open_field = np.random.default_rng(0).uniform(0, 100, size=(5000, 2))  # x, y in
 arena = Environment.from_samples(open_field, bin_size=2.0, units="cm")
 cell = GridCellModel(arena, grid_spacing=30.0, grid_orientation=np.radians(20.0))
 autocorr = spatial_autocorrelation(arena, cell.firing_rate(arena.bin_centers))
-properties = grid_properties(autocorr, bin_size=autocorrelation_pixel_size(arena))
+properties = grid_properties(autocorr, pixel_size=autocorrelation_pixel_size(arena))
 # Before: the lattice sat at 50° (grid_orientation set the plane waves), and
 # properties.orientation reported it reflected about 45°, in degrees
 assert abs(np.degrees(properties.orientation) - 20.0) < 2.0

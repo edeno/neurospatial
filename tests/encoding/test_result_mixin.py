@@ -252,7 +252,6 @@ class TestRetrofittedResultSummaries:
                     orientation=0.3,
                     orientation_std=0.05,
                     peak_coords=np.zeros((6, 2)),
-                    n_peaks=6,
                 ),
                 {"score", "scale", "orientation", "n_peaks"},
             ),

@@ -97,7 +97,6 @@ from neurospatial.encoding.grid import (
     grid_properties,
     grid_scale,
     grid_score,
-    periodicity_score,
     spatial_autocorrelation,
 )
 
@@ -206,7 +205,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "grid_properties",
     "grid_scale",
     "grid_score",
-    "periodicity_score",
     "spatial_autocorrelation",
     # Head direction cell analysis
     "is_head_direction_cell",

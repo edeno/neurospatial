@@ -561,9 +561,6 @@ def batch_sparsity(
 def batch_grid_scores(
     env: Environment,
     firing_rates: NDArray[np.float64],
-    *,
-    inner_radius_fraction: float = 0.2,
-    outer_radius_fraction: float = 0.5,
 ) -> BatchScoresResult:
     """Compute grid scores for multiple neurons.
 
@@ -574,25 +571,20 @@ def batch_grid_scores(
     Parameters
     ----------
     env : Environment
-        Spatial environment containing bin centers and connectivity.
-        Must be a regular 2D grid for FFT-based autocorrelation.
+        Environment with a regular 2D grid of rectangular cells, as
+        :func:`~neurospatial.encoding.grid.spatial_autocorrelation` requires.
     firing_rates : ndarray, shape (n_neurons, n_bins)
         Firing rate maps for each neuron in Hz.
-    inner_radius_fraction : float, default=0.2
-        Inner radius of annular region as fraction of autocorrelogram semi-axis.
-        See :func:`~neurospatial.encoding.grid.grid_score` for details.
-    outer_radius_fraction : float, default=0.5
-        Outer radius of annular region as fraction of autocorrelogram semi-axis.
-        See :func:`~neurospatial.encoding.grid.grid_score` for details.
 
     Returns
     -------
     BatchScoresResult
         Container with two parallel arrays of length ``n_neurons``:
 
-        - ``scores``: grid scores in range [-2, 2]. NaN where grid score
-          cannot be computed (constant firing, invalid autocorrelation,
-          non-regular grid environment, or a caught exception).
+        - ``scores``: grid scores in range [-2, 2]. NaN where the grid
+          score is undefined for that map (all-NaN or constant firing, no
+          central autocorrelogram peak bounded inside the map) or where a
+          caught exception occurred.
         - ``failures``: boolean mask, ``True`` for neurons whose
           computation raised an exception that was caught and converted
           to NaN. Use this to distinguish "score is NaN for legitimate
@@ -607,6 +599,13 @@ def batch_grid_scores(
     ValueError
         If firing_rates is not 2D.
         If firing_rates.shape[1] != env.n_bins.
+    NotImplementedError
+        If ``env`` has no regular 2D grid of rectangular cells (hexagonal,
+        mesh, track or 3D layouts, or uneven cells), exactly as
+        :func:`~neurospatial.encoding.grid.spatial_autocorrelation` refuses
+        it.
+    CartesianOnlyError
+        If ``env`` is polar.
 
     Notes
     -----
@@ -620,11 +619,6 @@ def batch_grid_scores(
     - **score > 0.4**: Strong hexagonal grid (typical threshold for grid cells)
     - **score ≈ 0**: No hexagonal structure (place cells, non-spatial cells)
     - **score < 0**: Anti-hexagonal structure (rare)
-
-    **Environment requirements**:
-
-    Grid score computation requires a regular 2D grid environment for FFT-based
-    autocorrelation. For irregular environments, the function returns NaN.
 
     Examples
     --------
@@ -668,37 +662,16 @@ def batch_grid_scores(
             f"env has {env.n_bins} bins"
         )
 
-    # API-level validation: invalid radius fractions are programmer
-    # errors, not per-neuron failures. Raise once before the loop so the
-    # ValueError reaches the caller rather than being swallowed into
-    # ``failures=True`` for every neuron. Mirrors the validation
-    # ``grid_score`` does internally.
-    if not (0 < inner_radius_fraction < 1):
-        raise ValueError(
-            f"inner_radius_fraction must be in (0, 1), got {inner_radius_fraction}"
-        )
-    if not (inner_radius_fraction < outer_radius_fraction <= 1):
-        raise ValueError(
-            f"outer_radius_fraction must be in (inner_radius_fraction, 1], "
-            f"got {outer_radius_fraction} with inner={inner_radius_fraction}"
-        )
-
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
     failures = np.zeros(n_neurons, dtype=np.bool_)
 
-    # Environment-level legitimate-NaN: grid score requires a regular 2D
-    # grid (the FFT autocorrelation path). On irregular topologies we
-    # short-circuit every neuron to NaN with failures=False rather than
-    # spending O(n_neurons) computation re-deriving the same env-level
-    # ValueError. Callers who want a 1D distance-correlation profile
-    # should use `spatial_autocorrelation_radial` directly and feed the
-    # result into `periodicity_score`.
-    from neurospatial.encoding.grid import _detect_grid_method
+    # The environment either has a rectangular lag grid or has no grid score
+    # at all; refuse once, as spatial_autocorrelation does, rather than
+    # returning NaN scores that read as "not a grid cell".
+    from neurospatial.encoding.grid import _require_rectangular_grid
 
-    if _detect_grid_method(env) != "fft":
-        scores.fill(np.nan)
-        return BatchScoresResult(scores=scores, failures=failures)
+    _require_rectangular_grid(env, "batch_grid_scores()")
 
     for i in range(n_neurons):
         firing_rate = firing_rates[i]
@@ -720,11 +693,7 @@ def batch_grid_scores(
 
         try:
             autocorr = spatial_autocorrelation(env, firing_rate)
-            scores[i] = grid_score(
-                autocorr,
-                inner_radius_fraction=inner_radius_fraction,
-                outer_radius_fraction=outer_radius_fraction,
-            )
+            scores[i] = grid_score(autocorr)
         except (ValueError, RuntimeError):
             # Caught exception: record both NaN and the failure flag so
             # the caller can distinguish this from a legitimate-NaN.
