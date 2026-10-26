@@ -70,7 +70,7 @@ References
 
 See Also
 --------
-neurospatial.visibility : Visibility and gaze computation
+neurospatial.ops.visibility : Visibility and gaze computation
 neurospatial.ops.egocentric : Coordinate transformations
 PlaceCellModel : Position-based place fields
 ObjectVectorCellModel : Object-distance tuned cells

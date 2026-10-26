@@ -2,25 +2,8 @@
 
 Provides tools for computing what an animal can see from any position in
 an environment, including field-of-view constraints, line-of-sight checks,
-and viewshed analysis.
-
-Import Paths
-------------
-After package reorganization (v0.4.0+), use::
-
-    from neurospatial.ops.visibility import (
-        FieldOfView,
-        ViewshedResult,
-        compute_viewed_location,
-        compute_viewshed,
-        compute_view_field,
-        compute_viewshed_trajectory,
-        visibility_occupancy,
-        visible_cues,
-    )
-
-    # Or import from the ops package
-    from neurospatial.ops import FieldOfView, compute_viewshed
+and viewshed analysis. Import from ``neurospatial.ops.visibility`` or
+``neurospatial.ops``.
 
 Common Use Cases
 ----------------
@@ -33,10 +16,13 @@ Which Function Should I Use?
 ----------------------------
 **Computing viewed location from gaze direction?**
     Use ``compute_viewed_location()`` with method="fixed_distance" for a
-    point at fixed distance, or method="ray_cast" for boundary intersection.
+    point at fixed distance, or method="ray_cast" for the first wall along
+    the gaze.
 
 **Need full visibility analysis from a position?**
-    Use ``compute_viewshed()`` to get all visible bins, boundaries, and cues.
+    Use ``compute_viewshed()`` to get the visible bins and cues. A bin is
+    visible when its center is inside the field of view with a clear line of
+    sight.
 
 **Just need a binary visibility mask?**
     Use ``compute_view_field()`` for a simple bool array of visible bins.
@@ -51,9 +37,9 @@ Species-Specific Field of View
 ------------------------------
 Use ``FieldOfView`` presets for biologically realistic constraints:
 
-- ``FieldOfView.rat()`` - ~300 degree FOV with blind spot behind
-- ``FieldOfView.mouse()`` - Similar to rat
-- ``FieldOfView.primate()`` - ~180 degree forward-facing FOV
+- ``FieldOfView.rat()`` - 320 degree FOV with a 40 degree blind spot behind
+- ``FieldOfView.mouse()`` - 310 degree FOV, similar to rat
+- ``FieldOfView.primate()`` - 180 degree forward-facing FOV
 
 Coordinate Conventions
 ----------------------
@@ -61,7 +47,7 @@ Coordinate Conventions
 - 0 radians = directly ahead
 - pi/2 radians = to the left
 - -pi/2 radians = to the right
-- +/-pi radians = behind
+- +/-pi radians = behind (reported as +pi)
 
 This matches the convention in ``neurospatial.ops.egocentric``.
 
@@ -76,7 +62,7 @@ References
 See Also
 --------
 neurospatial.ops.egocentric : Egocentric coordinate transforms
-neurospatial.spatial_view_field : Spatial view field computation
+neurospatial.encoding.compute_view_rate : Firing rate by viewed location
 """
 
 from __future__ import annotations
@@ -751,53 +737,6 @@ def _check_samples(
         )
 
 
-def _ray_cast_to_boundary(
-    env: BinningConsumer,
-    origin: NDArray[np.float64],
-    direction: float,
-    max_distance: float = 100.0,
-    n_steps: int = 100,
-    *,
-    boundary_source: Literal["physical", "analysis"] = "physical",
-) -> NDArray[np.float64] | None:
-    """Cast a ray from origin in direction until it exits the environment.
-
-    Uses exact geometric intersection; n_steps is retained for compatibility.
-
-    Parameters
-    ----------
-    env : Environment
-        The environment to ray cast within.
-    origin : NDArray[np.float64], shape (2,)
-        Starting position.
-    direction : float
-        Direction in radians (0=East).
-    max_distance : float
-        Maximum distance to search.
-    n_steps : int
-        Retained for compatibility; geometric intersections do not use steps.
-
-    boundary_source : {'physical', 'analysis'}, default='physical'
-        Declared physical walls, or explicitly requested analysis-cell boundaries.
-        Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray.
-
-    Returns
-    -------
-    NDArray[np.float64] or None
-        Intersection point, or None if no intersection found.
-    """
-    viewed = compute_viewed_location(
-        np.asarray(origin).reshape(1, 2),
-        np.array([direction]),
-        method="ray_cast",
-        env=env,
-        max_distance=max_distance,
-        boundary_source=boundary_source,
-    )
-    return None if not np.all(np.isfinite(viewed[0])) else viewed[0]
-
-
 def compute_viewshed(
     env: BinningConsumer,
     position: NDArray[np.float64],
@@ -1204,18 +1143,26 @@ def visible_cues(
     >>> from neurospatial import Environment
     >>> from neurospatial.ops.visibility import visible_cues
 
-    Create environment and check cue visibility:
+    A box with a wall at x = 50 from y = 20 to y = 80; the animal is west of
+    the wall, facing East:
 
-    >>> positions = np.random.rand(100, 2) * 100
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> cues = np.array([[50, 50], [80, 20]])  # 2 cues
+    >>> from shapely.geometry import LineString, box
+    >>> from neurospatial.arena import OpenArena
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((10, 10), dtype=bool),
+    ...     grid_edges=(np.arange(0.0, 101.0, 10.0),) * 2,
+    ...     arena=OpenArena(
+    ...         box(0, 0, 100, 100), walls=(LineString([(50, 20), (50, 80)]),)
+    ...     ),
+    ... )
+    >>> cues = np.array([[40.0, 50.0], [80.0, 50.0], [10.0, 50.0]])
     >>> visible, distances, bearings = visible_cues(
-    ...     env,
-    ...     position=np.array([25, 25]),
-    ...     heading=0.0,
-    ...     cue_positions=cues,
-    ...     boundary_source="analysis",
-    ... )  # doctest: +SKIP
+    ...     env, np.array([25.0, 50.0]), 0.0, cues, fov=np.pi
+    ... )
+    >>> visible.tolist()  # ahead; behind the wall; behind the animal
+    [True, False, False]
+    >>> distances.round(1).tolist()
+    [15.0, nan, nan]
     """
     position = _observer(position)
     _require_observation("visible_cues", position, heading)
