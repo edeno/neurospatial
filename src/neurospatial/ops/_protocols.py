@@ -135,6 +135,13 @@ class CenterTreeConsumer(Protocol):
     def bin_center_tree(self) -> cKDTree: ...
 
 
+class BinSpacingConsumer(Protocol):
+    """The environment's typical distance between neighboring bins."""
+
+    @property
+    def bin_spacing(self) -> float: ...
+
+
 class BinLookupConsumer(Protocol):
     """The bin each point lies in, -1 outside, by the environment's own rule."""
 
@@ -207,15 +214,21 @@ class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
     def bin_sizes(self) -> NDArray[np.float64]: ...
 
 
-class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Protocol):
-    """Diffusion geometry, cell faces and graph for heat-kernel and Chebyshev bases."""
+class WaveletBasisConsumer(
+    BasisCentersConsumer, DiffusionGeometryConsumer, BinSpacingConsumer, Protocol
+):
+    """Diffusion geometry, cell faces, graph and bin spacing for wavelet bases."""
 
     @property
     def binning(self) -> Binning: ...
 
 
 class ProbabilityTargetConsumer(
-    CartesianBinsConsumer, CenterTreeConsumer, BinLookupConsumer, Protocol
+    CartesianBinsConsumer,
+    CenterTreeConsumer,
+    BinLookupConsumer,
+    BinSpacingConsumer,
+    Protocol,
 ):
     """Cartesian bins that receive probabilities from their nearest centers.
 

@@ -34,7 +34,6 @@ from neurospatial._constants import IDW_MIN_DISTANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._validation import is_positive_integer
 from neurospatial.geometry import require_cartesian
-from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
@@ -623,7 +622,7 @@ def map_probabilities(
     # silent all-zero map.
     nearest_distance, nearest = tree.query(src_centers, k=1)
     if max_distance is None:
-        spacing = _estimate_typical_bin_spacing(tree, target_env.bin_centers)
+        spacing = target_env.bin_spacing
         beyond = nearest_distance > spacing
         # A center inside a target bin belongs to it however elongated the
         # bin; only the rest needs the target's containment test.

@@ -127,14 +127,7 @@ def _projection(env: Environment, track: Environment) -> Any:
     _, nearest = track.bin_center_tree().query(env.bin_centers)
     empty = 1.0 - len(np.unique(nearest)) / track.n_bins
     if empty > 0.1:
-        from neurospatial.ops import _typical_bin_spacing
-
-        spacing = _typical_bin_spacing(
-            env.bin_centers,
-            env.bin_sizes,
-            is_linearized_track=env.is_linearized_track,
-            tree=env.bin_center_tree(),
-        )
+        spacing = env.bin_spacing
         warnings.warn(
             _format_error(
                 f"{empty:.0%} of the track's bins are nearest to no 2-D bin, so "

@@ -48,77 +48,6 @@ TieBreakStrategy: TypeAlias = Literal["lowest_index", "closest_center"]
 _TIE_BREAKS: tuple[TieBreakStrategy, ...] = ("lowest_index", "closest_center")
 
 
-def _estimate_typical_bin_spacing(
-    kdtree: cKDTree, bin_centers: NDArray[np.float64]
-) -> float:
-    """Estimate typical bin spacing using deterministic quantile-based sampling.
-
-    Parameters
-    ----------
-    kdtree : cKDTree
-        KD-tree built from bin centers.
-    bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
-        Coordinates of all bin centers.
-
-    Returns
-    -------
-    typical_spacing : float
-        Median nearest-neighbor distance, estimated from sample of bins.
-        Returns np.inf if there is only one bin.
-
-    Notes
-    -----
-    Uses deterministic quantile-based sampling for reproducibility, selecting
-    up to 100 evenly-spaced bin indices.
-    """
-    if len(bin_centers) <= 1:
-        return np.inf
-
-    sample_size = min(100, len(bin_centers))
-    # Deterministic quantile-based sampling (not random)
-    sample_indices = np.linspace(0, len(bin_centers) - 1, sample_size, dtype=int)
-    sample_centers = bin_centers[sample_indices]
-    nn_dists, _ = kdtree.query(sample_centers, k=2, workers=-1)
-    return float(np.median(nn_dists[:, 1]))
-
-
-def _typical_bin_spacing(
-    bin_centers: NDArray[np.float64],
-    bin_sizes: NDArray[np.float64],
-    *,
-    is_linearized_track: bool,
-    tree: cKDTree,
-) -> float:
-    """Typical distance between neighbouring bins, measured along the space.
-
-    On a linearized track this is the median bin length along the track
-    (``bin_sizes``): Euclidean nearest neighbours can lie on another arm
-    of the track. Otherwise it is the median nearest-neighbour distance
-    between bin centres, which equals ``bin_size`` on a regular grid.
-
-    Parameters
-    ----------
-    bin_centers : ndarray of float64, shape (n_bins, n_dims)
-        Bin centers, ``env.bin_centers``.
-    bin_sizes : ndarray of float64, shape (n_bins,)
-        Bin measures, ``env.bin_sizes``.
-    is_linearized_track : bool
-        Whether the bins lie along a linearized track,
-        ``env.is_linearized_track``.
-    tree : scipy.spatial.cKDTree
-        KD-tree over ``bin_centers``, ``env.bin_center_tree()``.
-
-    Returns
-    -------
-    float
-        The spacing; ``np.inf`` for a single-bin environment that is not a
-        track.
-    """
-    if is_linearized_track:
-        return float(np.median(bin_sizes))
-    return _estimate_typical_bin_spacing(tree, bin_centers)
-
-
 def _validate_nearest_options(
     tie_break: TieBreakStrategy,
     max_distance: float | None,
@@ -158,7 +87,6 @@ def _nearest_bin_query(
     tie_break: TieBreakStrategy = ...,
     return_dist: Literal[False] = ...,
     max_distance: float | None = ...,
-    max_distance_factor: float | None = ...,
 ) -> NDArray[np.int64]: ...
 @overload
 def _nearest_bin_query(
@@ -169,7 +97,6 @@ def _nearest_bin_query(
     tie_break: TieBreakStrategy = ...,
     return_dist: bool,
     max_distance: float | None = ...,
-    max_distance_factor: float | None = ...,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
 def _nearest_bin_query(
     bin_centers: NDArray[np.float64],
@@ -179,7 +106,6 @@ def _nearest_bin_query(
     tie_break: TieBreakStrategy = "lowest_index",
     return_dist: bool = False,
     max_distance: float | None = None,
-    max_distance_factor: float | None = None,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
     """Query explicit centers and their tree using validated distance controls.
 
@@ -202,20 +128,9 @@ def _nearest_bin_query(
         nearest, distances = _nearest_lowest_index(kdtree, points)
         bin_indices = nearest.astype(np.int64)
 
-    # Check if any points are outside the environment based on distance threshold
-    if max_distance is not None or max_distance_factor is not None:
-        # Explicit distance threshold provided
-        if max_distance is not None:
-            threshold = max_distance
-        else:
-            # Estimate typical bin spacing and apply factor
-            # assert: max_distance_factor is not None (checked above)
-            assert max_distance_factor is not None  # for mypy
-            typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, bin_centers)
-            threshold = max_distance_factor * typical_bin_spacing
-
-        # Mark points beyond threshold as outside
-        bin_indices[distances > threshold] = -1
+    # Points farther than max_distance from every center are outside.
+    if max_distance is not None:
+        bin_indices[distances > max_distance] = -1
 
     if return_dist:
         # Set distance to inf for points outside environment

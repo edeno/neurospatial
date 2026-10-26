@@ -116,8 +116,6 @@ if TYPE_CHECKING:
         analysis_interior(binning, arena)(centers)
         valid_observers(binning, arena, centers, "physical")
         line_of_sight_clear(binning, arena, centers[0], centers[1])
-        _diffusion_generator(
-            centers, env.bin_center_tree(), env.get_diffusion_geometry()
-        )
+        _diffusion_generator(env.get_diffusion_geometry(), env.bin_spacing)
         boundary_geometry(env, "analysis")  # type: ignore[call-arg, arg-type]
         line_of_sight_clear(env, centers[0], centers[1])  # type: ignore[call-arg, arg-type]

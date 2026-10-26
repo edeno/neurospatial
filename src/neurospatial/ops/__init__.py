@@ -134,7 +134,6 @@ from neurospatial.ops.graph import (
 from neurospatial.ops.mapping import TieBreakStrategy, regions_to_mask, resample_field
 from neurospatial.ops.mapping import _nearest_bin_query as _nearest_bin_query
 from neurospatial.ops.mapping import _regions_mask as _regions_mask
-from neurospatial.ops.mapping import _typical_bin_spacing as _typical_bin_spacing
 from neurospatial.ops.mapping import (
     _validate_nearest_options as _validate_nearest_options,
 )

@@ -730,18 +730,16 @@ def geodesic_rbf_basis(
 
 
 def _diffusion_generator(
-    bin_centers: NDArray[np.float64], tree: cKDTree, geometry: DiffusionGeometry
+    geometry: DiffusionGeometry, spacing: float
 ) -> sparse.csr_matrix:
     """Finite-volume generator in bin-spacing² units, as used by env.smooth.
 
     Parameters
     ----------
-    bin_centers : ndarray of float64, shape (n_bins, n_dims)
-        Bin centers, for the typical bin spacing.
-    tree : scipy.spatial.cKDTree
-        The environment's KD-tree over ``bin_centers``.
     geometry : DiffusionGeometry
-        Conductances ``W`` and cell volumes of the same bins.
+        Conductances ``W`` and cell volumes of the bins.
+    spacing : float
+        The bins' typical spacing, ``env.bin_spacing``.
 
     Returns
     -------
@@ -749,9 +747,7 @@ def _diffusion_generator(
         ``spacing**2 * M**-1 (Deg - W)``.
     """
     from neurospatial.ops.diffusion import _generator
-    from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
-    spacing = _estimate_typical_bin_spacing(tree, bin_centers)
     return spacing**2 * _generator(geometry.W, geometry.volumes)
 
 
@@ -830,7 +826,7 @@ def heat_kernel_wavelet_basis(
 
     **Laplacian weighting**: Uses the finite-volume generator of
     ``env.smooth`` (shared-face measure over center distance, divided by cell
-    volume), scaled by the squared median nearest-neighbor bin spacing.
+    volume), scaled by the squared bin spacing, ``env.bin_spacing``.
     Spread is isotropic on a uniform Cartesian grid and expressed in bin units.
 
     **Comparison with geodesic RBF**:
@@ -881,16 +877,7 @@ def heat_kernel_wavelet_basis(
         )
 
     _require_faces(env, "heat_kernel_wavelet_basis")
-    # Bin spacing is a physical length: on a polar environment it comes from
-    # the centers' Cartesian embedding, not from (distance, angle) rows.
-    if env.coordinate_system.kind == "cartesian":
-        places, tree = env.bin_centers, env.bin_center_tree()
-    else:
-        from scipy.spatial import cKDTree
-
-        places = env.coordinate_system.cartesian_embedding(env.bin_centers)
-        tree = cKDTree(places)
-    laplacian = _diffusion_generator(places, tree, env.get_diffusion_geometry())
+    laplacian = _diffusion_generator(env.get_diffusion_geometry(), env.bin_spacing)
 
     # exp(-s L) @ delta for each scale, without forming exp(-s L).
     # Shape: (n_scales, n_bins, n_centers)

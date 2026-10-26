@@ -1313,6 +1313,9 @@ _POLAR_INHERITED_MEMBERS = {
     "nearest-bin lookup in the egocentric Cartesian embedding": {
         "nearest_bin",
     },
+    "bin spacing measured between places in the egocentric plane": {
+        "bin_spacing",
+    },
     "containment of (distance, angle) rows, angles wrapped to the range": {
         "bin_at",
         "bin_sequence",

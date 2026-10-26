@@ -22,6 +22,19 @@ Results that change:
   instead of its own copy of that lookup, so it refuses a field with an
   infinite value, for both methods, as `interpolate` does. Finite fields
   resample to identical values.
+- New `Environment.bin_spacing`: the typical distance between neighboring
+  bins, in the environment's units, computed once over every bin and cached.
+  On a linearized track it is the median bin length along the track; on an
+  egocentric polar environment it is measured between places in the animal's
+  plane. Every default scaled by "a bin spacing" now reads it:
+  `nearest_bin(max_distance_factor=)`, `map_probabilities`' default limit,
+  the heat-kernel wavelet basis, simulated place-field widths and
+  `validate_simulation`'s `max_center_error`. On a polar environment
+  `validate_simulation`, the track-animation warning and fastplotlib point
+  sizes measured (distance, angle) rows, so the angle bin in radians (0.39
+  for a pi/8 bin) stood in for a length; on a track `max_distance_factor`
+  and the wavelet basis used straight-line neighbors, which can lie on
+  another arm.
 - `stats.wrap_angle` returns its documented (-π, π]: a half-turn either way
   is now +π, not -π. Egocentric bearings use the same function, so the
   value just above π, which rounded to -π, now also stays at +π.

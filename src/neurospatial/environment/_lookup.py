@@ -7,7 +7,12 @@ from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
-from neurospatial.environment._cache import EMBEDDED_KDTREE, KDTREE, AnalysisCache
+from neurospatial.environment._cache import (
+    BIN_SPACING,
+    EMBEDDED_KDTREE,
+    KDTREE,
+    AnalysisCache,
+)
 from neurospatial.geometry import (
     Binning,
     CartesianSystem,
@@ -46,6 +51,8 @@ def nearest_bin(
         points, binning.bins.n_dims, call="Environment.nearest_bin"
     )
     _validate_nearest_options(tie_break, max_distance, max_distance_factor)
+    if max_distance_factor is not None:
+        max_distance = max_distance_factor * bin_spacing(cache, binning, coordinates)
     if coordinates.kind == "polar":
         centers, tree = cache.get(
             EMBEDDED_KDTREE, lambda: _embedded_tree(binning, coordinates)
@@ -66,7 +73,6 @@ def nearest_bin(
             tie_break=tie_break,
             return_dist=return_dist,
             max_distance=max_distance,
-            max_distance_factor=max_distance_factor,
         )
 
     array = np.asarray(points)
@@ -95,6 +101,38 @@ def _embedded_tree(
     embedded = coordinates.cartesian_embedding(binning.bins.centers)
     embedded.setflags(write=False)
     return embedded, cKDTree(embedded, leafsize=KDTREE_LEAF_SIZE)
+
+
+def bin_spacing(
+    cache: AnalysisCache,
+    binning: Binning,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+) -> float:
+    """Return the environment's cached typical distance between neighboring bins.
+
+    On a linearized track it is the median bin length along the track, since
+    the nearest bin center can lie on another arm. Otherwise it is the median,
+    over every bin, of the distance from a bin's center to its nearest other
+    center, measured between places: polar (distance, angle) centers are first
+    placed in the animal's Cartesian plane. ``inf`` for a single bin off a
+    track, which has no neighbor.
+    """
+
+    def build() -> float:
+        if binning.linearization is not None:
+            return float(np.median(binning.bins.sizes))
+        if binning.bins.n_bins < 2:
+            return float(np.inf)
+        if coordinates.kind == "polar":
+            places, tree = cache.get(
+                EMBEDDED_KDTREE, lambda: _embedded_tree(binning, coordinates)
+            )
+        else:
+            places, tree = binning.bins.centers, center_tree(cache, binning)
+        distances, _ = tree.query(places, k=2, workers=-1)
+        return float(np.median(distances[:, 1]))
+
+    return cache.get(BIN_SPACING, build)
 
 
 def center_tree(cache: AnalysisCache, binning: Binning) -> cKDTree:

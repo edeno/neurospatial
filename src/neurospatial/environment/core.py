@@ -63,7 +63,7 @@ from neurospatial.environment._fields import (
     require_face_geometry,
     smoothing_geometry,
 )
-from neurospatial.environment._lookup import center_tree, nearest_bin
+from neurospatial.environment._lookup import bin_spacing, center_tree, nearest_bin
 from neurospatial.environment._metrics import (
     _bin_attributes,
     _blocked_edges,
@@ -364,6 +364,38 @@ class Environment(Generic[_C]):
         declared ranges, such as explicit point bins.
         """
         return self._binning.dimension_ranges
+
+    @property
+    def bin_spacing(self) -> float:
+        """Typical distance between neighboring bins, in the environment's units.
+
+        The one length scale of the bins that default thresholds and widths
+        are expressed in (a place field 3 bin spacings wide, a mapped point at
+        most one bin spacing from the target bins). On a linearized track it
+        is the median bin length along the track, because the nearest bin
+        center can lie on another arm. Otherwise it is the median, over every
+        bin, of the distance from a bin's center to its nearest other center:
+        ``bin_size`` on a regular or hexagonal grid. On an egocentric polar
+        environment the distances are measured between places in the animal's
+        plane, not between (distance, angle) rows. A single bin off a track
+        has no neighbor, so its spacing is ``inf``.
+
+        Computed on first use and kept in the analysis cache.
+
+        Returns
+        -------
+        float
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.uniform(0, 50, (2000, 2)), bin_size=5.0)
+        >>> env.bin_spacing
+        5.0
+        """
+        return bin_spacing(self._cache, self._binning, self._geometry.coordinates)
 
     @property
     def grid_edges(self) -> tuple[NDArray[np.float64], ...]:
@@ -1458,8 +1490,8 @@ class Environment(Generic[_C]):
             Maximum distance, in length units; rejected points return bin
             ID -1.
         max_distance_factor : float or None, optional
-            Maximum distance as a multiple of typical center spacing. Cannot
-            be combined with max_distance. Without either limit every finite
+            Maximum distance as a multiple of ``bin_spacing``. Cannot be
+            combined with max_distance. Without either limit every finite
             point gets its nearest bin, however far away; use bin_at() or
             contains() to ask whether a point is inside the environment.
 

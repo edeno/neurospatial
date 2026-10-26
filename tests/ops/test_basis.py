@@ -40,12 +40,9 @@ def test_heat_kernel_uses_smooth_generator(fv_env):
     from scipy.sparse.linalg import expm_multiply
     from scipy.spatial import cKDTree
 
-    from neurospatial.ops.mapping import _estimate_typical_bin_spacing
-
     weights, volumes, _, _ = fv_env._diffusion_geometry
-    spacing = _estimate_typical_bin_spacing(
-        cKDTree(fv_env.bin_centers), fv_env.bin_centers
-    )
+    distances, _ = cKDTree(fv_env.bin_centers).query(fv_env.bin_centers, k=2)
+    spacing = np.median(distances[:, 1])
     generator = (
         spacing**2
         * sparse.diags(1 / volumes)

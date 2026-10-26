@@ -29,6 +29,14 @@ class MockEnvironment:
     def bin_center_tree(self):
         return cKDTree(self.bin_centers)
 
+    @property
+    def bin_spacing(self):
+        """Median nearest-neighbor distance, as Environment.bin_spacing."""
+        if self.n_bins < 2:
+            return np.inf
+        distances, _ = cKDTree(self.bin_centers).query(self.bin_centers, k=2)
+        return float(np.median(distances[:, 1]))
+
 
 class TestGet2dRotationMatrix:
     """get_2d_rotation_matrix takes radians, like every angle in the package."""
