@@ -76,7 +76,13 @@ def egocentric_batch():
     object_positions = np.array([[50.0, 50.0]])
     spike_times = [np.sort(rng.uniform(0, 100, k)) for k in (100, 150, 50)]
     return compute_egocentric_rates(
-        None, spike_times, times, positions, headings, object_positions
+        None,
+        spike_times,
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=(0.0, 50.0),
     )
 
 
@@ -87,7 +93,7 @@ def boundary_batch():
     from neurospatial.encoding import compute_boundary_vector_rates
 
     rng = np.random.default_rng(0)
-    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
+    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
     times = np.linspace(0, 100, 1000)
     positions = rng.uniform(10, 90, (1000, 2))
     headings = rng.uniform(-np.pi, np.pi, 1000)

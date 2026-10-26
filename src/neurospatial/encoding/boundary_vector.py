@@ -56,7 +56,12 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._observation import validate_break_before
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
-from neurospatial.encoding._polar_results import _PolarRateMixin, polar_summary_frame
+from neurospatial.encoding._polar_results import (
+    _PolarRateMixin,
+    polar_summary_frame,
+    require_known_bandwidth,
+    resolve_distance_range,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -529,7 +534,7 @@ def compute_boundary_vector_rates(
     headings: NDArray[np.float64] | None = None,
     *,
     direction_frame: Literal["allocentric", "egocentric"],
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     boundary_source: BoundarySource = "physical",
@@ -563,9 +568,11 @@ def compute_boundary_vector_rates(
         North); ``"egocentric"`` for egocentric boundary cells (0 = ahead,
         +pi/2 = left). There is no default: the two maps answer different
         questions.
-    distance_range : tuple of float, default=(0.0, 50.0)
+    distance_range : tuple of float or None, default=None
         (min, max) distance to a wall, in the environment's units. A wall
         farther along a ray than the maximum adds nothing for that ray.
+        None uses 0-50 cm converted to ``env.units``; with units that are
+        not a known length, pass it explicitly.
     n_distance_bins : int, default=10
         Number of distance bins.
     n_direction_bins : int, default=12
@@ -591,7 +598,8 @@ def compute_boundary_vector_rates(
         smooth over the polar grid, which also mixes neighboring distances.
     bandwidth : float, optional
         Smoothing bandwidth for the kernel methods, in the environment's
-        units.
+        units. None uses 5 cm converted to ``env.units``; with units that
+        are not a known length, a kernel method needs it explicitly.
     min_occupancy : float, default=0.0
         Seconds of boundary occupancy a bin needs to get a rate.
     unit_ids : array-like, optional
@@ -678,7 +686,7 @@ def compute_boundary_vector_rate(
     headings: NDArray[np.float64] | None = None,
     *,
     direction_frame: Literal["allocentric", "egocentric"],
-    distance_range: tuple[float, float] = (0.0, 50.0),
+    distance_range: tuple[float, float] | None = None,
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     boundary_source: BoundarySource = "physical",
@@ -751,7 +759,7 @@ def _boundary_vector_rates(
     headings: NDArray[np.float64] | None,
     *,
     direction_frame: Literal["allocentric", "egocentric"],
-    distance_range: tuple[float, float],
+    distance_range: tuple[float, float] | None,
     n_distance_bins: int,
     n_direction_bins: int,
     boundary_source: BoundarySource,
@@ -789,6 +797,8 @@ def _boundary_vector_rates(
     )
     _check_boundary_labels(direction_frame, boundary_source)
     _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
+    distance_range = resolve_distance_range(env.units, distance_range, context=context)
+    require_known_bandwidth(env.units, bandwidth, method, context=context)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     spike_trains, resolved_unit_ids, _ = as_labelled_spike_trains(

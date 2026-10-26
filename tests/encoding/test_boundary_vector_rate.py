@@ -247,9 +247,49 @@ def test_the_direction_frame_must_match_the_headings(env, session):
 
 def test_an_environment_without_known_walls_is_refused(session):
     times, positions, _ = session
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
 
     with pytest.raises(NotImplementedError, match="Physical walls are unknown"):
         compute_boundary_vector_rate(
             env, np.array([1.0]), times, positions, direction_frame="allocentric"
+        )
+
+
+@pytest.mark.parametrize(("units", "scale"), [("cm", 1.0), ("m", 0.01)])
+def test_length_defaults_are_converted_from_cm(units, scale):
+    """The 0-50 cm range and 5 cm kernel follow the environment's units."""
+    env = Environment.from_polygon(
+        box(0, 0, SIDE * scale, SIDE * scale), bin_size=5.0 * scale, units=units
+    )
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 60, DT)
+    positions = rng.uniform(2, SIDE - 2, (len(times), 2)) * scale
+    result = compute_boundary_vector_rate(
+        env,
+        [],
+        times,
+        positions,
+        direction_frame="allocentric",
+        method="diffusion_kde",
+    )
+    assert result.distance_range == pytest.approx((0.0, 50.0 * scale))
+    assert result.analysis_settings["bandwidth"] == pytest.approx(5.0 * scale)
+
+
+def test_unknown_units_need_explicit_lengths(session):
+    times, positions, _ = session
+    env = Environment.from_polygon(box(0, 0, SIDE, SIDE), bin_size=5.0)
+    with pytest.raises(ValueError, match="distance_range is required"):
+        compute_boundary_vector_rate(
+            env, [], times, positions, direction_frame="allocentric"
+        )
+    with pytest.raises(ValueError, match="needs a bandwidth"):
+        compute_boundary_vector_rate(
+            env,
+            [],
+            times,
+            positions,
+            direction_frame="allocentric",
+            distance_range=(0.0, 50.0),
+            method="gaussian_kde",
         )

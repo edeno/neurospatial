@@ -89,7 +89,9 @@ def test_frame_compute_signatures_are_truthful():
         assert params["headings"].default is inspect.Parameter.empty
         assert "direction_frame" not in params
     with pytest.raises(TypeError, match="headings"):
-        encoding.compute_object_vector_rate(None, [], [], [], [], headings=[])
+        encoding.compute_object_vector_rate(
+            None, [], [], [], [], headings=[], distance_range=(0.0, 50.0)
+        )
 
 
 def test_allocentric_preserves_gap_and_window_gates():
@@ -103,11 +105,14 @@ def test_allocentric_preserves_gap_and_window_gates():
         [[10, 0]],
         epochs=[[0, 0.2], [100, 100.2]],
         spike_window=[0, 100.2],
+        distance_range=(0.0, 50.0),
     )
     assert result.occupancy.sum() == pytest.approx(0.4)
     assert np.nansum(result.firing_rate * result.occupancy) == pytest.approx(2)
     assert result.spike_window_assumed is False
-    empty = encoding.compute_object_vector_rates(None, [], times, positions, [[10, 0]])
+    empty = encoding.compute_object_vector_rates(
+        None, [], times, positions, [[10, 0]], distance_range=(0.0, 50.0)
+    )
     assert empty.firing_rates.shape == (0, 120)
     assert empty.direction_frame == "allocentric"
     assert empty.occupancy.sum() == pytest.approx(0.4)
@@ -168,16 +173,26 @@ def test_frame_predicate_signatures_are_truthful():
     egocentric = inspect.signature(encoding.is_egocentric_object_vector_cell).parameters
     assert egocentric["headings"].default is inspect.Parameter.empty
     with pytest.raises(TypeError, match="headings"):
-        encoding.is_object_vector_cell(None, [], [], [], [], headings=[])
+        encoding.is_object_vector_cell(
+            None, [], [], [], [], headings=[], distance_range=(0.0, 50.0)
+        )
 
 
 def test_zero_heading_equivalence_at_direction_bin_edge():
     times = np.arange(4) * 0.1
     positions = np.zeros((4, 2))
     objects = np.array([[4.999999999999999, -8.660254037844387]])
-    allo = encoding.compute_object_vector_rate(None, [0.05], times, positions, objects)
+    allo = encoding.compute_object_vector_rate(
+        None, [0.05], times, positions, objects, distance_range=(0.0, 50.0)
+    )
     ego = encoding.compute_egocentric_rate(
-        None, [0.05], times, positions, np.zeros(4), objects
+        None,
+        [0.05],
+        times,
+        positions,
+        np.zeros(4),
+        objects,
+        distance_range=(0.0, 50.0),
     )
     np.testing.assert_array_equal(allo.occupancy, ego.occupancy)
     np.testing.assert_array_equal(allo.firing_rate, ego.firing_rate)

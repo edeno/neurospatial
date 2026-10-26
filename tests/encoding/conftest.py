@@ -101,14 +101,14 @@ def obj():
 def ou_env(ou_10min):
     from neurospatial import Environment
 
-    return Environment.from_samples(ou_10min[1], bin_size=5.0)
+    return Environment.from_samples(ou_10min[1], bin_size=5.0, units="cm")
 
 
 @pytest.fixture(scope="session")
 def ou_2min_env(ou_2min):
     from neurospatial import Environment
 
-    return Environment.from_samples(ou_2min[1], bin_size=5.0)
+    return Environment.from_samples(ou_2min[1], bin_size=5.0, units="cm")
 
 
 @pytest.fixture(scope="session")
@@ -854,7 +854,7 @@ def ovc_session() -> tuple[
     headings = (theta + np.pi / 2) % (2 * np.pi)
     headings = np.arctan2(np.sin(headings), np.cos(headings))
 
-    env = Environment.from_samples(positions, bin_size=2.0)
+    env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     # Concentrate spikes over short bursts at regular phase intervals so the
     # egocentric polar rate map has a clear, informative peak.

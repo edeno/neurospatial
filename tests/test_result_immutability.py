@@ -49,7 +49,13 @@ def populations() -> dict[str, object]:
             boundary_source="analysis",
         ),
         "egocentric": compute_egocentric_rates(
-            None, trains, times, positions, headings, objects
+            None,
+            trains,
+            times,
+            positions,
+            headings,
+            objects,
+            distance_range=(0.0, 50.0),
         ),
         "peri_event": population_peri_event_histogram(
             trains, np.array([10.0, 20.0]), (-1.0, 1.0)
