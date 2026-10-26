@@ -1525,43 +1525,6 @@ class TestComputeViewRateGazeOffsets:
         assert "gaze_offsets" in params
         assert params["gaze_offsets"].default is None
 
-    def test_gaze_offsets_changes_view_field(
-        self,
-        simple_env: Environment,
-        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
-        spike_times: np.ndarray,
-    ) -> None:
-        """Non-zero gaze offsets should produce different view field than zero offsets."""
-        from neurospatial.encoding.view import compute_view_rate
-
-        times, positions, headings = trajectory_data
-
-        # No gaze offset (aligned with heading)
-        result_no_offset = compute_view_rate(
-            simple_env,
-            spike_times,
-            times,
-            positions,
-            headings,
-            gaze_offsets=None,
-            boundary_source="analysis",
-        )
-
-        # 90-degree gaze offset (looking left)
-        gaze_offsets = np.full_like(headings, np.pi / 2)
-        result_with_offset = compute_view_rate(
-            simple_env,
-            spike_times,
-            times,
-            positions,
-            headings,
-            gaze_offsets=gaze_offsets,
-            boundary_source="analysis",
-        )
-
-        # View occupancy should be different (looking in different directions)
-        assert not np.allclose(result_no_offset.occupancy, result_with_offset.occupancy)
-
     def test_gaze_offsets_mismatched_length_raises(
         self,
         simple_env: Environment,
@@ -2113,3 +2076,79 @@ def test_fixed_distance_short_of_the_wall_views_open_space():
     )
     viewed = env.bin_centers[np.asarray(result.occupancy) > 0]
     np.testing.assert_allclose(viewed, [[7.0, 51.0]])
+
+
+@pytest.fixture(scope="module")
+def left_gaze_cell():
+    """A cell that fires while the animal looks LEFT at the middle of the North wall.
+
+    A 100 x 100 cm box; 10 minutes of uniform positions and headings at
+    30 Hz. The viewed point is the first wall along heading + pi/2, and the
+    rate is a 10 cm Gaussian around (50, 100) on that wall.
+    """
+    from shapely.geometry import box
+
+    from neurospatial.ops.visibility import compute_viewed_location
+    from neurospatial.simulation import generate_poisson_spikes
+
+    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 600, 1 / 30)
+    positions = rng.uniform(5, 95, (len(times), 2))
+    headings = rng.uniform(-np.pi, np.pi, len(times))
+    viewed = compute_viewed_location(
+        positions,
+        headings,
+        method="ray_cast",
+        env=env,
+        gaze_offsets=np.full(len(times), np.pi / 2),
+    )
+    target = np.array([50.0, 100.0])
+    rate = 0.5 + 20 * np.exp(-0.5 * (np.linalg.norm(viewed - target, axis=1) / 10) ** 2)
+    spikes = generate_poisson_spikes(rate, times, seed=7)
+    return env, spikes, times, positions, headings, target
+
+
+def test_gaze_offsets_recover_a_left_gaze_cell_only_on_the_left(left_gaze_cell):
+    """+pi/2 is left of the heading: it recovers the viewed spot; -pi/2 does not."""
+    from neurospatial.encoding.view import compute_view_rate
+
+    env, spikes, times, positions, headings, target = left_gaze_cell
+    left, right = (
+        compute_view_rate(
+            env,
+            spikes,
+            times,
+            positions,
+            headings,
+            gaze_offsets=np.full(len(times), offset),
+            method="binned",
+            min_occupancy=1.0,
+        )
+        for offset in (np.pi / 2, -np.pi / 2)
+    )
+    assert np.linalg.norm(left.peak_location() - target) <= 10.0
+    assert np.linalg.norm(right.peak_location() - target) > 20.0
+    assert left.view_spatial_information() > 3 * right.view_spatial_information()
+
+
+def test_view_rate_peaks_at_the_viewed_location_not_the_position(left_gaze_cell):
+    """The position map of a view cell has no field at the viewed spot."""
+    from neurospatial.encoding import compute_spatial_rate
+    from neurospatial.encoding.view import compute_view_rate
+
+    env, spikes, times, positions, headings, _target = left_gaze_cell
+    view = compute_view_rate(
+        env,
+        spikes,
+        times,
+        positions,
+        headings,
+        gaze_offsets=np.full(len(times), np.pi / 2),
+        method="binned",
+        min_occupancy=1.0,
+    )
+    place = compute_spatial_rate(
+        env, spikes, times, positions, method="binned", min_occupancy=1.0
+    )
+    assert view.view_spatial_information() > 5 * place.spatial_information()

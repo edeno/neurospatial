@@ -39,6 +39,30 @@ def test_allocentric_recovers_east_field(
     assert allo.spatial_information() >= 1.3 * ego.spatial_information()
 
 
+@pytest.mark.parametrize(
+    ("field_offset", "expected"),
+    [
+        ((0.0, 20.0), -np.pi / 2),  # field North of the object: object South
+        ((0.0, -20.0), np.pi / 2),  # field South of the object: object North
+        ((-20.0, 0.0), 0.0),  # field West of the object: object East
+    ],
+)
+def test_allocentric_direction_follows_the_room_axes(
+    ou_env, ou_10min, obj, field_offset, expected
+):
+    """North and South fields pin the sign of y; an East-West field cannot."""
+    from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+
+    times, positions, _ = ou_10min
+    model = PlaceCellModel(
+        ou_env, center=obj[0] + np.asarray(field_offset), width=6, max_rate=10
+    )
+    spikes = generate_poisson_spikes(model.firing_rate(positions), times, seed=3)
+    result = encoding.compute_object_vector_rate(ou_env, spikes, times, positions, obj)
+    error = np.angle(np.exp(1j * (result.preferred_direction() - expected)))
+    assert abs(error) <= np.pi / 6
+
+
 def test_egocentric_recovers_ahead_ovc(ou_env, ou_10min, obj, egocentric_ovc_spikes):
     times, positions, headings = ou_10min
     spikes = egocentric_ovc_spikes

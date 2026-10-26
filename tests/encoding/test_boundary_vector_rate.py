@@ -53,11 +53,17 @@ def _tuned_spikes(times, distance, preferred=15.0, width=4.0, seed=100):
     return generate_poisson_spikes(rate, times, seed=seed)
 
 
-def test_a_boundary_vector_cell_is_recovered(env, session):
-    """A cell firing for a wall 15 cm to the East peaks East at about 15 cm."""
+@pytest.mark.parametrize(
+    ("wall", "angle"), [("East", 0.0), ("North", np.pi / 2), ("South", -np.pi / 2)]
+)
+def test_a_boundary_vector_cell_is_recovered(env, session, wall, angle):
+    """A cell firing for a wall 15 cm away in one room direction peaks there.
+
+    North and South pin the sign of the y axis; East alone would not.
+    """
     times, positions, _ = session
-    east = _wall_distance(positions, np.zeros(len(positions)))
-    spikes = _tuned_spikes(times, east)
+    distance = _wall_distance(positions, np.full(len(positions), angle))
+    spikes = _tuned_spikes(times, distance)
 
     result = compute_boundary_vector_rate(
         env,
@@ -70,7 +76,8 @@ def test_a_boundary_vector_cell_is_recovered(env, session):
     )
 
     sector = np.pi / 24  # half a direction bin
-    assert abs(result.preferred_direction()) <= sector + 1e-12
+    error = np.angle(np.exp(1j * (result.preferred_direction() - angle)))
+    assert abs(error) <= sector + 1e-12, wall
     assert 10.0 <= result.preferred_distance() <= 20.0
 
 

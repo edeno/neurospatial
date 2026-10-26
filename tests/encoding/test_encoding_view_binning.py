@@ -867,9 +867,10 @@ class TestViewBinningEdgeCases:
             boundary_source="analysis",
         )
 
-        # Should have high occupancy in bins east of center
-        # Viewed location is at (60, 50) for view_distance=10
-        assert np.any(occupancy > 0)
+        # Every sample views (60, 50), 10 cm east of the animal.
+        viewed_bin = simple_env.bin_at(np.array([[60.0, 50.0]]))[0]
+        assert occupancy[viewed_bin] == pytest.approx(times[-1] - times[0])
+        assert np.count_nonzero(occupancy) == 1
 
     def test_gaze_toward_the_edge_stops_at_the_edge(
         self,
