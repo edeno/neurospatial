@@ -225,3 +225,65 @@ def validate_dimension_ranges(
             )
         ranges.append((lo, hi))
     return ranges
+
+
+def validate_edge_spacing(
+    edge_spacing: float | Sequence[float], n_edges: int
+) -> NDArray[np.float64]:
+    """Check the gaps between consecutive track edges and return one per gap.
+
+    Parameters
+    ----------
+    edge_spacing : float or sequence of float
+        One gap for every pair of consecutive edges of ``edge_order``, or one
+        value per gap, in the units of the node positions.
+    n_edges : int
+        Number of edges in ``edge_order``.
+
+    Returns
+    -------
+    ndarray of float64, shape (max(n_edges - 1, 0),)
+
+    Raises
+    ------
+    ValueError
+        If ``edge_spacing`` is not numbers, has the wrong number of values,
+        or holds a gap that is negative or not finite.
+
+    Examples
+    --------
+    >>> validate_edge_spacing(5.0, n_edges=3)
+    array([5., 5.])
+    """
+    n_gaps = max(n_edges - 1, 0)
+    scalar = np.ndim(edge_spacing) == 0
+    try:
+        gaps = np.asarray(edge_spacing, dtype=np.float64)
+        numeric = not isinstance(edge_spacing, (str, bytes, bool, np.bool_))
+    except (TypeError, ValueError):
+        numeric = False
+    if numeric and scalar:
+        gaps = np.full(n_gaps, float(gaps))
+    if numeric and gaps.ndim == 1 and gaps.shape != (n_gaps,):
+        problem = (
+            f"edge_spacing has length {gaps.shape[0]}, but edge_order has "
+            f"{n_gaps} gap(s) between consecutive edges"
+        )
+    elif (
+        not numeric
+        or gaps.shape != (n_gaps,)
+        or not np.all(np.isfinite(gaps) & (gaps >= 0))
+    ):
+        problem = f"edge_spacing={edge_spacing!r} is not a finite, non-negative gap"
+    else:
+        return gaps
+    raise ValueError(
+        _format_error(
+            f"{problem}.",
+            why="Why: edge_spacing is the linear distance inserted between "
+            "consecutive track edges: one finite, non-negative number for "
+            "every gap, or one per gap.",
+            fix=f"pass one number, such as edge_spacing=0.0, or {n_gaps} "
+            "non-negative values",
+        )
+    )

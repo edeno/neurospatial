@@ -244,6 +244,10 @@
   "segments must have positive representable lengths" or "TrackLinearization
   edges[0] must be finite and strictly increasing", and a maze first warned
   about an invalid divide.
+- A negative, infinite, NaN, boolean or text `edge_spacing` is refused by the
+  track layout before binning, with the gap count it needs. It was refused
+  after binning by `TrackLinearization`, which the caller never named; a
+  string raised a bare `IndexError` and an infinite gap warned first.
 - Hexagonal environments recorded away from the origin keep their cells
   after `apply_transform` moves them, for example to center the arena at
   (0, 0). The cells (used by `plot_field`, boundary bins, physical-border

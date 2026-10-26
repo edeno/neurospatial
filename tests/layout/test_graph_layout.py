@@ -363,3 +363,31 @@ def test_an_edge_between_coincident_nodes_is_refused_by_name():
         )
     assert "\nWhy: " in str(excinfo.value)
     assert "\nFix: " in str(excinfo.value)
+
+
+@pytest.mark.filterwarnings("error")
+@pytest.mark.parametrize(
+    "edge_spacing", [-3.0, np.nan, [np.inf], "1", True, [1.0, 2.0]]
+)
+def test_a_bad_edge_spacing_is_refused_before_binning(edge_spacing):
+    """edge_spacing is checked by the layout that takes it.
+
+    It was refused only after binning, by TrackLinearization, an object the
+    caller never named; a string raised a bare IndexError and an infinite
+    gap warned first.
+    """
+    graph = nx.Graph()
+    for node, pos in enumerate([(0.0, 0.0), (10.0, 0.0), (20.0, 0.0)]):
+        graph.add_node(node, pos=pos)
+    graph.add_edges_from([(0, 1), (1, 2)])
+    with pytest.raises(ValueError, match="edge_spacing") as excinfo:
+        GraphLayout().build(
+            graph_definition=graph,
+            edge_order=[(0, 1), (1, 2)],
+            edge_spacing=edge_spacing,
+            bin_size=2.0,
+        )
+    message = str(excinfo.value)
+    assert "TrackLinearization" not in message
+    assert "\nWhy: " in message
+    assert "\nFix: " in message

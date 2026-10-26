@@ -30,7 +30,7 @@ from neurospatial.layout.helpers.neighbor_pairs import (
 )
 from neurospatial.layout.helpers.track_graphs import refuse_coincident_nodes
 from neurospatial.layout.helpers.utils import get_centers
-from neurospatial.layout.validation import validate_cell_size
+from neurospatial.layout.validation import validate_cell_size, validate_edge_spacing
 
 Edge = tuple[Any, Any]
 
@@ -82,7 +82,8 @@ def _get_graph_bins(
     ------
     ValueError
         - If `bin_size` is not positive.
-        - If `edge_spacing` is a sequence but length != len(edge_order) - 1.
+        - If `edge_spacing` is not one finite, non-negative gap, or one per
+          pair of consecutive edges.
         - If any node in `edge_order` is missing from `graph`, or an entry
           is not an edge of `graph`.
         - If any node of `graph` lacks a 'pos' attribute.
@@ -111,14 +112,7 @@ def _get_graph_bins(
         )
 
     n_edges = len(edge_order)
-    if isinstance(edge_spacing, (int, float, np.number)):
-        gaps = np.full(max(0, n_edges - 1), float(edge_spacing))
-    else:
-        gaps = np.asarray(edge_spacing, dtype=float)
-        if gaps.ndim != 1 or gaps.shape[0] != max(0, n_edges - 1):
-            raise ValueError(
-                f"`edge_spacing` length must be {max(0, n_edges - 1)} (got {gaps.shape[0]})."
-            )
+    gaps = validate_edge_spacing(edge_spacing, n_edges)
     # If there are zero edges, we return empty structures
     if n_edges == 0:
         return (
