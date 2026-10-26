@@ -643,12 +643,27 @@ def clear_segments(
                 axis=1,
             )
         )
-        # Most sight lines touch no wall; build the costly overlay only for
-        # the ones that do.
-        shapely.prepare(walls)
-        touching = shapely.intersects(lines, walls)
+        # Intersect each sight line only with the wall segments it touches:
+        # most lines touch none, and overlaying a line with the whole wall
+        # geometry costs time in the number of wall vertices.
+        parts = shapely.get_parts(walls)
+        vertices, part_index = shapely.get_coordinates(parts, return_index=True)
+        adjacent = part_index[:-1] == part_index[1:]
+        wall_segments = np.stack((vertices[:-1], vertices[1:]), axis=1)[adjacent]
+        wall_segments = wall_segments[
+            np.any(wall_segments[:, 0] != wall_segments[:, 1], axis=1)
+        ]
+        tree = shapely.STRtree(shapely.linestrings(wall_segments))
+        line_index, segment_index = tree.query(lines, predicate="intersects")
+        order = np.argsort(line_index, kind="stable")
+        line_index, segment_index = line_index[order], segment_index[order]
+        pieces = shapely.intersection(lines[line_index], tree.geometries[segment_index])
+        kept = ~shapely.is_empty(pieces)
         contact = np.full(len(lines), shapely.GeometryCollection(), dtype=object)
-        contact[touching] = shapely.intersection(lines[touching], walls)
+        if kept.any():
+            shapely.geometrycollections(
+                pieces[kept], indices=line_index[kept], out=contact
+            )
         # Intersection and interpolation can cancel one endpoint coordinate
         # to zero. Allow eight ULPs in the cue's own coordinates and project
         # that rounding box onto the intersected wall's tangent. A coordinate
@@ -658,16 +673,7 @@ def clear_segments(
         terminal = selected[~same]
         allowance = 8 * np.spacing(np.abs(terminal[owners]))
         if len(coordinates):
-            parts = shapely.get_parts(walls)
-            vertices, part_index = shapely.get_coordinates(parts, return_index=True)
-            adjacent = part_index[:-1] == part_index[1:]
-            wall_segments = np.stack((vertices[:-1], vertices[1:]), axis=1)[adjacent]
-            wall_segments = wall_segments[
-                np.any(wall_segments[:, 0] != wall_segments[:, 1], axis=1)
-            ]
-            nearest = shapely.STRtree(shapely.linestrings(wall_segments)).nearest(
-                shapely.points(coordinates)
-            )
+            nearest = tree.nearest(shapely.points(coordinates))
             tangent = np.abs(np.diff(wall_segments[nearest], axis=1)[:, 0])
             tangent /= np.hypot.reduce(tangent, axis=1)[:, None]
             allowance += tangent * np.sum(tangent * allowance, axis=1)[:, None]
