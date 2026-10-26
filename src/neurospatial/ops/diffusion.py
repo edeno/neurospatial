@@ -255,13 +255,11 @@ def _raw_heat_operator(
     """
     degree = np.asarray(W.sum(axis=1)).ravel()
     inv_mass = scipy.sparse.diags(1.0 / volumes)
-    # CSC so scipy.sparse.linalg.expm's internal solves stay in their preferred
-    # format (avoids a SparseEfficiencyWarning).
-    laplacian = (inv_mass @ (scipy.sparse.diags(degree) - W)).tocsc()  # M^-1 (D - W)
+    laplacian = inv_mass @ (scipy.sparse.diags(degree) - W)  # M^-1 (D - W)
     t = sigma**2 / 2.0
-    kernel = scipy.sparse.linalg.expm(-t * laplacian)
-    if hasattr(kernel, "toarray"):
-        kernel = kernel.toarray()
+    # The heat kernel fills in completely, so the dense expm is far cheaper than
+    # the sparse one, whose intermediate products become dense anyway.
+    kernel = scipy.linalg.expm(-t * laplacian.toarray())
     return np.asarray(kernel, dtype=np.float64)
 
 

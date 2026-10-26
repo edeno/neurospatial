@@ -3175,6 +3175,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- Dense diffusion kernels (`env.compute_kernel`, `compute_diffusion_kernels`
+  and the `"gaussian_kde"` method) use the dense matrix exponential, since
+  the heat kernel has no zero entries: a 2,601-bin kernel takes 1.0 s instead
+  of 29 s. Values agree to within 1e-15.
 - Position lookup in a polygon arena (`from_polygon`) or a masked triangular
   mesh tests points against a prepared polygon: containment of a million
   points in a 257-vertex arena takes 0.045 s instead of 0.30 s, with
