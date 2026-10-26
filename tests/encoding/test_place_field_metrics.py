@@ -1538,34 +1538,44 @@ class TestComputeFieldEMD:
         with pytest.raises(ValueError, match="equal total mass"):
             compute_field_emd(env, field1, field2, metric="euclidean", normalize=False)
 
-    def test_emd_nan_handling(self):
-        """Test EMD handles NaN values gracefully."""
+    def test_emd_is_in_environment_distance_units(self):
+        """Moving a whole field 20 cm costs exactly 20 cm."""
         from neurospatial.encoding._field_metrics import compute_field_emd
 
-        rng = np.random.default_rng(42)
-        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Create sparse distributions
+        x, y = np.meshgrid(np.arange(0.5, 60.0), np.arange(0.5, 30.0))
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         centers = env.bin_centers
-        field1 = np.zeros(env.n_bins)
-        field2 = np.zeros(env.n_bins)
+        field_1 = np.exp(-np.sum((centers - [19.0, 15.0]) ** 2, axis=1) / 18.0)
+        field_1[np.linalg.norm(centers - [19.0, 15.0], axis=1) > 6] = 0.0
+        # The same field 20 cm east: bin i's mass moves to the bin 20 cm away.
+        shifted = env.bin_at(centers + np.array([20.0, 0.0]))
+        field_2 = np.zeros(env.n_bins)
+        field_2[shifted[field_1 > 0]] = field_1[field_1 > 0]
 
-        dist_from_center1 = np.linalg.norm(centers - [0, 0], axis=1)
-        dist_from_center2 = np.linalg.norm(centers - [10, 0], axis=1)
+        emd = compute_field_emd(env, field_1, field_2)
+        assert emd == pytest.approx(20.0, rel=1e-9)
 
-        field1[dist_from_center1 < 5] = 1.0
-        field2[dist_from_center2 < 5] = 1.0
+    def test_emd_compares_bins_finite_in_both_maps(self):
+        """Unsampled (NaN) bins are left out, not filled with zero rate."""
+        from neurospatial.encoding._field_metrics import compute_field_emd
 
-        # Add some NaN values
-        field1[0:5] = np.nan
-        field2[10:15] = np.nan
+        x, y = np.meshgrid(np.arange(0.5, 60.0), np.arange(0.5, 30.0))
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        centers = env.bin_centers
+        field = np.where(np.linalg.norm(centers - [15.0, 15.0], axis=1) < 5, 1.0, 0.0)
+        far_bins = np.flatnonzero(centers[:, 0] > 50)
 
-        # Should warn and set NaN to zero
-        with pytest.warns(UserWarning, match="NaN values"):
-            emd = compute_field_emd(env, field1, field2, metric="euclidean")
-            assert emd > 0
-            assert not np.isnan(emd)
+        # Session 1 never visited the far end; session 2 fired there too.
+        map_1 = field.copy()
+        map_1[far_bins] = np.nan
+        map_2 = field.copy()
+        map_2[far_bins] = 1.0
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            emd = compute_field_emd(env, map_1, map_2)
+        # On the bins both sessions sampled the maps are identical.
+        assert emd == pytest.approx(0.0, abs=1e-12)
 
     def test_emd_all_zeros(self):
         """Test EMD with all-zero distributions."""
@@ -1768,39 +1778,43 @@ class TestComputeFieldEMD:
             "when barriers force longer paths"
         )
 
-    def test_emd_geodesic_disconnected_warning(self):
-        """Test that disconnected bins trigger aggregated warning."""
+    @pytest.fixture(scope="class")
+    def two_rooms(self):
+        """Two 10 x 10 cm rooms 30 cm apart with no path between them."""
+        x, y = np.meshgrid(np.arange(0.5, 10.0), np.arange(0.5, 10.0))
+        room = np.c_[x.ravel(), y.ravel()]
+        env = Environment.from_samples(
+            np.vstack([room, room + np.array([40.0, 0.0])]), bin_size=2.0
+        )
+        left = env.bin_centers[:, 0] < 20
+        return env, left
+
+    def test_emd_geodesic_is_inf_when_mass_must_cross_rooms(self, two_rooms):
+        """No path carries mass between disconnected rooms: EMD is inf."""
         from neurospatial.encoding._field_metrics import compute_field_emd
 
-        rng = np.random.default_rng(42)
-        # Create sparse environment with disconnected regions
-        # Two separate clusters with no connectivity between them
-        cluster1 = rng.standard_normal((500, 2)) * 3 + np.array([0, 0])
-        cluster2 = rng.standard_normal((500, 2)) * 3 + np.array([50, 50])
-        data = np.vstack([cluster1, cluster2])
+        env, left = two_rooms
+        field_1 = left.astype(float)
+        field_2 = (~left).astype(float)
 
-        env = Environment.from_samples(data, bin_size=2.0)
+        assert compute_field_emd(env, field_1, field_2, metric="geodesic") == np.inf
+        assert np.isfinite(compute_field_emd(env, field_1, field_2))
 
-        # Create fields in both clusters
+    def test_emd_geodesic_moves_mass_within_each_room(self, two_rooms):
+        """With the same mass in each room, mass moves only inside rooms."""
+        from neurospatial.encoding._field_metrics import compute_field_emd
+
+        env, _ = two_rooms
         centers = env.bin_centers
-        field1 = np.zeros(env.n_bins)
-        field2 = np.zeros(env.n_bins)
+        field_1 = np.zeros(env.n_bins)
+        field_2 = np.zeros(env.n_bins)
+        for room_x in (1.0, 41.0):
+            field_1[env.bin_at(np.array([[room_x, 5.0]]))] = 1.0
+            field_2[env.bin_at(np.array([[room_x + 6.0, 5.0]]))] = 1.0
+        assert np.all(centers[field_1 > 0, 1] == centers[field_2 > 0, 1])
 
-        # Field 1: Cluster 1
-        dist_from_cluster1 = np.linalg.norm(centers - [0, 0], axis=1)
-        field1[dist_from_cluster1 < 5] = 1.0
-
-        # Field 2: Cluster 2
-        dist_from_cluster2 = np.linalg.norm(centers - [50, 50], axis=1)
-        field2[dist_from_cluster2 < 5] = 1.0
-
-        # Should warn about disconnected pairs
-        with pytest.warns(UserWarning, match="disconnected bin pairs"):
-            emd = compute_field_emd(env, field1, field2, metric="geodesic")
-
-            # Should still return a valid result (using Euclidean fallback)
-            assert emd > 0
-            assert not np.isnan(emd)
+        emd = compute_field_emd(env, field_1, field_2, metric="geodesic")
+        assert emd == pytest.approx(6.0)
 
 
 # =============================================================================

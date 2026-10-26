@@ -1029,27 +1029,36 @@ def compute_field_emd(
 
     Parameters
     ----------
-    firing_rate_1 : NDArray[np.float64], shape (n_bins,)
-        First firing rate distribution across spatial bins.
-    firing_rate_2 : NDArray[np.float64], shape (n_bins,)
-        Second firing rate distribution across spatial bins.
     env : Environment
         Spatial environment defining bin positions and connectivity.
+    firing_rate_1 : NDArray[np.float64], shape (n_bins,)
+        First firing rate distribution across spatial bins. NaN marks an
+        unsampled bin.
+    firing_rate_2 : NDArray[np.float64], shape (n_bins,)
+        Second firing rate distribution across spatial bins. NaN marks an
+        unsampled bin.
     metric : str, default="euclidean"
         Distance metric to use. Options:
         - "euclidean": Straight-line distance between bin centers
         - "geodesic": Shortest path distance through connectivity graph
     normalize : bool, default=True
-        If True, normalize distributions to sum to 1.0 before computing EMD.
-        If False, use raw firing rates (distributions must already sum to equal values).
+        If True, normalize each distribution to sum to 1.0 over the bins
+        finite in both maps before computing EMD. If False, use raw firing
+        rates (their sums over those bins must already be equal).
 
     Returns
     -------
     emd : float
         Earth Mover's Distance between the two distributions.
-        - For normalized distributions: unitless distance in [0, inf)
-        - For unnormalized distributions: cost in units of (rate x distance)
-        - Returns NaN if distributions cannot be computed (e.g., all zeros)
+
+        - With ``normalize=True``: the mean distance the firing-rate mass
+          moves, in the environment's distance units (e.g. cm). Moving a
+          whole field 10 cm gives 10.0.
+        - With ``normalize=False``: cost in units of (rate x distance).
+        - NaN if either distribution has zero total mass (with a warning).
+        - ``inf`` with ``metric="geodesic"`` when the maps put different
+          mass in parts of the environment with no path between them, so
+          no transport plan exists.
 
     Raises
     ------
@@ -1066,7 +1075,6 @@ def compute_field_emd(
     Warns
     -----
     UserWarning
-        If distributions contain NaN values (they will be set to zero).
         If normalized distributions have no mass (all zeros or NaN).
 
     See Also
@@ -1077,6 +1085,12 @@ def compute_field_emd(
     -----
     The Earth Mover's Distance is computed by solving the optimal transport problem.
 
+    **Missing bins.** Only bins finite in both maps are compared: an
+    unsampled (NaN) bin in either map is left out of both, and with
+    ``normalize=True`` each map is renormalized over the remaining bins.
+    Filling NaN with zero instead would treat unvisited places as silent
+    and move mass onto them.
+
     **Metric choice:**
 
     - **Euclidean**: Fast, works for any environment, but ignores barriers and walls.
@@ -1084,6 +1098,8 @@ def compute_field_emd(
 
     - **Geodesic**: Slower, respects environment structure (barriers, walls, connectivity).
       Use for complex environments like mazes, multi-room layouts, or non-convex arenas.
+      Mass moves only along paths in the connectivity graph, never between
+      disconnected parts of the environment.
 
     **Interpretation:**
 
@@ -1155,18 +1171,16 @@ def compute_field_emd(
             ),
         )
 
-    # Handle NaN values
-    firing_rate_1 = firing_rate_1.copy()
-    firing_rate_2 = firing_rate_2.copy()
-
-    if np.any(~np.isfinite(firing_rate_1)) or np.any(~np.isfinite(firing_rate_2)):
-        warnings.warn(
-            "Firing rate distributions contain NaN values. Setting to zero.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        firing_rate_1[~np.isfinite(firing_rate_1)] = 0.0
-        firing_rate_2[~np.isfinite(firing_rate_2)] = 0.0
+    # Compare only bins observed in both maps. Unsampled (NaN) bins are
+    # missing, not zero rate: filling them with zero would make mass in one
+    # map move onto bins the other session never sampled.
+    firing_rate_1 = np.asarray(firing_rate_1, dtype=np.float64)
+    firing_rate_2 = np.asarray(firing_rate_2, dtype=np.float64)
+    common_bins = np.flatnonzero(
+        np.isfinite(firing_rate_1) & np.isfinite(firing_rate_2)
+    )
+    firing_rate_1 = firing_rate_1[common_bins]
+    firing_rate_2 = firing_rate_2[common_bins]
 
     # Normalize distributions if requested
     if normalize:
@@ -1175,7 +1189,8 @@ def compute_field_emd(
 
         if sum1 == 0 or sum2 == 0:
             warnings.warn(
-                "One or both distributions have zero total mass. Returning NaN.",
+                "One or both distributions have zero total mass on the bins "
+                "finite in both maps. Returning NaN.",
                 category=UserWarning,
                 stacklevel=2,
             )
@@ -1189,8 +1204,9 @@ def compute_field_emd(
         sum2 = np.sum(firing_rate_2)
         if not np.isclose(sum1, sum2, rtol=1e-6):
             raise ValueError(
-                f"Unnormalized distributions must have equal total mass. "
-                f"Got {sum1:.6f} and {sum2:.6f}. Set normalize=True to auto-normalize."
+                f"Unnormalized distributions must have equal total mass on the "
+                f"bins finite in both maps. Got {sum1:.6f} and {sum2:.6f}. Set "
+                f"normalize=True to auto-normalize."
             )
 
     # Filter to bins with non-zero mass in either distribution
@@ -1208,7 +1224,7 @@ def compute_field_emd(
         return 0.0
 
     # Get active bins and their distributions
-    active_bins = np.where(nonzero_mask)[0]
+    active_bins = common_bins[nonzero_mask]
     p = firing_rate_1[nonzero_mask]
     q = firing_rate_2[nonzero_mask]
 
@@ -1220,32 +1236,21 @@ def compute_field_emd(
         dist_matrix = squareform(pdist(positions, metric="euclidean"))
 
     else:  # metric == "geodesic"
-        # Geodesic distance using precomputed full distance matrix (vectorized)
         from neurospatial.ops.distance import geodesic_distance_matrix
 
-        # Compute full geodesic distance matrix once
         full_geodesic = geodesic_distance_matrix(env.connectivity, weight="distance")
-
-        # Extract submatrix for active bins (vectorized indexing)
         dist_matrix = full_geodesic[np.ix_(active_bins, active_bins)]
 
-        # Find disconnected pairs (inf distances) and replace with Euclidean
-        disconnected_mask = np.isinf(dist_matrix)
-        disconnected_count = np.sum(disconnected_mask) // 2  # Count unique pairs
-
-        if disconnected_count > 0:
-            # Compute Euclidean fallback distances for disconnected pairs
-            positions = env.bin_centers[active_bins]
-            euclidean_dist = squareform(pdist(positions, metric="euclidean"))
-            dist_matrix = np.where(disconnected_mask, euclidean_dist, dist_matrix)
-
-            n = len(active_bins)
-            warnings.warn(
-                f"Found {disconnected_count} disconnected bin pairs out of {n * (n - 1) // 2} total pairs. "
-                f"Using Euclidean distance for disconnected pairs.",
-                category=UserWarning,
-                stacklevel=2,
-            )
+    # Mass cannot travel between parts of the environment with no path
+    # between them. Label each active bin by the first active bin it can
+    # reach (reachability is an equivalence relation); if any part holds
+    # different mass in the two maps, no transport plan exists.
+    reachable = np.isfinite(dist_matrix)
+    component = np.argmax(reachable, axis=1)
+    mass_1 = np.bincount(component, weights=p, minlength=len(p))
+    mass_2 = np.bincount(component, weights=q, minlength=len(q))
+    if not np.allclose(mass_1, mass_2, rtol=1e-9, atol=1e-12 * np.sum(p)):
+        return np.inf
 
     # Solve the optimal transport problem using linear programming
     # Variables: T[i,j] = mass transported from bin i (source) to bin j (target)
@@ -1253,12 +1258,14 @@ def compute_field_emd(
     # Constraints:
     #   - sum_j T[i,j] = p[i]  (all mass from source i is transported)
     #   - sum_i T[i,j] = q[j]  (all mass to target j is received)
-    #   - T[i,j] >= 0
+    #   - T[i,j] >= 0, and T[i,j] = 0 where no path joins i and j
 
     n = len(p)
 
-    # Flatten distance matrix for objective function
-    c = dist_matrix.flatten()
+    # Flatten distance matrix for objective function (unreachable pairs carry
+    # no mass, so their cost is irrelevant)
+    c = np.where(reachable, dist_matrix, 0.0).flatten()
+    upper = np.where(reachable.flatten(), np.inf, 0.0)
 
     # Equality constraints: Ax = b
     # Row constraints: sum over j of T[i,j] = p[i]
@@ -1280,7 +1287,7 @@ def compute_field_emd(
         c,
         A_eq=a_eq,
         b_eq=b_eq,
-        bounds=(0, None),
+        bounds=np.column_stack([np.zeros_like(upper), upper]),
         method="highs",
     )
 
