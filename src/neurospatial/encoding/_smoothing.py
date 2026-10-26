@@ -61,11 +61,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-# Single shared high-bin warn threshold. Reuse the diffusion-kernel warn
-# threshold so both dense O(n_bins^2) smoothing paths (diffusion + gaussian)
-# warn at the same bin count -- one threshold, not a divergent copy. Neither
-# path imposes a hard limit; above the threshold each warns (with a GB
-# estimate) and proceeds.
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops import (
     _RESOLUTION_MARGIN,
@@ -694,6 +690,28 @@ def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
             )
 
 
+def validate_min_occupancy(min_occupancy: float) -> float:
+    """Return ``min_occupancy`` as a float after checking it is finite and >= 0.
+
+    Raises
+    ------
+    ValueError
+        If ``min_occupancy`` is NaN, infinite or negative. A NaN threshold
+        compares False with every occupancy, so it would mask every bin
+        without the fully-masked warning.
+    """
+    value = float(min_occupancy)
+    if not (np.isfinite(value) and value >= 0.0):
+        raise ValueError(
+            _format_error(
+                f"min_occupancy must be a finite number of seconds >= 0, got {min_occupancy}.",
+                why="Why: it is the minimum time the animal must spend in a bin for its rate to count",
+                fix="pass min_occupancy=0.0 for no masking, or a dwell time in seconds such as 0.5",
+            )
+        )
+    return value
+
+
 def _apply_min_occupancy_mask(
     firing_rate: NDArray[np.floating[Any]],
     occupancy: NDArray[np.float64],
@@ -708,10 +726,9 @@ def _apply_min_occupancy_mask(
     ``result.occupancy < min_occupancy``. ``occupancy`` (shape ``(n_bins,)``)
     broadcasts over a leading neuron axis for batch rate maps.
 
-    A non-positive ``min_occupancy`` is a no-op, so the default (0.0) leaves the
-    smoothed rate untouched.
+    ``min_occupancy=0.0`` (the default) leaves the smoothed rate untouched.
     """
-    if min_occupancy <= 0.0:
+    if validate_min_occupancy(min_occupancy) == 0.0:
         return firing_rate
     return np.where(occupancy >= min_occupancy, firing_rate, np.nan)
 
@@ -725,7 +742,7 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
     seconds). This defense-in-depth guard turns that silent empty result into a
     loud, actionable warning.
     """
-    if min_occupancy <= 0.0:
+    if validate_min_occupancy(min_occupancy) == 0.0:
         return
     occupancy = np.asarray(occupancy, dtype=np.float64)
     occupied = occupancy > 0.0

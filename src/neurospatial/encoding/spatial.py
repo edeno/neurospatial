@@ -3020,13 +3020,12 @@ def _resolve_spatial_method(
         _validate_smoothing_parameters,
         _validate_spatial_method_params,
         resolve_spatial_bandwidth,
+        validate_min_occupancy,
         validate_pooled,
     )
 
     # Method-specific validation (mutual exclusivity + value domains), in the
-    # contract order, then resolve the ratio defaults. For ratio methods
-    # bandwidth/min_occupancy resolve to their historical defaults so existing
-    # behavior is byte-identical.
+    # contract order, then resolve the ratio defaults.
     penalty, rank = _validate_spatial_method_params(
         method,
         bandwidth=bandwidth,
@@ -3043,7 +3042,9 @@ def _resolve_spatial_method(
     resolved_bandwidth = (
         resolve_spatial_bandwidth(env, bandwidth) if method != "glm" else 0.0
     )
-    resolved_min_occupancy = 0.0 if min_occupancy is None else min_occupancy
+    resolved_min_occupancy = (
+        0.0 if min_occupancy is None else validate_min_occupancy(min_occupancy)
+    )
     if method != "glm":
         _validate_smoothing_parameters(method, resolved_bandwidth)
     return resolved_bandwidth, resolved_min_occupancy, penalty, rank

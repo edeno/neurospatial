@@ -3569,6 +3569,57 @@ def sparse_coverage_recording():
     return env, spikes, times, positions
 
 
+class TestMinOccupancyContract:
+    """min_occupancy is a dwell time in seconds per bin."""
+
+    @pytest.mark.parametrize("bad", [np.nan, -0.5, np.inf])
+    def test_non_finite_or_negative_min_occupancy_raises(
+        self, sparse_coverage_recording, bad
+    ) -> None:
+        from neurospatial.encoding.spatial import (
+            compute_spatial_rate,
+            compute_spatial_rates,
+        )
+
+        env, spikes, times, positions = sparse_coverage_recording
+        with pytest.raises(ValueError, match="min_occupancy"):
+            compute_spatial_rate(env, spikes, times, positions, min_occupancy=bad)
+        with pytest.raises(ValueError, match="min_occupancy"):
+            compute_spatial_rates(env, [spikes], times, positions, min_occupancy=bad)
+
+    def test_mask_does_not_depend_on_sampling_rate(self) -> None:
+        """Seconds, not samples: doubling the tracking rate keeps the same mask."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        rng = np.random.default_rng(3)
+        knots = np.arange(0.0, 600.0, 0.5)
+        walk = np.abs(
+            (np.cumsum(rng.normal(0, 2.0, (len(knots), 2)), axis=0) + 50) % 200 - 100
+        )
+        env = Environment.from_samples(walk, bin_size=5.0, units="cm")
+        spikes = np.sort(np.random.default_rng(4).uniform(0, knots[-1], 1500))
+        supports = []
+        for rate in (30.0, 60.0):
+            times = np.arange(0.0, knots[-1], 1.0 / rate)
+            positions = np.column_stack(
+                [np.interp(times, knots, walk[:, d]) for d in range(2)]
+            )
+            result = compute_spatial_rate(
+                env,
+                spikes,
+                times,
+                positions,
+                method="binned",
+                bandwidth=0.0,
+                min_occupancy=1.0,
+            )
+            supports.append(result.spatial_support)
+        assert 0 < supports[0].sum() < env.n_bins
+        # Interval endpoints shift by at most one frame, so only bins with
+        # occupancy within a frame of the threshold may differ.
+        assert np.mean(supports[0] != supports[1]) < 0.02
+
+
 class TestMetricsUseSpatialSupport:
     """Filling unsupported bins never changes a metric (missing is not zero)."""
 
