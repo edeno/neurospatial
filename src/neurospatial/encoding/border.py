@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 from scipy.sparse import coo_array
 from scipy.sparse.csgraph import connected_components
 
-from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial._exceptions import RegionNotFoundError
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -30,6 +30,9 @@ if TYPE_CHECKING:
 # Solstad et al. (2008): a field is at least 200 cm^2 of neighboring bins at
 # or above 30% of the peak rate.
 BORDER_FIELD_MIN_AREA_CM2 = 200.0
+# BNT and opexebo: a field has at least 9 bins. The minimum when the
+# environment's units are not a metric length, so 200 cm^2 has no meaning.
+BORDER_FIELD_MIN_BINS = 9
 
 
 def border_score(
@@ -66,11 +69,17 @@ def border_score(
         Solstad et al. (2008). Must be in (0, 1).
     min_area : float, optional
         Smallest area of one field, in squared position units (for example
-        cm² when ``env.units`` is ``"cm"``). Smaller fields are ignored. The
-        default, None, is the 200 cm² of Solstad et al. (2008), converted to
-        the environment's units; environments without metric length units
-        (``env.units`` unset, pixels or custom units) need an explicit value.
-        Pass 0 to keep every field.
+        cm² when ``env.units`` is ``"cm"``). Smaller fields are ignored. Pass
+        0 to keep every field. The default, None, depends on the units:
+
+        - metric length units (``"cm"``, ``"mm"``, ``"m"``, ...): the 200 cm²
+          of Solstad et al. (2008), converted to the environment's units.
+        - unset, pixel or custom units: 200 cm² cannot be expressed, so a
+          field needs at least 9 bins instead, the default of BNT and
+          opexebo.
+
+        ``summary_table()`` records the rule it applied in
+        ``df.attrs["border_field_minimum"]``.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
         Distance from field bins to the nearest wall.
 
@@ -98,14 +107,13 @@ def border_score(
     -------
     float
         Border score in [-1, 1]. NaN when the map has no positive finite peak,
-        when no field reaches ``min_area``, or, with ``metric='geodesic'``,
-        when a field bin has no path to a wall.
+        when no field reaches the minimum field size, or, with
+        ``metric='geodesic'``, when a field bin has no path to a wall.
 
     Raises
     ------
     ValueError
-        If an argument is invalid, or if ``min_area`` is None and the
-        environment's units are not a metric length.
+        If an argument is invalid.
     NotImplementedError
         If the walls are unavailable: with ``boundary_source='physical'``, when
         the arena's footprint was not measured (or a combined component has
@@ -121,7 +129,7 @@ def border_score(
 
     1. *Fields*: groups of neighboring bins (in the environment's
        connectivity graph) whose rate is at least ``threshold`` times the
-       peak rate, each covering at least ``min_area``.
+       peak rate, each at least the minimum field size (``min_area``).
     2. *Walls*: each closed outline (an arena ring, or the retained bins'
        outline) is split into separate walls at its corners, where it turns
        by more than 50° within two bin widths. A rectangle has four walls; a
@@ -153,10 +161,13 @@ def border_score(
     three differences. (1) Distances run from each bin's center to the wall,
     so a bin against the wall is half a bin away; BNT and opexebo count whole
     bins from the edge, so that bin is one bin away and their scores are
-    lower by an amount that shrinks with bin size. (2) Fields follow Solstad
-    et al. (2008) (``threshold=0.3``, ``min_area`` 200 cm²); BNT and opexebo
-    take fields from their place-field detection (by default 0.2 of the
-    peak, at least 9 bins and a peak of at least 1 Hz). (3) BNT and opexebo
+    lower by an amount that shrinks with bin size (at 2.5 cm bins in a 100 cm
+    box, about 0.07 lower for a round field on one wall). Bin centers are
+    the physical positions the rates describe; the whole-bin count is an
+    artifact of indexing pixels. (2) Fields follow Solstad et al. (2008)
+    (``threshold=0.3``, 200 cm²); BNT and opexebo take fields from their
+    place-field detection (by default 0.2 of the peak, at least 9 bins and
+    a peak of at least 1 Hz). (3) BNT and opexebo
     look past unvisited bins along a wall for the first visited bin; here an
     unvisited wall bin makes the physical score unavailable. This
     implementation also scores polygonal, circular and multi-room arenas and
@@ -209,7 +220,6 @@ def border_score(
     geometry = border_geometry(env, boundary_source)
     if boundary_source == "physical":
         _require_wall_rates(geometry, firing_rate)
-    min_area = _resolve_min_area(env, min_area)
 
     fields = _border_fields(env, firing_rate, threshold, min_area)
     if not fields:
@@ -237,39 +247,69 @@ def _validate_border_arguments(
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")
 
 
-def _resolve_min_area(env: Environment, min_area: float | None) -> float:
-    """``min_area``, or Solstad's 200 cm² in the environment's units."""
+def _border_field_minimum(env: Environment, min_area: float | None = None) -> str:
+    """The smallest border-score field, as applied to this environment.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the border score is computed on.
+    min_area : float, optional
+        The ``min_area`` passed to :func:`border_score`; None for its default.
+
+    Returns
+    -------
+    str
+        For example ``"200 cm² (Solstad et al., 2008)"`` for a centimeter
+        environment, or ``"9 bins (BNT/opexebo; units unknown)"`` for one
+        without metric length units.
+
+    Examples
+    --------
+    >>> import shapely
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.border import _border_field_minimum
+    >>> box = shapely.box(0, 0, 100, 100)
+    >>> _border_field_minimum(Environment.from_polygon(box, bin_size=2.5, units="cm"))
+    '200 cm² (Solstad et al., 2008)'
+    >>> _border_field_minimum(Environment.from_polygon(box, bin_size=2.5))
+    '9 bins (BNT/opexebo; units unknown)'
+    """
+    area, bins = _field_minimum(env, min_area)
+    if bins:
+        return f"{bins} bins (BNT/opexebo; units unknown)"
+    if min_area is None:
+        return f"{BORDER_FIELD_MIN_AREA_CM2:g} cm² (Solstad et al., 2008)"
+    return f"{area:g} {env.units or 'position units'}²"
+
+
+def _field_minimum(env: Environment, min_area: float | None) -> tuple[float, int]:
+    """The smallest field area and bin count for ``min_area``.
+
+    An explicit ``min_area`` is an area. The default is Solstad's 200 cm² in
+    the environment's units, or 9 bins when the units are not a metric
+    length.
+    """
     if min_area is not None:
-        return float(min_area)
+        return float(min_area), 0
     from neurospatial._units import units_per_centimeter
 
     per_cm = units_per_centimeter(env.units)
     if per_cm is None:
-        raise ValueError(
-            _format_error(
-                "border_score needs min_area: the environment's units "
-                f"({env.units!r}) are not a known length, so the 200 cm² minimum "
-                "field area of Solstad et al. (2008) cannot be expressed in them.",
-                why="Why: min_area is an area in squared position units.",
-                fix="declare the units with env.with_metadata(units='cm'), or pass "
-                "min_area=<smallest field area in squared position units> (0 keeps "
-                "every field); for label_cell_types, pass border_scores computed "
-                "that way",
-            )
-        )
-    return BORDER_FIELD_MIN_AREA_CM2 * per_cm**2
+        return 0.0, BORDER_FIELD_MIN_BINS
+    return BORDER_FIELD_MIN_AREA_CM2 * per_cm**2, 0
 
 
 def _border_fields(
     env: Environment,
     firing_rate: NDArray[np.float64],
     threshold: float,
-    min_area: float,
+    min_area: float | None,
 ) -> list[NDArray[np.intp]]:
     """Connected groups of bins at or above ``threshold`` of the peak rate.
 
-    Groups smaller than ``min_area`` are dropped. Empty when the map has no
-    positive finite peak.
+    Groups smaller than the minimum field size are dropped. Empty when the
+    map has no positive finite peak.
     """
     finite = np.isfinite(firing_rate)
     if not finite.any():
@@ -289,7 +329,10 @@ def _border_fields(
     bins = np.flatnonzero(above)
     groups, group = np.unique(labels[bins], return_inverse=True)
     areas = np.bincount(group, weights=env.bin_sizes[bins], minlength=len(groups))
-    return [bins[group == index] for index in np.flatnonzero(areas >= min_area)]
+    counts = np.bincount(group, minlength=len(groups))
+    smallest_area, smallest_count = _field_minimum(env, min_area)
+    kept = (areas >= smallest_area) & (counts >= smallest_count)
+    return [bins[group == index] for index in np.flatnonzero(kept)]
 
 
 def compute_region_coverage(

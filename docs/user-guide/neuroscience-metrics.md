@@ -410,8 +410,9 @@ score = border_score(
 
 1. *Fields*: groups of neighboring bins at or above `threshold × peak_rate`
    (default 0.3), each with an area of at least `min_area` (default 200 cm²,
-   converted to the environment's units; environments without metric units
-   need an explicit `min_area`).
+   converted to the environment's units; without metric length units, at
+   least 9 bins, the BNT/opexebo default). `summary_table()` records the rule
+   it applied in `df.attrs["border_field_minimum"]`.
 2. *Walls*: each outline is split into walls at its corners, where it turns by
    more than 50° within two bin widths. A rectangle has four walls; a circle,
    or any gently curving outline, is one wall. Each named internal wall is one
@@ -438,8 +439,8 @@ Calibrate a cutoff for other shapes, for example against shuffled spike trains.
 
 **Differences from BNT and opexebo** on rectangular boxes: distances run from
 each bin center to the wall (a bin against the wall is half a bin away, where
-they count it as one bin away, so their scores are slightly lower at coarse
-bins); fields follow Solstad et al. (2008) rather than their place-field
+they count it as one bin away, so their scores are lower: about 0.07 for a
+round field on one wall of a 100 cm box with 2.5 cm bins); fields follow Solstad et al. (2008) rather than their place-field
 detection (0.2 of the peak, at least 9 bins, peak at least 1 Hz); and an
 unvisited bin along a measured wall makes the physical score unavailable
 instead of being skipped.

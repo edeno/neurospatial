@@ -123,7 +123,8 @@ class TestBorderScore:
         assert border_score(env, with_speck, min_area=0) < border_score(env, wall)
         assert np.isnan(border_score(env, wall, min_area=10_000.0))
 
-    def test_default_min_area_follows_units_and_needs_a_known_length(self):
+    def test_default_min_area_follows_units(self):
+        """200 cm^2 converts with the units: meters score like centimeters."""
         from neurospatial.encoding import border_score
 
         env = _box(100, 100)
@@ -134,12 +135,52 @@ class TestBorderScore:
         np.testing.assert_allclose(
             border_score(meters, rates), border_score(env, rates)
         )
+
+    @pytest.mark.parametrize(
+        ("blob_bins", "kept_without_units"), [(16, True), (8, False)]
+    )
+    def test_default_field_minimum_is_200_cm2_or_9_bins(
+        self, blob_bins, kept_without_units
+    ):
+        """With metric units a field needs 200 cm^2 (32 bins of 2.5 cm); without
+        them it needs 9 bins, the BNT/opexebo default."""
+        from neurospatial.encoding import border_score
+
+        env = _box(100, 100)
         unitless = Environment.from_polygon(shapely.box(0, 0, 100, 100), bin_size=2.5)
-        with pytest.raises(ValueError, match=r"(?s)needs min_area.*units='cm'"):
-            border_score(unitless, rates)
-        np.testing.assert_allclose(
-            border_score(unitless, rates, min_area=200.0), border_score(env, rates)
+        x, y = env.bin_centers.T
+        wall = np.where(x < 7.5, 10.0, 0.2)
+        # A central blob of 4 x 4 or 2 x 4 bins at the peak rate.
+        rows = 4 if blob_bins == 16 else 2
+        blob = (np.abs(x - 50) < 5) & (y > 50) & (y < 50 + rows * 2.5)
+        assert blob.sum() == blob_bins
+        rates = np.where(blob, 10.0, wall)
+
+        # Centimeters: the blob is under 200 cm^2, so only the wall field counts.
+        np.testing.assert_allclose(border_score(env, rates), border_score(env, wall))
+        expected = (
+            border_score(env, rates, min_area=0)
+            if kept_without_units
+            else border_score(env, wall)
         )
+        np.testing.assert_allclose(border_score(unitless, rates), expected)
+
+    def test_summary_records_the_field_minimum_it_applied(self):
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        for units, rule in [("cm", "200 cm²"), (None, "9 bins")]:
+            env = Environment.from_polygon(
+                shapely.box(0, 0, 100, 100), bin_size=2.5, units=units
+            )
+            wall = _maps(env, 100, 100)["west strip"]
+            result = SpatialRatesResult(
+                wall[None], np.ones(env.n_bins), env, method="binned", bandwidth=0.0
+            )
+            table = result.summary_table()
+            assert table.attrs["border_field_minimum"].startswith(rule)
+            assert np.isfinite(table["border_score"]).all()
+            assert "unavailable_metrics" not in table.attrs
+            assert result.label_cell_types().tolist() == ["border"]
 
     def test_wall_strip_coverage_and_distance_by_hand(self):
         """A one-bin strip along the west wall of a 10 x 10 box covers that

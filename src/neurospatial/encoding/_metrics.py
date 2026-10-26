@@ -772,8 +772,8 @@ def batch_border_scores(
     min_area : float, optional
         Smallest area of one field, in squared position units (for example
         cm²). Smaller fields are ignored. The default, None, is the 200 cm² of
-        Solstad et al. (2008) in the environment's units; environments without
-        metric length units need an explicit value.
+        Solstad et al. (2008) in the environment's units, or at least 9 bins
+        (the BNT/opexebo default) when the units are not a metric length.
     metric : {"geodesic", "euclidean"}, default="geodesic"
         Distance from field bins to the nearest wall.
         - "geodesic": center-to-wall length at the wall plus the shortest path
@@ -792,8 +792,8 @@ def batch_border_scores(
         Container with two parallel arrays of length ``n_neurons``:
 
         - ``scores``: border scores in range [-1, 1]. NaN where border
-          score cannot be computed (no positive peak, no field of at least
-          ``min_area``, or a caught exception).
+          score cannot be computed (no positive peak, no field of the
+          minimum size, or a caught exception).
         - ``failures``: boolean mask, ``True`` for neurons whose
           ``border_score`` call raised ``ValueError`` or
           ``RuntimeError`` and was caught. A ``UserWarning`` is also
@@ -803,8 +803,7 @@ def batch_border_scores(
     ------
     ValueError
         If firing_rates is not 2D, if firing_rates.shape[1] != env.n_bins,
-        if an argument is invalid, or if ``min_area`` is None and the
-        environment's units are not a metric length.
+        or if an argument is invalid.
     NotImplementedError
         If physical wall coverage or observations are unavailable for any unit.
 
@@ -850,11 +849,7 @@ def batch_border_scores(
         _require_wall_rates,
         border_geometry,
     )
-    from neurospatial.encoding.border import (
-        _resolve_min_area,
-        _validate_border_arguments,
-        border_score,
-    )
+    from neurospatial.encoding.border import _validate_border_arguments, border_score
 
     firing_rates = np.asarray(firing_rates)
 
@@ -870,15 +865,13 @@ def batch_border_scores(
             f"env has {env.n_bins} bins"
         )
 
-    # Invalid arguments, unavailable walls and an unresolvable default field
-    # area concern every neuron, so raise them once here instead of recording
-    # a per-neuron failure.
+    # Invalid arguments and unavailable walls concern every neuron, so raise
+    # them once here instead of recording a per-neuron failure.
     _validate_border_arguments(threshold, min_area, metric, boundary_source)
     geometry = border_geometry(env, boundary_source)
     if boundary_source == "physical":
         for firing_rate in firing_rates:
             _require_wall_rates(geometry, firing_rate)
-    resolved_min_area = _resolve_min_area(env, min_area)
 
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
@@ -892,7 +885,7 @@ def batch_border_scores(
                 env,
                 firing_rate,
                 threshold=threshold,
-                min_area=resolved_min_area,
+                min_area=min_area,
                 metric=metric,  # type: ignore[arg-type]
                 boundary_source=boundary_source,
             )

@@ -649,6 +649,7 @@ def _spatial_summary_frame(
         batch_sparsity,
         batch_spatial_information,
     )
+    from neurospatial.encoding.border import _border_field_minimum
 
     rates = np.atleast_2d(_to_numpy(result._get_rates()))
     occupancy = _to_numpy(result.occupancy)
@@ -660,10 +661,7 @@ def _spatial_summary_frame(
         border = batch_border_scores(
             result.env, rates, boundary_source=boundary_source
         ).scores
-    except (NotImplementedError, ValueError) as exc:
-        # Unavailable walls or wall rates (NotImplementedError), or units in
-        # which the default minimum field area cannot be expressed
-        # (ValueError); the table's own arguments are otherwise valid.
+    except NotImplementedError as exc:
         border = np.full(len(rates), np.nan)
         border_unavailable = str(exc)
     columns: dict[str, Any] = {
@@ -685,6 +683,7 @@ def _spatial_summary_frame(
         columns["cell_type"] = labels
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["border_boundary_source"] = boundary_source
+    df.attrs["border_field_minimum"] = _border_field_minimum(result.env)
     if border_unavailable is not None:
         df.attrs["unavailable_metrics"] = {"border_score": border_unavailable}
     df.attrs["method"] = result.method
@@ -1288,8 +1287,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         min_area : float, optional
             Smallest area of one field, in squared position units (for
             example cm²). Smaller fields are ignored. The default, None, is
-            the 200 cm² of Solstad et al. (2008) in the environment's units;
-            environments without metric length units need an explicit value.
+            the 200 cm² of Solstad et al. (2008) in the environment's units,
+            or at least 9 bins (the BNT/opexebo default) when the units are
+            not a metric length.
         metric : {'geodesic', 'euclidean'}, default 'geodesic'
             Distance from field bins to the nearest wall.
             - 'geodesic': path through the environment (respects obstacles)
@@ -1304,8 +1304,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         float
             Border score in range [-1, 1]: near +1 for a thin field along a
             whole wall, -1 for firing away from every wall. A uniform map
-            scores about 0.5 on a square. NaN if no field reaches
-            ``min_area``.
+            scores about 0.5 on a square. NaN if no field reaches the
+            minimum size.
 
         Notes
         -----
@@ -2239,8 +2239,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         min_area : float, optional
             Smallest area of one field, in squared position units (for
             example cm²). Smaller fields are ignored. The default, None, is
-            the 200 cm² of Solstad et al. (2008) in the environment's units;
-            environments without metric length units need an explicit value.
+            the 200 cm² of Solstad et al. (2008) in the environment's units,
+            or at least 9 bins (the BNT/opexebo default) when the units are
+            not a metric length.
         metric : {'geodesic', 'euclidean'}, default 'geodesic'
             Distance from field bins to the nearest wall.
             - 'geodesic': path through the environment (respects obstacles)
@@ -2256,7 +2257,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             Border scores in range [-1, 1] for each neuron (``.scores``):
             near +1 for a thin field along a whole wall, -1 for firing away
             from every wall. A uniform map scores about 0.5 on a square. NaN
-            where no field reaches ``min_area``.
+            where no field reaches the minimum size.
 
         Notes
         -----
