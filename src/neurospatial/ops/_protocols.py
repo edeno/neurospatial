@@ -134,6 +134,12 @@ class CenterTreeConsumer(Protocol):
     def bin_center_tree(self) -> cKDTree: ...
 
 
+class BinLookupConsumer(Protocol):
+    """The bin each point lies in, -1 outside, by the environment's own rule."""
+
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
+
+
 class FieldPlotConsumer(Protocol):
     """Draw one value per bin on an Axes, through the environment's renderer."""
 
@@ -207,7 +213,9 @@ class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Prot
     def binning(self) -> Binning: ...
 
 
-class ProbabilityTargetConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol):
+class ProbabilityTargetConsumer(
+    CartesianBinsConsumer, CenterTreeConsumer, BinLookupConsumer, Protocol
+):
     """Cartesian bins that receive probabilities from their nearest centers.
 
     ``map_probabilities`` reads ``bin_center_tree`` once, at its boundary, and
@@ -215,17 +223,15 @@ class ProbabilityTargetConsumer(CartesianBinsConsumer, CenterTreeConsumer, Proto
     target center, to tell whether they still lie inside a target bin.
     """
 
-    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
-
-class ResampleSourceConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol):
+class ResampleSourceConsumer(
+    CartesianBinsConsumer, CenterTreeConsumer, BinLookupConsumer, Protocol
+):
     """Cartesian bins whose field is pulled back by nearest bin center.
 
     ``resample_field`` reads ``bin_at`` to tell which destination bins lie in
     the source, and ``bin_center_tree`` to find their nearest source centers.
     """
-
-    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
 
 class ResampleTargetConsumer(CartesianConsumer, BinCentersConsumer, Protocol):
