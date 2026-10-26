@@ -723,11 +723,8 @@ class TestGridProperties:
         score_individual = grid_score(autocorr)
         scale_individual = grid_scale(autocorr, pixel_size=pixel_size)
 
-        # Score should match exactly
         assert props.score == score_individual
-
-        # Scale should match (within tolerance due to peak detection variance)
-        assert abs(props.scale - scale_individual) < 5.0
+        assert props.scale == scale_individual
 
     def test_grid_properties_raises_on_invalid_input(self):
         """Test raises ValueError on invalid input."""
@@ -757,6 +754,156 @@ class TestGridProperties:
         assert np.isnan(props.orientation_std)
         # n_peaks should be 0 for flat data
         assert props.n_peaks == 0
+
+
+def _autocorr_with_peaks(peaks: list[tuple[float, float]]) -> np.ndarray:
+    """Autocorrelogram with a central peak and point-symmetric peak pairs.
+
+    ``peaks`` holds ``(distance_px, angle_deg)`` of one peak of each pair.
+    """
+    size = 121
+    offsets = np.arange(size) - size // 2
+    x, y = np.meshgrid(offsets, offsets, indexing="ij")
+    autocorr = np.exp(-(x**2 + y**2) / (2 * 4.0**2))
+    for distance, angle in peaks:
+        for sign in (1, -1):
+            cx = sign * distance * np.cos(np.radians(angle))
+            cy = sign * distance * np.sin(np.radians(angle))
+            autocorr += 0.6 * np.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * 4.0**2))
+    return autocorr / autocorr.max()
+
+
+class TestSpacingNeedsOneHexagon:
+    """Spacing and orientation are read only from a hexagon's first ring.
+
+    The nearest peaks of the autocorrelogram give a spacing only when they
+    can be one hexagon: their directions agree modulo 60 degrees to within
+    15 degrees (the second ring of a lattice, and half of a square lattice's
+    nearest peaks, point 30 degrees away), and peaks 1.5 or more times as far
+    as the nearest are not in the ring.
+    """
+
+    def test_hexagonal_ring_gives_its_spacing_and_orientation(self):
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _autocorr_with_peaks([(20.0, 10.0), (20.0, 70.0), (20.0, 130.0)])
+
+        props = grid_properties(autocorr, pixel_size=2.0)
+
+        assert props.n_peaks == 6
+        assert props.scale == pytest.approx(40.0, abs=1.0)
+        assert np.degrees(props.orientation) == pytest.approx(10.0, abs=2.0)
+
+    def test_fields_merged_into_two_directions_have_no_spacing(self):
+        """Wide fields leave peaks 23 degrees apart: not one hexagon.
+
+        With fields as wide as a third of the spacing, a 50 cm grid's map
+        left peaks at 61 cm (19 degrees) and 71 cm (42 degrees), and the
+        spacing read 66 cm.
+        """
+        from neurospatial.encoding.grid import grid_properties, grid_scale
+
+        autocorr = _autocorr_with_peaks([(24.4, 19.0), (28.4, 42.0)])
+
+        props = grid_properties(autocorr, pixel_size=2.5)
+
+        assert np.isfinite(props.score)
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+        assert np.isnan(props.orientation_std)
+        assert np.isnan(grid_scale(autocorr, pixel_size=2.5))
+
+    def test_second_ring_peaks_do_not_set_the_spacing(self):
+        """Oversmoothing left one direction of the ring and second-ring peaks.
+
+        A 45 cm grid smoothed with a 12 cm bandwidth kept a ring pair at
+        42 cm (30 degrees) beside second-ring peaks at 70 cm, and the spacing
+        read 70 cm.
+        """
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _autocorr_with_peaks([(17.0, 30.0), (27.8, 60.0), (28.4, 2.0)])
+
+        props = grid_properties(autocorr, pixel_size=2.5)
+
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+
+    def test_ring_with_one_direction_missing_keeps_its_spacing(self):
+        """Second-ring peaks among the six nearest are left out, not fatal."""
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _autocorr_with_peaks([(18.0, 38.0), (18.0, 98.0), (31.2, 8.0)])
+
+        props = grid_properties(autocorr, pixel_size=2.5)
+
+        assert props.n_peaks == 4
+        assert props.scale == pytest.approx(45.0, abs=1.5)
+        assert np.degrees(props.orientation) == pytest.approx(38.0, abs=3.0)
+
+    def test_square_lattice_has_no_hexagonal_spacing(self):
+        from neurospatial.encoding.grid import grid_properties
+
+        autocorr = _autocorr_with_peaks(
+            [(20.0, 0.0), (20.0, 90.0), (28.3, 45.0), (28.3, 135.0)]
+        )
+
+        props = grid_properties(autocorr, pixel_size=2.0)
+
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+
+    def test_no_spacing_when_the_score_is_undefined(self):
+        """An 80 cm grid in a 50 cm box has no bounded central peak."""
+        from neurospatial.encoding.grid import (
+            autocorrelation_pixel_size,
+            grid_properties,
+            spatial_autocorrelation,
+        )
+
+        edges = np.arange(0.0, 51.25, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((20, 20), dtype=bool), grid_edges=(edges, edges)
+        )
+        wavenumber = 4 * np.pi / (np.sqrt(3) * 80.0)
+        rate = np.exp(
+            sum(
+                np.cos(wavenumber * (env.bin_centers - 10.0) @ [np.cos(a), np.sin(a)])
+                for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
+            )
+        )
+
+        props = grid_properties(
+            spatial_autocorrelation(env, rate),
+            pixel_size=autocorrelation_pixel_size(env),
+        )
+
+        assert np.isnan(props.score)
+        assert np.isnan(props.scale)
+        assert np.isnan(props.orientation)
+
+    def test_smooth_random_maps_rarely_get_a_spacing(self):
+        """Without a hexagonal ring, most maps get no spacing (96% did before)."""
+        from scipy.ndimage import gaussian_filter
+
+        from neurospatial.encoding.grid import grid_scale, spatial_autocorrelation
+
+        edges = np.arange(0.0, 102.5, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+        )
+        rng = np.random.default_rng(0)
+        scales = [
+            grid_scale(
+                spatial_autocorrelation(
+                    env, gaussian_filter(rng.gamma(1.0, 1.0, (40, 40)), 3.0).ravel()
+                ),
+                pixel_size=2.5,
+            )
+            for _ in range(100)
+        ]
+
+        assert np.mean(np.isfinite(scales)) < 0.35
 
 
 class TestFindAutocorrPeaks:
