@@ -193,8 +193,8 @@ def spatial_autocorrelation(
         the smaller cell width. Zero lag is the center pixel and lags run to
         the full extent of the map in each direction, so for an ``(n_x,
         n_y)`` grid the map is ``(2 * n_x - 1, 2 * n_y - 1)``. Values in
-        [-1, 1]; NaN at shifts where fewer than 20 pairs of visited bins
-        overlap. When the two cell widths differ (by more than 1/100 of a
+        [-1, 1]; NaN at shifts where fewer than a quarter of the visited bins
+        (or fewer than 20 bins) overlap. When the two cell widths differ (by more than 1/100 of a
         cell across the grid) the lags along the wider axis are interpolated
         onto the finer spacing, so the map is larger along that axis.
 
@@ -220,12 +220,36 @@ def spatial_autocorrelation(
     the Pearson correlation over the pairs of bins that are both visited.
     Unvisited bins (NaN) and inactive grid cells are left out of each pair
     set rather than counted as zero firing, so a gap in coverage does not
-    pull correlations toward zero. Shifts with fewer than 20 overlapping
-    pairs are NaN: near the edge of the map so few bins overlap that their
-    correlation is mostly noise. The six
-    sums each correlation needs (pair count, the sums and sums of squares of
-    both sides, and the sum of products) are computed for all shifts at once
-    with zero-padded FFTs.
+    pull correlations toward zero. The six sums each correlation needs (pair
+    count, the sums and sums of squares of both sides, and the sum of
+    products) are computed for all shifts at once with zero-padded FFTs.
+
+    **Shifts with too little overlap are NaN.** A shift is kept when at least
+    a quarter of the visited bins, and at least 20 bins, overlap. The
+    sampling error of a correlation over ``n`` pairs of bins scales as
+    ``1 / sqrt(n)``, so the kept shifts are at most twice as noisy as zero
+    lag; farther out the correlation rests on a strip of bins along two
+    walls. The floor of 20 bins is the one of scaNpix (``spatialCrosscorr``)
+    and NeuroChaT (``spatial_corr_min_obs``) and decides only for maps of
+    fewer than 80 visited bins. In a square arena of side ``L`` a quarter of
+    the bins overlap out to ``0.75 L`` along the walls and ``0.71 L`` along
+    the diagonals.
+
+    The quarter was calibrated on simulated grid cells and on circular time
+    shifts (at least 20 s) of the spike trains of simulated grid, place and
+    untuned cells: 10 and 30 minute sessions in 0.5, 1 and 1.5 m square,
+    1.5 m circular and 1 x 2 m arenas, 2.5 cm bins, 100 shifts per cell.
+    With 20 bins as the only rule, the expanding annulus of
+    :func:`grid_score` reached shifts where only strips along two walls
+    overlap: the 95th percentile of the shuffled scores was 0.45-0.57, 7-11%
+    of them reached 0.4, and single place fields scored up to 0.75. With a
+    quarter, the 95th percentile was 0.41-0.48 (0.15 in the 0.5 m box), 1-8%
+    reached 0.4 and no place or untuned cell scored above 0.24. In arenas of
+    1 m and larger, grid cells with spacings up to 0.6 of the arena's side
+    kept median scores of 1.07-1.38; wider spacings score lower (0.64
+    instead of 1.29 for 80 cm in a 1 m box). Requiring half of the bins
+    removed most of the first ring of 50 cm grids in a 1 m box (median score
+    1.32 fell to 0.43).
 
     Interpretation:
 
@@ -545,9 +569,17 @@ def _uniform_spacing(edges: tuple[NDArray[np.float64], ...]) -> bool:
 
 
 # A lag's correlation needs at least this many pairs of visited bins that
-# overlap at that lag; fewer leave it NaN. Near the map's edge the overlap
-# shrinks to a few bins whose correlation is mostly noise.
+# overlap at that lag; fewer leave it NaN. Caswell Barry's spatialCrosscorr.m
+# in scaNpix and NeuroChaT's ``spatial_corr_min_obs`` default both use 20. It
+# decides only for maps of fewer than 80 visited bins; larger maps reach the
+# fraction below first.
 _MIN_OVERLAP_BINS = 20
+# A lag's correlation also needs at least this fraction of the map's visited
+# bins to overlap. The sampling error of a correlation over n pairs scales as
+# 1 / sqrt(n), so a lag over a quarter of the bins is at most twice as noisy
+# as zero lag. Calibrated on simulated grid cells and circularly time-shifted
+# shuffles (see spatial_autocorrelation).
+_MIN_OVERLAP_FRACTION = 0.25
 
 
 def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -567,7 +599,8 @@ def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64
     ndarray of float64, shape (2 * n_x - 1, 2 * n_y - 1)
         Correlation at lag ``(i - (n_x - 1), j - (n_y - 1))`` at index
         ``(i, j)``: zero lag is the center. NaN where fewer than
-        ``_MIN_OVERLAP_BINS`` pairs overlap or either side of the overlap is
+        ``_MIN_OVERLAP_BINS`` pairs, or fewer than ``_MIN_OVERLAP_FRACTION``
+        of the finite bins, overlap, or where either side of the overlap is
         constant.
     """
     valid = np.isfinite(rate_map)
@@ -609,8 +642,9 @@ def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64
         # A side of the overlap whose values are all equal has a variance of
         # rounding error only: its correlation is undefined.
         floor = 1e-9 * n_pairs**2
+        min_pairs = max(_MIN_OVERLAP_BINS, _MIN_OVERLAP_FRACTION * values.size)
         defined = (
-            (n_pairs >= _MIN_OVERLAP_BINS)
+            (n_pairs >= min_pairs)
             & (variance_first > floor)
             & (variance_second > floor)
         )
@@ -772,23 +806,33 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
        fields.
     2. Rotate the autocorrelogram by 30°, 60°, 90°, 120° and 150° about zero
        lag.
-    3. For each outer radius from twice the central-peak radius to the edge
-       of the map, in steps of one pixel, take the annulus between the
-       central peak and that radius, and compute the Pearson correlation
-       between the autocorrelogram and each rotation over the lags defined
-       in the map and in all five rotations:
+    3. For each outer radius from twice the central-peak radius to the
+       farthest lag defined in the map and in all five rotations, in steps
+       of one pixel, take the annulus between the central peak and that
+       radius, and compute the Pearson correlation between the
+       autocorrelogram and each rotation over the lags defined in the map
+       and in all five rotations:
        ``min(r60, r120) - max(r30, r90, r150)``. A neighboring field lies at
        least one central-peak diameter from zero lag, so a narrower annulus
        holds only the shoulder of the central peak; scaNpix likewise keeps
        its first annulus wider than a multiple of the inner radius.
     4. The score is the largest mean of three consecutive radii.
 
+    :func:`spatial_autocorrelation` leaves the shifts at which fewer than a
+    quarter of the visited bins overlap undefined, so the annulus stops where
+    the correlations still rest on most of the map. Sweeping it to the edge
+    of the map, as BNT does, lets correlations over strips of a few bins
+    along the walls decide the score; on circularly time-shifted shuffles
+    that put the 95th percentile at 0.45-0.57 and let single place fields
+    score up to 0.75.
+
     The 0.2 threshold and the factor of two are fixed module constants, not
     parameters.
 
     Sweeping the outer radius makes the score independent of the grid
     spacing and of the arena size, as long as the first ring of peaks lies
-    inside the map; a fixed annulus misses the ring of a widely spaced grid.
+    inside the defined lags, for spacings up to about 0.6 of the arena's
+    side; a fixed annulus misses the ring of a widely spaced grid.
 
     **Interpretation**:
 
@@ -832,10 +876,6 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     if np.isnan(central_radius):
         return np.nan
     edge = (min(centered.shape) - 1) // 2
-    radii = np.arange(int(np.ceil(_MIN_OUTER_RADIUS * central_radius)), edge + 1)
-    if radii.size < _N_SCORE_RADII:
-        return np.nan
-
     distance = _lag_distance(centered.shape)
     used = np.isfinite(centered) & (distance > central_radius) & (distance <= edge)
     rotations = []
@@ -843,6 +883,14 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
         rotated, defined = _rotate_about_zero_lag(centered, angle)
         rotations.append(rotated)
         used &= defined
+    if not used.any():
+        return np.nan
+    # The annulus grows only as far as the lags that are defined in the map
+    # and in every rotation; beyond them it would add no lags.
+    outer = int(np.floor(distance[used].max()))
+    radii = np.arange(int(np.ceil(_MIN_OUTER_RADIUS * central_radius)), outer + 1)
+    if radii.size < _N_SCORE_RADII:
+        return np.nan
 
     # Pearson correlation in every annulus at once: cumulative sums over the
     # lags sorted by distance, read at each outer radius.

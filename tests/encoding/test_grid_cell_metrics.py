@@ -13,8 +13,13 @@ from neurospatial import Environment
 
 
 def _direct_autocorrelation(rate_map: np.ndarray) -> np.ndarray:
-    """Pearson correlation at each lag over the overlapping finite bins, by loop."""
+    """Pearson correlation at each lag over the overlapping finite bins, by loop.
+
+    A lag is defined when at least 20 pairs and at least a quarter of the
+    finite bins overlap.
+    """
     n_x, n_y = rate_map.shape
+    min_pairs = max(20, np.isfinite(rate_map).sum() / 4)
     expected = np.full((2 * n_x - 1, 2 * n_y - 1), np.nan)
     for dx in range(1 - n_x, n_x):
         for dy in range(1 - n_y, n_y):
@@ -26,7 +31,7 @@ def _direct_autocorrelation(rate_map: np.ndarray) -> np.ndarray:
             ]
             both = np.isfinite(first) & np.isfinite(second)
             x, y = first[both], second[both]
-            if both.sum() >= 20 and np.ptp(x) > 0 and np.ptp(y) > 0:
+            if both.sum() >= min_pairs and np.ptp(x) > 0 and np.ptp(y) > 0:
                 expected[dx + n_x - 1, dy + n_y - 1] = np.corrcoef(x, y)[0, 1]
     return expected
 
@@ -42,16 +47,16 @@ def test_autocorrelation_is_pearson_over_overlapping_visited_bins(inactive):
     env = Environment.from_grid_mask(mask, (np.arange(10.0), np.arange(13.0)))
     rates = np.random.default_rng(3).gamma(2.0, 2.0, env.n_bins)
     rates[[3, 17, 40]] = np.nan
-    # Two silent rows make the overlap at a shift of 7 rows constant on one
-    # side, where the correlation is undefined.
-    rates[-24:] = 0.0
+    # Three silent rows make the overlap at a shift of 6 rows constant on one
+    # side, where the correlation is undefined although 36 pairs overlap.
+    rates[-36:] = 0.0
     rate_map = np.full(mask.shape, np.nan)
     rate_map[mask] = rates
 
     actual = spatial_autocorrelation(env, rates)
 
     assert actual.shape == (17, 23)
-    assert np.isnan(actual[8 + 7, 11])
+    assert np.isnan(actual[8 + 6, 11])
     np.testing.assert_allclose(actual[8, 11], 1.0, atol=1e-12)
     np.testing.assert_array_equal(
         np.isnan(actual), np.isnan(_direct_autocorrelation(rate_map))
@@ -63,19 +68,21 @@ def test_autocorrelation_is_pearson_over_overlapping_visited_bins(inactive):
 
 
 def test_autocorrelation_of_a_shifted_copy_is_not_wrapped():
-    """A shift by the map's own period correlates once; the circular map wrapped it."""
+    """A ramp correlates perfectly at every shift; wrapping it around would not."""
     from neurospatial.encoding.grid import spatial_autocorrelation
 
     mask = np.ones((30, 30), dtype=bool)
     env = Environment.from_grid_mask(mask, (np.arange(31.0),) * 2)
     x = env.bin_centers[:, 0]
     # A ramp along x: shifting by +k correlates perfectly with the overlap,
-    # while wrap-around would join the top of the ramp to its bottom.
+    # while wrap-around would join the top of the ramp to its bottom. Shifts
+    # up to 22 of 30 columns overlap in at least a quarter of the bins.
     autocorr = spatial_autocorrelation(env, x)
 
-    finite = np.isfinite(autocorr[29 + 1 : 29 + 25, 29])
+    finite = np.isfinite(autocorr[29 + 1 : 29 + 23, 29])
     assert finite.all()
-    np.testing.assert_allclose(autocorr[29 + 1 : 29 + 25, 29], 1.0, atol=1e-12)
+    np.testing.assert_allclose(autocorr[29 + 1 : 29 + 23, 29], 1.0, atol=1e-12)
+    assert np.isnan(autocorr[29 + 23, 29])
 
 
 class TestSpatialAutocorrelation:
@@ -366,6 +373,64 @@ class TestGridScore:
         # Hexagonal pattern should produce positive score
         # (Not necessarily > 0.4 for this simplified pattern, but should be > 0)
         assert score > 0.0
+
+    def test_smooth_random_maps_rarely_reach_the_screening_value(self):
+        """Smooth maps without a lattice seldom score 0.4 or more.
+
+        Smoothed random maps resemble the rate maps of time-shifted spike
+        trains. When the annulus swept out to shifts where only strips along
+        two walls overlap, 13.5% of these maps reached 0.4 and the 95th
+        percentile was 0.60; keeping shifts where a quarter of the bins
+        overlap brings them to 5% and 0.40.
+        """
+        from scipy.ndimage import gaussian_filter
+
+        from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+
+        edges = np.arange(0.0, 102.5, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+        )
+        rng = np.random.default_rng(0)
+        scores = np.array(
+            [
+                grid_score(
+                    spatial_autocorrelation(
+                        env, gaussian_filter(rng.gamma(1.0, 1.0, (40, 40)), 3.0).ravel()
+                    )
+                )
+                for _ in range(200)
+            ]
+        )
+
+        assert np.mean(scores >= 0.4) < 0.08
+        assert np.nanpercentile(scores, 95) < 0.45
+
+    @pytest.mark.parametrize(("side", "spacing"), [(100.0, 60.0), (150.0, 90.0)])
+    @pytest.mark.parametrize("orientation", [0.0, 0.3, 0.6, 0.9])
+    def test_grid_spaced_at_six_tenths_of_the_arena_scores_high(
+        self, side, spacing, orientation
+    ):
+        """The first ring of a grid spaced at 0.6 of the arena's side is scored."""
+        from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+
+        edges = np.arange(0.0, side + 1.25, 2.5)
+        n_cells = len(edges) - 1
+        env = Environment.from_grid_mask(
+            np.ones((n_cells, n_cells), dtype=bool), grid_edges=(edges, edges)
+        )
+        axes = spacing * np.array(
+            [
+                [np.cos(orientation), np.sin(orientation)],
+                [np.cos(orientation + np.pi / 3), np.sin(orientation + np.pi / 3)],
+            ]
+        )
+        steps = np.arange(-8, 9)
+        centers = np.stack(np.meshgrid(steps, steps), axis=-1).reshape(-1, 2) @ axes
+        squared = np.sum((env.bin_centers[:, None] - centers[None]) ** 2, axis=-1)
+        rate = np.exp(-squared / (2 * (0.15 * spacing) ** 2)).sum(axis=1)
+
+        assert grid_score(spatial_autocorrelation(env, rate)) > 1.2
 
     def test_place_cell_pattern_low_score(self):
         """A single place field's autocorrelogram has no hexagonal ring."""
