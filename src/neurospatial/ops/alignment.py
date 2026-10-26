@@ -1,50 +1,24 @@
-"""Alignment and Probability Mapping Between Spatial Environments.
+"""Alignment and probability mapping between spatial environments.
 
-This module provides functionalities to align and map data, particularly
-probability distributions, between different spatial `Environment` instances
-defined in the `neurospatial` package. Supports N-dimensional environments
-(2D, 3D, or higher).
+Moves probability distributions between the bins of different `Environment`
+instances (2D, 3D or higher), for example a posterior decoded in one session
+onto another session's bins.
 
-Import Paths
-------------
-New (recommended):
-    >>> from neurospatial.ops.alignment import (
-    ...     map_probabilities,
-    ...     get_2d_rotation_matrix,
-    ... )  # doctest: +SKIP
+1.  **Geometric transformations**: `apply_similarity_transform` scales, rotates
+    and translates points, such as a source environment's bin centers, into a
+    target environment's coordinates. `get_2d_rotation_matrix` builds a 2D
+    rotation from an angle in radians; for 3D rotations, use
+    `scipy.spatial.transform.Rotation`.
 
-Legacy (still works):
-    >>> from neurospatial.alignment import map_probabilities  # doctest: +SKIP
+2.  **Probability mapping**: `map_probabilities` gives each (optionally
+    transformed) source bin's probability to the nearest target bin, summing
+    the mass that lands in the same target bin, and refuses mass that lands
+    farther than a target bin spacing from every target bin.
 
-Core capabilities include:
-
-1.  **Geometric Transformations**:
-    * Applying similarity transformations (rotation, scaling, and translation)
-        to sets of points, typically the bin centers of a source `Environment`,
-        to align them with a target `Environment`'s coordinate space.
-    * Helper functions to create 2D rotation matrices from angles.
-    * For 3D rotations, use `scipy.spatial.transform.Rotation`.
-
-2.  **Probability Mapping**:
-    * The primary method, `map_probabilities`,
-        transfers probabilities from a source environment to a target environment.
-        For each bin in the (optionally transformed) source environment, its
-        probability is assigned to the spatially nearest bin in the target
-        environment. If multiple source bins map to the same target bin,
-        their probabilities are summed. This is useful when comparing or
-        aggregating data from slightly different discretizations or
-        experimental setups of the same underlying space.
-
-This module is designed to assist in scenarios such as:
-    * Comparing probability distributions (e.g., place fields (spatial firing
-        patterns of neurons), occupancy maps) from experiments where the recording
-        environment might have undergone slight shifts, rotations, or scaling.
-    * Mapping data from one type of spatial discretization (e.g., a fine grid)
-        to another (e.g., a coarser grid or a different layout type), while
-        attempting to preserve the spatial correspondence of the data.
-
-The functions expect `Environment` objects and probability arrays
-that correspond to the active bins of these environments.
+Use it for posteriors and occupancy probabilities from experiments where the
+arena moved, turned or was rescaled, or that were binned differently. Mass is
+summed, so do not use it for rate maps or other per-bin values; move those
+with :func:`~neurospatial.ops.resample_field`.
 """
 
 from __future__ import annotations
