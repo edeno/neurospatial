@@ -8,13 +8,11 @@ import scipy.sparse
 from numpy.typing import NDArray
 
 
-def _row_normalize(
-    matrix: scipy.sparse.csr_matrix, n_bins: int
-) -> scipy.sparse.csr_matrix:
+def _row_normalize(matrix: scipy.sparse.csr_matrix) -> scipy.sparse.csr_matrix:
     """Scale each row to sum to one; rows without entries stay zero."""
     row_sums = np.array(matrix.sum(axis=1)).flatten()
     nonzero_rows = row_sums > 0
-    inv_row_sums = np.zeros(n_bins)
+    inv_row_sums = np.zeros(matrix.shape[0])
     inv_row_sums[nonzero_rows] = 1.0 / row_sums[nonzero_rows]
     normalizer = scipy.sparse.diags(inv_row_sums, format="csr")
     return normalizer @ matrix
@@ -70,11 +68,9 @@ def _count_transitions(
         (transition_counts, (source_bins, target_bins)),
         shape=(n_bins, n_bins),
         dtype=float,
-    ).tocsr()
-    # Repeated steps between the same bins add up.
-    transition_matrix.sum_duplicates()
+    ).tocsr()  # Repeated steps between the same bins add up.
     if normalize:
-        transition_matrix = _row_normalize(transition_matrix, n_bins)
+        transition_matrix = _row_normalize(transition_matrix)
     return transition_matrix
 
 
@@ -100,7 +96,7 @@ def _random_walk_transitions(
     adjacency = nx.adjacency_matrix(graph, nodelist=range(n_bins))
     transition_matrix = adjacency.astype(float).tocsr()
     if normalize:
-        transition_matrix = _row_normalize(transition_matrix, n_bins)
+        transition_matrix = _row_normalize(transition_matrix)
     return transition_matrix
 
 

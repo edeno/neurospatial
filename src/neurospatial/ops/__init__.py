@@ -22,7 +22,7 @@ visibility : Viewshed, gaze, line-of-sight
 basis : GLM spatial basis functions
 """
 
-# Alignment operations
+# Occupancy allocation and transition helpers for Environment
 from neurospatial.ops._linear_allocation import (
     _linear_grid_occupancy as _linear_grid_occupancy,
 )
@@ -43,6 +43,8 @@ from neurospatial.ops._transitions import (
     _random_walk_transitions as _random_walk_transitions,
 )
 from neurospatial.ops._types import KernelMode
+
+# Alignment operations
 from neurospatial.ops.alignment import (
     apply_similarity_transform,
     get_2d_rotation_matrix,
