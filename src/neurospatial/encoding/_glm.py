@@ -32,9 +32,8 @@ from neurospatial.ops.diffusion import MRFBasis
 
 # ---------------------------------------------------------------------------
 # Module constants. Fixed numerics, not public params -- the glm API surface is
-# only ``penalty`` / ``rank``. The resolver's ``_DEFAULT_MAX_RANK`` is canonical
-# in ``ops.diffusion`` (imported by the public estimator layer), NOT redefined
-# here.
+# only ``penalty`` / ``rank``. The default basis rank (``_DEFAULT_MAX_RANK``)
+# lives with the basis resolver in ``ops.diffusion``, NOT here.
 # ---------------------------------------------------------------------------
 _RATE_FLOOR = 1e-10  # matches the decoding min_rate (likelihood.py:47)
 _MAX_ITER = 100  # Newton iterations
