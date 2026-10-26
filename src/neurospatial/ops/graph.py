@@ -454,14 +454,14 @@ def graph_convolve(
     field_clean = np.where(missing, 0.0, field)
 
     if normalize:
-        # Nadaraya-Watson: average over the observed source bins only.
-        observed_weights = kernel_matrix * ~missing[np.newaxis, :]
-        weight_sums = observed_weights.sum(axis=1)
+        # Nadaraya-Watson: average over the observed source bins only. The
+        # missing bins are zero in field_clean, so two matrix-vector products
+        # give the observed numerator and weight without an n_bins² copy.
+        weight_sums = kernel_matrix @ (~missing).astype(np.float64)
+        numerator = kernel_matrix @ field_clean
         supported = weight_sums > 0
         result: NDArray[np.float64] = np.full(env.n_bins, np.nan, dtype=np.float64)
-        result[supported] = (
-            observed_weights[supported] @ field_clean / weight_sums[supported]
-        )
+        result[supported] = numerator[supported] / weight_sums[supported]
         return result
 
     # A raw weighted sum is unknown wherever a nonzero weight meets a missing
