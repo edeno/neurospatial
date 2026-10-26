@@ -264,6 +264,8 @@ def test_shuffle_detects_true_spatial_view_cell(ou_env, ou_10min):
         headings,
         n_shuffles=200,
         rng=0,
+        gaze_model="fixed_distance",
+        view_distance=10.0,
         boundary_source="analysis",
     )[0]
     assert result.p_value == 1 / 201
@@ -283,6 +285,8 @@ def test_shuffle_detects_true_spatial_view_cell(ou_env, ou_10min):
 def test_shuffle_noise_false_positives(name, ou_env, ou_10min, noise_trains, obj):
     args = _significance_args(name, ou_env, noise_trains(600), ou_10min, obj)
     kwargs = {"bandwidth": 5} if name.startswith("place") else {}
+    if name.startswith("spatial_view"):
+        kwargs = {"boundary_source": "analysis"}
     result = getattr(encoding, name)(*args, n_shuffles=200, rng=0, **kwargs)
     assert sum(r.p_value < 0.05 for r in result.values()) <= 3
 
@@ -302,6 +306,8 @@ def test_shuffle_pooled_false_positive_rate(name, ou_env, ou_10min, noise_trains
     trains = [train for seed in range(1, 6) for train in noise_trains(600, seed=seed)]
     args = _significance_args(name, ou_env, trains, ou_10min, obj)
     kwargs = {"bandwidth": 5} if name.startswith("place") else {}
+    if name.startswith("spatial_view"):
+        kwargs = {"boundary_source": "analysis"}
     result = getattr(encoding, name)(*args, n_shuffles=200, rng=0, **kwargs)
     assert sum(r.p_value < 0.05 for r in result.values()) <= 10
 
