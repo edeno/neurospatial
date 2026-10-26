@@ -52,7 +52,12 @@ def _source_grid(
 
 @dataclass(frozen=True)
 class _RetainedLinearInterval:
-    """A half-open fraction of one observation interval assigned to one bin."""
+    """A half-open fraction of one observation interval assigned to one bin.
+
+    ``0 <= start_fraction < stop_fraction <= 1``: both builders take the
+    fractions from sorted unique breakpoints in ``[0, 1]``, and a stationary
+    interval is ``(0, 1)``.
+    """
 
     sample_index: int
     start_fraction: float
@@ -291,8 +296,10 @@ def retained_linear_intervals(
         Continuous domain and walls of the same environment.
     times : ndarray, shape (n_samples,)
         Validated timestamps, used to check interval-mask length.
-    positions : ndarray, shape (n_samples, 2)
-        Segment endpoints. Intervals with a non-finite endpoint are excluded.
+    positions : ndarray, shape (n_samples, n_dims)
+        Segment endpoints, ``n_dims == 2`` for planar cells and the bins'
+        dimension for N-D box cells. Intervals with a non-finite endpoint are
+        excluded.
     valid_mask : ndarray of bool, shape (n_samples - 1,)
         Observation validity (gaps, speed and recording windows), independent
         of whether the start point belongs to a retained bin.
