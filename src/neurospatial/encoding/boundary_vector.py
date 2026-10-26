@@ -126,10 +126,6 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         ``n_direction_bins`` times the analyzed duration.
     env : Environment
         The polar (distance, direction) environment of the bins.
-    distance_range : tuple of float
-        (min, max) distance to a wall covered by the bins.
-    n_distance_bins, n_direction_bins : int
-        Number of distance and direction bins.
     direction_frame : {"allocentric", "egocentric"}
         Frame of the direction to the wall. Allocentric: 0 = East,
         +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
@@ -137,6 +133,13 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         Which walls the rays stopped at.
     unit_id : int or str or None
         Identifier for this unit; set by indexing a population result.
+
+    Attributes
+    ----------
+    distance_range : tuple of float
+        (min, max) distance to a wall covered by the bins; read from ``env``.
+    n_distance_bins, n_direction_bins : int
+        Number of distance and direction bins; read from ``env``.
 
     Other Parameters
     ----------------
@@ -153,9 +156,6 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     firing_rate: ArrayLike
     occupancy: ArrayLike
     env: PolarEnvironment
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
     unit_id: int | str | None = None
@@ -261,10 +261,6 @@ class BoundaryVectorRatesResult(
         Boundary occupancy in seconds, shared by every unit.
     env : Environment
         The polar (distance, direction) environment of the bins.
-    distance_range : tuple of float
-        (min, max) distance to a wall covered by the bins.
-    n_distance_bins, n_direction_bins : int
-        Number of distance and direction bins.
     direction_frame : {"allocentric", "egocentric"}
         Frame of the direction to the wall.
     boundary_source : {"physical", "analysis"}
@@ -273,6 +269,13 @@ class BoundaryVectorRatesResult(
         One label per unit; ``np.arange(n_units)`` by default.
     unit_table : pandas.DataFrame, optional
         Per-unit metadata indexed by ``unit_id``.
+
+    Attributes
+    ----------
+    distance_range : tuple of float
+        (min, max) distance to a wall covered by the bins; read from ``env``.
+    n_distance_bins, n_direction_bins : int
+        Number of distance and direction bins; read from ``env``.
 
     Other Parameters
     ----------------
@@ -289,9 +292,6 @@ class BoundaryVectorRatesResult(
     firing_rates: ArrayLike
     occupancy: ArrayLike
     env: PolarEnvironment
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
@@ -332,9 +332,6 @@ class BoundaryVectorRatesResult(
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,
             env=self.env,
-            distance_range=self.distance_range,
-            n_distance_bins=self.n_distance_bins,
-            n_direction_bins=self.n_direction_bins,
             direction_frame=self.direction_frame,
             boundary_source=self.boundary_source,
             unit_id=label_at(self.unit_ids, idx),
@@ -739,9 +736,6 @@ def compute_boundary_vector_rate(
         firing_rate=unit.firing_rate,
         occupancy=unit.occupancy,
         env=unit.env,
-        distance_range=unit.distance_range,
-        n_distance_bins=unit.n_distance_bins,
-        n_direction_bins=unit.n_direction_bins,
         direction_frame=unit.direction_frame,
         boundary_source=unit.boundary_source,
         spike_window=unit.spike_window,
@@ -880,9 +874,6 @@ def _boundary_vector_rates(
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=polar_env,
-        distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
         direction_frame=direction_frame,
         boundary_source=boundary_source,
         unit_ids=resolved_unit_ids,

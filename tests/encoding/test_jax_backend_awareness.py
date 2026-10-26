@@ -544,9 +544,8 @@ class TestObjectVectorRateResultWithJax:
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         # Create egocentric polar environment
-        n_distance_bins = 5
         n_direction_bins = 12
-        distance_bin_size = 10.0  # 50.0 / 5 bins
+        distance_bin_size = 10.0  # five 10 cm rings over 0-50 cm
         angle_bin_size = 2 * np.pi / n_direction_bins
         env = Environment.from_polar_egocentric(
             distance_range=(0.0, 50.0),
@@ -564,9 +563,6 @@ class TestObjectVectorRateResultWithJax:
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
         )
 
         # Should not raise
@@ -580,9 +576,8 @@ class TestObjectVectorRateResultWithJax:
 
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
-        n_distance_bins = 5
         n_direction_bins = 12
-        distance_bin_size = 10.0  # 50.0 / 5 bins
+        distance_bin_size = 10.0  # five 10 cm rings over 0-50 cm
         angle_bin_size = 2 * np.pi / n_direction_bins
         env = Environment.from_polar_egocentric(
             distance_range=(0.0, 50.0),
@@ -604,9 +599,6 @@ class TestObjectVectorRateResultWithJax:
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
         )
 
         pref_dist = result.preferred_distance()

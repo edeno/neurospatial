@@ -178,13 +178,6 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         The polar environment used for the computation. This is
         typically created via ``Environment.from_polar_egocentric()`` and
         represents the (distance, direction) space indexing distance and direction to objects.
-    distance_range : tuple[float, float]
-        Range of distances (min, max) covered by the polar environment.
-    n_distance_bins : int
-        Number of distance bins in the polar grid.
-    n_direction_bins : int
-        Number of direction bins in the polar grid.
-
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
@@ -198,11 +191,11 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     env : Environment
         The egocentric polar environment.
     distance_range : tuple[float, float]
-        Distance range (min, max).
+        (min, max) distance covered by the bins; read from ``env``.
     n_distance_bins : int
-        Number of distance bins.
+        Number of distance bins; read from ``env``.
     n_direction_bins : int
-        Number of direction bins.
+        Number of direction bins; read from ``env``.
     unit_id : int or str or None
         Identifier for this unit. Set automatically when indexing/iterating a
         population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
@@ -261,9 +254,6 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     firing_rate: ArrayLike
     occupancy: ArrayLike
     env: PolarEnvironment
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     unit_id: int | str | None = None
 
@@ -652,13 +642,6 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         (and thus polar occupancy in the recorded frame) is the same for all neurons.
     env : Environment
         The polar environment used for the computation.
-    distance_range : tuple[float, float]
-        Range of distances (min, max) covered by the polar environment.
-    n_distance_bins : int
-        Number of distance bins in the polar grid.
-    n_direction_bins : int
-        Number of direction bins in the polar grid.
-
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
@@ -672,11 +655,11 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     env : Environment
         The egocentric polar environment.
     distance_range : tuple[float, float]
-        Distance range (min, max).
+        (min, max) distance covered by the bins; read from ``env``.
     n_distance_bins : int
-        Number of distance bins.
+        Number of distance bins; read from ``env``.
     n_direction_bins : int
-        Number of direction bins.
+        Number of direction bins; read from ``env``.
     unit_ids : NDArray, shape (n_units,)
         Identifier for each unit (row), e.g. from ``read_units`` or passed via
         ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
@@ -752,9 +735,6 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     firing_rates: ArrayLike
     occupancy: ArrayLike
     env: PolarEnvironment
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
@@ -854,9 +834,6 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,
             env=self.env,
-            distance_range=self.distance_range,
-            n_distance_bins=self.n_distance_bins,
-            n_direction_bins=self.n_direction_bins,
             unit_id=label_at(self.unit_ids, idx),
             spike_window=self.spike_window,
             analysis_settings=self._analysis_attrs()["analysis_settings"],
@@ -2160,9 +2137,6 @@ def _object_vector_rate(
         firing_rate=firing_rate,
         occupancy=occupancy_out,
         env=counts.polar_env,
-        distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )
@@ -2891,9 +2865,6 @@ def _object_vector_rates(
         firing_rates=firing_rates,
         occupancy=occupancy_out,
         env=counts.polar_env,
-        distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
         unit_ids=resolved_unit_ids,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,

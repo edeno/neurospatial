@@ -23,17 +23,30 @@ if TYPE_CHECKING:
 class _PolarRateMixin:
     """Bin centers, export metadata and peak coordinates of a polar rate map.
 
-    Hosts declare ``env`` (the polar environment), ``direction_frame``,
-    ``distance_range``, ``n_distance_bins`` and ``n_direction_bins``, and
-    inherit :class:`~neurospatial.encoding._base.SpatialResultMixin` after
-    this class.
+    Hosts declare ``env`` (the polar environment) and ``direction_frame``,
+    and inherit :class:`~neurospatial.encoding._base.SpatialResultMixin`
+    after this class. The grid's extent and shape are read from ``env``, the
+    one record of them, so they cannot disagree with the bins.
     """
 
     env: Any
     direction_frame: str
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
+
+    @property
+    def distance_range(self) -> tuple[float, float]:
+        """(min, max) distance covered by the bins, in the environment's units."""
+        edges = self.env.grid_edges[0]
+        return (float(edges[0]), float(edges[-1]))
+
+    @property
+    def n_distance_bins(self) -> int:
+        """Number of distance bins (rings) of the polar grid."""
+        return int(self.env.grid_shape[0])
+
+    @property
+    def n_direction_bins(self) -> int:
+        """Number of direction bins of the polar grid."""
+        return int(self.env.grid_shape[1])
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:

@@ -71,18 +71,12 @@ def test_result_records_frame(frame, ou_env, ou_2min, noise_trains, obj):
             single.firing_rate,
             single.occupancy,
             single.env,
-            single.distance_range,
-            single.n_distance_bins,
-            single.n_direction_bins,
         )
     with pytest.raises(TypeError, match="direction_frame"):
         encoding.ObjectVectorRatesResult(
             plural.firing_rates,
             plural.occupancy,
             plural.env,
-            plural.distance_range,
-            plural.n_distance_bins,
-            plural.n_direction_bins,
         )
 
 

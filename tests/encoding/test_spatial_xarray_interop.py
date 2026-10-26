@@ -272,9 +272,6 @@ def test_egocentric_rates_to_xarray_polar_coords():
         firing_rates=rng.uniform(0, 10, (n_neurons, env.n_bins)),
         occupancy=rng.uniform(0.5, 2.0, env.n_bins),
         env=env,
-        distance_range=(0.0, 50.0),
-        n_distance_bins=5,
-        n_direction_bins=12,
     )
     ds = result.to_xarray()
     assert isinstance(ds, xr.Dataset)
