@@ -875,7 +875,8 @@ Choices that change the answer:
   track with the default range (the spike extent), give a slope pinned at
   the search bound of one theta cycle across the range, several times too
   shallow, and still a small p-value. A warning flags any fit whose best
-  slope lies on the bound. Pass one field's spikes with
+  slope lies on the bound, and `result.slope_at_bound` records it for
+  batch analyses. Pass one field's spikes with
   `position_range=(field_start, field_end)` in the same coordinate.
 - **Fields cut by the end of the track.** The spikes cover only part of the
   field, so with the default range `normalized_slope` is the phase change

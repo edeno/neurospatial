@@ -267,6 +267,14 @@ class PhasePrecessionResult(ResultMixin):
     mean_resultant_length : float
         Mean resultant length of phase residuals in [0, 1].
         Higher values indicate better linear fit.
+    slope_at_bound : bool
+        True when the best-fitting slope lies on a ``slope_bounds`` edge, so
+        ``slope`` is the bound rather than an estimate: the data's best slope
+        may lie outside the search range. Usually the spikes are not one
+        field in one running direction, or ``position_range`` is wider than
+        the field; untuned spikes also often fit at a bound, with a large
+        ``p_value``. Filter on it in batch analyses instead of catching the
+        warning :func:`compute_phase_precession` emits.
     """
 
     slope: float
@@ -275,6 +283,7 @@ class PhasePrecessionResult(ResultMixin):
     correlation: float
     p_value: float
     mean_resultant_length: float
+    slope_at_bound: bool
 
     @property
     def normalized_slope(self) -> float:
@@ -304,6 +313,7 @@ class PhasePrecessionResult(ResultMixin):
             "correlation": self.correlation,
             "p_value": self.p_value,
             "mean_resultant_length": self.mean_resultant_length,
+            "slope_at_bound": self.slope_at_bound,
         }
 
     def is_significant(self, alpha: float = 0.05) -> bool:
@@ -369,6 +379,12 @@ class PhasePrecessionResult(ResultMixin):
             f"Residual mean resultant length R={self.mean_resultant_length:.3f} "
             "(1 when every spike lies on the fitted line)"
         )
+        if self.slope_at_bound:
+            lines.append(
+                "Slope is AT A SEARCH BOUND: it is the bound, not an estimate; "
+                "fit one field in one running direction with position_range "
+                "set to the field"
+            )
 
         return "\n".join(lines)
 
@@ -656,7 +672,8 @@ def compute_phase_precession(
     PhasePrecessionResult
         ``slope`` in radians per position unit, ``normalized_slope`` in
         radians across ``position_range``, ``offset`` (phase at
-        ``position_range[0]``), correlation, p-value and fit quality.
+        ``position_range[0]``), correlation, p-value, fit quality and
+        ``slope_at_bound``.
         ``p_value`` is a **shuffle p-value at the fitted slope** (see Notes);
         ``correlation`` is a slope-independent descriptive circular-linear
         effect size.
@@ -714,9 +731,10 @@ def compute_phase_precession(
     simulation. Restricting the spikes to one field and passing its bounds
     as ``position_range`` recovered the true slope. Spikes with no
     phase-position relationship also fit at a bound often (19-29% of
-    simulated untuned cells with 10 to 200 spikes); their ``p_value`` is then large and the slope means
-    nothing. :func:`has_phase_precession` warns only when the fit is
-    significant.
+    simulated untuned cells with 10 to 200 spikes); their ``p_value`` is
+    then large and the slope means nothing. The result records this as
+    ``slope_at_bound`` for batch analyses. :func:`has_phase_precession`
+    warns only when the fit is significant.
 
     **P-value.** ``p_value`` is a permutation p-value whose statistic is the
     mean resultant length (MRL) of phase residuals at the fitted slope — the
@@ -783,7 +801,7 @@ def compute_phase_precession(
     >>> round(leftward.slope, 2)
     0.19
     """
-    result, at_bound = _phase_precession(
+    result = _phase_precession(
         positions,
         phases,
         slope_bounds=slope_bounds,
@@ -793,7 +811,7 @@ def compute_phase_precession(
         n_shuffles=n_shuffles,
         rng=rng,
     )
-    if at_bound:
+    if result.slope_at_bound:
         _warn_slope_at_bound(result, slope_bounds)
     return result
 
@@ -808,8 +826,8 @@ def _phase_precession(
     min_spikes: int = 10,
     n_shuffles: int = 1000,
     rng: int | np.random.Generator | None = None,
-) -> tuple[PhasePrecessionResult, bool]:
-    """Fit and test phase precession; also say whether the slope hit a bound.
+) -> PhasePrecessionResult:
+    """Fit and test phase precession without warning about a slope bound.
 
     See :func:`compute_phase_precession` for the parameters.
     """
@@ -928,15 +946,15 @@ def _phase_precession(
     # effect size (slope-independent), NOT as the significance.
     correlation, _ = circular_linear_correlation(angles=phases, linear_values=positions)
 
-    result = PhasePrecessionResult(
+    return PhasePrecessionResult(
         slope=float(normalized_slope / width),
         offset=offset,
         position_range=(start, end),
         correlation=correlation,
         p_value=p_value,
         mean_resultant_length=float(mean_resultant_length),
+        slope_at_bound=at_bound,
     )
-    return result, at_bound
 
 
 def has_phase_precession(
@@ -1034,7 +1052,7 @@ def has_phase_precession(
     False
     """
     try:
-        result, at_bound = _phase_precession(
+        result = _phase_precession(
             positions,
             phases,
             slope_bounds=slope_bounds,
@@ -1049,7 +1067,7 @@ def has_phase_precession(
     significant = result.p_value < alpha
     # Fits of untuned spikes often land on a bound; warn only when the bound
     # decides the slope of a significant fit, whose sign is the verdict.
-    if significant and at_bound:
+    if significant and result.slope_at_bound:
         _warn_slope_at_bound(result, slope_bounds)
     return significant and result.slope < 0
 

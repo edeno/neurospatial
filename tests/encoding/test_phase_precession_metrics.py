@@ -20,6 +20,7 @@ class TestPhasePrecessionResult:
             correlation=0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
+            slope_at_bound=False,
         )
         assert result.is_significant(alpha=0.05) is True
 
@@ -34,6 +35,7 @@ class TestPhasePrecessionResult:
             correlation=0.2,
             p_value=0.10,
             mean_resultant_length=0.5,
+            slope_at_bound=False,
         )
         assert result.is_significant(alpha=0.05) is False
 
@@ -48,6 +50,7 @@ class TestPhasePrecessionResult:
             correlation=0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
+            slope_at_bound=False,
         )
         interp = result.interpretation()
         assert "SIGNIFICANT" in interp
@@ -64,6 +67,7 @@ class TestPhasePrecessionResult:
             correlation=0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
+            slope_at_bound=False,
         )
         interp = result.interpretation()
         assert "RECESSION" in interp
@@ -79,6 +83,7 @@ class TestPhasePrecessionResult:
             correlation=0.05,
             p_value=0.4,
             mean_resultant_length=0.2,
+            slope_at_bound=False,
         )
         interp = result.interpretation()
         assert "PRECESSION" not in interp
@@ -95,6 +100,7 @@ class TestPhasePrecessionResult:
             correlation=0.55,
             p_value=0.01,
             mean_resultant_length=0.75,
+            slope_at_bound=False,
         )
         interp = result.interpretation()
         assert "r=0.550" in interp
@@ -115,6 +121,7 @@ class TestPhasePrecessionResult:
             correlation=0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
+            slope_at_bound=False,
         )
         with pytest.raises(FrozenInstanceError):
             result.slope = 0.3  # type: ignore[misc]
@@ -130,6 +137,7 @@ class TestPhasePrecessionResult:
             correlation=0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
+            slope_at_bound=False,
         )
         assert str(result) == result.interpretation()
 
@@ -686,6 +694,9 @@ class TestSlopeAtBoundWarning:
             pooled = compute_phase_precession(
                 np.r_[x1, x2], np.r_[p1, p2], n_shuffles=0
             )
+        assert pooled.slope_at_bound is True
+        assert pooled.summary()["slope_at_bound"] is True
+        assert "AT A SEARCH BOUND" in pooled.interpretation()
         assert abs(pooled.normalized_slope) == pytest.approx(2 * np.pi)
         # The pinned slope is several times shallower than the true -5/28.7.
         assert abs(pooled.slope) < 0.5 * 5.0 / 28.7
@@ -717,6 +728,9 @@ class TestSlopeAtBoundWarning:
                 positions, phases, position_range=(36.0, 64.7), n_shuffles=0
             )
         assert result.slope == pytest.approx(-5.0 / 28.7, abs=0.02)
+        assert result.slope_at_bound is False
+        assert result.summary()["slope_at_bound"] is False
+        assert "SEARCH BOUND" not in result.interpretation()
 
     def test_screen_warns_only_for_a_significant_fit(self) -> None:
         """Untuned spikes that fit at a bound do not warn in the screen."""
@@ -733,6 +747,7 @@ class TestSlopeAtBoundWarning:
         with pytest.warns(UserWarning, match="edge of the slope search range"):
             untuned = compute_phase_precession(positions, phases, n_shuffles=99, rng=0)
         assert untuned.p_value > 0.05
+        assert untuned.slope_at_bound is True
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             assert has_phase_precession(positions, phases, rng=0) is False
