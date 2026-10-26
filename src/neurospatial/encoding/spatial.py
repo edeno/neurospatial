@@ -4361,57 +4361,57 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
 
     Attributes
     ----------
-    firing_rates : Mapping[str, NDArray[np.float64]]
-        Dictionary mapping direction labels (e.g., "A→B", "forward") to
-        firing rate arrays. Each array has shape (n_bins,) matching the
-        environment's bin structure.
-    occupancy : Mapping[str, NDArray[np.float64]]
-        Per-direction occupancy (time spent in each bin) in seconds.
-        Shape (n_bins,). Same keys as ``firing_rates``.
+    firing_rates : Mapping[Hashable, NDArray[np.float64]]
+        Mapping from direction label (e.g. ``"A→B"``, ``"forward"``, ``1``)
+        to that direction's firing rate map, shape (n_bins,), in Hz. Keys are
+        the label values themselves.
+    occupancy : Mapping[Hashable, NDArray[np.float64]]
+        Per-direction occupancy (time spent in each bin) in seconds, shape
+        (n_bins,). Same keys as ``firing_rates``.
     env : Environment
         Spatial environment used to compute the per-direction fields.
         Shared across all labels (the per-direction split is over time,
         not over space).
-    labels : tuple[str, ...]
-        Tuple of direction labels in iteration order. Preserves the order
-        in which directions were processed, enabling reproducible iteration.
+    labels : tuple of hashable
+        The keys of ``firing_rates`` in iteration order.
     spike_window : NDArray[np.float64] or None, shape (n_windows, 2)
         The spike-recording windows applied; None when spikes were assumed
         recorded wherever position was.
     missing_label : hashable or None
         The label value treated as missing, besides ``None`` and ``NaN``.
 
+    Raises
+    ------
+    ValueError
+        If the two mappings have different labels, or an array is not
+        shaped (env.n_bins,).
+
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> env = Environment.from_samples(
-    ...     np.linspace(0, 10, 11)[:, None], bin_size=1.0
-    ... )  # doctest: +SKIP
-    >>> firing_rates = {
-    ...     "home→goal": np.array([1.0, 2.0, 3.0]),
-    ...     "goal→home": np.array([3.0, 2.0, 1.0]),
-    ... }
-    >>> occupancy = {
-    ...     "home→goal": np.array([1.0, 1.0, 1.0]),
-    ...     "goal→home": np.array([1.0, 1.0, 1.0]),
-    ... }
-    >>> result = DirectionalPlaceFields(  # doctest: +SKIP
-    ...     firing_rates=firing_rates,
-    ...     occupancy=occupancy,
+    >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+    >>> env = Environment.from_samples(np.linspace(0, 10, 11)[:, None], bin_size=1.0)
+    >>> outbound = np.linspace(1.0, 5.0, env.n_bins)
+    >>> result = DirectionalPlaceFields(
+    ...     firing_rates={"home→goal": outbound, "goal→home": outbound[::-1]},
+    ...     occupancy={
+    ...         "home→goal": np.ones(env.n_bins),
+    ...         "goal→home": np.ones(env.n_bins),
+    ...     },
     ...     env=env,
-    ...     labels=("home→goal", "goal→home"),
     ... )
+    >>> result.labels
+    ('home→goal', 'goal→home')
 
     See Also
     --------
     compute_directional_place_fields : Compute directional place fields from spike data.
     """
 
-    firing_rates: Mapping[str, NDArray[np.float64]]
-    occupancy: Mapping[str, NDArray[np.float64]]
+    firing_rates: Mapping[Hashable, NDArray[np.float64]]
+    occupancy: Mapping[Hashable, NDArray[np.float64]]
     env: Environment
-    labels: tuple[str, ...]
 
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
@@ -4419,17 +4419,42 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
     missing_label: Hashable | None = field(default=None, kw_only=True, compare=False)
 
     def __post_init__(self) -> None:
-        """Own each direction's arrays and prevent replacing map entries."""
+        """Validate, own each direction's arrays and prevent replacing entries."""
+        rate_labels = list(self.firing_rates)
+        if set(rate_labels) != set(self.occupancy) or len(rate_labels) != len(
+            self.occupancy
+        ):
+            raise ValueError(
+                _format_error(
+                    f"firing_rates has labels {tuple(rate_labels)} but occupancy has "
+                    f"{tuple(self.occupancy)}.",
+                    why="Why: each direction's rate map needs its own occupancy",
+                    fix="pass both mappings with the same direction labels",
+                )
+            )
+        n_bins = self.env.n_bins
         for name in ("firing_rates", "occupancy"):
             arrays = getattr(self, name)
-            object.__setattr__(
-                self,
-                name,
-                MappingProxyType(
-                    {label: read_only_copy(array) for label, array in arrays.items()}
-                ),
-            )
+            owned = {}
+            for label in rate_labels:
+                array = read_only_copy(arrays[label])
+                if array.shape != (n_bins,):
+                    raise ValueError(
+                        _format_error(
+                            f"{name}[{label!r}] has shape {array.shape}, not "
+                            f"({n_bins},) for the env's {n_bins} bins.",
+                            why="Why: each direction's map is one value per bin of env",
+                            fix="compute the maps with compute_directional_place_fields on this env",
+                        )
+                    )
+                owned[label] = array
+            object.__setattr__(self, name, MappingProxyType(owned))
         self._own_arrays()
+
+    @property
+    def labels(self) -> tuple[Hashable, ...]:
+        """Direction labels in iteration order."""
+        return tuple(self.firing_rates)
 
     def __getstate__(self) -> dict[str, Any]:
         """Serialize read-only mappings as ordinary dictionaries."""
@@ -4453,7 +4478,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         """
         return self.spike_window is None
 
-    def correlation(self, label_a: str, label_b: str) -> float:
+    def correlation(self, label_a: Hashable, label_b: Hashable) -> float:
         """Pearson correlation between two directions' rate maps.
 
         Quantifies how similar the place-field map is between two movement
@@ -4466,7 +4491,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
 
         Parameters
         ----------
-        label_a, label_b : str
+        label_a, label_b : hashable
             Direction labels to compare. Must be present in ``labels``.
 
         Returns
@@ -4495,7 +4520,6 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ...     firing_rates={"fwd": rate, "rev": rate.copy()},
         ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         ...     env=env,
-        ...     labels=("fwd", "rev"),
         ... )
         >>> bool(np.isclose(result.correlation("fwd", "rev"), 1.0))
         True
@@ -4516,7 +4540,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
             return float("nan")
         return float(np.corrcoef(a, b)[0, 1])
 
-    def directionality_index(self, label_a: str, label_b: str) -> float:
+    def directionality_index(self, label_a: Hashable, label_b: Hashable) -> float:
         """Per-bin directionality index between two directions.
 
         Returns the mean absolute normalized rate difference between the two
@@ -4533,7 +4557,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
 
         Parameters
         ----------
-        label_a, label_b : str
+        label_a, label_b : hashable
             Direction labels to compare. Must be present in ``labels``.
 
         Returns
@@ -4561,7 +4585,6 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ...     firing_rates={"fwd": rate, "rev": rate.copy()},
         ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         ...     env=env,
-        ...     labels=("fwd", "rev"),
         ... )
         >>> bool(np.isclose(result.directionality_index("fwd", "rev"), 0.0))
         True
@@ -4610,7 +4633,6 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ...     },
         ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         ...     env=env,
-        ...     labels=("fwd", "rev"),
         ... )
         >>> result.summary()["n_directions"]
         2
@@ -4644,7 +4666,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         pandas.DataFrame
-            Long-form table with columns ``direction`` (str), ``bin`` (int),
+            Long-form table with columns ``direction`` (the label), ``bin`` (int),
             ``coord_0`` ... (float), ``firing_rate`` (float, Hz), and
             ``occupancy`` (float, seconds).
 
@@ -4664,7 +4686,6 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ...     },
         ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         ...     env=env,
-        ...     labels=("fwd", "rev"),
         ... )
         >>> df = result.to_dataframe()
         >>> sorted(df["direction"].unique())
@@ -4683,8 +4704,10 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         for label in self.labels:
             rate = _to_numpy(self.firing_rates[label]).ravel()
             occ = _to_numpy(self.occupancy[label]).ravel()
+            direction = np.empty(n_bins, dtype=object)
+            direction[:] = [label] * n_bins
             data: dict[str, Any] = {
-                "direction": np.repeat(label, n_bins),
+                "direction": direction,
                 "bin": np.arange(n_bins, dtype=np.int64),
             }
             for d in range(n_dims):
@@ -4747,7 +4770,6 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ...     },
         ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         ...     env=env,
-        ...     labels=("fwd", "rev"),
         ... )
         >>> ax = result.plot()
         >>> len(ax.get_lines())
@@ -4804,8 +4826,9 @@ def compute_directional_place_fields(
         Position trajectory. For 1D, can be shape (n_timepoints,) or (n_timepoints, 1).
     direction_labels : NDArray[object], shape (n_timepoints,)
         Direction label for each timepoint. Each label is hashable (e.g.,
-        "A→B", "forward", "CW"). ``None``, ``NaN`` and ``missing_label`` mark
-        samples without a direction and are excluded. The direction-label
+        "A→B", "forward", "CW", or a lap number). Labels are kept as given:
+        ``1`` and ``"1"`` are different directions. ``None``, ``NaN`` and
+        ``missing_label`` mark samples without a direction and are excluded. The direction-label
         functions give ``None`` to samples outside every lap, run or trial.
         Labels from ``heading_direction_labels`` include ``"stationary"``, an
         ordinary label here that gets its own map; pass
@@ -4851,10 +4874,17 @@ def compute_directional_place_fields(
     -------
     DirectionalPlaceFields
         Container with:
-        - ``firing_rates``: Mapping from direction label to firing rate array (n_bins,)
-        - ``occupancy``: Mapping from direction label to per-bin occupancy (n_bins,)
+
+        - ``firing_rates``: Mapping from each direction label to its firing
+          rate map (n_bins,)
+        - ``occupancy``: Mapping from each direction label to its per-bin
+          occupancy in seconds (n_bins,)
         - ``env``: Spatial environment shared across labels
-        - ``labels``: Tuple of direction labels in iteration order
+        - ``labels``: Every label that occurs in ``direction_labels``, sorted
+          (numbers numerically, then strings alphabetically; labels that
+          cannot be compared keep first-seen order). A label with no
+          analyzable time (it occurs only at the last sample, or outside
+          ``epochs``) has zero occupancy and an all-NaN rate map.
 
     Raises
     ------
@@ -4869,8 +4899,8 @@ def compute_directional_place_fields(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The bounds check
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The bounds check
     requires both of the interval's samples to be tracked inside the
     environment, so an interval ending in a tracking dropout is left out.
     The same intervals are removed from the spike counts and the occupancy.
@@ -4934,21 +4964,26 @@ def compute_directional_place_fields(
     labels_arr = np.empty(len(direction_labels), dtype=object)
     for i, value in enumerate(direction_labels):
         labels_arr[i] = value
-    codes, values = label_codes(labels_arr[:-1], missing_label)
+    sample_codes, values = label_codes(labels_arr, missing_label)
+    codes = sample_codes[:-1]
     first, last, run_codes = label_runs(codes, np.ones(codes.size, dtype=bool))
     sample_times = np.asarray(times, dtype=np.float64)
     run_windows = np.column_stack([sample_times[first], sample_times[last + 1]])
 
-    # Sort labels for reproducibility
-    labelled = [(values[c], c) for c in np.unique(run_codes)]
-    labelled = sorted(labelled, key=lambda item: str(item[0]))
+    # Natural order of the labels themselves: numbers numerically, then strings
+    # alphabetically. Labels that cannot be compared keep first-seen order.
+    sort_keys: list[Any] = [(isinstance(value, str), value) for value in values]
+    try:
+        order = sorted(range(len(sort_keys)), key=sort_keys.__getitem__)
+    except TypeError:
+        order = list(range(len(values)))
 
-    # Compute place field for each direction
-    firing_rates_dict: dict[str, NDArray[np.float64]] = {}
-    occupancy_dict: dict[str, NDArray[np.float64]] = {}
+    firing_rates_dict: dict[Hashable, NDArray[np.float64]] = {}
+    occupancy_dict: dict[Hashable, NDArray[np.float64]] = {}
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    for label, code in labelled:
+    for code in order:
+        label = values[code]
         label_windows = run_windows[run_codes == code]
         windows = (
             label_windows
@@ -4956,6 +4991,10 @@ def compute_directional_place_fields(
             else intersect_intervals(label_windows, resolved_epochs)
         )
         if windows.shape[0] == 0:
+            # The label occurs but no interval of it can be analyzed: report
+            # zero dwell time and a missing (not zero) rate.
+            firing_rates_dict[label] = np.full(env.n_bins, np.nan)
+            occupancy_dict[label] = np.zeros(env.n_bins)
             continue
 
         single = compute_spatial_rate(
@@ -4971,8 +5010,8 @@ def compute_directional_place_fields(
             break_before=breaks,
             spike_window=resolved_spike_window,
         )
-        firing_rates_dict[str(label)] = np.asarray(single.firing_rate, dtype=np.float64)
-        occupancy_dict[str(label)] = np.asarray(single.occupancy, dtype=np.float64)
+        firing_rates_dict[label] = np.asarray(single.firing_rate, dtype=np.float64)
+        occupancy_dict[label] = np.asarray(single.occupancy, dtype=np.float64)
 
     return DirectionalPlaceFields(
         spike_window=resolved_spike_window,
@@ -4980,7 +5019,6 @@ def compute_directional_place_fields(
         firing_rates=firing_rates_dict,
         occupancy=occupancy_dict,
         env=env,
-        labels=tuple(firing_rates_dict),
     )
 
 

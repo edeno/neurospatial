@@ -48,7 +48,6 @@ def _directional(env: Environment, rate_a, rate_b) -> DirectionalPlaceFields:
         firing_rates={"fwd": np.asarray(rate_a), "rev": np.asarray(rate_b)},
         occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         env=env,
-        labels=("fwd", "rev"),
     )
 
 

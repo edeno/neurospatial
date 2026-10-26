@@ -348,7 +348,7 @@ def test_directional_maps_are_owned_and_read_only(env, how):
     rates = {"forward": rate}
     dwell = {"forward": occupancy}
     result = DirectionalPlaceFields(
-        rates, dwell, env, ("forward",), spike_window=np.array([[0.0, 2.0]])
+        rates, dwell, env, spike_window=np.array([[0.0, 2.0]])
     )
     if how == "pickle":
         result = pickle.loads(pickle.dumps(result))
