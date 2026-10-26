@@ -735,9 +735,15 @@ controls are needed to distinguish those explanations.
 
 ### Viewed-location maps
 
-A view map indexes projected gaze locations rather than the animal's position.
-The fixed-distance model below projects 15 cm along measured heading; it is a
-geometric assumption, not a measurement of eye gaze.
+A view map indexes the location the animal looked at rather than its
+position. The default `gaze_model="ray_cast"` takes the first wall along each
+sample's heading; `gaze_model="fixed_distance"` takes the point
+`view_distance` ahead, or the first wall when one is nearer. A gaze never
+passes through a wall, so the map needs the arena's walls: build the
+environment from the measured outline (`Environment.from_polygon`) to use its
+walls, or pass `boundary_source="analysis"` to treat the edge of the binned
+area as the wall, as below. Either model is a geometric assumption about where
+the animal looked, not a measurement of eye gaze.
 
 <!-- docs-test: run -->
 ```python
@@ -745,7 +751,7 @@ from neurospatial.encoding import compute_view_rate
 
 view = compute_view_rate(
     env, spike_times, times, positions, headings,
-    gaze_model="fixed_distance", view_distance=15.0,
+    boundary_source="analysis",
     bandwidth=5.0, min_occupancy=0.5,
     epochs=(float(times[0]), float(times[-1])),
     spike_window=(float(times[0]), float(times[-1])),
@@ -754,8 +760,7 @@ view.plot(vmin=0)
 print("View information (bits/spike):", view.view_spatial_information())
 ```
 
-`gaze_model="ray_cast"` takes the first wall along the gaze instead.
-Projected locations outside the environment lack support. View and position
+Bins that were never viewed lack support (NaN). View and position
 maps generally have different occupancy and correlated predictors, so a larger
 view-information score alone does not demonstrate a spatial view cell. Match
 the scientific interpretation to the head/eye measurements and gaze model.

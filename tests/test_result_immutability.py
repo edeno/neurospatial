@@ -44,6 +44,7 @@ def populations() -> dict[str, object]:
             times,
             positions,
             headings,
+            gaze_model="fixed_distance",
             view_distance=10.0,
             boundary_source="analysis",
         ),

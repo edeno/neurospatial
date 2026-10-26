@@ -1872,7 +1872,7 @@ class TestIsSpatialViewCellParamOrder:
             times,
             positions,
             headings,
-            gaze_model="ray_cast",
+            gaze_model="fixed_distance",
             view_distance=15.0,
             boundary_source="analysis",
         )

@@ -33,7 +33,7 @@ def simple_env() -> Environment:
     y = np.linspace(0, 40, 5)
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(positions, bin_size=10.0)
+    return Environment.from_samples(positions, bin_size=10.0, units="cm")
 
 
 @pytest.fixture
@@ -213,13 +213,13 @@ class TestComputeViewRateGazeModel:
         )
         assert result.gaze_model == gaze_model
 
-    def test_default_gaze_model_is_fixed_distance(
+    def test_default_gaze_model_is_ray_cast(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
     ) -> None:
-        """Default gaze_model should be 'fixed_distance'."""
+        """The default views the first wall, so it has no fixed distance."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
@@ -231,7 +231,8 @@ class TestComputeViewRateGazeModel:
             headings,
             boundary_source="analysis",
         )
-        assert result.gaze_model == "fixed_distance"
+        assert result.gaze_model == "ray_cast"
+        assert result.view_distance is None
 
     def test_invalid_gaze_model_raises(
         self,
@@ -261,7 +262,7 @@ class TestComputeViewRateGazeModel:
 
 
 class TestComputeViewRateViewDistance:
-    """Test view_distance parameter."""
+    """view_distance belongs to the fixed-distance gaze and carries length units."""
 
     def test_stores_view_distance_in_result(
         self,
@@ -269,7 +270,6 @@ class TestComputeViewRateViewDistance:
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
     ) -> None:
-        """view_distance should be stored in the result."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
@@ -279,30 +279,72 @@ class TestComputeViewRateViewDistance:
             times,
             positions,
             headings,
+            gaze_model="fixed_distance",
             view_distance=15.0,
             boundary_source="analysis",
         )
         assert result.view_distance == 15.0
 
-    def test_default_view_distance_is_10(
-        self,
-        simple_env: Environment,
-        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
-        spike_times: np.ndarray,
+    @pytest.mark.parametrize(("units", "expected"), [("cm", 10.0), ("m", 0.1)])
+    def test_default_view_distance_is_10_cm_in_env_units(
+        self, units: str, expected: float
     ) -> None:
-        """Default view_distance should be 10.0."""
+        from shapely.geometry import box
+
+        from neurospatial.encoding.view import compute_view_rate
+
+        side = 40.0 if units == "cm" else 0.4
+        env = Environment.from_polygon(
+            box(0, 0, side, side), bin_size=side / 8, units=units
+        )
+        rng = np.random.default_rng(0)
+        times = np.arange(300) / 30.0
+        positions = rng.uniform(0.1 * side, 0.9 * side, (300, 2))
+        headings = rng.uniform(-np.pi, np.pi, 300)
+        result = compute_view_rate(
+            env, [], times, positions, headings, gaze_model="fixed_distance"
+        )
+        assert result.view_distance == pytest.approx(expected)
+        # Every gaze lands in the arena: a short gaze or the nearer wall.
+        assert np.sum(result.occupancy) == pytest.approx(times[-1] - times[0])
+
+    def test_unknown_units_need_an_explicit_view_distance(
+        self,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
-        result = compute_view_rate(
-            simple_env,
-            spike_times,
-            times,
-            positions,
-            headings,
-            boundary_source="analysis",
-        )
-        assert result.view_distance == 10.0
+        env = Environment.from_samples(positions, bin_size=10.0)
+        with pytest.raises(ValueError, match="needs view_distance"):
+            compute_view_rate(
+                env,
+                [],
+                times,
+                positions,
+                headings,
+                gaze_model="fixed_distance",
+                boundary_source="analysis",
+            )
+
+    def test_view_distance_is_refused_with_ray_cast(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        from neurospatial.encoding.view import compute_view_rate
+
+        times, positions, headings = trajectory_data
+        with pytest.raises(ValueError, match="no meaning with gaze_model='ray_cast'"):
+            compute_view_rate(
+                simple_env,
+                [],
+                times,
+                positions,
+                headings,
+                view_distance=15.0,
+                boundary_source="analysis",
+            )
 
 
 # ==============================================================================
@@ -1002,6 +1044,7 @@ class TestComputeViewRatesParameters:
             times,
             positions,
             headings,
+            gaze_model="fixed_distance",
             view_distance=20.0,
             boundary_source="analysis",
         )
@@ -1627,17 +1670,17 @@ class TestComputeViewRatePrecomputation:
 
         times, positions, headings = trajectory_data
         call_count = 0
-        original = _view_counts.compute_viewed_location
+        original = _view_counts.gaze_points
 
-        def counting_compute_viewed_location(*args, **kwargs):
+        def counting_gaze_points(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             return original(*args, **kwargs)
 
         monkeypatch.setattr(
             _view_counts,
-            "compute_viewed_location",
-            counting_compute_viewed_location,
+            "gaze_points",
+            counting_gaze_points,
         )
 
         compute_view_rate(
@@ -2006,3 +2049,67 @@ def test_physical_ray_cast_refuses_a_combined_room_with_its_own_frame():
             gaze_model="ray_cast",
             boundary_source="physical",
         )
+
+
+def _u_maze() -> Environment:
+    """Two 10 cm wide arms joined at the bottom, with a 10 cm divider between."""
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    outline = unary_union([box(0, 0, 10, 100), box(20, 0, 30, 100), box(0, 0, 30, 10)])
+    return Environment.from_polygon(outline, bin_size=2.0, units="cm")
+
+
+@pytest.mark.parametrize(
+    ("gaze_model", "settings"),
+    [("fixed_distance", {"view_distance": 17.0}), ("ray_cast", {})],
+)
+def test_gaze_stops_at_the_first_wall(gaze_model, settings):
+    """An animal facing the divider views the divider, never the far arm.
+
+    The left arm spans x in [0, 10] and the right arm x in [20, 30]. Facing
+    East from x in [3, 7], a 17 cm gaze would land in the right arm if it
+    passed through the divider at x = 10.
+    """
+    from neurospatial.encoding.view import compute_view_rate
+
+    env = _u_maze()
+    rng = np.random.default_rng(0)
+    times = np.arange(600) / 30.0
+    positions = np.c_[rng.uniform(3, 7, 600), rng.uniform(40, 60, 600)]
+    result = compute_view_rate(
+        env,
+        [],
+        times,
+        positions,
+        np.zeros(600),
+        gaze_model=gaze_model,
+        method="binned",
+        **settings,
+    )
+    x = env.bin_centers[:, 0]
+    occupancy = np.asarray(result.occupancy)
+    assert occupancy[x > 10].sum() == 0.0
+    # All viewing time lands in the bins against the divider (centers x = 9).
+    assert occupancy[np.isclose(x, 9.0)].sum() == pytest.approx(times[-1])
+
+
+def test_fixed_distance_short_of_the_wall_views_open_space():
+    """A gaze shorter than the distance to the wall is not pulled to the wall."""
+    from neurospatial.encoding.view import compute_view_rate
+
+    env = _u_maze()
+    times = np.arange(300) / 30.0
+    positions = np.tile([[3.0, 51.0]], (300, 1))
+    result = compute_view_rate(
+        env,
+        [],
+        times,
+        positions,
+        np.zeros(300),
+        gaze_model="fixed_distance",
+        view_distance=4.0,
+        method="binned",
+    )
+    viewed = env.bin_centers[np.asarray(result.occupancy) > 0]
+    np.testing.assert_allclose(viewed, [[7.0, 51.0]])

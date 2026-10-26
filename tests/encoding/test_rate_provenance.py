@@ -33,7 +33,11 @@ def rate_family(request):
         kwargs.update(method="diffusion_kde", bandwidth=2.0, min_occupancy=0.4)
         if family == "view":
             data += (headings,)
-            kwargs.update(view_distance=2.0)
+            kwargs.update(
+                gaze_model="fixed_distance",
+                view_distance=2.0,
+                boundary_source="analysis",
+            )
         elif family in ("object_vector", "egocentric"):
             if family == "egocentric":
                 data += (headings,)
@@ -157,7 +161,11 @@ def test_physical_bandwidth_default_is_invariant_under_unit_conversion(
         kwargs = {"method": method}
         if family == "view":
             args += (headings,)
-            kwargs["view_distance"] = 2.0 * scale
+            kwargs.update(
+                gaze_model="fixed_distance",
+                view_distance=2.0 * scale,
+                boundary_source="analysis",
+            )
         else:
             if family == "egocentric":
                 args += (headings,)

@@ -61,6 +61,7 @@ def view_batch():
         times,
         trajectory,
         headings,
+        gaze_model="fixed_distance",
         view_distance=10.0,
         boundary_source="analysis",
     )

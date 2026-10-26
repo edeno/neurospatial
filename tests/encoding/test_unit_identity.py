@@ -64,6 +64,7 @@ def _compute(name, env, times, positions, headings, trains, **kwargs):
             times,
             positions,
             headings,
+            gaze_model="fixed_distance",
             view_distance=10.0,
             **kwargs,
             boundary_source="analysis",

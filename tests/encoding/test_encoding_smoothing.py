@@ -1402,10 +1402,22 @@ def _oversized_bandwidth_calls():
             env, [spikes], times, positions, bandwidth=100.0
         ),
         "view": lambda: compute_view_rate(
-            env, spikes, times, positions, headings, bandwidth=100.0
+            env,
+            spikes,
+            times,
+            positions,
+            headings,
+            bandwidth=100.0,
+            boundary_source="analysis",
         ),
         "view-population": lambda: compute_view_rates(
-            env, [spikes], times, positions, headings, bandwidth=100.0
+            env,
+            [spikes],
+            times,
+            positions,
+            headings,
+            bandwidth=100.0,
+            boundary_source="analysis",
         ),
         "object-vector": lambda: compute_object_vector_rate(
             env, spikes, times, positions, objects, **ov

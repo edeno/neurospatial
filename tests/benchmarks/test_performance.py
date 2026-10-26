@@ -77,6 +77,7 @@ class TestFrameFamilyRates:
                 r.times,
                 r.positions,
                 r.headings,
+                gaze_model="fixed_distance",
                 view_distance=5.0,
             )
         else:

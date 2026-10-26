@@ -743,7 +743,7 @@ for visible bins and 0 for hidden ones. Averaging it over observed frames gives
 the fraction of time each bin was in view.
 
 The source choice is forwarded by the single/population view encoders, shuffle
-tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"`,
+tests and `SpatialViewCellModel`. With the default `gaze_model="ray_cast"`,
 encoding assigns a wall hit to the bin just inside the observer's side. A hit
 outside the retained analysis support makes physical view encoding unavailable
 and raises with guidance when it contributes to the selected recording time.
@@ -764,7 +764,9 @@ require gaze observations at every wall. Unviewed bins remain missing, and rays
 with no hit or invalid observations remain missing. Spike counts and exposure
 share that assignment, and results record the source in `analysis_settings`.
 Encoder/model searches cover the known geometry rather than imposing a fixed
-100-unit range. Fixed-distance gaze keeps its existing behavior.
+100-unit range. In the view encoders, fixed-distance gaze stops at the same
+walls: its viewed point is `view_distance` ahead or the first wall, whichever
+is nearer, so a gaze never lands behind a wall.
 
 Physical encoding of independently transformed combined components requires a
 shared certified owner frame; unsupported cases refuse with guidance. Curved
