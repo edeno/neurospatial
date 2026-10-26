@@ -2280,7 +2280,12 @@ def compute_directional_rate(
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, headings=headings, context="compute_directional_rate")
+    validate_trajectory(
+        times,
+        headings=headings,
+        context="compute_directional_rate",
+        heading_unit=angle_unit,
+    )
     validate_spike_times(spike_times, context="compute_directional_rate")
     breaks = validate_break_before(
         break_before, len(times), call="compute_directional_rate"
@@ -2578,7 +2583,12 @@ def compute_directional_rates(
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, headings=headings, context="compute_directional_rates")
+    validate_trajectory(
+        times,
+        headings=headings,
+        context="compute_directional_rates",
+        heading_unit=angle_unit,
+    )
     validate_spike_trains(spike_times_list, context="compute_directional_rates")
     breaks = validate_break_before(
         break_before, len(times), call="compute_directional_rates"
@@ -3271,7 +3281,10 @@ def head_direction_cell_significance(
         unit_ids=ids,
     )
     validate_trajectory(
-        times, headings=headings, context="head_direction_cell_significance"
+        times,
+        headings=headings,
+        context="head_direction_cell_significance",
+        heading_unit=angle_unit,
     )
     for train in trains:
         validate_spike_times(train, context="head_direction_cell_significance")
@@ -3291,9 +3304,14 @@ def head_direction_cell_significance(
     windows = run_time_bounds(times, mask)
 
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        return compute_directional_rates(
-            shifted, times, headings, **options
-        ).mean_vector_lengths()
+        # The heading-unit check already ran once above; do not repeat it for
+        # every shuffle.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=".*look like degrees", category=UserWarning
+            )
+            rates = compute_directional_rates(shifted, times, headings, **options)
+        return rates.mean_vector_lengths()
 
     observed, null = run_shuffle_test(
         statistic,

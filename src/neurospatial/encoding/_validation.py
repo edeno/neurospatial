@@ -23,12 +23,15 @@ directly.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     format_times_positions_error,
     times_positions_problems,
@@ -44,6 +47,7 @@ __all__ = [
     "validate_spike_times",
     "validate_spike_trains",
     "validate_trajectory",
+    "warn_if_angles_look_like_degrees",
 ]
 
 
@@ -241,6 +245,56 @@ def validate_spike_trains(
         validate_spike_times(spike_times, context=f"{context} (neuron {i})")
 
 
+def warn_if_angles_look_like_degrees(
+    angles: NDArray[np.float64],
+    *,
+    name: str,
+    context: str,
+    angle_unit_keyword: bool = False,
+) -> None:
+    """Warn when angles read as radians look like degrees.
+
+    Radians beyond ±2π are legitimate (unwrapped angles), so this warns
+    instead of raising. It fires when the largest finite magnitude exceeds 2π
+    but every finite value lies within ±360, the signature of degrees.
+
+    Parameters
+    ----------
+    angles : ndarray
+        Angles that will be read as radians. Non-finite values are ignored.
+    name : str
+        Argument name shown in the message, e.g. ``"headings"``.
+    context : str
+        Name of the calling public function.
+    angle_unit_keyword : bool, default False
+        Whether the caller accepts ``angle_unit="deg"``, so the message can
+        offer it.
+
+    Warns
+    -----
+    UserWarning
+        When the finite angles look like degrees.
+    """
+    finite = np.abs(angles[np.isfinite(angles)])
+    if finite.size == 0:
+        return
+    largest = float(finite.max())
+    if not (2 * np.pi + 1e-6 < largest <= 360.0):
+        return
+    fix = f"convert with np.radians({name})"
+    if angle_unit_keyword:
+        fix += ' or pass angle_unit="deg"'
+    warnings.warn(
+        f"{context}: {name} look like degrees (largest magnitude {largest:.4g}, "
+        f"all within ±360) but are read as radians, which wraps them into "
+        f"meaningless directions. {fix[0].upper()}{fix[1:]}. If they are "
+        f"unwrapped radians, wrap them with np.angle(np.exp(1j * {name})) "
+        "to silence this warning.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def validate_trajectory(
     times: NDArray[np.float64],
     positions: NDArray[np.float64] | None = None,
@@ -248,11 +302,14 @@ def validate_trajectory(
     *,
     context: str,
     n_dims: int | None = None,
+    heading_unit: Literal["rad", "deg"] | None = None,
 ) -> None:
     """Check trajectory shapes, aligned sample rows and timestamp validity.
 
     All detected problems are reported together. Non-finite positions and
     headings remain valid missing observations for the binning layer to drop.
+    Headings read as radians that look like degrees warn
+    (:func:`warn_if_angles_look_like_degrees`).
 
     Parameters
     ----------
@@ -267,11 +324,19 @@ def validate_trajectory(
         Name of the calling function, used in the error message.
     n_dims : int, optional
         Expected coordinate dimension of the environment.
+    heading_unit : {"rad", "deg"} or None, optional
+        The caller's ``angle_unit``, or None when the caller only accepts
+        radians. Headings are checked for degrees unless it is ``"deg"``.
 
     Raises
     ------
     ValueError
         If timestamp validity, shapes, coordinate dimensions or lengths disagree.
+
+    Warns
+    -----
+    UserWarning
+        When headings read as radians look like degrees.
     """
     looks_swapped = False
     if positions is None:
@@ -295,6 +360,13 @@ def validate_trajectory(
     if problems:
         raise ValueError(
             format_times_positions_error(problems, looks_swapped, call=context)
+        )
+    if headings is not None and heading_unit != "deg":
+        warn_if_angles_look_like_degrees(
+            headings,
+            name="headings",
+            context=context,
+            angle_unit_keyword=heading_unit is not None,
         )
 
 
