@@ -400,6 +400,74 @@ def _validate_centers(centers: Any, n_bins: int) -> NDArray[np.int_]:
     return array.astype(np.int_, copy=False)
 
 
+def _resolve_centers(
+    env: BasisCentersConsumer,
+    centers: NDArray[np.int_] | None,
+    n_centers: int | None,
+    center_method: Literal["kmeans", "farthest_point", "random"],
+    rng: int | np.random.Generator | None,
+    noun: str,
+) -> NDArray[np.int_]:
+    """Validated basis centers: ``centers`` as given, or ``n_centers`` selected.
+
+    ``noun`` names the basis functions in the error raised when neither is given.
+    """
+    if centers is None:
+        if n_centers is None:
+            raise ValueError(
+                "Must specify basis function locations.\n"
+                "\n"
+                "Two options:\n"
+                f"  1. Provide centers: specific bin indices for {noun} centers\n"
+                "     Example: centers=np.array([5, 10, 15, 20])\n"
+                "\n"
+                "  2. Provide n_centers: auto-select centers using k-means\n"
+                "     Example: n_centers=50\n"
+                "\n"
+                "See select_basis_centers() for manual center selection."
+            )
+        centers = select_basis_centers(
+            env, n_centers=n_centers, method=center_method, rng=rng
+        )
+    return _validate_centers(centers, env.n_bins)
+
+
+def _require_faces(env: WaveletBasisConsumer, analysis: str) -> None:
+    """Refuse a layout without cell faces, naming ``analysis`` (not smoothing)."""
+    faces = env.binning.faces
+    if isinstance(faces, MissingFaces):
+        raise faces.missing_error(analysis)
+
+
+def _center_deltas(n_bins: int, centers: NDArray[np.int_]) -> NDArray[np.float64]:
+    """Unit impulses at ``centers``, one per column: shape ``(n_bins, n_centers)``."""
+    delta = np.zeros((n_bins, len(centers)), dtype=np.float64)
+    delta[centers, np.arange(len(centers))] = 1.0
+    return delta
+
+
+def _center_major(
+    responses: NDArray[np.float64], normalize: Literal["unit", "max", "none"]
+) -> NDArray[np.float64]:
+    """Basis rows ordered by center, then by parameter, normalized.
+
+    Parameters
+    ----------
+    responses : NDArray[np.float64], shape (n_params, n_bins, n_centers)
+        One response per parameter value (scale or degree) and center.
+    normalize : {"unit", "max", "none"}
+        Row normalization (see :func:`_normalize_basis`).
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_centers * n_params, n_bins)
+        Every parameter for center 0, then center 1, and so on.
+    """
+    n_bins = responses.shape[1]
+    basis = responses.transpose(2, 0, 1).reshape(-1, n_bins)
+    return _normalize_basis(basis, normalize)
+
+
 def _normalize_basis(
     basis: NDArray[np.float64],
     mode: Literal["unit", "max", "none"],
@@ -587,26 +655,7 @@ def geodesic_rbf_basis(
     import networkx as nx
     from scipy.sparse.csgraph import shortest_path
 
-    # Handle centers
-    if centers is None:
-        if n_centers is None:
-            raise ValueError(
-                "Must specify basis function locations.\n"
-                "\n"
-                "Two options:\n"
-                "  1. Provide centers: specific bin indices for basis centers\n"
-                "     Example: centers=np.array([5, 10, 15, 20])\n"
-                "\n"
-                "  2. Provide n_centers: auto-select centers using k-means\n"
-                "     Example: n_centers=50\n"
-                "     (Recommended for most use cases)\n"
-                "\n"
-                "See select_basis_centers() for manual center selection."
-            )
-        centers = select_basis_centers(
-            env, n_centers=n_centers, method=center_method, rng=rng
-        )
-    centers = _validate_centers(centers, env.n_bins)
+    centers = _resolve_centers(env, centers, n_centers, center_method, rng, "basis")
 
     # Handle bandwidth and validate
     bandwidths = np.atleast_1d(bandwidth).astype(np.float64)
@@ -816,25 +865,7 @@ def heat_kernel_wavelet_basis(
     """
     from scipy.sparse.linalg import expm_multiply
 
-    # Handle centers
-    if centers is None:
-        if n_centers is None:
-            raise ValueError(
-                "Must specify basis function locations.\n"
-                "\n"
-                "Two options:\n"
-                "  1. Provide centers: specific bin indices for wavelet centers\n"
-                "     Example: centers=np.array([5, 10, 15, 20])\n"
-                "\n"
-                "  2. Provide n_centers: auto-select centers using k-means\n"
-                "     Example: n_centers=50\n"
-                "\n"
-                "See select_basis_centers() for manual center selection."
-            )
-        centers = select_basis_centers(
-            env, n_centers=n_centers, method=center_method, rng=rng
-        )
-    centers = _validate_centers(centers, env.n_bins)
+    centers = _resolve_centers(env, centers, n_centers, center_method, rng, "wavelet")
 
     # Validate scales
     scales_arr = np.asarray(scales, dtype=np.float64)
@@ -851,14 +882,7 @@ def heat_kernel_wavelet_basis(
             "Fix: pass positive scales, e.g. scales=[0.5, 1.0, 2.0, 4.0]."
         )
 
-    n_centers_actual = len(centers)
-    n_scales = len(scales_arr)
-    n_bins = env.n_bins
-
-    # Name this analysis, not "smoothing", if the layout has no cell faces.
-    faces = env.binning.faces
-    if isinstance(faces, MissingFaces):
-        raise faces.missing_error("heat_kernel_wavelet_basis")
+    _require_faces(env, "heat_kernel_wavelet_basis")
     # Bin spacing is a physical length: on a polar environment it comes from
     # the centers' Cartesian embedding, not from (distance, angle) rows.
     if env.coordinate_system.kind == "cartesian":
@@ -870,37 +894,13 @@ def heat_kernel_wavelet_basis(
         tree = cKDTree(places)
     laplacian = _diffusion_generator(places, tree, env.get_diffusion_geometry())
 
-    # Create delta vectors at centers
-    # Shape: (n_bins, n_centers)
-    delta_mat = np.zeros((n_bins, n_centers_actual), dtype=np.float64)
-    delta_mat[centers, np.arange(n_centers_actual)] = 1.0
-
-    # Compute heat kernel wavelets using expm_multiply
-    # Rows ordered by (center, scale): all scales for center 0, then center 1, etc.
-    # Shape: (n_centers * n_scales, n_bins)
-    #
-    # We collect wavelets for all scales first, then reorder.
-    # Each scale produces (n_bins, n_centers) -> we need (n_centers * n_scales, n_bins)
-    # with ordering: [center0_scale0, center0_scale1, ..., center1_scale0, ...]
-
-    # Compute exp(-s * L) @ delta for each scale
-    # expm_multiply computes exp(A) @ B efficiently without forming exp(A)
-    # Collect wavelets: shape (n_scales, n_bins, n_centers)
-    wavelets_all = np.stack(
-        [expm_multiply(-s * laplacian, delta_mat) for s in scales_arr], axis=0
+    # exp(-s L) @ delta for each scale, without forming exp(-s L).
+    # Shape: (n_scales, n_bins, n_centers)
+    delta = _center_deltas(env.n_bins, centers)
+    wavelets = np.stack(
+        [expm_multiply(-s * laplacian, delta) for s in scales_arr], axis=0
     )
-
-    # Reorder from (n_scales, n_bins, n_centers) to (n_centers, n_scales, n_bins)
-    # then reshape to (n_centers * n_scales, n_bins)
-    wavelets_reordered = wavelets_all.transpose(
-        2, 0, 1
-    )  # (n_centers, n_scales, n_bins)
-    basis = wavelets_reordered.reshape(n_centers_actual * n_scales, n_bins)
-
-    # Normalize
-    basis = _normalize_basis(basis, normalize)
-
-    return basis
+    return _center_major(wavelets, normalize)
 
 
 def chebyshev_filter_basis(
@@ -1032,25 +1032,7 @@ def chebyshev_filter_basis(
 
     from neurospatial.ops.diffusion import _generator, _symmetric_conjugate
 
-    # Handle centers
-    if centers is None:
-        if n_centers is None:
-            raise ValueError(
-                "Must specify basis function locations.\n"
-                "\n"
-                "Two options:\n"
-                "  1. Provide centers: specific bin indices for filter centers\n"
-                "     Example: centers=np.array([5, 10, 15, 20])\n"
-                "\n"
-                "  2. Provide n_centers: auto-select centers using k-means\n"
-                "     Example: n_centers=50\n"
-                "\n"
-                "See select_basis_centers() for manual center selection."
-            )
-        centers = select_basis_centers(
-            env, n_centers=n_centers, method=center_method, rng=rng
-        )
-    centers = _validate_centers(centers, env.n_bins)
+    centers = _resolve_centers(env, centers, n_centers, center_method, rng, "filter")
 
     # Validate max_degree
     if max_degree < 0:
@@ -1063,14 +1045,7 @@ def chebyshev_filter_basis(
             "  - max_degree=5: ~5 bins radius (typical choice)\n"
         )
 
-    n_centers_actual = len(centers)
-    n_bins = env.n_bins
-    n_degrees = max_degree + 1
-
-    # Name this analysis, not "smoothing", if the layout has no cell faces.
-    faces = env.binning.faces
-    if isinstance(faces, MissingFaces):
-        raise faces.missing_error("chebyshev_filter_basis")
+    _require_faces(env, "chebyshev_filter_basis")
     geometry = env.get_diffusion_geometry()
     # L = M^-1 (Deg - W) is not symmetric on unequal volumes; its symmetric
     # conjugate S = M^-1/2 (Deg - W) M^-1/2 has the same eigenvalues.
@@ -1083,53 +1058,25 @@ def chebyshev_filter_basis(
     # Rescale Laplacian to [-1, 1]: L_scaled = 2*L/lambda_max - I. When no two
     # bins share a face, L = 0 and every eigenvalue is 0, which any positive
     # scale maps to -1, so L_scaled = -I.
-    identity = sparse.identity(n_bins, format="csr")
+    identity = sparse.identity(env.n_bins, format="csr")
     laplacian_scaled = (
         (2.0 / lambda_max) * laplacian - identity if lambda_max > 0 else -identity
     )
 
-    # Create delta vectors at centers
-    # Shape: (n_bins, n_centers)
-    delta = np.zeros((n_bins, n_centers_actual), dtype=np.float64)
-    delta[centers, np.arange(n_centers_actual)] = 1.0
-
-    # Chebyshev recurrence: compute T_k(L_scaled) @ delta for k = 0..max_degree
-    # Standard recurrence:
-    #   T_0(x) = 1
-    #   T_1(x) = x
-    #   T_{k+1}(x) = 2x * T_k(x) - T_{k-1}(x)
-    #
-    # Rows ordered by (center, degree): all degrees for center 0, then center 1
-    #
-    # Vectorized: collect all Chebyshev polynomials in a list, then reorder at the end
-
-    # Collect Chebyshev results: list of (n_bins, n_centers) arrays for each degree
-    cheby_results = []
-
-    cheby_prev = delta.copy()  # T_0 @ delta = delta (identity)
-    cheby_results.append(cheby_prev)
-
+    # Chebyshev recurrence T_k(L_scaled) @ delta for k = 0..max_degree:
+    #   T_0(x) = 1,  T_1(x) = x,  T_{k+1}(x) = 2x * T_k(x) - T_{k-1}(x)
+    # Each term has shape (n_bins, n_centers).
+    delta = _center_deltas(env.n_bins, centers)
+    cheby_results = [delta]
     if max_degree >= 1:
-        cheby_curr = laplacian_scaled @ delta  # T_1 @ delta = L_scaled @ delta
+        cheby_prev, cheby_curr = delta, laplacian_scaled @ delta
         cheby_results.append(cheby_curr)
-
-        for _k in range(2, n_degrees):
+        for _k in range(2, max_degree + 1):
             cheby_next = 2.0 * (laplacian_scaled @ cheby_curr) - cheby_prev
             cheby_results.append(cheby_next)
             cheby_prev, cheby_curr = cheby_curr, cheby_next
 
-    # Stack results: (n_degrees, n_bins, n_centers)
-    cheby_stacked = np.stack(cheby_results, axis=0)
-
-    # Reorder from (n_degrees, n_bins, n_centers) to (n_centers, n_degrees, n_bins)
-    # then reshape to (n_centers * n_degrees, n_bins)
-    cheby_reordered = cheby_stacked.transpose(2, 0, 1)  # (n_centers, n_degrees, n_bins)
-    basis = cheby_reordered.reshape(n_centers_actual * n_degrees, n_bins)
-
-    # Normalize
-    basis = _normalize_basis(basis, normalize)
-
-    return basis
+    return _center_major(np.stack(cheby_results, axis=0), normalize)
 
 
 def _estimate_spectral_radius(laplacian: Any) -> float:
