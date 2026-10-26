@@ -4,7 +4,7 @@ This module converts spike trains and head direction data into discrete spike
 counts and occupancy arrays for head direction cell analysis.
 
 The functions in this module handle:
-1. Circular binning of head directions into angular bins (0 to 2π)
+1. Circular binning of head directions into angular bins over [-π, π)
 2. Occupancy computation from continuous head direction time series
 3. Spike counting from the most recent frame, using shared interval validity
 4. Batch processing of multiple neurons with joblib parallelization
@@ -13,7 +13,7 @@ Output shapes:
 - Spike counts (single neuron): (n_bins,)
 - Spike counts (batch): (n_neurons, n_bins)
 - Occupancy: (n_bins,) - always shared across neurons
-- Bin centers: (n_bins,) - angles in radians [0, 2π)
+- Bin centers: (n_bins,) - angles in radians [-π, π)
 
 The binning layer is intentionally separated from smoothing to allow:
 - Reusing occupancy across multiple neurons
@@ -135,7 +135,7 @@ def compute_directional_occupancy(
     occupancy : ndarray, shape (n_bins,)
         Time in seconds spent at each direction.
     bin_centers : ndarray, shape (n_bins,)
-        Center of each angular bin in radians [0, 2π).
+        Center of each angular bin in radians [-π, π).
 
     Raises
     ------
@@ -153,8 +153,8 @@ def compute_directional_occupancy(
     The last frame is excluded from occupancy since we don't know how
     long the animal stayed at that direction.
 
-    **Circular binning**: Headings are wrapped to [0, 2π) before binning.
-    Bins are evenly spaced from 0 to 2π.
+    **Circular binning**: Headings are wrapped to [-π, π) before binning.
+    Bins are evenly spaced from -π to π.
 
     Examples
     --------
@@ -198,7 +198,12 @@ def directional_frame_bins(
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
 ) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
-    """Map finite headings to circular bins; non-finite headings map to -1."""
+    """Map finite headings to circular bins; non-finite headings map to -1.
+
+    Any finite angle is accepted and wrapped to [-π, π); bins tile [-π, π)
+    and their centers are returned in radians. A 0 to 2π heading and the
+    same heading minus 2π fall in the same bin.
+    """
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
@@ -220,8 +225,8 @@ def directional_frame_bins(
         )
 
     finite = np.isfinite(headings_rad)
-    wrapped = headings_rad[finite] % (2 * np.pi)
-    bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
+    wrapped = (headings_rad[finite] + np.pi) % (2 * np.pi) - np.pi
+    bin_edges = np.linspace(-np.pi, np.pi, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     frame_bins = np.full(headings.shape, -1, dtype=np.intp)
     bins = np.digitize(wrapped, bin_edges) - 1
@@ -433,7 +438,7 @@ def bin_directional_spike_trains(
     occupancy : ndarray, shape (n_bins,)
         Time in seconds spent at each direction (shared across neurons).
     bin_centers : ndarray, shape (n_bins,)
-        Center of each angular bin in radians [0, 2π).
+        Center of each angular bin in radians [-π, π).
 
     Examples
     --------

@@ -5,7 +5,7 @@ and head direction data to spike counts and occupancy arrays.
 
 The binning layer:
 - Create helper to convert (spike_times, times, headings, bin_size) -> (spike_counts, occupancy)
-- Handle circular binning (0 to 2π)
+- Handle circular binning over [-π, π)
 - Support `angle_unit` parameter for input conversion
 """
 
@@ -350,7 +350,7 @@ class TestComputeDirectionalOccupancy:
         self,
         simple_trajectory: dict,
     ) -> None:
-        """Bin centers should be in [0, 2π) range."""
+        """Bin centers should be in [-π, π) range."""
         from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
@@ -361,8 +361,8 @@ class TestComputeDirectionalOccupancy:
             bin_size=np.pi / 30,
         )
 
-        assert np.all(bin_centers >= 0)
-        assert np.all(bin_centers < 2 * np.pi)
+        assert np.all(bin_centers >= -np.pi)
+        assert np.all(bin_centers < np.pi)
 
     def test_occupancy_dtype(
         self,
@@ -443,8 +443,8 @@ class TestComputeDirectionalOccupancy:
         assert occupancy.shape == (n_bins,)
         assert bin_centers.shape == (n_bins,)
         # Bin centers should always be in radians
-        assert np.all(bin_centers >= 0)
-        assert np.all(bin_centers < 2 * np.pi)
+        assert np.all(bin_centers >= -np.pi)
+        assert np.all(bin_centers < np.pi)
 
 
 # ==============================================================================

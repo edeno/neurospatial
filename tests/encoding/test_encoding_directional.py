@@ -2844,7 +2844,7 @@ class TestComputeDirectionalRateBasic:
         assert isinstance(result, DirectionalRateResult)
 
     def test_bin_centers_in_radians(self) -> None:
-        """compute_directional_rate produces bin_centers in radians [0, 2π)."""
+        """compute_directional_rate produces bin_centers in radians [-π, π)."""
         from neurospatial.encoding.directional import compute_directional_rate
 
         np.random.seed(42)
@@ -2855,8 +2855,8 @@ class TestComputeDirectionalRateBasic:
         result = compute_directional_rate(spike_times, times, headings)
 
         centers = np.asarray(result.bin_centers)
-        assert np.all(centers >= 0)
-        assert np.all(centers < 2 * np.pi)
+        assert np.all(centers >= -np.pi)
+        assert np.all(centers < np.pi)
 
     def test_metadata_defaults(self) -> None:
         """compute_directional_rate stores correct default metadata."""
@@ -4202,3 +4202,89 @@ def test_head_direction_plot_north_is_up(caller_axis, polar_display_offset) -> N
     assert abs(east_dy) < 1e-6 * east_dx
     assert east_dx > 0
     plt.close("all")
+
+
+# ==============================================================================
+# One angle range for every directional output
+# ==============================================================================
+
+
+def _circular_distance(a: float, b: float) -> float:
+    return float(abs(np.angle(np.exp(1j * (a - b)))))
+
+
+class TestHeadingRange:
+    """Bin centers, peaks and preferred directions share the range [-π, π)."""
+
+    @pytest.fixture(scope="class")
+    def session(self) -> tuple[np.ndarray, np.ndarray]:
+        times = np.arange(0.0, 600.0, 1 / 30)
+        headings = np.random.default_rng(0).uniform(-np.pi, np.pi, times.size)
+        return times, headings
+
+    @staticmethod
+    def _hd_spikes(times, headings, preferred, seed):
+        rate = 0.5 + 15.0 * np.exp(4.0 * (np.cos(headings - preferred) - 1.0))
+        return _frame_poisson_spikes(times, rate, seed=seed)
+
+    def test_preferred_direction_near_pi_recovered(self, session) -> None:
+        """A cell preferring π - 0.05 gives one answer from every accessor."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = session
+        preferred = np.pi - 0.05
+        spikes = self._hd_spikes(times, headings, preferred, seed=4)
+        result = compute_directional_rate(spikes, times, headings)
+
+        centers = np.asarray(result.bin_centers)
+        assert centers.min() >= -np.pi
+        assert centers.max() < np.pi
+        assert _circular_distance(result.preferred_direction(), preferred) < np.radians(
+            6
+        )
+        peak = float(result.peak_location())
+        assert -np.pi <= peak < np.pi
+        # Same number, not merely the same angle modulo 2π.
+        assert abs(peak - result.preferred_direction()) < 2 * result.bin_size
+        df = result.to_dataframe()
+        assert df["bin_center_angle"].between(-np.pi, np.pi, inclusive="left").all()
+
+    @pytest.mark.parametrize("delta", [0.7, -2.0, np.pi])
+    def test_rotating_headings_rotates_preferred_direction(
+        self, session, delta
+    ) -> None:
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = session
+        spikes = self._hd_spikes(times, headings, 0.3, seed=5)
+        base = compute_directional_rate(spikes, times, headings)
+        rotated = compute_directional_rate(spikes, times, headings + delta)
+        shift = rotated.preferred_direction() - base.preferred_direction()
+        assert _circular_distance(shift, delta) < np.radians(1)
+        assert rotated.mean_vector_length() == pytest.approx(
+            base.mean_vector_length(), abs=0.01
+        )
+
+    def test_zero_to_two_pi_headings_match_signed_headings(self, session) -> None:
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = session
+        spikes = self._hd_spikes(times, headings, -2.5, seed=6)
+        signed = compute_directional_rate(spikes, times, headings)
+        unsigned = compute_directional_rate(spikes, times, headings % (2 * np.pi))
+        assert_array_equal(unsigned.firing_rate, signed.firing_rate)
+        assert_array_equal(unsigned.bin_centers, signed.bin_centers)
+        assert unsigned.preferred_direction() == pytest.approx(
+            signed.preferred_direction()
+        )
+
+    def test_summary_records_allocentric_frame(self, session) -> None:
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        times, headings = session
+        result = compute_directional_rates(
+            [self._hd_spikes(times, headings, 1.0, seed=7)], times, headings
+        )
+        assert result.summary()["direction_frame"] == "allocentric"
+        assert result[0].summary()["direction_frame"] == "allocentric"
+        assert result.summary_table().attrs["direction_frame"] == "allocentric"
