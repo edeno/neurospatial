@@ -75,6 +75,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import CallIndexes, locate, require_cartesian
 
 if TYPE_CHECKING:
@@ -519,8 +520,13 @@ def compute_egocentric_distance(
         Target positions in allocentric coordinates.
     metric : str, default "euclidean"
         Distance metric. Options:
-        - "euclidean": Straight-line distance
-        - "geodesic": Path distance respecting environment boundaries
+
+        - "euclidean": Straight-line distance.
+        - "geodesic": Shortest-path distance along the environment's bin
+          graph, from the center of the animal's bin to the center of the
+          target's bin, so it goes around walls and holes. A position outside
+          the environment, or a NaN position or target (a missing
+          observation), gives NaN.
     env : Environment, optional
         Required when metric="geodesic". The environment to compute
         geodesic distances within.
@@ -534,6 +540,10 @@ def compute_egocentric_distance(
     ------
     ValueError
         If metric is invalid or metric="geodesic" without an environment.
+    ValueError
+        If metric="geodesic" and a finite target lies outside every bin of
+        ``env``; the message names the target and its distance to the
+        nearest bin center.
     CartesianOnlyError
         If metric="geodesic" and ``env`` is a polar environment.
 
@@ -636,13 +646,17 @@ def compute_egocentric_distance(
         call = "compute_egocentric_distance(metric='geodesic')"
         pos_bins = locate(binning, arena, positions, indexes, call=call)
 
-        # Hoist target-bin computation out of the per-target inner loop: map
-        # every target to its bin in a single batched ``bin_at`` call. For
-        # static targets (broadcast from 2D) this collapses ``n_time * n_targets``
-        # redundant lookups into one. Shape: (n_time, n_targets).
+        # Map every target to its bin in one batched ``locate`` call rather
+        # than one call per target and time. Shape: (n_time, n_targets).
         target_bins = locate(
             binning, arena, targets_3d.reshape(-1, 2), indexes, call=call
         ).reshape(n_time, n_targets)
+        _require_targets_in_bins(
+            targets_3d,
+            target_bins,
+            binning.bins.centers,
+            time_varying=targets.ndim == 3,
+        )
 
         # Cache distance fields by target bin: static targets recompute once;
         # time-varying targets pay only for unique target bins.
@@ -656,7 +670,7 @@ def compute_egocentric_distance(
             for i in range(n_targets):
                 target_bin = int(target_bins[t, i])
                 if target_bin < 0:
-                    # Target outside environment - cell stays NaN
+                    # Missing (NaN) target position - cell stays NaN
                     continue
                 if target_bin not in distance_field_cache:
                     distance_field_cache[target_bin] = compute_distance_field(
@@ -665,3 +679,50 @@ def compute_egocentric_distance(
                 distances[t, i] = distance_field_cache[target_bin][pos_bin]
 
     return distances
+
+
+def _require_targets_in_bins(
+    targets: NDArray[np.float64],
+    target_bins: NDArray[np.intp],
+    bin_centers: NDArray[np.float64],
+    *,
+    time_varying: bool,
+) -> None:
+    """Refuse a finite target that lies outside every bin.
+
+    Parameters
+    ----------
+    targets : ndarray of float64, shape (n_time, n_targets, 2)
+        Target positions at each time.
+    target_bins : ndarray of intp, shape (n_time, n_targets)
+        Bin of each target, ``-1`` outside the environment or at NaN.
+    bin_centers : ndarray of float64, shape (n_bins, 2)
+        Bin centers, to report how far outside the target is.
+    time_varying : bool
+        Whether the caller gave targets per time, so the error names the time.
+
+    Raises
+    ------
+    ValueError
+        If a finite target lies outside every bin.
+    """
+    outside = (target_bins < 0) & np.all(np.isfinite(targets), axis=-1)
+    if not outside.any():
+        return
+    time, target = np.argwhere(outside)[0]
+    point = targets[time, target]
+    coords = ", ".join(f"{value:g}" for value in point)
+    gap = float(np.min(np.linalg.norm(bin_centers - point, axis=1)))
+    where = f"at time index {time} " if time_varying else ""
+    raise ValueError(
+        _format_error(
+            f"Target {target} {where}at ({coords}) lies outside every bin, so "
+            "compute_egocentric_distance(metric='geodesic') has no path to it.",
+            why=f"geodesic distance runs along the environment's bin graph, "
+            f"from the animal's bin to the target's bin; the nearest bin center "
+            f"is {gap:.3g} away. A target on the arena's edge, such as an "
+            "object against a wall, can lie outside.",
+            fix="move the target inside the environment, or use "
+            "metric='euclidean' for straight-line distances",
+        )
+    )

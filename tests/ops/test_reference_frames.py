@@ -488,7 +488,7 @@ class TestGeodesicDistanceTimeVarying:
         return distances
 
     def test_geodesic_matches_reference_loop_with_out_of_env(self):
-        """Optimized geodesic distance equals the reference loop, incl. NaN cells."""
+        """Batched geodesic distance equals the reference loop, incl. NaN cells."""
         from neurospatial import Environment
         from neurospatial.ops.egocentric import compute_egocentric_distance
 
@@ -505,11 +505,11 @@ class TestGeodesicDistanceTimeVarying:
                 [40.0, 40.0],
             ]
         )
-        # Time-varying targets, one outside the env at t=1 (-> NaN cell).
+        # Time-varying targets, one missing at t=1 (-> NaN cell).
         targets = np.array(
             [
                 [[50.0, 50.0], [70.0, 30.0]],
-                [[50.0, 50.0], [99999.0, 99999.0]],  # second target outside
+                [[50.0, 50.0], [np.nan, np.nan]],  # second target missing
                 [[50.0, 50.0], [70.0, 30.0]],
                 [[30.0, 30.0], [80.0, 80.0]],
             ],
@@ -522,6 +522,42 @@ class TestGeodesicDistanceTimeVarying:
         )
 
         assert_allclose(actual, expected, equal_nan=True)
+
+    @pytest.mark.parametrize("time_varying", [False, True])
+    def test_target_outside_every_bin_is_refused(self, time_varying):
+        """A target outside the environment has no geodesic path: refuse it.
+
+        Leaving the whole target column NaN would look like a missing target.
+        """
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        env = self._build_quasi_1d_env()
+        positions = np.array([[20.0, 0.0], [30.0, 0.0]])
+        targets = np.array([[50.0, 0.0], [50.0, 30.0]])  # second is 30 off-strip
+        if time_varying:
+            targets = np.stack([targets, targets])
+        where = "at time index 0 " if time_varying else ""
+        with pytest.raises(
+            ValueError,
+            match=rf"^Target 1 {where}at \(50, 30\) lies outside every bin(?s:.*)"
+            r"nearest bin center is 29\.\d away(?s:.*)metric='euclidean'",
+        ):
+            compute_egocentric_distance(
+                positions, None, targets, metric="geodesic", env=env
+            )
+
+    def test_position_outside_is_missing_not_refused(self):
+        """An animal outside the environment gives a NaN row, as a missing sample."""
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        env = self._build_quasi_1d_env()
+        positions = np.array([[20.0, 0.0], [20.0, 30.0], [np.nan, np.nan]])
+        targets = np.array([[50.0, 0.0]])
+        distances = compute_egocentric_distance(
+            positions, None, targets, metric="geodesic", env=env
+        )
+        assert np.isfinite(distances[0, 0])
+        assert np.isnan(distances[1:, 0]).all()
 
 
 class TestComputeEgocentricDistanceFunctions:
