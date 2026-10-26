@@ -154,13 +154,14 @@ class ProbabilityMappingParams:
         return int(self.target_env.n_bins)
 
 
-def get_2d_rotation_matrix(angle_degrees: float) -> NDArray[np.float64]:
-    """Creates a 2D counter-clockwise rotation matrix for a given angle.
+def get_2d_rotation_matrix(angle: float) -> NDArray[np.float64]:
+    """Create a 2D counter-clockwise rotation matrix for a given angle.
 
     Parameters
     ----------
-    angle_degrees : float
-        The rotation angle in degrees. Positive for counter-clockwise.
+    angle : float
+        The rotation angle in radians. Positive is counter-clockwise (from
+        East toward North).
 
     Returns
     -------
@@ -169,23 +170,20 @@ def get_2d_rotation_matrix(angle_degrees: float) -> NDArray[np.float64]:
 
     Examples
     --------
-    >>> rotation_matrix = get_2d_rotation_matrix(90)
-    >>> print(rotation_matrix)  # doctest: +SKIP
-    [[ 0. -1.]
-     [ 1.  0.]]
+    >>> import numpy as np
+    >>> rotation_matrix = get_2d_rotation_matrix(np.pi / 2)
+    >>> np.allclose(rotation_matrix, [[0, -1], [1, 0]])
+    True
 
     Rotate a point 90 degrees counter-clockwise:
 
-    >>> import numpy as np
     >>> point = np.array([[1, 0]])
-    >>> rotated = point @ rotation_matrix.T
-    >>> print(rotated)  # doctest: +SKIP
-    [[0. 1.]]
+    >>> np.allclose(point @ rotation_matrix.T, [[0, 1]])
+    True
 
     """
-    angle_radians = np.deg2rad(angle_degrees)
-    cos_theta = np.cos(angle_radians)
-    sin_theta = np.sin(angle_radians)
+    cos_theta = np.cos(angle)
+    sin_theta = np.sin(angle)
 
     rotation_matrix = np.array([[cos_theta, -sin_theta], [sin_theta, cos_theta]])
     return rotation_matrix
@@ -235,7 +233,7 @@ def apply_similarity_transform(
     >>> # Define points
     >>> points = np.array([[1, 0], [0, 1], [1, 1]])
     >>> # Rotate 90 degrees
-    >>> rotation = get_2d_rotation_matrix(90)
+    >>> rotation = get_2d_rotation_matrix(np.pi / 2)
     >>> # Scale by 2
     >>> scale = 2.0
     >>> # Translate by (10, 20)
@@ -529,7 +527,7 @@ def map_probabilities(
     Map with rotation and scaling:
 
     >>> from neurospatial.ops.alignment import get_2d_rotation_matrix
-    >>> rotation = get_2d_rotation_matrix(45)  # 45 degree rotation
+    >>> rotation = get_2d_rotation_matrix(np.pi / 4)  # 45 degree rotation
     >>> target_probs = map_probabilities(
     ...     source_env,
     ...     target_env,

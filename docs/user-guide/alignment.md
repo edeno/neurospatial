@@ -283,6 +283,7 @@ posteriors and occupancy probabilities, not for rate maps. To move a rate map
 onto other bins, use `resample_field`, which copies each rate.
 
 ```python
+import numpy as np
 from neurospatial.ops import get_2d_rotation_matrix, map_probabilities
 from scipy.spatial.transform import Rotation
 
@@ -291,7 +292,7 @@ aligned_probs_2d = map_probabilities(
     source_env=env1,
     target_env=env2,
     source_probs=probs1,
-    source_rotation_matrix=get_2d_rotation_matrix(angle_degrees=45),
+    source_rotation_matrix=get_2d_rotation_matrix(np.pi / 4),  # radians
     source_scale=1.2
 )
 

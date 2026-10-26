@@ -30,28 +30,35 @@ class MockEnvironment:
 
 
 class TestGet2dRotationMatrix:
-    """Tests for get_2d_rotation_matrix function."""
+    """get_2d_rotation_matrix takes radians, like every angle in the package."""
+
+    def test_angle_is_in_radians(self):
+        """A quarter turn is pi / 2; 90 would be read as 90 radians."""
+        np.testing.assert_allclose(
+            get_2d_rotation_matrix(np.pi / 2) @ [1.0, 0.0], [0.0, 1.0], atol=1e-12
+        )
+        assert not np.allclose(get_2d_rotation_matrix(90) @ [1.0, 0.0], [0.0, 1.0])
 
     def test_identity(self):
-        """Test 0 degree rotation returns identity matrix."""
-        R = get_2d_rotation_matrix(0)
+        """A zero angle returns the identity matrix."""
+        R = get_2d_rotation_matrix(0.0)
         np.testing.assert_allclose(R, np.eye(2), atol=1e-8)
 
     def test_90_degrees(self):
-        """Test 90 degree counter-clockwise rotation."""
-        R = get_2d_rotation_matrix(90)
+        """A quarter turn (pi / 2) is counter-clockwise."""
+        R = get_2d_rotation_matrix(np.pi / 2)
         expected = np.array([[0, -1], [1, 0]])
         np.testing.assert_allclose(R, expected, atol=1e-8)
 
     def test_180_degrees(self):
-        """Test 180 degree rotation."""
-        R = get_2d_rotation_matrix(180)
+        """A half turn (pi)."""
+        R = get_2d_rotation_matrix(np.pi)
         expected = np.array([[-1, 0], [0, -1]])
         np.testing.assert_allclose(R, expected, atol=1e-8)
 
     def test_negative_angle(self):
-        """Test negative angle (clockwise rotation)."""
-        R = get_2d_rotation_matrix(-90)
+        """A negative angle turns clockwise."""
+        R = get_2d_rotation_matrix(-np.pi / 2)
         expected = np.array([[0, 1], [-1, 0]])
         np.testing.assert_allclose(R, expected, atol=1e-8)
 
@@ -71,7 +78,7 @@ class TestApplySimilarityTransform:
     def test_rotation_scale_translate(self):
         """Test combined rotation, scaling, and translation."""
         points = np.array([[1, 0], [0, 1]])
-        R = get_2d_rotation_matrix(90)
+        R = get_2d_rotation_matrix(np.pi / 2)
         s = 2.0
         t = np.array([1, 1])
         transformed = apply_similarity_transform(points, R, s, t)
@@ -128,7 +135,7 @@ class TestMapProbabilities:
         src_probs = np.array([0.7, 0.3])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        R = get_2d_rotation_matrix(90)
+        R = get_2d_rotation_matrix(np.pi / 2)
         tgt_probs = map_probabilities(
             src_env, tgt_env, src_probs, source_rotation_matrix=R
         )
