@@ -195,9 +195,13 @@
   used 1.0 per pixel, so positions in cm were binned as if each pixel were
   1 cm wide, and `layout_parameters["pixel_size"]` recorded None instead of
   the size used.
-- `get_n_bins` counts a reversed `(max, min)` range like the grid builder
-  does; it returned a negative count. It ignores positions rows with a NaN or
-  infinite coordinate, and refuses a range that is not finite.
+- A reversed `(max, min)` dimension range is refused, with the pair and
+  axis named, by `create_layout`, every layout engine that takes ranges and
+  `get_n_bins`, as `Environment.from_samples` already refused it. The
+  layouts silently reordered it, so a swapped pair (often the wrong column
+  or sign) built a grid without a word, and `get_n_bins` returned a negative
+  count. `get_n_bins` also ignores positions rows with a NaN or infinite
+  coordinate, and refuses a range that is not finite.
 - The large-grid memory warning points at your own call, not at a line inside
   neurospatial, and no longer suggests `infer_active_bins=True`, which cannot
   shrink the full grid the estimate counts.

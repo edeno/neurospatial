@@ -31,6 +31,7 @@ from neurospatial.layout.helpers.utils import get_n_bins
 from neurospatial.layout.validation import (
     validate_cell_size,
     validate_count_threshold,
+    validate_dimension_ranges,
 )
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
@@ -284,40 +285,14 @@ def _compute_dimension_ranges(
     Raises
     ------
     ValueError
-        If dimension_range length doesn't match n_dims, or if ranges cannot be inferred.
+        If dimension_range length doesn't match n_dims, a range is not finite
+        or has its minimum above its maximum, or ranges cannot be inferred.
     TypeError
         If dimension_range contains non-numeric values.
 
     """
     if dimension_range is not None:
-        if len(dimension_range) != n_dims:
-            raise ValueError(
-                f"`dimension_range` length ({len(dimension_range)}) must match "
-                f"n_dims ({n_dims}): one (min, max) pair per dimension.",
-            )
-        ranges = []
-        for i, (lo, hi) in enumerate(dimension_range):
-            try:
-                # Sort after converting: min and max drop a NaN silently.
-                lo_f, hi_f = sorted((float(lo), float(hi)))
-            except (TypeError, ValueError) as e:
-                raise TypeError(
-                    f"dimension_range must contain numeric tuples of (min, max). "
-                    f"Error at dimension {i}: got ({lo!r}, {hi!r})"
-                ) from e
-            if not (np.isfinite(lo_f) and np.isfinite(hi_f)):
-                raise ValueError(
-                    _format_error(
-                        f"dimension_range[{i}] is ({lo!r}, {hi!r}), which is not "
-                        "finite.",
-                        why="Why: cells of bin_size are laid across each range, "
-                        "so both ends must be finite numbers.",
-                        fix="pass finite (min, max) pairs in the units of "
-                        "positions, e.g. dimension_ranges=[(0, 100), (0, 100)]",
-                    )
-                )
-            # A zero-span range becomes one cell when widened to whole cells.
-            ranges.append((lo_f, hi_f))
+        ranges = validate_dimension_ranges(dimension_range, n_dims=n_dims)
     else:
         # Infer from `samples`
         if samples is None:

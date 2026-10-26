@@ -933,3 +933,24 @@ def test_a_missing_build_option_is_named_with_a_fix(build, missing):
     ) as error:
         build()
     assert "Why:" in str(error.value) and "Fix:" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("layout_kind", "options"),
+    [
+        ("RegularGrid", {"bin_size": 2.0}),
+        ("Hexagonal", {"hexagon_width": 2.0}),
+    ],
+)
+def test_a_reversed_dimension_range_is_refused(layout_kind, options):
+    """A (max, min) pair is refused, as Environment.from_samples refuses it.
+
+    The layouts silently reordered it, so a swapped pair (often a wrong
+    column or sign) built the grid without a word.
+    """
+    with pytest.raises(ValueError, match="minimum is above its maximum") as excinfo:
+        create_layout(layout_kind, dimension_ranges=[(0, 20), (20, 0)], **options)
+    message = str(excinfo.value)
+    assert "dimension_ranges[1]" in message
+    assert "\nWhy: " in message
+    assert "\nFix: " in message

@@ -139,3 +139,89 @@ def validate_count_threshold(value: int) -> int:
             )
         )
     return int(value)
+
+
+def validate_dimension_ranges(
+    dimension_ranges: Sequence[tuple[float, float]],
+    *,
+    n_dims: int | None = None,
+    name: str = "dimension_ranges",
+) -> list[tuple[float, float]]:
+    """Check explicit ranges and return one ``(minimum, maximum)`` per axis.
+
+    Every layout that takes ranges checks them here, so a bad pair gets the
+    same refusal from ``create_layout``, the engines and ``get_n_bins``. A
+    zero-span pair is kept: the grid widens it to one cell.
+
+    Parameters
+    ----------
+    dimension_ranges : sequence of (float, float)
+        The ``(minimum, maximum)`` extent of each axis, in the units of the
+        positions.
+    n_dims : int, optional
+        Number of axes the ranges must describe; any number when None.
+    name : str, default="dimension_ranges"
+        Argument name used in errors.
+
+    Returns
+    -------
+    list of (float, float)
+
+    Raises
+    ------
+    ValueError
+        If the number of pairs is not ``n_dims``, or a pair is not two
+        values, not finite, or has its minimum above its maximum.
+    TypeError
+        If a pair holds a value that is not a number.
+
+    Examples
+    --------
+    >>> validate_dimension_ranges([(0, 10), (0, 5)])
+    [(0.0, 10.0), (0.0, 5.0)]
+    """
+    pairs = list(dimension_ranges)
+    if n_dims is not None and len(pairs) != n_dims:
+        raise ValueError(
+            f"`{name}` length ({len(pairs)}) must match n_dims ({n_dims}): one "
+            "(min, max) pair per dimension.",
+        )
+    ranges = []
+    for i, pair in enumerate(pairs):
+        try:
+            values = [float(value) for value in pair]
+        except (TypeError, ValueError) as e:
+            raise TypeError(
+                f"{name} must contain numeric tuples of (min, max). "
+                f"Error at dimension {i}: got {pair!r}"
+            ) from e
+        if len(values) != 2:
+            raise ValueError(
+                f"{name}[{i}] is {pair!r}; each axis needs one (min, max) pair."
+            )
+        lo, hi = values
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            raise ValueError(
+                _format_error(
+                    f"{name}[{i}] is {tuple(pair)!r}, which is not finite.",
+                    why="Why: cells are laid across each range, so both ends "
+                    "must be finite numbers.",
+                    fix="pass finite (min, max) pairs in the units of "
+                    "positions, e.g. dimension_ranges=[(0, 100), (0, 100)]",
+                )
+            )
+        if lo > hi:
+            raise ValueError(
+                _format_error(
+                    f"{name}[{i}] is {tuple(pair)!r}, whose minimum is above "
+                    "its maximum.",
+                    why="Why: each pair is an axis's (minimum, maximum) "
+                    "extent, minimum first; a reversed pair usually means "
+                    "swapped values or a pair given for the wrong axis.",
+                    fix=f"pass ({pair[1]!r}, {pair[0]!r}) if that is the "
+                    "extent, and check that the pairs follow the columns of "
+                    "positions",
+                )
+            )
+        ranges.append((lo, hi))
+    return ranges

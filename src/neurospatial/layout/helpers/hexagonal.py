@@ -77,8 +77,8 @@ def _create_hex_grid(
         - If `hexagon_width <= 0`.
         - If `dimension_range` is None and `positions` is None or has no
           row without NaN.
-        - If `dimension_range` is provided but not two finite pairs (a
-          reversed ``(max, min)`` pair is accepted and sorted).
+        - If `dimension_range` is provided but not two finite
+          ``(min, max)`` pairs, minimum first.
         - If `positions` is not a 2D array of shape (n_samples, 2).
 
     """
