@@ -1,5 +1,7 @@
 """Tests for probability mapping and similarity transforms between environments."""
 
+import math
+
 import numpy as np
 import pytest
 from scipy.spatial import cKDTree
@@ -363,3 +365,79 @@ class TestMapProbabilitiesInverseDistanceWeighted:
             n_neighbors=1,
         )
         np.testing.assert_allclose(out, [1.0, 0.0], atol=1e-12)
+
+
+class TestMapProbabilitiesMaxDistance:
+    """Mass is never moved farther than max_distance to a target bin."""
+
+    @pytest.fixture(scope="class")
+    def square(self):
+        from neurospatial import Environment
+
+        rng = np.random.default_rng(0)
+        samples = rng.uniform(0, 100, (2000, 2))
+        return (
+            Environment.from_samples(samples, bin_size=5.0),
+            Environment.from_samples(samples, bin_size=10.0),
+        )
+
+    def test_coarser_bins_of_the_same_arena_are_accepted(self, square):
+        """Every fine bin lies inside a coarse bin, so nothing is refused."""
+        fine, coarse = square
+        probs = np.full(fine.n_bins, 1.0 / fine.n_bins)
+        mapped = map_probabilities(fine, coarse, probs)
+        assert mapped.sum() == pytest.approx(1.0)
+
+    def test_misaligned_mass_is_refused_with_the_amount(self, square):
+        """Rotating about the origin moves the arena off the target bins.
+
+        Nearest mapping used to pile that mass onto the target's edge bins.
+        """
+        fine, coarse = square
+        probs = np.full(fine.n_bins, 1.0 / fine.n_bins)
+        rotation = get_2d_rotation_matrix(np.pi / 4)
+        moved = 0.9 * fine.bin_centers @ rotation.T
+        distance, _ = coarse.bin_center_tree().query(moved)
+        expected = f"{np.mean(distance > 10.0):.1%} of the source probability"
+        with pytest.raises(ValueError, match=expected) as error:
+            map_probabilities(
+                fine, coarse, probs, source_rotation_matrix=rotation, source_scale=0.9
+            )
+        assert "one target bin spacing (10)" in str(error.value)
+        assert "math.inf" in str(error.value)
+
+        anywhere = map_probabilities(
+            fine,
+            coarse,
+            probs,
+            source_rotation_matrix=rotation,
+            source_scale=0.9,
+            max_distance=math.inf,
+        )
+        assert anywhere.sum() == pytest.approx(1.0)
+
+    def test_only_bins_that_hold_mass_count(self):
+        """A far source bin with zero probability moves nothing and passes."""
+        src_env = MockEnvironment(np.array([[0.0, 0.0], [100.0, 0.0]]), 2)
+        tgt_env = MockEnvironment(np.array([[0.0, 0.0], [1.0, 0.0]]), 2)
+        np.testing.assert_allclose(
+            map_probabilities(src_env, tgt_env, np.array([1.0, 0.0])), [1.0, 0.0]
+        )
+        with pytest.raises(ValueError, match=r"max_distance=50"):
+            map_probabilities(src_env, tgt_env, np.array([0.5, 0.5]), max_distance=50.0)
+
+    @pytest.mark.parametrize(
+        ("max_distance", "error"),
+        [
+            (-1.0, ValueError),
+            (np.nan, ValueError),
+            ("far", TypeError),
+            (True, TypeError),
+        ],
+    )
+    def test_refuses_invalid_max_distance(self, max_distance, error):
+        src_env = MockEnvironment(np.array([[0.0, 0.0]]), 2)
+        with pytest.raises(error, match="max_distance"):
+            map_probabilities(
+                src_env, src_env, np.array([1.0]), max_distance=max_distance
+            )

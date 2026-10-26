@@ -282,31 +282,53 @@ nearest target bin and the masses are summed, so the total is kept. Use it for
 posteriors and occupancy probabilities, not for rate maps. To move a rate map
 onto other bins, use `resample_field`, which copies each rate.
 
+The source bin centers are first scaled, rotated and translated into the
+target's coordinates, as `x' = R @ (source_scale * x) + t`. Scale and rotation
+act about the coordinate origin, so to undo a turn `R` about the arena center
+`c`, pass `source_translation_vector = c - source_scale * R @ c`. Source bins
+that hold probability but end up farther than one target bin spacing from
+every target bin are refused, with the share of the mass they hold, instead of
+being piled onto the target's edge bins. Pass `max_distance=` to change that
+limit, or `max_distance=math.inf` to accept any distance.
+
+Here the second session recorded the same square arena turned 30 degrees about
+its center, and a posterior decoded in session 2 is mapped onto session 1's
+bins:
+
+<!-- docs-test: run -->
 ```python
 import numpy as np
+from neurospatial import Environment
 from neurospatial.ops import get_2d_rotation_matrix, map_probabilities
-from scipy.spatial.transform import Rotation
 
-# 2D alignment with rotation and scaling
-aligned_probs_2d = map_probabilities(
-    source_env=env1,
-    target_env=env2,
-    source_probs=probs1,
-    source_rotation_matrix=get_2d_rotation_matrix(np.pi / 4),  # radians
-    source_scale=1.2
-)
+rng = np.random.default_rng(0)
+session1 = rng.uniform(0, 100, (5000, 2))
+center = np.array([50.0, 50.0])
+turn = get_2d_rotation_matrix(np.pi / 6)  # radians, counter-clockwise
+session2 = (session1 - center) @ turn.T + center
+target_env = Environment.from_samples(session1, bin_size=5.0, units="cm")
+source_env = Environment.from_samples(session2, bin_size=5.0, units="cm")
 
-# 3D alignment with rotation
-R_3d = Rotation.from_euler('xyz', [45, 30, 60], degrees=True).as_matrix()
-aligned_probs_3d = map_probabilities(
-    source_env=env_3d_1,
-    target_env=env_3d_2,
-    source_probs=probs_3d,
-    source_rotation_matrix=R_3d,
-    source_scale=0.9,
-    source_translation_vector=[10, 20, 30]
+# A posterior peaked where session 2 puts session 1's point (20, 70)
+peak = (np.array([20.0, 70.0]) - center) @ turn.T + center
+distance = np.linalg.norm(source_env.bin_centers - peak, axis=1)
+posterior = np.exp(-0.5 * (distance / 5.0) ** 2)
+posterior /= posterior.sum()
+
+back = get_2d_rotation_matrix(-np.pi / 6)
+mapped = map_probabilities(
+    source_env,
+    target_env,
+    posterior,
+    source_rotation_matrix=back,
+    source_translation_vector=center - back @ center,
 )
+assert np.isclose(mapped.sum(), 1.0)
+assert np.linalg.norm(target_env.bin_centers[mapped.argmax()] - [20, 70]) < 5
 ```
+
+For 3D environments, build the rotation with
+`scipy.spatial.transform.Rotation(...).as_matrix()` and pass it the same way.
 
 ## Complete Alignment Workflow
 

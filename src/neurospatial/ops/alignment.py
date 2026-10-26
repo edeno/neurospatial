@@ -59,6 +59,7 @@ from numpy.typing import NDArray
 from neurospatial._constants import IDW_MIN_DISTANCE
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry import require_cartesian
+from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
@@ -333,43 +334,6 @@ def _transform_source_bin_centers(
     return np.asarray(transformed, dtype=np.float64)
 
 
-def _map_nearest_neighbor(
-    tree: cKDTree,
-    src_centers: NDArray[np.float64],
-    source_probs: NDArray[np.float64],
-    n_tgt: int,
-) -> NDArray[np.float64]:
-    """Map probabilities using nearest neighbor strategy.
-
-    Parameters
-    ----------
-    tree : cKDTree
-        KDTree built on target bin centers.
-    src_centers : NDArray[np.float64]
-        Transformed source bin centers.
-    source_probs : NDArray[np.float64]
-        Source probabilities.
-    n_tgt : int
-        Number of target bins.
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Target probabilities.
-
-    """
-    target_probs = np.zeros(n_tgt, dtype=float)
-
-    # cKDTree.query does not raise on "no neighbor" (it returns inf distance /
-    # out-of-range index). A raised exception here means genuinely bad input
-    # (e.g. non-finite coordinates) and must propagate rather than degrade to a
-    # silent all-zero map.
-    _, idxs = tree.query(src_centers, k=1)
-
-    np.add.at(target_probs, idxs, source_probs)
-    return target_probs
-
-
 def _map_inverse_distance_weighted(
     tree: cKDTree,
     src_centers: NDArray[np.float64],
@@ -406,8 +370,6 @@ def _map_inverse_distance_weighted(
     # Clamp n_neighbors if larger than number of target bins
     k_eff = min(n_neighbors, n_tgt)
 
-    # See _map_nearest_neighbor: a raised exception is bad input, not a benign
-    # "no neighbor" — let it propagate.
     dists, idxs = tree.query(src_centers, k=k_eff)
 
     # If k_eff == 1, we may get 1D arrays; force them to 2D
@@ -432,6 +394,66 @@ def _map_inverse_distance_weighted(
     return target_probs
 
 
+def _check_max_distance(max_distance: object) -> None:
+    """Refuse a ``max_distance`` that is not None or a real number >= 0."""
+    if max_distance is None:
+        return
+    if isinstance(max_distance, (bool, np.bool_)) or not isinstance(
+        max_distance, (numbers.Real, np.floating, np.integer)
+    ):
+        raise TypeError(
+            f"max_distance must be a distance or None, got {max_distance!r}."
+        )
+    if np.isnan(float(max_distance)) or float(max_distance) < 0:
+        raise ValueError(f"max_distance must be zero or more, got {max_distance!r}.")
+
+
+def _require_mass_within(
+    source_probs: NDArray[np.float64],
+    nearest_distance: NDArray[np.float64],
+    max_distance: float,
+    default: bool,
+) -> None:
+    """Refuse to move probability mass farther than ``max_distance``.
+
+    Parameters
+    ----------
+    source_probs : NDArray[np.float64], shape (n_source_bins,)
+    nearest_distance : NDArray[np.float64], shape (n_source_bins,)
+        Distance from each transformed source bin center to the nearest
+        target bin center.
+    max_distance : float
+    default : bool
+        Whether ``max_distance`` is the default (the target bin spacing).
+    """
+    beyond = (nearest_distance > max_distance) & (source_probs > 0)
+    if not np.any(beyond):
+        return
+    total = float(source_probs.sum())
+    stranded = float(source_probs[beyond].sum())
+    limit = (
+        f"one target bin spacing ({max_distance:.4g})"
+        if default
+        else f"max_distance={max_distance:.4g}"
+    )
+    raise ValueError(
+        _format_error(
+            f"{stranded / total:.1%} of the source probability "
+            f"({int(beyond.sum())} source bins) lies farther than {limit} from "
+            "every target bin center; the farthest is "
+            f"{float(nearest_distance[beyond].max()):.4g} away.",
+            why="nearest-bin mapping would pile that mass onto the target's "
+            "edge bins, which it never belonged to",
+            fix="check the alignment: scale and rotation act about the "
+            "coordinate origin, so rotating about an arena center c needs "
+            "source_translation_vector = c - source_scale * R @ c. If the "
+            "mismatch is expected, pass a larger max_distance, or "
+            "max_distance=math.inf to give every source bin its nearest "
+            "target bin however far away",
+        )
+    )
+
+
 def map_probabilities(
     source_env: CartesianBinsConsumer,
     target_env: ProbabilityTargetConsumer,
@@ -443,9 +465,13 @@ def map_probabilities(
     source_scale: float = 1.0,
     source_rotation_matrix: NDArray[np.float64] | None = None,
     source_translation_vector: NDArray[np.float64] | None = None,
+    max_distance: float | None = None,
 ) -> NDArray[np.float64]:
-    """Map probabilities on source_env onto target_env, with optional scaling/translation
-    of the source bin-centers beforehand.
+    """Map probabilities on source_env onto target_env.
+
+    The source bin centers can first be scaled, rotated and translated into
+    the target's coordinates; each source bin's mass then moves to the
+    nearest target bin (or is split among its nearest target bins).
 
     Parameters
     ----------
@@ -454,7 +480,7 @@ def map_probabilities(
     target_env : Environment
         An Environment onto whose bins we want to map probabilities.
     source_probs : NDArray[np.float64]
-        1D array of length source_env.n_bins (nonnegative).
+        1D array of length source_env.n_bins; finite and nonnegative.
     mode : {'nearest', 'inverse-distance-weighted'}
         - "nearest": each source bin's mass → its single nearest target bin.
         - "inverse-distance-weighted" : spread each source bin's mass over
@@ -467,15 +493,26 @@ def map_probabilities(
         Small positive distance added before inverting distances in IDW
         weights, so a source bin on a target center does not divide by zero.
     source_scale : float, default=1.0
-        Uniform scaling factor to multiply every source bin-center by before querying.
+        Uniform scaling factor to multiply every source bin-center by before
+        querying. Scaling is about the coordinate origin.
     source_rotation_matrix : Optional[NDArray[np.float64]]
         If not None, must be a square rotation matrix (shape (n_dims, n_dims)).
         For 2D environments, use `get_2d_rotation_matrix()`.
         For 3D environments, use `scipy.spatial.transform.Rotation.as_matrix()`.
-        Applied to source bin centers after scaling but before translation.
+        Applied to source bin centers after scaling but before translation,
+        about the coordinate origin, not the arena's center.
     source_translation_vector : Optional[NDArray[np.float64]]
         If not None, must be a 1D array of length n_dims. Applied to source bin centers
         after scaling and rotation.
+    max_distance : float or None, default=None
+        Farthest a transformed source bin center may be from every target bin
+        center while it holds probability, in the target's length units.
+        None uses the target's typical bin spacing (the median distance
+        between neighboring bin centers): inside a regular grid every point is
+        within half a bin diagonal of a center (0.71 spacing in 2D, 0.87 in
+        3D), so a source bin farther than one spacing lies outside the
+        target's bins. ``math.inf`` sends every source bin to its nearest
+        target bin however far away.
 
     Returns
     -------
@@ -488,8 +525,12 @@ def map_probabilities(
     ------
     ValueError
         If `source_probs` has incorrect shape or NaN, infinite or negative
-        values; if dims mismatch; if `mode` is unknown; or if `n_neighbors`
-        or `eps` is invalid.
+        values; if dims mismatch; if `mode` is unknown; if `n_neighbors`,
+        `eps` or `max_distance` is invalid; or if source bins holding
+        probability lie farther than `max_distance` from every target bin
+        center (the message reports how much mass).
+    TypeError
+        If `max_distance` is not a number or None.
     CartesianOnlyError
         If either environment is polar: bins are matched by nearest Cartesian
         bin center after a similarity transform.
@@ -497,6 +538,7 @@ def map_probabilities(
     See Also
     --------
     resample_field : Move a rate map or other intensive field onto other bins.
+    estimate_transform : Fit the alignment from landmark pairs.
 
     Notes
     -----
@@ -505,42 +547,63 @@ def map_probabilities(
     Use this for posteriors and occupancy probabilities, and
     :func:`~neurospatial.ops.resample_field` for rate maps.
 
+    The transform is ``x' = R @ (source_scale * x) + t``. Scale and rotation
+    act about the coordinate origin: to rotate an arena by ``R`` about its
+    center ``c``, pass ``source_translation_vector = c - source_scale * R @ c``.
+
     Examples
     --------
-    Map probabilities between two environments with different bin sizes:
+    A second session recorded the same square arena turned 30 degrees about
+    its center. Map a decoded posterior from session 2 back onto session 1's
+    bins:
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.alignment import map_probabilities
-    >>> # Create two environments with different bin sizes
-    >>> data = np.random.rand(1000, 2) * 100
-    >>> source_env = Environment.from_samples(data, bin_size=5.0)
-    >>> target_env = Environment.from_samples(data, bin_size=10.0)
-    >>> # Create probability distribution for source
-    >>> source_probs = np.ones(source_env.n_bins) / source_env.n_bins
-    >>> # Map to target environment
-    >>> target_probs = map_probabilities(source_env, target_env, source_probs)
-    >>> target_probs.shape[0] == target_env.n_bins
-    True
-    >>> np.allclose(target_probs.sum(), 1.0)
-    True
-
-    Map with rotation and scaling:
-
-    >>> from neurospatial.ops.alignment import get_2d_rotation_matrix
-    >>> rotation = get_2d_rotation_matrix(np.pi / 4)  # 45 degree rotation
-    >>> target_probs = map_probabilities(
+    >>> from neurospatial.ops.alignment import (
+    ...     get_2d_rotation_matrix,
+    ...     map_probabilities,
+    ... )
+    >>> rng = np.random.default_rng(0)
+    >>> session1 = rng.uniform(0, 100, (5000, 2))
+    >>> center = np.array([50.0, 50.0])
+    >>> turn = get_2d_rotation_matrix(np.pi / 6)
+    >>> session2 = (session1 - center) @ turn.T + center
+    >>> target_env = Environment.from_samples(session1, bin_size=5.0)
+    >>> source_env = Environment.from_samples(session2, bin_size=5.0)
+    >>> # A posterior peaked where session 2 puts session 1's point (20, 70)
+    >>> peak = (np.array([20.0, 70.0]) - center) @ turn.T + center
+    >>> distance = np.linalg.norm(source_env.bin_centers - peak, axis=1)
+    >>> posterior = np.exp(-0.5 * (distance / 5.0) ** 2)
+    >>> posterior /= posterior.sum()
+    >>> # Undo the turn about the arena center, not about the origin
+    >>> back = get_2d_rotation_matrix(-np.pi / 6)
+    >>> mapped = map_probabilities(
     ...     source_env,
     ...     target_env,
-    ...     source_probs,
-    ...     source_rotation_matrix=rotation,
-    ...     source_scale=0.9,
+    ...     posterior,
+    ...     source_rotation_matrix=back,
+    ...     source_translation_vector=center - back @ center,
     ... )
+    >>> bool(np.isclose(mapped.sum(), 1.0))
+    True
+    >>> bool(np.linalg.norm(target_env.bin_centers[mapped.argmax()] - [20, 70]) < 5)
+    True
+
+    Rotating about the origin instead moves most of the arena off the target
+    bins, which is refused rather than piled onto the edge bins:
+
+    >>> map_probabilities(
+    ...     source_env, target_env, posterior, source_rotation_matrix=back
+    ... )  # doctest: +ELLIPSIS
+    Traceback (most recent call last):
+    ...
+    ValueError: ...% of the source probability ... lies farther than one target bin spacing (5) from every target bin center; ...
 
     """
     source_probs = _validated_probabilities(
         source_env, target_env, source_probs, mode, n_neighbors, eps
     )
+    _check_max_distance(max_distance)
     for argument, env in (("source_env", source_env), ("target_env", target_env)):
         require_cartesian(
             env.coordinate_system,
@@ -577,9 +640,24 @@ def map_probabilities(
     # The target environment's cached KD-tree over its bin centers.
     tree = target_env.bin_center_tree()
 
+    # cKDTree.query does not raise on "no neighbor" (it returns inf distance /
+    # out-of-range index). A raised exception here means genuinely bad input
+    # (e.g. non-finite coordinates) and must propagate rather than degrade to a
+    # silent all-zero map.
+    nearest_distance, nearest = tree.query(src_centers, k=1)
+    if max_distance is None:
+        limit = _estimate_typical_bin_spacing(tree, target_env.bin_centers)
+    else:
+        limit = float(max_distance)
+    _require_mass_within(
+        source_probs, nearest_distance, limit, default=max_distance is None
+    )
+
     # Perform the requested mapping
     if mode == "nearest":
-        return _map_nearest_neighbor(tree, src_centers, source_probs, n_tgt)
+        target_probs = np.zeros(n_tgt, dtype=float)
+        np.add.at(target_probs, nearest, source_probs)
+        return target_probs
     if mode == "inverse-distance-weighted":
         return _map_inverse_distance_weighted(
             tree,
