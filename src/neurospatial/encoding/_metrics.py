@@ -604,11 +604,13 @@ def batch_grid_scores(
     1. Computes spatial autocorrelation using :func:`spatial_autocorrelation`
     2. Computes grid score using :func:`grid_score`
 
-    **Interpretation**:
-
-    - **score > 0.4**: Strong hexagonal grid (typical threshold for grid cells)
-    - **score ≈ 0**: No hexagonal structure (place cells, non-spatial cells)
-    - **score < 0**: Anti-hexagonal structure (rare)
+    **Interpretation**: a higher score means stronger sixfold rotational
+    symmetry; about 0 means none (place cells, untuned cells) and below 0
+    another symmetry. 0.4 is a common screening convention for grid cells,
+    not a verdict: on circularly time-shifted spike trains of simulated grid,
+    place and untuned cells, 1-8% of the shuffled maps scored 0.4 or more.
+    Calling a cell a grid cell needs a null distribution from your own
+    recording: the scores of its spike train circularly shifted in time.
 
     Examples
     --------

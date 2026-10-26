@@ -275,15 +275,10 @@ class TestGridScore:
     """Tests for grid_score function."""
 
     def test_grid_score_anchor_perfect_hexagonal(self):
-        """Anchor test: Synthetic perfect hexagonal pattern should score > 0.3.
+        """A synthetic hexagonal autocorrelogram scores near the top of the range.
 
-        Mathematical reasoning:
-        - Perfect hexagonal symmetry has correlation at 60°, 120° rotations
-        - Grid score = min(r60, r120) - max(r30, r90, r150)
-        - For perfect hex: r60 ≈ r120 ≈ 1.0, r30 ≈ r90 ≈ r150 ≈ low
-        - Expected score > 0.3 (literature threshold for grid cells)
-
-        Reference: Langston et al. (2010) Science
+        Hexagonal symmetry correlates at 60° and 120° rotations and not at
+        30°, 90° and 150°, so min(r60, r120) - max(r30, r90, r150) is large.
         """
         from neurospatial.encoding.grid import grid_score
 
@@ -311,16 +306,9 @@ class TestGridScore:
 
         score = grid_score(autocorr)
 
-        # Perfect hexagonal pattern. Rotated about its zero-lag pixel, this
-        # synthetic Gaussian-peak autocorrelogram scores ~1.52 (1.40 when the
-        # rotation center sat half a pixel off zero lag); bracket it as
-        # 0.4 < score < 1.8, well above the 0.3 literature threshold and below
-        # the +2 theoretical maximum, so a regression that under- or
-        # over-scores hex symmetry fails.
-        assert 0.4 < score < 1.8, (
-            f"Expected grid score in (0.4, 1.8) for perfect hexagonal pattern, "
-            f"got {score}"
-        )
+        # Rotated about its zero-lag pixel, this synthetic Gaussian-peak
+        # autocorrelogram scores about 1.63.
+        assert 1.55 < score < 1.7, score
 
     def test_grid_score_anchor_isotropic_noise(self):
         """Anchor test: Isotropic random noise should have score near 0.

@@ -689,9 +689,14 @@ sweeps an annulus from the edge of the central peak out to those shifts and
 keeps the best 60°-versus-30° rotational contrast, so it does not depend on
 the grid spacing as long as the first ring of fields fits, for spacings up to
 about 0.6 of the arena's side. It is NaN when the central peak is not bounded
-inside the defined shifts or the arena is too small for an annulus around it. Inspect the rate map, autocorrelogram and
-occupancy together. A conventional score cutoff is not a calibrated
-significance test. On layouts without a rectangular grid (hexagonal bins,
+inside the defined shifts or the arena is too small for an annulus around it.
+`grid_properties` reads spacing and orientation only from peaks that can be one
+hexagon's first ring, and leaves them NaN otherwise. Inspect the rate map,
+autocorrelogram and occupancy together. A score of 0.4 is a common screening
+convention, not a significance test: on circularly time-shifted spike trains of
+simulated grid, place and untuned cells, 1-8% of the shuffled maps reached it.
+To call a grid cell, compare its score with the scores of its own spike train
+circularly shifted in time. On layouts without a rectangular grid (hexagonal bins,
 tracks, meshes) there is no grid score: `summary_table()` records it in
 `attrs["unavailable_metrics"]`. `spatial_autocorrelation_radial` from
 `neurospatial.encoding.grid` gives a distance-correlation profile there, but a

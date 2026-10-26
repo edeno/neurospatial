@@ -849,7 +849,15 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
 
     **Interpretation**:
 
-    - **score > 0.4**: hexagonal grid (a common grid-cell threshold)
+    - **higher scores**: stronger sixfold rotational symmetry. 0.4 is a
+      common screening convention for grid cells, not a verdict: on
+      circular time shifts of the spike trains of simulated grid, place and
+      untuned cells (0.5-1.5 m arenas, 10-30 minutes), 1-8% of the shuffled
+      maps scored 0.4 or more, and the 95th percentile of a single cell's
+      shuffled scores reached 0.61. Calling a cell a grid cell needs a null
+      distribution from your own recording: recompute the score after
+      circularly shifting the spike train in time (by at least 20 s), many
+      times, and compare the observed score with it.
     - **score ≈ 0**: no hexagonal structure (place cells, non-spatial cells)
     - **score < 0**: four-fold or other non-hexagonal symmetry
 

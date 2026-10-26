@@ -1184,10 +1184,12 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Returns
         -------
         float
-            Grid score in range [-2, 2].
-            - score > 0.4: Strong hexagonal grid (typical threshold)
-            - score ≈ 0: No hexagonal structure
-            - score < 0: Anti-hexagonal structure (rare)
+            Grid score in range [-2, 2]; higher means stronger sixfold
+            rotational symmetry, about 0 none, below 0 another symmetry.
+            0.4 is a common screening value, not a verdict: on circularly
+            time-shifted spike trains of simulated cells 1-8% of shuffled
+            maps reach it. Calling a grid cell needs a shuffle null from
+            your own recording (circular time shifts of the spike train).
             NaN when the map is all NaN or constant, or its autocorrelogram
             has no central peak bounded inside the map.
 
@@ -2412,8 +2414,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             Minimum spatial information (bits/spike) to be classified as a
             spatially tuned cell. Neurons below this are labeled "unclassified".
         min_grid_score : float or None, default=None
-            Minimum grid score to be classified as a grid cell. Standard
-            threshold from Sargolini et al. (2006).
+            Minimum grid score to be classified as a grid cell; ``None`` uses
+            0.4, a common screening convention. On circularly time-shifted
+            spike trains of simulated cells 1-8% of shuffled maps reach 0.4,
+            so it is a screen, not a verdict.
         min_border_score : float or None, default=None
             Minimum border score to be classified as a border cell. The
             default of 0.5 suits rectangular boxes, where a uniform map
@@ -2476,7 +2480,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         **Typical thresholds** (from literature):
 
         - Spatial information: 0.5-1.0 bits/spike (varies by study)
-        - Grid score: 0.4-0.5 (Sargolini et al., 2006)
+        - Grid score: 0.4 is a common screening convention; a grid-cell
+          verdict needs a circular time-shift null from the recording
         - Border score: 0.5 on rectangular boxes, where it sits at the score
           of a uniform map, so the spatial-information gate is what excludes
           untuned cells. Calibrate it for other arena shapes.
