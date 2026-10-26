@@ -11,6 +11,7 @@ from neurospatial.geometry import (
     Binning,
     GridBinningSpec,
     Locator,
+    Outline,
     RectilinearGrid,
     RectilinearLocator,
     graph_from_binning,
@@ -242,6 +243,15 @@ class _GridMixin(_NeighborPairsMixin):
         LayoutNotBuiltError
             If the layout has not been built.
         """
+        return self._grid_binning()
+
+    def _grid_binning(self, **choices: Any) -> Binning:
+        """Assemble this grid's binning; ``choices`` replace its face choices.
+
+        ``choices`` are :func:`assemble_binning` options, such as the polar
+        grid's ``faces="polar"``, that override the Cartesian grid's faces
+        and binning specification.
+        """
         pairs, distances = self._neighbor_pairs()
         assert self.bin_centers is not None
         return assemble_binning(
@@ -252,12 +262,16 @@ class _GridMixin(_NeighborPairsMixin):
             sizes=self.bin_sizes(),
             measure_dim=self.bin_centers.shape[1],
             locator=self.locator(),
-            faces="grid",
             face_arrays=(self._axis_widths(),),
             rectilinear=self.rectilinear_grid(),
-            grid_spec=self._grid_spec,
+            outline=self._outline(),
             dimension_ranges=self.dimension_ranges,
+            **{"faces": "grid", "grid_spec": self._grid_spec, **choices},
         )
+
+    def _outline(self) -> Outline | None:
+        """The arena outline the binning records; a plain grid has none."""
+        return None
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """Calculate area/volume for each active bin, assuming a uniform grid.

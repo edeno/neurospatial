@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from dataclasses import replace
 from typing import Any, ClassVar
 
 import numpy as np
@@ -8,7 +7,7 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError, _format_error
-from neurospatial.geometry import Binning, Outline
+from neurospatial.geometry import Outline
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import _create_regular_grid
@@ -125,9 +124,9 @@ class ShapelyPolygonLayout(_GridMixin):
             full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
         )
 
-    def binning(self) -> Binning:
-        """Return the grid's owned binning, with the polygon as its outline."""
-        return replace(super().binning(), outline=self.outline())
+    def _outline(self) -> Outline:
+        """The polygon is the binning's outline."""
+        return self.outline()
 
     def outline(self) -> Outline:
         """Return the defining polygon, including any interior rings.
