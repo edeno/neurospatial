@@ -225,47 +225,21 @@ def _nearest_bin_query(
         Query coordinates in the same stored coordinate columns.
     """
     # Query KD-tree
-    if tie_break == "closest_center":
-        # Fast path: just use nearest neighbor
+    if tie_break == "closest_center" or len(bin_centers) == 1:
         distances, indices = kdtree.query(points, k=1, workers=-1)
         bin_indices: NDArray[np.int64] = indices.astype(np.int64)
-
-    elif tie_break == "lowest_index":
-        # Deterministic path: find all ties and pick lowest index.
-        # We first query only the k=10 nearest candidates as a fast approximation:
-        # the lowest-index winner almost always lies among the nearest few. If a
-        # tie is *detected* among those candidates (see ``tied_rows`` below), we
-        # fall back to an exact all-center distance computation for just those
-        # rows, so >10 equidistant bins are still resolved correctly. The k=10
-        # cap only bounds the cheap first pass; it is not an upper bound on the
-        # number of ties that can be resolved exactly.
-        max_neighbors = min(10, len(bin_centers))
-        distances_kn, indices_kn = kdtree.query(points, k=max_neighbors, workers=-1)
-
-        # Handle k=1 case (single bin environment)
-        if max_neighbors == 1:
-            distances = np.atleast_1d(distances_kn)
-            bin_indices = np.atleast_1d(indices_kn).astype(np.int64)
-        else:
-            distances = distances_kn[:, 0]
-            # Vectorized tie resolution: for each point, find minimum index among ties
-            # Create mask of tied neighbors (within tolerance of minimum distance)
-            min_dists = distances_kn[:, 0:1]  # Keep dims for broadcasting
-            is_tied = np.abs(distances_kn - min_dists) < 1e-10  # (n_points, k)
-
-            # For each point, find minimum index among tied neighbors
-            # Set non-tied indices to large value so they're ignored in min
-            tied_indices = np.where(is_tied, indices_kn, np.iinfo(np.intp).max)
-            bin_indices = np.min(tied_indices, axis=1).astype(np.int64)
-
-            # cKDTree only returns max_neighbors candidates above. For exact ties
-            # involving more candidates, compute all-center distances only for
-            # rows where a tie was detected.
-            tied_rows = np.flatnonzero(np.count_nonzero(is_tied, axis=1) > 1)
-            if tied_rows.size:
-                bin_indices[tied_rows] = _lowest_tied_index(
-                    bin_centers, kdtree, points[tied_rows], distances[tied_rows]
-                )
+    else:
+        # The distances come back sorted, so a point has tied centers exactly
+        # when its second-nearest is within 1e-10 of its nearest. Only those
+        # rows need the exact lowest-index search, however many centers tie.
+        distances_k2, indices_k2 = kdtree.query(points, k=2, workers=-1)
+        distances = distances_k2[:, 0]
+        bin_indices = indices_k2[:, 0].astype(np.int64)
+        tied_rows = np.flatnonzero(np.abs(distances_k2[:, 1] - distances) < 1e-10)
+        if tied_rows.size:
+            bin_indices[tied_rows] = _lowest_tied_index(
+                bin_centers, kdtree, points[tied_rows], distances[tied_rows]
+            )
 
     # Check if any points are outside the environment based on distance threshold
     if max_distance is not None or max_distance_factor is not None:
