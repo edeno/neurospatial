@@ -22,9 +22,9 @@ from neurospatial.geometry._arena import (
     MaskArena,
     TrackArena,
     _CombinedArena,
-    _segment_distance,
     _TransformedArena,
     affine_geometry,
+    segment_distance,
 )
 from neurospatial.geometry._arrays import active_order
 from neurospatial.geometry._binning import (
@@ -301,7 +301,7 @@ def _overlap(a: _Piece, b: _Piece) -> bool:
             raise ValueError(
                 "Cannot certify nearly parallel track clearance; restrict the domains or use a well-resolved geometry."
             )
-        distance = _segment_distance(ac, bc)
+        distance = segment_distance(ac, bc)
         scale = max(lu, lv, float(np.max(np.abs(ac))), float(np.max(np.abs(bc))))
         error = 256 * np.finfo(float).eps * scale / (1.0 if parallel else sine * sine)
         if distance > ar + br + error:
@@ -559,7 +559,7 @@ def _arena_segment_interior(
         )
     if isinstance(arena, TrackArena) and arena.width is not None:
         return any(
-            _segment_distance(segment, track) < arena.width / 2
+            segment_distance(segment, track) < arena.width / 2
             for track in arena.segments
         )
     raise ValueError(

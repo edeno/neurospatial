@@ -10,6 +10,7 @@ import networkx as nx
 import numpy as np
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry import segment_distance
 
 
 def add_edge_with_distance(graph: nx.Graph, u: Any, v: Any) -> None:
@@ -196,8 +197,9 @@ def _refuse_overlapping_segments(
             overlapping = cosine > 1.0 - 1e-9
         else:
             overlapping = (
-                _segment_distance(
-                    positions[a], positions[b], positions[c], positions[d]
+                segment_distance(
+                    np.stack((positions[a], positions[b])),
+                    np.stack((positions[c], positions[d])),
                 )
                 <= tolerance
             )
@@ -211,23 +213,3 @@ def _refuse_overlapping_segments(
                     fix=f"list node_positions in the order {_NODE_ORDER[kind]}",
                 )
             )
-
-
-def _segment_distance(
-    p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, q1: np.ndarray
-) -> float:
-    """Shortest distance between segments p0-p1 and q0-q1, in any dimension."""
-    u, v, w = p1 - p0, q1 - q0, p0 - q0
-    a, b, c, d, e = u @ u, u @ v, v @ v, u @ w, v @ w
-    denominator = a * c - b * b
-    # Parallel segments: fix s and let the clamps below find the closest pair.
-    s = (
-        0.0
-        if denominator <= 1e-12 * a * c
-        else float(np.clip((b * e - c * d) / denominator, 0, 1))
-    )
-    t = (b * s + e) / c
-    if t < 0.0 or t > 1.0:
-        t = float(np.clip(t, 0.0, 1.0))
-        s = float(np.clip((b * t - d) / a, 0.0, 1.0))
-    return float(np.linalg.norm(w + s * u - t * v))

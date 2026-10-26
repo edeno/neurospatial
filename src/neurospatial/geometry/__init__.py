@@ -15,6 +15,7 @@ from neurospatial.geometry._arena import UnknownArena as UnknownArena
 from neurospatial.geometry._arena import _CombinedArena as _CombinedArena
 from neurospatial.geometry._arena import _TransformedArena as _TransformedArena
 from neurospatial.geometry._arena import mapped_geometry as mapped_geometry
+from neurospatial.geometry._arena import segment_distance as segment_distance
 from neurospatial.geometry._arena_fit import apply_walls as apply_walls
 from neurospatial.geometry._arena_fit import fit_walls as fit_walls
 from neurospatial.geometry._arena_fit import infer_arena as infer_arena
