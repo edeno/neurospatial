@@ -95,19 +95,23 @@ def linear_env():
 
 
 @pytest.fixture
-def maze_env_with_wall():
-    """Environment with a wall blocking direct path (L-shaped)."""
-    positions = []
-    # Left side (0-9, 0-9)
-    for i in range(10):
-        for j in range(10):
-            positions.append([float(i), float(j)])
-    # Bottom right (10-19, 0-4) - creates L-shape
-    for i in range(10, 20):
-        for j in range(5):
-            positions.append([float(i), float(j)])
-    positions = np.array(positions, dtype=float)
-    return Environment.from_samples(positions, bin_size=2.0)
+def walled_env():
+    """A 22 x 20 cm box of 2 cm bins split by a wall open only at the top.
+
+    Returns the environment and three bins: a center at (5, 1), a bin across
+    the wall at (17, 1) and a bin on the open side at (5, 13). Both are 12 cm
+    from the center in a straight line; the path around the wall is about
+    37 cm, the open-side path 12 cm.
+    """
+    edges_x = np.arange(12) * 2.0
+    edges_y = np.arange(11) * 2.0
+    mask = np.ones((11, 10), bool)
+    mask[5, :8] = False  # wall at x in [10, 12), open for y >= 16
+    env = Environment.from_grid_mask(mask, (edges_x, edges_y))
+    center, across, open_side = env.bin_at(
+        np.array([[5.0, 1.0], [17.0, 1.0], [5.0, 13.0]])
+    )
+    return env, int(center), int(across), int(open_side)
 
 
 @pytest.fixture
@@ -279,25 +283,30 @@ class TestGeodesicRBFBasis:
         for i, c in enumerate(centers):
             assert np.argmax(basis[i]) == c
 
-    def test_respects_walls(self, maze_env_with_wall):
-        """Basis should not leak through walls."""
-        # Find a center on left side
-        center_bin = maze_env_with_wall.bin_at([2.0, 2.0])
-        # Find a bin on right side that's spatially close but geodesically far
-        far_bin = maze_env_with_wall.bin_at([12.0, 2.0])
+    def test_respects_walls(self, walled_env):
+        """Each value is the Gaussian of the path length around the wall."""
+        import networkx as nx
 
-        basis = geodesic_rbf_basis(
-            maze_env_with_wall,
-            centers=center_bin,
-            bandwidth=3.0,
-            normalize="none",
+        env, center, across, open_side = walled_env
+        straight = np.linalg.norm(env.bin_centers[across] - env.bin_centers[center])
+        around = nx.shortest_path_length(
+            env.connectivity, center, across, weight="distance"
         )
+        assert straight == pytest.approx(12.0)
+        assert around > 3 * straight
 
-        # Value at far bin should be much smaller than at center
-        # (geodesic distance is large due to wall)
-        center_value = basis[0, center_bin]
-        far_value = basis[0, far_bin]
-        assert far_value < 0.1 * center_value
+        bandwidth = 6.0
+        basis = geodesic_rbf_basis(
+            env, centers=np.array([center]), bandwidth=bandwidth, normalize="none"
+        )
+        assert basis[0, across] == pytest.approx(
+            np.exp(-(around**2) / (2 * bandwidth**2)), rel=1e-12
+        )
+        assert basis[0, open_side] == pytest.approx(
+            np.exp(-(straight**2) / (2 * bandwidth**2)), rel=1e-12
+        )
+        # The straight-line (leaking) value would be about 10^7 times larger.
+        assert basis[0, across] < 1e-3 * basis[0, open_side]
 
     def test_unit_normalization(self, simple_2d_env):
         """Unit normalization should give L2 norm = 1."""
@@ -377,28 +386,13 @@ class TestHeatKernelWaveletBasis:
         # Also check that large scale has lower peak at center (heat has diffused away)
         assert large_scale[0, center_idx] < small_scale[0, center_idx]
 
-    def test_respects_graph_structure(self, maze_env_with_wall):
-        """Heat diffuses along graph edges, reaching distant bins more slowly."""
-        center_bin = maze_env_with_wall.bin_at([2.0, 2.0])
-        # Nearby bin (on same side of L)
-        nearby_bin = maze_env_with_wall.bin_at([4.0, 2.0])
-        # Far bin (requires going around the L)
-        far_bin = maze_env_with_wall.bin_at([12.0, 2.0])
-
+    def test_respects_walls(self, walled_env):
+        """Heat reaching a bin behind the wall is far below an open bin as near."""
+        env, center, across, open_side = walled_env
         basis = heat_kernel_wavelet_basis(
-            maze_env_with_wall,
-            centers=center_bin,
-            scales=[0.5],  # Small scale to see gradient
-            normalize="none",
+            env, centers=np.array([center]), scales=[8.0], normalize="none"
         )
-
-        # Heat should be highest at center, less at nearby, even less at far
-        center_value = basis[0, center_bin]
-        nearby_value = basis[0, nearby_bin]
-        far_value = basis[0, far_bin]
-
-        # Verify heat gradient respects graph distance
-        assert center_value > nearby_value > far_value
+        assert basis[0, across] < 1e-2 * basis[0, open_side]
 
     def test_raises_if_scales_non_positive(self, simple_2d_env):
         """Should raise ValueError for non-positive scales."""
