@@ -221,6 +221,14 @@ class TestSelectBasisCenters:
         with pytest.raises(ValueError, match="at least 1"):
             select_basis_centers(simple_2d_env, n_centers=-5)
 
+    def test_unknown_method_lists_the_available_ones(self, simple_2d_env):
+        """There is no grid method; the error offers the methods that exist."""
+        with pytest.raises(ValueError, match="'grid'") as exc:
+            select_basis_centers(simple_2d_env, n_centers=5, method="grid")
+        message = str(exc.value)
+        assert "'kmeans', 'farthest_point', 'random'" in message
+        assert "'random', 'grid'" not in message
+
     def test_random_method_returns_correct_count(self, simple_2d_env):
         """Random method should return exactly n_centers centers."""
         centers = select_basis_centers(simple_2d_env, n_centers=15, method="random")

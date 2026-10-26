@@ -8,14 +8,14 @@ Which Basis Should I Use?
 -------------------------
 **First time / Simple place cell models** → `geodesic_rbf_basis`
     Start here. Works like familiar Gaussian kernels but respects walls.
-    Fast computation. Easy to visualize and interpret.
+    Easy to visualize and interpret.
     Good for: GLMs, simple decoding models, place field decomposition.
 
 **Multi-scale spatial structure** → `heat_kernel_wavelet_basis`
     Captures both local bumps and compartment-level structure simultaneously.
     Smoother than RBF. Based on diffusion physics.
     Good for: Environments with rooms/corridors, hierarchical place cells.
-    Cost: 2-3× slower than RBF (still fast for typical environments).
+    Cost: one sparse matrix exponential per scale.
 
 **Very large environments (>10,000 bins)** → `chebyshev_filter_basis`
     Fastest computation (no distance matrix). Strict k-hop locality.
@@ -134,7 +134,7 @@ def select_basis_centers(
     env: BasisCentersConsumer,
     *,
     n_centers: int,
-    method: Literal["kmeans", "farthest_point", "random", "grid"] = "kmeans",
+    method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.int_]:
     """
@@ -157,17 +157,20 @@ def select_basis_centers(
 
         Start conservative (30-50) and increase if place field
         reconstructions are too smooth.
-    method : {"kmeans", "farthest_point", "random", "grid"}
+    method : {"kmeans", "farthest_point", "random"}
         Selection strategy:
 
         - "kmeans": K-means clustering on bin_centers, return nearest bins
           to cluster centroids. Good general-purpose choice.
         - "farthest_point": Greedy farthest-point sampling using geodesic
-          distance. Guarantees maximum spread but O(n_centers * n_bins).
+          distance, starting from a random bin. Each new center is the bin
+          farthest from those already chosen: a greedy heuristic that
+          spreads centers well, not a guaranteed maximum spread. Runs one
+          shortest-path search per center.
         - "random": Uniform random selection. Fast but may cluster.
-        - "grid": Regular grid subsampling (only for grid-based environments).
     rng : int, Generator, or None
-        Random seed or generator for reproducibility (kmeans, random methods).
+        Random seed or generator for reproducibility. Seeds k-means, the
+        first farthest-point center, and random selection.
 
     Returns
     -------
@@ -179,7 +182,7 @@ def select_basis_centers(
     ValueError
         If n_centers > n_bins.
         If n_centers < 1.
-        If method="grid" but environment is not grid-based.
+        If method is not one of the methods above.
     CartesianOnlyError
         If method="kmeans" and ``env`` is polar: k-means would cluster
         ``(distance, angle)`` bin centers as ``(x, y)``. Use
@@ -236,12 +239,10 @@ def select_basis_centers(
         )
     elif method == "random":
         return _select_centers_random(env.n_bins, n_centers, generator)
-    elif method == "grid":
-        return _select_centers_grid()
     else:
         raise ValueError(
             f"Unknown method: {method!r}. "
-            f"Expected one of: 'kmeans', 'farthest_point', 'random', 'grid'."
+            f"Expected one of: 'kmeans', 'farthest_point', 'random'."
         )
 
 
@@ -325,20 +326,6 @@ def _select_centers_farthest_point(
         distances_from_centers = np.minimum(distances_from_centers, new_distances)
 
     return np.asarray(centers, dtype=np.int_)
-
-
-def _select_centers_grid() -> NDArray[np.int_]:
-    """Select centers using regular grid subsampling."""
-    # For now, raise NotImplementedError - grid method requires
-    # knowing the grid structure which not all environments have
-    raise NotImplementedError(
-        "Grid method for center selection is not yet implemented.\n"
-        "\n"
-        "Use one of the available methods:\n"
-        "  - 'kmeans': Good general-purpose choice\n"
-        "  - 'farthest_point': Maximizes spatial spread\n"
-        "  - 'random': Fast but may cluster"
-    )
 
 
 def _validate_centers(centers: Any, n_bins: int) -> NDArray[np.int_]:
@@ -536,13 +523,8 @@ def geodesic_rbf_basis(
     - Time: O(n_centers * n_bins * log(n_bins)) using batch shortest paths
     - Space: O(n_centers * n_bandwidths * n_bins) for output basis
 
-    Typical runtimes (2023 MacBook Pro):
-
-    - 50cm × 50cm maze, 2cm bins, 50 centers: ~0.1s
-    - 100cm × 100cm maze, 2cm bins, 100 centers: ~1.0s
-    - 200cm × 200cm maze, 1cm bins, 200 centers: ~30s
-
-    For very large environments (>10,000 bins), consider:
+    Runtime grows with ``n_centers * n_bins``. For very large environments
+    (>10,000 bins), consider:
 
     - Using fewer centers (n_centers=30 instead of 100)
     - Larger bin_size to reduce n_bins
@@ -773,7 +755,6 @@ def heat_kernel_wavelet_basis(
 
     **Computational complexity**: O(n_scales * n_centers * n_bins) using
     scipy's expm_multiply, which avoids forming the full matrix exponential.
-    About 2-3× slower than geodesic RBF for typical environments.
 
     **Laplacian weighting**: Uses the finite-volume generator of
     ``env.smooth`` (shared-face measure over center distance, divided by cell
@@ -1212,6 +1193,9 @@ def spatial_basis(
     CartesianOnlyError
         If ``env`` is polar: the automatic scale multiplies distance and angle
         extents, and centers come from k-means on Cartesian bin centers.
+    ValueError
+        If ``env.dimension_ranges`` is None, so there is no extent to size the
+        basis from.
 
     Examples
     --------
