@@ -215,11 +215,12 @@ A public `ops` function that scientists call as `f(env, ...)` keeps taking
 the environment: it reads the components it needs once at the top (for
 example `env.binning`, `env.arena`, `env.connectivity` or
 `env.get_diffusion_geometry()`) and passes them to private functions that take
-those components. It does not call environment analysis methods such as
-`bin_at`, `nearest_bin` or `diffuse` from inside the computation. One exception
-is allowed: an operator the environment caches (its KD-tree search or its
-diffusion eigenbasis) may be read at the boundary as a callable, for example
-`dst_env.diffuse` in `resample_field`, so repeated calls do not rebuild it. Each base
+those components. It does not call environment analysis methods from inside
+the computation. Two kinds of method may be called at the boundary: a query the
+environment answers from a structure it caches (its point lookup, KD-tree or
+diffusion eigenbasis), so repeated calls do not rebuild it, for example
+`src_env.bin_at`, `src_env.bin_center_tree()` and `dst_env.diffuse` in
+`resample_field`; and the environment's own renderer, `plot_field`. Each base
 protocol names one to three members; combine bases rather than repeating
 members, and do not repeat a method's full signature unless the function calls
 it.

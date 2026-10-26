@@ -347,15 +347,9 @@ class TestResampleFieldOutOfBounds:
 
         assert resampled.shape == (dst_env.n_bins,)
 
-        # Identify which destination bins fall outside the source coverage.
-        from neurospatial.ops.mapping import TieBreakStrategy
-
-        dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers,
-            tie_break=TieBreakStrategy.LOWEST_INDEX,
-            max_distance_factor=10.0,  # resample_field's outside-source rule
-        )
-        outside = dst_to_src < 0
+        # resample_field's outside-source rule: the center lies in no source bin
+        outside = src_env.bin_at(dst_env.bin_centers) < 0
+        dst_to_src = src_env.nearest_bin(dst_env.bin_centers)
 
         # There must be some out-of-source destination bins for a valid test.
         assert np.any(outside)
@@ -415,17 +409,13 @@ class TestResampleFieldDiffuseNaN:
         (a forward diffusion matmul) and wiped out every reachable bin, leaving
         an all-NaN field.
         """
-        from neurospatial.ops.mapping import TieBreakStrategy, resample_field
+        from neurospatial.ops.mapping import resample_field
 
         src_env, dst_env = _src_and_extending_dst_envs()
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
 
-        dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers,
-            tie_break=TieBreakStrategy.LOWEST_INDEX,
-            max_distance_factor=10.0,  # resample_field's outside-source rule
-        )
-        outside = dst_to_src < 0
+        # resample_field's outside-source rule: the center lies in no source bin
+        outside = src_env.bin_at(dst_env.bin_centers) < 0
         assert np.any(outside)  # the test scenario must have out-of-source bins
         assert np.any(~outside)  # ... and some covered bins
 
@@ -445,17 +435,13 @@ class TestResampleFieldDiffuseNaN:
 
     def test_resample_diffuse_outside_bins_remain_nan(self):
         """Out-of-source bins are re-imposed as NaN after smoothing."""
-        from neurospatial.ops.mapping import TieBreakStrategy, resample_field
+        from neurospatial.ops.mapping import resample_field
 
         src_env, dst_env = _src_and_extending_dst_envs()
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
 
-        dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers,
-            tie_break=TieBreakStrategy.LOWEST_INDEX,
-            max_distance_factor=10.0,  # resample_field's outside-source rule
-        )
-        outside = dst_to_src < 0
+        # resample_field's outside-source rule: the center lies in no source bin
+        outside = src_env.bin_at(dst_env.bin_centers) < 0
         assert np.any(outside)
 
         diffuse = resample_field(

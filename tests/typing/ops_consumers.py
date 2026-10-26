@@ -117,7 +117,7 @@ if TYPE_CHECKING:
         analysis_interior(binning, arena)(centers)
         valid_observers(binning, arena, centers, "physical")
         line_of_sight_clear(binning, arena, centers[0], centers[1])
-        _pull_back_nearest(values, centers, lambda points: points[:, 0].astype(int))
+        _pull_back_nearest(values, centers[:, 0].astype(np.int64), values > 0)
         _diffusion_generator(
             centers, env.bin_center_tree(), env.get_diffusion_geometry()
         )

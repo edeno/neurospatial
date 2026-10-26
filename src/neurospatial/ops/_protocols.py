@@ -27,7 +27,6 @@ if TYPE_CHECKING:
         EgocentricPolarSystem,
     )
     from neurospatial.ops._types import KernelMode
-    from neurospatial.ops.mapping import TieBreakStrategy
     from neurospatial.regions import Regions
 
 
@@ -210,17 +209,14 @@ class ProbabilityTargetConsumer(CartesianBinsConsumer, Protocol):
 class ResampleSourceConsumer(CartesianBinsConsumer, Protocol):
     """Cartesian bins whose field is pulled back by nearest bin center.
 
-    ``nearest_bin`` is read once at the public boundary of ``resample_field``:
-    the source environment caches the KD-tree it searches.
+    ``resample_field`` reads ``bin_at`` to tell which destination bins lie in
+    the source, and ``bin_center_tree`` (a copy of the source's cached
+    KD-tree) to find their nearest source bin centers.
     """
 
-    def nearest_bin(
-        self,
-        positions: NDArray[np.float64],
-        *,
-        tie_break: TieBreakStrategy = ...,
-        max_distance_factor: float | None = ...,
-    ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]: ...
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
+
+    def bin_center_tree(self) -> cKDTree: ...
 
 
 class ResampleTargetConsumer(
