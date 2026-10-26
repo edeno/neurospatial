@@ -136,15 +136,10 @@ class TestBinSpikeTrain:
             trajectory_data["positions"],
         )
 
-        # Filter spikes to valid time range
-        valid_spikes = single_neuron_spikes[
-            (single_neuron_spikes >= trajectory_data["times"].min())
-            & (single_neuron_spikes <= trajectory_data["times"].max())
-        ]
-
-        # Some spikes may fall outside active bins, so sum should be <= n_valid_spikes
-        # but for a well-covered environment, should be close
-        assert np.sum(spike_counts) <= len(valid_spikes)
+        # Every sample is inside the environment and no interval exceeds
+        # max_gap, so every spike inside [times[0], times[-1]) is counted.
+        assert np.all(simple_env.bin_at(trajectory_data["positions"]) >= 0)
+        assert np.sum(spike_counts) == len(single_neuron_spikes)
 
     def test_empty_spike_train(
         self,
@@ -245,11 +240,9 @@ class TestComputeOccupancy:
         )
 
         total_duration = trajectory_data["times"][-1] - trajectory_data["times"][0]
-        total_occupancy = np.sum(occupancy)
-
-        # Should be close to total duration (may differ slightly due to
-        # invalid bin positions or max_gap handling)
-        assert total_occupancy <= total_duration + 0.01  # Allow small tolerance
+        # Every interval is inside the environment and shorter than max_gap.
+        assert np.all(simple_env.bin_at(trajectory_data["positions"]) >= 0)
+        assert np.sum(occupancy) == pytest.approx(total_duration, rel=1e-12)
 
 
 # ==============================================================================
@@ -437,14 +430,11 @@ class TestBinningEdgeCases:
         """All spikes in one location should be binned together."""
         from neurospatial.encoding._spatial_counts import bin_spike_train
 
-        # Create spikes at times when we know the position
-        # Position at t=0.5 (midpoint)
-        t_mid = 0.5
-        mid_idx = np.argmin(np.abs(trajectory_data["times"] - t_mid))
-        pos_at_mid = trajectory_data["positions"][mid_idx]
-
-        # Multiple spikes all at t=0.5
+        # Three spikes inside one sampling interval share its start bin.
         spikes = np.array([0.5, 0.5001, 0.5002])
+        frame = np.searchsorted(trajectory_data["times"], 0.5, side="right") - 1
+        assert frame == np.searchsorted(trajectory_data["times"], 0.5002, "right") - 1
+        pos_at_mid = trajectory_data["positions"][frame]
 
         spike_counts = bin_spike_train(
             simple_env,
@@ -453,12 +443,10 @@ class TestBinningEdgeCases:
             trajectory_data["positions"],
         )
 
-        # Should have counts in just one bin
         target_bin = simple_env.bin_at(pos_at_mid.reshape(1, -1))[0]
-        if target_bin >= 0:  # Valid bin
-            assert spike_counts[target_bin] == 3
-            # All other bins should be 0
-            assert np.sum(spike_counts) == 3
+        assert target_bin >= 0
+        assert spike_counts[target_bin] == 3
+        assert np.sum(spike_counts) == 3
 
     def test_handles_narrow_2d_environment(self) -> None:
         """Should handle narrow 2D environments correctly."""

@@ -849,7 +849,8 @@ class TestPopulationVectorCorrelation:
         a = np.random.default_rng(2).random((12, 40))
         order = np.roll(np.arange(12), 1)
         pv = population_vector_correlation(a, a[order])
-        assert np.all(pv < 0.99)
+        # Independent random maps: correlations scatter around zero, not one.
+        assert abs(np.median(pv)) < 0.2
 
     def test_nan_rate_makes_location_nan(self, random_maps) -> None:
         a, c = random_maps
