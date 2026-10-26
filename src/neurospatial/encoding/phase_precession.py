@@ -17,6 +17,10 @@ Which Function Should I Use?
 **Visualizing phase precession?**
     Use ``plot_phase_precession()`` for standard doubled-axis visualization.
 
+Positions must increase along the direction of travel (for example the
+distance travelled into the field), and each call takes one place field in
+one running direction; see :func:`compute_phase_precession`.
+
 Common Use Cases
 ----------------
 **Screening many neurons (fast filtering)**:
@@ -243,7 +247,8 @@ class PhasePrecessionResult(ResultMixin):
     ----------
     slope : float
         Fitted phase change per unit of position, in radians per position
-        unit (e.g. rad/cm when positions are in cm). Negative for precession.
+        unit (e.g. rad/cm when positions are in cm). Negative for precession
+        when positions increase along the direction of travel.
     offset : float
         Fitted phase in radians, in ``[0, 2*pi)``, at the start of the
         position range (``position_range[0]``).
@@ -590,8 +595,16 @@ def compute_phase_precession(
     Parameters
     ----------
     positions : ndarray of shape (n_spikes,)
-        Position at each spike, e.g. linearized position along the track in
-        cm. Restrict spikes to one place field and one running direction.
+        Position at each spike, in a coordinate that increases along the
+        direction of travel through the field: the distance travelled into
+        the field, or linearized track position for runs toward larger
+        positions and ``track_length - position`` for runs the other way.
+        Precession then has a negative slope in both running directions.
+        Pass the spikes of one place field at a time, with
+        ``position_range`` set to its bounds in the same coordinate. Raw
+        track positions from a run toward smaller positions give a positive
+        slope, and pooling both directions in raw coordinates mixes the two
+        slopes (see Notes).
     phases : ndarray of shape (n_spikes,)
         Spike phase relative to LFP theta in radians or degrees.
     slope_bounds : tuple of float, default=(-2*pi, 2*pi)
@@ -657,6 +670,16 @@ def compute_phase_precession(
     through a place field. This manifests as a negative slope in the
     phase-position relationship.
 
+    **Direction of travel.** Phase falls with the distance the animal has
+    travelled into the field, so the sign of the slope depends on which way
+    the position coordinate runs. In simulation, a precessing field crossed
+    toward smaller track positions gave ``slope = +0.18`` rad/cm in raw
+    track coordinates and ``-0.18`` rad/cm after flipping the coordinate;
+    pooling raw positions from both directions gave a correlation of 0.02.
+    Fit each running direction separately, or pool them in a coordinate
+    that increases along each run (distance into the field), as in the
+    example below.
+
     **Slope range.** Circular-linear regression needs a bounded slope range
     set by prior knowledge (Kempter et al., 2012): the residual phases of
     noisy spikes can line up again at slopes many cycles away from the true
@@ -708,6 +731,40 @@ def compute_phase_precession(
     -0.1
     >>> round(result.normalized_slope, 2)  # rad across the 50 cm range
     -5.0
+
+    On a linear track the animal crosses the field in both directions. Give
+    each spike its distance travelled into the field, so position increases
+    along every run:
+
+    >>> rng = np.random.default_rng(0)
+    >>> field_start, field_end = 86.0, 114.0  # cm, one field on a 200 cm track
+    >>> spike_positions = rng.uniform(field_start, field_end, 400)  # cm
+    >>> running_right = rng.random(400) < 0.5  # direction of travel per spike
+    >>> distance_into_field = np.where(
+    ...     running_right, spike_positions - field_start, field_end - spike_positions
+    ... )
+    >>> field_width = field_end - field_start
+    >>> phases = (
+    ...     5.5 - 5.0 * distance_into_field / field_width + rng.vonmises(0, 2, 400)
+    ... ) % (2 * np.pi)
+    >>> both_runs = compute_phase_precession(
+    ...     distance_into_field, phases, position_range=(0.0, field_width), rng=0
+    ... )
+    >>> round(both_runs.slope, 2)  # rad/cm: precession in both directions
+    -0.18
+    >>> bool(both_runs.p_value < 0.01)
+    True
+
+    In raw track coordinates the leftward runs read as recession:
+
+    >>> leftward = compute_phase_precession(
+    ...     spike_positions[~running_right],
+    ...     phases[~running_right],
+    ...     position_range=(field_start, field_end),
+    ...     rng=0,
+    ... )
+    >>> round(leftward.slope, 2)
+    0.19
     """
     result, at_bound = _phase_precession(
         positions,
@@ -885,7 +942,11 @@ def has_phase_precession(
     Parameters
     ----------
     positions : ndarray of shape (n_spikes,)
-        Position at each spike.
+        Position at each spike in one place field, in a coordinate that
+        increases along the direction of travel (e.g. distance travelled
+        into the field); see :func:`compute_phase_precession`. Raw track
+        positions from runs toward smaller positions screen as ``False``
+        for a precessing cell.
     phases : ndarray of shape (n_spikes,)
         Spike phase relative to LFP theta in radians or degrees.
     alpha : float, default=0.05

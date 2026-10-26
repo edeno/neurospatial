@@ -597,6 +597,53 @@ def _field_spikes(rng, start, width, n_spikes, kappa):
     return positions, phases
 
 
+class TestDirectionOfTravel:
+    """Precession is a negative slope in a coordinate that follows the run."""
+
+    def test_leftward_runs_need_a_flipped_coordinate(self) -> None:
+        """Raw positions of a leftward run read as recession; flipped, precession."""
+        from neurospatial.encoding.phase_precession import (
+            compute_phase_precession,
+            has_phase_precession,
+        )
+
+        stimulus = np.random.default_rng(13)
+        field_start, width = 86.0, 28.7
+        distance, phases = _field_spikes(stimulus, 0.0, width, 250, 2.0)
+        raw = field_start + width - distance  # leftward run in track coordinates
+        field = (field_start, field_start + width)
+        raw_fit = compute_phase_precession(raw, phases, position_range=field, rng=0)
+        flipped_fit = compute_phase_precession(
+            -raw, phases, position_range=(-field[1], -field[0]), rng=0
+        )
+        assert raw_fit.slope == pytest.approx(5.0 / width, abs=0.02)
+        assert flipped_fit.slope == pytest.approx(-raw_fit.slope, abs=1e-9)
+        assert flipped_fit.p_value == raw_fit.p_value
+        assert has_phase_precession(raw, phases, position_range=field, rng=0) is False
+        assert has_phase_precession(
+            -raw, phases, position_range=(-field[1], -field[0]), rng=0
+        )
+
+    def test_distance_into_field_pools_both_directions(self) -> None:
+        """Pooled in distance into the field, both runs give the true slope."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(14)
+        field_start, width = 86.0, 28.7
+        distance, phases = _field_spikes(stimulus, 0.0, width, 400, 2.0)
+        running_right = stimulus.random(400) < 0.5
+        raw = np.where(
+            running_right, field_start + distance, field_start + width - distance
+        )
+        field = (field_start, field_start + width)
+        pooled_raw = compute_phase_precession(raw, phases, position_range=field, rng=0)
+        pooled_distance = compute_phase_precession(
+            distance, phases, position_range=(0.0, width), rng=0
+        )
+        assert pooled_distance.slope == pytest.approx(-5.0 / width, abs=0.02)
+        assert pooled_distance.correlation > 3 * pooled_raw.correlation
+
+
 class TestSlopeAtBoundWarning:
     """A fit whose best slope sits on a slope bound warns and says why."""
 
