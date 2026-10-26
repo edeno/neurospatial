@@ -335,8 +335,8 @@ optional `arena=` argument of the sample and mask factories. Explicit polygon
 selection keeps whole bins whose centers lie strictly inside the polygon;
 lookup also rejects points outside its boundary or inside its holes. A curved or
 diagonal wall leaves slivers inside the arena whose grid cells were not kept
-(their centers lie outside); a position in a sliver belongs to the neighboring
-bin, less than one cell away, so an animal running along the wall stays in
+(their centers lie outside, or exactly on the wall); a position in a sliver
+belongs to the neighboring bin, less than one cell away, so an animal running along the wall stays in
 occupancy and spike counts. This selection does not change cell areas. Use
 `clip()` below when exact intersected cell areas are needed.
 
@@ -751,16 +751,19 @@ the fraction of time each bin was in view.
 
 The source choice is forwarded by the single/population view encoders, shuffle
 tests and `SpatialViewCellModel`. With the default `gaze_model="ray_cast"`,
-encoding assigns a wall hit to the bin just inside the observer's side. A hit
-outside the retained analysis support makes physical view encoding unavailable
-and raises with guidance when it contributes to the selected recording time.
-The final sample starts no exposure interval, and hits during excluded epochs,
-recording windows, long gaps or zero-duration intervals cannot change the map.
-Supplying wall geometry cannot add missing bins, and
-assigning a distant wall to a nearby bin would change the measured location.
-Build cells that reach the wall, or explicitly request the analysis-boundary
-approximation. `from_polygon()` keeps whole cells whose centers lie inside, so
-its cells stop short of a curved or slanted wall. To reach such a wall, clip a
+encoding assigns a wall hit to the bin just inside the observer's side.
+`from_polygon()` keeps whole cells whose centers lie strictly inside, so its
+cells stop short of a curved or slanted wall; a hit in the sliver between them
+and the wall belongs to the bin that owns positions there, as an animal's
+position in that sliver does. A hit outside the retained analysis support (in
+bins a subset removed, or beyond the cells) makes physical view encoding
+unavailable and raises with guidance when it contributes to the selected
+recording time. The final sample starts no exposure interval, and hits during
+excluded epochs, recording windows, long gaps or zero-duration intervals cannot
+change the map. Supplying wall geometry cannot add missing bins, and assigning
+a distant wall to a nearby bin would change the measured location. Build cells
+that reach the wall, or explicitly request the analysis-boundary
+approximation. To give exact cell areas at a curved or slanted wall, clip a
 grid that covers the arena to the measured polygon and attach its walls:
 `Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
 The geometry-only `compute_viewed_location()` still returns the known physical

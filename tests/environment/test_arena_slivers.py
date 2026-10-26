@@ -125,3 +125,63 @@ def test_rotated_grid_owns_its_whole_physical_wall(round_arena):
     original = border_geometry(round_arena, "physical")
     rotated = border_geometry(moved, "physical")
     np.testing.assert_array_equal(rotated.wall_bins, original.wall_bins)
+
+
+# A T whose 10 cm stem, on 2 cm bins spanning the 100 cm crossbar, has a column
+# of bin centers exactly on each stem wall (x = -5 and x = 5); a kite whose
+# slanted side passes through every fifth row of 2.5 cm bin centers.
+WALL_CENTRED = {
+    "t_shape": (
+        shapely.union(shapely.box(-5, -50, 5, 50), shapely.box(-50, 40, 50, 50)),
+        2.0,
+    ),
+    "kite": (shapely.Polygon([(0, 0), (100, -10), (120, 90), (10, 100)]), 2.5),
+}
+
+
+@pytest.fixture(scope="module", params=list(WALL_CENTRED), ids=list(WALL_CENTRED))
+def wall_centred(request):
+    polygon, bin_size = WALL_CENTRED[request.param]
+    return polygon, Environment.from_polygon(polygon, bin_size=bin_size, units="cm")
+
+
+def test_cells_centred_on_a_wall_give_their_positions_a_bin(wall_centred):
+    """A cell whose center lies on the wall is dropped, like a sliver."""
+    polygon, env = wall_centred
+    rng = np.random.default_rng(3)
+    lo, hi = np.reshape(polygon.bounds, (2, 2))
+    points = rng.uniform(lo, hi, (40_000, 2))
+    points = points[shapely.contains_xy(polygon, points[:, 0], points[:, 1])]
+    bins = env.bin_at(points)
+    assert (bins >= 0).all()
+    gaps = np.linalg.norm(env.bin_centers[bins] - points, axis=1)
+    assert gaps.max() < np.sqrt(2) * env.bin_sizes.max()
+
+
+def test_every_wall_piece_of_a_wall_centred_grid_has_an_owner(wall_centred):
+    from neurospatial.encoding._physical_border import border_geometry
+
+    _polygon, env = wall_centred
+    geometry = border_geometry(env, "physical")
+    owned = shapely.union_all(
+        [p for _owners, pieces in geometry.contact for p in pieces]
+    )
+    assert owned.length == pytest.approx(geometry.walls.length)
+
+
+def test_every_gaze_wall_hit_has_a_bin(wall_centred):
+    """Ray-cast gaze stopping at a wall in a dropped cell still has a bin."""
+    from neurospatial.geometry import wall_hit_bins
+    from neurospatial.ops.visibility import compute_viewed_location
+
+    _polygon, env = wall_centred
+    rng = np.random.default_rng(4)
+    origins = env.bin_centers[rng.integers(0, env.n_bins, 2000)]
+    hits = compute_viewed_location(
+        origins, rng.uniform(-np.pi, np.pi, 2000), method="ray_cast", env=env
+    )
+    bins = env.bin_at(np.nextafter(hits, origins))
+    bins = wall_hit_bins(env.binning, env.arena, hits, origins, bins, "physical")
+    assert (bins >= 0).all()
+    gaps = np.linalg.norm(env.bin_centers[bins] - hits, axis=1)
+    assert gaps.max() < np.sqrt(2) * env.bin_sizes.max()

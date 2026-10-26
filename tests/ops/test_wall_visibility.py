@@ -494,19 +494,13 @@ def test_cells_clipped_to_a_curved_or_slanted_wall_own_every_hit(name):
         max_gap=None,
     )
     assert rates.occupancy.sum() == len(origins) - 1
-    # Cells built by centre inclusion stop short of the wall and still refuse.
-    with pytest.raises(NotImplementedError, match=r"grid\.clip\(polygon\)"):
-        compute_view_rate(
-            Environment.from_polygon(polygon, bin_size=5.0),
-            times[::7] + 0.5,
-            times,
-            origins,
-            headings,
-            gaze_model="ray_cast",
-            method="binned",
-            bandwidth=0.0,
-            max_gap=None,
-        )
+    # Cells built by centre inclusion stop short of the wall; a hit in the
+    # sliver between them and the wall belongs to the bin that owns positions
+    # there, as wall pieces of a border score do.
+    whole_bins = Environment.from_polygon(polygon, bin_size=5.0)
+    bins = _precompute_view_bins(whole_bins, origins, headings, gaze_model="ray_cast")
+    np.testing.assert_array_equal(bins, whole_bins.bin_at(hits - 1e-6 * direction))
+    assert np.all(bins >= 0)
 
 
 @pytest.mark.parametrize("gap", [1e-7, 1e-12])
