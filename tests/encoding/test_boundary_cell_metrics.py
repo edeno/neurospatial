@@ -382,8 +382,8 @@ class TestComputeRegionCoverage:
 
         coverage = compute_region_coverage(env, field_bins)
 
-        # Empty region should have 0.0 coverage
-        assert coverage["far_away"] == 0.0
+        # A region with no bins has no coverage to measure: 0/0 is NaN.
+        assert np.isnan(coverage["far_away"])
 
     def test_region_coverage_nonexistent_region(
         self, small_2d_env: Environment

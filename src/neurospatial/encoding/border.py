@@ -318,9 +318,9 @@ def compute_region_coverage(
     Returns
     -------
     coverage : dict[str, float]
-        Dictionary mapping region name to coverage fraction [0, 1].
-        Coverage is computed as:
-        (number of region bins in field) / (total number of region bins)
+        Dictionary mapping region name to coverage fraction [0, 1]:
+        (number of region bins in field) / (total number of region bins).
+        NaN for a region that contains no bins.
 
     Examples
     --------
@@ -368,8 +368,9 @@ def compute_region_coverage(
     - **Task-relevant regions**: Check if fields overlap with reward zones, start boxes, etc.
     - **Multi-zone analysis**: Quantify field distribution across spatial zones
 
-    The coverage metric is simply the Jaccard coefficient between the field
-    and each region, but computed more efficiently.
+    Coverage is the fraction of the region's bins that lie in the field,
+    ``|region ∩ field| / |region|``. It is not symmetric: a field larger than
+    the region can still cover it completely.
     """
     # Get region names to analyze
     if regions is None:
@@ -393,8 +394,8 @@ def compute_region_coverage(
         region_bins = np.where(region_mask)[0]
 
         if len(region_bins) == 0:
-            # Empty region
-            coverage[region_name] = 0.0
+            # No bins to cover: the fraction is undefined, not zero.
+            coverage[region_name] = np.nan
         else:
             # Compute fraction of region bins that are in field
             coverage[region_name] = float(
