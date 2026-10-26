@@ -63,7 +63,7 @@ from neurospatial._results import (
     label_at,
     read_only_copy,
 )
-from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial.encoding._base import SpatialResultMixin, _is_jax_array, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
@@ -694,7 +694,7 @@ def _spatial_summary_frame(
         batch_spatial_information,
     )
 
-    rates = np.atleast_2d(_to_numpy(result._get_rates()))
+    rates = np.atleast_2d(_to_numpy(_supported_rates(result)))
     occupancy = _to_numpy(result.occupancy)
     peaks = np.atleast_2d(result.peak_location())
     info = np.asarray(batch_spatial_information(rates, occupancy))
@@ -1104,7 +1104,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding._metrics import spatial_information
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return spatial_information(self.firing_rate, self.occupancy)
+        return spatial_information(_supported_rates(self), self.occupancy)
 
     def sparsity(self) -> float | Any:
         """Sparsity of spatial firing.
@@ -1159,7 +1159,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding._metrics import sparsity
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return sparsity(self.firing_rate, self.occupancy)
+        return sparsity(_supported_rates(self), self.occupancy)
 
     def grid_score(self) -> float:
         """Grid score (hexagonal periodicity).
@@ -1220,7 +1220,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         from neurospatial.encoding.grid import grid_score as gs_func
         from neurospatial.encoding.grid import spatial_autocorrelation
 
-        firing_rate = _to_numpy(self.firing_rate)
+        firing_rate = _to_numpy(_supported_rates(self))
 
         try:
             autocorr = spatial_autocorrelation(self.env, firing_rate)
@@ -1301,7 +1301,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         )
         from neurospatial.encoding.grid import grid_properties as gp_func
 
-        firing_rate = _to_numpy(self.firing_rate)
+        firing_rate = _to_numpy(_supported_rates(self))
         autocorr = spatial_autocorrelation(self.env, firing_rate)
         # The autocorrelogram's square pixel side, a length; ``env.bin_sizes``
         # holds cell areas off a track.
@@ -1388,7 +1388,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         """
         from neurospatial.encoding.border import border_score as bs_func
 
-        firing_rate = _to_numpy(self.firing_rate)
+        firing_rate = _to_numpy(_supported_rates(self))
         env = self.env
         return bs_func(
             env,
@@ -1458,7 +1458,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         """
         from neurospatial.encoding.border import compute_region_coverage
 
-        firing_rate = _to_numpy(self.firing_rate)
+        firing_rate = _to_numpy(_supported_rates(self))
 
         # Threshold field at fraction of peak
         peak_rate = np.nanmax(firing_rate)
@@ -1542,7 +1542,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> isinstance(result.has_place_field(), bool)
         True
         """
-        firing_rate = _to_numpy(self.firing_rate)
+        firing_rate = _to_numpy(_supported_rates(self))
         fields = detect_place_fields(
             self.env,
             firing_rate,
@@ -2164,7 +2164,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         from neurospatial.encoding._metrics import batch_spatial_information
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return batch_spatial_information(self.firing_rates, self.occupancy)
+        return batch_spatial_information(_supported_rates(self), self.occupancy)
 
     def sparsity(self) -> NDArray[np.float64] | Any:
         """Sparsity of spatial firing for all neurons.
@@ -2219,7 +2219,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         from neurospatial.encoding._metrics import batch_sparsity
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
-        return batch_sparsity(self.firing_rates, self.occupancy)
+        return batch_sparsity(_supported_rates(self), self.occupancy)
 
     def grid_scores(self) -> BatchScoresResult:
         """Grid scores (hexagonal periodicity) for all neurons.
@@ -2272,7 +2272,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         """
         from neurospatial.encoding._metrics import batch_grid_scores
 
-        return batch_grid_scores(self.env, _to_numpy(self.firing_rates))
+        return batch_grid_scores(self.env, _to_numpy(_supported_rates(self)))
 
     def border_scores(
         self,
@@ -2345,7 +2345,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
 
         return batch_border_scores(
             self.env,
-            _to_numpy(self.firing_rates),
+            _to_numpy(_supported_rates(self)),
             threshold=threshold,
             min_area=min_area,
             metric=metric,
@@ -2728,6 +2728,29 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
 # ==============================================================================
 # Compute Functions
 # ==============================================================================
+
+
+def _supported_rates(result: SpatialRateResult | SpatialRatesResult) -> Any:
+    """Rates with every bin outside the occupancy support set to NaN.
+
+    A filled rate (``fill_value``) is a display or decoding convenience; the
+    bin was still unobserved, so metrics must not count it as observed
+    firing. JAX rates stay JAX arrays.
+
+    Returns
+    -------
+    array, shape (n_bins,) or (n_neurons, n_bins)
+        ``result``'s rates, NaN where the occupancy support is False.
+    """
+    from neurospatial.encoding._provenance import occupancy_support
+
+    rates = result._get_rates()
+    support = occupancy_support(result)
+    if _is_jax_array(rates):
+        import jax.numpy as jnp
+
+        return jnp.where(jnp.asarray(support), rates, jnp.nan)
+    return np.where(support, np.asarray(rates, dtype=np.float64), np.nan)
 
 
 def _fill_nan(rates: ArrayLike, fill_value: float) -> ArrayLike:
@@ -3249,7 +3272,8 @@ default="diffusion_kde"
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
         Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``.
+        value. None preserves NaN. Filling never changes ``spatial_support``,
+        and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
         explicit arrays require ``prior=rates.spatial_support.astype(float)``.
         Zero filling without that prior treats unobserved space as silence.
@@ -3737,7 +3761,8 @@ default="diffusion_kde"
         with ``method="glm"``.
     fill_value : float | None, default=None
         Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``.
+        value. None preserves NaN. Filling never changes ``spatial_support``,
+        and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
         explicit arrays require ``prior=rates.spatial_support.astype(float)``.
         Zero filling without that prior treats unobserved space as silence.
@@ -5269,7 +5294,8 @@ def has_place_field(
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
         Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``.
+        value. None preserves NaN. Filling never changes ``spatial_support``,
+        and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
         explicit arrays require ``prior=rates.spatial_support.astype(float)``.
         Zero filling without that prior treats unobserved space as silence.
@@ -5532,7 +5558,8 @@ def is_place_cell(
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
         Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``.
+        value. None preserves NaN. Filling never changes ``spatial_support``,
+        and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
         explicit arrays require ``prior=rates.spatial_support.astype(float)``.
         Zero filling without that prior treats unobserved space as silence.
@@ -5986,7 +6013,8 @@ def place_cell_significance(
         with ``method="glm"``.
     fill_value : float | None, default=None
         Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``.
+        value. None preserves NaN. Filling never changes ``spatial_support``,
+        and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
         explicit arrays require ``prior=rates.spatial_support.astype(float)``.
         Zero filling without that prior treats unobserved space as silence.

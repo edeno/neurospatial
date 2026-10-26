@@ -3535,6 +3535,82 @@ class TestComputeSpatialRateMinOccupancy:
         assert np.all(np.isnan(firing_rate[occupancy < min_occ]))
 
 
+@pytest.fixture(scope="module")
+def sparse_coverage_recording():
+    """A 10-minute random walk with many bins below 0.5 s occupancy.
+
+    The neuron fires at 5 Hz everywhere, so it carries no spatial information.
+    """
+    rng = np.random.default_rng(0)
+    times = np.arange(18000) / 30.0
+    steps = rng.normal(0, 1.2, (len(times), 2))
+    positions = np.abs((np.cumsum(steps, axis=0) + 50) % 200 - 100)
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    spikes = np.sort(np.random.default_rng(1).uniform(0, times[-1], 3000))
+    return env, spikes, times, positions
+
+
+class TestMetricsUseSpatialSupport:
+    """Filling unsupported bins never changes a metric (missing is not zero)."""
+
+    @pytest.mark.parametrize("method", ["binned", "diffusion_kde"])
+    def test_metrics_equal_for_nan_and_zero_fill(
+        self, sparse_coverage_recording, method
+    ) -> None:
+        from neurospatial.encoding.spatial import (
+            compute_spatial_rate,
+            compute_spatial_rates,
+        )
+
+        env, spikes, times, positions = sparse_coverage_recording
+        kwargs = {
+            "method": method,
+            "bandwidth": 0.0 if method == "binned" else 8.0,
+            "min_occupancy": 0.5,
+        }
+        nan_single = compute_spatial_rate(env, spikes, times, positions, **kwargs)
+        zero_single = compute_spatial_rate(
+            env, spikes, times, positions, fill_value=0.0, **kwargs
+        )
+        occupancy = np.asarray(nan_single.occupancy)
+        # Non-vacuous: occupied bins below the threshold are filled with 0 Hz.
+        masked = (occupancy > 0) & (occupancy < 0.5)
+        assert masked.sum() > 20
+        assert np.all(np.asarray(zero_single.firing_rate)[masked] == 0.0)
+
+        for name in ["spatial_information", "sparsity"]:
+            assert getattr(zero_single, name)() == pytest.approx(
+                getattr(nan_single, name)(), rel=1e-12
+            )
+        assert zero_single.has_place_field() == nan_single.has_place_field()
+        assert zero_single.border_score(boundary_source="analysis") == pytest.approx(
+            nan_single.border_score(boundary_source="analysis")
+        )
+
+        nan_pop = compute_spatial_rates(
+            env, [spikes, spikes[::2]], times, positions, **kwargs
+        )
+        zero_pop = compute_spatial_rates(
+            env, [spikes, spikes[::2]], times, positions, fill_value=0.0, **kwargs
+        )
+        np.testing.assert_allclose(
+            zero_pop.spatial_information(), nan_pop.spatial_information(), rtol=1e-12
+        )
+        np.testing.assert_allclose(zero_pop.sparsity(), nan_pop.sparsity(), rtol=1e-12)
+        np.testing.assert_array_equal(zero_pop.classify(), nan_pop.classify())
+        np.testing.assert_allclose(
+            zero_pop.border_scores(boundary_source="analysis").scores,
+            nan_pop.border_scores(boundary_source="analysis").scores,
+        )
+        columns = ["spatial_info", "sparsity", "border_score"]
+        np.testing.assert_allclose(
+            zero_pop.summary_table(boundary_source="analysis")[columns].to_numpy(),
+            nan_pop.summary_table(boundary_source="analysis")[columns].to_numpy(),
+        )
+        # An untuned 5 Hz neuron carries little information once masked.
+        assert nan_single.spatial_information() < 0.15
+
+
 class TestComputeSpatialRateBackendParameter:
     """Tests for compute_spatial_rate backend parameter."""
 
