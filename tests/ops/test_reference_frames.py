@@ -14,86 +14,6 @@ class TestModuleSetup:
     """Test module imports and structure."""
 
 
-class TestEgocentricFrame:
-    """Tests for EgocentricFrame dataclass."""
-
-    def test_to_egocentric_heading_zero_identity(self):
-        """With heading=0, egocentric x-axis aligns with allocentric x-axis.
-
-        When the animal faces East (heading=0):
-        - A point East of the animal is ahead (+x in egocentric)
-        - A point North of the animal is to the left (+y in egocentric)
-        """
-        from neurospatial.ops.egocentric import EgocentricFrame
-
-        # Animal at origin facing East
-        frame = EgocentricFrame(position=np.array([0.0, 0.0]), heading=0.0)
-
-        # Point 10 units East is 10 units ahead
-        point_east = np.array([[10.0, 0.0]])
-        ego = frame.to_egocentric(point_east)
-        assert_allclose(ego, [[10.0, 0.0]], atol=1e-10)
-
-        # Point 10 units North is 10 units left
-        point_north = np.array([[0.0, 10.0]])
-        ego = frame.to_egocentric(point_north)
-        assert_allclose(ego, [[0.0, 10.0]], atol=1e-10)
-
-    def test_to_egocentric_heading_pi_half(self):
-        """With heading=π/2, egocentric x-axis aligns with allocentric y-axis.
-
-        When the animal faces North (heading=π/2):
-        - A point North of the animal is ahead (+x in egocentric)
-        - A point East of the animal is to the right (-y in egocentric)
-        """
-        from neurospatial.ops.egocentric import EgocentricFrame
-
-        # Animal at origin facing North
-        frame = EgocentricFrame(position=np.array([0.0, 0.0]), heading=np.pi / 2)
-
-        # Point 10 units North is 10 units ahead
-        point_north = np.array([[0.0, 10.0]])
-        ego = frame.to_egocentric(point_north)
-        assert_allclose(ego, [[10.0, 0.0]], atol=1e-10)
-
-        # Point 10 units East is 10 units right (-y)
-        point_east = np.array([[10.0, 0.0]])
-        ego = frame.to_egocentric(point_east)
-        assert_allclose(ego, [[0.0, -10.0]], atol=1e-10)
-
-    def test_to_allocentric_inverse(self):
-        """to_allocentric is the inverse of to_egocentric."""
-        from neurospatial.ops.egocentric import EgocentricFrame
-
-        frame = EgocentricFrame(
-            position=np.array([5.0, 3.0]),
-            heading=np.pi / 3,  # 60 degrees
-        )
-
-        # Transform to egocentric and back
-        allocentric_orig = np.array([[10.0, 20.0], [30.0, 40.0]])
-        egocentric = frame.to_egocentric(allocentric_orig)
-        allocentric_recovered = frame.to_allocentric(egocentric)
-
-        assert_allclose(allocentric_recovered, allocentric_orig, atol=1e-10)
-
-    def test_round_trip_preserves_coordinates(self):
-        """Round-trip transformation preserves coordinates for various headings."""
-        from neurospatial.ops.egocentric import EgocentricFrame
-
-        rng = np.random.default_rng(42)
-
-        for heading in [0, np.pi / 4, np.pi / 2, np.pi, -np.pi / 2, 3 * np.pi / 4]:
-            position = rng.uniform(-100, 100, size=2)
-            frame = EgocentricFrame(position=position, heading=heading)
-
-            allocentric = rng.uniform(-100, 100, size=(10, 2))
-            egocentric = frame.to_egocentric(allocentric)
-            recovered = frame.to_allocentric(egocentric)
-
-            assert_allclose(recovered, allocentric, atol=1e-10)
-
-
 class TestAllocentricToEgocentric:
     """Tests for allocentric_to_egocentric batch function."""
 
@@ -158,6 +78,31 @@ class TestAllocentricToEgocentric:
 
         with pytest.raises(ValueError, match=r"Headings/positions length mismatch"):
             allocentric_to_egocentric(positions, headings, points)
+
+    @pytest.mark.parametrize("n_rows", [1, 3])
+    def test_time_varying_points_must_have_one_row_per_time(self, n_rows):
+        """A (1, n_points, 2) array is not silently reused at every time."""
+        from neurospatial.ops.egocentric import (
+            allocentric_to_egocentric,
+            compute_egocentric_bearing,
+        )
+
+        positions = np.zeros((2, 2))
+        headings = np.zeros(2)
+        points = np.ones((n_rows, 4, 2))
+        for transform in (allocentric_to_egocentric, compute_egocentric_bearing):
+            with pytest.raises(
+                ValueError,
+                match=rf"points time axis {n_rows} does not match positions length 2",
+            ):
+                transform(positions, headings, points)
+
+    @pytest.mark.parametrize("shape", [(4, 3), (2, 4, 3)])
+    def test_points_need_x_and_y(self, shape):
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
+
+        with pytest.raises(ValueError, match=r"points must have 2 columns \(x, y\)"):
+            allocentric_to_egocentric(np.zeros((2, 2)), np.zeros(2), np.ones(shape))
 
 
 class TestEgocentricToAllocentric:
@@ -262,7 +207,7 @@ class TestComputeEgocentricBearing:
         assert_allclose(bearing, [[-np.pi / 2]], atol=1e-10)
 
     def test_bearing_behind_target(self):
-        """Bearing is ±π when target is behind."""
+        """Bearing is +π, not -π, when the target is directly behind."""
         from neurospatial.ops.egocentric import compute_egocentric_bearing
 
         # Target at (-10, 0), animal at origin facing East
@@ -271,8 +216,8 @@ class TestComputeEgocentricBearing:
         heading = np.array([0.0])
 
         bearing = compute_egocentric_bearing(position, heading, target)
-        # Should be π or -π (both valid)
-        assert np.abs(np.abs(bearing[0, 0]) - np.pi) < 1e-10
+        # Bearings lie in (-π, π], so directly behind is +π.
+        assert_allclose(bearing, [[np.pi]], rtol=0, atol=1e-10)
 
     def test_angle_wrapping_near_pi(self):
         """Angles wrap correctly near ±π boundary."""
@@ -488,7 +433,7 @@ class TestGeodesicDistanceTimeVarying:
         return distances
 
     def test_geodesic_matches_reference_loop_with_out_of_env(self):
-        """Optimized geodesic distance equals the reference loop, incl. NaN cells."""
+        """Batched geodesic distance equals the reference loop, incl. NaN cells."""
         from neurospatial import Environment
         from neurospatial.ops.egocentric import compute_egocentric_distance
 
@@ -505,11 +450,11 @@ class TestGeodesicDistanceTimeVarying:
                 [40.0, 40.0],
             ]
         )
-        # Time-varying targets, one outside the env at t=1 (-> NaN cell).
+        # Time-varying targets, one missing at t=1 (-> NaN cell).
         targets = np.array(
             [
                 [[50.0, 50.0], [70.0, 30.0]],
-                [[50.0, 50.0], [99999.0, 99999.0]],  # second target outside
+                [[50.0, 50.0], [np.nan, np.nan]],  # second target missing
                 [[50.0, 50.0], [70.0, 30.0]],
                 [[30.0, 30.0], [80.0, 80.0]],
             ],
@@ -522,6 +467,42 @@ class TestGeodesicDistanceTimeVarying:
         )
 
         assert_allclose(actual, expected, equal_nan=True)
+
+    @pytest.mark.parametrize("time_varying", [False, True])
+    def test_target_outside_every_bin_is_refused(self, time_varying):
+        """A target outside the environment has no geodesic path: refuse it.
+
+        Leaving the whole target column NaN would look like a missing target.
+        """
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        env = self._build_quasi_1d_env()
+        positions = np.array([[20.0, 0.0], [30.0, 0.0]])
+        targets = np.array([[50.0, 0.0], [50.0, 30.0]])  # second is 30 off-strip
+        if time_varying:
+            targets = np.stack([targets, targets])
+        where = "at time index 0 " if time_varying else ""
+        with pytest.raises(
+            ValueError,
+            match=rf"^Target 1 {where}at \(50, 30\) lies outside every bin(?s:.*)"
+            r"nearest bin center is 29\.\d away(?s:.*)metric='euclidean'",
+        ):
+            compute_egocentric_distance(
+                positions, None, targets, metric="geodesic", env=env
+            )
+
+    def test_position_outside_is_missing_not_refused(self):
+        """An animal outside the environment gives a NaN row, as a missing sample."""
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        env = self._build_quasi_1d_env()
+        positions = np.array([[20.0, 0.0], [20.0, 30.0], [np.nan, np.nan]])
+        targets = np.array([[50.0, 0.0]])
+        distances = compute_egocentric_distance(
+            positions, None, targets, metric="geodesic", env=env
+        )
+        assert np.isfinite(distances[0, 0])
+        assert np.isnan(distances[1:, 0]).all()
 
 
 class TestComputeEgocentricDistanceFunctions:
@@ -642,3 +623,48 @@ class TestWrapAngleAntipode:
 
         bearing = compute_egocentric_bearing(position, heading, target)
         assert_allclose(bearing, [[np.pi]])
+
+
+class TestMissingObservations:
+    """A NaN position or heading is a missing observation, never a number."""
+
+    targets = np.array([[10.0, 0.0], [0.0, 10.0]])
+
+    @pytest.mark.parametrize("missing", ["position", "heading"])
+    def test_transform_and_bearing_are_nan_at_a_missing_sample(self, missing):
+        from neurospatial.ops.egocentric import (
+            allocentric_to_egocentric,
+            compute_egocentric_bearing,
+        )
+
+        positions = np.array([[0.0, 0.0], [1.0, 2.0], [3.0, 1.0]])
+        headings = np.array([0.0, 0.5, -1.0])
+        if missing == "position":
+            positions[1, 0] = np.nan
+        else:
+            headings[1] = np.nan
+        ego = allocentric_to_egocentric(positions, headings, self.targets)
+        bearing = compute_egocentric_bearing(positions, headings, self.targets)
+        assert np.isnan(ego[1]).all()
+        assert np.isnan(bearing[1]).all()
+        # The other samples are unaffected.
+        assert np.isfinite(ego[[0, 2]]).all()
+        assert np.isfinite(bearing[[0, 2]]).all()
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_distance_ignores_a_missing_heading(self, metric):
+        from neurospatial import Environment
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        grid = np.stack(np.meshgrid(np.arange(21.0), np.arange(21.0)), -1)
+        env = Environment.from_samples(grid.reshape(-1, 2), bin_size=2.0)
+        positions = np.array([[4.0, 4.0], [6.0, 8.0]])
+        headings = np.array([np.nan, np.nan])
+        distances = compute_egocentric_distance(
+            positions, headings, self.targets, metric=metric, env=env
+        )
+        expected = compute_egocentric_distance(
+            positions, None, self.targets, metric=metric, env=env
+        )
+        assert np.isfinite(distances).all()
+        np.testing.assert_array_equal(distances, expected)

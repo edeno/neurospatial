@@ -190,10 +190,10 @@ def _occupancy(
     dt = np.diff(times)
 
     # Default start allocation shares every interval gate with spike binning.
-    # Polygon linear allocation keeps observation validity separate from
-    # geometric support, allowing outside-to-inside and re-entry segments.
-    framed_nd = n_dims != 2 and binning.grid_frame is not None
-    observation_only = polygon_allocation and not framed_nd
+    # Linear allocation keeps observation validity separate from geometric
+    # support, so an interval that enters, leaves or re-enters the environment
+    # keeps the time its straight path spends inside.
+    observation_only = time_allocation == "linear"
     resolved_epochs = as_intervals(epochs, name="epochs")
     valid_mask = interval_valid_mask(
         times,
@@ -209,7 +209,7 @@ def _occupancy(
         # Complete-case rule, shared with spike binning: the animal's place
         # during an interval is known only when both samples are inside.
         valid_mask &= bin_indices[1:] >= 0
-    # Intervals that kept time; polygon allocation narrows this below.
+    # Intervals that kept time; linear allocation narrows this below.
     retained_mask = valid_mask
 
     # Initialize occupancy array
@@ -226,6 +226,9 @@ def _occupancy(
         )
 
     elif time_allocation == "linear":
+        # The observation mask has no bounds gate here, so an interval whose
+        # path never enters the environment (outside, or with a NaN end) is
+        # excluded only by the geometry.
         if polygon_allocation:
             pieces, occupancy = _polygon_linear_occupancy(
                 binning,
@@ -236,14 +239,11 @@ def _occupancy(
                 return_seconds=return_seconds,
                 indexes=cache,
             )
-            # The observation mask has no bounds gate here, so an interval
-            # whose path never enters the environment (outside, or with a NaN
-            # end) is excluded only by the geometry.
             retained_mask = np.zeros_like(valid_mask)
             retained_mask[[piece.sample_index for piece in pieces]] = True
         else:
             assert grid is not None
-            occupancy = _linear_grid_occupancy(
+            retained_mask, occupancy = _linear_grid_occupancy(
                 n_bins,
                 grid,
                 positions,
@@ -252,9 +252,6 @@ def _occupancy(
                 bin_indices,
                 return_seconds=return_seconds,
             )
-            # A straight path to a NaN end has no length to divide.
-            finite: NDArray[np.bool_] = np.all(np.isfinite(positions), axis=1)
-            retained_mask = valid_mask & finite[:-1] & finite[1:]
 
     warn_excluded_intervals(
         times,

@@ -517,9 +517,11 @@ approximation, especially for concave or clipped cells.
 `env.occupancy(times, positions)` measures time in seconds, rather than counting
 samples. Its default assigns each valid interval to its starting bin. Use
 `time_allocation="linear"` to split a straight segment over supported cells.
-On polygon cells, this handles entry, exit and re-entry, excludes holes, and
-does not renormalize the retained duration. Gaps, speed and epoch filters still
-apply. A proper crossing of an explicit physical wall raises instead of
+On grids of any dimension and on polygon cells, this handles entry, exit and
+re-entry, excludes holes, and does not renormalize the retained duration: a
+segment half inside the environment adds half its duration, or half a count
+with `return_seconds=False`, whichever way the animal travels. Gaps, speed and
+epoch filters still apply. A proper crossing of an explicit physical wall raises instead of
 interpolating through it; endpoint contact and motion along a wall are allowed
 when a bin owns those points.
 

@@ -52,7 +52,9 @@ __all__ = [
 
 @dataclass(frozen=True, repr=False, eq=False)
 class SpatialFeatureResult(ReadOnlyArraysMixin, ResultMixin):
-    """Feature-map values at query points, from ``sample_spatial_features``.
+    """Feature-map values at query points.
+
+    Returned by ``sample_spatial_features`` and ``sample_egocentric_features``.
 
     Each query point is a tracked position, or for egocentric sampling a point
     at a fixed offset from the animal. ``values`` keeps the sample axis first,

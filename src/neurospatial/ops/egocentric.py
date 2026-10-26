@@ -69,118 +69,23 @@ References
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import CallIndexes, locate, require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.ops._protocols import GraphLookupConsumer
 
 __all__ = [
-    "EgocentricFrame",
     "allocentric_to_egocentric",
     "compute_egocentric_bearing",
     "compute_egocentric_distance",
     "egocentric_to_allocentric",
 ]
-
-
-@dataclass(frozen=True)
-class EgocentricFrame:
-    """Egocentric reference frame at a single timepoint.
-
-    Attributes
-    ----------
-    position : NDArray, shape (2,)
-        Animal position in allocentric coordinates.
-    heading : float
-        Animal heading in radians (0=East, pi/2=North in allocentric frame).
-
-    Coordinate Conventions
-    ----------------------
-    **Allocentric (world-centered)**:
-    - 0 radians = East (+x direction)
-    - pi/2 radians = North (+y direction)
-    - Standard mathematical convention
-
-    **Egocentric (animal-centered)**:
-    - Origin at animal's position
-    - +x axis = forward (heading direction)
-    - +y axis = left (90 degrees counterclockwise from heading)
-    - Angles: 0=ahead, pi/2=left, -pi/2=right, +/-pi=behind
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.ops.egocentric import EgocentricFrame
-
-    Animal at origin facing East (heading=0):
-
-    >>> frame = EgocentricFrame(position=np.array([0.0, 0.0]), heading=0.0)
-    >>> # Point 10 units East is 10 units ahead
-    >>> frame.to_egocentric(np.array([[10.0, 0.0]]))
-    array([[10.,  0.]])
-
-    Animal at origin facing North (heading=pi/2):
-
-    >>> frame = EgocentricFrame(position=np.array([0.0, 0.0]), heading=np.pi / 2)
-    >>> # Point 10 units East is now 10 units to the right
-    >>> result = frame.to_egocentric(np.array([[10.0, 0.0]]))
-    >>> np.allclose(result, [[0.0, -10.0]])
-    True
-
-    Round-trip preserves coordinates:
-
-    >>> allocentric = np.array([[5.0, 3.0]])
-    >>> egocentric = frame.to_egocentric(allocentric)
-    >>> recovered = frame.to_allocentric(egocentric)
-    >>> np.allclose(allocentric, recovered)
-    True
-    """
-
-    position: NDArray[np.float64]
-    heading: float
-
-    def to_egocentric(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Transform allocentric points to egocentric coordinates.
-
-        Parameters
-        ----------
-        points : NDArray, shape (n_points, 2)
-            Points in allocentric coordinates.
-
-        Returns
-        -------
-        NDArray, shape (n_points, 2)
-            Points in egocentric coordinates.
-        """
-        centered = points - self.position
-        cos_h, sin_h = np.cos(-self.heading), np.sin(-self.heading)
-        rotation = np.array([[cos_h, -sin_h], [sin_h, cos_h]])
-        result: NDArray[np.float64] = centered @ rotation.T
-        return result
-
-    def to_allocentric(self, ego_points: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Transform egocentric points to allocentric coordinates.
-
-        Parameters
-        ----------
-        ego_points : NDArray, shape (n_points, 2)
-            Points in egocentric coordinates.
-
-        Returns
-        -------
-        NDArray, shape (n_points, 2)
-            Points in allocentric coordinates.
-        """
-        cos_h, sin_h = np.cos(self.heading), np.sin(self.heading)
-        rotation = np.array([[cos_h, -sin_h], [sin_h, cos_h]])
-        result: NDArray[np.float64] = (ego_points @ rotation.T) + self.position
-        return result
 
 
 def allocentric_to_egocentric(
@@ -195,7 +100,8 @@ def allocentric_to_egocentric(
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
     headings : NDArray, shape (n_time,)
-        Animal heading at each time (radians).
+        Animal heading at each time, in allocentric radians (0 = East,
+        +π/2 = North).
     points : NDArray, shape (n_points, 2) or (n_time, n_points, 2)
         Points to transform. If 2D, same points transformed at each time.
 
@@ -231,7 +137,10 @@ def allocentric_to_egocentric(
     Raises
     ------
     ValueError
-        If points has wrong shape or positions/headings length mismatch.
+        If ``points`` is not ``(n_points, 2)`` or ``(n_time, n_points, 2)``,
+        including a 3D ``points`` whose time axis differs from
+        ``len(positions)``; if ``positions`` is not ``(n_time, 2)``; or if
+        ``headings`` length does not match ``positions``.
     """
     points = np.asarray(points, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
@@ -272,10 +181,7 @@ def allocentric_to_egocentric(
 
     n_time = len(positions)
 
-    # Expand points to 3D if needed
-    if points.ndim == 2:
-        points = np.broadcast_to(points, (n_time, points.shape[0], 2)).copy()
-    elif points.ndim != 3:
+    if points.ndim > 3:
         raise ValueError(
             f"Invalid points dimensionality: got {points.ndim}D array.\n\n"
             f"WHAT: points must be 2D (n_points, 2) or 3D (n_time, n_points, 2)\n"
@@ -285,6 +191,30 @@ def allocentric_to_egocentric(
             f"2. Time-varying: use shape (n_time, n_points, 2)\n"
             f"Got shape: {points.shape}"
         )
+    if points.shape[-1] != 2:
+        raise ValueError(
+            _format_error(
+                f"points must have 2 columns (x, y); got shape {points.shape}.",
+                why="egocentric coordinates are planar: each point is rotated "
+                "about the animal's position by its heading.",
+                fix="pass points of shape (n_points, 2), or (n_time, n_points, 2) "
+                "for points that move",
+            )
+        )
+    if points.ndim == 3 and points.shape[0] != n_time:
+        raise ValueError(
+            _format_error(
+                f"points time axis {points.shape[0]} does not match positions "
+                f"length {n_time}.",
+                why="a 3D points array holds the points at each time, shape "
+                "(n_time, n_points, 2), and is transformed with that time's "
+                "position and heading.",
+                fix="pass points that do not move as a 2D (n_points, 2) array, "
+                "or give one row of points per position",
+            )
+        )
+    if points.ndim == 2:
+        points = np.broadcast_to(points, (n_time, points.shape[0], 2))
 
     # Center points around animal position
     # positions: (n_time, 2) -> (n_time, 1, 2) for broadcasting
@@ -323,7 +253,8 @@ def egocentric_to_allocentric(
     positions : NDArray, shape (n_time, 2)
         Animal position at each time in allocentric coordinates.
     headings : NDArray, shape (n_time,)
-        Animal heading at each time (radians).
+        Animal heading at each time, in allocentric radians (0 = East,
+        +π/2 = North).
     ego_points : NDArray, shape (n_time, n_points, 2)
         Points in egocentric coordinates.
 
@@ -430,7 +361,8 @@ def compute_egocentric_bearing(
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
     headings : NDArray, shape (n_time,)
-        Animal heading at each time (radians).
+        Animal heading at each time, in allocentric radians (0 = East,
+        +π/2 = North).
     targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
         Target positions in allocentric coordinates.
 
@@ -439,6 +371,11 @@ def compute_egocentric_bearing(
     NDArray, shape (n_time, n_targets)
         Bearing to each target at each timepoint in radians.
         Range: (-pi, pi], where 0=ahead, pi/2=left, -pi/2=right.
+
+    Raises
+    ------
+    ValueError
+        If the shapes are invalid, as for :func:`allocentric_to_egocentric`.
 
     Examples
     --------
@@ -487,8 +424,7 @@ def _wrap_bearing(angle: NDArray[np.float64]) -> NDArray[np.float64]:
         Angles wrapped to the half-open interval (-pi, pi] (a target directly
         behind the animal returns +pi, never -pi).
     """
-    # ((angle - pi) % (2*pi)) - (-pi)  shifts so the open end is at -pi and the
-    # closed end at +pi, giving the documented (-pi, pi] half-open interval.
+    # x % (-2π) lies in (-2π, 0], so shifting by -π then +π gives (-π, π].
     wrapped = (angle - np.pi) % (-2 * np.pi) + np.pi
     return wrapped
 
@@ -503,8 +439,8 @@ def compute_egocentric_distance(
 ) -> NDArray[np.float64]:
     """Compute distance to targets from animal position.
 
-    Distance is symmetric (does not depend on heading), but headings parameter
-    is included as a positional parameter to maintain API consistency with other
+    Distance does not depend on heading, but headings parameter is included
+    as a positional parameter to maintain API consistency with other
     egocentric functions like compute_egocentric_bearing().
 
     Parameters
@@ -512,15 +448,21 @@ def compute_egocentric_distance(
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
     headings : NDArray, shape (n_time,), optional
-        Animal heading at each time (radians). Not used for distance
+        Animal heading at each time, in allocentric radians (0 = East,
+        +π/2 = North), or None. Not used for distance
         calculation but included for API consistency with canonical argument
         order (positions, headings, targets).
     targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
         Target positions in allocentric coordinates.
     metric : str, default "euclidean"
         Distance metric. Options:
-        - "euclidean": Straight-line distance
-        - "geodesic": Path distance respecting environment boundaries
+
+        - "euclidean": Straight-line distance.
+        - "geodesic": Shortest-path distance along the environment's bin
+          graph, from the center of the animal's bin to the center of the
+          target's bin, so it goes around walls and holes. A position outside
+          the environment, or a NaN position or target (a missing
+          observation), gives NaN.
     env : Environment, optional
         Required when metric="geodesic". The environment to compute
         geodesic distances within.
@@ -534,6 +476,10 @@ def compute_egocentric_distance(
     ------
     ValueError
         If metric is invalid or metric="geodesic" without an environment.
+    ValueError
+        If metric="geodesic" and a finite target lies outside every bin of
+        ``env``; the message names the target and its distance to the
+        nearest bin center.
     CartesianOnlyError
         If metric="geodesic" and ``env`` is a polar environment.
 
@@ -636,13 +582,17 @@ def compute_egocentric_distance(
         call = "compute_egocentric_distance(metric='geodesic')"
         pos_bins = locate(binning, arena, positions, indexes, call=call)
 
-        # Hoist target-bin computation out of the per-target inner loop: map
-        # every target to its bin in a single batched ``bin_at`` call. For
-        # static targets (broadcast from 2D) this collapses ``n_time * n_targets``
-        # redundant lookups into one. Shape: (n_time, n_targets).
+        # Map every target to its bin in one batched ``locate`` call rather
+        # than one call per target and time. Shape: (n_time, n_targets).
         target_bins = locate(
             binning, arena, targets_3d.reshape(-1, 2), indexes, call=call
         ).reshape(n_time, n_targets)
+        _require_targets_in_bins(
+            targets_3d,
+            target_bins,
+            binning.bins.centers,
+            time_varying=targets.ndim == 3,
+        )
 
         # Cache distance fields by target bin: static targets recompute once;
         # time-varying targets pay only for unique target bins.
@@ -656,7 +606,7 @@ def compute_egocentric_distance(
             for i in range(n_targets):
                 target_bin = int(target_bins[t, i])
                 if target_bin < 0:
-                    # Target outside environment - cell stays NaN
+                    # Missing (NaN) target position - cell stays NaN
                     continue
                 if target_bin not in distance_field_cache:
                     distance_field_cache[target_bin] = compute_distance_field(
@@ -665,3 +615,50 @@ def compute_egocentric_distance(
                 distances[t, i] = distance_field_cache[target_bin][pos_bin]
 
     return distances
+
+
+def _require_targets_in_bins(
+    targets: NDArray[np.float64],
+    target_bins: NDArray[np.intp],
+    bin_centers: NDArray[np.float64],
+    *,
+    time_varying: bool,
+) -> None:
+    """Refuse a finite target that lies outside every bin.
+
+    Parameters
+    ----------
+    targets : ndarray of float64, shape (n_time, n_targets, 2)
+        Target positions at each time.
+    target_bins : ndarray of intp, shape (n_time, n_targets)
+        Bin of each target, ``-1`` outside the environment or at NaN.
+    bin_centers : ndarray of float64, shape (n_bins, 2)
+        Bin centers, to report how far outside the target is.
+    time_varying : bool
+        Whether the caller gave targets per time, so the error names the time.
+
+    Raises
+    ------
+    ValueError
+        If a finite target lies outside every bin.
+    """
+    outside = (target_bins < 0) & np.all(np.isfinite(targets), axis=-1)
+    if not outside.any():
+        return
+    time, target = np.argwhere(outside)[0]
+    point = targets[time, target]
+    coords = ", ".join(f"{value:g}" for value in point)
+    gap = float(np.min(np.linalg.norm(bin_centers - point, axis=1)))
+    where = f"at time index {time} " if time_varying else ""
+    raise ValueError(
+        _format_error(
+            f"Target {target} {where}at ({coords}) lies outside every bin, so "
+            "compute_egocentric_distance(metric='geodesic') has no path to it.",
+            why=f"geodesic distance runs along the environment's bin graph, "
+            f"from the animal's bin to the target's bin; the nearest bin center "
+            f"is {gap:.3g} away. A target on the arena's edge, such as an "
+            "object against a wall, can lie outside.",
+            fix="move the target inside the environment, or use "
+            "metric='euclidean' for straight-line distances",
+        )
+    )
