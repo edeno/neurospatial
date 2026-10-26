@@ -164,24 +164,9 @@ def cell_polygons(binning: Binning) -> tuple[Polygon, ...]:
     elif isinstance(shapes, TriangleShapes):
         polygons = tuple(shapely.polygons(shapes.points[shapes.triangles]))
     elif isinstance(shapes, HexagonShapes):
+        # Publication checked the bin centers against this locator geometry,
+        # with rounding bounds carried through every transform.
         polygons = cells_from_locator(binning.locator)
-        centers = shapely.get_coordinates(
-            shapely.centroid(np.asarray(polygons, dtype=object))
-        )
-        local = min(float(shapes.radius), float(np.min(binning.bins.sizes)) ** 0.5)
-        allowance = (
-            64
-            * np.finfo(float).eps
-            * np.maximum(np.abs(centers), np.abs(binning.bins.centers))
-            + 64 * np.finfo(float).eps * local
-        )
-        if np.any(allowance >= local / 4) or not np.all(
-            np.abs(centers - binning.bins.centers) <= allowance
-        ):
-            raise _error(
-                "Canonical hexagon centers disagree with published bin centers.",
-                "use consistent lattice geometry or rescale the coordinate origin",
-            )
     elif binning.rectilinear is not None and len(binning.rectilinear.shape) == 2:
         grid = binning.rectilinear
         polygons = _boxes(grid.edges, *np.nonzero(grid.active_mask))

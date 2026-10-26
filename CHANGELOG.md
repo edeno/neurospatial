@@ -240,6 +240,14 @@
   "segments must have positive representable lengths" or "TrackLinearization
   edges[0] must be finite and strictly increasing", and a maze first warned
   about an invalid divide.
+- Hexagonal environments recorded away from the origin keep their cells
+  after `apply_transform` moves them, for example to center the arena at
+  (0, 0). The cells (used by `plot_field`, boundary bins, physical-border
+  scores, clipping and combining) were refused with "Canonical hexagon
+  centers disagree with published bin centers": a second center check
+  scaled its rounding allowance by the new, small coordinates. The
+  publication check, which carries rounding through each transform, is the
+  only one now.
 
 ### Spatial geometry review
 
