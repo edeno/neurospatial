@@ -67,7 +67,13 @@ def test_egocentric_entry_point_warns_for_degree_headings(session) -> None:
     times, positions, headings, spikes = session
     with pytest.warns(UserWarning, match=r"np\.radians\(headings\)"):
         compute_egocentric_rate(
-            None, spikes, times, positions, np.degrees(headings), [[50.0, 50.0]]
+            None,
+            spikes,
+            times,
+            positions,
+            np.degrees(headings),
+            [[50.0, 50.0]],
+            distance_range=(0.0, 50.0),
         )
 
 
