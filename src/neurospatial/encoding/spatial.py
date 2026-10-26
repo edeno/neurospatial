@@ -798,7 +798,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
     analysis_settings : dict or None
         Resolved epochs, observed intervals, gap/speed/occupancy gates and
-        estimator settings. None for manually constructed or legacy results.
+        estimator settings. None for manually constructed results.
     spatial_support : ndarray of bool, shape (n_bins,)
         Observed bins meeting the occupancy threshold with finite rates.
     spike_window : NDArray[np.float64] or None
@@ -1716,7 +1716,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         Mismatched or duplicate labels raise ValueError.
     analysis_settings : dict or None
         Resolved epochs, observed intervals, gap/speed/occupancy gates and
-        estimator settings. None for manually constructed or legacy results.
+        estimator settings. None for manually constructed results.
     spatial_support : ndarray of bool, shape (n_bins,)
         Observed bins meeting the occupancy threshold with finite rates.
     spike_window : NDArray[np.float64] or None
@@ -2427,7 +2427,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
         Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
         report a circular-shift test and its assumptions instead of a cutoff verdict.
-        None thresholds resolve through PLACE_GRID_BORDER_THRESHOLDS.
+        None thresholds are 0.5 bits/spike, grid score 0.4 and border score 0.5.
         For a shuffle test, call place_cell_significance(...)
         with the raw arrays; a result does not keep the arrays it was computed from.
 
@@ -2545,8 +2545,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         Parameters
         ----------
         min_info : float or None, default=None
-            Minimum spatial information (bits/spike) to be classified as a
-            place cell.
+            Inclusive minimum Skaggs spatial information (bits/spike) to be
+            classified as a place cell; None is 0.5 bits/spike.
 
         Returns
         -------
@@ -2588,7 +2588,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
         Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
         report a circular-shift test and its assumptions instead of a cutoff verdict.
-        None thresholds resolve through PLACE_SPATIAL_INFO_THRESHOLDS.
+        ``min_info=None`` is 0.5 bits/spike.
         For a shuffle test, call place_cell_significance(...)
         with the raw arrays; a result does not keep the arrays it was computed from.
         """
@@ -3133,7 +3133,7 @@ def _prepare_spatial_support(
     # Resolve the speed gate ONCE so the SAME concrete array feeds both the
     # spike numerator and the occupancy denominator (numerator/denominator
     # alignment by construction). When min_speed is None this returns None and
-    # nothing speed-related changes downstream (byte-for-byte unchanged).
+    # no speed gate is applied.
     resolved_speed = resolve_speed(
         times, positions, speed, min_speed, max_gap=max_gap, break_before=break_before
     )
@@ -3331,8 +3331,7 @@ default="diffusion_kde"
         periods are excluded from BOTH the spike numerator AND the occupancy
         denominator using ONE shared per-interval speed gate, so the firing
         rate stays correct (gating only one side would bias the rate). When
-        ``None`` (the default) NO speed filtering is applied and the output is
-        byte-for-byte identical to before.
+        ``None`` (the default) NO speed filtering is applied.
 
         **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
         ``None``, speed is :func:`neurospatial.behavior.compute_speed`: the
@@ -3414,11 +3413,25 @@ default="diffusion_kde"
     SpatialRateResult
         Result object containing:
 
-        - ``firing_rate``: Firing rate map in Hz, shape (n_bins,)
+        - ``firing_rate``: Firing rate map in Hz, shape (n_bins,); NaN where
+          the rate is missing (see ``spatial_support``) unless ``fill_value``
+          is given
         - ``occupancy``: Time in each bin in seconds, shape (n_bins,)
         - ``env``: The environment used
-        - ``method``: Method used for smoothing
-        - ``bandwidth``: Bandwidth used for smoothing
+        - ``method``: Estimator used
+        - ``bandwidth``: Smoothing bandwidth (``None`` for ``method="glm"``)
+        - ``spatial_support``: Bins with occupancy at least
+          ``min_occupancy`` and a finite rate, shape (n_bins,); unchanged by
+          ``fill_value``
+        - ``analysis_settings``: Resolved epochs, observed intervals,
+          gap/speed/occupancy gates and estimator settings
+        - ``spike_window`` and ``spike_window_assumed``: The spike-recording
+          windows applied, and whether they were assumed
+        - GAM diagnostics for ``method="glm"`` (``coefficients``,
+          ``penalty``, ``penalty_weights``, ``rank``, ``deviance``,
+          ``converged``, ``n_iter``, ``reml_objective``,
+          ``reml_at_boundary``, ``penalty_selected_by_reml``, ``pooled``);
+          ``None`` for the ratio methods
 
     See Also
     --------
@@ -3433,17 +3446,16 @@ default="diffusion_kde"
     Linear allocation instead retains the portions crossing effective cells.
     Counts and occupancy always share the same retained temporal support.
 
-    The function uses the binning layer (``_spatial_counts.py``) to convert spike
-    times to spike counts, then the smoothing layer (``_smoothing.py``) to
-    compute the smoothed firing rate.
-
     **Algorithm**:
 
     1. Map trajectory positions to spatial bins
-    2. Interpolate spike positions from trajectory using spike times
-    3. Count spikes in each spatial bin
-    4. Compute occupancy (time spent in each bin)
-    5. Apply smoothing (method-dependent, see ``_smoothing.py``)
+    2. Compute occupancy (time spent in each bin) from the retained intervals
+    3. Count each spike in the bin that receives its interval's time (the
+       start sample's bin under ``"start"`` allocation, the interpolated
+       position's bin under ``"linear"``)
+    4. Estimate the rate with ``method``: smooth counts and occupancy, then
+       divide (``diffusion_kde``, ``gaussian_kde``), or divide, then smooth
+       (``binned``)
 
     Examples
     --------
@@ -3662,8 +3674,8 @@ default="diffusion_kde"
         backend=resolved_backend,
     )
 
-    # Replace masked/low-occupancy NaN bins with fill_value when requested.
-    # Default (None) preserves NaN so existing callers see no behavior change.
+    # Replace masked/low-occupancy NaN bins with fill_value when requested;
+    # None keeps them NaN (missing).
     if fill_value is not None:
         firing_rate = _fill_nan(firing_rate, fill_value)
 
@@ -3734,9 +3746,8 @@ def compute_spatial_rates(
         - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
           labels): its index becomes the result's ``unit_ids``
 
-        All formats are coerced to per-neuron spike trains via
-        ``_as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
-        group must equal the group's index.
+        A ``unit_ids`` passed with a labelled group must equal the group's
+        index.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds. For pynapple tracking,
         pass ``tsd.t`` and ``tsd.values`` as separate arrays.
@@ -3809,8 +3820,7 @@ default="diffusion_kde"
         periods are excluded from BOTH the (shared) occupancy denominator AND
         every per-neuron spike numerator using ONE shared per-interval speed
         gate, so firing rates stay correct. When ``None`` (default) NO speed
-        filtering is applied and the output is byte-for-byte identical to
-        before. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
+        filtering is applied. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
         magnitude of the 0.1 s Gaussian-smoothed velocity; pass an explicit
         ``speed`` for geodesic / linearized-track environments.
     max_gap : float or None, default=0.5
@@ -3885,13 +3895,10 @@ default="diffusion_kde"
         Storage dtype of the returned ``(n_units, n_bins)`` rate-map array.
         ``np.float32`` halves the stored rate-map array. The rate computation
         is still performed in float64 and only the final result is cast, so
-        float32 values match float64 within float32 tolerance.
-        ``decode_session`` / ``decode_session_summary`` now accept their own
-        ``dtype`` parameter (default float64) that honors float32 end-to-end --
-        the encoding-model working set AND the posterior -- so
-        ``decode_session(dtype=np.float32)`` halves the decode working set on
-        the golden path. Default ``np.float64`` leaves every existing caller
-        byte-for-byte unchanged. Any other dtype raises ``ValueError``.
+        float32 values match float64 within float32 tolerance. To halve the
+        decoding working set as well, pass ``dtype=np.float32`` to
+        ``decode_session`` / ``decode_session_summary``. Any other dtype
+        raises ``ValueError``.
     unit_ids : ndarray or sequence, optional
         Per-unit identity labels (integers or strings), one per neuron in
         the same order as ``spike_times``. Stored on the result's
@@ -4308,8 +4315,8 @@ default="diffusion_kde"
         dtype=dtype,
     )
 
-    # Replace masked/low-occupancy NaN bins with fill_value when requested.
-    # Default (None) preserves NaN so existing callers see no behavior change.
+    # Replace masked/low-occupancy NaN bins with fill_value when requested;
+    # None keeps them NaN (missing).
     if fill_value is not None:
         firing_rates = _fill_nan(firing_rates, fill_value)
 
@@ -5391,8 +5398,7 @@ def has_place_field(
         periods are excluded from BOTH the spike numerator AND the occupancy
         denominator using ONE shared per-interval speed gate, so the firing
         rate stays correct (gating only one side would bias the rate). When
-        ``None`` (the default) NO speed filtering is applied and the output is
-        byte-for-byte identical to before.
+        ``None`` (the default) NO speed filtering is applied.
 
         **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
         ``None``, speed is :func:`neurospatial.behavior.compute_speed`: the
@@ -5551,7 +5557,8 @@ def is_place_cell(
     criterion : {"spatial_info", "shuffle"}
         Screen the observed statistic or test circular-shift significance.
     min_info : float or None, default=None
-        Inclusive screen cutoff; None resolves to the family threshold constant.
+        Inclusive spatial-information cutoff for ``criterion="spatial_info"``
+        (bits/spike); None is 0.5 bits/spike.
     alpha : float or None, default=None
         P-value level for ``criterion="shuffle"``; None resolves to 0.05.
     n_shuffles : int or None, default=None
@@ -6005,11 +6012,13 @@ def place_cell_significance(
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test place tuning against circular spike-time shifts.
 
-    Recompute the population map for the supplied arrays and for each shifted
-    train, using exactly the observed map's valid intervals. Shuffles preserve
-    counts on the compressed analyzed clock and never enter recording gaps.
-    This costs about n_shuffles population-map recomputes. The result's
-    is_significant property uses 0.05; compare p_value < alpha for another level.
+    The test statistic is Skaggs spatial information (bits/spike) of each
+    unit's rate map. Recompute the population map for the supplied arrays and
+    for each shifted train, using exactly the observed map's valid intervals.
+    Shuffles preserve counts on the compressed analyzed clock and never enter
+    recording gaps. This costs about n_shuffles population-map recomputes.
+    The result's is_significant property uses 0.05; compare p_value < alpha
+    for another level.
 
     Parameters
     ----------
@@ -6025,32 +6034,18 @@ def place_cell_significance(
         - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
           labels): its index becomes the result's ``unit_ids``
 
-        All formats are coerced to per-neuron spike trains via
-        ``_as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
-        group must equal the group's index.
+        A ``unit_ids`` passed with a labelled group must equal the group's
+        index.
     times : ndarray, shape (n_samples,)
         Sample timestamps in seconds, sorted and aligned with the raw coordinates.
 
     positions : ndarray, shape (n_samples, n_dims)
         Raw animal coordinates aligned with times, in environment units.
 
-    method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, default="diffusion_kde"
-        Estimator to use. See ``compute_spatial_rate()`` for details. In addition
-        to the three ratio methods, ``method="glm"`` fits a penalized-Poisson GAM
-        (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
-        everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
-        with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This function is
-        the batched entry point the decoder consumes; ``method="glm"`` flows
-        through both the decoder (``decode_session`` / ``BayesianDecoder``) and
-        NWB persistence (``write_spatial_rates`` round-trips the GAM diagnostics).
-        ``diffusion_kde`` and ``binned`` are
-        matrix-free (O(n_bins·rank) per neuron); ``glm`` also avoids a dense
-        O(n_bins²) kernel but its penalized-Poisson fit is **not** linear in
-        ``rank`` — each Newton step builds and solves a per-unit (r, r) Hessian
-        (≈ O(n_units·n_bins·rank²) + O(n_units·rank³)), repeated across Newton
-        iterations and REML λ candidates, so keep ``rank`` modest for large
-        populations (see ``compute_spatial_rate`` for details). Only
-        ``gaussian_kde`` builds a dense O(n_bins²) kernel.
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Rate-map estimator; see ``compute_spatial_rate()``. ``"glm"`` raises:
+        its pooled REML penalty couples units, so a shifted single-unit fit
+        would not be the observed model.
     bandwidth : float | None, default=None
         (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
         ``None`` uses 5 cm in declared metric units (0.05 m / 50 mm),
@@ -6067,28 +6062,11 @@ def place_cell_significance(
         explicit arrays require ``prior=rates.spatial_support.astype(float)``.
         Zero filling without that prior treats unobserved space as silence.
         Mutually exclusive with ``method="glm"``.
-    penalty : float | None, default=None
-        (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
-        selects ``λ`` by REML, which raises ``ValueError`` on pathologically
-        under-sampled data where no ``λ`` yields a converged fit (see
-        ``compute_spatial_rate``). Mutually exclusive with the ratio methods.
-    rank : int | None, default=None
-        (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
-        (≥ 1). ``None`` uses the module default cap; an out-of-range value is
-        clamped (never rejected) to the effective rank reported via
-        ``result.rank``. Mutually exclusive with the ratio methods.
+    penalty, rank : None, default=None
+        GLM-only settings; ``method="glm"`` is not supported here, so any
+        value raises ``ValueError``.
     pooled : bool, default=True
-        (``method="glm"`` only; strict ``bool``.) One **shared** smoothing penalty
-        ``λ`` for the whole population (``True``, the default) or an **independent
-        per-unit** ``λ`` (``False``). Under ``pooled=False`` the REML search runs
-        once per informative unit (cost ~ one REML per neuron), so
-        ``result.penalty`` / ``reml_objective`` / ``reml_at_boundary`` become
-        ``(n_units,)`` vectors and ``penalty_selected_by_reml`` a per-unit mask;
-        zero-spike units fall back to the pooled ``λ`` over the informative units
-        (``penalty_selected_by_reml=False``, ``reml_objective=nan``). A fixed
-        ``penalty`` beats ``pooled`` (scalar ``λ``); ``pooled`` is a no-op at
-        ``penalty_rank == 0`` or when no unit spikes. ``pooled=False`` with a ratio
-        method raises ``ValueError``.
+        GLM-only setting; ``pooled=False`` raises ``ValueError``.
     speed : ndarray, shape (n_samples,), optional
         Precomputed instantaneous speed at each trajectory sample (physical
         units / second). Only used when ``min_speed`` is set; auto-derived from
@@ -6099,8 +6077,7 @@ def place_cell_significance(
         periods are excluded from BOTH the (shared) occupancy denominator AND
         every per-neuron spike numerator using ONE shared per-interval speed
         gate, so firing rates stay correct. When ``None`` (default) NO speed
-        filtering is applied and the output is byte-for-byte identical to
-        before. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
+        filtering is applied. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
         magnitude of the 0.1 s Gaussian-smoothed velocity; pass an explicit
         ``speed`` for geodesic / linearized-track environments.
     max_gap : float or None, default=0.5
@@ -6154,13 +6131,10 @@ def place_cell_significance(
         Storage dtype of the returned ``(n_units, n_bins)`` rate-map array.
         ``np.float32`` halves the stored rate-map array. The rate computation
         is still performed in float64 and only the final result is cast, so
-        float32 values match float64 within float32 tolerance.
-        ``decode_session`` / ``decode_session_summary`` now accept their own
-        ``dtype`` parameter (default float64) that honors float32 end-to-end --
-        the encoding-model working set AND the posterior -- so
-        ``decode_session(dtype=np.float32)`` halves the decode working set on
-        the golden path. Default ``np.float64`` leaves every existing caller
-        byte-for-byte unchanged. Any other dtype raises ``ValueError``.
+        float32 values match float64 within float32 tolerance. To halve the
+        decoding working set as well, pass ``dtype=np.float32`` to
+        ``decode_session`` / ``decode_session_summary``. Any other dtype
+        raises ``ValueError``.
     unit_ids : ndarray or sequence, optional
         Per-unit identity labels (integers or strings), one per neuron in
         the same order as ``spike_times``. Stored on the result's
@@ -6180,8 +6154,10 @@ def place_cell_significance(
     Returns
     -------
     dict[Hashable, ShuffleTestResult]
-        Per-unit observed score, null scores, corrected p-value and z-score,
-        keyed by unit label in input order. Invalid observed scores yield NaN p-values.
+        Per-unit observed spatial information (bits/spike), null scores,
+        corrected p-value and z-score, keyed by unit label in input order. An
+        undefined observed score (a silent unit) or a null with no finite
+        score gives a NaN p-value.
 
     Raises
     ------

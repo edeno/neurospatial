@@ -686,9 +686,10 @@ def count_place_cells(
     """
     Count cells at or above a spatial information threshold.
 
-    Determines number of spatially selective cells in a population based on
-    Skaggs spatial information criterion. Standard method for identifying
-    place cells vs. non-selective cells.
+    A threshold screen on Skaggs spatial information [1]_. Plug-in
+    information is biased upward at low spike counts, so the count includes
+    untuned cells in short recordings; use ``place_cell_significance`` for a
+    shuffle test.
 
     Parameters
     ----------
@@ -697,8 +698,8 @@ def count_place_cells(
         Typically computed using `spatial_information()`.
     threshold : float, default=0.5
         Minimum spatial information (bits/spike) to count a cell. The cutoff
-        is inclusive: a cell exactly at the threshold counts. Default of 0.5
-        bits/spike is standard in literature (Skaggs et al., 1996).
+        is inclusive: a cell exactly at the threshold counts. 0.5 bits/spike
+        is a common screening value, not a calibrated test.
 
     Returns
     -------
@@ -721,19 +722,15 @@ def count_place_cells(
 
     Notes
     -----
-    **Classification criteria**:
-
-    - **Place cells**: Spatial information >= 0.5 bits/spike
-    - **Interneurons**: Mean firing rate > 10 Hz (handled separately)
-    - **Non-selective**: Low spatial information or uniform firing
-
-    NaN values (e.g., from cells with zero firing) are excluded from count.
+    NaN values (undefined information, e.g. silent cells) are not counted.
+    The screen does not separate interneurons or other cell classes.
 
     References
     ----------
-    .. [1] Skaggs, W. E., McNaughton, B. L., et al. (1996). Theta phase
-           precession in hippocampal neuronal populations and the compression
-           of temporal sequences. Hippocampus, 6(2), 149-172.
+    .. [1] Skaggs, W. E., McNaughton, B. L., Gothard, K. M., & Markus, E. J.
+           (1993). An information-theoretic approach to deciphering the
+           hippocampal code. Advances in Neural Information Processing
+           Systems 5, 1030-1037.
     """
     # Exclude NaN values (cells with undefined information)
     valid_mask = ~np.isnan(spatial_information)

@@ -95,23 +95,15 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
         return int(self.scores.shape[0])
 
     def __getitem__(self, idx: Any) -> Any:
-        # Delegate to the ndarray's own __getitem__ so all forms of
-        # ndarray indexing work transparently: integer (-> scalar float),
-        # slice (-> 1-D ndarray), boolean mask (-> 1-D ndarray), array
-        # of indices (-> 1-D ndarray). The downstream code that used to
-        # write `scores[~np.isnan(scores)]` against a plain ndarray
-        # keeps working when `scores` is a BatchScoresResult.
+        # ndarray indexing: integer -> float, slice/mask/index array -> 1-D.
         return self.scores[idx]
 
     def __array__(
         self, dtype: Any = None, copy: bool | None = None
     ) -> NDArray[np.float64]:
-        # NumPy ufuncs (np.isnan, np.where, etc.) call __array__ when
-        # given a non-ndarray input. Returning the underlying scores
-        # array lets callers use BatchScoresResult anywhere they used
-        # to use a plain (n_neurons,) array of scores. The ``copy``
-        # keyword is required by NumPy 2's array protocol -- without it
-        # ``np.asarray(result, copy=False)`` raises in NumPy 2.
+        # NumPy functions (np.isnan, np.where, ...) call __array__ on a
+        # non-ndarray input, so the result works wherever an (n_neurons,)
+        # score array does. NumPy 2's array protocol passes ``copy``.
         #
         # We mirror plain ndarray semantics: copy=False with a dtype that
         # requires a cast must raise, because the request is impossible
@@ -137,12 +129,7 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
 
     @property
     def shape(self) -> tuple[int, ...]:
-        """Shape of the underlying scores array, ``(n_neurons,)``.
-
-        Pass-through to ``self.scores.shape`` so callers reading
-        ``result.shape`` can keep doing so when the function previously
-        returned a plain ndarray.
-        """
+        """Shape of the underlying scores array, ``(n_neurons,)``."""
         return self.scores.shape
 
     @property
@@ -1204,8 +1191,8 @@ def mutual_information(
     migration = (
         "mutual_information requires a 2-D joint position-response histogram. "
         "Mean firing rates and occupancy do not determine mutual information. "
-        "Use information_per_second(firing_rate, occupancy) for the previous "
-        "Skaggs calculation in bits/second."
+        "For a rate map, use information_per_second(firing_rate, occupancy) "
+        "for the Skaggs information rate in bits/second."
     )
     if occupancy is not None:
         raise ValueError(migration)

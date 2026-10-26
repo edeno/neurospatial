@@ -360,9 +360,8 @@ def smooth_rate_maps_batch(
         Storage dtype of the returned rate-map array. The matmul/division is
         always done in float64 for accuracy; only the final returned array is
         cast to ``dtype``. ``np.float32`` halves the ``(n_neurons, n_bins)``
-        storage. Default ``np.float64`` leaves every existing caller
-        byte-for-byte unchanged. Honored on the NumPy path; on the JAX path the
-        cast is applied to the returned array as well.
+        storage. Honored on the NumPy path; on the JAX path the cast is
+        applied to the returned array as well.
 
     Returns
     -------
@@ -879,12 +878,11 @@ def _diffusion_kde(
     smoothing method and matches the public
     ``result.occupancy < min_occupancy`` contract.
 
-    ``env.diffuse`` is a pure linear operator (unlike the shipped clipped dense
-    kernel), so under truncation the smoothed densities carry tolerance-level
-    noise, including negative lobes; the **resolution gate** divides only where
-    the occupancy density is resolved above that noise, and the output rate is
-    clipped ``>= 0`` (decode nonnegativity, as the shipped clipped-kernel path
-    guaranteed).
+    ``env.diffuse`` is a linear operator, so under truncation the smoothed
+    densities carry tolerance-level noise, including negative lobes; the
+    **resolution gate** divides only where the occupancy density is resolved
+    above that noise, and the output rate is clipped ``>= 0`` (a firing rate
+    is non-negative, which decoding relies on).
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -996,10 +994,9 @@ def _binned(
     if bandwidth <= 0 or np.all(np.isnan(raw_rate)):
         return raw_rate.astype(np.float64)
 
-    # A firing rate is non-negative. The shipped dense-kernel binned path was
-    # structurally >= 0 (clipped kernel times non-negative raw rate); the linear
-    # apply-path can leave tolerance-level negatives at far/unvisited bins, so
-    # clip here (as _diffusion_kde does). _binned_gate itself stays sign-
+    # A firing rate is non-negative. The linear apply-path can leave
+    # tolerance-level negatives at far/unvisited bins, so clip here (as
+    # _diffusion_kde does). _binned_gate itself stays sign-
     # preserving -- resample uses the same masked-average pattern on signed
     # fields -- so the clip lives in this rate wrapper, not the helper.
     smoothed = np.clip(_binned_gate(env, raw_rate, bandwidth), 0.0, None)

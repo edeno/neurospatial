@@ -235,8 +235,7 @@ def resolve_speed(
     min_speed : float or None
         Speed threshold. When ``None``, NO speed filtering happens: this
         returns ``None`` and the caller passes nothing speed-related to
-        ``env.occupancy`` (so ``max_gap`` etc. stay exactly as before — the
-        output is byte-for-byte unchanged). It is an error to pass ``speed``
+        ``env.occupancy``. It is an error to pass ``speed``
         without ``min_speed`` (see Raises): a bare ``speed`` would otherwise be
         silently ignored, asymmetric with ``env.occupancy`` (which raises on
         ``min_speed`` without ``speed``).
@@ -283,8 +282,7 @@ def resolve_speed(
                 "min_speed=<threshold> to enable speed filtering, or omit "
                 "speed."
             )
-        # No filtering requested: return None so callers leave env.occupancy
-        # exactly as before (byte-for-byte unchanged output).
+        # No filtering requested: callers pass no speed gate.
         return None
 
     times = np.asarray(times, dtype=np.float64)
@@ -1336,8 +1334,7 @@ def bin_spike_trains(
         :func:`resolve_speed`.
     min_speed : float or None
         Minimum speed threshold (physical units / second). When ``None``
-        (default) no speed filtering happens and the output is byte-for-byte
-        unchanged. When set, low-speed intervals are excluded from BOTH
+        (default) no speed filtering happens. When set, low-speed intervals are excluded from BOTH
         occupancy and spike counts.
     max_gap : float or None
         Maximum time gap in seconds. Intervals with ``dt > max_gap`` are
