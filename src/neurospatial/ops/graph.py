@@ -246,18 +246,13 @@ def _neighbor_reduce_linear(
     a sparse matrix-vector product ``A @ x`` where ``A`` is the binary adjacency
     matrix (with the diagonal added when ``include_self`` is True).
     """
-    import networkx as nx
     import scipy.sparse as sp
 
-    n_bins = env.n_bins
+    from neurospatial.ops.distance import _bin_adjacency
 
-    # Binary adjacency matrix ordered by node id 0..n_bins-1.
-    adjacency = nx.to_scipy_sparse_array(
-        env.connectivity,
-        nodelist=range(n_bins),
-        weight=None,
-        format="csr",
-        dtype=np.float64,
+    n_bins = env.n_bins
+    adjacency = _bin_adjacency(
+        env.connectivity, weight=None, operation="neighbor_reduce()"
     )
     if include_self:
         adjacency = adjacency + sp.eye(n_bins, format="csr", dtype=np.float64)

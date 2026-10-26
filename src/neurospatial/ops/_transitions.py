@@ -92,9 +92,11 @@ def _random_walk_transitions(
         Row-stochastic transitions, or the adjacency matrix when not
         normalized. Isolated bins have zero rows.
     """
-    n_bins = graph.number_of_nodes()
-    adjacency = nx.adjacency_matrix(graph, nodelist=range(n_bins))
-    transition_matrix = adjacency.astype(float).tocsr()
+    from neurospatial.ops.distance import _bin_adjacency
+
+    transition_matrix = scipy.sparse.csr_matrix(
+        _bin_adjacency(graph, weight=None, operation="transitions()")
+    )
     if normalize:
         transition_matrix = _row_normalize(transition_matrix)
     return transition_matrix
