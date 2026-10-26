@@ -207,7 +207,7 @@ class TestComputeEgocentricBearing:
         assert_allclose(bearing, [[-np.pi / 2]], atol=1e-10)
 
     def test_bearing_behind_target(self):
-        """Bearing is ±π when target is behind."""
+        """Bearing is +π, not -π, when the target is directly behind."""
         from neurospatial.ops.egocentric import compute_egocentric_bearing
 
         # Target at (-10, 0), animal at origin facing East
@@ -216,8 +216,8 @@ class TestComputeEgocentricBearing:
         heading = np.array([0.0])
 
         bearing = compute_egocentric_bearing(position, heading, target)
-        # Should be π or -π (both valid)
-        assert np.abs(np.abs(bearing[0, 0]) - np.pi) < 1e-10
+        # Bearings lie in (-π, π], so directly behind is +π.
+        assert_allclose(bearing, [[np.pi]], rtol=0, atol=1e-10)
 
     def test_angle_wrapping_near_pi(self):
         """Angles wrap correctly near ±π boundary."""
@@ -623,3 +623,48 @@ class TestWrapAngleAntipode:
 
         bearing = compute_egocentric_bearing(position, heading, target)
         assert_allclose(bearing, [[np.pi]])
+
+
+class TestMissingObservations:
+    """A NaN position or heading is a missing observation, never a number."""
+
+    targets = np.array([[10.0, 0.0], [0.0, 10.0]])
+
+    @pytest.mark.parametrize("missing", ["position", "heading"])
+    def test_transform_and_bearing_are_nan_at_a_missing_sample(self, missing):
+        from neurospatial.ops.egocentric import (
+            allocentric_to_egocentric,
+            compute_egocentric_bearing,
+        )
+
+        positions = np.array([[0.0, 0.0], [1.0, 2.0], [3.0, 1.0]])
+        headings = np.array([0.0, 0.5, -1.0])
+        if missing == "position":
+            positions[1, 0] = np.nan
+        else:
+            headings[1] = np.nan
+        ego = allocentric_to_egocentric(positions, headings, self.targets)
+        bearing = compute_egocentric_bearing(positions, headings, self.targets)
+        assert np.isnan(ego[1]).all()
+        assert np.isnan(bearing[1]).all()
+        # The other samples are unaffected.
+        assert np.isfinite(ego[[0, 2]]).all()
+        assert np.isfinite(bearing[[0, 2]]).all()
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_distance_ignores_a_missing_heading(self, metric):
+        from neurospatial import Environment
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        grid = np.stack(np.meshgrid(np.arange(21.0), np.arange(21.0)), -1)
+        env = Environment.from_samples(grid.reshape(-1, 2), bin_size=2.0)
+        positions = np.array([[4.0, 4.0], [6.0, 8.0]])
+        headings = np.array([np.nan, np.nan])
+        distances = compute_egocentric_distance(
+            positions, headings, self.targets, metric=metric, env=env
+        )
+        expected = compute_egocentric_distance(
+            positions, None, self.targets, metric=metric, env=env
+        )
+        assert np.isfinite(distances).all()
+        np.testing.assert_array_equal(distances, expected)
