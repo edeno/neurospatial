@@ -27,8 +27,12 @@ Three views of the same operator serve the three consumers (see
 - ``mode="average"`` returns ``H`` (row-stochastic) for averaging an
   **intensive** field (rate maps), volume-unbiased on non-uniform ``M``.
 
-Public entry points are ``Environment.compute_kernel`` / ``Environment.smooth``;
-:func:`diffusion_kernel` is the internal adapter they route through.
+Public entry points are ``Environment.compute_kernel``, which builds the dense
+kernel with :func:`heat_kernel_from_W`, and ``Environment.smooth`` /
+``Environment.diffuse``, which apply the operator matrix-free through a cached
+truncated eigenbasis and never build the kernel. :func:`diffusion_kernel`
+builds the same dense kernel from any object that provides the diffusion
+geometry.
 """
 
 from __future__ import annotations
@@ -55,10 +59,10 @@ if TYPE_CHECKING:
     from neurospatial.ops._protocols import DiffusionGeometryConsumer
     from neurospatial.ops._types import KernelMode
 
-# Public entry points. The eigenbasis/apply-path functions below
-# (apply_heat_operator, _diffusion_apply, heat_kernel_rank,
-# _component_support_mask) are internal
-# machinery imported explicitly by the smoothing consumers, not `import *` API.
+# Module exports. The eigenbasis/apply-path functions below are internal:
+# ``_diffusion_apply`` serves ``Environment.diffuse`` (environment/_fields.py),
+# ``_component_support_mask`` the encoding rate-map smoothing, and
+# ``apply_heat_operator`` / ``heat_kernel_rank`` are used only in this module.
 __all__ = [
     "MRFBasis",
     "diffusion_kernel",
@@ -79,13 +83,13 @@ _HEAT_KERNEL_RANK_START = 32
 # the eigenbasis product, measured near 1e-14 of the largest output.
 _FULL_BASIS_APPLY_RTOL = 1e-13
 
-# MRF penalty-basis resolver constant (consumed by ``_select_live_basis`` and the
-# ``Environment.get_mrf_basis`` glue). ``_DEFAULT_MAX_RANK`` is the requested-rank
-# cap ``R`` used when ``rank is None``. It lives here (not in the encoding tier)
-# because the pure selector below returns ``MRFBasis`` and must not import from a
-# higher tier; the encoding-tier fit re-imports it rather than redefining it. The
-# null-vs-fill split is STRUCTURAL (see :func:`_null_mode_mask`), never an
-# absolute eigenvalue cutoff, so no null-tolerance constant is needed.
+# MRF penalty-basis resolver constant (consumed by ``_target_live_rank`` and
+# ``_select_live_basis`` in this module). ``_DEFAULT_MAX_RANK`` is the
+# requested-rank cap ``R`` used when ``rank is None``. It lives here (not in the
+# encoding tier) because the pure selector below returns ``MRFBasis`` and must
+# not import from a higher tier; no other module uses it. The null-vs-fill split
+# is STRUCTURAL (see :func:`_null_mode_mask`), never an absolute eigenvalue
+# cutoff, so no null-tolerance constant is needed.
 _DEFAULT_MAX_RANK = 250
 
 
@@ -201,11 +205,12 @@ class _MRFEigenbasis:
         )
 
 
-# Tiny floor for masked/support-gated denominators in the consumers (the raw
-# linear apply can leave a truncation-noise-tiny value where the dense
-# denominator was tiny-positive; the W-component support gate keeps the bin, and
-# this floor keeps the division finite -- a near-boundary bin stays finite but is
-# not value-equal to the dense path, which is part of the truncation contract).
+# Tiny floor for the support-gated denominator of
+# :func:`_masked_diffusion_average` (the raw linear apply can leave a
+# truncation-noise-tiny value where the dense denominator was tiny-positive; the
+# W-component support gate keeps the bin, and this floor keeps the division
+# finite -- a near-boundary bin stays finite but is not value-equal to the dense
+# path, which is part of the truncation contract).
 _DIFFUSE_DENOM_EPS = 1e-12
 
 # A smoothed weight is resolved when it exceeds this many times the diffusion
@@ -283,7 +288,7 @@ def _warn_dense_kernel(n_bins: int) -> None:
 def heat_kernel_from_W(
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
-    sigma: float,
+    bandwidth: float,
     *,
     mode: KernelMode,
 ) -> NDArray[np.float64]:
@@ -305,7 +310,7 @@ def heat_kernel_from_W(
         Finite-volume weight matrix (see :func:`_raw_heat_operator`).
     volumes : NDArray[np.float64], shape (n_bins,)
         Per-bin cell volumes ``M``.
-    sigma : float
+    bandwidth : float
         Physical smoothing standard deviation.
     mode : {"transition", "density", "average"}
         Which normalized view to return.
@@ -318,8 +323,8 @@ def heat_kernel_from_W(
     Raises
     ------
     ValueError
-        If ``mode`` is not one of the three supported values, or ``sigma`` is
-        not finite and positive.
+        If ``mode`` is not one of the three supported values, or ``bandwidth``
+        is not finite and positive.
 
     Warns
     -----
@@ -341,13 +346,13 @@ def heat_kernel_from_W(
         raise ValueError(
             f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
         )
-    if not (np.isfinite(sigma) and sigma > 0.0):
-        raise ValueError(f"sigma must be finite and > 0, got {sigma}.")
+    if not (np.isfinite(bandwidth) and bandwidth > 0.0):
+        raise ValueError(f"bandwidth must be finite and > 0, got {bandwidth}.")
     _warn_dense_kernel(volumes.shape[0])
 
     # Clip round-off negatives (real cross-block lobes only appear under the
     # truncated env.diffuse apply-path, not on this full-rank dense path).
-    H = np.clip(_raw_heat_operator(W, volumes, sigma), 0.0, None)
+    H = np.clip(_raw_heat_operator(W, volumes, bandwidth), 0.0, None)
 
     kernel: NDArray[np.float64]
     if mode == "average":
@@ -456,7 +461,7 @@ def _block_eigenbasis(
             "to the no-shift-invert which='SM' solver, which may return a "
             "lower-quality eigenbasis. Consider a larger bandwidth.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         eigvals, eigvecs = scipy.sparse.linalg.eigsh(block, k=rank, which="SM", v0=v0)
 
@@ -1291,7 +1296,7 @@ def _masked_diffusion_average(
 # ---------------------------------------------------------------------------
 def diffusion_kernel(
     env: DiffusionGeometryConsumer,
-    sigma: float,
+    bandwidth: float,
     *,
     mode: KernelMode = "density",
 ) -> NDArray[np.float64]:
@@ -1305,7 +1310,7 @@ def diffusion_kernel(
     ----------
     env : Environment
         Environment (any supported layout).
-    sigma : float
+    bandwidth : float
         Physical smoothing standard deviation (finite, > 0).
     mode : {"transition", "density", "average"}, default="density"
         Kernel orientation (see :func:`heat_kernel_from_W`). ``"average"`` is
@@ -1321,8 +1326,8 @@ def diffusion_kernel(
     NotImplementedError
         If the environment's layout supplies no diffusion geometry.
     ValueError
-        On invalid ``sigma`` or ``mode``, or on provider geometry that violates
+        On invalid ``bandwidth`` or ``mode``, or on provider geometry that violates
         the diffusion contract.
     """
     geometry = env.get_diffusion_geometry()
-    return heat_kernel_from_W(geometry.W, geometry.volumes, sigma, mode=mode)
+    return heat_kernel_from_W(geometry.W, geometry.volumes, bandwidth, mode=mode)

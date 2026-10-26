@@ -392,27 +392,21 @@ class TestGradientOperator:
         np.testing.assert_allclose(grad_field, 0.0, atol=1e-10)
 
     def test_gradient_linear_field_regular_grid(self):
-        """Test that gradient of linear field is constant on regular grid."""
-        # Create 1D chain with uniform spacing
-        data = np.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
-        env = Environment.from_samples(data, bin_size=1.0)
+        """A field rising 3 units per cm has gradient +-3 per cm on every edge.
 
-        # Create linear field: f(x) = 2*x
-        # Bins at x = 0, 1, 2, 3, 4
-        field = np.array([0.0, 2.0, 4.0, 6.0, 8.0])
-
+        The 2.5 cm spacing makes the division by edge length visible: the raw
+        difference between neighbors is 7.5.
+        """
         from neurospatial.ops.calculus import gradient
 
-        # Compute gradient
-        grad_field = gradient(env, field)
+        env = Environment.from_samples(np.arange(0.0, 12.5, 2.5)[:, None], bin_size=2.5)
+        x = env.bin_centers[:, 0]
+        grad_field = gradient(env, 3.0 * x)
 
-        # For uniform grid with spacing 1.0 and slope 2.0,
-        # gradient should be constant (2.0 / 1.0 = 2.0)
-        # The derivative divides the field difference by the edge distance
-        grad_values = np.abs(grad_field)
-
-        # All gradient magnitudes should be similar (constant gradient)
-        assert np.allclose(grad_values, grad_values[0], rtol=0.1)
+        src, dst = env.edge_pairs[:, 0], env.edge_pairs[:, 1]
+        direction = np.sign(x[dst] - x[src])  # +1 where the edge points up in x
+        assert np.all(direction != 0)
+        np.testing.assert_allclose(grad_field, 3.0 * direction, rtol=1e-12)
 
     def test_gradient_validation(self):
         """Test that gradient validates input field shape."""

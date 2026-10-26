@@ -770,3 +770,26 @@ def test_perf_large_grid(baseline):
     big_time = time.perf_counter() - t0
     assert np.all(np.isfinite(out_big))
     assert big_time < 120.0, f"10k-bin apply took {big_time:.1f}s"
+
+
+def test_shift_invert_fallback_warning_points_at_the_caller(monkeypatch):
+    """The fallback warning names the line that called env.diffuse, not diffusion.py."""
+    import scipy.sparse.linalg
+
+    from neurospatial import Environment
+
+    original = scipy.sparse.linalg.eigsh
+
+    def eigsh_without_shift_invert(*args, **kwargs):
+        if "sigma" in kwargs:
+            raise RuntimeError("factorization failed")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(scipy.sparse.linalg, "eigsh", eigsh_without_shift_invert)
+    edges = np.arange(41, dtype=float)
+    env = Environment.from_grid_mask(np.ones((40, 40), bool), (edges, edges))
+    field = np.zeros(env.n_bins)
+    field[0] = 1.0
+    with pytest.warns(UserWarning, match="Shift-invert eigsh failed") as record:
+        env.diffuse(field, bandwidth=10.0, mode="transition")
+    assert {w.filename for w in record} == {__file__}

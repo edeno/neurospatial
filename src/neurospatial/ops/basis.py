@@ -8,84 +8,97 @@ Which Basis Should I Use?
 -------------------------
 **First time / Simple place cell models** → `geodesic_rbf_basis`
     Start here. Works like familiar Gaussian kernels but respects walls.
-    Fast computation. Easy to visualize and interpret.
+    Easy to visualize and interpret.
     Good for: GLMs, simple decoding models, place field decomposition.
 
 **Multi-scale spatial structure** → `heat_kernel_wavelet_basis`
     Captures both local bumps and compartment-level structure simultaneously.
     Smoother than RBF. Based on diffusion physics.
     Good for: Environments with rooms/corridors, hierarchical place cells.
-    Cost: 2-3× slower than RBF (still fast for typical environments).
+    Cost: one sparse matrix exponential per scale.
 
 **Very large environments (>10,000 bins)** → `chebyshev_filter_basis`
     Fastest computation (no distance matrix). Strict k-hop locality.
     Good for: Large arenas, online/real-time applications.
     Tradeoff: Less intuitive parameterization (degree vs spatial extent).
 
-**Not sure?** Start with `geodesic_rbf_basis(env, n_centers=50, sigma=10.0)`.
+**Not sure?** Start with `geodesic_rbf_basis(env, n_centers=50, bandwidth=10.0)`.
 You can always switch later—all three work the same way in GLMs.
 
-**Want automatic parameter selection?** Use `spatial_basis()`:
-    >>> basis = spatial_basis(env)  # Automatic, sensible defaults  # doctest: +SKIP
+**Want automatic parameter selection?** Use ``spatial_basis(env)``, which
+picks centers and bandwidths from the environment's size.
 
 Scale Parameters Across Bases
 ------------------------------
 The three basis types use different scale parameters:
 
-- geodesic_rbf_basis(sigma=...): RBF bandwidth in environment units (cm)
+- geodesic_rbf_basis(bandwidth=...): RBF bandwidth in environment units (cm)
 - heat_kernel_wavelet_basis(scales=...): Diffusion time in bin-spacing² units;
   standard deviation sqrt(2*scale) bins
 - chebyshev_filter_basis(max_degree=...): How many bins away from center the
   function extends (degree 5 = nonzero within 5 bins of center)
 
 Rough equivalence for spatial extent:
-    sigma ≈ sqrt(2*scale) * bin_size ≈ max_degree * bin_size
+    bandwidth ≈ sqrt(2*scale) * bin_size ≈ max_degree * bin_size
 
 For example, with 2cm bins and 10cm desired spatial extent:
-    sigma=10.0  or  scales=[12.5]  or  max_degree=5
+    bandwidth=10.0  or  scales=[12.5]  or  max_degree=5
 
 Quick Start
 -----------
->>> from neurospatial import Environment  # doctest: +SKIP
->>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
->>>
->>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
->>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)  # doctest: +SKIP
->>>
->>> # Create GLM design matrix
->>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
->>> X = basis[:, bin_indices].T  # Shape: (n_times, n_basis)  # doctest: +SKIP
+A GLM needs one design-matrix row per time bin, aligned with the spike counts
+of that time bin. Look up the bin of every position sample with
+``env.bin_at`` (not ``env.bin_sequence``, which drops repeated bins) and keep
+the samples inside the environment: ``bin_at`` marks the others with -1,
+which as an index would select the last bin.
+
+>>> import numpy as np
+>>> from neurospatial import Environment
+>>> from neurospatial.ops import geodesic_rbf_basis
+>>> rng = np.random.default_rng(0)
+>>> positions = rng.uniform(0, 100, size=(2000, 2))  # (n_time, 2), cm
+>>> env = Environment.from_samples(positions, bin_size=5.0)
+>>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=10.0, rng=0)
+>>> bins = env.bin_at(positions)  # (n_time,), -1 outside the environment
+>>> inside = bins >= 0
+>>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
+>>> X.shape == (int(inside.sum()), 50)
+True
 
 Full GLM Workflow
 -----------------
->>> from neurospatial import Environment  # doctest: +SKIP
->>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
->>> import numpy as np  # doctest: +SKIP
+Fit a simulated place cell (field at (30, 60) cm) with a Poisson GLM and
+project the coefficients back to a rate map.
+
+>>> import numpy as np
+>>> from sklearn.linear_model import PoissonRegressor
+>>> from neurospatial import Environment
+>>> from neurospatial.ops import geodesic_rbf_basis
+>>> rng = np.random.default_rng(0)
+>>> dt = 0.02  # s per time bin
+>>> positions = rng.uniform(0, 100, size=(5000, 2))  # one row per time bin, cm
+>>> distance_sq = np.sum((positions - [30.0, 60.0]) ** 2, axis=1)
+>>> rate = 1.0 + 20.0 * np.exp(-distance_sq / (2 * 10.0**2))  # Hz
+>>> spike_counts = rng.poisson(rate * dt)  # (n_time,)
 >>>
->>> # 1. Create environment and basis
->>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
->>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=[5.0, 10.0])  # doctest: +SKIP
+>>> # 1. Environment and a two-scale basis
+>>> env = Environment.from_samples(positions, bin_size=5.0)
+>>> basis = geodesic_rbf_basis(env, n_centers=30, bandwidth=[10.0, 20.0], rng=0)
 >>>
->>> # 2. Create design matrix from trajectory
->>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
->>> X_spatial = basis[:, bin_indices].T  # (n_times, n_basis)  # doctest: +SKIP
+>>> # 2. Design matrix, one row per time bin inside the environment
+>>> bins = env.bin_at(positions)
+>>> inside = bins >= 0
+>>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
+>>> y = spike_counts[inside]
 >>>
->>> # 3. Combine with other features (optional)
->>> speed = compute_speed(times, positions)  # doctest: +SKIP
->>> X = np.column_stack([X_spatial, speed[:, None]])  # doctest: +SKIP
+>>> # 3. Fit the GLM
+>>> model = PoissonRegressor(alpha=1e-4, max_iter=1000).fit(X, y)
 >>>
->>> # 4. Fit GLM (example with statsmodels)
->>> import statsmodels.api as sm  # doctest: +SKIP
->>> X = sm.add_constant(X)  # doctest: +SKIP
->>> model = sm.GLM(spike_counts, X, family=sm.families.Poisson())  # doctest: +SKIP
->>> result = model.fit()  # doctest: +SKIP
->>>
->>> # 5. Visualize fitted place field
->>> beta_spatial = result.params[
-...     1 : len(basis) + 1
-... ]  # Spatial coefficients  # doctest: +SKIP
->>> place_field = beta_spatial @ basis  # Project back to space  # doctest: +SKIP
->>> env.plot_field(place_field, title="Fitted Place Field")  # doctest: +SKIP
+>>> # 4. Fitted rate in every bin (Hz); plot it with env.plot_field
+>>> fitted_rate = np.exp(model.intercept_ + basis.T @ model.coef_) / dt
+>>> peak = env.bin_centers[np.argmax(fitted_rate)]
+>>> bool(np.linalg.norm(peak - [30.0, 60.0]) < 5.0)
+True
 
 References
 ----------
@@ -102,6 +115,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import MissingFaces, require_cartesian
 
 if TYPE_CHECKING:
@@ -131,7 +145,7 @@ def select_basis_centers(
     env: BasisCentersConsumer,
     *,
     n_centers: int,
-    method: Literal["kmeans", "farthest_point", "random", "grid"] = "kmeans",
+    method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.int_]:
     """
@@ -144,27 +158,30 @@ def select_basis_centers(
     n_centers : int
         Number of centers to select.
 
-        **Rule of thumb**: n_centers ≈ (environment area) / (sigma²)
+        **Rule of thumb**: n_centers ≈ (environment area) / (bandwidth²)
 
-        - For 100cm × 100cm maze with sigma=10cm: n_centers ≈ 100
-        - For 50cm linear track with sigma=5cm: n_centers ≈ 10
+        - For 100cm × 100cm maze with bandwidth=10cm: n_centers ≈ 100
+        - For 50cm linear track with bandwidth=5cm: n_centers ≈ 10
 
         Too few centers: May miss local spatial structure
         Too many centers: Redundant coverage, overfitting risk
 
         Start conservative (30-50) and increase if place field
         reconstructions are too smooth.
-    method : {"kmeans", "farthest_point", "random", "grid"}
+    method : {"kmeans", "farthest_point", "random"}
         Selection strategy:
 
         - "kmeans": K-means clustering on bin_centers, return nearest bins
           to cluster centroids. Good general-purpose choice.
         - "farthest_point": Greedy farthest-point sampling using geodesic
-          distance. Guarantees maximum spread but O(n_centers * n_bins).
+          distance, starting from a random bin. Each new center is the bin
+          farthest from those already chosen: a greedy heuristic that
+          spreads centers well, not a guaranteed maximum spread. Runs one
+          shortest-path search per center.
         - "random": Uniform random selection. Fast but may cluster.
-        - "grid": Regular grid subsampling (only for grid-based environments).
     rng : int, Generator, or None
-        Random seed or generator for reproducibility (kmeans, random methods).
+        Random seed or generator for reproducibility. Seeds k-means, the
+        first farthest-point center, and random selection.
 
     Returns
     -------
@@ -176,7 +193,7 @@ def select_basis_centers(
     ValueError
         If n_centers > n_bins.
         If n_centers < 1.
-        If method="grid" but environment is not grid-based.
+        If method is not one of the methods above.
     CartesianOnlyError
         If method="kmeans" and ``env`` is polar: k-means would cluster
         ``(distance, angle)`` bin centers as ``(x, y)``. Use
@@ -184,10 +201,17 @@ def select_basis_centers(
 
     Examples
     --------
-    >>> centers = select_basis_centers(
-    ...     env, n_centers=50, method="kmeans"
-    ... )  # doctest: +SKIP
-    >>> basis = geodesic_rbf_basis(env, centers=centers, sigma=5.0)  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import geodesic_rbf_basis, select_basis_centers
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> centers = select_basis_centers(env, n_centers=50, method="kmeans", rng=0)
+    >>> centers.shape
+    (50,)
+    >>> basis = geodesic_rbf_basis(env, centers=centers, bandwidth=5.0)
+    >>> basis.shape == (50, env.n_bins)
+    True
     """
     # Input validation
     if n_centers < 1:
@@ -231,12 +255,10 @@ def select_basis_centers(
         )
     elif method == "random":
         return _select_centers_random(env.n_bins, n_centers, generator)
-    elif method == "grid":
-        return _select_centers_grid()
     else:
         raise ValueError(
             f"Unknown method: {method!r}. "
-            f"Expected one of: 'kmeans', 'farthest_point', 'random', 'grid'."
+            f"Expected one of: 'kmeans', 'farthest_point', 'random'."
         )
 
 
@@ -287,7 +309,9 @@ def _select_centers_farthest_point(
     from scipy.sparse.csgraph import shortest_path
 
     # Get adjacency matrix for shortest path computation
-    adjacency = nx.to_scipy_sparse_array(connectivity, weight="distance", format="csr")
+    adjacency = nx.to_scipy_sparse_array(
+        connectivity, nodelist=range(n_bins), weight="distance", format="csr"
+    )
 
     # Start with a random point
     centers = [int(rng.integers(0, n_bins))]
@@ -320,18 +344,60 @@ def _select_centers_farthest_point(
     return np.asarray(centers, dtype=np.int_)
 
 
-def _select_centers_grid() -> NDArray[np.int_]:
-    """Select centers using regular grid subsampling."""
-    # For now, raise NotImplementedError - grid method requires
-    # knowing the grid structure which not all environments have
-    raise NotImplementedError(
-        "Grid method for center selection is not yet implemented.\n"
-        "\n"
-        "Use one of the available methods:\n"
-        "  - 'kmeans': Good general-purpose choice\n"
-        "  - 'farthest_point': Maximizes spatial spread\n"
-        "  - 'random': Fast but may cluster"
-    )
+def _validate_centers(centers: Any, n_bins: int) -> NDArray[np.int_]:
+    """Return ``centers`` as bin indices, refusing values that are not bins.
+
+    Parameters
+    ----------
+    centers : array-like of int, shape (n_centers,)
+        Bin indices of the basis centers.
+    n_bins : int
+        Number of bins in the environment.
+
+    Returns
+    -------
+    NDArray[np.int_], shape (n_centers,)
+        The same indices.
+
+    Raises
+    ------
+    TypeError
+        If ``centers`` is not an integer array: a fractional value would be
+        truncated to a different bin.
+    ValueError
+        If ``centers`` is not 1-D or holds an index outside ``[0, n_bins)``,
+        such as the outside marker -1, which would wrap to the last bin.
+    """
+    array = np.asarray(centers)
+    if not np.issubdtype(array.dtype, np.integer):
+        raise TypeError(
+            _format_error(
+                f"centers must be integer bin indices, got dtype {array.dtype}.",
+                why="A fractional center would be truncated to a different bin.",
+                fix="pass bin indices, e.g. env.bin_at(points) or "
+                "select_basis_centers(env, n_centers=...)",
+            )
+        )
+    if array.ndim != 1:
+        raise ValueError(
+            _format_error(
+                f"centers must be a 1-D array of bin indices, got shape {array.shape}.",
+                fix="pass one bin index per basis center",
+            )
+        )
+    invalid = array[(array < 0) | (array >= n_bins)]
+    if invalid.size:
+        raise ValueError(
+            _format_error(
+                f"centers holds {invalid.size} value(s) that are not bins of this "
+                f"environment (valid: 0 to {n_bins - 1}), e.g. {int(invalid[0])}.",
+                why="-1 is env.bin_at's marker for a point outside the "
+                "environment, and a negative index would wrap to the last bin.",
+                fix="drop centers whose point is outside the environment, or "
+                "choose centers with select_basis_centers(env, n_centers=...)",
+            )
+        )
+    return array.astype(np.int_, copy=False)
 
 
 def _normalize_basis(
@@ -377,7 +443,7 @@ def geodesic_rbf_basis(
     env: BasisCentersConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
-    sigma: float | Sequence[float] = 5.0,
+    bandwidth: float | Sequence[float] = 5.0,
     n_centers: int | None = None,
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
@@ -386,8 +452,8 @@ def geodesic_rbf_basis(
     """
     Compute maze-aware RBF basis using geodesic distances.
 
-    For each center c and bandwidth sigma, computes:
-        B(j) = exp(-d_geo(j, c)^2 / (2 * sigma^2))
+    For each center c and bandwidth (physical standard deviation), computes:
+        B(j) = exp(-d_geo(j, c)^2 / (2 * bandwidth^2))
 
     where d_geo is the shortest-path distance respecting walls.
 
@@ -396,16 +462,16 @@ def geodesic_rbf_basis(
     env : Environment
         Environment.
     centers : NDArray[np.int_] or None
-        Node indices for basis centers. If None, auto-select using
+        Bin indices (0 to ``n_bins - 1``) for basis centers. If None, auto-select using
         n_centers and center_method.
-    sigma : float or sequence of float
+    bandwidth : float or sequence of float
         RBF bandwidth in environment units (typically cm).
         Controls spatial spread of each basis function.
 
-        **Rule of thumb**: sigma ≈ (desired coverage diameter) / 2
+        **Rule of thumb**: bandwidth ≈ (desired coverage diameter) / 2
 
-        - sigma=5.0cm: Localized to ~10cm diameter (covers 2*sigma)
-        - sigma=20.0cm: Broad coverage, ~40cm diameter
+        - bandwidth=5.0cm: Localized to ~10cm diameter (covers 2*bandwidth)
+        - bandwidth=20.0cm: Broad coverage, ~40cm diameter
 
         Multiple values create multi-scale basis (recommended):
         Example: [5.0, 10.0, 20.0] for 10cm, 20cm, 40cm coverage.
@@ -430,31 +496,35 @@ def geodesic_rbf_basis(
 
     Returns
     -------
-    basis : NDArray[np.float64], shape (n_centers * n_sigmas, n_bins)
-        Basis matrix with rows ordered by (center, sigma):
+    basis : NDArray[np.float64], shape (n_centers * n_bandwidths, n_bins)
+        Basis matrix with rows ordered by (center, bandwidth):
 
-        - basis[0:n_sigmas] = all scales for center 0
-        - basis[n_sigmas:2*n_sigmas] = all scales for center 1
+        - basis[0:n_bandwidths] = all scales for center 0
+        - basis[n_bandwidths:2*n_bandwidths] = all scales for center 1
         - ...
 
-        Example with n_centers=3, sigma=[5, 10]:
-            Row 0: center 0, sigma=5
-            Row 1: center 0, sigma=10
-            Row 2: center 1, sigma=5
-            Row 3: center 1, sigma=10
-            Row 4: center 2, sigma=5
-            Row 5: center 2, sigma=10
+        Example with n_centers=3, bandwidth=[5, 10]:
+            Row 0: center 0, bandwidth=5
+            Row 1: center 0, bandwidth=10
+            Row 2: center 1, bandwidth=5
+            Row 3: center 1, bandwidth=10
+            Row 4: center 2, bandwidth=5
+            Row 5: center 2, bandwidth=10
 
-        To create GLM design matrix from trajectory:
-        >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
-        >>> X = basis[:, bin_indices].T  # (n_timepoints, n_basis)  # doctest: +SKIP
+        ``basis[:, bins].T`` with ``bins = env.bin_at(positions)`` restricted
+        to ``bins >= 0`` is a GLM design matrix with one row per time bin
+        (see Examples).
 
     Raises
     ------
     ValueError
-        If sigma contains non-positive values.
+        If bandwidth contains non-positive values.
         If centers is None and n_centers is None.
+        If centers holds an index that is not a bin, such as the outside
+        marker -1.
         If environment graph is disconnected and some bins are unreachable.
+    TypeError
+        If centers is not an integer array.
 
     Notes
     -----
@@ -467,15 +537,10 @@ def geodesic_rbf_basis(
     **Computational complexity**:
 
     - Time: O(n_centers * n_bins * log(n_bins)) using batch shortest paths
-    - Space: O(n_centers * n_sigmas * n_bins) for output basis
+    - Space: O(n_centers * n_bandwidths * n_bins) for output basis
 
-    Typical runtimes (2023 MacBook Pro):
-
-    - 50cm × 50cm maze, 2cm bins, 50 centers: ~0.1s
-    - 100cm × 100cm maze, 2cm bins, 100 centers: ~1.0s
-    - 200cm × 200cm maze, 1cm bins, 200 centers: ~30s
-
-    For very large environments (>10,000 bins), consider:
+    Runtime grows with ``n_centers * n_bins``. For very large environments
+    (>10,000 bins), consider:
 
     - Using fewer centers (n_centers=30 instead of 100)
     - Larger bin_size to reduce n_bins
@@ -483,21 +548,35 @@ def geodesic_rbf_basis(
 
     Examples
     --------
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>>
-    >>> # Single scale
-    >>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)  # doctest: +SKIP
-    >>> basis.shape  # doctest: +SKIP
-    (50, n_bins)
-    >>>
-    >>> # Multi-scale (recommended)
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import geodesic_rbf_basis
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+
+    Single scale:
+
+    >>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=10.0, rng=0)
+    >>> basis.shape == (50, env.n_bins)
+    True
+
+    Multi-scale (recommended), 30 centers x 3 bandwidths:
+
     >>> basis = geodesic_rbf_basis(
-    ...     env, n_centers=30, sigma=[5.0, 10.0, 20.0]
-    ... )  # doctest: +SKIP
-    >>> basis.shape  # doctest: +SKIP
-    (90, n_bins)  # 30 centers * 3 scales
+    ...     env, n_centers=30, bandwidth=[5.0, 10.0, 20.0], rng=0
+    ... )
+    >>> basis.shape == (90, env.n_bins)
+    True
+
+    GLM design matrix, one row per position sample (time bin). ``bin_at``
+    marks samples outside the environment with -1; drop them, and the same
+    time bins from the spike counts:
+
+    >>> bins = env.bin_at(positions)
+    >>> inside = bins >= 0
+    >>> X = basis[:, bins[inside]].T  # (n_time_inside, n_basis)
+    >>> X.shape == (int(inside.sum()), 90)
+    True
 
     See Also
     --------
@@ -527,30 +606,31 @@ def geodesic_rbf_basis(
         centers = select_basis_centers(
             env, n_centers=n_centers, method=center_method, rng=rng
         )
-    centers = np.asarray(centers, dtype=np.int_)
+    centers = _validate_centers(centers, env.n_bins)
 
-    # Handle sigma and validate
-    sigmas = np.atleast_1d(sigma).astype(np.float64)
-    if np.any(sigmas <= 0):
-        invalid = sigmas[sigmas <= 0]
+    # Handle bandwidth and validate
+    bandwidths = np.atleast_1d(bandwidth).astype(np.float64)
+    if np.any(bandwidths <= 0):
+        invalid = bandwidths[bandwidths <= 0]
         raise ValueError(
-            f"sigma values must be positive, got: {invalid}.\n"
+            f"bandwidth values must be positive, got: {invalid}.\n"
             "\n"
-            "sigma controls spatial spread of basis functions:\n"
-            "  - sigma=5.0: ~10cm diameter coverage\n"
-            "  - sigma=10.0: ~20cm diameter coverage\n"
+            "bandwidth controls spatial spread of basis functions:\n"
+            "  - bandwidth=5.0: ~10cm diameter coverage\n"
+            "  - bandwidth=10.0: ~20cm diameter coverage\n"
             "\n"
-            "Rule of thumb: sigma ≈ (desired coverage diameter) / 2"
+            "Rule of thumb: bandwidth ≈ (desired coverage diameter) / 2"
         )
 
     n_centers_actual = len(centers)
-    n_sigmas = len(sigmas)
+    n_bandwidths = len(bandwidths)
     n_bins = env.n_bins
 
     # Compute distances from all centers at once using scipy's optimized implementation
     # This is ~5-10x faster than per-center Dijkstra
+    # Row/column i must be bin i, whatever order the graph's nodes were added.
     adjacency = nx.to_scipy_sparse_array(
-        env.connectivity, weight="distance", format="csr"
+        env.connectivity, nodelist=range(n_bins), weight="distance", format="csr"
     )
     distances = shortest_path(
         csgraph=adjacency,
@@ -578,23 +658,24 @@ def geodesic_rbf_basis(
             "To fix, ensure all bins are reachable when creating the environment."
         )
 
-    # Compute RBF for each (center, sigma) combination
-    # Rows ordered by (center, sigma): all sigmas for center 0, then center 1, etc.
-    # Shape: (n_centers * n_sigmas, n_bins)
+    # Compute RBF for each (center, bandwidth) combination
+    # Rows ordered by (center, bandwidth): all bandwidths for center 0, then center 1, etc.
+    # Shape: (n_centers * n_bandwidths, n_bins)
     #
     # Vectorized computation using broadcasting:
     # distances: (n_centers, n_bins)
-    # sigmas: (n_sigmas,)
-    # Result: (n_centers, n_sigmas, n_bins) -> reshape to (n_centers * n_sigmas, n_bins)
-    sigmas_arr = np.asarray(sigmas)
-    two_sigma_sq = 2.0 * sigmas_arr**2  # (n_sigmas,)
+    # bandwidths: (n_bandwidths,)
+    # Result: (n_centers, n_bandwidths, n_bins) -> reshape to (n_centers * n_bandwidths, n_bins)
+    bandwidths_arr = np.asarray(bandwidths)
+    two_bandwidth_sq = 2.0 * bandwidths_arr**2  # (n_bandwidths,)
 
-    # Broadcast: (n_centers, 1, n_bins) / (1, n_sigmas, 1) -> (n_centers, n_sigmas, n_bins)
+    # Broadcast: (n_centers, 1, n_bins) / (1, n_bandwidths, 1) -> (n_centers, n_bandwidths, n_bins)
     basis_3d = np.exp(
-        -(distances[:, np.newaxis, :] ** 2) / two_sigma_sq[np.newaxis, :, np.newaxis]
+        -(distances[:, np.newaxis, :] ** 2)
+        / two_bandwidth_sq[np.newaxis, :, np.newaxis]
     )
-    # Reshape to (n_centers * n_sigmas, n_bins) with (center, sigma) ordering
-    basis = basis_3d.reshape(n_centers_actual * n_sigmas, n_bins)
+    # Reshape to (n_centers * n_bandwidths, n_bins) with (center, bandwidth) ordering
+    basis = basis_3d.reshape(n_centers_actual * n_bandwidths, n_bins)
 
     # Normalize
     basis = _normalize_basis(basis, normalize)
@@ -657,13 +738,13 @@ def heat_kernel_wavelet_basis(
     env : Environment
         Environment with connectivity graph.
     centers : NDArray[np.int_] or None
-        Node indices for wavelet centers. If None, auto-select.
+        Bin indices (0 to ``n_bins - 1``) for wavelet centers. If None, auto-select.
     scales : sequence of float, default=(0.5, 1.0, 2.0, 4.0)
         Diffusion time in units of bin spacing². The kernel's standard
         deviation on a uniform Cartesian grid is ``sqrt(2 * scale)`` bins,
         independent of ``bin_size``: 0.5 → 1, 1 → 1.41, 2 → 2, 4 → 2.83 bins.
         Larger values give wider spread; walls and boundaries constrain it.
-        For physical bandwidth sigma, scale = sigma² / (2 * spacing²).
+        For a physical bandwidth, scale = bandwidth² / (2 * spacing²).
     n_centers : int or None
         Number of centers for auto-selection.
     center_method : {"kmeans", "farthest_point", "random"}
@@ -684,6 +765,10 @@ def heat_kernel_wavelet_basis(
     ValueError
         If scales contains non-positive values.
         If centers is None and n_centers is None.
+        If centers holds an index that is not a bin, such as the outside
+        marker -1.
+    TypeError
+        If centers is not an integer array.
     NotImplementedError
         If the layout has no finite-volume geometry builder.
 
@@ -700,7 +785,6 @@ def heat_kernel_wavelet_basis(
 
     **Computational complexity**: O(n_scales * n_centers * n_bins) using
     scipy's expm_multiply, which avoids forming the full matrix exponential.
-    About 2-3× slower than geodesic RBF for typical environments.
 
     **Laplacian weighting**: Uses the finite-volume generator of
     ``env.smooth`` (shared-face measure over center distance, divided by cell
@@ -716,11 +800,16 @@ def heat_kernel_wavelet_basis(
 
     Examples
     --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import heat_kernel_wavelet_basis
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> basis = heat_kernel_wavelet_basis(
-    ...     env, n_centers=30, scales=[0.5, 1, 2, 4]
-    ... )  # doctest: +SKIP
-    >>> basis.shape  # doctest: +SKIP
-    (120, n_bins)  # 30 centers * 4 scales
+    ...     env, n_centers=30, scales=[0.5, 1, 2, 4], rng=0
+    ... )
+    >>> basis.shape == (120, env.n_bins)  # 30 centers x 4 scales
+    True
 
     References
     ----------
@@ -749,7 +838,7 @@ def heat_kernel_wavelet_basis(
         centers = select_basis_centers(
             env, n_centers=n_centers, method=center_method, rng=rng
         )
-    centers = np.asarray(centers, dtype=np.int_)
+    centers = _validate_centers(centers, env.n_bins)
 
     # Validate scales
     scales_arr = np.asarray(scales, dtype=np.float64)
@@ -819,7 +908,7 @@ def heat_kernel_wavelet_basis(
 
 
 def chebyshev_filter_basis(
-    env: BasisCentersConsumer,
+    env: WaveletBasisConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
     max_degree: int = 5,
@@ -829,24 +918,26 @@ def chebyshev_filter_basis(
     rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.float64]:
     """
-    Compute Chebyshev polynomial filter basis on graph Laplacian.
+    Compute Chebyshev polynomial filter basis on the diffusion generator.
 
     For each center c and polynomial degree k, computes:
         B(j) = [T_k(L_scaled)]_{j,c}
 
     where T_k is the Chebyshev polynomial of degree k and L_scaled is the
-    Laplacian rescaled to have eigenvalues in [-1, 1].
+    finite-volume diffusion generator of ``env.smooth`` rescaled to have
+    eigenvalues in [-1, 1].
 
     Parameters
     ----------
     env : Environment
-        Environment with connectivity graph.
+        Environment with finite-volume cell geometry.
     centers : NDArray[np.int_] or None
-        Node indices for filter centers. If None, auto-select.
+        Bin indices (0 to ``n_bins - 1``) for filter centers. If None, auto-select.
     max_degree : int, default=5
         Maximum polynomial degree, which controls spatial extent.
         A degree-k basis function is nonzero only for bins within k
-        steps of its center (where each "step" is a bin-to-bin connection).
+        steps of its center, where each step crosses a face shared by two
+        bins (bins that touch only at a corner are not one step apart).
 
         **Choosing max_degree**:
 
@@ -879,17 +970,26 @@ def chebyshev_filter_basis(
     ValueError
         If max_degree < 0.
         If centers is None and n_centers is None.
+        If centers holds an index that is not a bin, such as the outside
+        marker -1.
+    TypeError
+        If centers is not an integer array.
+    NotImplementedError
+        If the layout has no finite-volume geometry builder.
 
     Notes
     -----
-    The operator is the connectivity graph's Laplacian with ``distance``
-    edge weights, rescaled by its spectral radius. It defines hop locality
-    only and is not a physical diffusion; use ``heat_kernel_wavelet_basis``
-    for bin-size-independent spread.
+    The operator is ``L = M**-1 (Deg - W)``, the generator ``env.smooth`` and
+    ``heat_kernel_wavelet_basis`` diffuse with: ``W = A / d`` is the shared-face
+    measure over the center distance and ``M`` the cell volume. It is rescaled
+    by its largest eigenvalue, so the filters do not depend on ``bin_size``.
+    Neighbors across a face of the same size are coupled equally, and bins
+    that only touch at a corner, or sit on opposite sides of a wall, are not
+    coupled.
 
     **Strict locality guarantee**: A degree-k polynomial of L depends only
-    on nodes within k hops. This is stronger than heat kernel or RBF bases,
-    which have infinite (though decaying) support.
+    on bins within k shared-face steps. This is stronger than heat kernel or
+    RBF bases, which have infinite (though decaying) support.
 
     **No eigendecomposition needed**: Computed via Chebyshev recurrence:
 
@@ -910,11 +1010,14 @@ def chebyshev_filter_basis(
 
     Examples
     --------
-    >>> basis = chebyshev_filter_basis(
-    ...     env, n_centers=40, max_degree=5
-    ... )  # doctest: +SKIP
-    >>> basis.shape  # doctest: +SKIP
-    (240, n_bins)  # 40 centers * 6 degrees (0 through 5)
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import chebyshev_filter_basis
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> basis = chebyshev_filter_basis(env, n_centers=40, max_degree=5, rng=0)
+    >>> basis.shape == (240, env.n_bins)  # 40 centers x 6 degrees (0 to 5)
+    True
 
     References
     ----------
@@ -929,8 +1032,9 @@ def chebyshev_filter_basis(
         https://pygsp.readthedocs.io/
     """
 
-    import networkx as nx
     from scipy import sparse
+
+    from neurospatial.ops.diffusion import _symmetric_conjugate
 
     # Handle centers
     if centers is None:
@@ -950,7 +1054,7 @@ def chebyshev_filter_basis(
         centers = select_basis_centers(
             env, n_centers=n_centers, method=center_method, rng=rng
         )
-    centers = np.asarray(centers, dtype=np.int_)
+    centers = _validate_centers(centers, env.n_bins)
 
     # Validate max_degree
     if max_degree < 0:
@@ -967,14 +1071,19 @@ def chebyshev_filter_basis(
     n_bins = env.n_bins
     n_degrees = max_degree + 1
 
-    # Get graph Laplacian (sparse)
-    laplacian = nx.laplacian_matrix(
-        env.connectivity, nodelist=range(n_bins), weight="distance"
-    )
-    laplacian = laplacian.tocsr()  # Ensure CSR for efficient matrix-vector products
+    # Name this analysis, not "smoothing", if the layout has no cell faces.
+    faces = env.binning.faces
+    if isinstance(faces, MissingFaces):
+        raise faces.missing_error("chebyshev_filter_basis")
+    geometry = env.get_diffusion_geometry()
+    # L = M^-1 (Deg - W) is not symmetric on unequal volumes; its symmetric
+    # conjugate S = M^-1/2 (Deg - W) M^-1/2 has the same eigenvalues.
+    symmetric = _symmetric_conjugate(geometry.W, geometry.volumes)
+    degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
+    laplacian = (sparse.diags(1.0 / geometry.volumes) @ (degree - geometry.W)).tocsr()
 
     # Estimate largest eigenvalue for rescaling
-    lambda_max = _estimate_spectral_radius(laplacian)
+    lambda_max = _estimate_spectral_radius(symmetric)
 
     # Rescale Laplacian to [-1, 1]: L_scaled = 2*L/lambda_max - I
     laplacian_scaled = (2.0 / lambda_max) * laplacian - sparse.identity(
@@ -1027,15 +1136,15 @@ def chebyshev_filter_basis(
 
 def _estimate_spectral_radius(laplacian: Any) -> float:
     """
-    Estimate largest eigenvalue of graph Laplacian.
+    Estimate largest eigenvalue of a symmetric positive semi-definite Laplacian.
 
     Uses scipy.sparse.linalg.eigsh for efficiency. Falls back to
     max-degree bound if eigsh fails.
 
     Parameters
     ----------
-    laplacian : sparse matrix
-        Graph Laplacian matrix.
+    laplacian : sparse matrix, shape (n_bins, n_bins)
+        Symmetric Laplacian, e.g. ``M**-1/2 (Deg - W) M**-1/2``.
 
     Returns
     -------
@@ -1059,8 +1168,9 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
         return float(eigenvalues[0])
     except (ArpackNoConvergence, ArpackError) as e:
         # ARPACK failed to converge on the largest eigenvalue. Fall back to the
-        # exact upper bound lambda_max <= 2 * max_degree (diagonal of the graph
-        # Laplacian holds node degrees). Any *other* exception (malformed matrix,
+        # Gershgorin upper bound lambda_max <= 2 * max(diagonal): the diagonal
+        # Deg_i / M_i equals the off-diagonal row sum of M^-1 (Deg - W), which
+        # has the same eigenvalues. Any *other* exception (malformed matrix,
         # wrong dtype) is a real bug and propagates.
         max_degree_bound = 2.0 * float(np.max(laplacian.diagonal()))
         warnings.warn(
@@ -1084,7 +1194,7 @@ def spatial_basis(
     Create maze-aware spatial basis with automatic parameter selection.
 
     This is a convenience wrapper around geodesic_rbf_basis() that
-    automatically chooses n_centers and sigma based on your environment
+    automatically chooses n_centers and bandwidth based on your environment
     size and desired coverage scale.
 
     Use this when you want sensible defaults without tuning parameters.
@@ -1099,11 +1209,11 @@ def spatial_basis(
         Environment size is the track length on a linearized track and the
         geometric mean of the axis extents (``dimension_ranges``) otherwise.
 
-        - "local": Fine-grained (sigma ≈ 5% of environment size)
+        - "local": Fine-grained (bandwidth ≈ 5% of environment size)
           Good for: Detailed place fields, small receptive fields
-        - "medium": Moderate (sigma ≈ 10% of environment size)
+        - "medium": Moderate (bandwidth ≈ 10% of environment size)
           Good for: General-purpose spatial modeling (recommended)
-        - "global": Broad (sigma ≈ 20% of environment size)
+        - "global": Broad (bandwidth ≈ 20% of environment size)
           Good for: Compartment-level structure, coarse encoding
     n_features : int, default=100
         Approximate number of basis functions.
@@ -1121,24 +1231,31 @@ def spatial_basis(
     CartesianOnlyError
         If ``env`` is polar: the automatic scale multiplies distance and angle
         extents, and centers come from k-means on Cartesian bin centers.
+    ValueError
+        If ``env.dimension_ranges`` is None, so there is no extent to size the
+        basis from.
 
     Examples
     --------
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.ops.basis import spatial_basis  # doctest: +SKIP
-    >>>
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>> basis = spatial_basis(env)  # Automatic defaults  # doctest: +SKIP
-    >>>
-    >>> # Use in GLM immediately
-    >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
-    >>> X = basis[:, bin_indices].T  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import spatial_basis
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> basis = spatial_basis(env, rng=0)  # automatic defaults
+    >>> basis.shape == (102, env.n_bins)  # 34 centers x 3 bandwidths
+    True
+
+    GLM design matrix, one row per time bin inside the environment:
+
+    >>> bins = env.bin_at(positions)
+    >>> X = basis[:, bins[bins >= 0]].T  # (n_time_inside, n_basis)
 
     Notes
     -----
     For more control over parameters, use geodesic_rbf_basis() directly.
 
-    The function creates a multi-scale basis with 3 octave-spaced sigma
+    The function creates a multi-scale basis with 3 octave-spaced bandwidth
     values centered around the coverage-determined scale.
     """
     require_cartesian(
@@ -1146,8 +1263,8 @@ def spatial_basis(
         "spatial_basis()",
         why="Its automatic scale comes from the Cartesian extent of the bins.",
         fix=(
-            "use geodesic_rbf_basis(env, sigma=..., center_method='farthest_point') "
-            "with sigma in distance units"
+            "use geodesic_rbf_basis(env, bandwidth=..., center_method='farthest_point') "
+            "with bandwidth in distance units"
         ),
     )
     # Compute environment extent
@@ -1168,24 +1285,24 @@ def spatial_basis(
         min_val, max_val = dim_ranges[0]
         extent = max_val - min_val
     else:
-        # Use geometric mean of extents for multi-dimensional environments
+        # Geometric mean of the axis extents: a length in every dimension.
         extents = [max_val - min_val for min_val, max_val in dim_ranges]
-        extent = float(np.sqrt(np.prod(extents)))
+        extent = float(np.prod(extents) ** (1.0 / len(extents)))
 
-    # Determine base sigma from coverage setting
-    sigma_fraction = {"local": 0.05, "medium": 0.10, "global": 0.20}
-    sigma_base = extent * sigma_fraction[coverage]
+    # Determine base bandwidth from coverage setting
+    bandwidth_fraction = {"local": 0.05, "medium": 0.10, "global": 0.20}
+    bandwidth_base = extent * bandwidth_fraction[coverage]
 
-    # Create multi-scale basis with 3 octave-spaced sigmas
-    sigmas = [sigma_base / 2, sigma_base, sigma_base * 2]
+    # Create multi-scale basis with 3 octave-spaced bandwidths
+    bandwidths = [bandwidth_base / 2, bandwidth_base, bandwidth_base * 2]
 
     # Compute n_centers to achieve approximately n_features total
-    n_centers = max(1, int(np.ceil(n_features / len(sigmas))))
+    n_centers = max(1, int(np.ceil(n_features / len(bandwidths))))
 
     return geodesic_rbf_basis(
         env,
         n_centers=n_centers,
-        sigma=sigmas,
+        bandwidth=bandwidths,
         normalize="unit",
         rng=rng,
     )
@@ -1208,7 +1325,7 @@ def plot_basis_functions(
 
     - Spatial coverage is appropriate
     - Basis functions respect walls
-    - Multi-scale structure is present (if using multiple sigmas/scales)
+    - Multi-scale structure is present (if using multiple bandwidths/scales)
 
     Parameters
     ----------
@@ -1233,18 +1350,26 @@ def plot_basis_functions(
 
     Examples
     --------
+    >>> import matplotlib.pyplot as plt
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import geodesic_rbf_basis, plot_basis_functions
+    >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> basis = geodesic_rbf_basis(
-    ...     env, n_centers=50, sigma=[5, 10, 20]
-    ... )  # doctest: +SKIP
-    >>> fig = plot_basis_functions(env, basis, n_examples=9)  # doctest: +SKIP
-    >>> fig.savefig("basis_functions.png")  # doctest: +SKIP
+    ...     env, n_centers=20, bandwidth=[5.0, 10.0, 20.0], rng=0
+    ... )
+    >>> fig = plot_basis_functions(env, basis, indices=[0, 1, 2])
+    >>> len(fig.axes) >= 3
+    True
+    >>> plt.close(fig)
 
     Notes
     -----
     This function is useful for:
 
     - Debugging: Check that basis functions have expected spatial extent
-    - Parameter tuning: Visualize effect of different sigma/scale values
+    - Parameter tuning: Visualize effect of different bandwidth/scale values
     - Presentation: Create figures showing basis function coverage
     """
     import matplotlib.pyplot as plt

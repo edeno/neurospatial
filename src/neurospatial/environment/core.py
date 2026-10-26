@@ -6484,10 +6484,11 @@ class Environment(Generic[_C]):
     ) -> NDArray[np.float64]:
         """Compute the finite-volume diffusion kernel for smoothing operations.
 
-        Wrapper around :func:`neurospatial.ops.diffusion.diffusion_kernel` that
-        resolves this environment's layout geometry and cell volumes, so
-        ``bandwidth`` is the true physical standard deviation (σ) of the
-        smoothing on any supported layout, independent of bin size.
+        Builds the dense heat operator ``exp(-t L)`` from this environment's
+        cached layout geometry and cell volumes, so ``bandwidth`` is the true
+        physical standard deviation (σ) of the smoothing on any supported
+        layout, independent of bin size. :meth:`smooth` and :meth:`diffuse`
+        apply the same operator without building this matrix.
 
         Parameters
         ----------

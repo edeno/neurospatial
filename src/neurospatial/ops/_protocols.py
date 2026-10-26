@@ -190,7 +190,7 @@ class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
 
 
 class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Protocol):
-    """Diffusion geometry, cell faces and graph for heat-kernel wavelets."""
+    """Diffusion geometry, cell faces and graph for heat-kernel and Chebyshev bases."""
 
     @property
     def binning(self) -> Binning: ...

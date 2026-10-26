@@ -142,11 +142,25 @@ class TestNormalizeFieldValidation:
         with pytest.raises(ValueError, match="all zeros"):
             normalize_field(np.zeros(4))
 
-    def test_non_positive_eps_rejected(self):
+    def test_time_by_bin_array_is_refused(self):
+        """A posterior (n_time, n_bins) is many distributions, not one.
+
+        Normalizing it as a whole would leave rows that do not sum to 1.
+        """
         from neurospatial.ops.normalize import normalize_field
 
-        with pytest.raises(ValueError, match="eps must be positive"):
-            normalize_field(np.array([1.0, 2.0]), eps=0.0)
+        posterior = np.array([[1.0, 1.0, 2.0], [10.0, 10.0, 20.0]])
+        with pytest.raises(ValueError, match=r"\(2, 3\)") as exc:
+            normalize_field(posterior)
+        message = str(exc.value)
+        assert "axis=1" in message
+        assert "\nFix:" in message
+
+    def test_scalar_is_refused(self):
+        from neurospatial.ops.normalize import normalize_field
+
+        with pytest.raises(ValueError, match="1-D"):
+            normalize_field(np.float64(3.0))
 
 
 class TestCombineFieldsValidation:

@@ -29,7 +29,7 @@ Create a simple graph (unit face measure, unit spacing) and compute a kernel:
 ...     graph.edges[u, v]["A"] = 1.0
 >>> volumes = np.ones(5)
 >>> kernel = compute_diffusion_kernels(
-...     graph, volumes=volumes, sigma=1.0, mode="transition"
+...     graph, volumes=volumes, bandwidth=1.0, mode="transition"
 ... )
 >>> kernel.shape
 (5, 5)
@@ -50,6 +50,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import DiffusionGeometry
 from neurospatial.ops._types import KernelMode
 from neurospatial.ops.diffusion import heat_kernel_from_W
@@ -79,16 +80,16 @@ def compute_diffusion_kernels(
     graph: nx.Graph,
     *,
     volumes: NDArray[np.float64],
-    sigma: float,
+    bandwidth: float,
     mode: KernelMode,
 ) -> NDArray[np.float64]:
     """Assemble a finite-volume diffusion kernel from a face-measure graph.
 
     Builds the finite-volume weight matrix ``W[i, j] = A[i, j] / d[i, j]`` from
     the graph's edge attributes and returns the requested normalized view of the
-    heat operator ``H = exp(-t L)``, ``L = M^-1 (D - W)``, ``t = sigma^2 / 2``.
-    ``bandwidth`` is thereby the true physical standard deviation (sigma) of the
-    smoothing on any K-orthogonal layout, independent of bin size.
+    heat operator ``H = exp(-t L)``, ``L = M^-1 (D - W)``, ``t = bandwidth^2 / 2``.
+    ``bandwidth`` is thereby the physical standard deviation of the smoothing on
+    any K-orthogonal layout, independent of bin size.
 
     This is the low-level primitive. Most callers should use
     :meth:`Environment.compute_kernel` / :meth:`Environment.smooth`, which take
@@ -109,9 +110,10 @@ def compute_diffusion_kernels(
     volumes : NDArray[np.float64], shape (n_bins,)
         Per-bin cell volumes ``M``, node-ordered ``0..n-1``. Every entry must be
         finite and strictly positive (the operator divides by ``volumes``).
-    sigma : float
-        Physical smoothing standard deviation. Must be finite and > 0 (it feeds
-        ``sigma**2`` into the matrix exponential).
+    bandwidth : float
+        Physical smoothing standard deviation, in the units of the edge
+        ``"distance"``. Must be finite and > 0 (it feeds ``bandwidth**2`` into
+        the matrix exponential).
     mode : {"transition", "density", "average"}
         Normalized view of the operator:
 
@@ -129,7 +131,7 @@ def compute_diffusion_kernels(
     Raises
     ------
     ValueError
-        If ``sigma`` is non-finite or ``<= 0``; if ``graph`` is directed or a
+        If ``bandwidth`` is non-finite or ``<= 0``; if ``graph`` is directed or a
         multigraph (reciprocal or parallel edges would sum into one doubled
         conductance; collapse them with ``nx.Graph(graph)``); if ``volumes`` has
         the wrong shape or any non-finite / non-positive entry; if node labels
@@ -173,13 +175,13 @@ def compute_diffusion_kernels(
       method build a dense kernel.
     - Reduce the number of bins by increasing ``bin_size`` when constructing the
       environment.
-    - For population decoding at scale, the memory-safe paths this release are
-      float32 rate maps and the summary decode
+    - For population decoding at scale, the memory-safe paths are float32 rate
+      maps and the summary decode
       (:func:`~neurospatial.decoding.posterior.decode_position_summary`), which
       avoid materializing a full dense posterior.
     """
     geometry = DiffusionGeometry.from_graph(graph, volumes)
-    return heat_kernel_from_W(geometry.W, geometry.volumes, sigma, mode=mode)
+    return heat_kernel_from_W(geometry.W, geometry.volumes, bandwidth, mode=mode)
 
 
 def apply_kernel(
@@ -199,7 +201,10 @@ def apply_kernel(
     Parameters
     ----------
     field : NDArray[np.float64], shape (n_bins,)
-        Input field to transform.
+        Input field to transform. Must be finite: the kernel mixes every bin
+        into every other, so one NaN would make every output bin NaN. Smooth a
+        field with missing (NaN) bins with ``env.smooth`` or ``env.diffuse``,
+        which leave missing bins out.
     kernel : NDArray[np.float64], shape (n_bins, n_bins)
         Diffusion kernel matrix (from compute_kernel or compute_diffusion_kernels).
     mode : "forward" | "adjoint", default="forward"
@@ -208,7 +213,7 @@ def apply_kernel(
         - "adjoint": Transpose operation with optional mass weighting
     bin_sizes : NDArray[np.float64], shape (n_bins,), optional
         Bin sizes (areas/volumes) for mass-weighted adjoint in density mode.
-        Typically obtained from ``env.bin_sizes``.
+        Typically obtained from ``env.bin_sizes``. Adjoint mode only.
         - If None: adjoint is simple transpose (K.T @ field)
         - If provided: adjoint is mass-weighted (M^{-1} K.T M @ field)
           where M = diag(bin_sizes)
@@ -226,6 +231,8 @@ def apply_kernel(
     ValueError
         If mode is not 'forward' or 'adjoint'.
         If field size doesn't match kernel dimensions.
+        If field contains NaN or Inf.
+        If bin_sizes is given with mode='forward'.
         If bin_sizes size doesn't match field size.
         If bin_sizes has non-positive values (adjoint mode only).
         If kernel is not square.
@@ -350,6 +357,31 @@ def apply_kernel(
     if field.shape != (n_bins,):
         raise ValueError(
             f"Field size {field.shape[0]} does not match kernel size {n_bins}"
+        )
+
+    non_finite = ~np.isfinite(field)
+    if non_finite.any():
+        raise ValueError(
+            _format_error(
+                f"field has {int(non_finite.sum())} non-finite value(s) (NaN or Inf).",
+                why="The kernel mixes every bin into every other, so one NaN "
+                "would make every output bin NaN, even in parts of the "
+                "environment the missing bin does not touch.",
+                fix="smooth a field with missing bins with env.smooth(field, "
+                "bandwidth=..., mode=...) or env.diffuse(field, bandwidth=..., "
+                'mode="average"), which leave NaN bins out, or fill them first',
+            )
+        )
+
+    if bin_sizes is not None and mode == "forward":
+        raise ValueError(
+            _format_error(
+                'apply_kernel() got bin_sizes with mode="forward".',
+                why="Forward mode is K @ field; bin_sizes only weight the "
+                "adjoint, M^-1 K^T M @ field.",
+                fix='drop bin_sizes, or pass mode="adjoint" for the '
+                "mass-weighted adjoint of a density kernel",
+            )
         )
 
     # Check bin_sizes size and validate positive values if provided
