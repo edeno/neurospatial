@@ -1459,9 +1459,7 @@ def compute_step_lengths(
         from neurospatial.ops.distance import geodesic_distance_matrix
 
         # Get full distance matrix (uses scipy.sparse.csgraph.shortest_path)
-        dist_matrix = geodesic_distance_matrix(
-            env.connectivity, env.n_bins, weight="distance"
-        )
+        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
 
         # Outside/missing positions map to -1, which is not a graph node.
         # Never let NumPy interpret it as the last bin.
@@ -2043,9 +2041,7 @@ def mean_square_displacement(
         # This is O(V*E*log(V)) once vs O(n_lags * n_samples * V*log(V)) per lookup
         from neurospatial.ops.distance import geodesic_distance_matrix
 
-        dist_matrix = geodesic_distance_matrix(
-            env.connectivity, env.n_bins, weight="distance"
-        )
+        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
 
     sample_indices = np.arange(n_samples)
     finite_positions = support.sample_valid

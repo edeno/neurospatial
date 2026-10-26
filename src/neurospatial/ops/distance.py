@@ -21,13 +21,19 @@ neighbors_within
     Bins within a given distance of a source bin.
 """
 
+from __future__ import annotations
+
 from collections.abc import Iterable
+from typing import TYPE_CHECKING, NoReturn
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+
+if TYPE_CHECKING:
+    from scipy.sparse import csr_array
 
 
 def euclidean_distance_matrix(centers: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -58,9 +64,8 @@ def euclidean_distance_matrix(centers: NDArray[np.float64]) -> NDArray[np.float6
 
 def geodesic_distance_matrix(
     G: nx.Graph,
-    n_states: int,
     *,
-    weight: str = "distance",
+    weight: str | None = "distance",
 ) -> NDArray[np.float64]:
     """Compute geodesic (shortest-path) distance matrix on a graph.
 
@@ -69,17 +74,23 @@ def geodesic_distance_matrix(
     Parameters
     ----------
     G : nx.Graph
-        NetworkX graph representing spatial connectivity.
-    n_states : int
-        Number of states/nodes in the graph.
-    weight : str, default="distance"
-        Edge attribute to use as weight for path length calculation.
+        NetworkX graph representing spatial connectivity, such as
+        ``env.connectivity``. Its nodes must be the bin indices
+        ``0 .. n_bins - 1``.
+    weight : str or None, default="distance"
+        Edge attribute holding each edge's length. None counts edges (hops).
 
     Returns
     -------
-    NDArray[np.float64], shape (n_states, n_states)
+    NDArray[np.float64], shape (n_bins, n_bins)
         Geodesic distance matrix where element (i, j) is the shortest path
-        length from node i to node j. Disconnected nodes have distance np.inf.
+        length from bin i to bin j. Disconnected bins have distance np.inf.
+
+    Raises
+    ------
+    ValueError
+        If the nodes of ``G`` are not exactly ``0 .. n_bins - 1``, or an edge
+        lacks the ``weight`` attribute.
 
     Notes
     -----
@@ -88,14 +99,24 @@ def geodesic_distance_matrix(
     The algorithm automatically selects between Dijkstra's algorithm
     (for sparse graphs) and Floyd-Warshall (for dense graphs).
 
+    Examples
+    --------
+    >>> import networkx as nx
+    >>> from neurospatial.ops.distance import geodesic_distance_matrix
+    >>> G = nx.Graph()
+    >>> # Rows follow the bin index, whatever order the edges were added in.
+    >>> G.add_edge(2, 3, distance=1.0)
+    >>> G.add_edge(0, 1, distance=1.0)
+    >>> G.add_edge(1, 2, distance=2.0)
+    >>> geodesic_distance_matrix(G)[0].tolist()
+    [0.0, 1.0, 3.0, 4.0]
+
     """
     from scipy.sparse.csgraph import shortest_path
 
-    if G.number_of_nodes() == 0:
+    adjacency = _bin_adjacency(G, weight=weight, operation="geodesic_distance_matrix()")
+    if adjacency.shape[0] == 0:
         return np.empty((0, 0), dtype=np.float64)
-
-    # Convert NetworkX graph to scipy sparse adjacency matrix
-    adjacency = nx.to_scipy_sparse_array(G, weight=weight, format="csr")
 
     # Compute shortest paths using scipy's optimized implementation
     dist_matrix: NDArray[np.float64] = shortest_path(
@@ -142,9 +163,12 @@ def geodesic_distance_between_points(
     networkx.NodeNotFound
         If either bin is not a node of ``G``, such as the outside marker -1:
         a missing bin has no distance, which is not the same as no path.
+    ValueError
+        If an edge lacks the ``weight`` attribute.
 
     """
     _require_nodes(G, [bin_from, bin_to], "geodesic_distance_between_points()")
+    _require_edge_weight(G, weight, "geodesic_distance_between_points()")
     try:
         length = nx.shortest_path_length(
             G,
@@ -161,15 +185,110 @@ def _require_nodes(G: nx.Graph, nodes: Iterable[int], operation: str) -> None:
     """Refuse bins that are not graph nodes, naming the outside marker -1."""
     missing = [int(node) for node in nodes if node not in G]
     if missing:
-        raise nx.NodeNotFound(
-            _format_error(
-                f"{operation}: bin(s) {missing} are not nodes of the graph.",
-                why="-1 marks a sample outside the environment, which has no "
-                "graph distance; other values are not bins of this graph.",
-                fix="drop the -1 samples first (bins[bins >= 0]), or pass bins "
-                "from env.bin_at() of positions inside the environment",
-            )
+        _raise_missing_nodes(missing, operation)
+
+
+def _raise_missing_nodes(missing: list[int], operation: str) -> NoReturn:
+    raise nx.NodeNotFound(
+        _format_error(
+            f"{operation}: bin(s) {missing} are not nodes of the graph.",
+            why="-1 marks a sample outside the environment, which has no "
+            "graph distance; other values are not bins of this graph.",
+            fix="drop the -1 samples first (bins[bins >= 0]), or pass bins "
+            "from env.bin_at() of positions inside the environment",
         )
+    )
+
+
+def _require_bin_graph(G: nx.Graph, operation: str) -> int:
+    """Refuse a graph whose nodes are not exactly the bins ``0 .. n - 1``.
+
+    Distance arrays are indexed by bin, so row ``i`` must be node ``i``.
+
+    Returns
+    -------
+    int
+        The number of bins, ``G.number_of_nodes()``.
+    """
+    n_bins = G.number_of_nodes()
+    if all(node in G for node in range(n_bins)):
+        return n_bins
+    stray = [
+        node
+        for node in G.nodes
+        if not (isinstance(node, (int, np.integer)) and 0 <= node < n_bins)
+    ]
+    raise ValueError(
+        _format_error(
+            f"{operation}: the graph's nodes must be the bin indices 0 to "
+            f"{n_bins - 1}; nodes {stray[:5]} are not.",
+            why="Entry i of the result is the distance for bin i, so every "
+            "node must be the index of the bin it stands for.",
+            fix="pass env.connectivity, or relabel the graph with "
+            "nx.convert_node_labels_to_integers(G, ordering='sorted') and "
+            "translate your bin labels the same way",
+        )
+    )
+
+
+def _require_edge_weight(G: nx.Graph, weight: str | None, operation: str) -> None:
+    """Refuse a ``weight`` attribute that some edges lack.
+
+    NetworkX and SciPy would otherwise count such an edge as length 1, so a
+    misspelled attribute would silently give hop counts.
+    """
+    if weight is None:
+        return
+    measured = nx.get_edge_attributes(G, weight)
+    if len(measured) == G.number_of_edges():
+        return
+    unmeasured = next((u, v) for u, v in G.edges if (u, v) not in measured)
+    present = sorted(G.edges[unmeasured])
+    raise ValueError(
+        _format_error(
+            f"{operation}: {G.number_of_edges() - len(measured)} edge(s) have "
+            f"no {weight!r} attribute, for example edge {unmeasured} "
+            f"(its attributes: {present}).",
+            why="an edge without a length would count as 1, so distances "
+            "would silently become edge counts.",
+            fix="pass weight= one of the edge attributes (env.connectivity "
+            "edges carry 'distance'), or weight=None to count edges",
+        )
+    )
+
+
+def _bin_adjacency(G: nx.Graph, *, weight: str | None, operation: str) -> csr_array:
+    """Sparse edge-length matrix whose row and column ``i`` are bin ``i``.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Graph whose nodes are the bins ``0 .. n_bins - 1``.
+    weight : str or None
+        Edge attribute holding each edge's length; None counts edges.
+    operation : str
+        Calling function, named in errors.
+
+    Returns
+    -------
+    scipy.sparse.csr_array, shape (n_bins, n_bins)
+        Edge lengths, for ``scipy.sparse.csgraph`` with ``directed=False``.
+
+    Raises
+    ------
+    ValueError
+        If the nodes are not ``0 .. n_bins - 1`` or an edge lacks ``weight``.
+    """
+    from scipy.sparse import csr_array
+
+    n_bins = _require_bin_graph(G, operation)
+    if n_bins == 0:
+        return csr_array((0, 0), dtype=np.float64)
+    _require_edge_weight(G, weight, operation)
+    adjacency: csr_array = nx.to_scipy_sparse_array(
+        G, nodelist=range(n_bins), weight=weight, format="csr"
+    )
+    return adjacency
 
 
 def _validate_source_nodes(
@@ -243,7 +362,7 @@ def distance_field(
     *,
     metric: str = "geodesic",
     bin_centers: NDArray[np.float64] | None = None,
-    weight: str = "distance",
+    weight: str | None = "distance",
     cutoff: float | None = None,
 ) -> NDArray[np.float64]:
     """Compute distance field: distance from each node to nearest source node.
@@ -269,8 +388,8 @@ def distance_field(
     bin_centers : NDArray[np.float64], shape (n_nodes, n_dims), optional
         Node coordinates in N-dimensional space. Required when
         ``metric='euclidean'``. Ignored for geodesic metric.
-    weight : str, default="distance"
-        Edge attribute to use as weight for path length calculation.
+    weight : str or None, default="distance"
+        Edge attribute holding each edge's length; None counts edges (hops).
         Only used when ``metric='geodesic'``.
     cutoff : float, optional
         Maximum distance threshold. Nodes farther than ``cutoff`` from
@@ -360,7 +479,7 @@ def distance_field(
 
     sources_array = np.asarray(sources, dtype=int).ravel()
 
-    n_nodes = G.number_of_nodes()
+    n_nodes = _require_bin_graph(G, "distance_field()")
     if n_nodes == 0:
         return np.empty(0, dtype=np.float64)
 
@@ -401,9 +520,7 @@ def distance_field(
     # Geodesic metric - use consistent validation
     valid_sources = _validate_source_nodes(sources_array, G)
 
-    # Use scipy's vectorized multi-source Dijkstra for better performance
-    # Convert graph to sparse adjacency matrix
-    adjacency = nx.to_scipy_sparse_array(G, weight=weight, format="csr")
+    adjacency = _bin_adjacency(G, weight=weight, operation="distance_field()")
 
     # Run Dijkstra from all sources at once (vectorized)
     # Returns shape (n_sources, n_nodes)
@@ -428,7 +545,7 @@ def pairwise_distances(
     G: nx.Graph,
     nodes: list[int] | NDArray[np.int_],
     *,
-    weight: str = "distance",
+    weight: str | None = "distance",
 ) -> NDArray[np.float64]:
     """Compute pairwise geodesic distances between specified nodes.
 
@@ -441,8 +558,8 @@ def pairwise_distances(
         NetworkX graph representing spatial connectivity.
     nodes : list[int] or NDArray[np.int_]
         List of node indices to compute distances between.
-    weight : str, default="distance"
-        Edge attribute to use as weight for path length calculation.
+    weight : str or None, default="distance"
+        Edge attribute holding each edge's length; None counts edges (hops).
 
     Returns
     -------
@@ -485,8 +602,7 @@ def pairwise_distances(
 
     _require_nodes(G, nodes_array, "pairwise_distances()")
 
-    # Convert graph to sparse matrix (vectorized approach)
-    adjacency = nx.to_scipy_sparse_array(G, weight=weight, format="csr")
+    adjacency = _bin_adjacency(G, weight=weight, operation="pairwise_distances()")
 
     # Run Dijkstra from all nodes at once; shape (n_nodes, n_graph_nodes).
     dist_from_sources = dijkstra(
@@ -532,8 +648,9 @@ def neighbors_within(
         - 'euclidean': Straight-line L2 distance
     bin_centers : NDArray[np.float64], shape (n_nodes, n_dims), optional
         Node coordinates. Required when ``metric='euclidean'``.
-    weight : str, default="distance"
-        Edge attribute to use for geodesic distances.
+    weight : str or None, default="distance"
+        Edge attribute holding each edge's length, for geodesic distances;
+        None counts edges (hops).
     include_center : bool, default=True
         Whether to include the center bin itself in each neighborhood.
 
@@ -606,12 +723,11 @@ def neighbors_within(
             f"Provide a positive radius value or 0 for only center nodes."
         )
 
+    n_nodes = _require_bin_graph(G, "neighbors_within()")
     centers_array = np.asarray(centers, dtype=int).ravel()
 
     if len(centers_array) == 0:
         return []
-
-    n_nodes = G.number_of_nodes()
 
     # Euclidean metric
     if metric == "euclidean":
@@ -645,6 +761,7 @@ def neighbors_within(
         return result
 
     # Geodesic metric - validate centers and provide helpful errors
+    _require_edge_weight(G, weight, "neighbors_within()")
     result = []
     for c in centers_array:
         if c not in G.nodes:

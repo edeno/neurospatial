@@ -6,9 +6,12 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial.ops.distance import (
+    distance_field,
     euclidean_distance_matrix,
     geodesic_distance_between_points,
     geodesic_distance_matrix,
+    neighbors_within,
+    pairwise_distances,
 )
 
 
@@ -140,7 +143,7 @@ class TestGeodesicDistanceMatrix:
         graph.add_edge(1, 2, distance=1.0)
         graph.add_edge(2, 3, distance=1.0)
 
-        result = geodesic_distance_matrix(graph, n_states=4)
+        result = geodesic_distance_matrix(graph)
 
         expected = np.array(
             [
@@ -160,7 +163,7 @@ class TestGeodesicDistanceMatrix:
         graph.add_edge(0, 1, distance=1.0)
         graph.add_edge(2, 3, distance=1.0)
 
-        result = geodesic_distance_matrix(graph, n_states=4)
+        result = geodesic_distance_matrix(graph)
 
         # Disconnected nodes should have inf distance
         assert result[0, 2] == np.inf
@@ -183,7 +186,7 @@ class TestGeodesicDistanceMatrix:
         graph.add_edge(1, 2, distance=1.0)
         graph.add_edge(0, 2, distance=5.0)  # Longer direct path
 
-        result = geodesic_distance_matrix(graph, n_states=3)
+        result = geodesic_distance_matrix(graph)
 
         # Shortest path from 0 to 2 should be via node 1 (distance 2.0, not 5.0)
         assert_allclose(result[0, 2], 2.0)
@@ -194,7 +197,7 @@ class TestGeodesicDistanceMatrix:
         graph = nx.Graph()
         graph.add_node(0)
 
-        result = geodesic_distance_matrix(graph, n_states=1)
+        result = geodesic_distance_matrix(graph)
 
         expected = np.array([[0.0]])
         assert_allclose(result, expected)
@@ -203,7 +206,7 @@ class TestGeodesicDistanceMatrix:
         """Test with empty graph."""
         graph = nx.Graph()
 
-        result = geodesic_distance_matrix(graph, n_states=0)
+        result = geodesic_distance_matrix(graph)
 
         assert result.shape == (0, 0)
 
@@ -215,7 +218,7 @@ class TestGeodesicDistanceMatrix:
             for j in range(i + 1, 4):
                 graph.add_edge(i, j, distance=1.0)
 
-        result = geodesic_distance_matrix(graph, n_states=4)
+        result = geodesic_distance_matrix(graph)
 
         # All off-diagonal elements should be 1.0
         expected = np.ones((4, 4))
@@ -230,7 +233,7 @@ class TestGeodesicDistanceMatrix:
         graph.add_edge(1, 2)
         graph.add_edge(2, 3)
 
-        result = geodesic_distance_matrix(graph, n_states=4, weight=None)
+        result = geodesic_distance_matrix(graph, weight=None)
 
         # Distance is hop count when unweighted
         expected = np.array(
@@ -247,7 +250,7 @@ class TestGeodesicDistanceMatrix:
         for u, v, w in edges:
             graph.add_edge(u, v, distance=w)
 
-        result = geodesic_distance_matrix(graph, n_states=4)
+        result = geodesic_distance_matrix(graph)
 
         # From 0 to 2: can go 0->1->2 (distance 2) or 0->3->2 (distance 2)
         assert_allclose(result[0, 2], 2.0)
@@ -263,7 +266,7 @@ class TestGeodesicDistanceMatrix:
         graph.add_edge(2, 3, distance=1.0)
         graph.add_edge(0, 3, distance=2.0)  # Shortcut
 
-        result = geodesic_distance_matrix(graph, n_states=4)
+        result = geodesic_distance_matrix(graph)
 
         # From 1 to 3: better to go 1->0->3 (distance 3) than 1->2->3 (distance 11)
         assert_allclose(result[1, 3], 3.0)
@@ -275,7 +278,7 @@ class TestGeodesicDistanceMatrix:
         graph.add_edge(1, 2, weight=10.0, distance=1.0)
 
         # Use 'weight' instead of 'distance'
-        result = geodesic_distance_matrix(graph, n_states=3, weight="weight")
+        result = geodesic_distance_matrix(graph, weight="weight")
 
         assert_allclose(result[0, 2], 15.0)  # Using weight attribute
 
@@ -381,3 +384,79 @@ class TestGeodesicDistanceBetweenPoints:
             geodesic_distance_between_points(graph, 0, 2, weight="cost"), 1.0
         )
         assert_allclose(geodesic_distance_between_points(graph, 0, 2, weight=None), 1.0)
+
+
+def _path_inserted_out_of_order() -> nx.Graph:
+    """Path 0-1-2-3-4 with unit lengths whose first edge added is (3, 4).
+
+    NetworkX keeps nodes in insertion order (3, 4, 0, 1, 2), so a distance
+    array built in node order would put bin 3 in row 0.
+    """
+    graph = nx.Graph()
+    for u, v in [(3, 4), (0, 1), (1, 2), (2, 3)]:
+        graph.add_edge(u, v, distance=1.0)
+    return graph
+
+
+class TestDistancesAreIndexedByBin:
+    """Entry i of every distance array is bin i, whatever the node order."""
+
+    def test_geodesic_distance_matrix(self):
+        result = geodesic_distance_matrix(_path_inserted_out_of_order())
+        expected = np.abs(np.subtract.outer(np.arange(5), np.arange(5)))
+        assert_allclose(result, expected)
+
+    def test_distance_field(self):
+        result = distance_field(_path_inserted_out_of_order(), [0])
+        assert_allclose(result, [0.0, 1.0, 2.0, 3.0, 4.0])
+
+    def test_pairwise_distances(self):
+        result = pairwise_distances(_path_inserted_out_of_order(), [0, 4])
+        assert_allclose(result, [[0.0, 4.0], [4.0, 0.0]])
+
+    @pytest.mark.parametrize(
+        "compute",
+        [
+            lambda graph: geodesic_distance_matrix(graph),
+            lambda graph: distance_field(graph, [0]),
+            lambda graph: pairwise_distances(graph, [0]),
+            lambda graph: neighbors_within(graph, [0], radius=1.0),
+        ],
+        ids=["matrix", "field", "pairwise", "neighbors"],
+    )
+    def test_graph_whose_nodes_are_not_bin_indices_is_refused(self, compute):
+        graph = nx.Graph()
+        graph.add_edge(0, 1, distance=1.0)
+        graph.add_edge(1, 5, distance=1.0)  # three nodes, but no bin 2
+        with pytest.raises(ValueError, match=r"bin indices 0 to 2; nodes \[5\]"):
+            compute(graph)
+
+
+class TestEdgeWeightMustExist:
+    """A misspelled edge attribute must not silently turn lengths into hops."""
+
+    @pytest.fixture
+    def graph(self) -> nx.Graph:
+        graph = nx.Graph()
+        graph.add_edge(0, 1, distance=2.5)
+        graph.add_edge(1, 2, distance=2.5)
+        return graph
+
+    @pytest.mark.parametrize(
+        "compute",
+        [
+            lambda graph: geodesic_distance_matrix(graph, weight="dist"),
+            lambda graph: distance_field(graph, [0], weight="dist"),
+            lambda graph: pairwise_distances(graph, [0, 2], weight="dist"),
+            lambda graph: neighbors_within(graph, [0], radius=1.0, weight="dist"),
+            lambda graph: geodesic_distance_between_points(graph, 0, 2, weight="dist"),
+        ],
+        ids=["matrix", "field", "pairwise", "neighbors", "between"],
+    )
+    def test_missing_weight_attribute_is_refused(self, graph, compute):
+        with pytest.raises(ValueError, match="no 'dist' attribute"):
+            compute(graph)
+
+    def test_weight_none_counts_edges(self, graph):
+        assert_allclose(distance_field(graph, [0], weight=None), [0.0, 1.0, 2.0])
+        assert_allclose(distance_field(graph, [0]), [0.0, 2.5, 5.0])

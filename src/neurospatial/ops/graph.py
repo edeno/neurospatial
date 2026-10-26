@@ -422,9 +422,7 @@ def graph_convolve(
 
         # Compute all pairwise geodesic distances at once: O(n_bins * E log V)
         # This is much faster than O(n_bins^2 * E log V) from individual Dijkstra calls
-        dist_matrix = geodesic_distance_matrix(
-            env.connectivity, env.n_bins, weight="distance"
-        )
+        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
 
         # Apply kernel function to entire distance matrix (vectorized)
         # Most kernel functions (e.g., Gaussian, exponential) are ufunc-compatible

@@ -181,7 +181,7 @@ import numpy as np
 from neurospatial.ops.distance import geodesic_distance_matrix
 from neurospatial.ops.graph import graph_convolve
 
-distances = geodesic_distance_matrix(env.connectivity, env.n_bins, weight="distance")
+distances = geodesic_distance_matrix(env.connectivity, weight="distance")
 kernel_matrix = np.exp(-(distances**2) / (2 * 5.0**2))
 field = np.sin(env.bin_centers[:, 0] / 10.0)
 filtered = graph_convolve(env, field, kernel_matrix)

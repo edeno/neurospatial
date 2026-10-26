@@ -1216,9 +1216,7 @@ def compute_field_emd(
         from neurospatial.ops.distance import geodesic_distance_matrix
 
         # Compute full geodesic distance matrix once
-        full_geodesic = geodesic_distance_matrix(
-            env.connectivity, env.n_bins, weight="distance"
-        )
+        full_geodesic = geodesic_distance_matrix(env.connectivity, weight="distance")
 
         # Extract submatrix for active bins (vectorized indexing)
         dist_matrix = full_geodesic[np.ix_(active_bins, active_bins)]

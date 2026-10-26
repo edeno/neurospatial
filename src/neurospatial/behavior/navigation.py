@@ -660,9 +660,7 @@ def path_progress(
     if env.n_bins < 5000:
         # Small environment - precompute full distance matrix
         if metric == "geodesic":
-            dist_matrix = geodesic_distance_matrix(
-                env.connectivity, env.n_bins, weight="distance"
-            )
+            dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
         else:  # euclidean
             dist_matrix = euclidean_distance_matrix(env.bin_centers)
 
@@ -829,7 +827,7 @@ def distance_to_region(
 
             if metric == "geodesic":
                 dist_matrix = geodesic_distance_matrix(
-                    env.connectivity, env.n_bins, weight="distance"
+                    env.connectivity, weight="distance"
                 )
             else:
                 dist_matrix = euclidean_distance_matrix(env.bin_centers)
