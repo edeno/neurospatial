@@ -221,14 +221,21 @@ class PhasePrecessionResult(ResultMixin):
 
     The result is immutable: its fields cannot be reassigned.
 
+    The fitted line is ``phase = offset + slope * (position -
+    position_range[0])``, wrapped to ``[0, 2*pi)``.
+
     Attributes
     ----------
     slope : float
-        Slope of phase-position relationship (radians per position unit).
-    slope_units : str
-        Units of slope (e.g., "rad/cm").
+        Fitted phase change per unit of position, in radians per position
+        unit (e.g. rad/cm when positions are in cm). Negative for precession.
     offset : float
-        Phase offset at position 0 (radians).
+        Fitted phase in radians, in ``[0, 2*pi)``, at the start of the
+        position range (``position_range[0]``).
+    position_range : tuple of (float, float)
+        ``(start, end)`` of the position range the fit was normalized over,
+        in position units: the ``position_range`` argument, or the minimum
+        and maximum spike position when it was not given.
     correlation : float
         Circular-linear correlation coefficient in [0, 1]. A descriptive,
         slope-independent effect size (Mardia & Jupp); it does not determine
@@ -243,17 +250,27 @@ class PhasePrecessionResult(ResultMixin):
     """
 
     slope: float
-    slope_units: str
     offset: float
+    position_range: tuple[float, float]
     correlation: float
     p_value: float
     mean_resultant_length: float
+
+    @property
+    def normalized_slope(self) -> float:
+        """Phase change across the whole position range, in radians.
+
+        ``slope * (position_range[1] - position_range[0])``: the slope in
+        units of the range, which ``slope_bounds`` constrains. ``-2*pi`` is
+        one full theta cycle of precession across the field.
+        """
+        return self.slope * (self.position_range[1] - self.position_range[0])
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
             "slope": self.slope,
-            "slope_units": self.slope_units,
+            "normalized_slope": self.normalized_slope,
             "offset": self.offset,
             "correlation": self.correlation,
             "p_value": self.p_value,
@@ -288,7 +305,10 @@ class PhasePrecessionResult(ResultMixin):
             Multi-line interpretation of the phase precession analysis.
         """
         lines = []
-        slope_text = f"slope={self.slope:.3f} {self.slope_units}"
+        slope_text = (
+            f"slope={self.slope:.3g} rad per position unit, "
+            f"{self.normalized_slope:.2f} rad across the position range"
+        )
 
         if self.is_significant():
             lines.append(
@@ -356,9 +376,12 @@ def _slope_grid(
     required_steps = 4 * span * position_span / np.pi
     if not np.isfinite(required_steps) or required_steps > 19_999:
         raise ValueError(
-            "Resolving slope_bounds over this position span requires more than "
-            "20,000 slope candidates. Narrow slope_bounds in radians per position "
-            "unit, or supply position_range and bounds in normalized position units."
+            f"slope_bounds={tuple(slope_bounds)} needs more than 20,000 slope "
+            "candidates to resolve the fit.\n"
+            "Why: the bounds are radians of phase change across the whole "
+            "position range; phase precession spans about one theta cycle "
+            "(2*pi rad) per field.\n"
+            "Fix: narrow slope_bounds, e.g. the default (-2*pi, 2*pi)."
         )
     n_grid = max(100, int(np.ceil(required_steps)) + 1)
     return np.linspace(bounds[0], bounds[1], n_grid)
@@ -503,24 +526,33 @@ def compute_phase_precession(
     """
     Analyze phase precession in place cell data.
 
-    Fits a linear phase-position relationship using maximum likelihood
-    estimation (maximizing mean resultant length of residuals).
+    Fits a linear phase-position relationship by circular-linear regression:
+    the slope maximizes the mean resultant length of the phase residuals
+    (Kempter et al., 2012). Positions are rescaled to ``[0, 1]`` over
+    ``position_range`` for the fit, and the slope is reported back in
+    radians per position unit.
 
     Parameters
     ----------
     positions : ndarray of shape (n_spikes,)
-        Position at each spike in arbitrary position units.
+        Position at each spike, e.g. linearized position along the track in
+        cm. Restrict spikes to one place field and one running direction.
     phases : ndarray of shape (n_spikes,)
         Spike phase relative to LFP theta in radians or degrees.
     slope_bounds : tuple of float, default=(-2*pi, 2*pi)
-        Bounds for slope optimization (radians per position unit).
+        ``(low, high)`` search range for the phase change across the whole
+        position range, in radians (``normalized_slope`` of the result). The
+        default allows up to one theta cycle of precession or recession
+        across the field. The fit is circular, so a range wider than the
+        data can resolve lets noise alias onto a steep spurious slope; widen
+        it only when prior knowledge says the phase turns through more than
+        one cycle across the range.
     position_range : tuple of (float, float), optional
-        If provided as ``(pos_min, pos_max)``, positions are normalized to
-        [0, 1] before fitting. This changes the slope units from
-        ``rad/position_unit`` to ``rad/normalized_position``, where the slope
-        represents phase change across the entire normalized field.
-        **Use case**: When comparing precession across fields of different
-        sizes, normalization makes slopes comparable.
+        ``(start, end)`` of the place field in position units, with
+        ``end > start``. Positions are rescaled so ``start`` maps to 0 and
+        ``end`` to 1 before fitting, and ``offset`` is the fitted phase at
+        ``start``. Pass the field boundaries so the slope search covers one
+        cycle per field. Default: the minimum and maximum spike position.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input phases.
     min_spikes : int, default=10
@@ -537,7 +569,9 @@ def compute_phase_precession(
     Returns
     -------
     PhasePrecessionResult
-        Dataclass with slope, offset, correlation, p-value, and fit quality.
+        ``slope`` in radians per position unit, ``normalized_slope`` in
+        radians across ``position_range``, ``offset`` (phase at
+        ``position_range[0]``), correlation, p-value and fit quality.
         ``p_value`` is a **shuffle p-value at the fitted slope** (see Notes);
         ``correlation`` is a slope-independent descriptive circular-linear
         effect size.
@@ -545,8 +579,10 @@ def compute_phase_precession(
     Raises
     ------
     ValueError
-        If insufficient spikes or invalid input, or resolving the supplied
-        slope bounds at the position scale requires more than 20,000 grid points.
+        If there are fewer than ``min_spikes`` valid spikes, the spike
+        positions do not vary, ``position_range`` is not increasing,
+        ``n_shuffles`` is negative, or ``slope_bounds`` would need more than
+        20,000 grid points to resolve.
 
     See Also
     --------
@@ -560,21 +596,27 @@ def compute_phase_precession(
     through a place field. This manifests as a negative slope in the
     phase-position relationship.
 
+    **Slope range.** Circular-linear regression needs a bounded slope range
+    set by prior knowledge (Kempter et al., 2012): the residual phases of
+    noisy spikes can line up again at slopes many cycles away from the true
+    one. Fitting on positions rescaled to the field and searching at most
+    one cycle per field makes the default range scale with the field,
+    whatever the position units.
+
     **P-value.** ``p_value`` is a permutation p-value whose statistic is the
     mean resultant length (MRL) of phase residuals at the fitted slope — the
     same quantity the fit maximizes. The null is built by permuting the
     phase-position pairing and **re-fitting the slope on each shuffle**, so
     the test asks whether the fitted precession is stronger than chance,
     rather than testing a slope-free circular-linear association. A +1
-    smoothing is applied (Phipson & Smyth, 2010) so ``p_value`` is never exactly
-    zero.
+    smoothing is applied (Phipson & Smyth, 2010) so ``p_value`` is never
+    exactly zero.
 
     **Performance.** Observed and shuffled test statistics use the same
-    data-adaptive slope grid, with spacing determined by the position span.
-    The reported fit additionally uses Brent refinement. Shuffles are evaluated
-    in batches with bounded temporary storage; the cost scales with the slope
-    range, position span and ``n_shuffles``. Reduce the shuffle count or narrow
-    physically appropriate slope bounds for faster screening.
+    slope grid, with spacing set by ``slope_bounds``. The reported fit
+    additionally uses Brent refinement. Shuffles are evaluated in batches
+    with bounded temporary storage; the cost scales with the slope range and
+    ``n_shuffles``.
 
     ``correlation`` is the circular-linear correlation (Mardia & Jupp),
     reported as a descriptive, slope-independent effect size — it does not
@@ -585,9 +627,12 @@ def compute_phase_precession(
     >>> import numpy as np
     >>> from neurospatial.encoding.phase_precession import compute_phase_precession
     >>> positions = np.linspace(0, 50, 100)  # 0-50 cm
-    >>> phases = 2 * np.pi - positions * 0.1  # Negative slope
+    >>> phases = (2 * np.pi - positions * 0.1) % (2 * np.pi)  # -0.1 rad/cm
     >>> result = compute_phase_precession(positions, phases, rng=0)
-    >>> print(result)  # doctest: +SKIP
+    >>> round(result.slope, 3)  # rad/cm
+    -0.1
+    >>> round(result.normalized_slope, 2)  # rad across the 50 cm range
+    -5.0
     """
     from scipy.stats import circmean
 
@@ -595,6 +640,12 @@ def compute_phase_precession(
     positions = np.asarray(positions, dtype=np.float64)
     phases = np.asarray(phases, dtype=np.float64)
     phases = _to_radians(phases, angle_unit)
+    n_shuffles_eff = int(n_shuffles)
+    if n_shuffles_eff < 0:
+        raise ValueError(
+            f"n_shuffles must be non-negative, got {n_shuffles}.\n"
+            "Fix: pass n_shuffles=0 to skip the shuffle test, or a positive count."
+        )
 
     # Validate paired inputs (handles length mismatch, NaN removal)
     positions, phases = _validate_paired_input(
@@ -606,29 +657,37 @@ def compute_phase_precession(
     # conversion, but optimization assumes [0, 2*pi] range.
     phases = phases % (2 * np.pi)
 
-    # Handle position normalization
-    # Note: If position_range is provided, the correlation is computed on
-    # normalized positions [0, 1], not the original position values.
-    slope_units = "rad/position_unit"
-    if position_range is not None:
-        pos_min, pos_max = position_range
-        if pos_max <= pos_min:
+    if np.ptp(positions) == 0:
+        raise ValueError(
+            f"All {len(positions)} spike positions equal {positions[0]}, so no "
+            "phase-position slope can be fit.\n"
+            "Fix: pass spikes from a pass through the place field, where "
+            "position varies."
+        )
+    if position_range is None:
+        start, end = float(positions.min()), float(positions.max())
+    else:
+        start, end = float(position_range[0]), float(position_range[1])
+        if not (np.isfinite(start) and np.isfinite(end) and end > start):
             raise ValueError(
-                f"position_range must have pos_max > pos_min. "
-                f"Got pos_min={pos_min}, pos_max={pos_max}.\n"
-                f"Fix: Ensure position_range=(min, max) where max > min."
+                f"position_range must be (start, end) with end > start, got "
+                f"{position_range}.\n"
+                "Fix: pass the place-field boundaries in position units, e.g. "
+                "position_range=(20.0, 60.0)."
             )
-        positions = (positions - pos_min) / (pos_max - pos_min)
-        slope_units = "rad/normalized_position (0-1)"
+    width = end - start
+    # Fit on positions rescaled to the range, so slope_bounds are radians
+    # across the range whatever the position units.
+    normalized = (positions - start) / width
 
     # Fit the slope that maximizes the mean resultant length (MRL) of the
     # phase residuals (full data-adaptive grid + Brent refinement).
-    optimal_slope, mean_resultant_length = _fit_slope(phases, positions, slope_bounds)
+    normalized_slope, mean_resultant_length = _fit_slope(
+        phases, normalized, slope_bounds
+    )
 
-    # Compute residuals at optimal slope
-    residuals = (phases - optimal_slope * positions) % (2 * np.pi)
-
-    # Compute offset as circular mean of residuals
+    # Offset: circular mean of the residuals, the fitted phase at start.
+    residuals = (phases - normalized_slope * normalized) % (2 * np.pi)
     offset = float(circmean(residuals, high=2 * np.pi, low=0))
 
     # Shuffle null: break the phase<->position pairing, re-fit the slope on
@@ -643,20 +702,21 @@ def compute_phase_precession(
     # spuriously deflate the p-value. The refined MRL is still reported as the
     # fit-quality field.
     rng = np.random.default_rng(rng)
-    n_shuffles_eff = int(n_shuffles)
-    if n_shuffles_eff < 0:
-        raise ValueError("n_shuffles must be non-negative.")
-    grid_slopes = _slope_grid(positions, slope_bounds)
+    grid_slopes = _slope_grid(normalized, slope_bounds)
     phasors = np.exp(1j * phases)
-    observed_mrl = _max_residual_mrls(phasors[:, None], positions, grid_slopes)[0]
+    observed_mrl = _max_residual_mrls(phasors[:, None], normalized, grid_slopes)[0]
     null_mrls = np.empty(n_shuffles_eff, dtype=np.float64)
-    batch_size = max(1, min(64, 1_000_000 // len(positions)))
-    for start in range(0, n_shuffles_eff, batch_size):
-        stop = min(start + batch_size, n_shuffles_eff)
+    batch_size = max(1, min(64, 1_000_000 // len(normalized)))
+    for batch_start in range(0, n_shuffles_eff, batch_size):
+        batch_stop = min(batch_start + batch_size, n_shuffles_eff)
         # Permuting phases instead of positions gives the same pairing null
         # while reusing each block's position/slope basis across the batch.
-        draws = np.column_stack([rng.permutation(phasors) for _ in range(stop - start)])
-        null_mrls[start:stop] = _max_residual_mrls(draws, positions, grid_slopes)
+        draws = np.column_stack(
+            [rng.permutation(phasors) for _ in range(batch_stop - batch_start)]
+        )
+        null_mrls[batch_start:batch_stop] = _max_residual_mrls(
+            draws, normalized, grid_slopes
+        )
     # +1 smoothing avoids p == 0 (Phipson & Smyth 2010).
     # Count numerical ties too: BLAS may sum vector and batched products in a
     # different order, but equivalent permutations must never become significant.
@@ -670,9 +730,9 @@ def compute_phase_precession(
     correlation, _ = circular_linear_correlation(angles=phases, linear_values=positions)
 
     return PhasePrecessionResult(
-        slope=float(optimal_slope),
-        slope_units=slope_units,
+        slope=float(normalized_slope / width),
         offset=offset,
+        position_range=(start, end),
         correlation=correlation,
         p_value=p_value,
         mean_resultant_length=float(mean_resultant_length),
@@ -685,6 +745,8 @@ def has_phase_precession(
     *,
     alpha: float = 0.05,
     min_correlation: float = 0.2,
+    slope_bounds: tuple[float, float] = (-2 * np.pi, 2 * np.pi),
+    position_range: tuple[float, float] | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     n_shuffles: int = 200,
     rng: int | np.random.Generator | None = None,
@@ -701,6 +763,13 @@ def has_phase_precession(
         Significance level for the shuffle test.
     min_correlation : float, default=0.2
         Minimum correlation coefficient required.
+    slope_bounds : tuple of float, default=(-2*pi, 2*pi)
+        Search range for the phase change across the position range, in
+        radians; see :func:`compute_phase_precession`.
+    position_range : tuple of (float, float), optional
+        ``(start, end)`` of the place field in position units; default the
+        minimum and maximum spike position. See
+        :func:`compute_phase_precession`.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input phases.
     n_shuffles : int, default=200
@@ -750,6 +819,8 @@ def has_phase_precession(
         result = compute_phase_precession(
             positions,
             phases,
+            slope_bounds=slope_bounds,
+            position_range=position_range,
             angle_unit=angle_unit,
             n_shuffles=n_shuffles,
             rng=rng,
@@ -884,9 +955,12 @@ def plot_phase_precession(
 
     # Plot fitted lines if result provided and show_fit is True
     if result is not None and show_fit:
-        # Create fitted line
+        # Fitted line in the positions' own units: offset is the phase at
+        # the start of the fit's position range.
         pos_range = np.linspace(positions.min(), positions.max(), 100)
-        fitted_phases = (result.offset + result.slope * pos_range) % (2 * np.pi)
+        fitted_phases = (
+            result.offset + result.slope * (pos_range - result.position_range[0])
+        ) % (2 * np.pi)
 
         # Plot in both the lower [0, 2pi] and upper [2pi, 4pi] regions
         ax.plot(pos_range, fitted_phases, **line_kw)

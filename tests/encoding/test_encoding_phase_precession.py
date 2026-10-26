@@ -237,7 +237,7 @@ class TestPhasePrecessionFunctionality:
 
         result = PhasePrecessionResult(
             slope=-0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.5,
             p_value=0.01,
@@ -253,7 +253,7 @@ class TestPhasePrecessionFunctionality:
 
         result = PhasePrecessionResult(
             slope=-0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.5,
             p_value=0.01,

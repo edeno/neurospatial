@@ -15,7 +15,7 @@ class TestPhasePrecessionResult:
 
         result = PhasePrecessionResult(
             slope=-0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.5,
             p_value=0.01,
@@ -29,7 +29,7 @@ class TestPhasePrecessionResult:
 
         result = PhasePrecessionResult(
             slope=-0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.2,
             p_value=0.10,
@@ -43,7 +43,7 @@ class TestPhasePrecessionResult:
 
         result = PhasePrecessionResult(
             slope=-0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.5,
             p_value=0.01,
@@ -59,7 +59,7 @@ class TestPhasePrecessionResult:
 
         result = PhasePrecessionResult(
             slope=0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.5,
             p_value=0.01,
@@ -74,7 +74,7 @@ class TestPhasePrecessionResult:
 
         result = PhasePrecessionResult(
             slope=-0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.05,
             p_value=0.4,
@@ -92,7 +92,7 @@ class TestPhasePrecessionResult:
 
         result = PhasePrecessionResult(
             slope=-0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.5,
             p_value=0.01,
@@ -107,7 +107,7 @@ class TestPhasePrecessionResult:
 
         result = PhasePrecessionResult(
             slope=-0.1,
-            slope_units="rad/cm",
+            position_range=(0.0, 40.0),
             offset=1.0,
             correlation=0.5,
             p_value=0.01,
@@ -148,13 +148,14 @@ class TestPhasePrecession:
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         n = 400
-        positions = np.linspace(0, 200, n)  # wide span -> narrow MRL lobe
+        positions = np.linspace(0, 200, n)
+        # About 17 cycles across the range: a wide search -> narrow MRL lobe.
         true_slope = -0.54211  # offset from coarse-grid sample points
         offset = 1.0
         phases = (offset + true_slope * positions) % (2 * np.pi)
 
         result = compute_phase_precession(
-            positions, phases, slope_bounds=(-2 * np.pi, 2 * np.pi)
+            positions, phases, slope_bounds=(-40 * np.pi, 40 * np.pi)
         )
 
         # Noiseless data: the true slope gives a perfect fit (MRL == 1).
@@ -181,52 +182,92 @@ class TestPhasePrecession:
         assert raw.mean_resultant_length > 0.99
         assert raw.p_value == normalized.p_value == 0.01
 
-    def test_shuffle_test_preserves_physical_unit_conversion(self) -> None:
-        """Changing position units and slope bounds preserves the tested hypothesis."""
+    def test_position_units_do_not_change_the_fit(self) -> None:
+        """The same spikes in cm and in m give one fit, reported in each unit."""
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         stimulus = np.random.default_rng(34)
-        positions = stimulus.uniform(0, 200, 80)
-        phases = stimulus.uniform(0, 2 * np.pi, len(positions))
-        result = compute_phase_precession(
-            positions, phases, slope_bounds=(-0.2, 0.2), n_shuffles=99, rng=5
+        positions_cm = stimulus.uniform(0, 200, 80)
+        phases = (
+            np.pi - 2 * np.pi * positions_cm / 200 + stimulus.vonmises(0, 2, 80)
+        ) % (2 * np.pi)
+        in_cm = compute_phase_precession(positions_cm, phases, n_shuffles=99, rng=5)
+        in_m = compute_phase_precession(
+            positions_cm / 100, phases, n_shuffles=99, rng=5
         )
-        converted = compute_phase_precession(
-            positions / 100,
-            phases,
-            slope_bounds=(-20, 20),
-            n_shuffles=99,
-            rng=5,
-        )
-        assert result.p_value == converted.p_value
-        assert converted.slope == pytest.approx(result.slope * 100, abs=1e-3)
-        assert result.mean_resultant_length == pytest.approx(
-            converted.mean_resultant_length, abs=1e-6
+        assert in_m.p_value == in_cm.p_value
+        assert in_m.slope == pytest.approx(in_cm.slope * 100, rel=1e-6)
+        assert in_m.normalized_slope == pytest.approx(in_cm.normalized_slope, rel=1e-6)
+        assert in_m.offset == pytest.approx(in_cm.offset, abs=1e-9)
+        assert in_cm.mean_resultant_length == pytest.approx(
+            in_m.mean_resultant_length, abs=1e-6
         )
 
-    def test_constant_positions_cannot_become_significant(self) -> None:
-        """Numerical differences in identical permutation statistics count as ties."""
+    def test_default_bounds_recover_weakly_coupled_slope(self) -> None:
+        """One cycle per 40 cm field is recovered from noisy, sparse spikes.
+
+        Phase coupling is weak (von Mises kappa 0.7) and each cell has 40
+        spikes. A search wider than one cycle per field lets noise alias onto
+        steep slopes; the default search over one cycle per field recovers the
+        true slope in most simulated cells.
+        """
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        true_slope = -2 * np.pi / 40  # rad/cm
+        recovered = []
+        for seed in range(40):
+            stimulus = np.random.default_rng(seed)
+            positions = stimulus.uniform(0, 40, 40)
+            phases = (
+                np.pi + true_slope * (positions - 20) + stimulus.vonmises(0, 0.7, 40)
+            ) % (2 * np.pi)
+            result = compute_phase_precession(positions, phases, n_shuffles=0)
+            recovered.append(result.slope)
+        within = np.mean(np.abs(np.array(recovered) - true_slope) < 0.05)
+        assert within >= 0.7, f"slope recovered in only {within:.0%} of cells"
+
+    def test_offset_is_the_phase_at_the_start_of_the_range(self) -> None:
+        """offset is the fitted phase at position_range[0]."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(11)
+        positions = stimulus.uniform(20, 60, 200)
+        true_offset, true_slope = 5.0, -2 * np.pi / 40
+        phases = (
+            true_offset + true_slope * (positions - 20) + stimulus.vonmises(0, 8, 200)
+        ) % (2 * np.pi)
+        result = compute_phase_precession(
+            positions, phases, position_range=(20.0, 60.0), n_shuffles=0
+        )
+        assert result.position_range == (20.0, 60.0)
+        assert result.slope == pytest.approx(true_slope, abs=0.01)
+        assert result.normalized_slope == pytest.approx(result.slope * 40.0)
+        offset_error = np.angle(np.exp(1j * (result.offset - true_offset)))
+        assert abs(offset_error) < 0.1
+
+    def test_constant_positions_raise(self) -> None:
+        """A slope cannot be fit when every spike is at the same position."""
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         positions = np.full(50, 123.0)
         phases = np.random.default_rng(8).uniform(0, 2 * np.pi, len(positions))
-        with pytest.warns(RuntimeWarning, match="no variation"):
-            result = compute_phase_precession(positions, phases, n_shuffles=99, rng=1)
-        assert result.p_value == 1.0
+        with pytest.raises(ValueError, match="no phase-position slope"):
+            compute_phase_precession(positions, phases, n_shuffles=99, rng=1)
 
-    def test_excessive_slope_search_explains_normalization(self) -> None:
+    def test_excessive_slope_search_raises(self) -> None:
         """An unresolvable search fails before allocating a huge grid of slopes."""
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         positions = np.linspace(0, 1e8, 30)
         phases = (-2 * np.pi * positions / 1e8) % (2 * np.pi)
-        with pytest.raises(ValueError, match=r"20,000.*Narrow slope_bounds"):
-            compute_phase_precession(positions, phases, n_shuffles=0)
-        normalized = compute_phase_precession(
-            positions, phases, position_range=(0, 1e8), n_shuffles=9, rng=0
-        )
-        assert normalized.mean_resultant_length > 0.99
-        assert normalized.p_value == 0.1
+        with pytest.raises(ValueError, match=r"(?s)20,000.*narrow slope_bounds"):
+            compute_phase_precession(
+                positions, phases, slope_bounds=(-1e5, 1e5), n_shuffles=0
+            )
+        result = compute_phase_precession(positions, phases, n_shuffles=9, rng=0)
+        assert result.mean_resultant_length > 0.99
+        assert result.slope == pytest.approx(-2 * np.pi / 1e8, rel=1e-3)
+        assert result.p_value == 0.1
 
     def test_correlation_in_valid_range(self) -> None:
         """Correlation should be in [0, 1]."""
@@ -309,20 +350,17 @@ class TestPhasePrecession:
 
         assert 0 <= result.correlation <= 1
 
-    def test_position_range_normalization(self) -> None:
-        """position_range should normalize positions and change slope units."""
+    def test_default_position_range_is_the_spike_extent(self) -> None:
+        """Without position_range the fit is normalized over the spike positions."""
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
-        positions = np.linspace(0, 100, 50)
+        positions = rng.uniform(10, 90, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
-        # position_range normalizes to [0, 1] - documented behavior, not a warning
-        result = compute_phase_precession(
-            positions, phases, position_range=(0.0, 100.0)
-        )
+        result = compute_phase_precession(positions, phases, n_shuffles=0)
 
-        assert "normalized" in result.slope_units.lower()
+        assert result.position_range == (positions.min(), positions.max())
 
     def test_invalid_position_range_raises(self) -> None:
         """Invalid position_range should raise ValueError."""
@@ -332,7 +370,7 @@ class TestPhasePrecession:
         positions = np.linspace(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
-        with pytest.raises(ValueError, match="pos_max > pos_min"):
+        with pytest.raises(ValueError, match="end > start"):
             compute_phase_precession(positions, phases, position_range=(100.0, 0.0))
 
 
@@ -357,14 +395,14 @@ class TestHasPhasePrecession:
 
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 200)
-        # Strong negative slope
-        true_slope = -0.15
+        # Strong negative slope: about one theta cycle across the field
+        true_slope = -0.12
         phases = (np.pi + true_slope * positions + rng.normal(0, 0.1, 200)) % (
             2 * np.pi
         )
 
         result = has_phase_precession(
-            positions, phases, alpha=0.05, min_correlation=0.2
+            positions, phases, alpha=0.05, min_correlation=0.2, rng=0
         )
 
         assert result is True
@@ -378,7 +416,7 @@ class TestHasPhasePrecession:
         phases = rng.uniform(0, 2 * np.pi, 50)
 
         result = has_phase_precession(
-            positions, phases, alpha=0.05, min_correlation=0.2
+            positions, phases, alpha=0.05, min_correlation=0.2, rng=0
         )
 
         assert result is False
@@ -390,15 +428,30 @@ class TestHasPhasePrecession:
         rng = np.random.default_rng(42)
         positions = np.linspace(0, 50, 200)
         # Strong positive slope (recession)
-        true_slope = 0.15
+        true_slope = 0.12
         phases = (np.pi + true_slope * positions + rng.normal(0, 0.1, 200)) % (
             2 * np.pi
         )
 
-        result = has_phase_precession(positions, phases)
+        result = has_phase_precession(positions, phases, rng=0)
 
         # Should return False because slope is positive
         assert result is False
+
+    def test_forwards_slope_bounds(self) -> None:
+        """A search restricted to recession cannot report precession."""
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        stimulus = np.random.default_rng(5)
+        positions = stimulus.uniform(0, 40, 300)
+        phases = (np.pi - 2 * np.pi * positions / 40 + stimulus.vonmises(0, 4, 300)) % (
+            2 * np.pi
+        )
+
+        assert has_phase_precession(positions, phases, rng=0)
+        assert not has_phase_precession(
+            positions, phases, slope_bounds=(0.0, 2 * np.pi), rng=0
+        )
 
     def test_handles_insufficient_data(self) -> None:
         """Should return False for insufficient data (not raise)."""
@@ -817,6 +870,30 @@ class TestPlotPhasePrecession:
         finally:
             plt.close("all")
 
+    def test_fit_line_follows_the_data_with_a_field_range(self) -> None:
+        """The drawn fit is the fitted phase at each plotted position."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.phase_precession import (
+            compute_phase_precession,
+            plot_phase_precession,
+        )
+
+        positions = np.linspace(20, 60, 100)
+        true_phase = (1.0 - 0.15 * (positions - 20)) % (2 * np.pi)
+        result = compute_phase_precession(
+            positions, true_phase, position_range=(20.0, 60.0), n_shuffles=0
+        )
+        ax = plot_phase_precession(positions, true_phase, result=result)
+
+        try:
+            line_x, line_y = ax.get_lines()[0].get_data()
+            expected = (1.0 - 0.15 * (np.asarray(line_x) - 20)) % (2 * np.pi)
+            error = np.angle(np.exp(1j * (np.asarray(line_y) - expected)))
+            assert np.max(np.abs(error)) < 1e-3
+        finally:
+            plt.close("all")
+
     def test_handles_phases_in_radians(self) -> None:
         """Should correctly handle phases in radians."""
         import matplotlib.pyplot as plt
@@ -873,7 +950,11 @@ class TestPhasePrecessionSlopeMagnitude:
         true_slope = -0.1  # rad per position unit
         phases = self._wrap(true_slope * positions + 1.0 + rng.normal(0, 0.2, 200))
 
-        result = compute_phase_precession(positions, phases)
+        # -0.1 rad/unit over 100 units is 1.6 cycles across the range, more
+        # than the default one-cycle search: widen it explicitly.
+        result = compute_phase_precession(
+            positions, phases, slope_bounds=(-4 * np.pi, 4 * np.pi)
+        )
         assert np.isclose(result.slope, true_slope, atol=0.02)
 
     def test_slope_sign_and_magnitude_for_positive_slope(self):
@@ -890,26 +971,20 @@ class TestPhasePrecessionSlopeMagnitude:
     def test_position_range_normalization(self):
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
-        # Contract (phase_precession docstring): with position_range=None the
-        # slope is rad/position_unit; with position_range=(min, max) positions
-        # are normalized to [0, 1] and the slope is rad/normalized_position, so
-        # it equals the raw slope times the position span.
-        #
-        # Bounds note: this test uses true_slope = -0.05 so the normalized
-        # slope is -0.05 * 100 = -5 rad/normalized_position, which is inside the
-        # default slope_bounds (-2*pi, 2*pi) ~= (-6.28, 6.28). A steeper slope
-        # such as -0.1 would normalize to -10, get clipped at -2*pi, and break
-        # the expected (raw * span) relation -- hence the smaller value here.
+        # slope is in radians per position unit whatever range the fit is
+        # normalized over; normalized_slope is the phase change across that
+        # range. -0.05 rad/unit over 100 units is -5 rad, inside the default
+        # one-cycle search.
         rng = np.random.default_rng(3)
         positions = np.linspace(0, 100, 200)
         true_slope = -0.05
         phases = self._wrap(true_slope * positions + 1.0 + rng.normal(0, 0.2, 200))
 
-        raw = compute_phase_precession(positions, phases)
-        normalized = compute_phase_precession(
-            positions, phases, position_range=(0.0, 100.0)
+        default = compute_phase_precession(positions, phases, n_shuffles=0)
+        field = compute_phase_precession(
+            positions, phases, position_range=(0.0, 100.0), n_shuffles=0
         )
 
-        assert np.isclose(raw.slope, true_slope, atol=0.02)
-        # Normalized slope = raw slope * span (100), within bounds.
-        assert np.isclose(normalized.slope, true_slope * 100.0, atol=0.5)
+        assert np.isclose(default.slope, true_slope, atol=0.02)
+        assert np.isclose(field.slope, true_slope, atol=0.02)
+        assert np.isclose(field.normalized_slope, true_slope * 100.0, atol=0.5)
