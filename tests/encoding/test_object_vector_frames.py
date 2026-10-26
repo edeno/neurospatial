@@ -386,3 +386,32 @@ def test_all_samples_outside_the_environment_warn_like_place_maps():
             distance_range=(0.0, 2000.0),
         )
     assert np.all(np.isnan(result.firing_rate))
+
+
+def test_preferred_vector_of_an_unmeasured_map_is_nan():
+    """No supported bin means no peak: NaN, as for boundary-vector maps."""
+    from neurospatial import Environment
+
+    polar = Environment.from_polar_egocentric(
+        distance_range=(0.0, 50.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 6,
+        circular_angle=True,
+    )
+    result = encoding.ObjectVectorRateResult(
+        np.full(polar.n_bins, np.nan),
+        np.zeros(polar.n_bins),
+        polar,
+        direction_frame="allocentric",
+    )
+    assert np.isnan(result.preferred_distance())
+    assert np.isnan(result.preferred_direction())
+    rates = np.ones((2, polar.n_bins))
+    rates[1] = np.nan
+    population = encoding.ObjectVectorRatesResult(
+        rates, np.ones(polar.n_bins), polar, direction_frame="allocentric"
+    )
+    assert np.isfinite(population.preferred_distances()[0])
+    assert np.isnan(population.preferred_distances()[1])
+    assert np.isnan(population.preferred_directions()[1])

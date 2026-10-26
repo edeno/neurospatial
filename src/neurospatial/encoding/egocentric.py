@@ -392,15 +392,14 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         Returns
         -------
         float
-            Distance to object at peak firing rate, in the same units as
-            the environment (typically cm). Uses nanargmax to handle NaN
-            values in the firing rate map.
+            Distance to the object at the peak firing rate, in the
+            environment's length units; NaN when no bin has a rate.
 
         Notes
         -----
         For object-vector cells, this represents the preferred distance to
-        the object. A cell with preferred_distance=20 fires most when the
-        object is 20 cm away from the animal.
+        the object. With positions in cm, a cell with preferred_distance=20
+        fires most when the object is 20 cm away from the animal.
 
         The distance is extracted from the polar environment's bin
         centers. The first component (index 0) represents distance.
@@ -433,10 +432,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         preferred_direction : Get direction component of peak response
         plot : Visualize the object-vector rate map
         """
-        firing_rate = _to_numpy(self.firing_rate)
-        peak_bin = np.nanargmax(firing_rate)
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-        return float(bin_centers[peak_bin, 0])
+        return float(self._peak_coordinates(0)[0])
 
     def preferred_direction(self) -> float:
         """Direction from the animal to the object at peak firing rate.
@@ -448,7 +444,8 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         Returns
         -------
         float
-            Peak animal-to-object direction in radians, in the recorded frame.
+            Peak animal-to-object direction in radians, in the recorded
+            frame; NaN when no bin has a rate.
 
         Examples
         --------
@@ -478,10 +475,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         preferred_distance : Get distance component of peak response
         plot : Visualize the object-vector rate map
         """
-        firing_rate = _to_numpy(self.firing_rate)
-        peak_bin = np.nanargmax(firing_rate)
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-        return float(bin_centers[peak_bin, 1])
+        return float(self._peak_coordinates(1)[0])
 
     def spatial_information(self) -> float:
         """Compute spatial information in the recorded frame (bits per spike).
@@ -999,14 +993,14 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         Returns
         -------
         ndarray, shape (n_neurons,)
-            Distance to object at peak firing rate for each neuron, in the
-            same units as the environment (typically cm).
+            Distance to the object at each neuron's peak firing rate, in
+            the environment's length units; NaN for a unit with no rate.
 
         Notes
         -----
         For object-vector cells, this represents the preferred distance to
-        the object. A cell with preferred_distance=20 fires most when the
-        object is 20 cm away from the animal.
+        the object. With positions in cm, a cell with preferred_distance=20
+        fires most when the object is 20 cm away from the animal.
 
         Examples
         --------
@@ -1042,14 +1036,7 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ObjectVectorRateResult.preferred_distance : Single-neuron version
         preferred_directions : Get direction preferences for all neurons
         """
-        firing_rates = _to_numpy(self.firing_rates)
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-
-        # Peak (max-firing) bin per neuron, ignoring NaNs; then read off the
-        # distance component (column 0 of bin_centers).
-        peak_idx = np.nanargmax(firing_rates, axis=1)
-        distances: NDArray[np.float64] = bin_centers[peak_idx, 0]
-        return distances
+        return self._peak_coordinates(0)
 
     def preferred_directions(self) -> NDArray[np.float64]:
         """Directions from the animal to the object at peak firing rate.
@@ -1061,7 +1048,8 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         Returns
         -------
         NDArray[np.float64], shape (n_neurons,)
-            Peak animal-to-object direction in radians, in the recorded frame.
+            Peak animal-to-object direction in radians, in the recorded
+            frame; NaN for a unit with no rate.
 
         Examples
         --------
@@ -1097,14 +1085,7 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ObjectVectorRateResult.preferred_direction : Single-neuron version
         preferred_distances : Get distance preferences for all neurons
         """
-        firing_rates = _to_numpy(self.firing_rates)
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-
-        # Peak (max-firing) bin per neuron, ignoring NaNs; then read off the
-        # direction component (column 1 of bin_centers).
-        peak_idx = np.nanargmax(firing_rates, axis=1)
-        directions: NDArray[np.float64] = bin_centers[peak_idx, 1]
-        return directions
+        return self._peak_coordinates(1)
 
     def spatial_information(self) -> NDArray[np.float64]:
         """Spatial information in the recorded frame for all neurons (bits per spike).
