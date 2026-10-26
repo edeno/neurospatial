@@ -282,6 +282,7 @@ class TestMixinsErrorMessages:
         assert "_GridMixin.locator" in error_msg
         assert "build()" in error_msg
 
+
 class TestErrorMessageFormat:
     """Test that error messages follow consistent format patterns."""
 
