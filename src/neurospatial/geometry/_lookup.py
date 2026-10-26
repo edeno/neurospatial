@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
@@ -92,8 +93,8 @@ def _snap_outline_slivers(
 
     A grid keeps the cells whose centers lie inside the arena's outline, so
     slivers of a curved or diagonal wall are inside the arena but in no bin.
-    A position inside such a cell (one of the grid's cells, whose center lies
-    outside the arena) belongs to the nearest neighboring cell whose center
+    A position inside such a cell (one of the grid's cells, whose center is not
+    strictly inside the arena) belongs to the nearest neighboring cell whose center
     lies inside, less than one cell away, when that cell is a bin. A cell
     removed on purpose (by ``subset``) keeps its sliver positions outside, as
     do positions beyond the grid. A rotated, reflected or sheared grid
@@ -138,11 +139,18 @@ def _snap_outline_slivers(
             axis=-1,
         )
 
+    domain = arena.polygonal_domain() if len(edges) == 2 else None
+
     def in_arena(grid_centers: NDArray[np.float64]) -> NDArray[np.bool_]:
-        flat = grid_centers.reshape(-1, len(edges))
-        return np.asarray(arena.contains(to_world(flat))).reshape(
-            grid_centers.shape[:-1]
+        # The rule that kept the grid's bins: a cell whose center lies on the
+        # outline was not kept, so it is a sliver too, not a missing bin.
+        flat = to_world(grid_centers.reshape(-1, len(edges)))
+        inside = (
+            shapely.contains_xy(domain, flat[:, 0], flat[:, 1])
+            if domain is not None
+            else arena.contains(flat)
         )
+        return np.asarray(inside).reshape(grid_centers.shape[:-1])
 
     sliver = ~in_arena(centers_of(cells))
     rows, cells, source = rows[sliver], cells[sliver], source[sliver]

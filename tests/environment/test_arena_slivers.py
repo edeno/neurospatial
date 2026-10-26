@@ -125,3 +125,19 @@ def test_rotated_grid_owns_its_whole_physical_wall(round_arena):
     original = border_geometry(round_arena, "physical")
     rotated = border_geometry(moved, "physical")
     np.testing.assert_array_equal(rotated.wall_bins, original.wall_bins)
+
+
+def test_outline_through_cell_centers_gives_every_wall_point_a_bin():
+    """A cell whose center lies exactly on the outline is not kept, so it is a
+    sliver whose wall points belong to a neighboring bin. These kite edges
+    pass through grid cell centers at 2.5 cm bins."""
+    from neurospatial.geometry import locate_outline_points
+
+    kite = shapely.Polygon([(0, 0), (100, -10), (120, 90), (10, 100)])
+    env = Environment.from_polygon(kite, bin_size=2.5, units="cm")
+    outline = shapely.segmentize(kite.exterior, 0.1)
+    points = shapely.get_coordinates(outline)[:-1]
+    bins = locate_outline_points(env._binning, env.arena, points)
+    assert (bins >= 0).all()
+    gaps = np.linalg.norm(env.bin_centers[bins] - points, axis=1)
+    assert gaps.max() < 2.5 * np.sqrt(2) * 1.5  # within the neighboring cell
