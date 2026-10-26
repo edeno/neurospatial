@@ -806,11 +806,11 @@ counts flagged by the screen, not cells with ground-truth tuning.
 
 | Minutes (approximate spikes) | Egocentric information median / flags (0.3) | Place information median / flags (0.5) | Detected fields | View flags (0.5) | HD flags |
 | --- | --- | --- | --- | --- | --- |
-| 1 (30) | 2.12 / 20/20 | 0.86 / 19/20 | 20/20 | 19/20 | 0/20 |
-| 2 (60) | 1.41 / 20/20 | 0.53 / 15/20 | 20/20 | 19/20 | 0/20 |
+| 1 (30) | 2.12 / 20/20 | 0.86 / 19/20 | 11/20 | 19/20 | 0/20 |
+| 2 (60) | 1.41 / 20/20 | 0.53 / 15/20 | 9/20 | 19/20 | 0/20 |
 | 5 (150) | 0.70 / 20/20 | 0.22 / 0/20 | 20/20 | 0/20 | 0/20 |
 | 10 (300) | 0.41 / 20/20 | 0.11 / 0/20 | 20/20 | 0/20 | 0/20 |
-| 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 20/20 | 0/20 | 0/20 |
+| 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 16/20 | 0/20 | 0/20 |
 
 The allocentric object-vector information screen also flagged 20/20 in the
 10-minute fixture. HD's MVL screen weights firing rates, while its Rayleigh

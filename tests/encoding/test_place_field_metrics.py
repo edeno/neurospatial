@@ -81,6 +81,20 @@ def test_place_field_workflow_integration():
 # =============================================================================
 
 
+@pytest.fixture(scope="module")
+def track_arena():
+    """80 x 40 cm arena with 2 cm bins and a Gaussian bump factory."""
+    xx, yy = np.meshgrid(np.arange(1, 80, 2.0), np.arange(1, 40, 2.0))
+    env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=2.0)
+    centers = env.bin_centers
+
+    def bump(x0, y0, peak, sigma):
+        d2 = (centers[:, 0] - x0) ** 2 + (centers[:, 1] - y0) ** 2
+        return peak * np.exp(-d2 / (2 * sigma**2))
+
+    return env, bump
+
+
 class TestDetectPlaceFields:
     """Tests for place field detection algorithm.
 
@@ -129,43 +143,76 @@ class TestDetectPlaceFields:
         mean_center = field_centers.mean(axis=0)
         assert_allclose(mean_center, [10.0, 10.0], atol=2.0)
 
-    def test_detect_place_fields_subfields(self):
-        """Test subfield discrimination with coalescent fields."""
-        # Create environment
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((10000, 2)) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        # Create two close peaks that might be detected as subfields
-        firing_rate = np.zeros(env.n_bins)
-        peak1_pos = np.array([0.0, 0.0])
-        peak2_pos = np.array([3.0, 0.0])  # Close but distinct
-
-        for i in range(env.n_bins):
-            center = env.bin_centers[i]
-            dist1 = np.linalg.norm(center - peak1_pos)
-            dist2 = np.linalg.norm(center - peak2_pos)
-            firing_rate[i] = 8.0 * np.exp(-(dist1**2) / (2 * 2.0**2)) + 6.0 * np.exp(
-                -(dist2**2) / (2 * 2.0**2)
-            )
-
+    def test_coalescent_fields_split_at_true_centers(self, track_arena):
+        """Two fields 16 cm apart (sigma 5 cm) merge at 0.2 x peak; subfields split them."""
+        env, bump = track_arena
+        firing_rate = bump(32, 20, 10.0, 5.0) + bump(48, 20, 10.0, 5.0)
         from neurospatial.encoding.spatial import detect_place_fields
 
-        # With subfield detection enabled (default)
-        fields_with_subfields = detect_place_fields(
-            env, firing_rate, detect_subfields=True
+        fields = detect_place_fields(env, firing_rate, detect_subfields=True)
+        assert len(fields) == 2
+        centroids = sorted(
+            [
+                (firing_rate[f] @ env.bin_centers[f]) / firing_rate[f].sum()
+                for f in fields
+            ],
+            key=lambda centroid: centroid[0],
         )
+        bin_size = 2.0
+        assert_allclose(centroids[0], [32.0, 20.0], atol=bin_size)
+        assert_allclose(centroids[1], [48.0, 20.0], atol=bin_size)
 
-        # Should detect 2 subfields
-        assert len(fields_with_subfields) >= 1
+        merged = detect_place_fields(env, firing_rate, detect_subfields=False)
+        assert len(merged) == 1
 
-        # Without subfield detection
-        fields_no_subfields = detect_place_fields(
-            env, firing_rate, detect_subfields=False
-        )
+    def test_peak_floor_stops_cascade_into_noise(self, track_arena):
+        """Each field's threshold scales with its own peak, so low bumps need a floor.
 
-        # Should merge into one field
-        assert len(fields_no_subfields) == 1
+        A 20 Hz field, a 3 Hz bump and one isolated 5 Hz bin give one field:
+        neither secondary peak reaches 0.6 x 20 Hz. Without the floor the
+        thresholds shrank with each smaller peak and reported 22 fields with
+        peaks down to 0 Hz.
+        """
+        env, bump = track_arena
+        firing_rate = bump(15, 20, 20.0, 4.0) + bump(60, 20, 3.0, 5.0)
+        isolated = np.argmin(np.linalg.norm(env.bin_centers - [40, 5], axis=1))
+        firing_rate[isolated] = 5.0
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        fields = detect_place_fields(env, firing_rate)
+        assert len(fields) == 1
+        assert np.max(firing_rate[fields[0]]) == pytest.approx(20.0, rel=0.05)
+
+        # Without the secondary-peak fraction, the 1 Hz floor still applies:
+        # the 3 Hz bump is a field and nothing below 1 Hz is.
+        fields = detect_place_fields(env, firing_rate, min_secondary_peak_fraction=0.0)
+        peaks = [float(np.max(firing_rate[f])) for f in fields]
+        assert len(fields) == 2
+        assert min(peaks) >= 1.0
+
+    def test_min_peak_rate_is_an_absolute_floor(self, track_arena):
+        """A map whose maximum is below min_peak_rate has no field."""
+        env, bump = track_arena
+        firing_rate = bump(40, 20, 0.8, 5.0)
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        assert len(detect_place_fields(env, firing_rate)) == 0
+        assert len(detect_place_fields(env, firing_rate, min_peak_rate=0.5)) == 1
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"min_peak_rate": np.nan}, "min_peak_rate"),
+            ({"min_peak_rate": -1.0}, "min_peak_rate"),
+            ({"min_secondary_peak_fraction": 1.5}, "min_secondary_peak_fraction"),
+        ],
+    )
+    def test_peak_floor_arguments_validated(self, track_arena, kwargs, match):
+        env, bump = track_arena
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        with pytest.raises(ValueError, match=match):
+            detect_place_fields(env, bump(40, 20, 10.0, 5.0), **kwargs)
 
     def test_detect_place_fields_explicit_map_mean_exclusion(self):
         """A requested map-mean cutoff warns when it excludes a map."""
@@ -1846,37 +1893,6 @@ class TestDetectPlaceFieldsValidation:
 
         fields = detect_place_fields(env, firing_rate, min_size=20)
         assert len(fields) == 0 or all(len(f) >= 20 for f in fields)
-
-    def test_subfields_extension_path(self):
-        """Test that subfields are properly extended to fields list."""
-        positions = []
-        for x in np.linspace(0, 30, 150):
-            for y in np.linspace(0, 30, 150):
-                positions.append([x, y])
-        positions = np.array(positions)
-
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        from neurospatial.encoding.spatial import detect_place_fields
-
-        firing_rate = np.zeros(env.n_bins)
-        for i in range(env.n_bins):
-            center = env.bin_centers[i]
-            dist1 = np.sqrt((center[0] - 10) ** 2 + (center[1] - 10) ** 2)
-            dist2 = np.sqrt((center[0] - 20) ** 2 + (center[1] - 20) ** 2)
-            firing_rate[i] = 5.0 * np.exp(-(dist1**2) / (2 * 2.5**2)) + 5.0 * np.exp(
-                -(dist2**2) / (2 * 2.5**2)
-            )
-
-        fields_with_subfields = detect_place_fields(
-            env, firing_rate, detect_subfields=True, threshold=0.2
-        )
-
-        fields_without_subfields = detect_place_fields(
-            env, firing_rate, detect_subfields=False, threshold=0.2
-        )
-
-        assert len(fields_with_subfields) >= len(fields_without_subfields)
 
 
 class TestFieldCentroidEdgeCases:

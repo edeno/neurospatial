@@ -198,6 +198,8 @@ def population_coverage(
     *,
     threshold: float = 0.2,
     min_size: int | None = None,
+    min_peak_rate: float = 1.0,
+    min_secondary_peak_fraction: float = 0.6,
     max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
     n_jobs: int = 1,
@@ -221,13 +223,20 @@ def population_coverage(
     min_size : int, optional
         Minimum number of bins for a valid field. Default is 9.
         Passed to `detect_place_fields()`.
+    min_peak_rate : float, default=1.0
+        Smallest peak rate (Hz) that can start a field. Passed to
+        `detect_place_fields()`.
+    min_secondary_peak_fraction : float, default=0.6
+        A field after a neuron's first must peak at least this fraction of
+        that neuron's maximum rate. Passed to `detect_place_fields()`.
     max_mean_rate : float, default=np.inf
         Optional cutoff on the unweighted mean of non-NaN spatial-bin rates
         (Hz), passed to ``detect_place_fields``. The default disables exclusion.
         This is not a recording-time mean and does not identify cell type.
     detect_subfields : bool, default=True
-        If True, recursively detect subfields within large fields.
-        Passed to `detect_place_fields()`.
+        If True, split a large field at 0.5 and then 0.7 of its peak when
+        that separates two neighboring fields. Passed to
+        `detect_place_fields()`.
     n_jobs : int, default=1
         Number of parallel jobs for per-neuron place-field detection. Use
         ``-1`` for all CPUs. ``1`` means sequential processing (no joblib
@@ -343,6 +352,8 @@ def population_coverage(
                 firing_rates[neuron_idx],
                 threshold=threshold,
                 min_size=min_size,
+                min_peak_rate=min_peak_rate,
+                min_secondary_peak_fraction=min_secondary_peak_fraction,
                 max_mean_rate=max_mean_rate,
                 detect_subfields=detect_subfields,
             )
@@ -360,6 +371,8 @@ def population_coverage(
                     firing_rates[neuron_idx],
                     threshold=threshold,
                     min_size=min_size,
+                    min_peak_rate=min_peak_rate,
+                    min_secondary_peak_fraction=min_secondary_peak_fraction,
                     max_mean_rate=max_mean_rate,
                     detect_subfields=detect_subfields,
                 )
