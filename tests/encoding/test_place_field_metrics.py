@@ -694,7 +694,6 @@ class TestRateMapCoherence:
     - Perfectly smooth fields (expected high coherence)
     - Random noise (expected low coherence)
     - Edge cases (NaN handling, constant firing)
-    - Different correlation methods (Pearson vs. Spearman)
     """
 
     def test_rate_map_coherence_uniform_rate(self):
@@ -807,27 +806,6 @@ class TestRateMapCoherence:
             "Coherence should handle NaNs unless all values are NaN"
         )
 
-    def test_rate_map_coherence_method_parameter(self):
-        """Test that method parameter works (pearson vs spearman)."""
-        rng = np.random.default_rng(42)
-        positions = (
-            rng.standard_normal((500, 2)) * 20
-        )  # Reduced from 2000 - sufficient for coherence test
-        env = Environment.from_samples(positions, bin_size=4.0)
-
-        # Smooth field
-        firing_rate = np.ones(env.n_bins) * 5.0
-        firing_rate[: len(firing_rate) // 2] = 3.0
-
-        from neurospatial.encoding._field_metrics import rate_map_coherence
-
-        coherence_pearson = rate_map_coherence(env, firing_rate, method="pearson")
-        coherence_spearman = rate_map_coherence(env, firing_rate, method="spearman")
-
-        # Both should be valid
-        assert -1.0 <= coherence_pearson <= 1.0
-        assert -1.0 <= coherence_spearman <= 1.0
-
     def test_rate_map_coherence_return_type(self):
         """Test that coherence returns scalar float."""
         rng = np.random.default_rng(42)
@@ -844,26 +822,35 @@ class TestRateMapCoherence:
         assert np.ndim(coherence) == 0, "Coherence should be scalar"
         assert isinstance(coherence, (float, np.floating)) or np.isnan(coherence)
 
-    def test_rate_map_coherence_range(self):
-        """Test that coherence is always in [-1, 1]."""
+    def test_rate_map_coherence_is_fisher_z_of_neighbor_correlation(self):
+        """Coherence is arctanh of Pearson r between rates and neighbor means.
+
+        Muller & Kubie (1989) report the Fisher z of this correlation.
+        """
+        from scipy.stats import pearsonr
+
+        from neurospatial.encoding._field_metrics import rate_map_coherence
+
+        x, y = np.meshgrid(np.arange(0.5, 40.0), np.arange(0.5, 40.0))
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
         rng = np.random.default_rng(42)
-        # Test multiple random environments
-        for _ in range(5):
-            positions = rng.standard_normal((2000, 2)) * 15
-            env = Environment.from_samples(positions, bin_size=3.0)
+        centers = env.bin_centers
+        firing_rate = 5.0 * np.exp(
+            -np.sum((centers - [20.0, 20.0]) ** 2, axis=1) / (2 * 6.0**2)
+        ) + rng.uniform(0, 1.0, env.n_bins)
 
-            # Random firing rate
-            firing_rate = rng.random(env.n_bins) * 5.0
+        graph = env.connectivity
+        neighbor_means = np.array(
+            [
+                np.mean(firing_rate[list(graph.neighbors(node))])
+                for node in range(env.n_bins)
+            ]
+        )
+        r = pearsonr(firing_rate, neighbor_means).statistic
 
-            from neurospatial.encoding._field_metrics import rate_map_coherence
-
-            coherence = rate_map_coherence(env, firing_rate)
-
-            # Coherence should be in valid range or NaN
-            if not np.isnan(coherence):
-                assert -1.0 <= coherence <= 1.0, (
-                    f"Coherence {coherence} out of range [-1, 1]"
-                )
+        coherence = rate_map_coherence(env, firing_rate)
+        assert coherence == pytest.approx(np.arctanh(r), rel=1e-12)
+        assert coherence > r  # z exceeds r for positive r
 
 
 class TestSelectivity:
@@ -1180,10 +1167,6 @@ class TestFieldShapeMetrics:
         # Circular field should have reasonably low eccentricity
         # Random sampling makes perfect circles unlikely, so use generous threshold
         assert shape["eccentricity"] < 0.8
-        assert "major_axis_length" in shape
-        assert "minor_axis_length" in shape
-        assert "orientation" in shape
-        assert "area" in shape
         # Major and minor axes should be similar for circular fields
         assert shape["major_axis_length"] / shape["minor_axis_length"] < 2.0
 
@@ -1212,6 +1195,69 @@ class TestFieldShapeMetrics:
             # Elongated field should have high eccentricity
             assert shape["eccentricity"] > 0.3
             assert shape["major_axis_length"] > shape["minor_axis_length"]
+
+    @pytest.fixture(scope="class")
+    def grid_env(self):
+        """A 2 cm grid over a 60 x 60 cm arena."""
+        x, y = np.meshgrid(np.arange(0.5, 60.0), np.arange(0.5, 60.0))
+        return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+
+    @staticmethod
+    def _bar(env, angle, length=30.0, width=2.5):
+        """Uniform field on a bar through the arena center at ``angle``."""
+        direction = np.array([np.cos(angle), np.sin(angle)])
+        offset = env.bin_centers - [30.0, 30.0]
+        along = offset @ direction
+        across = offset @ np.array([-direction[1], direction[0]])
+        bins = np.flatnonzero((np.abs(along) <= length / 2) & (np.abs(across) < width))
+        rate = np.zeros(env.n_bins)
+        rate[bins] = 10.0
+        return rate, bins
+
+    @pytest.mark.parametrize(
+        ("angle", "expected"),
+        [
+            (0.0, 0.0),
+            (np.pi / 4, np.pi / 4),
+            (-np.pi / 4, -np.pi / 4),
+            (np.pi / 2, -np.pi / 2),
+            (3 * np.pi / 4, -np.pi / 4),
+        ],
+    )
+    def test_orientation_is_the_axis_angle(self, grid_env, angle, expected):
+        """Orientation is the major-axis angle folded into [-pi/2, pi/2)."""
+        from neurospatial.encoding._field_metrics import field_shape_metrics
+
+        rate, bins = self._bar(grid_env, angle)
+        orientation = field_shape_metrics(grid_env, rate, bins)["orientation"]
+
+        assert -np.pi / 2 <= orientation < np.pi / 2
+        # An axis has no direction: compare angles modulo pi.
+        assert abs(np.angle(np.exp(2j * (orientation - expected)))) / 2 < 0.05
+
+    def test_axis_lengths_are_two_standard_deviations(self, grid_env):
+        """Axis length is 2 * SD of the rate-weighted bin positions."""
+        from neurospatial.encoding._field_metrics import field_shape_metrics
+
+        rate, bins = self._bar(grid_env, 0.0)
+        shape = field_shape_metrics(grid_env, rate, bins)
+
+        centers = grid_env.bin_centers[bins]
+        assert shape["major_axis_length"] == pytest.approx(2 * np.std(centers[:, 0]))
+        assert shape["minor_axis_length"] == pytest.approx(2 * np.std(centers[:, 1]))
+
+    def test_area_is_physical_like_field_size(self, grid_env):
+        """area is in squared position units, the same as field_size."""
+        from neurospatial.encoding._field_metrics import (
+            field_shape_metrics,
+            field_size,
+        )
+
+        rate, bins = self._bar(grid_env, 0.0)
+        shape = field_shape_metrics(grid_env, rate, bins)
+
+        assert shape["area"] == pytest.approx(field_size(grid_env, bins))
+        assert shape["area"] == pytest.approx(4.0 * len(bins))  # 2 cm x 2 cm bins
 
     def test_field_shape_metrics_3d_warning(self):
         """Test that 3D environment raises warning."""
@@ -1306,65 +1352,41 @@ class TestFieldShiftDistance:
         # Should be ~10 (shifted by 10 units along x-axis)
         assert_allclose(shift, 10.0, atol=2.0)
 
-    def test_field_shift_distance_geodesic(self):
-        """Test geodesic shift distance."""
-        # Create same environment for both sessions with denser sampling
-        # to ensure bins are well-distributed
+    def test_field_shift_distance_geodesic_follows_the_maze(self):
+        """Geodesic shift is the path around an L-shaped arena's corner."""
+        from neurospatial.encoding._field_metrics import (
+            field_shift_distance,
+            rate_map_centroid,
+        )
+
         rng = np.random.default_rng(42)
-        data = rng.standard_normal((5000, 2)) * 20
-        env = Environment.from_samples(data, bin_size=3.0)
+        horizontal = rng.uniform([0, 0], [20, 5], size=(2000, 2))
+        vertical = rng.uniform([0, 5], [5, 20], size=(2000, 2))
+        env = Environment.from_samples(np.vstack([horizontal, vertical]), bin_size=2.0)
 
-        # Ensure environment has enough bins
-        if env.n_bins < 30:
-            # Skip if environment is too small
-            return
+        def field(center):
+            bins = np.flatnonzero(np.linalg.norm(env.bin_centers - center, axis=1) < 3)
+            rate = np.zeros(env.n_bins)
+            rate[bins] = 10.0
+            return rate, bins
 
-        # Create shifted fields in same environment
-        # Use actual bin positions to ensure fields are within environment
-        firing_rate_1 = np.zeros(env.n_bins)
-        firing_rate_2 = np.zeros(env.n_bins)
+        rate_1, bins_1 = field([2.5, 17.5])
+        rate_2, bins_2 = field([17.5, 2.5])
+        geodesic = field_shift_distance(
+            env, rate_1, bins_1, env, rate_2, bins_2, metric="geodesic"
+        )
+        euclidean = field_shift_distance(env, rate_1, bins_1, env, rate_2, bins_2)
 
-        # Pick bins around center of environment for field 1
-        # This ensures the centroid is within bounds
-        mid_bins = env.n_bins // 2
-        field_bins_1 = np.arange(mid_bins - 5, mid_bins + 5)
-        firing_rate_1[field_bins_1] = 10.0
-
-        # Pick bins further away for field 2
-        field_bins_2 = np.arange(mid_bins + 10, mid_bins + 20)
-        firing_rate_2[field_bins_2] = 10.0
-
-        from neurospatial.encoding._field_metrics import field_shift_distance
-
-        # Fallback to Euclidean if geodesic fails
-        try:
-            shift = field_shift_distance(
-                env,
-                firing_rate_1,
-                field_bins_1,
-                env,
-                firing_rate_2,
-                field_bins_2,
-                metric="geodesic",
-            )
-
-            # If geodesic worked, distance should be non-negative and finite
-            if not np.isnan(shift):
-                assert shift >= 0
-        except Exception:
-            # Geodesic distance can fail in some configurations
-            # Just check that Euclidean works
-            shift_euclidean = field_shift_distance(
-                env,
-                firing_rate_1,
-                field_bins_1,
-                env,
-                firing_rate_2,
-                field_bins_2,
-                metric="euclidean",
-            )
-            assert shift_euclidean >= 0
-            assert not np.isnan(shift_euclidean)
+        centroids = np.array(
+            [
+                rate_map_centroid(env, rate_1, bins_1),
+                rate_map_centroid(env, rate_2, bins_2),
+            ]
+        )
+        expected = env.distance_between(bins=env.bin_at(centroids))
+        assert geodesic == pytest.approx(expected)
+        assert euclidean == pytest.approx(np.linalg.norm(centroids[0] - centroids[1]))
+        assert geodesic > euclidean + 5.0
 
 
 # =============================================================================
@@ -1503,34 +1525,44 @@ class TestComputeFieldEMD:
         with pytest.raises(ValueError, match="equal total mass"):
             compute_field_emd(env, field1, field2, metric="euclidean", normalize=False)
 
-    def test_emd_nan_handling(self):
-        """Test EMD handles NaN values gracefully."""
+    def test_emd_is_in_environment_distance_units(self):
+        """Moving a whole field 20 cm costs exactly 20 cm."""
         from neurospatial.encoding._field_metrics import compute_field_emd
 
-        rng = np.random.default_rng(42)
-        data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Create sparse distributions
+        x, y = np.meshgrid(np.arange(0.5, 60.0), np.arange(0.5, 30.0))
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         centers = env.bin_centers
-        field1 = np.zeros(env.n_bins)
-        field2 = np.zeros(env.n_bins)
+        field_1 = np.exp(-np.sum((centers - [19.0, 15.0]) ** 2, axis=1) / 18.0)
+        field_1[np.linalg.norm(centers - [19.0, 15.0], axis=1) > 6] = 0.0
+        # The same field 20 cm east: bin i's mass moves to the bin 20 cm away.
+        shifted = env.bin_at(centers + np.array([20.0, 0.0]))
+        field_2 = np.zeros(env.n_bins)
+        field_2[shifted[field_1 > 0]] = field_1[field_1 > 0]
 
-        dist_from_center1 = np.linalg.norm(centers - [0, 0], axis=1)
-        dist_from_center2 = np.linalg.norm(centers - [10, 0], axis=1)
+        emd = compute_field_emd(env, field_1, field_2)
+        assert emd == pytest.approx(20.0, rel=1e-9)
 
-        field1[dist_from_center1 < 5] = 1.0
-        field2[dist_from_center2 < 5] = 1.0
+    def test_emd_compares_bins_finite_in_both_maps(self):
+        """Unsampled (NaN) bins are left out, not filled with zero rate."""
+        from neurospatial.encoding._field_metrics import compute_field_emd
 
-        # Add some NaN values
-        field1[0:5] = np.nan
-        field2[10:15] = np.nan
+        x, y = np.meshgrid(np.arange(0.5, 60.0), np.arange(0.5, 30.0))
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        centers = env.bin_centers
+        field = np.where(np.linalg.norm(centers - [15.0, 15.0], axis=1) < 5, 1.0, 0.0)
+        far_bins = np.flatnonzero(centers[:, 0] > 50)
 
-        # Should warn and set NaN to zero
-        with pytest.warns(UserWarning, match="NaN values"):
-            emd = compute_field_emd(env, field1, field2, metric="euclidean")
-            assert emd > 0
-            assert not np.isnan(emd)
+        # Session 1 never visited the far end; session 2 fired there too.
+        map_1 = field.copy()
+        map_1[far_bins] = np.nan
+        map_2 = field.copy()
+        map_2[far_bins] = 1.0
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            emd = compute_field_emd(env, map_1, map_2)
+        # On the bins both sessions sampled the maps are identical.
+        assert emd == pytest.approx(0.0, abs=1e-12)
 
     def test_emd_all_zeros(self):
         """Test EMD with all-zero distributions."""
@@ -1733,39 +1765,43 @@ class TestComputeFieldEMD:
             "when barriers force longer paths"
         )
 
-    def test_emd_geodesic_disconnected_warning(self):
-        """Test that disconnected bins trigger aggregated warning."""
+    @pytest.fixture(scope="class")
+    def two_rooms(self):
+        """Two 10 x 10 cm rooms 30 cm apart with no path between them."""
+        x, y = np.meshgrid(np.arange(0.5, 10.0), np.arange(0.5, 10.0))
+        room = np.c_[x.ravel(), y.ravel()]
+        env = Environment.from_samples(
+            np.vstack([room, room + np.array([40.0, 0.0])]), bin_size=2.0
+        )
+        left = env.bin_centers[:, 0] < 20
+        return env, left
+
+    def test_emd_geodesic_is_inf_when_mass_must_cross_rooms(self, two_rooms):
+        """No path carries mass between disconnected rooms: EMD is inf."""
         from neurospatial.encoding._field_metrics import compute_field_emd
 
-        rng = np.random.default_rng(42)
-        # Create sparse environment with disconnected regions
-        # Two separate clusters with no connectivity between them
-        cluster1 = rng.standard_normal((500, 2)) * 3 + np.array([0, 0])
-        cluster2 = rng.standard_normal((500, 2)) * 3 + np.array([50, 50])
-        data = np.vstack([cluster1, cluster2])
+        env, left = two_rooms
+        field_1 = left.astype(float)
+        field_2 = (~left).astype(float)
 
-        env = Environment.from_samples(data, bin_size=2.0)
+        assert compute_field_emd(env, field_1, field_2, metric="geodesic") == np.inf
+        assert np.isfinite(compute_field_emd(env, field_1, field_2))
 
-        # Create fields in both clusters
+    def test_emd_geodesic_moves_mass_within_each_room(self, two_rooms):
+        """With the same mass in each room, mass moves only inside rooms."""
+        from neurospatial.encoding._field_metrics import compute_field_emd
+
+        env, _ = two_rooms
         centers = env.bin_centers
-        field1 = np.zeros(env.n_bins)
-        field2 = np.zeros(env.n_bins)
+        field_1 = np.zeros(env.n_bins)
+        field_2 = np.zeros(env.n_bins)
+        for room_x in (1.0, 41.0):
+            field_1[env.bin_at(np.array([[room_x, 5.0]]))] = 1.0
+            field_2[env.bin_at(np.array([[room_x + 6.0, 5.0]]))] = 1.0
+        assert np.all(centers[field_1 > 0, 1] == centers[field_2 > 0, 1])
 
-        # Field 1: Cluster 1
-        dist_from_cluster1 = np.linalg.norm(centers - [0, 0], axis=1)
-        field1[dist_from_cluster1 < 5] = 1.0
-
-        # Field 2: Cluster 2
-        dist_from_cluster2 = np.linalg.norm(centers - [50, 50], axis=1)
-        field2[dist_from_cluster2 < 5] = 1.0
-
-        # Should warn about disconnected pairs
-        with pytest.warns(UserWarning, match="disconnected bin pairs"):
-            emd = compute_field_emd(env, field1, field2, metric="geodesic")
-
-            # Should still return a valid result (using Euclidean fallback)
-            assert emd > 0
-            assert not np.isnan(emd)
+        emd = compute_field_emd(env, field_1, field_2, metric="geodesic")
+        assert emd == pytest.approx(6.0)
 
 
 # =============================================================================
@@ -2112,21 +2148,6 @@ class TestRateMapCoherenceEdgeCases:
         # May return NaN for zero variance
         assert isinstance(coherence, (float, np.floating))
 
-    def test_rate_map_coherence_invalid_method_raises_error(self):
-        """Test rate_map_coherence raises ValueError for invalid method."""
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((1000, 2)) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        from neurospatial.encoding._field_metrics import rate_map_coherence
-
-        firing_rate = rng.random(env.n_bins) * 5.0
-
-        with pytest.raises(
-            ValueError, match=r"Unknown method.*Use 'pearson' or 'spearman'"
-        ):
-            rate_map_coherence(env, firing_rate, method="invalid")
-
 
 class TestSelectivityEdgeCases:
     """Test edge cases in selectivity function."""
@@ -2286,72 +2307,83 @@ class TestFieldShiftDistanceEdgeCases:
         )
         assert np.isnan(result)
 
-    def test_field_shift_distance_incompatible_environments_geodesic(self):
-        """Test field_shift_distance with incompatible environments (geodesic mode)."""
+    def test_geodesic_shift_accepts_separately_built_identical_environments(self):
+        """Two Environment objects with the same bins share one graph."""
         from neurospatial.encoding._field_metrics import field_shift_distance
 
-        # Use deterministic positions to ensure centroids are in bounds
-        positions1 = np.array([[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1]])
-        env1 = Environment.from_samples(positions1, bin_size=1.0)
-
-        positions2 = np.array([[0, 0], [1, 0], [0, 1]])  # Fewer bins
-        env2 = Environment.from_samples(positions2, bin_size=1.0)
-
-        # Create firing rates and use bins that exist in both environments
-        rng = np.random.default_rng(42)
-        firing_rate_1 = rng.random(env1.n_bins)
-        firing_rate_2 = rng.random(env2.n_bins)
-        # Use bins near center to ensure centroids are valid
-        field_bins_1 = np.array([0, 1, 2])  # Use first few bins
-        field_bins_2 = np.array([0, 1, 2])  # Use first few bins (if they exist in env2)
-
-        # When environments have different number of bins, falls back to Euclidean
-        # This should trigger the "different number of bins" warning (lines 1660-1670)
-        # OR the "centroids outside bounds" warning if centroids map to invalid bins
-        with pytest.warns(
-            UserWarning, match="(different number of bins|centroids fall outside)"
-        ):
-            result = field_shift_distance(
-                env1,
-                firing_rate_1,
-                field_bins_1,
-                env2,
-                firing_rate_2,
-                field_bins_2,
-                metric="geodesic",
-            )
-        # Should return either a valid distance (Euclidean fallback) or NaN (out of bounds)
-        assert isinstance(result, float)
-        assert result >= 0
-
-    def test_geodesic_shift_maps_both_centroids_on_the_first_environment(self):
-        """Both centroids are located on env_1's graph, not by env_2's indices."""
-        from neurospatial.encoding._field_metrics import (
-            field_shift_distance,
-            rate_map_centroid,
+        x, y = np.meshgrid(np.arange(0.0, 40.0), np.arange(0.0, 40.0))
+        samples = np.c_[x.ravel(), y.ravel()]
+        env_1 = Environment.from_samples(samples, bin_size=4.0)
+        env_2 = Environment.from_samples(samples, bin_size=4.0)
+        bins_1 = np.flatnonzero(
+            np.linalg.norm(env_1.bin_centers - [10, 18], axis=1) < 5
         )
+        bins_2 = np.flatnonzero(
+            np.linalg.norm(env_2.bin_centers - [26, 18], axis=1) < 5
+        )
+        rate_1 = np.zeros(env_1.n_bins)
+        rate_1[bins_1] = 10.0
+        rate_2 = np.zeros(env_2.n_bins)
+        rate_2[bins_2] = 10.0
+
+        shift = field_shift_distance(
+            env_1, rate_1, bins_1, env_2, rate_2, bins_2, metric="geodesic"
+        )
+        assert shift == pytest.approx(16.0)
+
+    @pytest.mark.parametrize("change", ["extended", "translated"])
+    def test_geodesic_shift_refuses_environments_with_different_bins(self, change):
+        """Geodesic distance needs one graph; different bins are refused.
+
+        An extended arena has more bins; a translated one has the same bin
+        count but every index is a different place. Neither has a path
+        between the two sessions' bins, so the call raises rather than
+        measuring Euclidean distance or returning inf.
+        """
+        from neurospatial import IncompatibleEnvironmentError
+        from neurospatial.encoding._field_metrics import field_shift_distance
         from neurospatial.ops.transforms import translate
 
         x, y = np.meshgrid(np.arange(0.0, 40.0), np.arange(0.0, 40.0))
         env_1 = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
-        # Same bins and indices, shifted 8 cm east: index i is a different place.
-        env_2 = env_1.apply_transform(translate(8.0, 0.0))
-        field_bins = np.flatnonzero(
-            np.linalg.norm(env_1.bin_centers - [18.0, 18.0], axis=1) < 5.0
+        if change == "extended":
+            x2, y2 = np.meshgrid(np.arange(0.0, 60.0), np.arange(0.0, 40.0))
+            env_2 = Environment.from_samples(
+                np.c_[x2.ravel(), y2.ravel()], bin_size=4.0
+            )
+        else:
+            env_2 = env_1.apply_transform(translate(8.0, 0.0))
+        bins_1 = np.flatnonzero(
+            np.linalg.norm(env_1.bin_centers - [18, 18], axis=1) < 5
         )
-        rate = np.zeros(env_1.n_bins)
-        rate[field_bins] = 10.0
-
-        shift = field_shift_distance(
-            env_1, rate, field_bins, env_2, rate, field_bins, metric="geodesic"
+        bins_2 = np.flatnonzero(
+            np.linalg.norm(env_2.bin_centers - [26, 18], axis=1) < 5
         )
+        rate_1 = np.zeros(env_1.n_bins)
+        rate_1[bins_1] = 10.0
+        rate_2 = np.zeros(env_2.n_bins)
+        rate_2[bins_2] = 10.0
 
-        centroids = [
-            rate_map_centroid(env_1, rate, field_bins),
-            rate_map_centroid(env_2, rate, field_bins),
-        ]
-        assert shift == env_1.distance_between(points=centroids)
-        assert shift > 0.0  # the fields sit 8 cm apart
+        with pytest.raises(IncompatibleEnvironmentError, match="metric='euclidean'"):
+            field_shift_distance(
+                env_1, rate_1, bins_1, env_2, rate_2, bins_2, metric="geodesic"
+            )
+        # Euclidean distance between centroids is defined across arenas.
+        shift = field_shift_distance(env_1, rate_1, bins_1, env_2, rate_2, bins_2)
+        assert np.isfinite(shift)
+
+    def test_invalid_metric_raises_even_for_an_empty_field(self):
+        """metric is checked before the data, so a NaN field cannot hide it."""
+        from neurospatial.encoding._field_metrics import field_shift_distance
+
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(
+            rng.standard_normal((1000, 2)) * 10, bin_size=2.0
+        )
+        rate = np.full(env.n_bins, np.nan)
+        bins = np.array([10, 20, 30])
+        with pytest.raises(ValueError, match="metric"):
+            field_shift_distance(env, rate, bins, env, rate, bins, metric="manhattan")
 
 
 class TestComputeFieldEMDEdgeCases:

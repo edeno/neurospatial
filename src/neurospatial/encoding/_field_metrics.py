@@ -354,49 +354,48 @@ def field_stability(
 def rate_map_coherence(
     env: Environment,
     firing_rate: NDArray[np.float64],
-    *,
-    method: Literal["pearson", "spearman"] = "pearson",
 ) -> float:
     """Compute spatial coherence of a firing rate map.
 
-    Spatial coherence measures the smoothness of spatial firing patterns by
-    computing the correlation between each bin's firing rate and the mean rate
-    of its spatial neighbors. High coherence indicates smooth, spatially
-    structured firing. Low coherence indicates noisy or scattered firing.
-
-    This metric was introduced by Muller & Kubie (1989) to assess the quality
-    of place field representations.
+    Spatial coherence (Muller & Kubie, 1989) measures the smoothness of
+    spatial firing: the Fisher z-transform (arctanh) of the Pearson
+    correlation between each bin's firing rate and the mean rate of its
+    spatial neighbors. High coherence indicates smooth, spatially structured
+    firing. Low coherence indicates noisy or scattered firing.
 
     Parameters
     ----------
     env : Environment
         Spatial environment containing bin centers and connectivity.
     firing_rate : NDArray[np.float64], shape (n_bins,)
-        Spatial firing rate map (Hz or spikes/second).
-    method : {'pearson', 'spearman'}, optional
-        Correlation method. Default is 'pearson'.
-        - 'pearson': Pearson correlation (linear relationship)
-        - 'spearman': Spearman correlation (monotonic relationship)
+        Spatial firing rate map (Hz or spikes/second). NaN marks an
+        unsampled bin.
 
     Returns
     -------
     float
-        Spatial coherence in range [-1, 1]. Returns NaN if:
+        Spatial coherence, the Fisher z ``arctanh(r)`` of the correlation
+        ``r``: 0 for no correlation and unbounded (``inf`` when ``r == 1``).
+        ``np.tanh(coherence)`` recovers ``r``. Returns NaN if:
         - All firing rates are zero or constant (no variance)
         - All rates are NaN
-        - Insufficient valid bins after NaN removal
+        - Fewer than two bins have a rate and a fully observed neighborhood
 
     Notes
     -----
     **Algorithm**:
 
     1. For each bin i, compute mean firing rate of neighbors: m_i = mean(r_j) for j in neighbors(i)
-    2. Compute correlation between bin rates r_i and neighbor means m_i
-    3. Coherence = corr(r, m)
+    2. Compute the Pearson correlation r between bin rates r_i and neighbor means m_i
+    3. Coherence = arctanh(r)
+
+    Muller & Kubie (1989) report this z-transformed correlation, as does the
+    BNT MATLAB toolbox's ``analyses.coherence`` by default. Some packages
+    return ``r`` itself; check which one before comparing numbers.
 
     **Interpretation**:
 
-    - **High coherence (> 0.7)**: Smooth, spatially structured firing (good place field)
+    - **High coherence (> 0.7, r > 0.6)**: Smooth, spatially structured firing
     - **Medium coherence (0.3-0.7)**: Some spatial structure but with noise
     - **Low coherence (< 0.3)**: Noisy, poorly defined spatial firing
 
@@ -404,7 +403,10 @@ def rate_map_coherence(
 
     This implementation uses `env.connectivity` to determine spatial neighbors,
     making it applicable to irregular environments and graphs with obstacles.
-    For regular grids, results should match Muller & Kubie (1989) approach.
+    Muller & Kubie (1989) average the eight surrounding pixels of a square
+    grid, the neighborhood of a grid built with diagonal connectivity (the
+    ``Environment.from_samples`` default). Bins with an unsampled (NaN)
+    neighbor are left out rather than treating the missing rate as zero.
 
     References
     ----------
@@ -484,15 +486,9 @@ def rate_map_coherence(
     if np.std(bin_rates) == 0 or np.std(neighbor_rate_means) == 0:
         return np.nan
 
-    # Compute correlation
-    if method == "pearson":
-        coherence, _ = stats.pearsonr(bin_rates, neighbor_rate_means)
-    elif method == "spearman":
-        coherence, _ = stats.spearmanr(bin_rates, neighbor_rate_means)
-    else:
-        raise ValueError(f"Unknown method: {method}. Use 'pearson' or 'spearman'.")
-
-    return float(coherence)
+    correlation, _ = stats.pearsonr(bin_rates, neighbor_rate_means)
+    with np.errstate(divide="ignore"):
+        return float(np.arctanh(correlation))
 
 
 def in_out_field_ratio(
@@ -626,10 +622,15 @@ def field_shape_metrics(
     dict[str, float]
         Dictionary with shape metrics:
         - 'eccentricity': float in [0, 1], where 0 = circular, 1 = linear
-        - 'major_axis_length': float, extent along major axis (same units as env)
-        - 'minor_axis_length': float, extent along minor axis (same units as env)
-        - 'orientation': float, angle of major axis in radians [-pi/2, pi/2]
-        - 'area': float, spatial extent of field (number of bins)
+        - 'major_axis_length': float, full width of the field along its
+          major axis, ``2 * sqrt(lambda_max)``: two rate-weighted standard
+          deviations of bin position (+/- 1 SD), in environment units
+        - 'minor_axis_length': float, the same along the minor axis
+        - 'orientation': float, angle of the major axis in radians from the
+          first spatial dimension, in ``[-pi/2, pi/2)``. An axis has no
+          direction, so a field along x is 0 and one along y is ``-pi/2``.
+        - 'area': float, physical area of the field bins (e.g. cm^2), the
+          same as :func:`field_size`
 
         Returns dict with NaN values if field is empty or environment is not 2D.
 
@@ -775,16 +776,16 @@ def field_shape_metrics(
     # Eccentricity
     eccentricity = np.sqrt(1 - lambda_min / lambda_max) if lambda_max > 0 else 0.0
 
-    # Axis lengths (2 standard deviations = ~95% of data)
+    # Axis lengths: full width at +/- 1 rate-weighted SD along each axis.
     major_axis = 2 * np.sqrt(lambda_max)
     minor_axis = 2 * np.sqrt(lambda_min)
 
-    # Orientation (angle of major axis)
-    # eigenvectors[:, 0] is the major axis direction
-    orientation = np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])
+    # Orientation of the major axis. The eigenvector's sign is arbitrary, so
+    # fold its angle to an axial angle in [-pi/2, pi/2).
+    direction = np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])
+    orientation = (direction + np.pi / 2) % np.pi - np.pi / 2
 
-    # Area (number of bins)
-    area = float(len(field_bins))
+    area = field_size(env, field_bins)
 
     result.update(
         {
@@ -831,19 +832,28 @@ def field_shift_distance(
         Indices of bins belonging to place field in second session.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric. ``"euclidean"`` is straight-line distance between
-        the rate-weighted centroids. ``"geodesic"`` is the shortest path
-        along the connectivity graph and requires ``env_1`` and ``env_2``
-        to be the same environment or aligned environments with compatible
-        connectivity; geodesic distance respects barriers and boundaries.
+        the rate-weighted centroids, and works across different
+        environments in one coordinate frame. ``"geodesic"`` is the shortest
+        path along the connectivity graph between the bins containing the
+        two centroids; it respects barriers and boundaries and requires
+        ``env_1`` and ``env_2`` to have the same bins and connectivity.
 
     Returns
     -------
     float
-        Distance between field centroids in spatial units (same units as environment).
-        Returns NaN if either field is empty or centroid calculation fails.
+        Distance between field centroids in the environments' spatial units.
+        NaN if either field has no finite, positive-rate bins (no centroid),
+        or, for ``"geodesic"``, if a centroid falls outside every bin (a
+        warning says which). ``inf`` for ``"geodesic"`` when the two
+        centroids lie in parts of the environment with no path between them.
 
     Raises
     ------
+    ValueError
+        If ``metric`` is not ``"euclidean"`` or ``"geodesic"``.
+    IncompatibleEnvironmentError
+        If ``metric="geodesic"`` and ``env_1`` and ``env_2`` differ in their
+        bins or connectivity: there is no single graph to measure a path on.
     CartesianOnlyError
         If ``env_1`` or ``env_2`` is polar: field centroids are Cartesian
         rate-weighted means of bin centers.
@@ -927,6 +937,12 @@ def field_shift_distance(
     .. [2] Colgin et al. (2008). Understanding memory through hippocampal remapping.
            Trends Neurosci 31(9).
     """
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(
+            f"metric must be 'euclidean' or 'geodesic', got {metric!r}.\n"
+            "Fix: pass metric='euclidean' for straight-line distance or "
+            "metric='geodesic' for the path through the environment."
+        )
     for argument, env in (("env_1", env_1), ("env_2", env_2)):
         require_cartesian(
             env.coordinate_system,
@@ -940,6 +956,27 @@ def field_shift_distance(
                 "Environment.from_samples(positions, bin_size=...)"
             ),
         )
+    if metric == "geodesic":
+        from neurospatial._exceptions import IncompatibleEnvironmentError
+        from neurospatial.environment import _environment_differences
+
+        bins, topology = _environment_differences(env_1, env_2)
+        mismatch = bins or topology
+        if mismatch is not None:
+            raise IncompatibleEnvironmentError(
+                "field_shift_distance(metric='geodesic') needs env_1 and env_2 "
+                f"to have the same bins and connectivity; they differ in "
+                f"{mismatch}. A path is measured on one environment's graph, "
+                "and the other session's bins are not on it.",
+                fix=(
+                    "use metric='euclidean' to compare centroids across "
+                    "environments in one coordinate frame, or compute both rate "
+                    "maps on the same environment"
+                ),
+                first=env_1,
+                second=env_2,
+            )
+
     # Compute centroids for both fields
     centroid_1 = rate_map_centroid(env_1, firing_rate_1, field_bins_1)
     centroid_2 = rate_map_centroid(env_2, firing_rate_2, field_bins_2)
@@ -948,57 +985,22 @@ def field_shift_distance(
     if np.any(np.isnan(centroid_1)) or np.any(np.isnan(centroid_2)):
         return np.nan
 
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
+    if metric == "euclidean":
+        return float(np.linalg.norm(centroid_1 - centroid_2))
 
-    if metric == "geodesic":
-        # Geodesic distance using environment connectivity
-        # Validate that centroids fall within environment bounds
-        bin_1 = env_1.bin_at(centroid_1.reshape(1, -1))[0]
-        bin_2 = env_2.bin_at(centroid_2.reshape(1, -1))[0]
-
-        # Check if bins are valid (centroids in bounds)
-        if bin_1 < 0 or bin_2 < 0:
-            warnings.warn(
-                "One or both centroids fall outside environment bounds. "
-                "Cannot compute geodesic distance. Returning NaN.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            return np.nan
-
-        # Check if environments are compatible for geodesic distance
-        if env_1 is not env_2 and env_1.n_bins != env_2.n_bins:
-            # Different environment objects - check if they have same bins
-            warnings.warn(
-                f"Environments have different number of bins ({env_1.n_bins} vs {env_2.n_bins}). "
-                "Geodesic distance requires compatible environments. Falling back to Euclidean distance.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            # Fall back to Euclidean
-            distance = float(np.linalg.norm(centroid_1 - centroid_2))
-            return distance
-
-        try:
-            # Both centroids are measured on env_1's graph; bin_2 indexes env_2.
-            end_bin = env_1.bin_at(centroid_2.reshape(1, -1))[0]
-            if end_bin < 0:
-                return np.inf
-            return float(env_1.distance_between(bins=[bin_1, end_bin]))
-        except Exception as e:
-            warnings.warn(
-                f"Failed to compute geodesic distance: {e}. Falling back to Euclidean distance.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            # Fall back to Euclidean
-            distance = float(np.linalg.norm(centroid_1 - centroid_2))
-            return distance
-    else:
-        # Euclidean distance between centroids
-        distance = float(np.linalg.norm(centroid_1 - centroid_2))
-        return distance
+    # Same bins and connectivity: measure the path on env_1's graph.
+    centroid_bins = env_1.bin_at(np.stack([centroid_1, centroid_2]))
+    if np.any(centroid_bins < 0):
+        warnings.warn(
+            "A field centroid falls outside every bin of the environment (for "
+            "example the centroid of a curved field lies in a wall), so it has "
+            "no geodesic position. Returning NaN; use metric='euclidean' for "
+            "this field.",
+            category=UserWarning,
+            stacklevel=2,
+        )
+        return np.nan
+    return float(env_1.distance_between(bins=centroid_bins))
 
 
 def compute_field_emd(
@@ -1023,27 +1025,36 @@ def compute_field_emd(
 
     Parameters
     ----------
-    firing_rate_1 : NDArray[np.float64], shape (n_bins,)
-        First firing rate distribution across spatial bins.
-    firing_rate_2 : NDArray[np.float64], shape (n_bins,)
-        Second firing rate distribution across spatial bins.
     env : Environment
         Spatial environment defining bin positions and connectivity.
+    firing_rate_1 : NDArray[np.float64], shape (n_bins,)
+        First firing rate distribution across spatial bins. NaN marks an
+        unsampled bin.
+    firing_rate_2 : NDArray[np.float64], shape (n_bins,)
+        Second firing rate distribution across spatial bins. NaN marks an
+        unsampled bin.
     metric : str, default="euclidean"
         Distance metric to use. Options:
         - "euclidean": Straight-line distance between bin centers
         - "geodesic": Shortest path distance through connectivity graph
     normalize : bool, default=True
-        If True, normalize distributions to sum to 1.0 before computing EMD.
-        If False, use raw firing rates (distributions must already sum to equal values).
+        If True, normalize each distribution to sum to 1.0 over the bins
+        finite in both maps before computing EMD. If False, use raw firing
+        rates (their sums over those bins must already be equal).
 
     Returns
     -------
     emd : float
         Earth Mover's Distance between the two distributions.
-        - For normalized distributions: unitless distance in [0, inf)
-        - For unnormalized distributions: cost in units of (rate x distance)
-        - Returns NaN if distributions cannot be computed (e.g., all zeros)
+
+        - With ``normalize=True``: the mean distance the firing-rate mass
+          moves, in the environment's distance units (e.g. cm). Moving a
+          whole field 10 cm gives 10.0.
+        - With ``normalize=False``: cost in units of (rate x distance).
+        - NaN if either distribution has zero total mass (with a warning).
+        - ``inf`` with ``metric="geodesic"`` when the maps put different
+          mass in parts of the environment with no path between them, so
+          no transport plan exists.
 
     Raises
     ------
@@ -1060,7 +1071,6 @@ def compute_field_emd(
     Warns
     -----
     UserWarning
-        If distributions contain NaN values (they will be set to zero).
         If normalized distributions have no mass (all zeros or NaN).
 
     See Also
@@ -1071,6 +1081,12 @@ def compute_field_emd(
     -----
     The Earth Mover's Distance is computed by solving the optimal transport problem.
 
+    **Missing bins.** Only bins finite in both maps are compared: an
+    unsampled (NaN) bin in either map is left out of both, and with
+    ``normalize=True`` each map is renormalized over the remaining bins.
+    Filling NaN with zero instead would treat unvisited places as silent
+    and move mass onto them.
+
     **Metric choice:**
 
     - **Euclidean**: Fast, works for any environment, but ignores barriers and walls.
@@ -1078,6 +1094,8 @@ def compute_field_emd(
 
     - **Geodesic**: Slower, respects environment structure (barriers, walls, connectivity).
       Use for complex environments like mazes, multi-room layouts, or non-convex arenas.
+      Mass moves only along paths in the connectivity graph, never between
+      disconnected parts of the environment.
 
     **Interpretation:**
 
@@ -1149,18 +1167,16 @@ def compute_field_emd(
             ),
         )
 
-    # Handle NaN values
-    firing_rate_1 = firing_rate_1.copy()
-    firing_rate_2 = firing_rate_2.copy()
-
-    if np.any(~np.isfinite(firing_rate_1)) or np.any(~np.isfinite(firing_rate_2)):
-        warnings.warn(
-            "Firing rate distributions contain NaN values. Setting to zero.",
-            category=UserWarning,
-            stacklevel=2,
-        )
-        firing_rate_1[~np.isfinite(firing_rate_1)] = 0.0
-        firing_rate_2[~np.isfinite(firing_rate_2)] = 0.0
+    # Compare only bins observed in both maps. Unsampled (NaN) bins are
+    # missing, not zero rate: filling them with zero would make mass in one
+    # map move onto bins the other session never sampled.
+    firing_rate_1 = np.asarray(firing_rate_1, dtype=np.float64)
+    firing_rate_2 = np.asarray(firing_rate_2, dtype=np.float64)
+    common_bins = np.flatnonzero(
+        np.isfinite(firing_rate_1) & np.isfinite(firing_rate_2)
+    )
+    firing_rate_1 = firing_rate_1[common_bins]
+    firing_rate_2 = firing_rate_2[common_bins]
 
     # Normalize distributions if requested
     if normalize:
@@ -1169,7 +1185,8 @@ def compute_field_emd(
 
         if sum1 == 0 or sum2 == 0:
             warnings.warn(
-                "One or both distributions have zero total mass. Returning NaN.",
+                "One or both distributions have zero total mass on the bins "
+                "finite in both maps. Returning NaN.",
                 category=UserWarning,
                 stacklevel=2,
             )
@@ -1183,8 +1200,9 @@ def compute_field_emd(
         sum2 = np.sum(firing_rate_2)
         if not np.isclose(sum1, sum2, rtol=1e-6):
             raise ValueError(
-                f"Unnormalized distributions must have equal total mass. "
-                f"Got {sum1:.6f} and {sum2:.6f}. Set normalize=True to auto-normalize."
+                f"Unnormalized distributions must have equal total mass on the "
+                f"bins finite in both maps. Got {sum1:.6f} and {sum2:.6f}. Set "
+                f"normalize=True to auto-normalize."
             )
 
     # Filter to bins with non-zero mass in either distribution
@@ -1202,7 +1220,7 @@ def compute_field_emd(
         return 0.0
 
     # Get active bins and their distributions
-    active_bins = np.where(nonzero_mask)[0]
+    active_bins = common_bins[nonzero_mask]
     p = firing_rate_1[nonzero_mask]
     q = firing_rate_2[nonzero_mask]
 
@@ -1214,32 +1232,21 @@ def compute_field_emd(
         dist_matrix = squareform(pdist(positions, metric="euclidean"))
 
     else:  # metric == "geodesic"
-        # Geodesic distance using precomputed full distance matrix (vectorized)
         from neurospatial.ops.distance import geodesic_distance_matrix
 
-        # Compute full geodesic distance matrix once
         full_geodesic = geodesic_distance_matrix(env.connectivity, weight="distance")
-
-        # Extract submatrix for active bins (vectorized indexing)
         dist_matrix = full_geodesic[np.ix_(active_bins, active_bins)]
 
-        # Find disconnected pairs (inf distances) and replace with Euclidean
-        disconnected_mask = np.isinf(dist_matrix)
-        disconnected_count = np.sum(disconnected_mask) // 2  # Count unique pairs
-
-        if disconnected_count > 0:
-            # Compute Euclidean fallback distances for disconnected pairs
-            positions = env.bin_centers[active_bins]
-            euclidean_dist = squareform(pdist(positions, metric="euclidean"))
-            dist_matrix = np.where(disconnected_mask, euclidean_dist, dist_matrix)
-
-            n = len(active_bins)
-            warnings.warn(
-                f"Found {disconnected_count} disconnected bin pairs out of {n * (n - 1) // 2} total pairs. "
-                f"Using Euclidean distance for disconnected pairs.",
-                category=UserWarning,
-                stacklevel=2,
-            )
+    # Mass cannot travel between parts of the environment with no path
+    # between them. Label each active bin by the first active bin it can
+    # reach (reachability is an equivalence relation); if any part holds
+    # different mass in the two maps, no transport plan exists.
+    reachable = np.isfinite(dist_matrix)
+    component = np.argmax(reachable, axis=1)
+    mass_1 = np.bincount(component, weights=p, minlength=len(p))
+    mass_2 = np.bincount(component, weights=q, minlength=len(q))
+    if not np.allclose(mass_1, mass_2, rtol=1e-9, atol=1e-12 * np.sum(p)):
+        return np.inf
 
     # Solve the optimal transport problem using linear programming
     # Variables: T[i,j] = mass transported from bin i (source) to bin j (target)
@@ -1247,12 +1254,14 @@ def compute_field_emd(
     # Constraints:
     #   - sum_j T[i,j] = p[i]  (all mass from source i is transported)
     #   - sum_i T[i,j] = q[j]  (all mass to target j is received)
-    #   - T[i,j] >= 0
+    #   - T[i,j] >= 0, and T[i,j] = 0 where no path joins i and j
 
     n = len(p)
 
-    # Flatten distance matrix for objective function
-    c = dist_matrix.flatten()
+    # Flatten distance matrix for objective function (unreachable pairs carry
+    # no mass, so their cost is irrelevant)
+    c = np.where(reachable, dist_matrix, 0.0).flatten()
+    upper = np.where(reachable.flatten(), np.inf, 0.0)
 
     # Equality constraints: Ax = b
     # Row constraints: sum over j of T[i,j] = p[i]
@@ -1274,7 +1283,7 @@ def compute_field_emd(
         c,
         A_eq=a_eq,
         b_eq=b_eq,
-        bounds=(0, None),
+        bounds=np.column_stack([np.zeros_like(upper), upper]),
         method="highs",
     )
 
