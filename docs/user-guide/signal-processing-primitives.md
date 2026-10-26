@@ -171,7 +171,7 @@ assert np.allclose(constant_contrast[observed], 0.0, atol=1e-12)
 
 Positive contrast indicates greater narrow-scale than broad-scale activity; negative contrast indicates the reverse. It is not a field boundary, a field center, or a significance test by itself. Thresholding the top 5% will select bins even for an unsuitable map.
 
-Use `normalize=False` only when your supplied weights already have the intended scale or signed balance. A signed center-surround matrix should have zero row sums to remove constants; re-normalizing it by its signed sum destroys that property. Missing source values also require explicit treatment when designing such a matrix.
+Use `normalize=False` only when your supplied weights already have the intended scale or signed balance. A signed center-surround matrix should have zero row sums to remove constants; re-normalizing it by its signed sum destroys that property. Without normalization, a destination is NaN wherever a nonzero weight falls on a NaN source, because the weighted sum is unknown; with a full-support kernel such as a Gaussian, that is every connected bin. Set those weights to exactly zero in a precomputed matrix, or fill the field explicitly, to decide how missing sources count.
 
 ### Reusing a precomputed matrix
 
@@ -181,7 +181,7 @@ import numpy as np
 from neurospatial.ops.distance import geodesic_distance_matrix
 from neurospatial.ops.graph import graph_convolve
 
-distances = geodesic_distance_matrix(env.connectivity, env.n_bins, weight="distance")
+distances = geodesic_distance_matrix(env.connectivity, weight="distance")
 kernel_matrix = np.exp(-(distances**2) / (2 * 5.0**2))
 field = np.sin(env.bin_centers[:, 0] / 10.0)
 filtered = graph_convolve(env, field, kernel_matrix)

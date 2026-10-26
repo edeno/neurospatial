@@ -235,7 +235,6 @@ REQUIRED_DATA_ARGUMENTS = {
     ("get_layout_parameters", "layout_type"),
     # Sizes of the data the function describes.
     ("field_density_map", "n_bins"),
-    ("geodesic_distance_matrix", "n_states"),
     ("marchenko_pastur_threshold", "n_neurons"),
     ("marchenko_pastur_threshold", "n_time_bins"),
 }

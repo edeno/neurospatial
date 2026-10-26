@@ -186,12 +186,11 @@ class TestEnvironmentProperties:
     )  # Use profile's max_examples, extend deadline for graph operations
     def test_distance_triangle_inequality(self, n_nodes: int, seed: int):
         """
-        Property: Graph distances must satisfy triangle inequality.
+        Property: the package's geodesic distances are a metric on the bins.
 
-        For any three nodes i, j, k: d(i,k) ≤ d(i,j) + d(j,k)
-
-        This is a fundamental property of metric spaces and must hold for
-        all shortest path distances in our connectivity graphs.
+        For all bins i, j, k: d(i, k) <= d(i, j) + d(j, k), d is symmetric
+        with a zero diagonal, ``distance_field`` agrees with the matrix row,
+        and an entry matches NetworkX's shortest path for the same bins.
 
         Parameters
         ----------
@@ -200,6 +199,8 @@ class TestEnvironmentProperties:
         seed : int
             Random seed for reproducibility
         """
+        from neurospatial.ops.distance import distance_field, geodesic_distance_matrix
+
         rng = np.random.default_rng(seed)
 
         # Create random 2D grid environment
@@ -218,38 +219,25 @@ class TestEnvironmentProperties:
         if env.n_bins < 5:
             pytest.skip("Not enough bins for meaningful triangle inequality test")
 
-        # Verify graph is connected (otherwise distances might be infinite)
-        if not nx.is_connected(env.connectivity):
-            pytest.skip("Graph is not connected")
+        distances = geodesic_distance_matrix(env.connectivity)
 
-        # Sample 3 random nodes to test triangle inequality
-        # Use at least 3 trials to test different node combinations
-        for _ in range(min(3, env.n_bins // 2)):
-            # Sample 3 distinct nodes
-            node_indices = rng.choice(env.n_bins, size=3, replace=False)
-            i, j, k = node_indices
+        # Every triple at once: via[i, j, k] = d(i, j) + d(j, k).
+        via = distances[:, :, None] + distances[None, :, :]
+        assert np.all(distances[:, None, :] <= via + 1e-10)
+        np.testing.assert_array_equal(distances, distances.T)
+        np.testing.assert_array_equal(np.diag(distances), 0.0)
 
-            # Get pairwise distances
-            try:
-                d_ij = nx.shortest_path_length(
-                    env.connectivity, source=i, target=j, weight="distance"
-                )
-                d_jk = nx.shortest_path_length(
-                    env.connectivity, source=j, target=k, weight="distance"
-                )
-                d_ik = nx.shortest_path_length(
-                    env.connectivity, source=i, target=k, weight="distance"
-                )
-            except nx.NetworkXNoPath:
-                # Nodes not connected - skip this combination
-                continue
-
-            # Property: Triangle inequality must hold
-            # Allow small numerical tolerance for floating point arithmetic
-            tolerance = 1e-10
-            assert d_ik <= d_ij + d_jk + tolerance, (
-                f"Triangle inequality violated: d({i},{k})={d_ik} > d({i},{j})+d({j},{k})={d_ij + d_jk}"
+        source, target = (int(b) for b in rng.choice(env.n_bins, 2, replace=False))
+        np.testing.assert_allclose(
+            distance_field(env.connectivity, [source]), distances[source], rtol=1e-12
+        )
+        if nx.has_path(env.connectivity, source, target):
+            reference = nx.shortest_path_length(
+                env.connectivity, source, target, weight="distance"
             )
+            np.testing.assert_allclose(distances[source, target], reference, rtol=1e-12)
+        else:
+            assert np.isinf(distances[source, target])
 
     @given(
         n_bins=st.integers(min_value=20, max_value=100),

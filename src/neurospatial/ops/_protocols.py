@@ -1,9 +1,15 @@
 """The environment members that public ops functions read at their boundary.
 
 A public ops function that takes an environment reads the components it
-needs once, through these members, and computes from those components; it
-does not call back into environment analysis methods. Each base protocol
-names one to three members; the composite protocols only combine bases.
+needs once, through these members, and computes from those components. The
+only methods it calls are queries the environment answers from a structure it
+caches (``bin_at``, ``bin_center_tree``, ``diffuse``), so repeated calls do
+not rebuild it, and the environment's own renderer (``plot_field``); it calls
+them at the boundary, never from inside the computation.
+
+Each base protocol names one to three members. A composite protocol combines
+bases and may add a member that only its own functions read; a member that
+two composites need becomes a base.
 """
 
 from __future__ import annotations
@@ -27,7 +33,6 @@ if TYPE_CHECKING:
         EgocentricPolarSystem,
     )
     from neurospatial.ops._types import KernelMode
-    from neurospatial.ops.mapping import TieBreakStrategy
     from neurospatial.regions import Regions
 
 
@@ -119,6 +124,16 @@ class DivergenceConsumer(Protocol):
     def get_divergence_operator(self) -> sparse.csc_matrix: ...
 
 
+class CenterTreeConsumer(Protocol):
+    """A copy of the environment's cached KD-tree over its bin centers.
+
+    ``bin_center_tree`` refuses polar environments, whose rows are not
+    Cartesian; tree indices are bin indices.
+    """
+
+    def bin_center_tree(self) -> cKDTree: ...
+
+
 class FieldPlotConsumer(Protocol):
     """Draw one value per bin on an Axes, through the environment's renderer."""
 
@@ -166,14 +181,10 @@ class GraphLookupConsumer(BinningConsumer, CoordinateConsumer, Protocol):
     def connectivity(self) -> nx.Graph: ...
 
 
-class BasisCentersConsumer(GraphConsumer, BinsConsumer, CoordinateConsumer, Protocol):
-    """Centers, graph and coordinate meaning for choosing basis centers.
-
-    ``bin_center_tree`` is a copy of the environment's cached KD-tree over its
-    centers; it refuses polar environments, whose rows are not Cartesian.
-    """
-
-    def bin_center_tree(self) -> cKDTree: ...
+class BasisCentersConsumer(
+    GraphConsumer, BinsConsumer, CoordinateConsumer, CenterTreeConsumer, Protocol
+):
+    """Centers, their KD-tree, graph and coordinate meaning for basis centers."""
 
 
 class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
@@ -196,31 +207,21 @@ class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Prot
     def binning(self) -> Binning: ...
 
 
-class ProbabilityTargetConsumer(CartesianBinsConsumer, Protocol):
+class ProbabilityTargetConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol):
     """Cartesian bins that receive probabilities from their nearest centers.
 
-    ``bin_center_tree`` is read once at the public boundary of
-    ``map_probabilities``: the target environment caches the KD-tree and
-    hands out a copy.
+    ``map_probabilities`` reads ``bin_center_tree`` once, at its boundary.
     """
 
-    def bin_center_tree(self) -> cKDTree: ...
 
-
-class ResampleSourceConsumer(CartesianBinsConsumer, Protocol):
+class ResampleSourceConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol):
     """Cartesian bins whose field is pulled back by nearest bin center.
 
-    ``nearest_bin`` is read once at the public boundary of ``resample_field``:
-    the source environment caches the KD-tree it searches.
+    ``resample_field`` reads ``bin_at`` to tell which destination bins lie in
+    the source, and ``bin_center_tree`` to find their nearest source centers.
     """
 
-    def nearest_bin(
-        self,
-        positions: NDArray[np.float64],
-        *,
-        tie_break: TieBreakStrategy = ...,
-        max_distance_factor: float | None = ...,
-    ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]: ...
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
 
 class ResampleTargetConsumer(

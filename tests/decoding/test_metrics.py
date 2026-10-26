@@ -332,9 +332,9 @@ class TestErrorAlongTheEnvironment:
         rng = np.random.default_rng(0)
         decoded_bins = rng.integers(0, small_2d_env.n_bins, 200)
         actual_bins = rng.integers(0, small_2d_env.n_bins, 200)
-        expected = geodesic_distance_matrix(
-            small_2d_env.connectivity, small_2d_env.n_bins
-        )[decoded_bins, actual_bins]
+        expected = geodesic_distance_matrix(small_2d_env.connectivity)[
+            decoded_bins, actual_bins
+        ]
         centers = small_2d_env.bin_centers
         np.testing.assert_allclose(
             decoding_error(small_2d_env, centers[decoded_bins], centers[actual_bins]),
