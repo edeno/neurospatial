@@ -153,7 +153,6 @@ from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
 
 # Transform operations
 from neurospatial.ops.transforms import (
-    Affine2D,
     AffineND,
     SpatialTransform,
     VideoCalibration,
@@ -236,7 +235,6 @@ __all__ = [
     "apply_kernel",
     "compute_diffusion_kernels",
     # Transforms - Core classes
-    "Affine2D",
     "AffineND",
     "SpatialTransform",
     "VideoCalibration",

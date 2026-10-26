@@ -14,7 +14,7 @@ from matplotlib.patches import RegularPolygon
 
 from neurospatial import Environment
 from neurospatial.io import from_dict, to_dict
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 
 def _owned_layout(parent, tag):
@@ -111,16 +111,16 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     source_writeability = tuple(
         array.flags.writeable for array in (*layout.grid_edges, layout.active_mask)
     )
-    translation = Affine2D(
+    translation = AffineND(
         np.array([[1.0, 0.0, 1.25], [0.0, 1.0, -2.5], [0.0, 0.0, 1.0]])
     )
-    similarity = Affine2D(
+    similarity = AffineND(
         np.array([[0.0, -2.0, 1.25], [2.0, 0.0, -2.5], [0.0, 0.0, 1.0]])
     )
     keep = np.array([True, False, True, False, True])
     indices = np.arange(parent.n_bins)
     linear_scale = 1.0
-    forward = Affine2D(np.eye(3))
+    forward = AffineND(np.eye(3))
     if operation == "subset":
         child = parent.subset(mask=keep)
         indices = indices[keep]
@@ -207,7 +207,7 @@ def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
     parent = publish_environment(
         "external", _owned_layout(native, "ExternalGrid"), "ExternalGrid", {}
     )
-    transform = Affine2D(
+    transform = AffineND(
         np.array([[1.0, 0.0, 1.25], [0.0, 1.0, -2.5], [0.0, 0.0, 1.0]])
     )
     keep = np.arange(parent.n_bins) % 3 != 1

@@ -9,7 +9,7 @@ import pytest
 
 from neurospatial.annotation import core
 from neurospatial.annotation.project import AnnotationProject, AnnotationShape
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 
 
 @pytest.mark.parametrize("interval", [0, -1, np.inf, np.nan, True, "30"])
@@ -72,7 +72,7 @@ def test_calibration_for_another_frame_size_fails_before_the_editor(monkeypatch)
         "_setup_annotation_viewer",
         lambda *args, **kwargs: pytest.fail("Must reject before opening a viewer"),
     )
-    calibration = VideoCalibration(Affine2D(np.eye(3)), (640, 480))
+    calibration = VideoCalibration(AffineND(np.eye(3)), (640, 480))
     with pytest.raises(ValueError, match="frame_size_px must match"):
         core.annotate_video("unused.mp4", bin_size=1.0, calibration=calibration)
 
@@ -127,7 +127,7 @@ def test_resume_uses_embedded_frame_and_current_session_calibration(
     path = tmp_path / "draft.project"
     draft.save(path)
     source = path if from_file else draft
-    live_calibration = VideoCalibration(Affine2D(np.diag([0.25, -0.25, 1.0])), (20, 10))
+    live_calibration = VideoCalibration(AffineND(np.diag([0.25, -0.25, 1.0])), (20, 10))
     order = []
     captured = {}
     viewer = SimpleNamespace(close=lambda: order.append("close"))
@@ -340,7 +340,7 @@ def test_public_resume_keeps_invalid_close_editable_and_saves_live_calibration(
         session.layer.data = [vertices[:, ::-1]]
         session.set_calibration(
             VideoCalibration(
-                Affine2D(np.array([[0.5, 0, 0], [0, -0.5, 10], [0, 0, 1]])), (20, 20)
+                AffineND(np.array([[0.5, 0, 0], [0, -0.5, 10], [0, 0, 1]])), (20, 20)
             )
         )
         session.set_bin_size(0.5)

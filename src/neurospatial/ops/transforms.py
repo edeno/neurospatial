@@ -1,40 +1,15 @@
-"""Coordinate transforms and calibration (ops/transforms.py).
-=============================================================
+"""Coordinate transforms and video calibration.
 
-N-dimensional affine transformations with a unified API.
+`AffineND` is one composable, homogeneous affine transform for points of any
+dimension. Build one with a factory (`translate`, `scale_2d`, `flip_y`,
+`identity`, `translate_3d`, `scale_3d`, `from_rotation_matrix`,
+`identity_nd`), estimate one from landmark pairs with `estimate_transform`, or
+calibrate video pixels to centimeters with `calibrate_from_scale_bar`,
+`calibrate_from_landmarks` and `VideoCalibration`. Compose transforms with
+``@`` and apply one by calling it on an ``(..., n_dims)`` array.
 
-New Import Path (v0.4+)
------------------------
-This module has moved from ``neurospatial.transforms`` to ``neurospatial.ops.transforms``.
-
-.. code-block:: python
-
-    # New import path (recommended)
-    from neurospatial.ops.transforms import Affine2D, translate, scale_2d
-
-    # Old path still works via re-export from top-level __init__.py
-    from neurospatial.transforms import Affine2D  # deprecated
-
-Two complementary APIs
-----------------------
-1.  *Composable objects* (`AffineND`, `Affine2D`)
-    Build a transform once, reuse everywhere, keep provenance.
-2.  *Quick helpers* (`flip_y_data`, `convert_to_cm`, `convert_to_pixels`)
-    One-liners for scripts that just need a NumPy array back.
-
-For 2D (backward compatible):
-    Use `Affine2D` or factory functions like `translate()`, `scale_2d()`.
-
-For 3D (new in v0.3):
-    Use `AffineND` or factory functions like `translate_3d()`, `scale_3d()`,
-    or `from_rotation_matrix()` with scipy.spatial.transform.Rotation.
-
-Notes
------
-**Version History**:
-- v0.2.x and earlier: 2D-only (`Affine2D`)
-- v0.3+: Added 3D support (`AffineND`)
-- v0.4+: Moved to ``neurospatial.ops.transforms``; merged ``calibration.py``
+`flip_y_data`, `convert_to_cm` and `convert_to_pixels` apply a pixel/cm
+conversion in one call and return the converted array.
 """
 
 # ruff: noqa: N806  - uppercase matrix names (A, R, X) follow mathematical convention
@@ -46,10 +21,13 @@ from typing import Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+from neurospatial.geometry import _check_homogeneous
+from neurospatial.geometry._arrays import ReadOnlyState
+
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
     # Core classes
-    "Affine2D",
     "AffineND",
     "SpatialTransform",
     "VideoCalibration",
@@ -86,33 +64,106 @@ class SpatialTransform(Protocol):
     def __call__(self, pts: NDArray[np.float64]) -> NDArray[np.float64]: ...
 
 
-@dataclass(frozen=True, slots=True)
-class AffineND(SpatialTransform):
-    """N-D affine transform expressed as an (n_dims+1) × (n_dims+1) homogeneous matrix.
+_AFFINE_FIX = (
+    "put the linear part in A[:n_dims, :n_dims], the translation in "
+    "A[:n_dims, n_dims] and [0, ..., 0, 1] in the last row, or build the "
+    "transform with translate(), scale_2d(), from_rotation_matrix() or "
+    "estimate_transform()"
+)
+
+
+def _check_affine_matrix(matrix: NDArray[np.float64]) -> None:
+    """Raise a ValueError naming what makes ``matrix`` not an invertible affine map."""
+    try:
+        _check_homogeneous(matrix)
+    except ValueError as exc:
+        fix = _AFFINE_FIX
+        if (
+            matrix.ndim != 2
+            or matrix.shape[0] < 2
+            or matrix.shape[0] != matrix.shape[1]
+        ):
+            what = (
+                "AffineND needs a square (n_dims + 1, n_dims + 1) homogeneous "
+                f"matrix, got shape {matrix.shape}."
+            )
+            why = "the extra row and column hold the translation"
+        elif not np.all(np.isfinite(matrix)):
+            what = "AffineND got a matrix with NaN or infinite entries."
+            why = "a non-finite entry sends every point to NaN or infinity"
+        elif not np.array_equal(matrix[-1], np.r_[np.zeros(len(matrix) - 1), 1.0]):
+            what = (
+                f"AffineND needs the last row [0, ..., 0, 1], got "
+                f"{matrix[-1].tolist()}."
+            )
+            why = (
+                "any other last row is a projective map, which bends straight "
+                "walls and changes areas unevenly, not an affine one"
+            )
+        else:
+            what = (
+                "AffineND got a singular matrix: its linear part "
+                f"{matrix[:-1, :-1].tolist()} has zero determinant."
+            )
+            why = (
+                "a singular map collapses space onto a line or plane, so it "
+                "has no inverse to carry points, bins or video pixels back"
+            )
+            fix = "use an invertible matrix with nonzero scale factors; " + fix
+        raise ValueError(_format_error(what, why=why, fix=fix)) from exc
+
+
+@dataclass(frozen=True, eq=False)
+class AffineND(ReadOnlyState, SpatialTransform):
+    """Invertible affine transform as an (n_dims+1) × (n_dims+1) homogeneous matrix.
 
     Works for 2D, 3D, or higher dimensions. For N-dimensional points, uses
     (N+1) × (N+1) homogeneous matrix A such that:
 
         [x'₁, x'₂, ..., x'ₙ, 1]^T  =  A @ [x₁, x₂, ..., xₙ, 1]^T
 
+    Parameters
+    ----------
+    A : array-like, shape (n_dims+1, n_dims+1)
+        Homogeneous transformation matrix. It encodes rotation, scaling,
+        translation and shear; it must be finite, its bottom row must be
+        ``[0, ..., 0, 1]`` and its linear part ``A[:n_dims, :n_dims]`` must
+        be invertible. The transform keeps a read-only copy.
+
     Attributes
     ----------
     A : NDArray[np.float64], shape (n_dims+1, n_dims+1)
-        Homogeneous transformation matrix. Encodes rotation, scaling,
-        translation, and shear. The bottom row is always [0, 0, ..., 0, 1].
+        Read-only homogeneous transformation matrix.
     n_dims : int
         Number of spatial dimensions (2 for 2D, 3 for 3D, etc.).
 
+    Raises
+    ------
+    ValueError
+        If ``A`` is not square, has NaN or infinite entries, has a bottom row
+        other than ``[0, ..., 0, 1]``, or is singular.
+
+    Notes
+    -----
+    Two transforms are equal (``==``) when their matrices are equal.
+
     Examples
     --------
-    3D translation:
+    2D scaling followed by translation:
 
     >>> import numpy as np
+    >>> from neurospatial.ops.transforms import translate, scale_2d
+    >>> transform = translate(10, 20) @ scale_2d(2.0)
+    >>> transform(np.array([[0, 0], [1, 1]]))
+    array([[10., 20.],
+           [12., 22.]])
+
+    3D translation:
+
     >>> from neurospatial.ops.transforms import translate_3d
     >>> transform = translate_3d(10, 20, 30)
     >>> points = np.array([[0, 0, 0], [1, 1, 1]])
-    >>> transformed = transform(points)
-    >>> transformed
+    >>> transform(points)
     array([[10., 20., 30.],
            [11., 21., 31.]])
 
@@ -122,31 +173,36 @@ class AffineND(SpatialTransform):
     >>> from neurospatial.ops.transforms import from_rotation_matrix
     >>> R = Rotation.from_euler("z", 90, degrees=True).as_matrix()
     >>> transform = from_rotation_matrix(R)
-    >>> points = np.array([[1, 0, 0]])
-    >>> transformed = transform(points)
-    >>> np.allclose(transformed, [[0, 1, 0]])
+    >>> np.allclose(transform(np.array([[1, 0, 0]])), [[0, 1, 0]])
     True
 
     See Also
     --------
-    Affine2D : Alias for 2D transforms (backward compatible)
     from_rotation_matrix : Create transform from rotation matrix
+    estimate_transform : Fit a transform to landmark pairs
     """
 
     A: NDArray[np.float64]  # shape (n_dims+1, n_dims+1)
 
     def __post_init__(self) -> None:
-        """Validate transformation matrix shape."""
-        A = np.asarray(self.A, dtype=np.float64)
-        if A.ndim != 2 or A.shape[0] != A.shape[1]:
-            raise ValueError(f"Affine matrix must be square, got shape {A.shape}")
-        # Store validated array
+        """Validate the matrix and keep a read-only copy."""
+        A = np.array(self.A, dtype=np.float64)
+        _check_affine_matrix(A)
+        A.setflags(write=False)
         object.__setattr__(self, "A", A)
 
     @property
     def n_dims(self) -> int:
         """Number of spatial dimensions (2 for 2D, 3 for 3D, etc.)."""
         return int(self.A.shape[0] - 1)
+
+    def __eq__(self, other: object) -> bool:
+        """Whether ``other`` is an AffineND with an equal matrix."""
+        if not isinstance(other, AffineND):
+            return NotImplemented
+        return bool(np.array_equal(self.A, other.A))
+
+    __hash__ = None  # type: ignore[assignment]
 
     def __call__(self, pts: NDArray[np.float64]) -> NDArray[np.float64]:
         """Apply transformation to N-dimensional points.
@@ -160,6 +216,11 @@ class AffineND(SpatialTransform):
         -------
         NDArray[np.float64], shape (..., n_dims)
             Transformed points.
+
+        Raises
+        ------
+        ValueError
+            If the last axis of ``pts`` does not have length ``n_dims``.
 
         Examples
         --------
@@ -175,9 +236,10 @@ class AffineND(SpatialTransform):
         n_dims = self.n_dims
 
         # Validate dimensions
-        if pts.shape[-1] != n_dims:
+        if pts.ndim == 0 or pts.shape[-1] != n_dims:
+            given = pts.shape[-1] if pts.ndim else 0
             raise ValueError(
-                f"Transform is {n_dims}D but points have {pts.shape[-1]} dimensions. "
+                f"Transform is {n_dims}D but points have {given} dimensions. "
                 f"Expected shape (..., {n_dims}), got {pts.shape}"
             )
 
@@ -207,8 +269,9 @@ class AffineND(SpatialTransform):
 
         Raises
         ------
-        np.linalg.LinAlgError
-            If transformation matrix is singular (non-invertible).
+        ValueError
+            If the inverse has entries beyond floating-point range (a nearly
+            singular transform).
 
         Examples
         --------
@@ -239,6 +302,11 @@ class AffineND(SpatialTransform):
         ValueError
             If transforms have different dimensions.
 
+        Notes
+        -----
+        The result applies `other` first, then `self`. Composition order
+        matters: ``a.compose(b)`` ≠ ``b.compose(a)`` in general.
+
         Examples
         --------
         >>> from neurospatial.ops.transforms import translate_3d, scale_3d
@@ -256,166 +324,16 @@ class AffineND(SpatialTransform):
         return AffineND(self.A @ other.A)
 
     def __matmul__(self, other: AffineND) -> AffineND:
-        """Compose transformations using @ operator."""
+        """Compose transformations using @ operator (``other`` applied first)."""
         return self.compose(other)
 
 
-@dataclass(frozen=True, slots=True)
-class Affine2D(SpatialTransform):
-    """2-D affine transform expressed as a 3 × 3 homogeneous matrix *A* such that
-
-        [x', y', 1]^T  =  A @ [x, y, 1]^T
-
-    Attributes
-    ----------
-    A : NDArray[np.float64], shape (3, 3)
-        Homogeneous transformation matrix representing the affine transformation.
-        The matrix encodes rotation, scaling, translation, and shear operations.
-        The bottom row is always [0, 0, 1].
-
-    Examples
-    --------
-    Create a transform that scales then translates:
-
-    >>> import numpy as np
-    >>> from neurospatial.ops.transforms import translate, scale_2d
-    >>> transform = translate(10, 20) @ scale_2d(2.0)
-    >>> points = np.array([[0, 0], [1, 1]])
-    >>> transformed = transform(points)
-    >>> transformed
-    array([[10., 20.],
-           [12., 22.]])
-
-    """
-
-    A: NDArray[np.float64]  # shape (3, 3)
-
-    # ---- core --------------------------------------------------------
-    def __call__(self, pts: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Apply transformation to points.
-
-        Parameters
-        ----------
-        pts : NDArray[np.float64], shape (..., 2)
-            2D points to transform.
-
-        Returns
-        -------
-        NDArray[np.float64], shape (..., 2)
-            Transformed points.
-
-        Examples
-        --------
-        >>> from neurospatial.ops.transforms import translate
-        >>> transform = translate(10, 20)
-        >>> points = np.array([[0, 0], [1, 1]])
-        >>> transform(points)
-        array([[10., 20.],
-               [11., 21.]])
-
-        """
-        pts = np.asanyarray(pts, dtype=float)
-        pts_h = np.c_[pts.reshape(-1, 2), np.ones((pts.size // 2, 1))]
-        out = pts_h @ self.A.T
-        out = out[:, :2] / out[:, 2:3]
-        return np.asarray(out.reshape(pts.shape), dtype=np.float64)
-
-    # ---- helpers -----------------------------------------------------
-    def inverse(self) -> Affine2D:
-        """Compute the inverse transformation.
-
-        Returns
-        -------
-        Affine2D
-            New Affine2D representing the inverse transformation.
-
-        Raises
-        ------
-        np.linalg.LinAlgError
-            If transformation matrix is singular (non-invertible).
-
-        Examples
-        --------
-        >>> from neurospatial.ops.transforms import translate
-        >>> transform = translate(10, 20)
-        >>> inv = transform.inverse()
-        >>> points = np.array([[10, 20]])
-        >>> inv(points)
-        array([[0., 0.]])
-
-        """
-        return Affine2D(np.asarray(np.linalg.inv(self.A), dtype=np.float64))
-
-    def compose(self, other: Affine2D) -> Affine2D:
-        """Compose this transformation with another.
-
-        Parameters
-        ----------
-        other : Affine2D
-            Transformation to compose with (applied first).
-
-        Returns
-        -------
-        Affine2D
-            New transformation representing ``self ∘ other``.
-
-        Notes
-        -----
-        The resulting transformation applies `other` first, then `self`.
-        Composition order matters: ``a.compose(b)`` ≠ ``b.compose(a)`` in general.
-
-        Examples
-        --------
-        >>> from neurospatial.ops.transforms import translate
-        >>> t1 = translate(10, 0)
-        >>> t2 = translate(0, 20)
-        >>> combined = t1.compose(t2)
-        >>> points = np.array([[0, 0]])
-        >>> combined(points)
-        array([[10., 20.]])
-
-        """
-        return Affine2D(self.A @ other.A)
-
-    # Pythonic shorthand:  t3 = t1 @ t2
-    def __matmul__(self, other: Affine2D) -> Affine2D:
-        """Compose transformations using @ operator.
-
-        Parameters
-        ----------
-        other : Affine2D
-            Transformation to compose with.
-
-        Returns
-        -------
-        Affine2D
-            Composed transformation (``self @ other``).
-
-        See Also
-        --------
-        compose : Functional composition interface.
-
-        Examples
-        --------
-        >>> from neurospatial.ops.transforms import translate, scale_2d
-        >>> t1 = translate(10, 0)
-        >>> t2 = scale_2d(2.0)
-        >>> combined = t1 @ t2
-        >>> points = np.array([[0, 0], [1, 1]])
-        >>> combined(points)
-        array([[10.,  0.],
-               [12.,  2.]])
-
-        """
-        return self.compose(other)
-
-
-def identity() -> Affine2D:
-    """Return the identity transform.
+def identity() -> AffineND:
+    """Return the 2D identity transform.
 
     Returns
     -------
-    Affine2D
+    AffineND
         Identity transformation (no change to input points).
 
     Examples
@@ -427,11 +345,11 @@ def identity() -> Affine2D:
            [3., 4.]])
 
     """
-    return Affine2D(np.eye(3))
+    return AffineND(np.eye(3))
 
 
 # Factory helpers for the most common ops ---------------------------------
-def scale_2d(sx: float = 1.0, sy: float | None = None) -> Affine2D:
+def scale_2d(sx: float = 1.0, sy: float | None = None) -> AffineND:
     """Create uniform or anisotropic scaling transformation.
 
     Parameters
@@ -443,7 +361,7 @@ def scale_2d(sx: float = 1.0, sy: float | None = None) -> Affine2D:
 
     Returns
     -------
-    Affine2D
+    AffineND
         Scaling transformation.
 
     Examples
@@ -464,10 +382,10 @@ def scale_2d(sx: float = 1.0, sy: float | None = None) -> Affine2D:
 
     """
     sy = sx if sy is None else sy
-    return Affine2D(np.array([[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]]))
+    return AffineND(np.array([[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]]))
 
 
-def translate(tx: float = 0.0, ty: float = 0.0) -> Affine2D:
+def translate(tx: float = 0.0, ty: float = 0.0) -> AffineND:
     """Create translation transformation.
 
     Parameters
@@ -479,7 +397,7 @@ def translate(tx: float = 0.0, ty: float = 0.0) -> Affine2D:
 
     Returns
     -------
-    Affine2D
+    AffineND
         Translation transformation.
 
     Examples
@@ -491,10 +409,10 @@ def translate(tx: float = 0.0, ty: float = 0.0) -> Affine2D:
            [11., 21.]])
 
     """
-    return Affine2D(np.array([[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]]))
+    return AffineND(np.array([[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]]))
 
 
-def flip_y(frame_height_px: float) -> Affine2D:
+def flip_y(frame_height_px: float) -> AffineND:
     """Flip the *y*-axis of pixel coordinates so that origin moves
     from top-left to bottom-left.
 
@@ -505,11 +423,11 @@ def flip_y(frame_height_px: float) -> Affine2D:
 
     Returns
     -------
-    Affine2D
+    AffineND
         Transformation that flips y-axis around frame center.
 
     """
-    return Affine2D(
+    return AffineND(
         np.array([[1.0, 0.0, 0.0], [0.0, -1.0, frame_height_px], [0.0, 0.0, 1.0]]),
     )
 
@@ -520,7 +438,7 @@ def calibrate_from_scale_bar(
     p2_px: tuple[float, float],
     known_length_cm: float,
     frame_size_px: tuple[int, int],
-) -> Affine2D:
+) -> AffineND:
     """Build pixel→cm transform from a scale bar of known length.
 
     Creates an affine transformation that converts video pixel coordinates
@@ -540,7 +458,7 @@ def calibrate_from_scale_bar(
 
     Returns
     -------
-    Affine2D
+    AffineND
         Transform that converts pixel coords to cm coords with Y-flip.
 
     Raises
@@ -626,7 +544,7 @@ def calibrate_from_landmarks(
     frame_size_px: tuple[int, int],
     *,
     kind: str = "similarity",
-) -> Affine2D:
+) -> AffineND:
     """Build pixel→cm transform from corresponding landmark pairs.
 
     Creates an affine transformation from at least 3 corresponding point pairs
@@ -650,7 +568,7 @@ def calibrate_from_landmarks(
 
     Returns
     -------
-    Affine2D
+    AffineND
         Transform that converts pixel coords to cm coords.
 
     Raises
@@ -751,12 +669,11 @@ def calibrate_from_landmarks(
                 f"Ensure at least 3 non-collinear points."
             )
 
-    # Use estimate_transform from this module (returns AffineND, wrap in Affine2D)
     result = estimate_transform(landmarks_px_flipped, landmarks_cm, kind=kind)
 
     # The fit accepts flipped pixels; compose the flip so callers can supply
     # raw image pixels, as they do for calibrate_from_scale_bar.
-    return Affine2D(result.A) @ flip_y(frame_height)
+    return result @ flip_y(frame_height)
 
 
 @dataclass
@@ -768,7 +685,7 @@ class VideoCalibration:
 
     Parameters
     ----------
-    transform_px_to_cm : Affine2D
+    transform_px_to_cm : AffineND
         Transform that converts pixel coordinates to cm coordinates.
         Should include Y-axis flip (video origin top-left to env bottom-left).
     frame_size_px : tuple[int, int]
@@ -776,11 +693,11 @@ class VideoCalibration:
 
     Attributes
     ----------
-    transform_px_to_cm : Affine2D
+    transform_px_to_cm : AffineND
         Forward transform from pixels to cm.
     frame_size_px : tuple[int, int]
         Video frame dimensions.
-    transform_cm_to_px : Affine2D
+    transform_cm_to_px : AffineND
         Inverse transform from cm to pixels (cached property).
     cm_per_px : float
         Approximate scale factor (computed from transform matrix).
@@ -806,19 +723,19 @@ class VideoCalibration:
     0.5
     """
 
-    transform_px_to_cm: Affine2D
+    transform_px_to_cm: AffineND
     frame_size_px: tuple[int, int]
 
     # Cached inverse transform
-    _transform_cm_to_px: Affine2D | None = None
+    _transform_cm_to_px: AffineND | None = None
 
     @property
-    def transform_cm_to_px(self) -> Affine2D:
+    def transform_cm_to_px(self) -> AffineND:
         """Get the inverse transform (cm to pixels).
 
         Returns
         -------
-        Affine2D
+        AffineND
             Transform that converts cm coordinates to pixel coordinates.
         """
         if self._transform_cm_to_px is None:
@@ -871,7 +788,7 @@ class VideoCalibration:
         VideoCalibration
             Restored calibration object.
         """
-        transform = Affine2D(np.array(d["transform_px_to_cm"]))
+        transform = AffineND(np.array(d["transform_px_to_cm"]))
         frame_size_list = d["frame_size_px"]
         frame_size = (int(frame_size_list[0]), int(frame_size_list[1]))
         return cls(transform_px_to_cm=transform, frame_size_px=frame_size)
@@ -1039,7 +956,7 @@ def identity_nd(*, n_dims: int = 2) -> AffineND:
 
 
 # ---------------------------------------------------------------------
-# Quick NumPy helpers that *internally* build and apply Affine2D
+# Quick NumPy helpers that build and apply a 2D AffineND
 # ---------------------------------------------------------------------
 def flip_y_data(
     data: NDArray[np.float64] | tuple | list,
@@ -1064,7 +981,7 @@ def flip_y_data(
     -----
     Equivalent to::
 
-        Affine2D([[1, 0, 0], [0, -1, H], [0, 0, 1]])(data)
+        AffineND([[1, 0, 0], [0, -1, H], [0, 0, 1]])(data)
 
     but without the user having to build the transform.
 
@@ -1230,7 +1147,6 @@ def estimate_transform(
     See Also
     --------
     AffineND : N-D affine transformation class
-    Affine2D : 2D affine transformation (same as AffineND with n_dims=2)
     Environment.apply_transform : Apply a transform to an environment.
 
     """
@@ -1349,10 +1265,10 @@ def estimate_transform(
 def simple_scale(
     px_per_cm: float,
     offset_px: tuple[float, float] = (0.0, 0.0),
-) -> Affine2D:
-    """Create a simple Affine2D transform that converts pixel units to centimeters.
+) -> AffineND:
+    """Create a simple transform that converts pixel units to centimeters.
 
-    This returns an Affine2D matrix which, when applied to [x_px, y_px, 1]^T,
+    This returns an AffineND whose matrix, when applied to [x_px, y_px, 1]^T,
     yields coordinates in centimeters.
 
     Parameters
@@ -1365,7 +1281,7 @@ def simple_scale(
 
     Returns
     -------
-    Affine2D
+    AffineND
         An affine transformation that converts pixel coordinates to centimeters.
 
     Raises
@@ -1423,4 +1339,4 @@ def simple_scale(
         ],
         dtype=float,
     )
-    return Affine2D(A)
+    return AffineND(A)

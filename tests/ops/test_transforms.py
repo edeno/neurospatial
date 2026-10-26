@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial.ops.transforms import (
-    Affine2D,
+    AffineND,
     calibrate_from_landmarks,
     calibrate_from_scale_bar,
     flip_y,
@@ -49,7 +49,7 @@ class TestCalibrateFromScaleBar:
         )
 
         # Check that transform is correctly computed
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_diagonal_scale_bar(self):
         """Diagonal scale bar computes Euclidean distance correctly."""
@@ -89,15 +89,15 @@ class TestCalibrateFromScaleBar:
         bottom_point_cm = transform(bottom_point_px)
         assert_allclose(bottom_point_cm[0, 1], 0.0, atol=1e-10)
 
-    def test_returns_affine2d(self):
-        """Returns an Affine2D instance."""
+    def test_returns_affine_nd(self):
+        """Returns an AffineND instance."""
         transform = calibrate_from_scale_bar(
             p1_px=(0.0, 0.0),
             p2_px=(100.0, 0.0),
             known_length_cm=10.0,
             frame_size_px=(640, 480),
         )
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_zero_length_raises(self):
         """Zero-length scale bar raises ValueError."""
@@ -198,7 +198,7 @@ class TestCalibrateFromLandmarks:
             kind="rigid",
         )
 
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_similarity_transform(self):
         """Similarity (scale + rotation + translation) transform."""
@@ -214,7 +214,7 @@ class TestCalibrateFromLandmarks:
             kind="similarity",
         )
 
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_affine_transform(self):
         """Full affine transform from landmarks."""
@@ -229,7 +229,7 @@ class TestCalibrateFromLandmarks:
             kind="affine",
         )
 
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_roundtrip_accuracy(self):
         """Pixel→cm→pixel roundtrip within tolerance."""
@@ -346,7 +346,7 @@ class TestVideoCalibration:
         )
 
         assert calib.frame_size_px == (640, 480)
-        assert isinstance(calib.transform_px_to_cm, Affine2D)
+        assert isinstance(calib.transform_px_to_cm, AffineND)
 
     def test_cm_per_px_property(self):
         """cm_per_px returns approximate scale factor."""
@@ -373,7 +373,7 @@ class TestVideoCalibration:
         """Rotating or reflecting calibrated axes does not change their scale."""
         from neurospatial.ops.transforms import VideoCalibration
 
-        rotation = Affine2D(
+        rotation = AffineND(
             np.array(
                 [
                     [np.cos(angle), -np.sin(angle), 10],

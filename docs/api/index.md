@@ -101,11 +101,11 @@ Transform and align spatial representations.
 
 ### [neurospatial.ops.transforms](neurospatial/ops/transforms.md)
 
-2D affine transformations.
+Affine transformations and video calibration.
 
 **Key Classes:**
 
-- `Affine2D`: Composable 2D affine transformations
+- `AffineND`: Composable affine transformations in any dimension
 
 ### [neurospatial.encoding](neurospatial/encoding/index.md)
 

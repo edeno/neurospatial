@@ -1114,11 +1114,11 @@ class VideoOverlay:
 @dataclass(frozen=True)
 class VideoCalibration:
     """Video→environment coordinate calibration."""
-    transform_px_to_cm: Affine2D          # Pixel → cm transform
+    transform_px_to_cm: AffineND          # Pixel → cm transform
     frame_size_px: tuple[int, int]        # (width, height) in pixels
 
     @property
-    def transform_cm_to_px(self) -> Affine2D:
+    def transform_cm_to_px(self) -> AffineND:
         """Inverse transform (cm → pixel)."""
 
     @property

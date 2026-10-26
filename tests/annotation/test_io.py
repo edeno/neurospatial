@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial.annotation.io import regions_from_cvat, regions_from_labelme
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 
 
 class TestRegionsFromLabelme:
@@ -45,7 +45,7 @@ class TestRegionsFromLabelme:
                 [0.0, 0.0, 1.0],
             ]
         )
-        transform = Affine2D(scale_matrix)
+        transform = AffineND(scale_matrix)
         calibration = VideoCalibration(transform, frame_size_px=(640, 480))
 
         json_data = {
@@ -118,7 +118,7 @@ class TestRegionsFromCvat:
                 [0.0, 0.0, 1.0],
             ]
         )
-        transform = Affine2D(scale_matrix)
+        transform = AffineND(scale_matrix)
         calibration = VideoCalibration(transform, frame_size_px=(640, 480))
 
         xml_content = """<?xml version="1.0" encoding="utf-8"?>

@@ -170,7 +170,7 @@ if TYPE_CHECKING:
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops import KernelMode
     from neurospatial.ops.diffusion import MRFBasis
-    from neurospatial.ops.transforms import Affine2D, AffineND
+    from neurospatial.ops.transforms import AffineND
 
 logger = logging.getLogger(__name__)
 
@@ -2820,7 +2820,7 @@ class Environment(Generic[_C]):
     )
     def apply_transform(
         self: Environment[CartesianSystem],
-        transform: AffineND | Affine2D,
+        transform: AffineND,
         *,
         name: str | None = None,
         frame: str | None = None,
@@ -2829,9 +2829,8 @@ class Environment(Generic[_C]):
         """Apply affine transformation to environment, returning a new instance.
 
         Transforms the environment's bin centers, connectivity graph, and regions
-        using an affine transformation. Supports both 2D (Affine2D) and N-D
-        (AffineND) transforms. The transformation must match the environment's
-        dimensionality.
+        using an affine transformation. The transformation must match the
+        environment's dimensionality.
 
         Translation and similarity transforms retain finite-volume smoothing
         and differential operators. Cartesian 2-D/3-D grids retain source axes
@@ -2848,12 +2847,9 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        transform : AffineND or Affine2D
-            Affine transformation to apply. Must match environment dimensionality:
-
-            - For 2D environments: use Affine2D or AffineND with n_dims=2
-            - For 3D environments: use AffineND with n_dims=3
-            - For N-D environments: use AffineND with n_dims=N
+        transform : AffineND
+            Affine transformation to apply. Its ``n_dims`` must match the
+            environment's dimensionality.
 
             Create transforms using factory functions like `translate()`,
             `scale_2d()`, `from_rotation_matrix()`, or compose using `@` operator.
@@ -2893,16 +2889,14 @@ class Environment(Generic[_C]):
         Raises
         ------
         ValueError
-            If transform dimensionality doesn't match environment dimensionality,
-            the transform is not invertible, or a track receives a non-similarity
-            transform. Rebuild such a track from transformed nodes with
+            If transform dimensionality doesn't match environment dimensionality
+            or a track receives a non-similarity transform. Rebuild such a track from transformed nodes with
             ``Environment.from_graph``. Also if the transform changes lengths,
             the environment has units, and ``units`` is omitted.
 
         See Also
         --------
         estimate_transform : Estimate transformation from point correspondences
-        neurospatial.ops.transforms.Affine2D : 2D affine transformation class
         neurospatial.ops.transforms.AffineND : N-D affine transformation class
         neurospatial.ops.transforms.translate : Create translation transform
         neurospatial.ops.transforms.scale_2d : Create scaling transform
@@ -2947,7 +2941,7 @@ class Environment(Generic[_C]):
 
         Rotation (2D):
 
-        >>> from neurospatial.ops.transforms import Affine2D
+        >>> from neurospatial.ops.transforms import AffineND
         >>> # 45-degree rotation
         >>> angle = np.pi / 4
         >>> R = np.array(
@@ -2957,7 +2951,7 @@ class Environment(Generic[_C]):
         ...         [0, 0, 1],
         ...     ]
         ... )
-        >>> transform = Affine2D(R)
+        >>> transform = AffineND(R)
         >>> env_rotated = env.apply_transform(transform)
         >>> # Distances between bin centers are preserved under rotation
         >>> def steps(centers):
@@ -2968,7 +2962,7 @@ class Environment(Generic[_C]):
         Composed transforms (scale, then rotate, then translate):
 
         >>> from neurospatial.ops.transforms import scale_2d
-        >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)
+        >>> T = translate(50, 50) @ AffineND(R) @ scale_2d(1.2)
         >>> env_aligned = env.apply_transform(T, name="aligned")
         >>> np.allclose(env_aligned.bin_centers, T(env.bin_centers))
         True

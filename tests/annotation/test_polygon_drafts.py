@@ -8,7 +8,7 @@ from neurospatial.annotation.core import (
     _add_initial_regions,
     _process_annotation_results,
 )
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 from neurospatial.regions import Region, Regions
 
 
@@ -23,7 +23,7 @@ def test_donut_boundary_and_roi_roundtrip(calibrated):
     )
 
     calibration = (
-        VideoCalibration(Affine2D(np.diag([0.5, 0.5, 1.0])), frame_size_px=(100, 100))
+        VideoCalibration(AffineND(np.diag([0.5, 0.5, 1.0])), frame_size_px=(100, 100))
         if calibrated
         else None
     )

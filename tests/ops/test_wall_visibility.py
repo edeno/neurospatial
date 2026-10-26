@@ -138,7 +138,7 @@ def test_observer_on_outer_wall_sees_the_room_it_faces(source, restore):
 
 
 def test_rotated_observer_on_wall_sees_the_opposite_wall():
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     a = 0.3
     matrix = np.array(
@@ -148,7 +148,7 @@ def test_rotated_observer_on_wall_sees_the_opposite_wall():
             [0, 0, 1],
         ]
     )
-    env = room(wall=False).apply_transform(Affine2D(matrix))
+    env = room(wall=False).apply_transform(AffineND(matrix))
     # Rotation rounds exact along-wall rays to either side of the wall.
     origins, headings, expected, _ = (values[:-2] for values in wall_observer_rays())
     mapped = origins @ matrix[:2, :2].T + matrix[:2, 2]
@@ -246,7 +246,7 @@ def test_view_encoding_uses_observer_side_of_wall_and_records_source():
 @pytest.mark.parametrize("offset", [0.0, 100.0, 1e9])
 def test_rotated_wall_encoding_retains_observer_side(offset):
     from neurospatial.encoding.view import compute_view_rate
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     a = 0.3
     matrix = np.array(
@@ -256,7 +256,7 @@ def test_rotated_wall_encoding_retains_observer_side(offset):
             [0, 0, 1],
         ]
     )
-    env = room().apply_transform(Affine2D(matrix))
+    env = room().apply_transform(AffineND(matrix))
     observed = np.array([2.5, 4.5]) @ matrix[:2, :2].T + matrix[:2, 2]
     result = compute_view_rate(
         env,
@@ -319,7 +319,7 @@ def test_first_hole_and_doorway_hits_and_analysis_mode_propagation():
 
 @pytest.mark.parametrize("offset", [0.0, 100.0, 1e9])
 def test_wall_cue_visibility_survives_frame_rounding(offset):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     a = 0.3
     matrix = np.array(
@@ -329,7 +329,7 @@ def test_wall_cue_visibility_survives_frame_rounding(offset):
             [0, 0, 1],
         ]
     )
-    env = room().apply_transform(Affine2D(matrix))
+    env = room().apply_transform(AffineND(matrix))
     points = (
         np.array([[2.5, 4.5], [5, 4.5], [5.00001, 4.5]]) @ matrix[:2, :2].T
         + matrix[:2, 2]
@@ -346,7 +346,7 @@ def test_wall_cue_visibility_survives_frame_rounding(offset):
 
 def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
     from neurospatial.encoding._view_counts import _precompute_view_bins
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     a = 0.3
     matrix = np.array(
@@ -356,7 +356,7 @@ def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
             [0, 0, 1.0],
         ]
     )
-    env = room().apply_transform(Affine2D(matrix))
+    env = room().apply_transform(AffineND(matrix))
     point = np.array([2.5, 4.5]) @ matrix[:2, :2].T + matrix[:2, 2]
     headings = np.linspace(-np.pi, np.pi, 72, endpoint=False) + a
     bins = _precompute_view_bins(
@@ -368,7 +368,7 @@ def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
 
 def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
     from neurospatial.encoding._view_counts import _precompute_view_bins
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     a = 0.3
     matrix = np.array(
@@ -380,9 +380,9 @@ def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
     )
     parent = room()
     cropped = parent.subset(mask=parent.bin_centers[:, 0] < 4).apply_transform(
-        Affine2D(matrix)
+        AffineND(matrix)
     )
-    clipped = parent.clip(box(4.2, 4.2, 5, 4.8)).apply_transform(Affine2D(matrix))
+    clipped = parent.clip(box(4.2, 4.2, 5, 4.8)).apply_transform(AffineND(matrix))
     point = np.array([2.5, 4.5]) @ matrix[:2, :2].T + matrix[:2, 2]
     for env, expected in [(cropped, -1), (clipped, 0)]:
         for restored in (env, Environment.from_dict(env.to_dict())):
@@ -418,9 +418,9 @@ def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
         matrix = np.eye(3)
         matrix[:2, :2] = rotation
         matrix[:2, 2] = [100, 200]
-        from neurospatial.ops.transforms import Affine2D
+        from neurospatial.ops.transforms import AffineND
 
-        env = env.apply_transform(Affine2D(matrix))
+        env = env.apply_transform(AffineND(matrix))
         origins = origins @ rotation.T + [100, 200]
         headings += angle
     if restore:

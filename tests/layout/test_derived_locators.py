@@ -14,7 +14,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 
 @pytest.fixture
@@ -133,7 +133,7 @@ def test_rectilinear_subset_keeps_full_grid_and_changes_active_map():
 
 def test_positive_diagonal_locator_maps_edges_exactly(full_locator):
     matrix = np.array([[2.0, 0.0, 0.1], [0.0, 0.5, 0.2], [0.0, 0.0, 1.0]])
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     child = full_locator.transformed(transform)
     assert isinstance(child, RectilinearLocator)
     for axis, scale in enumerate([2.0, 0.5]):
@@ -161,4 +161,4 @@ def test_rectilinear_fast_path_refuses_reflections_and_axis_mixing(
 ):
     matrix = np.eye(3)
     matrix[:2, :2] = linear
-    assert full_locator.transformed(Affine2D(matrix)) is None
+    assert full_locator.transformed(AffineND(matrix)) is None

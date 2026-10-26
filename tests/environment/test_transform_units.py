@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.ops.transforms import Affine2D, scale_2d, translate
+from neurospatial.ops.transforms import AffineND, scale_2d, translate
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +29,7 @@ def test_a_calibration_relabels_the_units(camera):
     [
         (scale_2d(0.5), "scales lengths by 0.5"),
         (
-            Affine2D(np.array([[1.0, 0.5, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])),
+            AffineND(np.array([[1.0, 0.5, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])),
             "stretches or shears lengths",
         ),
     ],
@@ -50,7 +50,7 @@ def test_a_stretch_in_the_same_units_keeps_them_when_asked(camera):
 
 def test_rigid_transforms_keep_the_units(camera):
     angle = 0.3
-    rotation = Affine2D(
+    rotation = AffineND(
         np.array(
             [
                 [np.cos(angle), -np.sin(angle), 0.0],

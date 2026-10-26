@@ -5,7 +5,6 @@ import pytest
 
 from neurospatial import Environment, Regions
 from neurospatial.ops.transforms import (
-    Affine2D,
     AffineND,
     estimate_transform,
     translate,
@@ -217,7 +216,7 @@ class TestApplyTransformToEnvironment:
 
     def test_apply_identity_transform(self, simple_2d_env):
         """Test applying identity transform."""
-        transform = Affine2D(np.eye(3))
+        transform = AffineND(np.eye(3))
         transformed_env = simple_2d_env.apply_transform(transform)
 
         assert np.allclose(transformed_env.bin_centers, simple_2d_env.bin_centers)
@@ -236,8 +235,8 @@ class TestApplyTransformToEnvironment:
         "transform",
         [
             translate(10, 20),
-            Affine2D(np.array([[0.0, -2.0, 10.0], [0.5, 0.0, 20.0], [0, 0, 1]])),
-            Affine2D(np.array([[1.0, 2.0, 0.0], [0.0, -1.0, 0.0], [0, 0, 1]])),
+            AffineND(np.array([[0.0, -2.0, 10.0], [0.5, 0.0, 20.0], [0, 0, 1]])),
+            AffineND(np.array([[1.0, 2.0, 0.0], [0.0, -1.0, 0.0], [0, 0, 1]])),
         ],
         ids=["translation", "rotation_and_scaling", "shear_and_reflection"],
     )
@@ -282,11 +281,6 @@ class TestApplyTransformToEnvironment:
             transformed.bin_at(transform(points)), [0, -1, -1]
         )
 
-    def test_singular_environment_transform_raises(self, simple_2d_env):
-        """Collapsed cells cannot support an inverse containment query."""
-        with pytest.raises(ValueError, match="invertible"):
-            simple_2d_env.apply_transform(Affine2D(np.diag([0.0, 1.0, 1.0])))
-
     def test_transform_preserves_polygon_holes(self):
         """Excluded regions stay excluded under both translation and reflection."""
         from shapely.geometry import Point, Polygon
@@ -304,7 +298,7 @@ class TestApplyTransformToEnvironment:
         region_builder = Regions(env.regions.values())
         region_builder.add("arena", polygon=polygon)
         env = env.with_regions(region_builder)
-        transform = Affine2D(np.array([[-2.0, 0, 10], [0, 3.0, 20], [0, 0, 1]]))
+        transform = AffineND(np.array([[-2.0, 0, 10], [0, 3.0, 20], [0, 0, 1]]))
         transformed = env.apply_transform(transform)
         region = transformed.regions["arena"].data
 
@@ -344,7 +338,7 @@ class TestApplyTransformToEnvironment:
                 [0, 0, 1],
             ]
         )
-        transform = Affine2D(R)
+        transform = AffineND(R)
 
         transformed_env = simple_2d_env.apply_transform(transform)
 

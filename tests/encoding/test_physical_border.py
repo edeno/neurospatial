@@ -124,7 +124,7 @@ def test_result_summary_explains_unavailable_walls_and_explicit_mode_propagates(
 
 
 def test_physical_score_similarity_invariance_and_bad_source():
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     env = physical(wall=True)
     field = (env.bin_centers[:, 0] < 1).astype(float)
@@ -136,7 +136,7 @@ def test_physical_score_similarity_invariance_and_bad_source():
             [0, 0, 1],
         ]
     )
-    transformed = env.apply_transform(Affine2D(matrix))
+    transformed = env.apply_transform(AffineND(matrix))
     np.testing.assert_allclose(
         border_score(transformed, field, metric="euclidean"),
         border_score(env, field, metric="euclidean"),
@@ -146,14 +146,14 @@ def test_physical_score_similarity_invariance_and_bad_source():
 
 
 def test_independently_transformed_components_refuse_uncertified_contact():
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     env = physical()
     a = 0.3
     matrix = np.array(
         [[np.cos(a), -np.sin(a), 20], [np.sin(a), np.cos(a), 0], [0, 0, 1]]
     )
-    rotated = env.apply_transform(Affine2D(matrix)).with_metadata(frame=env.frame)
+    rotated = env.apply_transform(AffineND(matrix)).with_metadata(frame=env.frame)
     combined = Environment.combine(
         {"plain": env, "rotated": rotated}, auto_bridge=False
     )
@@ -180,10 +180,10 @@ def test_combined_rooms_retain_shared_physical_wall(restore, transformed):
         dict(zip(["left", "right"], rooms, strict=True)), auto_bridge=False
     )
     if transformed:
-        from neurospatial.ops.transforms import Affine2D
+        from neurospatial.ops.transforms import AffineND
 
         env = env.apply_transform(
-            Affine2D(np.array([[1.0, 0.0, 100.0], [0.0, 1.0, 200.0], [0.0, 0.0, 1.0]]))
+            AffineND(np.array([[1.0, 0.0, 100.0], [0.0, 1.0, 200.0], [0.0, 0.0, 1.0]]))
         )
     if restore:
         env = Environment.from_dict(env.to_dict())

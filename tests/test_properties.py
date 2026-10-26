@@ -55,7 +55,7 @@ def rotate_2d(angle_radians: float) -> AffineND:
 
     Returns
     -------
-    Affine2D
+    AffineND
         2D rotation transformation
     """
     angle_degrees = np.degrees(angle_radians)
@@ -411,7 +411,7 @@ class TestTransformProperties:
         # Distance before rotation
         dist_before = np.linalg.norm(point)
 
-        # Apply rotation using __call__ (Affine2D is callable)
+        # Apply the rotation by calling the transform
         T = rotate_2d(angle)
         rotated_point = T(point.reshape(1, 2))[0]
 

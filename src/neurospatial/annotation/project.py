@@ -27,7 +27,7 @@ from neurospatial.annotation._types import (
     MultipleBoundaryStrategy,
     RegionType,
 )
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 from neurospatial.regions.core import (
     _freeze_metadata,
     _require_json_metadata,
@@ -179,7 +179,7 @@ def _copy_calibration(
     if not np.all(np.isfinite(inverse)):
         raise ValueError("Calibration inverse transform must be finite.")
     matrix.setflags(write=False)
-    return VideoCalibration(Affine2D(matrix), frame_size)
+    return VideoCalibration(AffineND(matrix), frame_size)
 
 
 @dataclass(frozen=True, eq=False, init=False)
@@ -487,7 +487,7 @@ class AnnotationProject:
                         )
                         # Do not use from_dict: it silently truncates fractional sizes.
                         calibration = VideoCalibration(
-                            Affine2D(
+                            AffineND(
                                 np.asarray(
                                     calibration["transform_px_to_cm"], dtype=float
                                 )

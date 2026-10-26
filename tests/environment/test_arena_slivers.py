@@ -95,9 +95,9 @@ def test_transformed_grid_keeps_every_in_arena_position(
     round_arena, in_arena_points, matrix
 ):
     """A rotated or mirrored grid assigns sliver positions to the same bins."""
-    from neurospatial.ops import Affine2D
+    from neurospatial.ops import AffineND
 
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     moved = round_arena.apply_transform(transform)
     expected = round_arena.bin_at(in_arena_points)
     assert (expected >= 0).all()
@@ -120,9 +120,9 @@ def test_rotated_grid_owns_its_whole_physical_wall(round_arena):
     """Wall pieces in outline slivers keep an owner after a rotation."""
     from neurospatial.encoding._physical_border import physical_border_geometry
     from neurospatial.geometry import physical_walls
-    from neurospatial.ops import Affine2D
+    from neurospatial.ops import AffineND
 
-    moved = round_arena.apply_transform(Affine2D(_rotation(0.3, (1.5, -2.0))))
+    moved = round_arena.apply_transform(AffineND(_rotation(0.3, (1.5, -2.0))))
     original = physical_border_geometry(round_arena, physical_walls(round_arena.arena))
     rotated = physical_border_geometry(moved, physical_walls(moved.arena))
     np.testing.assert_array_equal(rotated.wall_bins, original.wall_bins)

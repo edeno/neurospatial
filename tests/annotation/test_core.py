@@ -13,7 +13,7 @@ from neurospatial.annotation.core import (
     annotate_video,
 )
 from neurospatial.landmarks import Landmarks
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 from neurospatial.regions import Region, Regions
 
 
@@ -431,7 +431,7 @@ class TestAddInitialRegions:
                 [0.0, 0.0, 1.0],
             ]
         )
-        transform = Affine2D(scale_matrix)
+        transform = AffineND(scale_matrix)
         calibration = VideoCalibration(transform, frame_size_px=(640, 480))
 
         # Region in "cm" (world coords after 2x scale)
@@ -838,7 +838,7 @@ class TestAddPositionsLayer:
         """Calibration transforms positions from cm to pixels."""
         napari = pytest.importorskip("napari")
         from neurospatial.annotation.core import _add_positions_layer
-        from neurospatial.ops.transforms import Affine2D, VideoCalibration
+        from neurospatial.ops.transforms import AffineND, VideoCalibration
 
         viewer = napari.Viewer(show=False)
 
@@ -850,7 +850,7 @@ class TestAddPositionsLayer:
                 [0.0, 0.0, 1.0],
             ]
         )
-        transform = Affine2D(scale_matrix)
+        transform = AffineND(scale_matrix)
         calibration = VideoCalibration(transform, frame_size_px=(640, 480))
 
         # Positions in cm

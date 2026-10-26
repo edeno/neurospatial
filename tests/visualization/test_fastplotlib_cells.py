@@ -12,14 +12,14 @@ from neurospatial import Environment
 from neurospatial.animation._style import _heading_displacement
 from neurospatial.environment._fastplotlib import ColorScale, cell_mesh, volume_opacity
 from neurospatial.layout import create_layout
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 EDGES = np.arange(0.0, 41.0, 4.0)
 
 
 def _rotation(angle):
     c, s = np.cos(angle), np.sin(angle)
-    return Affine2D(np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.0]]))
+    return AffineND(np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.0]]))
 
 
 def _grid(mask=None):

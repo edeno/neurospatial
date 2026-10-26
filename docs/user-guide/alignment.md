@@ -4,7 +4,8 @@ neurospatial provides tools for transforming and aligning spatial representation
 
 ## 2D Affine Transformations
 
-For 2D environments, use the `Affine2D` class:
+Every transform is an `AffineND`; for 2D environments, build one with the
+factory functions:
 
 <!-- docs-test: run -->
 ```python
@@ -121,7 +122,7 @@ import numpy as np
 
 from neurospatial import Environment, compute_spatial_rates
 from neurospatial.ops import estimate_transform
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 mask = np.ones((3, 3), dtype=bool)
 mask[1, 1] = False
@@ -130,7 +131,7 @@ assert not source.arena.physical_footprint_known
 assert not source.arena.walls
 
 landmarks = np.array([[0., 0.], [3., 0.], [0., 3.], [3., 3.]])
-known_map = Affine2D(np.array([[.8, -.6, 10.], [.6, .8, 20.], [0., 0., 1.]]))
+known_map = AffineND(np.array([[.8, -.6, 10.], [.6, .8, 20.], [0., 0., 1.]]))
 transform = estimate_transform(landmarks, known_map(landmarks), kind="affine")
 room = source.apply_transform(transform, frame="room")
 np.testing.assert_array_equal(room.bin_at(transform(source.bin_centers)), np.arange(source.n_bins))
@@ -181,12 +182,12 @@ is available.
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 x = np.linspace(0., 10., 101)
 positions = np.column_stack((x, 2. + np.sin(x)))
 source = Environment.from_samples(positions, bin_size=.5, units="cm")
-reflection = Affine2D(np.diag([1., -1., 1.]))
+reflection = AffineND(np.diag([1., -1., 1.]))
 aligned = source.apply_transform(reflection, frame="room")
 assert not aligned.arena.physical_footprint_known
 assert not aligned.arena.walls

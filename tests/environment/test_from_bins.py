@@ -242,11 +242,11 @@ def test_transform_preserves_pair_alignment_with_unequal_edge_lengths(transform_
 def test_similarity_preserves_declared_navigation_weights(
     source_factory, matrix, scale
 ):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     source = source_factory()
     env = Environment.from_bins(source)
-    derived = env.apply_transform(Affine2D(np.asarray(matrix, dtype=float)))
+    derived = env.apply_transform(AffineND(np.asarray(matrix, dtype=float)))
     np.testing.assert_array_equal(derived.edge_pairs, source.connections.pairs)
     expected = source.connections.pair_distances * scale
     for pair, distance in zip(derived.edge_pairs, expected, strict=True):
@@ -277,11 +277,11 @@ def test_similarity_preserves_declared_navigation_weights(
 def test_non_similarity_refuses_unknown_navigation_path_geometry(
     source_factory, matrix
 ):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     env = Environment.from_bins(source_factory())
     with pytest.raises(ValueError, match=r"navigation|path|weight"):
-        env.apply_transform(Affine2D(np.asarray(matrix, dtype=float)))
+        env.apply_transform(AffineND(np.asarray(matrix, dtype=float)))
 
 
 @pytest.mark.parametrize(
@@ -293,7 +293,7 @@ def test_non_similarity_refuses_unknown_navigation_path_geometry(
     ids=["shear", "unequal_scaling"],
 )
 def test_non_similarity_keeps_euclidean_navigation_supported(matrix):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     source = _nearest()
     bins = source.bins
@@ -304,7 +304,7 @@ def test_non_similarity_keeps_euclidean_navigation_supported(matrix):
     env = Environment.from_bins(
         replace(source, connections=BinConnections.from_arrays(pairs, euclidean))
     )
-    derived = env.apply_transform(Affine2D(np.asarray(matrix, dtype=float)))
+    derived = env.apply_transform(AffineND(np.asarray(matrix, dtype=float)))
     centers = derived.bin_centers
     expected = np.linalg.norm(
         centers[derived.edge_pairs[:, 1]] - centers[derived.edge_pairs[:, 0]], axis=1
@@ -491,11 +491,11 @@ def test_nearest_lookup_without_a_radius_or_domain_is_refused():
 
 def test_derived_and_combined_sites_still_need_a_lookup_radius():
     """Wrapping sites in a combination, subset or map keeps the refusal."""
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     sites = _sites()
     combined = Environment.combine({"sites": sites})
-    shifted = Affine2D(np.array([[1.0, 0.0, 5.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+    shifted = AffineND(np.array([[1.0, 0.0, 5.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
     for env in (
         combined,
         combined.subset(mask=np.array([True, True, False])),
@@ -700,7 +700,7 @@ def test_hex_data_roundtrip_preserves_lattice_and_autocorrelation(transport, tmp
 
 @pytest.mark.parametrize("derivation", ["subset", "transform", "clip", "chain"])
 def test_explicit_derived_data_preserves_retained_source_indices(derivation):
-    from neurospatial.ops.transforms import Affine2D, translate
+    from neurospatial.ops.transforms import AffineND, translate
 
     parent = Environment.from_grid_mask(
         np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
@@ -712,7 +712,7 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
     elif derivation == "transform":
         cosine, sine = np.cos(0.2), np.sin(0.2)
         source = parent.apply_transform(
-            Affine2D(np.array([[cosine, -sine, 0], [sine, cosine, 0], [0, 0, 1]]))
+            AffineND(np.array([[cosine, -sine, 0], [sine, cosine, 0], [0, 0, 1]]))
         )
     elif derivation == "clip":
         source = parent.clip(box(0.2, 0.2, 2.8, 2.8))
@@ -849,7 +849,7 @@ def test_explicit_grid_cannot_omit_a_shared_face_or_invent_a_diagonal_one(kind):
 
 @pytest.mark.parametrize("history", ["similarity", "axis_scale", "subset_similarity"])
 def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(history):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     source = _variable_grid_faces(2)
     if history == "axis_scale":
@@ -873,7 +873,7 @@ def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(histo
         )
     if history == "subset_similarity":
         env = env.subset(mask=np.arange(env.n_bins) != 3)
-    derived = env.apply_transform(Affine2D(matrix))
+    derived = env.apply_transform(AffineND(matrix))
     source = derived._binning
     Environment.from_bins(source)
     faces = source.build_faces()
@@ -1002,7 +1002,7 @@ _CELL_FACE_LABELS = {"hex": "hexagon faces", "mesh": "triangle faces"}
 
 
 def _cell_face_source(kind, history):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     if kind == "hex":
         env = Environment.from_layout(
@@ -1037,7 +1037,7 @@ def _cell_face_source(kind, history):
         matrix = np.eye(3)
         matrix[:2, :2] = linear
         matrix[:2, 2] = [100.0, -50.0]
-        env = env.apply_transform(Affine2D(matrix))
+        env = env.apply_transform(AffineND(matrix))
     source = env._binning
     return env, replace(source, faces=KnownFaces(source.build_faces()))
 

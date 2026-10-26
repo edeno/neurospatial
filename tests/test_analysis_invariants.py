@@ -16,7 +16,7 @@ from neurospatial import Environment, compute_spatial_rate, compute_spatial_rate
 from neurospatial.decoding import BayesianDecoder
 from neurospatial.encoding import SpikeTrains
 from neurospatial.ops.distance import distance_field
-from neurospatial.ops.transforms import Affine2D, translate
+from neurospatial.ops.transforms import AffineND, translate
 
 
 @pytest.mark.parametrize("order", list(permutations(range(3))))
@@ -103,7 +103,7 @@ def test_chained_coordinate_changes_preserve_queries_and_occupancy(
     if reflect:
         matrix[:2, 0] *= -1
     matrix[:2, 2] = [10.0, -7.0]
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     points = np.vstack([env.bin_centers, [[1.43, 1.57], [-20.0, -20.0]]])
     # Probe interiors, holes and outside points; exact boundaries are excluded
     # because roundoff there can legitimately change the owning adjacent cell.
@@ -140,7 +140,7 @@ def test_grid_rotated_by_a_subnormal_angle_is_accepted(angle):
         [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
     )
     matrix[:2, 2] = [10.0, -7.0]
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     rotated = env.apply_transform(transform)
     np.testing.assert_allclose(
         rotated.bin_centers, transform(env.bin_centers), rtol=0, atol=1e-12
@@ -164,7 +164,7 @@ def test_chained_grid_transforms_accept_their_inverse():
     matrix = np.eye(3)
     matrix[:2, :2] = 1.263995540083514 * np.eye(2)
     matrix[:2, 2] = [10.0, -7.0]
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     shifted = env.apply_transform(transform).apply_transform(translate(3.0, 2.0))
     restored = shifted.apply_transform(translate(-3.0, -2.0)).apply_transform(
         transform.inverse()

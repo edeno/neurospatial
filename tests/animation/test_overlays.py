@@ -626,7 +626,7 @@ class TestVideoData:
         sample_frame_indices: np.ndarray,
         sample_env_bounds: tuple[float, float, float, float],
     ):
-        """Test VideoData with Affine2D transform."""
+        """Test VideoData with AffineND transform."""
         from neurospatial.animation.overlays import VideoData
         from neurospatial.ops.transforms import identity
 
