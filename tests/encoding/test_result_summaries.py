@@ -32,6 +32,7 @@ TABLE_COLUMNS = {
         "border_score",
         "peak_x",
         "peak_y",
+        "n_spikes_outside_intervals",
         "cell_type",
     ],
     "view": [
@@ -39,6 +40,7 @@ TABLE_COLUMNS = {
         "spatial_information",
         "peak_x",
         "peak_y",
+        "n_spikes_outside_intervals",
         "is_spatial_view_cell",
     ],
     "allocentric": [
@@ -46,6 +48,7 @@ TABLE_COLUMNS = {
         "preferred_distance",
         "preferred_direction_deg",
         "preferred_direction",
+        "n_spikes_outside_intervals",
         "is_object_vector_cell",
     ],
     "egocentric": [
@@ -53,6 +56,7 @@ TABLE_COLUMNS = {
         "preferred_distance",
         "preferred_direction_deg",
         "preferred_direction",
+        "n_spikes_outside_intervals",
         "is_object_vector_cell",
     ],
     "directional": [
@@ -63,6 +67,7 @@ TABLE_COLUMNS = {
         "preferred_direction",
         "tuning_width",
         "tuning_pvalue",
+        "n_spikes_outside_intervals",
         "is_head_direction_cell",
     ],
 }

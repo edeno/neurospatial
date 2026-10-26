@@ -1479,6 +1479,7 @@ class TestViewRatesResultSummaryTable:
             "spatial_information",
             "peak_x",
             "peak_y",
+            "n_spikes_outside_intervals",
             "is_spatial_view_cell",
         ]
 
@@ -1701,6 +1702,7 @@ class TestViewRatesResultSummaryTable:
             "peak_y",
             "peak_firing_rate",
             "spatial_information",
+            "n_spikes_outside_intervals",
             "is_spatial_view_cell",
         }
         assert expected_columns.issubset(set(df.columns))

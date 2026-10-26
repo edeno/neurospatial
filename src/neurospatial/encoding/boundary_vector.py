@@ -192,6 +192,12 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
 
     Other Parameters
     ----------------
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -215,6 +221,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     bandwidth: float | None = field(default=None, kw_only=True)
     unit_id: int | str | None = None
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -342,6 +349,12 @@ class BoundaryVectorRatesResult(
 
     Other Parameters
     ----------------
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -366,6 +379,9 @@ class BoundaryVectorRatesResult(
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -700,7 +716,7 @@ def compute_boundary_vector_rates(
     ...     env, spikes, times, positions, headings, direction_frame="egocentric"
     ... )
     >>> list(rates.summary_table().columns)
-    ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information']
+    ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information', 'n_spikes_outside_intervals']
     """
     return _boundary_vector_rates(
         env,
@@ -796,6 +812,7 @@ def compute_boundary_vector_rate(
         boundary_source=unit.boundary_source,
         method=unit.method,
         bandwidth=unit.bandwidth,
+        n_spikes_outside_intervals=unit.n_spikes_outside_intervals,
         spike_window=unit.spike_window,
         analysis_settings=unit.analysis_settings,
     )
@@ -827,7 +844,10 @@ def _boundary_vector_rates(
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._egocentric_counts import _create_egocentric_environment
-    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._provenance import (
+        rate_analysis_settings,
+        spikes_outside_intervals,
+    )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         _warn_if_fully_masked,
@@ -947,6 +967,7 @@ def _boundary_vector_rates(
         bandwidth=resolved_bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
         unit_table=getattr(spike_times, "unit_table", None),
+        n_spikes_outside_intervals=spikes_outside_intervals(spike_trains, support),
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )

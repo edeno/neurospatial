@@ -194,13 +194,15 @@ def polar_summary_frame(
     extra: Mapping[str, NDArray[Any]],
     extra_units: Mapping[str, str],
     thresholds: Mapping[str, float] | None,
+    classification: Mapping[str, NDArray[Any]] | None = None,
 ) -> pd.DataFrame:
     """One row per unit with the peak and its distance and direction.
 
     The columns are ``peak_firing_rate``, ``preferred_distance``,
     ``preferred_direction_deg`` and ``preferred_direction``, then ``extra``
-    (a family's metrics, with any classification last). Singular and
-    population results get identical columns.
+    (a family's metrics), ``n_spikes_outside_intervals`` and any
+    ``classification``. Singular and population results get identical
+    columns.
     """
     import pandas as pd
 
@@ -211,6 +213,8 @@ def polar_summary_frame(
         "preferred_direction_deg": np.degrees(peaks[:, 1]),
         "preferred_direction": peaks[:, 1],
         **extra,
+        **result._accounting_columns(),
+        **(classification or {}),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["direction_frame"] = result.direction_frame

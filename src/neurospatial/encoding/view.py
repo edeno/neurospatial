@@ -206,6 +206,7 @@ def _view_summary_frame(
         "spatial_information": np.asarray(batch_spatial_information(rates, occupancy)),
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
+        **result._accounting_columns(),
         "is_spatial_view_cell": _view_classify(rates, occupancy, **VIEW_THRESHOLDS),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
@@ -279,6 +280,12 @@ class ViewRateResult(SingleUnitRateMixin):
 
     Other Parameters
     ----------------
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -344,6 +351,7 @@ class ViewRateResult(SingleUnitRateMixin):
     unit_id: int | str | None = None
 
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -661,6 +669,12 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
 
     Other Parameters
     ----------------
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -734,6 +748,9 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -1096,7 +1113,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         >>> result = compute_view_rates(env, spike_times, times, trajectory, headings)
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_firing_rate', 'spatial_information', 'peak_x', 'peak_y', 'is_spatial_view_cell']
+        ['peak_firing_rate', 'spatial_information', 'peak_x', 'peak_y', 'n_spikes_outside_intervals', 'is_spatial_view_cell']
         >>> df.index.name
         'unit_id'
 
@@ -1263,6 +1280,7 @@ class _ViewCounts(NamedTuple):
     spike_counts: NDArray[np.float64]  # (n_units, n_bins), unsmoothed
     occupancy: NDArray[np.float64]  # (n_bins,) seconds
     analysis_settings: dict[str, Any]
+    n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
 
 
 def _count_views(
@@ -1325,7 +1343,10 @@ def _count_views(
     analysis_settings : dict
         Provenance settings for the result.
     """
-    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._provenance import (
+        rate_analysis_settings,
+        spikes_outside_intervals,
+    )
     from neurospatial.encoding._view_counts import prepare_view_binning
 
     prepared = prepare_view_binning(
@@ -1355,7 +1376,12 @@ def _count_views(
         gaze_offsets_source="provided" if gaze_offsets is not None else None,
         boundary_source=boundary_source if gaze_model != "fixed_distance" else None,
     )
-    return _ViewCounts(spike_counts, occupancy, settings)
+    return _ViewCounts(
+        spike_counts,
+        occupancy,
+        settings,
+        spikes_outside_intervals(spike_trains, prepared.support),
+    )
 
 
 def compute_view_rate(
@@ -1665,6 +1691,7 @@ def compute_view_rate(
         view_distance=view_distance,
         method=method,
         bandwidth=bandwidth,
+        n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )
@@ -1916,7 +1943,7 @@ def compute_view_rates(
     >>> # Per-unit scalar summary (one row per unit)
     >>> summary = result.summary_table()
     >>> summary.shape
-    (3, 5)
+    (3, 6)
     >>> # Dense per-bin frame (one row per (unit, bin))
     >>> df = result.to_dataframe()
     >>> len(df) == 3 * env.n_bins
@@ -2111,6 +2138,7 @@ def _compute_view_rates(
         bandwidth=bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
         unit_table=getattr(spike_times, "unit_table", None),
+        n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )

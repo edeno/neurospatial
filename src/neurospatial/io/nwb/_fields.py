@@ -23,7 +23,8 @@ recovered from the stored labels or rate maps.
 Schema ``2.4`` adds resolved ``analysis_settings`` (including epochs, observed
 intervals and occupancy thresholds). Older files report these as unknown.
 Schema ``2.5`` adds ``min_occupancy``, the occupancy threshold in seconds that
-defines ``spatial_support``; files without it are refused.
+defines ``spatial_support`` (files without it are refused), and each unit's
+``n_spikes_outside_intervals`` (``null`` when unknown).
 
 ``read_place_field`` enforces the schema **major** version: it reads only tables
 whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0``,
@@ -722,6 +723,11 @@ def write_spatial_rates(
         "occupancy_name": occupancy_name,
         "unit_ids_generated": bool(result._unit_ids_generated),
         "min_occupancy": float(result.min_occupancy),
+        "n_spikes_outside_intervals": (
+            None
+            if result.n_spikes_outside_intervals is None
+            else result.n_spikes_outside_intervals.tolist()
+        ),
         "analysis_settings": result.analysis_settings,
         "spike_window": (
             None if result.spike_window is None else result.spike_window.tolist()
@@ -1244,6 +1250,11 @@ def read_place_field(
         _unit_ids_generated=unit_ids_generated,
         spike_window=spike_window,
         min_occupancy=_recorded_min_occupancy(meta, name),
+        n_spikes_outside_intervals=(
+            None
+            if meta.get("n_spikes_outside_intervals") is None
+            else np.asarray(meta["n_spikes_outside_intervals"], dtype=np.int64)
+        ),
         analysis_settings=meta.get("analysis_settings"),
         **gam_fields,  # type: ignore[arg-type]
     )

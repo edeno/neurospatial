@@ -174,6 +174,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         def bandwidth(self) -> float | None: ...
 
         min_occupancy: float
+        n_spikes_outside_intervals: Any
 
     @property
     def spatial_support(self) -> NDArray[np.bool_]:
@@ -712,9 +713,41 @@ class _RateResultMixin(SpatialResultMixin):
             )
         object.__setattr__(self, "bandwidth", bandwidth)
         object.__setattr__(self, "min_occupancy", self._checked_min_occupancy())
+        object.__setattr__(self, "n_spikes_outside_intervals", self._checked_counts())
         object.__setattr__(
             self, "spike_window", as_intervals(self.spike_window, name="spike_window")
         )
+
+    def _checked_counts(self) -> Any:
+        """Spikes outside the analyzed intervals: one count per unit, or None."""
+        from neurospatial._exceptions import _format_error
+
+        counts = self.n_spikes_outside_intervals
+        if counts is None:
+            return None
+        array = np.asarray(counts)
+        shape = () if self._RATES_NDIM == 1 else np.shape(self._get_rates())[:1]
+        if array.shape != shape or array.dtype.kind not in "iu" or np.any(array < 0):
+            kind = type(self).__name__
+            raise ValueError(
+                _format_error(
+                    f"{kind}: n_spikes_outside_intervals={counts!r} is not one "
+                    f"spike count >= 0 per unit (shape {shape}).",
+                    why="Why: it counts each unit's spikes outside the analyzed "
+                    "time intervals.",
+                    fix="pass the counts of the computation, or None when unknown.",
+                )
+            )
+        return int(array) if self._RATES_NDIM == 1 else array.astype(np.int64)
+
+    def _accounting_columns(self) -> dict[str, Any]:
+        """Per-unit spike accounting for ``summary_table`` (NA when unknown)."""
+        import pandas as pd
+
+        n_units = 1 if self._RATES_NDIM == 1 else int(np.shape(self._get_rates())[0])
+        counts = self.n_spikes_outside_intervals
+        values = [pd.NA] * n_units if counts is None else np.atleast_1d(counts).tolist()
+        return {"n_spikes_outside_intervals": pd.array(values, dtype="Int64")}
 
     def _checked_min_occupancy(self) -> float:
         """``min_occupancy`` as seconds, agreeing with any recorded setting."""
@@ -847,6 +880,9 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
             occupancy=self.occupancy,
             unit_id=label_at(self.unit_ids, position),
             min_occupancy=self.min_occupancy,
+            n_spikes_outside_intervals=None
+            if self.n_spikes_outside_intervals is None
+            else int(self.n_spikes_outside_intervals[position]),
             spike_window=self.spike_window,
             analysis_settings=self._analysis_attrs()["analysis_settings"],
             _unit_ids_generated=self._unit_ids_generated,

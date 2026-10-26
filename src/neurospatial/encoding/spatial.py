@@ -71,6 +71,7 @@ from neurospatial.encoding._base import (
     _to_numpy,
 )
 from neurospatial.encoding._metrics import BatchScoresResult
+from neurospatial.encoding._provenance import spikes_outside_intervals
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
@@ -684,6 +685,7 @@ def _spatial_summary_frame(
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **_glm_summary_columns(result),
+        **result._accounting_columns(),
     }
     if include_classification:
         labels = _label_from_scores(info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS)
@@ -764,6 +766,12 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         own scalar values and ``penalty_selected_by_reml`` its provenance
         (``False`` = pooled-``λ`` fallback zero-spike unit); ``pooled`` records
         the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -853,6 +861,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     pooled: bool | None = None
 
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -1689,6 +1698,12 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         provided. A unit_id column or named/non-default index aligns rows
         by identity; an unnamed default RangeIndex uses unit order.
         Mismatched or duplicate labels raise ValueError.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -1810,6 +1825,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
     pooled: bool | None = None
 
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -3588,6 +3606,9 @@ default="diffusion_kde"
         # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
         # ``pooled=True`` fields are already scalars and pass through untouched.
         return SpatialRateResult(
+            n_spikes_outside_intervals=int(
+                spikes_outside_intervals([spike_times], support.time_support)[0]
+            ),
             analysis_settings=settings,
             spike_window=resolved_spike_window,
             firing_rate=single_firing_rate,
@@ -3635,6 +3656,9 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRateResult(
+        n_spikes_outside_intervals=int(
+            spikes_outside_intervals([spike_times], support.time_support)[0]
+        ),
         min_occupancy=min_occupancy,
         analysis_settings=settings,
         spike_window=resolved_spike_window,
@@ -4165,6 +4189,9 @@ default="diffusion_kde"
         # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
         # straight through from the fit; they are scalar/None under pooled=True.
         return SpatialRatesResult(
+            n_spikes_outside_intervals=spikes_outside_intervals(
+                spike_times_list, support.time_support
+            ),
             analysis_settings=settings,
             unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
@@ -4221,6 +4248,9 @@ default="diffusion_kde"
             occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
+            n_spikes_outside_intervals=spikes_outside_intervals(
+                spike_times_list, support.time_support
+            ),
             min_occupancy=min_occupancy,
             analysis_settings=settings,
             unit_table=getattr(spike_times, "unit_table", None),
@@ -4289,6 +4319,9 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRatesResult(
+        n_spikes_outside_intervals=spikes_outside_intervals(
+            spike_times_list, support.time_support
+        ),
         min_occupancy=min_occupancy,
         analysis_settings=settings,
         unit_table=getattr(spike_times, "unit_table", None),

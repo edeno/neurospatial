@@ -160,6 +160,21 @@ class TestSpatialRatesRoundTrip:
         assert back.min_occupancy == 2.5
         np.testing.assert_array_equal(back.spatial_support, result.spatial_support)
         assert not back.spatial_support.all()
+        assert back.n_spikes_outside_intervals is None
+
+    def test_spike_accounting_survives_roundtrip(self, empty_nwb, sample_environment):
+        import dataclasses
+
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        result = dataclasses.replace(
+            _make_rates_result(sample_environment),
+            n_spikes_outside_intervals=np.array([0, 4, 17]),
+        )
+        write_spatial_rates(empty_nwb, result)
+        back = read_place_field(empty_nwb, env=sample_environment)
+        np.testing.assert_array_equal(back.n_spikes_outside_intervals, [0, 4, 17])
+        assert back[2].n_spikes_outside_intervals == 17
 
     def test_metadata_without_min_occupancy_is_refused(
         self, empty_nwb, sample_environment

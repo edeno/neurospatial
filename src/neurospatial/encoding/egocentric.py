@@ -156,7 +156,8 @@ def _object_vector_summary_frame(
     return polar_summary_frame(
         result,
         index=index,
-        extra={
+        extra={},
+        classification={
             "is_object_vector_cell": _object_vector_classify(
                 rates, occupancy, **OBJECT_VECTOR_THRESHOLDS
             )
@@ -219,6 +220,12 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
 
     Other Parameters
     ----------------
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -286,6 +293,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     unit_id: int | str | None = None
 
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -736,6 +744,12 @@ class ObjectVectorRatesResult(
 
     Other Parameters
     ----------------
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -815,6 +829,9 @@ class ObjectVectorRatesResult(
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -1255,7 +1272,7 @@ class ObjectVectorRatesResult(
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'is_object_vector_cell']
+        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'n_spikes_outside_intervals', 'is_object_vector_cell']
         >>> len(df)
         3
         >>> df.index.name
@@ -1982,6 +1999,7 @@ class _ObjectVectorCounts(NamedTuple):
     polar_env: PolarEnvironment  # polar geometry (distance in env units, angle in rad)
     bandwidth: float | None  # resolved kernel bandwidth; None for "binned"
     analysis_settings: dict[str, Any]
+    n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
 
 
 def _count_object_vectors(
@@ -2056,7 +2074,10 @@ def _count_object_vectors(
         Provenance settings for the result.
     """
     from neurospatial.encoding._egocentric_counts import prepare_egocentric_binning
-    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._provenance import (
+        rate_analysis_settings,
+        spikes_outside_intervals,
+    )
     from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
 
     # Keep the prepared polar geometry separate from the allocentric env.
@@ -2097,7 +2118,14 @@ def _count_object_vectors(
         metric=metric,
         objects=object_names,
     )
-    return _ObjectVectorCounts(spike_counts, occupancy, polar_env, bandwidth, settings)
+    return _ObjectVectorCounts(
+        spike_counts,
+        occupancy,
+        polar_env,
+        bandwidth,
+        settings,
+        spikes_outside_intervals(spike_trains, prepared.support),
+    )
 
 
 def _object_vector_rate(
@@ -2226,6 +2254,7 @@ def _object_vector_rate(
         env=counts.polar_env,
         method=method,
         bandwidth=counts.bandwidth,
+        n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )
@@ -2991,6 +3020,7 @@ def _object_vector_rates(
         bandwidth=counts.bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
         unit_table=getattr(spike_times, "unit_table", None),
+        n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )

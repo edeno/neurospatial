@@ -1797,6 +1797,7 @@ class TestObjectVectorRatesResultSummaryTable:
             "preferred_distance",
             "preferred_direction_deg",
             "preferred_direction",
+            "n_spikes_outside_intervals",
             "is_object_vector_cell",
         ]
 

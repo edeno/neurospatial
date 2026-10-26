@@ -470,6 +470,7 @@ def _directional_summary_frame(
         "preferred_direction": directions,
         "tuning_width": widths,
         "tuning_pvalue": _tuning_pvalues(rates, occupancy, centers, counts),
+        **result._accounting_columns(),
         "is_head_direction_cell": _head_direction_classify(
             rates, occupancy, centers, counts, **HEAD_DIRECTION_THRESHOLDS
         ),
@@ -547,6 +548,12 @@ class DirectionalRateResult(SingleUnitRateMixin):
 
     Other Parameters
     ----------------
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -613,6 +620,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
     direction_frame: ClassVar[Literal["allocentric"]] = "allocentric"
 
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -1425,6 +1433,12 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
 
     Other Parameters
     ----------------
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to be in ``spatial_support``: the
         threshold the rates were estimated with. ``analysis_settings`` only
@@ -1506,6 +1520,9 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
     min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -2036,6 +2053,7 @@ class _DirectionalCounts(NamedTuple):
     bin_size: float  # radians, 2*pi / n_bins actually used
     bandwidth: float | None  # radians
     analysis_settings: dict[str, Any]
+    n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
 
 
 def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
@@ -2109,7 +2127,10 @@ def _count_directional(
     from neurospatial.encoding._directional_counts import (
         prepare_directional_binning,
     )
-    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._provenance import (
+        rate_analysis_settings,
+        spikes_outside_intervals,
+    )
 
     _check_smoothing_bandwidth(bandwidth, angle_unit)
     # Counts and occupancy share one frame mask, including a single unit.
@@ -2153,6 +2174,9 @@ def _count_directional(
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         analysis_settings=settings,
+        n_spikes_outside_intervals=spikes_outside_intervals(
+            spike_trains, prepared.support
+        ),
     )
 
 
@@ -2410,6 +2434,7 @@ def compute_directional_rate(
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts,
+        n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )
@@ -2709,6 +2734,7 @@ def compute_directional_rates(
             spike_counts=empty_counts,
             unit_ids=resolved_unit_ids if labels_supplied else None,
             unit_table=getattr(spike_times, "unit_table", None),
+            n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
             spike_window=resolved_spike_window,
             analysis_settings=settings,
         )
@@ -2766,6 +2792,7 @@ def compute_directional_rates(
         spike_counts=spike_counts_all,
         unit_ids=resolved_unit_ids if labels_supplied else None,
         unit_table=getattr(spike_times, "unit_table", None),
+        n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )

@@ -26,6 +26,8 @@ from neurospatial.encoding import (
 
 N_SAMPLES = 1000
 DURATION = 100.0
+# Every sampled position is within 57 cm of the object, so no frame is out of range.
+OBJECT_RANGE = (0.0, 80.0)
 
 
 @pytest.fixture(scope="module")
@@ -79,6 +81,7 @@ def _object_vector(rec: dict[str, Any], **kwargs: Any) -> Any:
         rec["positions"],
         rec["headings"],
         rec["object_positions"],
+        distance_range=OBJECT_RANGE,
         **kwargs,
     )
 
@@ -394,3 +397,120 @@ def test_spike_trains_metadata_reaches_every_family(
     assert result.unit_ids.tolist() == [4, 5, 6]
     assert result._unit_ids_generated is False
     pd.testing.assert_frame_equal(result.unit_table, trains.unit_table)
+
+
+# ---------------------------------------------------------------------------
+# Spike accounting
+# ---------------------------------------------------------------------------
+
+
+def _single(family: str, rec: dict[str, Any], spikes: np.ndarray, **kwargs: Any) -> Any:
+    """Each family's single-unit result for one spike train."""
+    from neurospatial.encoding import (
+        compute_boundary_vector_rate,
+        compute_directional_rate,
+        compute_egocentric_rate,
+        compute_spatial_rate,
+        compute_view_rate,
+    )
+
+    t, pos, hd = rec["times"], rec["positions"], rec["headings"]
+    if family == "spatial":
+        return compute_spatial_rate(rec["env"], spikes, t, pos, **kwargs)
+    if family == "directional":
+        return compute_directional_rate(spikes, t, hd, **kwargs)
+    if family == "view":
+        return compute_view_rate(rec["env"], spikes, t, pos, hd, **kwargs)
+    if family == "object_vector":
+        return compute_egocentric_rate(
+            rec["env"],
+            spikes,
+            t,
+            pos,
+            hd,
+            rec["object_positions"],
+            distance_range=OBJECT_RANGE,
+            **kwargs,
+        )
+    return compute_boundary_vector_rate(
+        rec["env"], spikes, t, pos, hd, direction_frame="egocentric", **kwargs
+    )
+
+
+@pytest.fixture(scope="module")
+def spikes_with_known_exclusions() -> tuple[list[np.ndarray], list[int]]:
+    """Spike trains with a known number of spikes outside epochs=[(10, 60)].
+
+    Every excluded spike is at least 4 s from a window edge, so the expected
+    count does not depend on where the sampled intervals start or stop.
+    """
+    rng = np.random.default_rng(7)
+    trains, outside = [], []
+    for n_in, n_before, n_after, n_untracked in (
+        (40, 3, 5, 2),
+        (25, 0, 0, 0),
+        (0, 4, 1, 1),
+    ):
+        train = np.concatenate(
+            [
+                rng.uniform(20.0, 50.0, n_in),
+                rng.uniform(0.5, 6.0, n_before),
+                rng.uniform(64.0, 99.0, n_after),
+                rng.uniform(101.0, 120.0, n_untracked),  # after tracking stops
+            ]
+        )
+        trains.append(np.sort(train))
+        outside.append(n_before + n_after + n_untracked)
+    return trains, outside
+
+
+def test_spikes_outside_the_analyzed_intervals_are_counted_per_unit(
+    family: str,
+    recording: dict[str, Any],
+    spikes_with_known_exclusions: tuple[list[np.ndarray], list[int]],
+) -> None:
+    """Population, its units and single-unit calls report the same counts."""
+    trains, expected = spikes_with_known_exclusions
+    rec = {**recording, "spike_times": trains}
+    population = FAMILIES[family](rec, epochs=[(10.0, 60.0)])
+    np.testing.assert_array_equal(population.n_spikes_outside_intervals, expected)
+    assert population.n_spikes_outside_intervals.dtype == np.int64
+    table = population.summary_table()
+    assert table["n_spikes_outside_intervals"].dtype == "Int64"
+    assert table["n_spikes_outside_intervals"].tolist() == expected
+    for i, train in enumerate(trains):
+        single = _single(family, rec, train, epochs=[(10.0, 60.0)])
+        assert single.n_spikes_outside_intervals == expected[i]
+        assert population[i].n_spikes_outside_intervals == expected[i]
+        single_table = single.summary_table()
+        assert single_table.columns.tolist() == table.columns.tolist()
+        assert single_table["n_spikes_outside_intervals"].tolist() == [expected[i]]
+
+
+def test_accounting_does_not_vary_settings_between_population_and_units(
+    family: str,
+    recording: dict[str, Any],
+    spikes_with_known_exclusions: tuple[list[np.ndarray], list[int]],
+) -> None:
+    """Counts are per-unit fields; analysis_settings stay shared and identical."""
+    trains, _expected = spikes_with_known_exclusions
+    population = FAMILIES[family]({**recording, "spike_times": trains})
+    assert "n_spikes_outside_intervals" not in population.analysis_settings
+    for unit in population:
+        assert unit.analysis_settings == population.analysis_settings
+
+
+def test_unknown_accounting_is_missing_not_zero(population: Any) -> None:
+    unknown = dataclasses.replace(population, n_spikes_outside_intervals=None)
+    column = unknown.summary_table()["n_spikes_outside_intervals"]
+    assert column.isna().all()
+    assert unknown[0].n_spikes_outside_intervals is None
+    assert unknown[0].summary_table()["n_spikes_outside_intervals"].isna().all()
+
+
+@pytest.mark.parametrize(
+    "counts", [np.array([1, 2]), np.array([1.5, 0.0, 2.0]), np.array([-1, 0, 0])]
+)
+def test_refuses_counts_that_are_not_one_per_unit(population: Any, counts: Any) -> None:
+    with pytest.raises(ValueError, match="is not one spike count >= 0 per unit"):
+        dataclasses.replace(population, n_spikes_outside_intervals=counts)

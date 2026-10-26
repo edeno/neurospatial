@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any
 
@@ -46,6 +47,46 @@ def rate_analysis_settings(
         "pooled": bool(pooled) if method == "glm" else None,
         **deepcopy(family_settings),
     }
+
+
+def spikes_outside_intervals(
+    spike_trains: Sequence[NDArray[np.float64]], support: TimeSupport
+) -> NDArray[np.int64]:
+    """Each unit's number of spikes outside the analyzed time intervals.
+
+    Parameters
+    ----------
+    spike_trains : sequence of ndarray, each shape (n_spikes_i,)
+        Spike times in seconds, one array per unit.
+    support : TimeSupport
+        The retained half-open intervals (``support.runs``), recorded as
+        ``analysis_settings["observed_intervals"]``.
+
+    Returns
+    -------
+    ndarray of int64, shape (n_units,)
+        Spikes before or after tracking, in gaps longer than ``max_gap``,
+        across declared breaks, outside ``epochs`` or ``spike_window``, or at
+        times the family did not analyze (slow movement below ``min_speed``,
+        an object or wall beyond ``distance_range``). They are in no rate.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from types import SimpleNamespace
+    >>> support = SimpleNamespace(runs=np.array([[0.0, 1.0], [2.0, 3.0]]))
+    >>> spikes_outside_intervals([np.array([0.5, 1.0, 1.5, 2.5, 3.0])], support)
+    array([3])
+    """
+    from neurospatial._intervals import times_in_intervals
+
+    return np.array(
+        [
+            len(train) - int(np.count_nonzero(times_in_intervals(support.runs, train)))
+            for train in spike_trains
+        ],
+        dtype=np.int64,
+    )
 
 
 def rate_xarray_attrs(result: Any) -> dict[str, Any]:
