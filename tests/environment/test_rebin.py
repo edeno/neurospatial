@@ -588,3 +588,31 @@ class TestRebinDiagonalConnectivityMaskedGrid:
 
         coarse = env.rebin(factor=2)
         _assert_masked_connectivity(env, coarse, diagonal=False)
+
+
+@pytest.mark.parametrize(
+    ("rebin", "n_bins"),
+    [
+        (lambda env: env.rebin(1), 16),
+        (lambda env: env.rebin(2), 4),
+        (lambda env: env.rebin(bin_size=2.0), 4),
+    ],
+    ids=["factor-1", "factor-2", "bin_size-2"],
+)
+def test_rebinning_keeps_exact_grids_far_from_the_origin(rebin, n_bins):
+    """Unit cells at 1e12 have exact edges and widths, so they rebin.
+
+    Integer coordinates there are exactly representable, but the coarse grid's
+    builder refused any edge whose float spacing could exceed 1e-4 of a cell.
+    """
+    env = Environment.from_layout(
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=[(1e12, 1e12 + 4)] * 2,
+            infer_active_bins=False,
+        )
+    )
+    rebinned = rebin(env)
+    assert rebinned.n_bins == n_bins
+    np.testing.assert_allclose(rebinned.bin_sizes.sum(), env.bin_sizes.sum(), rtol=0)

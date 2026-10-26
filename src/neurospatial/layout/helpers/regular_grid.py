@@ -32,6 +32,7 @@ from neurospatial.layout.validation import (
     validate_cell_size,
     validate_count_threshold,
     validate_dimension_ranges,
+    validate_uniform_edges,
 )
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
@@ -431,7 +432,9 @@ def _build_grid_structure(
             )
         final_edges.append(edges_dim.astype(float))
 
-    edges_tuple = tuple(final_edges)
+    # The same check as given edges: cell measures use each axis's first
+    # width, which rounding far from the origin can make wrong.
+    edges_tuple = validate_uniform_edges(final_edges, label="axis {axis} of the grid")
     centers_shape = tuple(len(edges) - 1 for edges in final_edges)
     return edges_tuple, grid_cell_centers(edges_tuple), centers_shape
 

@@ -287,3 +287,86 @@ def validate_edge_spacing(
             "non-negative values",
         )
     )
+
+
+def validate_uniform_edges(
+    grid_edges: Sequence[NDArray[np.floating]], *, label: str = "grid_edges[{axis}]"
+) -> tuple[NDArray[np.float64], ...]:
+    """Check that each axis's edges lay out cells of one width.
+
+    Cell measures and face areas use each axis's first width, so the widths
+    must agree up to float rounding of the edges, and that rounding must stay
+    within 1 part in 10^4 of a cell. Edges far from the origin pass when they
+    are exact, such as integers at 1e12.
+
+    Parameters
+    ----------
+    grid_edges : sequence of ndarray
+        Cell edges of each axis.
+    label : str, default="grid_edges[{axis}]"
+        Name of one axis's edges in errors, formatted with ``axis``.
+
+    Returns
+    -------
+    tuple of ndarray of float64
+        The edges as float arrays.
+
+    Raises
+    ------
+    ValueError
+        If an axis's edges are not finite, 1-D, at least two and strictly
+        increasing; if its widths differ by more than rounding explains; or
+        if rounding at its coordinates makes them differ by more than 1 part
+        in 10^4 of a cell.
+
+    Examples
+    --------
+    >>> validate_uniform_edges([np.linspace(0, 10, 6)])
+    (array([ 0.,  2.,  4.,  6.,  8., 10.]),)
+    """
+    checked = []
+    for axis, raw in enumerate(grid_edges):
+        name = label.format(axis=axis)
+        edges = np.asarray(raw, dtype=np.float64)
+        if edges.ndim != 1 or edges.size < 2 or not np.all(np.isfinite(edges)):
+            raise ValueError(
+                f"{name} must be a finite 1-D array with >= 2 edges, "
+                f"got shape {edges.shape}.\n"
+                "Fix: pass e.g. np.linspace(start, stop, n_bins + 1)."
+            )
+        widths = np.diff(edges)
+        if np.any(widths <= 0):
+            raise ValueError(
+                f"{name} must be strictly increasing; smallest width "
+                f"is {widths.min():.6g}.\n"
+                "Fix: sort the edges and drop duplicates."
+            )
+        w0 = widths[0]
+        # Float spacing at the largest coordinate bounds each edge's
+        # representation error.
+        largest = float(np.max(np.abs(edges)))
+        ulp = np.spacing(largest)
+        deviation = float(np.max(np.abs(widths - w0)))
+        allowance = 1e-7 * w0 + 4 * ulp
+        # Where rounding can move a width by more than 1 part in 10^4, any
+        # spread that large is either that rounding or cannot be told from it.
+        coarse = 4 * ulp > 1e-4 * w0
+        if coarse and deviation > 1e-4 * w0:
+            raise ValueError(
+                f"{name} reaches {largest:.6g}, where float64 resolves only "
+                f"{ulp:.3g}; its bin widths differ from the first "
+                f"({w0:.6g}) by up to {deviation:.3g}, more than 1 part in "
+                "10^4, so bin widths and volumes would be wrong.\n"
+                "Fix: subtract an origin offset before building the environment, "
+                "e.g. positions - positions.min(axis=0)."
+            )
+        if deviation > allowance:
+            raise ValueError(
+                f"{name} must be uniformly spaced: widths differ from "
+                f"the first ({w0:.10g}) by up to {deviation:.3g}, more than the "
+                f"{allowance:.3g} rounding allowance; cell volumes and diffusion "
+                "face measures assume one width per axis.\n"
+                "Fix: use np.linspace(start, stop, n_bins + 1) for each axis."
+            )
+        checked.append(edges)
+    return tuple(checked)

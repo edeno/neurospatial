@@ -9,6 +9,7 @@ from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
+from neurospatial.layout.validation import validate_uniform_edges
 
 
 class MaskedGridLayout(_GridMixin):
@@ -91,45 +92,7 @@ class MaskedGridLayout(_GridMixin):
                 "Fix: pass grid_edges=(edges_axis0, edges_axis1, ...) matching "
                 "active_mask.ndim."
             )
-        grid_edges = tuple(np.asarray(e, dtype=np.float64) for e in grid_edges)
-        for axis, edges in enumerate(grid_edges):
-            if edges.ndim != 1 or edges.size < 2 or not np.all(np.isfinite(edges)):
-                raise ValueError(
-                    f"grid_edges[{axis}] must be a finite 1-D array with >= 2 edges, "
-                    f"got shape {edges.shape}.\n"
-                    "Fix: pass e.g. np.linspace(start, stop, n_bins + 1)."
-                )
-            widths = np.diff(edges)
-            if np.any(widths <= 0):
-                raise ValueError(
-                    f"grid_edges[{axis}] must be strictly increasing; smallest width "
-                    f"is {widths.min():.6g}.\n"
-                    "Fix: sort the edges and drop duplicates."
-                )
-            w0 = widths[0]
-            # Float spacing at the largest coordinate bounds each edge's
-            # representation error.
-            largest = float(np.max(np.abs(edges)))
-            ulp = np.spacing(largest)
-            if 4 * ulp > 1e-4 * w0:
-                raise ValueError(
-                    f"grid_edges[{axis}] reaches {largest:.6g}, where float64 "
-                    f"resolves only {ulp:.3g}; a bin width of {w0:.6g} cannot be "
-                    "represented to 1 part in 10^4 there, so bin widths and volumes "
-                    "would be wrong.\n"
-                    "Fix: subtract an origin offset before building the environment, "
-                    "e.g. positions - positions.min(axis=0)."
-                )
-            deviation = float(np.max(np.abs(widths - w0)))
-            allowance = 1e-7 * w0 + 4 * ulp
-            if deviation > allowance:
-                raise ValueError(
-                    f"grid_edges[{axis}] must be uniformly spaced: widths differ from "
-                    f"the first ({w0:.10g}) by up to {deviation:.3g}, more than the "
-                    f"{allowance:.3g} rounding allowance; cell volumes and diffusion "
-                    "face measures assume one width per axis.\n"
-                    "Fix: use np.linspace(start, stop, n_bins + 1) for each axis."
-                )
+        grid_edges = validate_uniform_edges(grid_edges)
 
         self.active_mask = active_mask
         self.grid_edges = grid_edges

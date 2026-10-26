@@ -251,6 +251,14 @@
 - `Environment.plot` draws the arena outline with its holes, so an arena
   with an obstacle no longer looks solid, and draws it for every layout that
   has one: a rotated or clipped polygon environment drew no outline.
+- One check of grid edges, by the regular, polygon and masked grids. A grid
+  far from the origin is refused only when float rounding actually makes its
+  cell widths differ by more than 1 part in 10^4, with a fix to subtract an
+  origin offset. Exact edges, such as unit cells at 1e12, are accepted by
+  `from_grid_mask` and `rebin(bin_size=...)`, which refused them. Cells of
+  0.3 at 1e12, whose widths are up to 4e-4 uneven, are refused by
+  `create_layout` and `from_samples` as by `from_grid_mask`; they were built
+  with wrong cell volumes.
 - Hexagonal environments recorded away from the origin keep their cells
   after `apply_transform` moves them, for example to center the arena at
   (0, 0). The cells (used by `plot_field`, boundary bins, physical-border
