@@ -1404,9 +1404,12 @@ def compute_egocentric_rate(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -1648,9 +1651,12 @@ def compute_object_vector_rate(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -2175,9 +2181,12 @@ def compute_egocentric_rates(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -2485,9 +2494,12 @@ def compute_object_vector_rates(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -3039,9 +3051,12 @@ def is_object_vector_cell(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -3282,9 +3297,12 @@ def is_egocentric_object_vector_cell(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -3670,9 +3688,8 @@ def _object_vector_significance(
     from neurospatial._results import resolve_unit_ids
     from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._egocentric_counts import (
-        _compute_object_coords,
-        _coords_to_flat_bin_idx,
         _create_egocentric_environment,
+        object_frame_bins,
         resolve_object_positions,
     )
     from neurospatial.encoding._significance import (
@@ -3735,15 +3752,15 @@ def _object_vector_significance(
     object_positions, _ = resolve_object_positions(
         object_positions, env=env, positions=positions, metric=metric
     )
-    distances, bearings = _compute_object_coords(
-        positions, headings, object_positions, metric=metric, env=env
-    )
-    frame_bins = _coords_to_flat_bin_idx(
-        distances.ravel(),
-        bearings.ravel(),
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
+    frame_bins = object_frame_bins(
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        env=env,
     )
     mask = interval_valid_mask(
         times,
@@ -3827,9 +3844,12 @@ def object_vector_cell_significance(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -4032,9 +4052,12 @@ def egocentric_object_vector_cell_significance(
     Parameters
     ----------
     env : Environment or None
-        The allocentric environment. Required when
-        ``metric="geodesic"`` (used to compute distances around
-        obstacles). May be ``None`` when ``metric="euclidean"``.
+        The allocentric environment the positions were recorded in. Required
+        when ``metric="geodesic"`` (used to compute distances around
+        obstacles). When given, a sample whose position lies outside its
+        bins adds no occupancy and no spikes, as in place maps. May be
+        ``None`` with
+        ``metric="euclidean"``; then every tracked sample counts.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 

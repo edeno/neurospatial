@@ -298,3 +298,76 @@ def test_egocentric_shuffle_paths_require_headings(continuous_recording, call):
                 *args, criterion="shuffle", n_shuffles=3, rng=0
             )
     assert "Fix:" in str(exc.value)
+
+
+def _arena_session():
+    """Two minutes in a 100 x 100 cm box at 30 Hz with an object at its center."""
+    from shapely.geometry import box
+
+    from neurospatial import Environment
+
+    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 120, 1 / 30)
+    positions = rng.uniform(5, 95, (len(times), 2))
+    headings = rng.uniform(-np.pi, np.pi, len(times))
+    spikes = np.sort(np.random.default_rng(1).uniform(0, 120, 300))
+    return env, times, positions, headings, spikes
+
+
+@pytest.mark.parametrize("frame", ["allocentric", "egocentric"])
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+def test_samples_outside_the_environment_add_no_occupancy(frame, metric):
+    """With an env, a sample tracked outside its bins is dropped, as in place maps.
+
+    Moving the first half of the session 1000 cm outside the arena must remove
+    that half's occupancy and spikes, not relabel them as far from the object.
+    """
+    env, times, positions, headings, spikes = _arena_session()
+    outside = positions.copy()
+    half = len(times) // 2
+    outside[:half] += 1000.0
+    compute = (
+        encoding.compute_object_vector_rate
+        if frame == "allocentric"
+        else encoding.compute_egocentric_rate
+    )
+    extra = () if frame == "allocentric" else (headings,)
+    settings = {"distance_range": (0.0, 2000.0), "metric": metric}
+    obj = np.array([[50.0, 50.0]])
+    inside = compute(env, spikes, times, positions, *extra, obj, **settings)
+    moved = compute(env, spikes, times, outside, *extra, obj, **settings)
+
+    kept = np.zeros(len(times) - 1, dtype=bool)
+    kept[half:] = True
+    assert np.sum(moved.occupancy) == pytest.approx(np.diff(times)[kept].sum())
+    assert np.sum(moved.occupancy) == pytest.approx(
+        0.5 * np.sum(inside.occupancy), rel=1e-3
+    )
+    spike_counts = np.nan_to_num(np.asarray(moved.firing_rate) * moved.occupancy)
+    assert spike_counts.sum() == pytest.approx(np.sum(spikes >= times[half]), abs=1e-6)
+
+
+def test_without_an_environment_every_sample_counts():
+    """env=None has no bins to be outside of, so no sample is dropped."""
+    _env, times, positions, _headings, spikes = _arena_session()
+    outside = positions.copy()
+    outside[: len(times) // 2] += 1000.0
+    result = encoding.compute_object_vector_rate(
+        None, spikes, times, outside, [[50.0, 50.0]], distance_range=(0.0, 2000.0)
+    )
+    assert np.sum(result.occupancy) == pytest.approx(times[-1] - times[0])
+
+
+def test_all_samples_outside_the_environment_warn_like_place_maps():
+    env, times, positions, _headings, spikes = _arena_session()
+    with pytest.warns(UserWarning, match="samples out of bounds or at NaN positions"):
+        result = encoding.compute_object_vector_rate(
+            env,
+            spikes,
+            times,
+            positions + 1000.0,
+            [[50.0, 50.0]],
+            distance_range=(0.0, 2000.0),
+        )
+    assert np.all(np.isnan(result.firing_rate))

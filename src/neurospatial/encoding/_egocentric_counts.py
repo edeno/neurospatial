@@ -23,7 +23,6 @@ Output shapes:
 The binning layer is separated from smoothing to allow:
 - Reusing occupancy across multiple neurons
 - Precomputing egocentric coordinates for efficiency
-- Future JAX implementations with different parallelization strategies
 
 Coordinate Conventions
 ----------------------
@@ -482,6 +481,57 @@ def _coords_to_flat_bin_idx(
     return flat_bin_idx
 
 
+def object_frame_bins(
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
+    metric: DistanceMetric,
+    env: Environment | None,
+) -> NDArray[np.intp]:
+    """Polar bin of the nearest object at each sample, or -1.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_time, 2)
+        Animal positions in allocentric coordinates.
+    headings : ndarray, shape (n_time,) or None
+        Heading in radians, or None for allocentric bearing.
+    object_positions : ndarray, shape (n_objects, 2) or (n_time, n_objects, 2)
+        Object positions, fixed or per sample.
+    distance_range, n_distance_bins, n_direction_bins
+        The polar grid.
+    metric : {"euclidean", "geodesic"}
+        Distance to the objects.
+    env : Environment or None
+        The environment the positions were recorded in, or None.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_time,)
+        Flat polar bin; -1 for a missing sample, a distance outside
+        ``distance_range`` and, when ``env`` is given, a position outside
+        every environment bin. The last is the rule place maps use: a
+        sample tracked outside the environment is not an observation of it.
+    """
+    distances, bearings = _compute_object_coords(
+        positions, headings, object_positions, metric=metric, env=env
+    )
+    bins = _coords_to_flat_bin_idx(
+        distances.ravel(),
+        bearings.ravel(),
+        distance_range,
+        n_distance_bins,
+        n_direction_bins,
+    )
+    if env is not None:
+        bins[env.bin_at(positions) < 0] = -1
+    return bins
+
+
 def compute_egocentric_occupancy(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -524,8 +574,8 @@ def compute_egocentric_occupancy(
         - "euclidean": Straight-line distance
         - "geodesic": Path distance respecting environment boundaries
     env : Environment, optional
-        Required when metric="geodesic". The allocentric environment
-        used to compute geodesic distances.
+        The allocentric environment. Required when metric="geodesic"; when
+        given, samples outside its bins add no occupancy.
 
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
@@ -627,26 +677,15 @@ def compute_egocentric_occupancy(
     )
     n_bins = polar_env.n_bins
 
-    # Compute egocentric coordinates
-    nearest_distances, nearest_bearings = _compute_object_coords(
+    bin_indices = object_frame_bins(
         positions,
         headings,
         object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
         metric=metric,
         env=env,
-    )
-
-    # Flatten from (n_time, 1) to (n_time,)
-    nearest_distances = nearest_distances.ravel()
-    nearest_bearings = nearest_bearings.ravel()
-
-    # Convert to flat bin indices
-    bin_indices = _coords_to_flat_bin_idx(
-        nearest_distances,
-        nearest_bearings,
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
     )
 
     mask = interval_valid_mask(
@@ -702,7 +741,8 @@ def bin_egocentric_spike_train(
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
     env : Environment, optional
-        Required when metric="geodesic".
+        Required when metric="geodesic"; when given, samples outside its
+        bins are dropped.
 
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
@@ -795,19 +835,15 @@ def bin_egocentric_spike_train(
     )
     n_bins = polar_env.n_bins
 
-    nearest_distances, nearest_bearings = _compute_object_coords(
+    bin_indices = object_frame_bins(
         positions,
         headings,
         object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
         metric=metric,
         env=env,
-    )
-    bin_indices = _coords_to_flat_bin_idx(
-        nearest_distances.ravel(),
-        nearest_bearings.ravel(),
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
     )
     mask = interval_valid_mask(
         times,
@@ -873,26 +909,16 @@ def prepare_egocentric_binning(
     n_bins = polar_env.n_bins
 
     if frame_bins is None:
-        # Compute egocentric coordinates ONCE (shared across all neurons)
-        nearest_distances, nearest_bearings = _compute_object_coords(
+        # Polar bins ONCE (shared across all neurons)
+        frame_bins = object_frame_bins(
             positions,
             headings,
             object_positions,
+            distance_range=distance_range,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
             metric=metric,
             env=env,
-        )
-
-        # Flatten
-        nearest_distances = nearest_distances.ravel()
-        nearest_bearings = nearest_bearings.ravel()
-
-        # Precompute bin indices for all behavioral frames
-        frame_bins = _coords_to_flat_bin_idx(
-            nearest_distances,
-            nearest_bearings,
-            distance_range,
-            n_distance_bins,
-            n_direction_bins,
         )
 
     prepared = prepare_frame_binning(
@@ -956,7 +982,8 @@ def bin_egocentric_spike_trains(
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
     env : Environment, optional
-        Required when metric="geodesic".
+        Required when metric="geodesic"; when given, samples outside its
+        bins are dropped.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
