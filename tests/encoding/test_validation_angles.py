@@ -129,3 +129,15 @@ def test_shuffle_warns_once_for_degree_headings(session) -> None:
         )
     messages = [str(w.message) for w in caught if "look like degrees" in str(w.message)]
     assert len(messages) == 1
+
+
+def test_all_nan_headings_warning_names_headings(session) -> None:
+    """With no finite heading, the fix concerns headings, not positions."""
+    from neurospatial.encoding import compute_directional_rate
+
+    times, _, headings, spikes = session
+    with pytest.warns(UserWarning, match="excluded ALL") as caught:
+        compute_directional_rate(spikes, times, np.full_like(headings, np.nan))
+    message = next(str(w.message) for w in caught if "excluded ALL" in str(w.message))
+    assert "NaN headings" in message
+    assert "positions" not in message

@@ -16,7 +16,7 @@ import math
 import numbers
 import warnings
 from dataclasses import dataclass
-from typing import Any, Protocol, overload
+from typing import Any, Literal, Protocol, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -695,6 +695,7 @@ def warn_excluded_intervals(
     spike_window: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     start_bin_gate: bool = False,
+    samples: Literal["positions", "headings"] = "positions",
     break_before: NDArray[np.bool_] | None = None,
     result: str = "the result is empty or NaN rather than a measurement",
     suppress_hint: str = "",
@@ -729,7 +730,9 @@ def warn_excluded_intervals(
         Active speed threshold, named when set.
     start_bin_gate : bool, default=False
         Whether the mask also drops intervals at samples outside the
-        environment or at NaN positions.
+        environment or at NaN positions (NaN headings for ``"headings"``).
+    samples : {"positions", "headings"}, default="positions"
+        What the start-bin gate bins, so the message names the right input.
     break_before : ndarray of bool, shape (n_samples,), or None
         Declared recording breaks, named when any is set.
     result : str
@@ -817,7 +820,14 @@ def warn_excluded_intervals(
             "check that break_before is True only at the first sample of each "
             "new recording"
         )
-    if start_bin_gate:
+    if start_bin_gate and samples == "headings":
+        gates.append("samples at NaN headings")
+        fixes.append(
+            "check that headings are finite while the animal was tracked "
+            "(NaN marks a missing sample; all-NaN headings usually mean the "
+            "heading was never computed for these times)"
+        )
+    elif start_bin_gate:
         gates.append("samples out of bounds or at NaN positions")
         fixes.append("check that positions use the environment's coordinates")
     if not fixes:
