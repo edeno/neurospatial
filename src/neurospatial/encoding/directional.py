@@ -547,6 +547,10 @@ class DirectionalRateResult(SingleUnitRateMixin):
 
     Other Parameters
     ----------------
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         family-specific settings. Preserved by indexing and table/xarray
@@ -555,7 +559,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
     Notes
     -----
     ``spatial_support`` is a boolean mask over this result's bins. A bin must
-    have positive occupancy, meet the recorded minimum occupancy and have
+    have positive occupancy, be occupied for at least ``min_occupancy`` and have
     finite rates for every unit. Angular and polar results use their own bin
     coordinates; unsupported bins are not evidence of neural silence.
 
@@ -608,6 +612,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
     unit_id: int | str | None = None
     direction_frame: ClassVar[Literal["allocentric"]] = "allocentric"
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -1419,6 +1424,10 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
 
     Other Parameters
     ----------------
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         family-specific settings. Preserved by indexing and table/xarray
@@ -1427,7 +1436,7 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     Notes
     -----
     ``spatial_support`` is a boolean mask over this result's bins. A bin must
-    have positive occupancy, meet the recorded minimum occupancy and have
+    have positive occupancy, be occupied for at least ``min_occupancy`` and have
     finite rates for every unit. Angular and polar results use their own bin
     coordinates; unsupported bins are not evidence of neural silence.
 
@@ -1495,6 +1504,7 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )

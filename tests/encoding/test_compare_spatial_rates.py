@@ -58,6 +58,7 @@ def make(env):
         *,
         on=None,
         bandwidth=5.0,
+        min_occupancy=0.0,
     ) -> SpatialRatesResult:
         return rates_result(
             env if on is None else on,
@@ -65,6 +66,7 @@ def make(env):
             occupancy,
             unit_ids=ids,
             bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
             analysis_settings=settings,
         )
 
@@ -157,8 +159,8 @@ def test_finite_rate_in_an_unoccupied_bin_is_not_support(make) -> None:
     assert result.occupied_a.tolist() == [True, True, True, True, False]
 
 
-def test_min_occupancy_is_read_from_each_results_settings(make) -> None:
-    rates_a = make(F, [1, 0.2, 1, 1, 1], settings={"min_occupancy": 0.5})
+def test_min_occupancy_is_read_from_each_result(make) -> None:
+    rates_a = make(F, [1, 0.2, 1, 1, 1], min_occupancy=0.5)
     with pytest.warns(UserWarning, match="min_occupancy"):
         result = compare_spatial_rates(rates_a, make(F))
     assert result.n_common_bins.tolist() == [4]

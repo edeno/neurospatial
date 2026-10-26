@@ -285,3 +285,58 @@ def test_view_refuses_unknown_gaze_model(recording: dict[str, Any]) -> None:
         dataclasses.replace(view[0], view_distance=10.0)
     with pytest.raises(ValueError, match="needs a finite view_distance > 0"):
         dataclasses.replace(view, gaze_model="fixed_distance", view_distance=-1.0)
+
+
+# ---------------------------------------------------------------------------
+# Occupancy threshold
+# ---------------------------------------------------------------------------
+
+
+def test_support_follows_the_typed_min_occupancy(population: Any) -> None:
+    """spatial_support is occupancy > 0 and >= min_occupancy, whatever is recorded."""
+    occupancy = np.asarray(population.occupancy)
+    threshold = float(np.median(occupancy[occupancy > 0]))
+    plain = dataclasses.replace(population, analysis_settings=None, min_occupancy=0.0)
+    gated = dataclasses.replace(
+        population, analysis_settings=None, min_occupancy=threshold
+    )
+    finite = np.isfinite(np.asarray(population.firing_rates)).all(axis=0)
+    np.testing.assert_array_equal(plain.spatial_support, (occupancy > 0) & finite)
+    np.testing.assert_array_equal(
+        gated.spatial_support, (occupancy > 0) & (occupancy >= threshold) & finite
+    )
+    assert gated.spatial_support.sum() < plain.spatial_support.sum()
+    np.testing.assert_array_equal(gated[0].spatial_support, gated.spatial_support)
+    assert gated[0].min_occupancy == threshold
+
+
+def test_compute_records_the_threshold_it_applied(
+    family: str, recording: dict[str, Any]
+) -> None:
+    if family == "directional":
+        pytest.skip("directional rates have no occupancy threshold")
+    result = FAMILIES[family](recording, min_occupancy=0.3)
+    assert result.min_occupancy == 0.3
+    assert result.analysis_settings["min_occupancy"] == 0.3
+    assert result[1].min_occupancy == 0.3
+    occupancy = np.asarray(result.occupancy)
+    assert not result.spatial_support[(occupancy > 0) & (occupancy < 0.3)].any()
+
+
+@pytest.mark.parametrize("min_occupancy", [-1.0, np.nan, np.inf, "abc", None])
+def test_refuses_a_threshold_that_is_not_seconds(
+    population: Any, min_occupancy: Any
+) -> None:
+    for result in (population, population[0]):
+        with pytest.raises(ValueError, match="is not a finite number of seconds"):
+            dataclasses.replace(result, min_occupancy=min_occupancy)
+
+
+def test_refuses_a_threshold_that_disagrees_with_the_record(population: Any) -> None:
+    settings = {**(population.analysis_settings or {}), "min_occupancy": 0.5}
+    with pytest.raises(ValueError, match="disagrees with the recorded"):
+        dataclasses.replace(population, analysis_settings=settings, min_occupancy=0.0)
+    agreeing = dataclasses.replace(
+        population, analysis_settings=settings, min_occupancy=0.5
+    )
+    assert agreeing.min_occupancy == 0.5

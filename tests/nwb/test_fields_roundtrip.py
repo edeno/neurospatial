@@ -143,6 +143,40 @@ class TestSpatialRatesRoundTrip:
         with pytest.raises(ValueError, match=key):
             read_place_field(empty_nwb)
 
+    def test_min_occupancy_and_support_survive_roundtrip(
+        self, empty_nwb, sample_environment
+    ):
+        """The occupancy threshold, not a settings dict, defines read-back support."""
+        import dataclasses
+
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        result = dataclasses.replace(
+            _make_rates_result(sample_environment), min_occupancy=2.5
+        )
+        assert result.analysis_settings is None
+        write_spatial_rates(empty_nwb, result)
+        back = read_place_field(empty_nwb, env=sample_environment)
+        assert back.min_occupancy == 2.5
+        np.testing.assert_array_equal(back.spatial_support, result.spatial_support)
+        assert not back.spatial_support.all()
+
+    def test_metadata_without_min_occupancy_is_refused(
+        self, empty_nwb, sample_environment
+    ):
+        """Without the threshold the maps' support is unknown: refuse the file."""
+        import json
+
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        write_spatial_rates(empty_nwb, _make_rates_result(sample_environment))
+        table = empty_nwb.processing["analysis"]["spatial_rates"]
+        meta = json.loads(table.description)
+        meta.pop("min_occupancy")
+        table.fields["description"] = json.dumps(meta)
+        with pytest.raises(ValueError, match="records no min_occupancy"):
+            read_place_field(empty_nwb)
+
     def test_full_roundtrip_equal(self, empty_nwb, sample_environment):
         """firing_rates/occupancy/unit_ids/unit_table/smoothing/bandwidth equal."""
         from neurospatial.encoding.spatial import SpatialRatesResult

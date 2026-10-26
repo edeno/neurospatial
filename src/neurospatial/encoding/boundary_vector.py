@@ -192,6 +192,10 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
 
     Other Parameters
     ----------------
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         binning settings.
@@ -210,6 +214,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     method: str = field(default="binned", kw_only=True)
     bandwidth: float | None = field(default=None, kw_only=True)
     unit_id: int | str | None = None
+    min_occupancy: float = field(default=0.0, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -336,6 +341,10 @@ class BoundaryVectorRatesResult(
 
     Other Parameters
     ----------------
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         binning settings.
@@ -355,6 +364,7 @@ class BoundaryVectorRatesResult(
     bandwidth: float | None = field(default=None, kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+    min_occupancy: float = field(default=0.0, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -777,6 +787,7 @@ def compute_boundary_vector_rate(
     )
     unit = population[0]
     return BoundaryVectorRateResult(
+        min_occupancy=unit.min_occupancy,
         firing_rate=unit.firing_rate,
         occupancy=unit.occupancy,
         env=unit.env,
@@ -925,6 +936,7 @@ def _boundary_vector_rates(
         n_direction_bins=int(n_direction_bins),
     )
     return BoundaryVectorRatesResult(
+        min_occupancy=min_occupancy,
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=polar_env,

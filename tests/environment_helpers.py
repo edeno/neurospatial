@@ -232,6 +232,7 @@ def rates_result(
     *,
     unit_ids=(1,),
     bandwidth=5.0,
+    min_occupancy=0.0,
     analysis_settings=None,
 ):
     """A binned ``SpatialRatesResult`` on ``env`` holding the given maps.
@@ -248,6 +249,7 @@ def rates_result(
         method="binned",
         bandwidth=bandwidth,
         unit_ids=None if unit_ids is None else list(unit_ids),
+        min_occupancy=min_occupancy,
         analysis_settings=analysis_settings,
     )
 

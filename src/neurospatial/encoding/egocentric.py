@@ -219,6 +219,10 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
 
     Other Parameters
     ----------------
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         family-specific settings. Preserved by indexing and table/xarray
@@ -227,7 +231,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     Notes
     -----
     ``spatial_support`` is a boolean mask over this result's bins. A bin must
-    have positive occupancy, meet the recorded minimum occupancy and have
+    have positive occupancy, be occupied for at least ``min_occupancy`` and have
     finite rates for every unit. Angular and polar results use their own bin
     coordinates; unsupported bins are not evidence of neural silence.
 
@@ -281,6 +285,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     bandwidth: float | None = field(default=None, kw_only=True)
     unit_id: int | str | None = None
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -730,6 +735,10 @@ class ObjectVectorRatesResult(
 
     Other Parameters
     ----------------
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         family-specific settings. Preserved by indexing and table/xarray
@@ -738,7 +747,7 @@ class ObjectVectorRatesResult(
     Notes
     -----
     ``spatial_support`` is a boolean mask over this result's bins. A bin must
-    have positive occupancy, meet the recorded minimum occupancy and have
+    have positive occupancy, be occupied for at least ``min_occupancy`` and have
     finite rates for every unit. Angular and polar results use their own bin
     coordinates; unsupported bins are not evidence of neural silence.
 
@@ -804,6 +813,7 @@ class ObjectVectorRatesResult(
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -2208,6 +2218,7 @@ def _object_vector_rate(
 
     # Return result
     return ObjectVectorRateResult(
+        min_occupancy=min_occupancy,
         direction_frame="allocentric" if headings is None else "egocentric",
         firing_rate=firing_rate,
         occupancy=occupancy_out,
@@ -2970,6 +2981,7 @@ def _object_vector_rates(
 
     # Return result
     return ObjectVectorRatesResult(
+        min_occupancy=min_occupancy,
         direction_frame="allocentric" if headings is None else "egocentric",
         firing_rates=firing_rates,
         occupancy=occupancy_out,

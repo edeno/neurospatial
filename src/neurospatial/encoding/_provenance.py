@@ -79,8 +79,8 @@ def occupancy_support(result: Any) -> NDArray[np.bool_]:
     Parameters
     ----------
     result : object
-        A rate result with ``occupancy`` ``(n_bins,)`` in seconds and
-        ``analysis_settings`` (``min_occupancy`` in seconds; ``None`` is 0).
+        A rate result with ``occupancy`` ``(n_bins,)`` and ``min_occupancy``,
+        both in seconds.
 
     Returns
     -------
@@ -93,16 +93,14 @@ def occupancy_support(result: Any) -> NDArray[np.bool_]:
     >>> import numpy as np
     >>> result = SimpleNamespace(
     ...     occupancy=np.array([0.0, 0.2, 1.0]),
-    ...     analysis_settings={"min_occupancy": 0.5},
+    ...     min_occupancy=0.5,
     ... )
     >>> occupancy_support(result).tolist()
     [False, False, True]
     """
-    settings = result.analysis_settings or {}
-    threshold = settings.get("min_occupancy") or 0.0
     occupancy = np.asarray(result.occupancy)
     support: NDArray[np.bool_] = np.asarray(
-        (occupancy > 0) & (occupancy >= threshold), dtype=bool
+        (occupancy > 0) & (occupancy >= result.min_occupancy), dtype=bool
     )
     return support
 

@@ -763,6 +763,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         own scalar values and ``penalty_selected_by_reml`` its provenance
         (``False`` = pooled-``λ`` fallback zero-spike unit); ``pooled`` records
         the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved epochs, observed intervals, gap/speed/occupancy gates and
         estimator settings. None for manually constructed results.
@@ -847,6 +851,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     penalty_selected_by_reml: bool | None = None
     pooled: bool | None = None
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -1682,6 +1687,10 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         provided. A unit_id column or named/non-default index aligns rows
         by identity; an unnamed default RangeIndex uses unit order.
         Mismatched or duplicate labels raise ValueError.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved epochs, observed intervals, gap/speed/occupancy gates and
         estimator settings. None for manually constructed results.
@@ -1798,6 +1807,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
     penalty_selected_by_reml: NDArray[np.bool_] | None = None
     pooled: bool | None = None
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
@@ -3623,6 +3633,7 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRateResult(
+        min_occupancy=min_occupancy,
         analysis_settings=settings,
         spike_window=resolved_spike_window,
         firing_rate=firing_rate,
@@ -4208,6 +4219,7 @@ default="diffusion_kde"
             occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
+            min_occupancy=min_occupancy,
             analysis_settings=settings,
             unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
@@ -4275,6 +4287,7 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRatesResult(
+        min_occupancy=min_occupancy,
         analysis_settings=settings,
         unit_table=getattr(spike_times, "unit_table", None),
         spike_window=resolved_spike_window,

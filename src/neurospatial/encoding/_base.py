@@ -173,6 +173,8 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         @property
         def bandwidth(self) -> float | None: ...
 
+        min_occupancy: float
+
     @property
     def spatial_support(self) -> NDArray[np.bool_]:
         """Observed, sufficiently occupied bins with finite rates.
@@ -709,9 +711,41 @@ class _RateResultMixin(SpatialResultMixin):
                 )
             )
         object.__setattr__(self, "bandwidth", bandwidth)
+        object.__setattr__(self, "min_occupancy", self._checked_min_occupancy())
         object.__setattr__(
             self, "spike_window", as_intervals(self.spike_window, name="spike_window")
         )
+
+    def _checked_min_occupancy(self) -> float:
+        """``min_occupancy`` as seconds, agreeing with any recorded setting."""
+        from neurospatial._exceptions import _format_error
+
+        kind = type(self).__name__
+        value = _real_scalar(self.min_occupancy)
+        if value is None or not (np.isfinite(value) and value >= 0):
+            raise ValueError(
+                _format_error(
+                    f"{kind}: min_occupancy={self.min_occupancy!r} is not a "
+                    "finite number of seconds >= 0.",
+                    why="Why: bins occupied for less than min_occupancy seconds "
+                    "are outside spatial_support.",
+                    fix="pass the min_occupancy the rates were estimated with, or "
+                    "0.0 for no threshold.",
+                )
+            )
+        recorded = (self.analysis_settings or {}).get("min_occupancy")
+        if recorded is not None and recorded != value:
+            raise ValueError(
+                _format_error(
+                    f"{kind}: min_occupancy={value} disagrees with the recorded "
+                    f"analysis_settings['min_occupancy']={recorded!r}.",
+                    why="Why: spatial_support is derived from min_occupancy; the "
+                    "recorded settings only describe it.",
+                    fix=f"pass min_occupancy={recorded!r}, or drop the recorded "
+                    "value from analysis_settings.",
+                )
+            )
+        return value
 
     def _check_family(self) -> None:
         """Family-specific invariants; results override this hook."""
@@ -812,6 +846,7 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
             firing_rate=self._get_rates()[position],
             occupancy=self.occupancy,
             unit_id=label_at(self.unit_ids, position),
+            min_occupancy=self.min_occupancy,
             spike_window=self.spike_window,
             analysis_settings=self._analysis_attrs()["analysis_settings"],
             _unit_ids_generated=self._unit_ids_generated,
