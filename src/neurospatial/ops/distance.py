@@ -210,7 +210,7 @@ def _require_bin_graph(G: nx.Graph, operation: str) -> int:
     int
         The number of bins, ``G.number_of_nodes()``.
     """
-    n_bins = G.number_of_nodes()
+    n_bins: int = G.number_of_nodes()
     if all(node in G for node in range(n_bins)):
         return n_bins
     stray = [
