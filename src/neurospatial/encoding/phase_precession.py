@@ -91,6 +91,10 @@ def theta_phase(
     A zero-phase (forward-backward) Butterworth filter is used so the phase is
     not time-shifted relative to the input.
 
+    Phase 0 is the peak of the theta-filtered LFP, pi/2 its falling zero
+    crossing, pi its trough and 3*pi/2 its rising zero crossing. Which
+    physiological event that is depends on the recording site (see Notes).
+
     Parameters
     ----------
     lfp : ndarray of shape (n_samples,)
@@ -105,7 +109,8 @@ def theta_phase(
     -------
     ndarray of shape (n_samples,)
         Instantaneous theta phase in radians, wrapped to ``[0, 2*pi)``, one
-        value per input sample. Phase increases through the theta cycle.
+        value per input sample: 0 at the filtered-LFP peak, pi at the
+        trough. Phase increases through the theta cycle.
 
     Raises
     ------
@@ -128,6 +133,16 @@ def theta_phase(
     Only :mod:`scipy` is used (``scipy.signal``); no new dependency is
     introduced. This function takes an LFP array the caller already has — it
     does not load or spike-sort data.
+
+    **Reference point.** Phases are relative to the peaks of the LFP as
+    recorded. Theta reverses polarity with depth through the hippocampal
+    layers, so the same physiological moment is a peak on one electrode and
+    a trough on another. Precession slopes do not depend on the reference,
+    but phase offsets (the phase at which firing starts in the field)
+    compare across recordings only when the reference is the same; to
+    report phase
+    relative to troughs, use ``(theta_phase(lfp, ...) + np.pi) % (2 * np.pi)``
+    and say so.
 
     To obtain the spike phases that :func:`compute_phase_precession` expects, sample
     this per-sample phase at the spike times (e.g. by interpolating the
