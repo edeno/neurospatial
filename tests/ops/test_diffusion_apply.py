@@ -634,7 +634,7 @@ def test_near_full_rank_diffuse_solves_once(monkeypatch):
         out = np.asarray(env.diffuse(fields["nonneg"], bandwidth=0.8, mode="density"))
     assert np.all(np.isfinite(out))
     holder = diffusion_eigenbasis(env._cache)
-    assert holder.resolved[(0.8, _HEAT_KERNEL_RANK_TOL)] == "dense"
+    assert holder.resolved[0.8] == "dense"
     assert holder.basis[0].shape == (env.n_bins, env.n_bins)
     assert not any(array.flags.writeable for array in holder.basis)
     n_dense_solves = solves.count(None)
