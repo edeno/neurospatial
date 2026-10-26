@@ -215,6 +215,24 @@
 - A track `edge_order` entry whose two nodes no edge of the graph joins is
   refused with a message naming it; the build failed later with a bare
   `KeyError`.
+- A misspelled layout option, passed to `create_layout` or directly to an
+  engine's `build()`, is named in one message pointing to
+  `get_layout_parameters()`. Before, `create_layout` named it, while a direct
+  `build()` reported a missing required option instead of the misspelling.
+- `HexagonalLayout` refuses a non-finite `dimension_ranges` end with the
+  same message as the grid layouts; it raised "cannot convert float NaN to
+  integer".
+- Building an environment from a triangular mesh is about twice as fast:
+  face normals are computed for all neighbor pairs at once (0.40 s to
+  0.02 s for a 64k-triangle disk, computed twice per build), with identical
+  results. Hexagonal `plot_field` draws one collection instead of a patch
+  per hexagon (about 5x faster at 13k hexagons; the collection is now a
+  `PolyCollection`), and connections are drawn from the neighbor pairs.
+- `plot_field(nan_color=None)` leaves NaN bins undrawn on grids and meshes
+  too, as documented, instead of using a custom colormap's bad color; a
+  `nan_color` with its own alpha keeps it there as on hexagons and polygons.
+- `ImageMaskLayout` cell centers use the edge-midpoint rule of the other grid
+  engines, which can move them by a few ULPs.
 
 ### Spatial geometry review
 
