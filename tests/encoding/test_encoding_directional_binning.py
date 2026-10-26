@@ -5,7 +5,7 @@ and head direction data to spike counts and occupancy arrays.
 
 The binning layer:
 - Create helper to convert (spike_times, times, headings, bin_size) -> (spike_counts, occupancy)
-- Handle circular binning (0 to 2π)
+- Handle circular binning over [-π, π)
 - Support `angle_unit` parameter for input conversion
 """
 
@@ -67,14 +67,6 @@ def multiple_neuron_spikes() -> list[NDArray[np.float64]]:
 
 class TestBinDirectionalSpikeTrain:
     """Tests for bin_directional_spike_train function (single neuron binning)."""
-
-    def test_function_is_importable(self) -> None:
-        """bin_directional_spike_train should be importable from encoding._directional_counts."""
-        from neurospatial.encoding._directional_counts import (
-            bin_directional_spike_train,
-        )
-
-        assert bin_directional_spike_train is not None
 
     def test_returns_spike_counts(
         self,
@@ -296,14 +288,6 @@ class TestBinDirectionalSpikeTrainAngleUnit:
 class TestComputeDirectionalOccupancy:
     """Tests for compute_directional_occupancy function."""
 
-    def test_function_is_importable(self) -> None:
-        """compute_directional_occupancy should be importable from encoding._directional_counts."""
-        from neurospatial.encoding._directional_counts import (
-            compute_directional_occupancy,
-        )
-
-        assert compute_directional_occupancy is not None
-
     def test_returns_occupancy_and_bin_centers(
         self,
         simple_trajectory: dict,
@@ -350,7 +334,7 @@ class TestComputeDirectionalOccupancy:
         self,
         simple_trajectory: dict,
     ) -> None:
-        """Bin centers should be in [0, 2π) range."""
+        """Bin centers should be in [-π, π) range."""
         from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
@@ -361,8 +345,8 @@ class TestComputeDirectionalOccupancy:
             bin_size=np.pi / 30,
         )
 
-        assert np.all(bin_centers >= 0)
-        assert np.all(bin_centers < 2 * np.pi)
+        assert np.all(bin_centers >= -np.pi)
+        assert np.all(bin_centers < np.pi)
 
     def test_occupancy_dtype(
         self,
@@ -443,8 +427,8 @@ class TestComputeDirectionalOccupancy:
         assert occupancy.shape == (n_bins,)
         assert bin_centers.shape == (n_bins,)
         # Bin centers should always be in radians
-        assert np.all(bin_centers >= 0)
-        assert np.all(bin_centers < 2 * np.pi)
+        assert np.all(bin_centers >= -np.pi)
+        assert np.all(bin_centers < np.pi)
 
 
 # ==============================================================================
@@ -454,14 +438,6 @@ class TestComputeDirectionalOccupancy:
 
 class TestBinDirectionalSpikeTrains:
     """Tests for bin_directional_spike_trains function (multiple neurons)."""
-
-    def test_function_is_importable(self) -> None:
-        """bin_directional_spike_trains should be importable from encoding._directional_counts."""
-        from neurospatial.encoding._directional_counts import (
-            bin_directional_spike_trains,
-        )
-
-        assert bin_directional_spike_trains is not None
 
     def test_returns_spike_counts_occupancy_and_bin_centers(
         self,

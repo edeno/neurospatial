@@ -67,7 +67,7 @@ change training support or recorded analysis choices.
   `SpatialRatesResult.label_cell_types()`.
 - `has_place_field` detects a field; it is not a cell-type verdict.
 - Result methods and batch classifiers are threshold screens with inclusive
-  `>=` thresholds (Rayleigh p-values stay `< alpha`). Shuffle verdicts come from
+  `>=` thresholds (p-values stay `< alpha`). Shuffle verdicts come from
   the `*_significance` functions or `criterion="shuffle"` on raw arrays, and
   seeded results agree between single and population calls when `unit_id`
   matches.

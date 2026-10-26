@@ -81,10 +81,6 @@ def batch_firing_rates(n_neurons: int, n_bins: int) -> np.ndarray:
 # ==============================================================================
 
 
-class TestDirectionalRateResultImport:
-    """Test that DirectionalRateResult can be imported."""
-
-
 class TestDirectionalRateResultCreation:
     """Test DirectionalRateResult dataclass creation."""
 
@@ -111,39 +107,9 @@ class TestDirectionalRateResultCreation:
             result.bin_size = 0.2  # type: ignore[misc]
 
 
-class TestDirectionalRateResultFields:
-    """Test DirectionalRateResult field access and shapes."""
-
-    def test_bin_centers_in_radians(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """bin_centers are in radians [0, 2π)."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        centers = np.asarray(result.bin_centers)
-        assert np.all(centers >= 0)
-        assert np.all(centers < 2 * np.pi)
-
-
 # ==============================================================================
 # DirectionalRatesResult Tests
 # ==============================================================================
-
-
-class TestDirectionalRatesResultImport:
-    """Test that DirectionalRatesResult can be imported."""
 
 
 class TestDirectionalRatesResultCreation:
@@ -169,10 +135,6 @@ class TestDirectionalRatesResultCreation:
 
         with pytest.raises(FrozenInstanceError):
             result.bin_size = 0.2  # type: ignore[misc]
-
-
-class TestDirectionalRatesResultFields:
-    """Test DirectionalRatesResult field access and shapes."""
 
 
 class TestDirectionalRatesResultIteration:
@@ -505,27 +467,6 @@ class TestDirectionalRateResultPlot:
 class TestDirectionalRateResultPreferredDirection:
     """Test DirectionalRateResult.preferred_direction() method."""
 
-    def test_preferred_direction_returns_float(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """preferred_direction() returns a float."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        pref_dir = result.preferred_direction()
-        assert isinstance(pref_dir, float)
-
     def test_preferred_direction_in_valid_range(
         self,
         single_firing_rate: np.ndarray,
@@ -609,27 +550,6 @@ class TestDirectionalRateResultPreferredDirection:
 class TestDirectionalRateResultPreferredDirectionDeg:
     """Test DirectionalRateResult.preferred_direction_deg() method."""
 
-    def test_preferred_direction_deg_returns_float(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """preferred_direction_deg() returns a float."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        pref_dir_deg = result.preferred_direction_deg()
-        assert isinstance(pref_dir_deg, float)
-
     def test_preferred_direction_deg_conversion(
         self,
         single_firing_rate: np.ndarray,
@@ -676,27 +596,6 @@ class TestDirectionalRateResultPreferredDirectionDeg:
 
 class TestDirectionalRateResultPeakFiringRate:
     """Test DirectionalRateResult.peak_firing_rate() method."""
-
-    def test_peak_firing_rate_returns_float(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """peak_firing_rate() returns a float."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        peak = result.peak_firing_rate()
-        assert isinstance(peak, float)
 
     def test_peak_firing_rate_correct_value(
         self,
@@ -775,27 +674,6 @@ class TestDirectionalRateResultPeakFiringRate:
 
 class TestDirectionalRateResultMeanVectorLength:
     """Test DirectionalRateResult.mean_vector_length() method."""
-
-    def test_mean_vector_length_returns_float(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """mean_vector_length() returns a float."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        mvl = result.mean_vector_length()
-        assert isinstance(mvl, float)
 
     def test_mean_vector_length_in_valid_range(
         self,
@@ -908,27 +786,6 @@ class TestDirectionalRateResultMeanVectorLength:
 class TestDirectionalRateResultTuningWidth:
     """Test DirectionalRateResult.tuning_width() method."""
 
-    def test_tuning_width_returns_float(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """tuning_width() returns a float."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        width = result.tuning_width()
-        assert isinstance(width, float)
-
     def test_tuning_width_in_valid_range(
         self,
         single_firing_rate: np.ndarray,
@@ -1015,27 +872,6 @@ class TestDirectionalRateResultTuningWidth:
 class TestDirectionalRateResultTuningWidthDeg:
     """Test DirectionalRateResult.tuning_width_deg() method."""
 
-    def test_tuning_width_deg_returns_float(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """tuning_width_deg() returns a float."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        width_deg = result.tuning_width_deg()
-        assert isinstance(width_deg, float)
-
     def test_tuning_width_deg_conversion(
         self,
         single_firing_rate: np.ndarray,
@@ -1082,151 +918,189 @@ class TestDirectionalRateResultTuningWidthDeg:
             assert 0 < width_deg <= 180
 
 
-class TestDirectionalRateResultRayleighPvalue:
-    """Test DirectionalRateResult.rayleigh_pvalue() method."""
+@pytest.fixture(scope="module")
+def biased_heading_session() -> tuple[np.ndarray, np.ndarray]:
+    """Ten minutes at 30 Hz with headings concentrated near 0.5 rad.
 
-    def test_rayleigh_pvalue_returns_float(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """rayleigh_pvalue() returns a float."""
+    Headings follow a von Mises distribution (kappa = 1.5), so the animal
+    faces some directions about 20 times longer than others.
+    """
+    times = np.arange(0.0, 600.0, 1 / 30)
+    headings = np.random.default_rng(0).vonmises(0.5, 1.5, times.size)
+    return times, headings
+
+
+def _frame_poisson_spikes(times: np.ndarray, rate: np.ndarray, seed: int) -> np.ndarray:
+    """Spike times from per-frame Poisson counts at ``rate`` (Hz) per frame."""
+    rng = np.random.default_rng(seed)
+    dt = np.diff(times)
+    counts = rng.poisson(rate[:-1] * dt)
+    starts = np.repeat(times[:-1], counts)
+    widths = np.repeat(dt, counts)
+    return np.sort(starts + rng.uniform(0.0, 1.0, starts.size) * widths)
+
+
+class TestTuningPvalue:
+    """tuning_pvalue tests one preferred direction given heading occupancy."""
+
+    @staticmethod
+    def _result(counts, occupancy):
         from neurospatial.encoding.directional import DirectionalRateResult
 
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
+        counts = np.asarray(counts, dtype=np.float64)
+        occupancy = np.asarray(occupancy, dtype=np.float64)
+        n = len(counts)
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rate = np.where(occupancy > 0, counts / occupancy, np.nan)
+        return DirectionalRateResult(
+            firing_rate=rate,
+            occupancy=occupancy,
+            bin_centers=centers,
+            bin_size=2 * np.pi / n,
             bandwidth=None,
+            spike_counts=counts,
         )
 
-        pval = result.rayleigh_pvalue()
-        assert isinstance(pval, float)
-
-    def test_rayleigh_pvalue_in_valid_range(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
+    def test_flat_cell_with_biased_headings_is_calibrated(
+        self, biased_heading_session
     ) -> None:
-        """rayleigh_pvalue() returns value in [0, 1]."""
-        from neurospatial.encoding.directional import DirectionalRateResult
+        """A constant-rate cell is not called tuned because of where the animal faced.
 
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        pval = result.rayleigh_pvalue()
-        assert 0 <= pval <= 1
-
-    def test_rayleigh_pvalue_tuned_neuron_low(
-        self,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """rayleigh_pvalue() is low for sharply tuned neurons."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        # Sharply tuned neuron
-        preferred_dir = np.pi / 2
-        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
-
-        result = DirectionalRateResult(
-            firing_rate=firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        pval = result.rayleigh_pvalue()
-        # Tuned neuron should have low p-value (significant non-uniformity)
-        assert pval < 0.05
-
-    def test_rayleigh_pvalue_uniform_high(
-        self,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """rayleigh_pvalue() is high for uniform firing."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        # Uniform firing rate
-        firing_rate = np.ones(n_bins) * 5.0
-
-        result = DirectionalRateResult(
-            firing_rate=firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        pval = result.rayleigh_pvalue()
-        # Uniform firing should have high p-value (non-significant)
-        assert pval > 0.5
-
-    def test_rayleigh_pvalue_ignores_unvisited_bins(self) -> None:
-        """Spikes in unvisited (zero-occupancy) bins must not drive p-value.
-
-        Regression test: an unvisited heading bin has zero occupancy and a
-        NaN firing rate, yet raw spike counts assigned to it would otherwise
-        weight the Rayleigh test and produce spurious significance. Only
-        occupied bins (occupancy > 0, finite rate) may contribute.
+        Spike headings of a flat cell follow the heading occupancy, so a test
+        of the spike headings alone (count-weighted Rayleigh) rejects in
+        every run. Correcting for occupancy keeps the false-positive rate
+        near alpha.
         """
-        from neurospatial.encoding.directional import DirectionalRateResult
+        from neurospatial.encoding.directional import compute_directional_rates
 
-        # Animal only ever occupied bin 0 (occupancy=[2,0,0,0]); 100 spikes are
-        # (erroneously) assigned to the unvisited bins 1 and 2.
-        centers = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])
-        occupancy = np.array([2.0, 0.0, 0.0, 0.0])
-        firing_rate = np.array([0.0, np.nan, np.nan, np.nan])
-        counts = np.array([0.0, 50.0, 50.0, 0.0])
+        times, headings = biased_heading_session
+        rng = np.random.default_rng(1)
+        duration = times[-1] - times[0]
+        trains = [
+            np.sort(rng.uniform(times[0], times[-1], rng.poisson(2.0 * duration)))
+            for _ in range(400)
+        ]
+        result = compute_directional_rates(trains, times, headings)
+        pvalues = result.tuning_pvalues()
+        assert np.all(np.isfinite(pvalues))
+        false_positive_rate = np.mean(pvalues < 0.05)
+        assert 0.02 <= false_positive_rate <= 0.09
+        # The screen built on it flags no flat cell.
+        assert not result.classify().any()
 
-        result = DirectionalRateResult(
-            firing_rate=firing_rate,
-            occupancy=occupancy,
-            bin_centers=centers,
-            bin_size=np.pi / 2,
-            bandwidth=None,
-            spike_counts=counts,
+    def test_hd_cell_with_biased_headings_is_detected(
+        self, biased_heading_session
+    ) -> None:
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = biased_heading_session
+        rate = 0.5 + 8.0 * np.exp(2.0 * (np.cos(headings - 2.0) - 1.0))
+        spikes = _frame_poisson_spikes(times, rate, seed=2)
+        result = compute_directional_rate(spikes, times, headings)
+        assert result.tuning_pvalue() < 1e-10
+        assert result.is_head_direction_cell()
+        # Occupancy normalization recovers the cell's preference (2.0 rad),
+        # not the animal's preferred heading (0.5 rad).
+        error = abs(np.angle(np.exp(1j * (result.preferred_direction() - 2.0))))
+        assert error < np.radians(6)
+
+    def test_uniform_occupancy_equals_large_sample_rayleigh(self) -> None:
+        """With equal time at every heading, T = 2 N R²: the Rayleigh test."""
+        from neurospatial.stats.circular import mean_resultant_length, rayleigh_test
+
+        n = 36
+        rng = np.random.default_rng(3)
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        counts = rng.poisson(6.0 * np.exp(1.0 * (np.cos(centers - 1.0) - 1.0)))
+        result = self._result(counts, np.full(n, 0.4))
+
+        n_spikes = counts.sum()
+        assert n_spikes >= 50  # Rayleigh's small-sample correction is off
+        r = mean_resultant_length(centers, weights=counts)
+        expected = np.exp(-n_spikes * r**2)
+        assert result.tuning_pvalue() == pytest.approx(expected, rel=1e-10)
+        _, rayleigh_p = rayleigh_test(centers[counts > 0], weights=counts[counts > 0])
+        assert result.tuning_pvalue() == pytest.approx(rayleigh_p, rel=1e-10)
+
+    def test_occupancy_scale_does_not_change_pvalue(self) -> None:
+        """Doubling every bin's time with the same counts tests the same tuning."""
+        n = 24
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        counts = np.round(10.0 * np.exp(2.0 * (np.cos(centers) - 1.0))) + 1.0
+        occupancy = 0.2 + 0.6 * np.abs(np.sin(centers))
+        p = self._result(counts, occupancy).tuning_pvalue()
+        assert np.isfinite(p)
+        assert self._result(counts, 2.0 * occupancy).tuning_pvalue() == pytest.approx(
+            p, rel=1e-10
         )
 
-        # No occupied bin carries >=3 spikes -> insufficient valid bins -> NaN,
-        # NOT a tiny (significant) p-value from the unvisited-bin spikes.
-        assert np.isnan(result.rayleigh_pvalue())
+    def test_spikes_follow_occupancy_is_not_tuned(self) -> None:
+        """Counts proportional to occupancy give the null statistic exactly."""
+        n = 24
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        occupancy = np.exp(1.5 * np.cos(centers - 0.5))
+        counts = 10.0 * occupancy
+        assert self._result(counts, occupancy).tuning_pvalue() == pytest.approx(1.0)
 
-    def test_rayleigh_pvalue_concentrated_visited_cell_significant(self) -> None:
-        """A genuinely-visited cell concentrated in 1-2 occupied bins stays significant."""
+    def test_spikes_in_unvisited_bins_are_ignored(self) -> None:
+        """Spikes assigned to a heading the animal never faced cannot be tested."""
+        occupancy = np.array([2.0, 0.0, 0.0, 0.0, 2.0, 2.0])
+        counts = np.array([0.0, 50.0, 50.0, 0.0, 0.0, 0.0])
+        assert np.isnan(self._result(counts, occupancy).tuning_pvalue())
+
+    def test_two_visited_directions_cannot_be_tested(self) -> None:
+        """Cosine and sine terms need at least three visited directions."""
+        occupancy = np.array([1.0, 1.0, 0.0, 0.0, 0.0, 0.0])
+        counts = np.array([30.0, 2.0, 0.0, 0.0, 0.0, 0.0])
+        assert np.isnan(self._result(counts, occupancy).tuning_pvalue())
+
+    def test_spikes_concentrated_in_two_bins_are_tuned(self) -> None:
+        n = 36
+        counts = np.zeros(n)
+        counts[10], counts[11] = 60.0, 40.0
+        assert self._result(counts, np.full(n, 0.5)).tuning_pvalue() < 1e-10
+
+    def test_fewer_than_three_spikes_is_nan(self) -> None:
+        counts = np.zeros(12)
+        counts[3] = 2.0
+        assert np.isnan(self._result(counts, np.full(12, 1.0)).tuning_pvalue())
+
+    def test_counts_rebuilt_from_unsmoothed_rate(self) -> None:
+        """Without spike_counts, counts are firing_rate * occupancy."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
-        # Cell fires almost exclusively in two adjacent OCCUPIED bins.
-        centers = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])
-        occupancy = np.array([1.0, 1.0, 1.0, 1.0])
-        firing_rate = np.array([20.0, 18.0, 0.0, 0.0])
-        counts = np.array([20.0, 18.0, 0.0, 0.0])
-
-        result = DirectionalRateResult(
-            firing_rate=firing_rate,
+        n = 24
+        occupancy = np.linspace(0.2, 1.0, n)
+        counts = np.arange(n, dtype=float) % 7
+        with_counts = self._result(counts, occupancy)
+        without = DirectionalRateResult(
+            firing_rate=with_counts.firing_rate,
             occupancy=occupancy,
-            bin_centers=centers,
-            bin_size=np.pi / 2,
+            bin_centers=with_counts.bin_centers,
+            bin_size=with_counts.bin_size,
             bandwidth=None,
-            spike_counts=counts,
+        )
+        assert without.tuning_pvalue() == pytest.approx(
+            with_counts.tuning_pvalue(), rel=1e-12
         )
 
-        assert result.rayleigh_pvalue() < 0.05
+    def test_population_matches_single_units(self, biased_heading_session) -> None:
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        times, headings = biased_heading_session
+        trains = [
+            _frame_poisson_spikes(
+                times, 1.0 + 4.0 * np.exp(np.cos(headings - pref) - 1.0), seed=10 + k
+            )
+            for k, pref in enumerate((-2.0, 0.0, 2.5))
+        ]
+        result = compute_directional_rates(trains, times, headings)
+        np.testing.assert_allclose(
+            result.tuning_pvalues(), [unit.tuning_pvalue() for unit in result]
+        )
+        table = result.summary_table()
+        np.testing.assert_allclose(table["tuning_pvalue"], result.tuning_pvalues())
 
 
 # ==============================================================================
@@ -1236,27 +1110,6 @@ class TestDirectionalRateResultRayleighPvalue:
 
 class TestDirectionalRateResultIsHdCell:
     """Test DirectionalRateResult.is_head_direction_cell() method."""
-
-    def test_is_hd_cell_returns_bool(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """is_head_direction_cell() returns a boolean."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        is_hd = result.is_head_direction_cell()
-        assert isinstance(is_hd, bool)
 
     def test_is_hd_cell_true_for_sharply_tuned(
         self,
@@ -1356,7 +1209,7 @@ class TestDirectionalRateResultIsHdCell:
             bandwidth=None,
         )
 
-        pval = result.rayleigh_pvalue()
+        pval = result.tuning_pvalue()
 
         # With very strict alpha (below p-value), should be False
         # Note: sharply tuned will have very low p-value, so use even lower alpha
@@ -1410,7 +1263,7 @@ class TestDirectionalRateResultIsHdCell:
         )
 
         mvl = result.mean_vector_length()
-        pval = result.rayleigh_pvalue()
+        pval = result.tuning_pvalue()
 
         # Set thresholds so only MVL criterion is met
         # (high alpha threshold that is below the p-value)
@@ -1427,27 +1280,6 @@ class TestDirectionalRateResultIsHdCell:
 
 class TestDirectionalRateResultInterpretation:
     """Test DirectionalRateResult.interpretation() method."""
-
-    def test_interpretation_returns_string(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """interpretation() returns a string."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        interp = result.interpretation()
-        assert isinstance(interp, str)
 
     def test_interpretation_hd_cell_format(
         self,
@@ -2270,18 +2102,17 @@ class TestDirectionalRatesResultPeakFiringRates:
 class TestDirectionalRatesResultSummaryTable:
     """Test DirectionalRatesResult.summary_table() method."""
 
-    def test_summary_table_returns_dataframe(
+    @pytest.fixture
+    def population(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
-    ) -> None:
-        """summary_table() returns a pandas DataFrame."""
-        pd = pytest.importorskip("pandas")
+    ):
         from neurospatial.encoding.directional import DirectionalRatesResult
 
-        result = DirectionalRatesResult(
+        return DirectionalRatesResult(
             firing_rates=batch_firing_rates,
             occupancy=single_occupancy,
             bin_centers=bin_centers,
@@ -2289,207 +2120,33 @@ class TestDirectionalRatesResultSummaryTable:
             bandwidth=None,
         )
 
-        df = result.summary_table()
-        assert isinstance(df, pd.DataFrame)
-
-    def test_summary_table_has_correct_row_count(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_neurons: int,
-    ) -> None:
-        """summary_table() returns one row per unit."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        df = result.summary_table()
+    def test_summary_table_one_row_per_unit(self, population, n_neurons) -> None:
+        df = population.summary_table()
         assert len(df) == n_neurons
-
-    def test_summary_table_has_unit_id_column(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """summary_table() is indexed by unit_id."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        df = result.summary_table()
         assert df.index.name == "unit_id"
 
-    def test_summary_table_has_preferred_direction_column(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
+    @pytest.mark.parametrize(
+        ("column", "expected"),
+        [
+            ("peak_rate", lambda r: r.peak_firing_rate()),
+            ("mean_vector_length", lambda r: r.mean_vector_lengths()),
+            ("preferred_direction", lambda r: r.preferred_directions()),
+            ("preferred_direction_deg", lambda r: np.degrees(r.preferred_directions())),
+            ("tuning_width", lambda r: r.tuning_widths()),
+            ("tuning_width_deg", lambda r: np.degrees(r.tuning_widths())),
+            ("tuning_pvalue", lambda r: r.tuning_pvalues()),
+            ("is_head_direction_cell", lambda r: r.classify()),
+        ],
+    )
+    def test_summary_table_column_matches_method(
+        self, population, column, expected
     ) -> None:
-        """summary_table() includes preferred_direction column (radians)."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
+        """Each column equals the batch method it summarizes."""
+        df = population.summary_table()
+        np.testing.assert_allclose(
+            df[column].to_numpy(dtype=float),
+            np.asarray(expected(population), dtype=float),
         )
-
-        df = result.summary_table()
-        assert "preferred_direction" in df.columns
-
-    def test_summary_table_has_preferred_direction_deg_column(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """summary_table() includes preferred_direction_deg column."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        df = result.summary_table()
-        assert "preferred_direction_deg" in df.columns
-
-    def test_summary_table_has_mean_vector_length_column(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """summary_table() includes mean_vector_length column."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        df = result.summary_table()
-        assert "mean_vector_length" in df.columns
-
-    def test_summary_table_has_tuning_width_column(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """summary_table() includes tuning_width column (radians)."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        df = result.summary_table()
-        assert "tuning_width" in df.columns
-
-    def test_summary_table_has_tuning_width_deg_column(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """summary_table() includes tuning_width_deg column."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        df = result.summary_table()
-        assert "tuning_width_deg" in df.columns
-
-    def test_summary_table_has_peak_rate_column(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """summary_table() includes peak_rate column."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        df = result.summary_table()
-        assert "peak_rate" in df.columns
-
-    def test_summary_table_has_is_hd_cell_column(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """summary_table() includes is_head_direction_cell column."""
-        pytest.importorskip("pandas")
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        df = result.summary_table()
-        assert "is_head_direction_cell" in df.columns
 
     def test_summary_table_unit_id_default_integers(
         self,
@@ -2784,10 +2441,6 @@ class TestDirectionalRatesResultSummaryTable:
 # ==============================================================================
 
 
-class TestComputeDirectionalRateImport:
-    """Test that compute_directional_rate can be imported."""
-
-
 class TestComputeDirectionalRateBasic:
     """Test basic compute_directional_rate functionality."""
 
@@ -2810,7 +2463,7 @@ class TestComputeDirectionalRateBasic:
         assert isinstance(result, DirectionalRateResult)
 
     def test_bin_centers_in_radians(self) -> None:
-        """compute_directional_rate produces bin_centers in radians [0, 2π)."""
+        """compute_directional_rate produces bin_centers in radians [-π, π)."""
         from neurospatial.encoding.directional import compute_directional_rate
 
         np.random.seed(42)
@@ -2821,8 +2474,8 @@ class TestComputeDirectionalRateBasic:
         result = compute_directional_rate(spike_times, times, headings)
 
         centers = np.asarray(result.bin_centers)
-        assert np.all(centers >= 0)
-        assert np.all(centers < 2 * np.pi)
+        assert np.all(centers >= -np.pi)
+        assert np.all(centers < np.pi)
 
     def test_metadata_defaults(self) -> None:
         """compute_directional_rate stores correct default metadata."""
@@ -3084,13 +2737,10 @@ class TestComputeDirectionalRateEdgeCases:
 
         result = compute_directional_rate(spike_times, times, headings)
 
-        # Should have valid result (only 2 spikes counted: 2.0 and 5.0)
+        # Only the spikes at 2.0 and 5.0 fall inside the tracked time.
+        assert result.spike_counts.sum() == 2
         rates = np.asarray(result.firing_rate)
-        # Total spike count should be approximately 2 (not 4)
-        total_rate = np.nansum(rates * result.occupancy)
-        # Total spikes = integral of rate * occupancy
-        # With only 2 spikes included, the integral should be roughly 2
-        assert 1 <= total_rate <= 3  # Allow some tolerance
+        assert np.nansum(rates * result.occupancy) == pytest.approx(2.0)
 
     def test_all_same_heading(self) -> None:
         """compute_directional_rate handles constant head direction."""
@@ -3201,10 +2851,6 @@ class TestComputeDirectionalRateInputValidation:
 # ==============================================================================
 # compute_directional_rates() Tests
 # ==============================================================================
-
-
-class TestComputeDirectionalRatesImport:
-    """Test that compute_directional_rates can be imported."""
 
 
 class TestComputeDirectionalRatesBasic:
@@ -3772,8 +3418,8 @@ class TestDirectionalRateResultNaNHandling:
         assert not np.isnan(mvl)
         assert 0 <= mvl <= 1
 
-    def test_rayleigh_pvalue_with_nans(self) -> None:
-        """rayleigh_pvalue handles NaN values in firing_rate."""
+    def test_tuning_pvalue_with_nans(self) -> None:
+        """tuning_pvalue handles NaN values in firing_rate."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         n_bins = 60
@@ -3788,7 +3434,7 @@ class TestDirectionalRateResultNaNHandling:
             bin_size=np.pi / 30,
             bandwidth=None,
         )
-        pval = result.rayleigh_pvalue()
+        pval = result.tuning_pvalue()
 
         # Should still compute a valid p-value
         assert not np.isnan(pval)
@@ -3834,7 +3480,7 @@ class TestDirectionalRateResultNaNHandling:
         # All metrics should return NaN
         assert np.isnan(result.preferred_direction())
         assert np.isnan(result.mean_vector_length())
-        assert np.isnan(result.rayleigh_pvalue())
+        assert np.isnan(result.tuning_pvalue())
 
 
 class TestDirectionalBatchNaNHandling:
@@ -3949,122 +3595,6 @@ class TestDirectionalRateRecovery:
         assert circ_dist < 2 * self.BIN_SIZE
 
 
-# ==============================================================================
-# Rayleigh p-value: count-weighting (scale invariance)
-# ==============================================================================
-
-
-class TestRayleighPvalueCountWeighting:
-    """Rayleigh p-value must weight by spike counts, not firing rate (Hz)."""
-
-    @staticmethod
-    def _make_result(firing_rate, occupancy, spike_counts):
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        n = len(firing_rate)
-        centers = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        return DirectionalRateResult(
-            firing_rate=np.asarray(firing_rate, dtype=np.float64),
-            occupancy=np.asarray(occupancy, dtype=np.float64),
-            bin_centers=centers,
-            bin_size=2 * np.pi / n,
-            bandwidth=None,
-            spike_counts=np.asarray(spike_counts, dtype=np.float64),
-        )
-
-    def test_rayleigh_pvalue_scale_invariant(self) -> None:
-        """Same spike counts at different occupancy/rate scales => same p-value."""
-        n = 36
-        centers = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        base_counts = np.round(50.0 * np.exp(3.0 * (np.cos(centers - np.pi / 2) - 1.0)))
-        occ = np.ones(n) * 0.5
-        rate = base_counts / occ
-
-        # Same counts, but occupancy halved => firing rate doubled. With
-        # count-weighting the p-value is unchanged; with rate-weighting (the
-        # old bug) it would change because the rate scale changed.
-        ref = self._make_result(rate, occ, base_counts)
-        doubled_rate = self._make_result(rate * 2.0, occ * 0.5, base_counts)
-        p_ref = ref.rayleigh_pvalue()
-        assert np.isfinite(p_ref)
-        # Count-weighting is invariant to the rate scale (same counts).
-        assert doubled_rate.rayleigh_pvalue() == pytest.approx(p_ref, rel=1e-9)
-
-        # Fail-before sentinel: the Rayleigh statistic z = sum(w) * R**2 scales
-        # with the total weight, so weighting by the doubled rate would inflate
-        # z (and shrink the p-value) relative to the reference rate weighting.
-        from neurospatial.stats.circular import rayleigh_test
-
-        valid = base_counts > 0
-        z_rate_ref, _ = rayleigh_test(centers[valid], weights=rate[valid])
-        z_rate_doubled, _ = rayleigh_test(centers[valid], weights=(rate * 2.0)[valid])
-        assert z_rate_doubled > z_rate_ref
-
-    def test_rayleigh_pvalue_matches_counts_weighting(self) -> None:
-        """rayleigh_pvalue equals rayleigh_test weighted by spike_counts."""
-        from neurospatial.stats.circular import rayleigh_test
-
-        n = 24
-        centers = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        counts = np.round(40.0 * np.exp(2.0 * (np.cos(centers) - 1.0)))
-        occ = np.ones(n) * 0.4
-        rate = counts / occ
-        result = self._make_result(rate, occ, counts)
-
-        valid = np.isfinite(centers) & np.isfinite(counts) & (counts > 0)
-        _, expected = rayleigh_test(centers[valid], weights=counts[valid])
-        assert result.rayleigh_pvalue() == pytest.approx(expected, rel=1e-12)
-
-    def test_rayleigh_pvalue_differs_from_rate_weighting(self) -> None:
-        """Count-weighted statistic differs from the old rate-weighted value."""
-        from neurospatial.stats.circular import rayleigh_test
-
-        n = 24
-        centers = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        counts = np.round(8.0 * np.exp(1.5 * (np.cos(centers) - 1.0))) + 1.0
-        # Non-uniform occupancy makes rate differ from counts in both scale
-        # and shape, so count- vs rate-weighting give distinct statistics.
-        occ = 0.2 + 0.6 * np.abs(np.sin(centers))
-        rate = counts / occ
-        result = self._make_result(rate, occ, counts)
-
-        valid = np.isfinite(rate) & (rate > 0)
-        z_count, p_count = rayleigh_test(centers[valid], weights=counts[valid])
-        z_rate, _ = rayleigh_test(centers[valid], weights=rate[valid])
-        # The corrected p-value matches the count-weighted statistic.
-        assert result.rayleigh_pvalue() == pytest.approx(p_count, rel=1e-12)
-        # And the count-weighted statistic is distinct from the rate-weighted.
-        assert abs(z_count - z_rate) > 1e-6
-
-    def test_rayleigh_pvalue_concentrated_two_bins_not_nan(self) -> None:
-        """A cell with all spikes in 1-2 bins is strongly tuned, not NaN.
-
-        The effective sample size is the total spike count, not the number of
-        occupied angular bins, so a sharply tuned cell concentrating 100
-        spikes into 2 adjacent bins must yield a small p-value (significant)
-        rather than tripping the old distinct-bin gate and returning NaN.
-        """
-        from neurospatial.stats.circular import rayleigh_test
-
-        n = 36
-        centers = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        counts = np.zeros(n)
-        counts[10] = 60.0  # 100 spikes in 2 adjacent angular bins
-        counts[11] = 40.0
-        occ = np.ones(n) * 0.5
-        rate = counts / occ
-        result = self._make_result(rate, occ, counts)
-
-        pval = result.rayleigh_pvalue()
-        assert np.isfinite(pval)
-        assert pval < 1e-10
-
-        # Matches the underlying count-weighted Rayleigh on the occupied bins.
-        valid = counts > 0
-        _, expected = rayleigh_test(centers[valid], weights=counts[valid])
-        assert pval == pytest.approx(expected, rel=1e-12)
-
-
 class TestComputeDirectionalRateSpikeCounts:
     """compute_directional_rate / _rates plumb spike counts through."""
 
@@ -4096,8 +3626,8 @@ class TestComputeDirectionalRateSpikeCounts:
         np.testing.assert_array_equal(
             batch[1].spike_counts, np.asarray(batch.spike_counts)[1]
         )
-        # Round-trips through rayleigh_pvalue without error.
-        assert np.isfinite(batch[1].rayleigh_pvalue())
+        # Round-trips through tuning_pvalue without error.
+        assert np.isfinite(batch[1].tuning_pvalue())
 
 
 # ==============================================================================
@@ -4284,3 +3814,341 @@ def test_head_direction_plot_north_is_up(caller_axis, polar_display_offset) -> N
     assert abs(east_dy) < 1e-6 * east_dx
     assert east_dx > 0
     plt.close("all")
+
+
+# ==============================================================================
+# One angle range for every directional output
+# ==============================================================================
+
+
+def _circular_distance(a: float, b: float) -> float:
+    return float(abs(np.angle(np.exp(1j * (a - b)))))
+
+
+class TestHeadingRange:
+    """Bin centers, peaks and preferred directions share the range [-π, π)."""
+
+    @pytest.fixture(scope="class")
+    def session(self) -> tuple[np.ndarray, np.ndarray]:
+        times = np.arange(0.0, 600.0, 1 / 30)
+        headings = np.random.default_rng(0).uniform(-np.pi, np.pi, times.size)
+        return times, headings
+
+    @staticmethod
+    def _hd_spikes(times, headings, preferred, seed):
+        rate = 0.5 + 15.0 * np.exp(4.0 * (np.cos(headings - preferred) - 1.0))
+        return _frame_poisson_spikes(times, rate, seed=seed)
+
+    def test_preferred_direction_near_pi_recovered(self, session) -> None:
+        """A cell preferring π - 0.05 gives one answer from every accessor."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = session
+        preferred = np.pi - 0.05
+        spikes = self._hd_spikes(times, headings, preferred, seed=4)
+        result = compute_directional_rate(spikes, times, headings)
+
+        centers = np.asarray(result.bin_centers)
+        assert centers.min() >= -np.pi
+        assert centers.max() < np.pi
+        assert _circular_distance(result.preferred_direction(), preferred) < np.radians(
+            6
+        )
+        peak = float(result.peak_location())
+        assert -np.pi <= peak < np.pi
+        # Same number, not merely the same angle modulo 2π.
+        assert abs(peak - result.preferred_direction()) < 2 * result.bin_size
+        df = result.to_dataframe()
+        assert df["bin_center_angle"].between(-np.pi, np.pi, inclusive="left").all()
+
+    @pytest.mark.parametrize("delta", [0.7, -2.0, np.pi])
+    def test_rotating_headings_rotates_preferred_direction(
+        self, session, delta
+    ) -> None:
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = session
+        spikes = self._hd_spikes(times, headings, 0.3, seed=5)
+        base = compute_directional_rate(spikes, times, headings)
+        rotated = compute_directional_rate(spikes, times, headings + delta)
+        shift = rotated.preferred_direction() - base.preferred_direction()
+        assert _circular_distance(shift, delta) < np.radians(1)
+        assert rotated.mean_vector_length() == pytest.approx(
+            base.mean_vector_length(), abs=0.01
+        )
+
+    def test_zero_to_two_pi_headings_match_signed_headings(self, session) -> None:
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = session
+        spikes = self._hd_spikes(times, headings, -2.5, seed=6)
+        signed = compute_directional_rate(spikes, times, headings)
+        unsigned = compute_directional_rate(spikes, times, headings % (2 * np.pi))
+        assert_array_equal(unsigned.firing_rate, signed.firing_rate)
+        assert_array_equal(unsigned.bin_centers, signed.bin_centers)
+        assert unsigned.preferred_direction() == pytest.approx(
+            signed.preferred_direction()
+        )
+
+    def test_summary_records_allocentric_frame(self, session) -> None:
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        times, headings = session
+        result = compute_directional_rates(
+            [self._hd_spikes(times, headings, 1.0, seed=7)], times, headings
+        )
+        assert result.summary()["direction_frame"] == "allocentric"
+        assert result[0].summary()["direction_frame"] == "allocentric"
+        assert result.summary_table().attrs["direction_frame"] == "allocentric"
+
+
+# ==============================================================================
+# Heading coverage
+# ==============================================================================
+
+
+class TestHeadingCoverage:
+    """MVL over a partial heading range is inflated; the screen says so."""
+
+    @pytest.fixture(scope="class")
+    def limited_session(self) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+        """Headings within ±60° of East and 20 untuned 2 Hz units."""
+        times = np.arange(0.0, 600.0, 1 / 30)
+        headings = np.random.default_rng(0).uniform(-np.pi / 3, np.pi / 3, times.size)
+        rng = np.random.default_rng(1)
+        trains = [np.sort(rng.uniform(0.0, times[-1], 1200)) for _ in range(20)]
+        return times, headings, trains
+
+    def test_largest_unvisited_arc(self) -> None:
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        n = 12
+        occupancy = np.ones(n)
+        occupancy[[3, 4, 5, 11, 0]] = 0.0  # runs of 3 and of 2 across the wrap
+        result = DirectionalRateResult(
+            firing_rate=np.where(occupancy > 0, 1.0, np.nan),
+            occupancy=occupancy,
+            bin_centers=np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n,
+            bin_size=2 * np.pi / n,
+            bandwidth=None,
+        )
+        assert result.largest_unvisited_arc() == pytest.approx(3 * 2 * np.pi / n)
+
+    def test_wrapping_run_and_full_coverage(self) -> None:
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        n = 12
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        occupancy = np.ones(n)
+        occupancy[[10, 11, 0, 1]] = 0.0
+        result = DirectionalRatesResult(
+            firing_rates=np.ones((2, n)),
+            occupancy=occupancy,
+            bin_centers=centers,
+            bin_size=2 * np.pi / n,
+            bandwidth=None,
+        )
+        assert result.largest_unvisited_arc() == pytest.approx(4 * 2 * np.pi / n)
+        full = DirectionalRatesResult(
+            firing_rates=np.ones((2, n)),
+            occupancy=np.ones(n),
+            bin_centers=centers,
+            bin_size=2 * np.pi / n,
+            bandwidth=None,
+        )
+        assert full.largest_unvisited_arc() == 0.0
+
+    def test_limited_headings_warn_where_mvl_verdict_is_made(
+        self, limited_session
+    ) -> None:
+        from neurospatial.encoding.directional import (
+            compute_directional_rates,
+            is_head_direction_cell,
+        )
+
+        times, headings, trains = limited_session
+        result = compute_directional_rates(trains, times, headings)
+        # Untuned cells over a 120° arc look tuned by MVL alone.
+        assert np.median(result.mean_vector_lengths()) > 0.7
+        assert result.largest_unvisited_arc() == pytest.approx(
+            np.radians(240), abs=result.bin_size
+        )
+        with pytest.warns(UserWarning, match="unvisited"):
+            flags = result.classify()
+        # The occupancy-corrected test keeps the screen from passing them.
+        assert flags.sum() <= 2
+        with pytest.warns(UserWarning, match='criterion="shuffle"'):
+            table = result.summary_table()
+        assert table.attrs["largest_unvisited_arc"] == pytest.approx(
+            result.largest_unvisited_arc()
+        )
+        with pytest.warns(UserWarning, match="unvisited"):
+            result[0].is_head_direction_cell()
+        with pytest.warns(UserWarning, match="unvisited"):
+            is_head_direction_cell(trains[0], times, headings)
+
+    def test_full_heading_coverage_does_not_warn(self, biased_heading_session) -> None:
+        import warnings
+
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = biased_heading_session
+        spikes = np.sort(np.random.default_rng(3).uniform(0.0, times[-1], 600))
+        result = compute_directional_rate(spikes, times, headings)
+        assert result.largest_unvisited_arc() < np.pi / 2
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result.is_head_direction_cell()
+            result.summary_table()
+
+
+class TestDegreeDefaults:
+    """The default bin width is 6° whatever unit the headings use."""
+
+    @pytest.fixture(scope="class")
+    def session(self):
+        times = np.arange(0.0, 300.0, 1 / 30)
+        headings = np.random.default_rng(0).uniform(-np.pi, np.pi, times.size)
+        rate = 0.5 + 10.0 * np.exp(3.0 * (np.cos(headings - 1.0) - 1.0))
+        return times, headings, _frame_poisson_spikes(times, rate, seed=9)
+
+    def test_rate_default_bin_size_matches_radians(self, session) -> None:
+        from neurospatial.encoding.directional import (
+            compute_directional_rate,
+            compute_directional_rates,
+        )
+
+        times, headings, spikes = session
+        rad = compute_directional_rate(spikes, times, headings)
+        deg = compute_directional_rate(
+            spikes, times, np.degrees(headings), angle_unit="deg"
+        )
+        assert len(rad.firing_rate) == len(deg.firing_rate) == 60
+        np.testing.assert_allclose(deg.firing_rate, rad.firing_rate)
+        assert deg.tuning_width() == pytest.approx(rad.tuning_width())
+        rates = compute_directional_rates(
+            [spikes], times, np.degrees(headings), angle_unit="deg"
+        )
+        np.testing.assert_allclose(rates.firing_rates[0], rad.firing_rate)
+
+    def test_predicates_default_bin_size_matches_radians(self, session) -> None:
+        from neurospatial.encoding.directional import (
+            head_direction_cell_significance,
+            is_head_direction_cell,
+        )
+
+        times, headings, spikes = session
+        assert is_head_direction_cell(spikes, times, headings) is True
+        assert (
+            is_head_direction_cell(
+                spikes, times, np.degrees(headings), angle_unit="deg"
+            )
+            is True
+        )
+        kwargs = {"n_shuffles": 9, "min_shift": 20.0, "rng": 0}
+        deg = head_direction_cell_significance(
+            [spikes], times, np.degrees(headings), angle_unit="deg", **kwargs
+        )[0]
+        rad = head_direction_cell_significance([spikes], times, headings, **kwargs)[0]
+        assert deg.observed_score == pytest.approx(rad.observed_score)
+
+
+@pytest.mark.parametrize(
+    ("rate", "occupancy"),
+    [(np.full(12, np.nan), np.zeros(12)), (np.zeros(12), np.ones(12))],
+    ids=["never-visited", "silent"],
+)
+def test_undefined_tuning_metrics_are_nan(rate, occupancy) -> None:
+    """A map with no finite or no positive rate has undefined tuning, not an error."""
+    from neurospatial.encoding.directional import (
+        DirectionalRateResult,
+        DirectionalRatesResult,
+    )
+
+    centers = np.linspace(-np.pi, np.pi, 12, endpoint=False) + np.pi / 12
+    result = DirectionalRateResult(
+        firing_rate=rate,
+        occupancy=occupancy,
+        bin_centers=centers,
+        bin_size=np.pi / 6,
+        bandwidth=None,
+    )
+    assert np.isnan(result.preferred_direction())
+    assert np.isnan(result.preferred_direction_deg())
+    assert np.isnan(result.tuning_width())
+    assert np.isnan(result.tuning_width_deg())
+    assert "undefined" in result.interpretation()
+    population = DirectionalRatesResult(
+        firing_rates=np.vstack([rate, 1.0 + np.cos(centers)]),
+        occupancy=occupancy,
+        bin_centers=centers,
+        bin_size=np.pi / 6,
+        bandwidth=None,
+    )
+    widths = population.tuning_widths()
+    assert np.isnan(widths[0])
+    assert np.isnan(population.summary_table()["tuning_width"].iloc[0])
+
+
+class TestBackendParity:
+    """backend="jax" changes the output array type, never the statistics."""
+
+    @pytest.fixture(scope="class")
+    def session(self):
+        times = np.arange(0.0, 120.0, 1 / 30)
+        headings = np.random.default_rng(0).uniform(-np.pi, np.pi, times.size)
+        rate = 0.5 + 10.0 * np.exp(3.0 * (np.cos(headings + 1.0) - 1.0))
+        flat = np.sort(np.random.default_rng(2).uniform(0.0, times[-1], 200))
+        return times, headings, [_frame_poisson_spikes(times, rate, seed=8), flat]
+
+    def test_rates_and_metrics_match(self, session) -> None:
+        pytest.importorskip("jax")
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        times, headings, trains = session
+        ref = compute_directional_rates(trains, times, headings, bandwidth=0.2)
+        jax_result = compute_directional_rates(
+            trains, times, headings, bandwidth=0.2, backend="jax"
+        )
+        np.testing.assert_allclose(
+            np.asarray(jax_result.firing_rates), ref.firing_rates, rtol=1e-6
+        )
+        np.testing.assert_allclose(
+            jax_result.tuning_pvalues(), ref.tuning_pvalues(), rtol=1e-6
+        )
+        assert_array_equal(jax_result.classify(), ref.classify())
+        assert ref.classify().tolist() == [True, False]
+
+    @pytest.mark.parametrize("criterion", ["threshold", "shuffle"])
+    def test_predicate_matches(self, session, criterion) -> None:
+        pytest.importorskip("jax")
+        from neurospatial.encoding.directional import is_head_direction_cell
+
+        times, headings, trains = session
+        kwargs = {"n_shuffles": 19, "rng": 0} if criterion == "shuffle" else {}
+        for train in trains:
+            assert is_head_direction_cell(
+                train, times, headings, criterion=criterion, backend="jax", **kwargs
+            ) == is_head_direction_cell(
+                train, times, headings, criterion=criterion, **kwargs
+            )
+
+    def test_significance_matches(self, session) -> None:
+        pytest.importorskip("jax")
+        from neurospatial.encoding.directional import head_direction_cell_significance
+
+        times, headings, trains = session
+        ref = head_direction_cell_significance(
+            trains, times, headings, n_shuffles=19, rng=0
+        )
+        jax_result = head_direction_cell_significance(
+            trains, times, headings, n_shuffles=19, rng=0, backend="jax"
+        )
+        for unit in ref:
+            assert jax_result[unit].observed_score == pytest.approx(
+                ref[unit].observed_score, rel=1e-6
+            )
+            np.testing.assert_allclose(
+                jax_result[unit].null_scores, ref[unit].null_scores, rtol=1e-6
+            )
+            assert jax_result[unit].p_value == ref[unit].p_value

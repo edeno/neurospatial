@@ -62,6 +62,7 @@ TABLE_COLUMNS = {
         "tuning_width_deg",
         "preferred_direction",
         "tuning_width",
+        "tuning_pvalue",
         "is_head_direction_cell",
     ],
 }
@@ -128,9 +129,10 @@ def test_population_summary_names_aggregation(rate_family_results, family):
     }
     if family in ("spatial", "view"):
         expected.add("method")
-    if family in ("allocentric", "egocentric"):
+    if family in ("allocentric", "egocentric", "directional"):
         expected.add("direction_frame")
-        assert summary["direction_frame"] == family
+        frame = "allocentric" if family == "directional" else family
+        assert summary["direction_frame"] == frame
     assert set(summary) == expected
     assert summary["n_units"] == 3
     assert summary["max_peak_firing_rate"] == np.nanmax(result.peak_firing_rate())

@@ -341,5 +341,5 @@ def test_heading_interpretation_uses_shared_thresholds(
     )
     text = result.interpretation()
     assert "Not classified as HD cell" in text
-    assert "Rayleigh test not significant" in text
+    assert "Tuning test not significant" in text
     assert ">= 0.0" in text

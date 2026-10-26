@@ -616,10 +616,15 @@ print("Rate-weighted mean vector length:", hd.mean_vector_length())
 ```
 
 Inspect angular occupancy as well as rates. Mean vector length describes the
-estimated tuning curve. A fixed cutoff is a screen, and a Rayleigh statistic
-on spike angles can reflect uneven heading dwell time. A circular-shift test
-on the raw recording is available when its stationarity assumptions fit the
-experiment:
+estimated tuning curve. A fixed cutoff is a screen. `hd.tuning_pvalue()` tests
+for one preferred direction given how long the animal faced each heading, so
+uneven heading dwell time alone does not make a cell look tuned; it assumes
+spikes are independent given heading, and bursting or slow rate drift make
+its p-value too small. Mean vector length uses only visited headings, so check
+`hd.largest_unvisited_arc()`: when the animal never faced an arc wider than
+90°, untuned cells get inflated MVLs and the screen warns. A circular-shift
+test on the raw recording is the verdict when its stationarity assumptions fit
+the experiment:
 
 <!-- docs-test: run -->
 ```python
@@ -813,18 +818,18 @@ counts flagged by the screen, not cells with ground-truth tuning.
 | 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 20/20 | 0/20 | 0/20 |
 
 The allocentric object-vector information screen also flagged 20/20 in the
-10-minute fixture. HD's MVL screen weights firing rates, while its Rayleigh
-statistic weights spike counts (or reconstructs counts from rate times
-occupancy). The spike-angle distribution can reflect heading dwell time, so
-Rayleigh can be occupancy-biased; these empirical zero counts do not calibrate
-the combined screen for another occupancy distribution.
+10-minute fixture. HD's screen combines the rate-weighted mean vector length
+with an occupancy-corrected test of one preferred direction (a Poisson score
+test with heading occupancy as exposure), which keeps its false-positive rate
+near `alpha` for untuned cells under uneven heading sampling when spikes are
+independent given heading.
 
 `has_place_field()` preserves field detection. `is_place_cell()` requires
 `criterion="spatial_info"` (screen) or `"shuffle"` (circular-shift verdict).
 The other four cell predicates default to `criterion="threshold"` and allow
 opt-in `"shuffle"`. Result methods and batch `classify()` offer threshold
 screens; results keep no raw input arrays. Threshold comparisons are inclusive;
-shuffle and Rayleigh p-values must be strictly below `alpha`.
+shuffle and tuning-test p-values must be strictly below `alpha`.
 
 For publication, report a shuffle test through the raw-array predicate or the
 matching `*_cell_significance` function, together with its estimator, windows,
