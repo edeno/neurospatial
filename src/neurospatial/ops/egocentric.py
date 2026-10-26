@@ -232,7 +232,10 @@ def allocentric_to_egocentric(
     Raises
     ------
     ValueError
-        If points has wrong shape or positions/headings length mismatch.
+        If ``points`` is not ``(n_points, 2)`` or ``(n_time, n_points, 2)``,
+        including a 3D ``points`` whose time axis differs from
+        ``len(positions)``; if ``positions`` is not ``(n_time, 2)``; or if
+        ``headings`` length does not match ``positions``.
     """
     points = np.asarray(points, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
@@ -273,10 +276,7 @@ def allocentric_to_egocentric(
 
     n_time = len(positions)
 
-    # Expand points to 3D if needed
-    if points.ndim == 2:
-        points = np.broadcast_to(points, (n_time, points.shape[0], 2)).copy()
-    elif points.ndim != 3:
+    if points.ndim > 3:
         raise ValueError(
             f"Invalid points dimensionality: got {points.ndim}D array.\n\n"
             f"WHAT: points must be 2D (n_points, 2) or 3D (n_time, n_points, 2)\n"
@@ -286,6 +286,30 @@ def allocentric_to_egocentric(
             f"2. Time-varying: use shape (n_time, n_points, 2)\n"
             f"Got shape: {points.shape}"
         )
+    if points.shape[-1] != 2:
+        raise ValueError(
+            _format_error(
+                f"points must have 2 columns (x, y); got shape {points.shape}.",
+                why="egocentric coordinates are planar: each point is rotated "
+                "about the animal's position by its heading.",
+                fix="pass points of shape (n_points, 2), or (n_time, n_points, 2) "
+                "for points that move",
+            )
+        )
+    if points.ndim == 3 and points.shape[0] != n_time:
+        raise ValueError(
+            _format_error(
+                f"points time axis {points.shape[0]} does not match positions "
+                f"length {n_time}.",
+                why="a 3D points array holds the points at each time, shape "
+                "(n_time, n_points, 2), and is transformed with that time's "
+                "position and heading.",
+                fix="pass points that do not move as a 2D (n_points, 2) array, "
+                "or give one row of points per position",
+            )
+        )
+    if points.ndim == 2:
+        points = np.broadcast_to(points, (n_time, points.shape[0], 2))
 
     # Center points around animal position
     # positions: (n_time, 2) -> (n_time, 1, 2) for broadcasting
@@ -440,6 +464,11 @@ def compute_egocentric_bearing(
     NDArray, shape (n_time, n_targets)
         Bearing to each target at each timepoint in radians.
         Range: (-pi, pi], where 0=ahead, pi/2=left, -pi/2=right.
+
+    Raises
+    ------
+    ValueError
+        If the shapes are invalid, as for :func:`allocentric_to_egocentric`.
 
     Examples
     --------

@@ -159,6 +159,31 @@ class TestAllocentricToEgocentric:
         with pytest.raises(ValueError, match=r"Headings/positions length mismatch"):
             allocentric_to_egocentric(positions, headings, points)
 
+    @pytest.mark.parametrize("n_rows", [1, 3])
+    def test_time_varying_points_must_have_one_row_per_time(self, n_rows):
+        """A (1, n_points, 2) array is not silently reused at every time."""
+        from neurospatial.ops.egocentric import (
+            allocentric_to_egocentric,
+            compute_egocentric_bearing,
+        )
+
+        positions = np.zeros((2, 2))
+        headings = np.zeros(2)
+        points = np.ones((n_rows, 4, 2))
+        for transform in (allocentric_to_egocentric, compute_egocentric_bearing):
+            with pytest.raises(
+                ValueError,
+                match=rf"points time axis {n_rows} does not match positions length 2",
+            ):
+                transform(positions, headings, points)
+
+    @pytest.mark.parametrize("shape", [(4, 3), (2, 4, 3)])
+    def test_points_need_x_and_y(self, shape):
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
+
+        with pytest.raises(ValueError, match=r"points must have 2 columns \(x, y\)"):
+            allocentric_to_egocentric(np.zeros((2, 2)), np.zeros(2), np.ones(shape))
+
 
 class TestEgocentricToAllocentric:
     """Tests for egocentric_to_allocentric batch function."""
