@@ -515,6 +515,51 @@ class TestComputeViewedLocation:
                 positions, headings, method="ray_cast", boundary_source="analysis"
             )
 
+    @pytest.mark.parametrize("boundary_source", ["physical", "analysis"])
+    def test_ray_cast_reaches_a_distant_wall_by_default(self, boundary_source):
+        """The default search reaches every wall, even in a 3 m arena."""
+        from neurospatial.ops.visibility import compute_viewed_location
+
+        env = _open_box(300.0, 10.0)
+        positions = np.array([[10.0, 150.0], [150.0, 10.0], [290.0, 290.0]])
+        headings = np.array([0.0, np.pi / 2, -3 * np.pi / 4])
+
+        viewed = compute_viewed_location(
+            positions,
+            headings,
+            method="ray_cast",
+            env=env,
+            boundary_source=boundary_source,
+        )
+
+        assert_allclose(viewed, [[300.0, 150.0], [150.0, 300.0], [0.0, 0.0]], atol=1e-9)
+
+    @pytest.mark.parametrize("method", ["fixed_distance", "ray_cast"])
+    @pytest.mark.parametrize(
+        ("positions", "headings", "offsets", "match"),
+        [
+            (np.zeros((3, 2)), np.zeros(2), None, r"one heading per position"),
+            (np.zeros((3, 2)), np.zeros((3, 1)), None, r"one heading per position"),
+            (np.zeros(2), np.zeros(1), None, r"positions of shape \(n_time, 2\)"),
+            (np.zeros((3, 3)), np.zeros(3), None, r"positions of shape \(n_time, 2\)"),
+            (np.zeros((3, 2)), np.zeros(3), np.zeros(2), r"one gaze offset per"),
+        ],
+    )
+    def test_mismatched_samples_raise(
+        self, method, positions, headings, offsets, match
+    ):
+        """Misaligned inputs are refused instead of broadcast or truncated."""
+        from neurospatial.ops.visibility import compute_viewed_location
+
+        with pytest.raises(ValueError, match=match):
+            compute_viewed_location(
+                positions,
+                headings,
+                method=method,
+                gaze_offsets=offsets,
+                env=_open_box(20.0, 5.0),
+            )
+
 
 def _open_box(size, bin_size):
     from shapely.geometry import box

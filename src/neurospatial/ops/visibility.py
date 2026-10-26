@@ -606,7 +606,7 @@ def compute_viewed_location(
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     env: BinningConsumer | None = None,
-    max_distance: float = 100.0,
+    max_distance: float | None = None,
     boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64]:
     """Compute the location being viewed by the animal.
@@ -614,24 +614,28 @@ def compute_viewed_location(
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_time, 2)
-        Animal positions in allocentric coordinates.
+        Animal positions in allocentric coordinates (environment units).
     headings : NDArray[np.float64], shape (n_time,)
-        Animal heading at each time (radians, 0=East).
+        Animal heading at each time (allocentric radians: 0 = East,
+        +pi/2 = North).
     method : {"fixed_distance", "ray_cast", "boundary"}, default "fixed_distance"
         Method for computing viewed location:
-        - "fixed_distance": Point at fixed distance in gaze direction
-        - "ray_cast": Intersection with environment boundary
-        - "boundary": Nearest boundary point in gaze direction
-    view_distance : float, default 10.0
-        Distance for fixed_distance method.
-    gaze_offsets : NDArray[np.float64], shape (n_time,), optional
-        Offset from heading to gaze direction (e.g., eye tracking).
-        If None, gaze is aligned with heading.
-    env : Environment, optional
-        Required for ray_cast and boundary methods.
-    max_distance : float, default 100.0
-        Maximum ray distance for ray_cast method.
 
+        - "fixed_distance": the point ``view_distance`` ahead along the gaze.
+        - "ray_cast": the first wall the gaze ray reaches.
+        - "boundary": the same as "ray_cast".
+    view_distance : float, default 10.0
+        Distance in environment units (e.g. cm) for the fixed_distance method.
+    gaze_offsets : NDArray[np.float64], shape (n_time,), optional
+        Gaze direction relative to the heading, in egocentric radians
+        (0 = ahead, + = left, - = right), e.g. from eye tracking. If None,
+        gaze is aligned with heading.
+    env : Environment, optional
+        Required for the ray_cast method.
+    max_distance : float or None, default None
+        Longest gaze ray for the ray_cast method, in environment units.
+        ``None`` searches far enough to reach every wall: twice the diagonal
+        of the box enclosing the walls and the positions.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
@@ -640,18 +644,22 @@ def compute_viewed_location(
     Returns
     -------
     NDArray[np.float64], shape (n_time, 2)
-        Viewed location in allocentric coordinates. NaN if ray doesn't
-        intersect environment.
+        Viewed location in allocentric coordinates. NaN for a missing
+        observation and, with ray_cast, where no wall lies within
+        ``max_distance`` or the observer is outside the walls.
 
     Raises
     ------
     ValueError
-        If method is invalid, ray_cast/boundary has no environment, or the
-        requested search distance is not finite and positive.
+        If method is invalid, ray_cast has no environment, the shapes of
+        ``positions``, ``headings`` and ``gaze_offsets`` disagree, or
+        ``max_distance`` is not finite and positive.
 
     Examples
     --------
     >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Environment
     >>> from neurospatial.ops.visibility import compute_viewed_location
 
     Fixed distance method:
@@ -663,6 +671,14 @@ def compute_viewed_location(
     ... )
     >>> np.allclose(viewed[0], [10.0, 0.0])
     True
+
+    The first wall along the gaze, however far away:
+
+    >>> env = Environment.from_polygon(box(0, 0, 300, 300), bin_size=10.0)
+    >>> compute_viewed_location(
+    ...     np.array([[10.0, 150.0]]), np.array([0.0]), method="ray_cast", env=env
+    ... )
+    array([[300., 150.]])
     """
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
@@ -672,35 +688,69 @@ def compute_viewed_location(
             f"method must be 'fixed_distance', 'ray_cast', or 'boundary', "
             f"got '{method}'"
         )
-
     if method in ("ray_cast", "boundary") and env is None:
         raise ValueError(f"env is required when method='{method}'")
-
-    n_time = len(positions)
-
-    # Compute gaze direction
-    gaze_direction = headings + gaze_offsets if gaze_offsets is not None else headings
-
-    viewed = np.full((n_time, 2), np.nan, dtype=np.float64)
+    _check_samples("compute_viewed_location", positions, headings)
+    gaze_direction = headings
+    if gaze_offsets is not None:
+        gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64)
+        if gaze_offsets.shape != headings.shape:
+            raise ValueError(
+                _format_error(
+                    "compute_viewed_location() needs one gaze offset per "
+                    f"heading, shape {headings.shape}; got {gaze_offsets.shape}.",
+                    fix="pass gaze_offsets with the same length as headings",
+                )
+            )
+        gaze_direction = headings + gaze_offsets
 
     if method == "fixed_distance":
-        # Simple: point at fixed distance in gaze direction
-        viewed[:, 0] = positions[:, 0] + view_distance * np.cos(gaze_direction)
-        viewed[:, 1] = positions[:, 1] + view_distance * np.sin(gaze_direction)
-
-    else:
-        assert env is not None
-        viewed = boundary_view(
-            env.binning,
-            env.arena,
-            positions,
-            gaze_direction,
-            max_distance,
-            boundary_source,
-            CallIndexes(),
+        return positions + view_distance * np.column_stack(
+            (np.cos(gaze_direction), np.sin(gaze_direction))
         )
 
-    return viewed
+    from neurospatial.geometry import boundary_geometry, search_distance
+
+    assert env is not None
+    binning, arena = env.binning, env.arena
+    if max_distance is None:
+        max_distance = search_distance(
+            boundary_geometry(binning, arena, boundary_source), positions
+        )
+    return boundary_view(
+        binning,
+        arena,
+        positions,
+        gaze_direction,
+        max_distance,
+        boundary_source,
+        CallIndexes(),
+    )
+
+
+def _check_samples(
+    call: str, positions: NDArray[np.float64], headings: NDArray[np.float64]
+) -> None:
+    """Require positions ``(n_time, 2)`` and one heading per position."""
+    if positions.ndim != 2 or positions.shape[1] != 2:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs positions of shape (n_time, 2); got "
+                f"{positions.shape}.",
+                fix="pass one (x, y) row per sample",
+            )
+        )
+    if headings.shape != (len(positions),):
+        raise ValueError(
+            _format_error(
+                f"{call}() needs one heading per position, shape "
+                f"({len(positions)},); got {headings.shape}.",
+                why="Why: each sample's gaze starts at its position and points "
+                "along its heading.",
+                fix="pass headings with the same length as positions (NaN marks "
+                "a missing heading)",
+            )
+        )
 
 
 def _ray_cast_to_boundary(
