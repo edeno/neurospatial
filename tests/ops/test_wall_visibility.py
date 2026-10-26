@@ -204,7 +204,7 @@ def test_cues_and_viewed_bins_are_occluded_by_internal_wall():
     cues = np.array([[3.5, 4.5], [5.0, 4.5], [7.5, 4.5]])
     visible, _, _ = visible_cues(env, observer, 0.0, cues)
     np.testing.assert_array_equal(visible, [True, True, False])
-    result = compute_viewshed(env, observer, 0.0, n_rays=72)
+    result = compute_viewshed(env, observer, 0.0)
     assert np.all(env.bin_centers[result.visible_bins, 0] < 5)
 
 
@@ -363,7 +363,7 @@ def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
         env, np.tile(point, (72, 1)), headings, gaze_model="ray_cast"
     )
     assert np.all((bins < 50) & (bins >= 0))
-    assert np.all(compute_viewshed(env, point, a, n_rays=72).visible_bins < 50)
+    assert np.all(compute_viewshed(env, point, a).visible_bins < 50)
 
 
 def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():

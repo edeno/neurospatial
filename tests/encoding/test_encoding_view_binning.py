@@ -5,7 +5,7 @@ and gaze data to spike counts and view occupancy arrays.
 
 The binning layer:
 - Create helper to compute view occupancy (time viewing each spatial bin)
-- Support gaze models: "fixed_distance", "ray_cast", "boundary"
+- Support gaze models: "fixed_distance", "ray_cast"
 - Convert (spike_times, times, positions, headings, gaze_model) -> (spike_counts, occupancy)
 """
 
@@ -267,25 +267,6 @@ class TestComputeViewOccupancyGazeModels:
 
         assert occupancy.shape == (simple_env.n_bins,)
 
-    def test_boundary_gaze_model(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-    ) -> None:
-        """'boundary' gaze model should work."""
-        from neurospatial.encoding._view_counts import compute_occupancy
-
-        occupancy = compute_occupancy(
-            simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            gaze_model="boundary",
-            boundary_source="analysis",
-        )
-
-        assert occupancy.shape == (simple_env.n_bins,)
-
     def test_different_gaze_models_give_different_results(
         self,
         simple_env: Environment,
@@ -539,27 +520,6 @@ class TestBinViewSpikeTrainGazeModels:
             trajectory_data["positions"],
             trajectory_data["headings"],
             gaze_model="ray_cast",
-            boundary_source="analysis",
-        )
-
-        assert spike_counts.shape == (simple_env.n_bins,)
-
-    def test_boundary_gaze_model(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        single_neuron_spikes: NDArray[np.float64],
-    ) -> None:
-        """'boundary' gaze model should work."""
-        from neurospatial.encoding._view_counts import bin_view_spike_train
-
-        spike_counts = bin_view_spike_train(
-            simple_env,
-            single_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            gaze_model="boundary",
             boundary_source="analysis",
         )
 
@@ -1322,7 +1282,7 @@ class TestGazeModelGeometry:
     The view binning maps a viewed location (computed by
     ``compute_viewed_location`` with the chosen ``gaze_model``) into a spatial
     bin. These tests pin the geometry the audit found only smoke-tested:
-    ``boundary``/``ray_cast`` clip the gaze ray at the environment wall (valid
+    ``ray_cast`` clips the gaze ray at the environment wall (valid
     bins), while ``fixed_distance`` projects a fixed distance ahead and can land
     outside the environment (bin index -1).
     """
@@ -1342,7 +1302,7 @@ class TestGazeModelGeometry:
         viewed_boundary = compute_viewed_location(
             positions,
             headings,
-            method="boundary",
+            method="ray_cast",
             view_distance=10.0,
             env=rectangular_env,
             max_distance=150.0,
@@ -1363,40 +1323,3 @@ class TestGazeModelGeometry:
         assert np.all(bins_boundary >= 0)
         # fixed_distance projects 10 cm past the wall -> mostly outside the env.
         assert np.mean(bins_fixed < 0) >= 0.5
-
-    def test_ray_cast_matches_boundary_in_convex_env(self, rectangular_env):
-        from neurospatial.ops.visibility import compute_viewed_location
-
-        rng = np.random.default_rng(1)
-        positions = rng.uniform(20.0, 80.0, (200, 2))
-        headings = rng.uniform(-np.pi, np.pi, 200)
-
-        viewed_boundary = compute_viewed_location(
-            positions,
-            headings,
-            method="boundary",
-            view_distance=10.0,
-            env=rectangular_env,
-            max_distance=150.0,
-            boundary_source="analysis",
-        )
-        viewed_ray = compute_viewed_location(
-            positions,
-            headings,
-            method="ray_cast",
-            view_distance=10.0,
-            env=rectangular_env,
-            max_distance=150.0,
-            boundary_source="analysis",
-        )
-
-        # In a convex env with no obstacles both methods stop at the same wall.
-        valid = ~(
-            np.isnan(viewed_boundary).any(axis=1) | np.isnan(viewed_ray).any(axis=1)
-        )
-        assert valid.sum() > 0
-        np.testing.assert_allclose(
-            viewed_boundary[valid],
-            viewed_ray[valid],
-            atol=rectangular_env.bin_sizes.max(),
-        )

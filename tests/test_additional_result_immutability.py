@@ -282,11 +282,10 @@ CASES = [
     (
         ViewshedResult,
         {
-            "visible_bins": np.array([0, 2], dtype=np.intp),
+            "visibility_map": np.array([1.0, 0.0, 1.0]),
             "visible_cues": np.array([1], dtype=np.intp),
             "cue_distances": np.array([3.0]),
             "cue_bearings": np.array([0.5]),
-            "occlusion_map": np.array([0.0, 1.0]),
         },
     ),
     (

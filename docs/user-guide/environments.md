@@ -729,18 +729,21 @@ observer sees the side it faces. A cue at the first contact is visible; a cue
 behind it is occluded. A lost tracking frame is not an occluded view:
 `visible_cues()` and `compute_view_field()` refuse a NaN or infinite position
 or heading, and `compute_viewshed_trajectory()` keeps such frames missing,
-with an `occlusion_map` of NaN. Stored affine frames
+with a `visibility_map` of NaN. Stored affine frames
 use locally bounded projection errors for boundary contact. Physical mode only
 uses supplied wall evidence; inferred domains do not add unasserted outer walls.
 
-`compute_viewshed()` still samples rays to determine visible-bin coverage;
-wall intersections and cue line of sight use geometric intersections. Missing
-analysis bins do not occlude physical rays, and the sampled bins stop strictly
-before wall contact. Visibility maps remain an approximation whose angular
-coverage depends on `n_rays`.
+`compute_viewshed()` uses the same test for bins as for cues. A bin is
+visible when the direction to its center lies inside the field of view and the
+straight line to its center crosses no wall. The test is exact for each bin, so
+the result does not depend on bin size or distance. A bin whose center is
+hidden counts as hidden even if a corner of it is in view. Missing analysis
+bins do not occlude physical sight lines. The result's `visibility_map` is 1
+for visible bins and 0 for hidden ones. Averaging it over observed frames gives
+the fraction of time each bin was in view.
 
 The source choice is forwarded by the single/population view encoders, shuffle
-tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"` or `"boundary"`,
+tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"`,
 encoding assigns a wall hit to the bin just inside the observer's side. A hit
 outside the retained analysis support makes physical view encoding unavailable
 and raises with guidance when it contributes to the selected recording time.

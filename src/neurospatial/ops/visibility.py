@@ -2,25 +2,8 @@
 
 Provides tools for computing what an animal can see from any position in
 an environment, including field-of-view constraints, line-of-sight checks,
-and viewshed analysis.
-
-Import Paths
-------------
-After package reorganization (v0.4.0+), use::
-
-    from neurospatial.ops.visibility import (
-        FieldOfView,
-        ViewshedResult,
-        compute_viewed_location,
-        compute_viewshed,
-        compute_view_field,
-        compute_viewshed_trajectory,
-        visibility_occupancy,
-        visible_cues,
-    )
-
-    # Or import from the ops package
-    from neurospatial.ops import FieldOfView, compute_viewshed
+and viewshed analysis. Import from ``neurospatial.ops.visibility`` or
+``neurospatial.ops``.
 
 Common Use Cases
 ----------------
@@ -33,10 +16,13 @@ Which Function Should I Use?
 ----------------------------
 **Computing viewed location from gaze direction?**
     Use ``compute_viewed_location()`` with method="fixed_distance" for a
-    point at fixed distance, or method="ray_cast" for boundary intersection.
+    point at fixed distance, or method="ray_cast" for the first wall along
+    the gaze.
 
 **Need full visibility analysis from a position?**
-    Use ``compute_viewshed()`` to get all visible bins, boundaries, and cues.
+    Use ``compute_viewshed()`` to get the visible bins and cues. A bin is
+    visible when its center is inside the field of view with a clear line of
+    sight.
 
 **Just need a binary visibility mask?**
     Use ``compute_view_field()`` for a simple bool array of visible bins.
@@ -51,9 +37,9 @@ Species-Specific Field of View
 ------------------------------
 Use ``FieldOfView`` presets for biologically realistic constraints:
 
-- ``FieldOfView.rat()`` - ~300 degree FOV with blind spot behind
-- ``FieldOfView.mouse()`` - Similar to rat
-- ``FieldOfView.primate()`` - ~180 degree forward-facing FOV
+- ``FieldOfView.rat()`` - 320 degree FOV with a 40 degree blind spot behind
+- ``FieldOfView.mouse()`` - 310 degree FOV, similar to rat
+- ``FieldOfView.primate()`` - 180 degree forward-facing FOV
 
 Coordinate Conventions
 ----------------------
@@ -61,7 +47,7 @@ Coordinate Conventions
 - 0 radians = directly ahead
 - pi/2 radians = to the left
 - -pi/2 radians = to the right
-- +/-pi radians = behind
+- +/-pi radians = behind (reported as +pi)
 
 This matches the convention in ``neurospatial.ops.egocentric``.
 
@@ -76,12 +62,12 @@ References
 See Also
 --------
 neurospatial.ops.egocentric : Egocentric coordinate transforms
-neurospatial.spatial_view_field : Spatial view field computation
+neurospatial.encoding.compute_view_rate : Firing rate by viewed location
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -93,12 +79,13 @@ from neurospatial.geometry import (
     CallIndexes,
     batch_line_of_sight_clear,
     boundary_view,
-    locate,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from neurospatial.geometry import Arena, Binning, LookupIndexes
-    from neurospatial.ops._protocols import BinCentersConsumer, BinningConsumer
+    from neurospatial.ops._protocols import BinningConsumer, BinsConsumer
 
 __all__ = [
     "FieldOfView",
@@ -116,23 +103,32 @@ __all__ = [
 class FieldOfView:
     """Field of view specification for visibility analysis.
 
-    Defines the angular extent of what an animal can see, with support for
-    asymmetric fields, binocular regions, and blind spots.
+    Defines the egocentric angular extent of what an animal can see, with an
+    optional binocular region straight ahead. Angles are egocentric radians:
+    0 = ahead, +pi/2 = left, -pi/2 = right, +/-pi = behind. The field of view
+    is the closed range ``[right_angle, left_angle]``; the directions behind
+    the animal outside it form the blind spot.
 
     Attributes
     ----------
     left_angle : float
-        Maximum angle to the left in radians. Positive value (e.g., pi/2 = 90
-        degrees left).
+        Leftmost visible direction in radians, in ``[right_angle, pi]``
+        (e.g., pi/2 = 90 degrees left).
     right_angle : float
-        Maximum angle to the right in radians. Negative value (e.g., -pi/2 =
-        90 degrees right).
+        Rightmost visible direction in radians, in ``[-pi, left_angle]``
+        (e.g., -pi/2 = 90 degrees right).
     binocular_half_angle : float, optional
-        Half-angle of binocular overlap region centered on 0. Default is 0.0
-        (no binocular region).
-    blind_spot_behind : float, optional
-        Half-angle of blind spot centered on +-pi (behind). Default is 0.0
-        (no blind spot).
+        Half-angle in radians of the binocular overlap region centered on 0
+        (straight ahead). Default is 0.0 (no binocular region). A positive
+        value must fit inside the field of view:
+        ``binocular_half_angle <= min(left_angle, -right_angle)``.
+
+    Raises
+    ------
+    ValueError
+        If an angle is not finite, the angles are not ordered
+        ``-pi <= right_angle <= left_angle <= pi``, or the binocular region
+        is negative or extends past the field of view.
 
     Examples
     --------
@@ -148,12 +144,12 @@ class FieldOfView:
     Use species-specific presets:
 
     >>> fov_rat = FieldOfView.rat()
-    >>> 290 < fov_rat.total_angle_degrees < 340
-    True
+    >>> round(fov_rat.total_angle_degrees)  # a 40-degree blind spot behind
+    320
 
     >>> fov_primate = FieldOfView.primate()
-    >>> 150 < fov_primate.total_angle_degrees < 200
-    True
+    >>> round(fov_primate.total_angle_degrees)
+    180
 
     Check if an angle is within the field of view:
 
@@ -162,29 +158,65 @@ class FieldOfView:
     True
     >>> fov.contains_angle(np.pi)  # Behind
     False
+
+    A field of view covering only the left side:
+
+    >>> left_only = FieldOfView(left_angle=np.pi / 2, right_angle=0.1)
+    >>> left_only.contains_angle(0.5), left_only.contains_angle(-0.5)
+    (True, False)
     """
 
     left_angle: float
     right_angle: float
     binocular_half_angle: float = 0.0
-    blind_spot_behind: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate field of view parameters."""
-        if self.left_angle < self.right_angle:
+        angles = {
+            "left_angle": self.left_angle,
+            "right_angle": self.right_angle,
+            "binocular_half_angle": self.binocular_half_angle,
+        }
+        bad = [name for name, value in angles.items() if not np.isfinite(value)]
+        if bad:
             raise ValueError(
-                f"left_angle ({self.left_angle:.3f}) must be >= right_angle "
-                f"({self.right_angle:.3f}). "
-                "Note: left_angle should be positive, right_angle negative."
+                _format_error(
+                    "FieldOfView needs finite angles; got "
+                    + ", ".join(f"{name}={angles[name]}" for name in bad)
+                    + ".",
+                    fix="give every angle as a finite number of radians",
+                )
             )
-        if self.binocular_half_angle < 0:
+        if not -np.pi <= self.right_angle <= self.left_angle <= np.pi:
             raise ValueError(
-                f"binocular_half_angle must be non-negative, "
-                f"got {self.binocular_half_angle}"
+                _format_error(
+                    "FieldOfView needs -pi <= right_angle <= left_angle <= pi; "
+                    f"got left_angle={self.left_angle:.3f}, "
+                    f"right_angle={self.right_angle:.3f}.",
+                    why="Why: angles are egocentric radians (0 = ahead, "
+                    "+pi/2 = left, -pi/2 = right), and the field of view is "
+                    "the range from right_angle to left_angle.",
+                    fix="pass the left edge as left_angle and the right edge "
+                    "as right_angle, both in [-pi, pi]; a full circle is "
+                    "left_angle=pi, right_angle=-pi",
+                )
             )
-        if self.blind_spot_behind < 0:
+        half = self.binocular_half_angle
+        if half < 0 or (
+            half > 0 and not self.right_angle <= -half <= half <= self.left_angle
+        ):
             raise ValueError(
-                f"blind_spot_behind must be non-negative, got {self.blind_spot_behind}"
+                _format_error(
+                    f"FieldOfView binocular_half_angle={half:.3f} does not fit "
+                    f"in the field of view [{self.right_angle:.3f}, "
+                    f"{self.left_angle:.3f}].",
+                    why="Why: the binocular region is the range "
+                    "[-binocular_half_angle, binocular_half_angle] straight "
+                    "ahead that both eyes see, so it lies inside the field of "
+                    "view.",
+                    fix="pass 0 for no binocular region, or a half-angle no "
+                    "larger than min(left_angle, -right_angle)",
+                )
             )
 
     @classmethod
@@ -194,7 +226,7 @@ class FieldOfView:
         Parameters
         ----------
         half_angle : float
-            Half-angle of the field of view in radians.
+            Half-angle of the field of view in radians, in ``[0, pi]``.
             The total FOV will be 2 * half_angle.
 
         Returns
@@ -216,9 +248,9 @@ class FieldOfView:
     def rat(cls) -> FieldOfView:
         """Field of view for a rat.
 
-        Rats have a ~300-320 degree field of view with a ~40-60 degree
-        blind spot directly behind, and a ~40-60 degree binocular region
-        in front.
+        Rats see about 320 degrees, with a 40-degree blind spot directly
+        behind (20 degrees each side) and a binocular region of about 50
+        degrees in front.
 
         Returns
         -------
@@ -229,34 +261,29 @@ class FieldOfView:
         ----------
         Wallace, D. J., et al. (2013). Vision Research, 78, 1-10.
         """
-        # ~320 degree total FOV (160 each side from center)
-        # ~20 degree blind spot each side behind
-        # ~25 degree binocular half-angle
         return cls(
-            left_angle=np.pi * 160 / 180,  # 160 degrees
+            left_angle=np.pi * 160 / 180,
             right_angle=-np.pi * 160 / 180,
-            binocular_half_angle=np.pi * 25 / 180,  # 25 degrees
-            blind_spot_behind=np.pi * 20 / 180,  # 20 degrees each side
+            binocular_half_angle=np.pi * 25 / 180,
         )
 
     @classmethod
     def mouse(cls) -> FieldOfView:
         """Field of view for a mouse.
 
-        Mice have a similar field of view to rats, with a large lateral
-        field and small blind spot behind.
+        Mice have a field of view similar to rats: about 310 degrees, with a
+        50-degree blind spot directly behind and a binocular region of about
+        40 degrees in front.
 
         Returns
         -------
         FieldOfView
             Mouse-like field of view.
         """
-        # Similar to rat
         return cls(
-            left_angle=np.pi * 155 / 180,  # 155 degrees
+            left_angle=np.pi * 155 / 180,
             right_angle=-np.pi * 155 / 180,
-            binocular_half_angle=np.pi * 20 / 180,  # 20 degrees
-            blind_spot_behind=np.pi * 25 / 180,  # 25 degrees each side
+            binocular_half_angle=np.pi * 20 / 180,
         )
 
     @classmethod
@@ -272,10 +299,9 @@ class FieldOfView:
             Primate-like field of view.
         """
         return cls(
-            left_angle=np.pi * 90 / 180,  # 90 degrees
+            left_angle=np.pi * 90 / 180,
             right_angle=-np.pi * 90 / 180,
-            binocular_half_angle=np.pi * 60 / 180,  # 60 degrees
-            blind_spot_behind=0.0,  # No additional blind spot
+            binocular_half_angle=np.pi * 60 / 180,
         )
 
     @property
@@ -285,7 +311,7 @@ class FieldOfView:
         Returns
         -------
         float
-            Total angle from left_angle to right_angle.
+            Angle from right_angle to left_angle, in ``[0, 2 * pi]``.
         """
         return self.left_angle - self.right_angle
 
@@ -308,7 +334,9 @@ class FieldOfView:
         Parameters
         ----------
         angle : float or NDArray
-            Egocentric angle(s) in radians. 0=ahead, pi/2=left, -pi/2=right.
+            Egocentric angle(s) in radians: 0 = ahead, pi/2 = left,
+            -pi/2 = right. Wrapped to (-pi, pi] first, so directly behind is
+            +pi. NaN is never inside.
 
         Returns
         -------
@@ -326,21 +354,8 @@ class FieldOfView:
         False
         """
         angle = np.asarray(angle)
-
-        # Wrap angle to (-pi, pi]
-        wrapped = (angle + np.pi) % (2 * np.pi) - np.pi
-
-        # Check if within left/right bounds
+        wrapped = _wrap_egocentric(angle)
         in_bounds = (wrapped <= self.left_angle) & (wrapped >= self.right_angle)
-
-        # Check if in blind spot behind
-        if self.blind_spot_behind > 0:
-            # Blind spot is centered on +-pi
-            # An angle is in blind spot if |angle| > pi - blind_spot_behind
-            in_blind_spot = np.abs(wrapped) > (np.pi - self.blind_spot_behind)
-            in_bounds = in_bounds & ~in_blind_spot
-
-        # Return scalar if input was scalar
         if angle.ndim == 0:
             return bool(in_bounds)
         return in_bounds
@@ -353,7 +368,7 @@ class FieldOfView:
         Parameters
         ----------
         angle : float or NDArray
-            Egocentric angle(s) in radians.
+            Egocentric angle(s) in radians, wrapped to (-pi, pi] first.
 
         Returns
         -------
@@ -378,13 +393,15 @@ class FieldOfView:
             return np.zeros_like(angle, dtype=bool) if np.ndim(angle) > 0 else False
 
         angle = np.asarray(angle)
-        wrapped = (angle + np.pi) % (2 * np.pi) - np.pi
-
-        in_binocular = np.abs(wrapped) <= self.binocular_half_angle
-
+        in_binocular = np.abs(_wrap_egocentric(angle)) <= self.binocular_half_angle
         if angle.ndim == 0:
             return bool(in_binocular)
         return in_binocular
+
+
+def _wrap_egocentric(angle: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Wrap egocentric angles to (-pi, pi], so directly behind is +pi."""
+    return np.asarray((angle - np.pi) % (-2 * np.pi) + np.pi)
 
 
 @dataclass(frozen=True, eq=False)
@@ -393,67 +410,116 @@ class ViewshedResult(ReadOnlyArraysMixin):
 
     Attributes
     ----------
-    visible_bins : NDArray[np.intp]
-        Indices of environment bins visible from the observer position.
-    visible_cues : NDArray[np.intp]
-        Indices of visible cues (if cue_positions were provided).
-    cue_distances : NDArray[np.float64]
-        Distances to visible cues.
-    cue_bearings : NDArray[np.float64]
-        Egocentric bearings to visible cues.
-    occlusion_map : NDArray[np.float64]
-        Per-bin occlusion score [0, 1] where 1 means fully visible. NaN in
-        every bin for a missing observation (a NaN or infinite position or
-        heading), whose visible bins and cues are then empty.
-    _total_bins : int, optional
-        Total number of bins in the environment (for computing fractions).
+    visibility_map : NDArray[np.float64], shape (n_bins,)
+        1.0 where the bin is visible, 0.0 where it is outside the field of
+        view or hidden behind a wall. NaN in every bin for a missing
+        observation (a NaN or infinite position or heading). Averaging the
+        maps of observed frames gives the fraction of frames each bin was in
+        view.
+    visible_cues : NDArray[np.intp], shape (n_visible_cues,)
+        Indices into ``cue_positions`` of the visible cues, increasing.
+    cue_distances : NDArray[np.float64], shape (n_visible_cues,)
+        Distance from the observer to each visible cue, in environment units.
+    cue_bearings : NDArray[np.float64], shape (n_visible_cues,)
+        Egocentric bearing of each visible cue in radians, (-pi, pi]:
+        0 = ahead, +pi/2 = left, -pi/2 = right.
+
+    Raises
+    ------
+    ValueError
+        If ``visibility_map`` is not a non-empty 1-D array of 1, 0 and NaN
+        (all NaN or none), the cue arrays differ in length, the cue indices
+        are not increasing non-negative integers, or a missing observation
+        has visible cues.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.ops.visibility import ViewshedResult
     >>> result = ViewshedResult(
-    ...     visible_bins=np.array([0, 1, 2]),
-    ...     visible_cues=np.array([]),
+    ...     visibility_map=np.array([1.0, 1.0, 0.0, 1.0]),
+    ...     visible_cues=np.array([], dtype=np.intp),
     ...     cue_distances=np.array([]),
     ...     cue_bearings=np.array([]),
-    ...     occlusion_map=np.zeros(10),
     ... )
-    >>> result.n_visible_bins
-    3
+    >>> result.visible_bins
+    array([0, 1, 3])
+    >>> result.visibility_fraction
+    0.75
     """
 
-    visible_bins: NDArray[np.intp]
+    visibility_map: NDArray[np.float64]
     visible_cues: NDArray[np.intp]
     cue_distances: NDArray[np.float64]
     cue_bearings: NDArray[np.float64]
-    occlusion_map: NDArray[np.float64]
-    _total_bins: int = field(default=0)
 
     def __post_init__(self) -> None:
-        """Own the arrays as read-only copies."""
+        """Check that the fields describe one viewshed, then own the arrays."""
+        problems = self._inconsistencies()
+        if problems:
+            raise ValueError(
+                "ViewshedResult fields are inconsistent: " + "; ".join(problems) + "."
+            )
         self._own_arrays()
+
+    def _inconsistencies(self) -> list[str]:
+        """List every way the fields disagree with each other."""
+        problems: list[str] = []
+        visibility = np.asarray(self.visibility_map, dtype=np.float64)
+        if visibility.ndim != 1 or visibility.size == 0:
+            problems.append("visibility_map needs shape (n_bins,) with n_bins >= 1")
+        else:
+            missing = np.isnan(visibility)
+            if not np.all((visibility == 0) | (visibility == 1) | missing):
+                problems.append("visibility_map holds only 1.0, 0.0 or NaN")
+            elif missing.any() and not missing.all():
+                problems.append(
+                    "visibility_map is NaN in every bin (a missing observation) "
+                    "or in none"
+                )
+            elif missing.all() and np.size(self.visible_cues):
+                problems.append("a missing observation has no visible cues")
+        cues = np.asarray(self.visible_cues)
+        n_cues = cues.shape
+        if cues.ndim != 1:
+            problems.append("visible_cues needs shape (n_visible_cues,)")
+        elif cues.size and not (
+            np.issubdtype(cues.dtype, np.integer)
+            and cues[0] >= 0
+            and np.all(np.diff(cues) > 0)
+        ):
+            problems.append("visible_cues are increasing non-negative cue indices")
+        for name in ("cue_distances", "cue_bearings"):
+            if np.shape(getattr(self, name)) != n_cues:
+                problems.append(f"{name} needs shape {n_cues}, like visible_cues")
+        return problems
+
+    @property
+    def visible_bins(self) -> NDArray[np.intp]:
+        """Indices of the visible bins, increasing; empty when missing."""
+        return np.flatnonzero(self.visibility_map == 1.0)
+
+    @property
+    def n_bins(self) -> int:
+        """Number of bins in the environment."""
+        return int(self.visibility_map.size)
 
     @property
     def n_visible_bins(self) -> int:
         """Number of visible bins."""
-        return len(self.visible_bins)
+        return int(np.count_nonzero(self.visibility_map == 1.0))
 
     @property
     def visibility_fraction(self) -> float:
-        """Fraction of total bins that are visible.
+        """Fraction of the environment's bins that are visible.
 
         Returns
         -------
         float
-            Fraction in [0, 1]. Returns 0 if _total_bins not set, and NaN
-            for a missing observation (``occlusion_map`` all NaN).
+            Fraction in [0, 1], or NaN for a missing observation
+            (``visibility_map`` all NaN).
         """
-        if self._total_bins == 0:
-            return 0.0
-        if self.occlusion_map.size and np.all(np.isnan(self.occlusion_map)):
-            return float("nan")
-        return self.n_visible_bins / self._total_bins
+        return float(np.mean(self.visibility_map))
 
     @property
     def n_visible_cues(self) -> int:
@@ -487,7 +553,7 @@ class ViewshedResult(ReadOnlyArraysMixin):
             self.cue_bearings[mask],
         )
 
-    def visible_bin_centers(self, env: BinCentersConsumer) -> NDArray[np.float64]:
+    def visible_bin_centers(self, env: BinsConsumer) -> NDArray[np.float64]:
         """Get allocentric positions of visible bin centers.
 
         Parameters
@@ -499,7 +565,22 @@ class ViewshedResult(ReadOnlyArraysMixin):
         -------
         NDArray[np.float64], shape (n_visible_bins, n_dims)
             Allocentric positions of visible bin centers.
+
+        Raises
+        ------
+        ValueError
+            If ``env`` has a different number of bins than this viewshed.
         """
+        if env.n_bins != self.n_bins:
+            raise ValueError(
+                _format_error(
+                    f"This viewshed covers {self.n_bins} bins, but env has "
+                    f"{env.n_bins}.",
+                    why="Why: visible bin indices only name bin centers in the "
+                    "environment the viewshed was computed in.",
+                    fix="pass the environment given to compute_viewshed",
+                )
+            )
         return env.bin_centers[self.visible_bins]
 
 
@@ -507,11 +588,11 @@ def compute_viewed_location(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    method: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    method: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     env: BinningConsumer | None = None,
-    max_distance: float = 100.0,
+    max_distance: float | None = None,
     boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.float64]:
     """Compute the location being viewed by the animal.
@@ -519,24 +600,27 @@ def compute_viewed_location(
     Parameters
     ----------
     positions : NDArray[np.float64], shape (n_time, 2)
-        Animal positions in allocentric coordinates.
+        Animal positions in allocentric coordinates (environment units).
     headings : NDArray[np.float64], shape (n_time,)
-        Animal heading at each time (radians, 0=East).
-    method : {"fixed_distance", "ray_cast", "boundary"}, default "fixed_distance"
+        Animal heading at each time (allocentric radians: 0 = East,
+        +pi/2 = North).
+    method : {"fixed_distance", "ray_cast"}, default "fixed_distance"
         Method for computing viewed location:
-        - "fixed_distance": Point at fixed distance in gaze direction
-        - "ray_cast": Intersection with environment boundary
-        - "boundary": Nearest boundary point in gaze direction
-    view_distance : float, default 10.0
-        Distance for fixed_distance method.
-    gaze_offsets : NDArray[np.float64], shape (n_time,), optional
-        Offset from heading to gaze direction (e.g., eye tracking).
-        If None, gaze is aligned with heading.
-    env : Environment, optional
-        Required for ray_cast and boundary methods.
-    max_distance : float, default 100.0
-        Maximum ray distance for ray_cast method.
 
+        - "fixed_distance": the point ``view_distance`` ahead along the gaze.
+        - "ray_cast": the first wall the gaze ray reaches.
+    view_distance : float, default 10.0
+        Distance in environment units (e.g. cm) for the fixed_distance method.
+    gaze_offsets : NDArray[np.float64], shape (n_time,), optional
+        Gaze direction relative to the heading, in egocentric radians
+        (0 = ahead, + = left, - = right), e.g. from eye tracking. If None,
+        gaze is aligned with heading.
+    env : Environment, optional
+        Required for the ray_cast method.
+    max_distance : float or None, default None
+        Longest gaze ray for the ray_cast method, in environment units.
+        ``None`` searches far enough to reach every wall: twice the diagonal
+        of the box enclosing the walls and the positions.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
@@ -545,18 +629,22 @@ def compute_viewed_location(
     Returns
     -------
     NDArray[np.float64], shape (n_time, 2)
-        Viewed location in allocentric coordinates. NaN if ray doesn't
-        intersect environment.
+        Viewed location in allocentric coordinates. NaN for a missing
+        observation and, with ray_cast, where no wall lies within
+        ``max_distance`` or the observer is outside the walls.
 
     Raises
     ------
     ValueError
-        If method is invalid, ray_cast/boundary has no environment, or the
-        requested search distance is not finite and positive.
+        If method is invalid, ray_cast has no environment, the shapes of
+        ``positions``, ``headings`` and ``gaze_offsets`` disagree, or
+        ``max_distance`` is not finite and positive.
 
     Examples
     --------
     >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Environment
     >>> from neurospatial.ops.visibility import compute_viewed_location
 
     Fixed distance method:
@@ -568,91 +656,85 @@ def compute_viewed_location(
     ... )
     >>> np.allclose(viewed[0], [10.0, 0.0])
     True
+
+    The first wall along the gaze, however far away:
+
+    >>> env = Environment.from_polygon(box(0, 0, 300, 300), bin_size=10.0)
+    >>> compute_viewed_location(
+    ...     np.array([[10.0, 150.0]]), np.array([0.0]), method="ray_cast", env=env
+    ... )
+    array([[300., 150.]])
     """
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    if method not in ("fixed_distance", "ray_cast", "boundary"):
+    if method not in ("fixed_distance", "ray_cast"):
         raise ValueError(
-            f"method must be 'fixed_distance', 'ray_cast', or 'boundary', "
-            f"got '{method}'"
+            f"method must be 'fixed_distance' or 'ray_cast', got {method!r}."
         )
-
-    if method in ("ray_cast", "boundary") and env is None:
-        raise ValueError(f"env is required when method='{method}'")
-
-    n_time = len(positions)
-
-    # Compute gaze direction
-    gaze_direction = headings + gaze_offsets if gaze_offsets is not None else headings
-
-    viewed = np.full((n_time, 2), np.nan, dtype=np.float64)
+    if method == "ray_cast" and env is None:
+        raise ValueError("env is required when method='ray_cast'")
+    _check_samples("compute_viewed_location", positions, headings)
+    gaze_direction = headings
+    if gaze_offsets is not None:
+        gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64)
+        if gaze_offsets.shape != headings.shape:
+            raise ValueError(
+                _format_error(
+                    "compute_viewed_location() needs one gaze offset per "
+                    f"heading, shape {headings.shape}; got {gaze_offsets.shape}.",
+                    fix="pass gaze_offsets with the same length as headings",
+                )
+            )
+        gaze_direction = headings + gaze_offsets
 
     if method == "fixed_distance":
-        # Simple: point at fixed distance in gaze direction
-        viewed[:, 0] = positions[:, 0] + view_distance * np.cos(gaze_direction)
-        viewed[:, 1] = positions[:, 1] + view_distance * np.sin(gaze_direction)
-
-    else:
-        assert env is not None
-        viewed = boundary_view(
-            env.binning,
-            env.arena,
-            positions,
-            gaze_direction,
-            max_distance,
-            boundary_source,
-            CallIndexes(),
+        return positions + view_distance * np.column_stack(
+            (np.cos(gaze_direction), np.sin(gaze_direction))
         )
 
-    return viewed
+    from neurospatial.geometry import boundary_geometry, search_distance
 
-
-def _ray_cast_to_boundary(
-    env: BinningConsumer,
-    origin: NDArray[np.float64],
-    direction: float,
-    max_distance: float = 100.0,
-    n_steps: int = 100,
-    *,
-    boundary_source: Literal["physical", "analysis"] = "physical",
-) -> NDArray[np.float64] | None:
-    """Cast a ray from origin in direction until it exits the environment.
-
-    Uses exact geometric intersection; n_steps is retained for compatibility.
-
-    Parameters
-    ----------
-    env : Environment
-        The environment to ray cast within.
-    origin : NDArray[np.float64], shape (2,)
-        Starting position.
-    direction : float
-        Direction in radians (0=East).
-    max_distance : float
-        Maximum distance to search.
-    n_steps : int
-        Retained for compatibility; geometric intersections do not use steps.
-
-    boundary_source : {'physical', 'analysis'}, default='physical'
-        Declared physical walls, or explicitly requested analysis-cell boundaries.
-        Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray.
-
-    Returns
-    -------
-    NDArray[np.float64] or None
-        Intersection point, or None if no intersection found.
-    """
-    viewed = compute_viewed_location(
-        np.asarray(origin).reshape(1, 2),
-        np.array([direction]),
-        method="ray_cast",
-        env=env,
-        max_distance=max_distance,
-        boundary_source=boundary_source,
+    assert env is not None
+    binning, arena = env.binning, env.arena
+    if max_distance is None:
+        max_distance = search_distance(
+            boundary_geometry(binning, arena, boundary_source), positions
+        )
+    return boundary_view(
+        binning,
+        arena,
+        positions,
+        gaze_direction,
+        max_distance,
+        boundary_source,
+        CallIndexes(),
     )
-    return None if not np.all(np.isfinite(viewed[0])) else viewed[0]
+
+
+def _check_samples(
+    call: str, positions: NDArray[np.float64], headings: NDArray[np.float64]
+) -> None:
+    """Require positions ``(n_time, 2)`` and one heading per position."""
+    if positions.ndim != 2 or positions.shape[1] != 2:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs positions of shape (n_time, 2); got "
+                f"{positions.shape}.",
+                fix="pass one (x, y) row per sample",
+            )
+        )
+    if headings.shape != (len(positions),):
+        raise ValueError(
+            _format_error(
+                f"{call}() needs one heading per position, shape "
+                f"({len(positions)},); got {headings.shape}.",
+                why="Why: each sample's gaze starts at its position and points "
+                "along its heading.",
+                fix="pass headings with the same length as positions (NaN marks "
+                "a missing heading)",
+            )
+        )
 
 
 def compute_viewshed(
@@ -661,32 +743,31 @@ def compute_viewshed(
     heading: float,
     *,
     fov: FieldOfView | float | None = None,
-    n_rays: int = 360,
     cue_positions: NDArray[np.float64] | None = None,
     boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> ViewshedResult:
     """Compute visible bins from an observer position.
 
-    Casts rays from the observer position to determine which bins are
-    visible, optionally restricted by field of view.
+    A bin is visible when the direction from the observer to the bin center
+    lies inside the field of view and the straight line to the center
+    crosses no wall. Each bin is tested exactly, so the result does not
+    depend on bin size or on the distance to the bin. Cues use the same
+    test.
 
     Parameters
     ----------
     env : Environment
         The environment to analyze.
     position : NDArray[np.float64], shape (2,)
-        Observer position in allocentric coordinates.
+        Observer position in allocentric coordinates (environment units).
     heading : float
-        Observer heading in radians (0=East).
+        Observer heading in radians (allocentric: 0 = East, +pi/2 = North).
     fov : FieldOfView, float, or None, default None
         Field of view constraint. If FieldOfView, uses its bounds.
-        If float, interpreted as full angle in radians.
-        If None, uses full 360 degrees.
-    n_rays : int, default 360
-        Number of rays to cast (higher = more accurate).
+        If float, the total angle in radians, in (0, 2*pi], centered on the
+        heading. If None, uses full 360 degrees.
     cue_positions : NDArray[np.float64], shape (n_cues, 2), optional
-        Positions of cues to check visibility for.
-
+        Positions of cues to check visibility for; must be finite.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
@@ -695,77 +776,166 @@ def compute_viewshed(
     Returns
     -------
     ViewshedResult
-        Viewshed analysis result with visible bins, boundaries, and cues.
+        Viewshed analysis result with visible bins and cues.
         For a NaN or infinite ``position`` or ``heading`` (a missing
-        observation) its ``occlusion_map`` is NaN in every bin. An observer
+        observation) its ``visibility_map`` is NaN in every bin. An observer
         outside the region the boundary source covers sees nothing: no
-        visible bins or cues and a zero ``occlusion_map``.
+        visible bins or cues and a zero ``visibility_map``.
+
+    Raises
+    ------
+    ValueError
+        If ``position`` is not shape ``(2,)``, ``fov`` is not a valid field
+        of view, or ``cue_positions`` is not finite with shape
+        ``(n_cues, 2)``.
 
     Examples
     --------
     >>> import numpy as np
+    >>> from shapely.geometry import box
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.visibility import compute_viewshed, FieldOfView
-    >>> rng = np.random.default_rng(42)
-    >>> positions = rng.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> result = compute_viewshed(
-    ...     env, np.array([50.0, 50.0]), heading=0.0, boundary_source="analysis"
-    ... )
-    >>> result.n_visible_bins > 0
+    >>> from neurospatial.ops.visibility import compute_viewshed
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
+    >>> result = compute_viewshed(env, np.array([50.0, 50.0]), heading=0.0)
+    >>> result.visibility_fraction  # an open box: every bin is in view
+    1.0
+    >>> ahead = compute_viewshed(env, np.array([50.0, 50.0]), 0.0, fov=np.pi)
+    >>> bool(np.all(env.bin_centers[ahead.visible_bins, 0] > 50.0))  # East
     True
     """
+    binning, arena = env.binning, env.arena
+    indexes = CallIndexes()
     return _viewshed(
-        env.binning,
-        env.arena,
+        binning,
+        arena,
         position,
         heading,
-        fov=fov,
-        n_rays=n_rays,
-        cue_positions=cue_positions,
+        fov=_field_of_view(fov),
+        cue_positions=_cue_array(cue_positions, "compute_viewshed"),
         boundary_source=boundary_source,
+        clear=_sight_lines(binning, arena, boundary_source, indexes),
+        indexes=indexes,
     )
 
 
-def _angular_range(
-    fov: FieldOfView | float | None,
-) -> tuple[float, float, FieldOfView | None, bool]:
-    """Egocentric ray range ``(min, max)``, the FieldOfView, and full circle.
+def _field_of_view(fov: FieldOfView | float | None) -> FieldOfView | None:
+    """Resolve the ``fov`` argument; None means the full circle.
 
-    A number is the total field-of-view angle in radians.
+    A number is the total field-of-view angle in radians, in (0, 2*pi].
     """
-    if fov is None:
-        return -np.pi, np.pi, None, True
-    if isinstance(fov, (int, float)):
-        half_angle = float(fov) / 2
-        return -half_angle, half_angle, FieldOfView.symmetric(half_angle), False
-    return fov.right_angle, fov.left_angle, fov, False
+    if fov is None or isinstance(fov, FieldOfView):
+        return fov
+    angle = float(fov)
+    if not (np.isfinite(angle) and 0 < angle <= 2 * np.pi):
+        raise ValueError(
+            _format_error(
+                f"fov={fov!r} is not a field-of-view angle.",
+                why="Why: a number is the total angle in radians that the "
+                "animal sees, centered on its heading.",
+                fix="pass a total angle in (0, 2*pi] radians (np.pi for "
+                "180 degrees), a FieldOfView, or None for the full circle",
+            )
+        )
+    return FieldOfView.symmetric(angle / 2)
 
 
-def _check_n_rays(n_rays: int) -> None:
-    """Raise ValueError unless ``n_rays`` is a positive integer."""
-    if (
-        isinstance(n_rays, (bool, np.bool_))
-        or not isinstance(n_rays, (int, np.integer))
-        or n_rays < 1
-    ):
-        raise ValueError("n_rays must be a positive integer.")
+def _observer(position: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Return one observer position as a float array of shape (2,)."""
+    position = np.asarray(position, dtype=np.float64)
+    if position.shape != (2,):
+        raise ValueError(
+            _format_error(
+                f"The observer position needs shape (2,); got {position.shape}.",
+                fix="pass one (x, y) position; for a trajectory use "
+                "compute_viewshed_trajectory",
+            )
+        )
+    return position
 
 
-def _check_viewshed_options(
+def _cue_array(
+    cue_positions: NDArray[np.float64] | None, call: str
+) -> NDArray[np.float64]:
+    """Validate cue positions as finite ``(n_cues, 2)``; None means none.
+
+    ``call`` is the public function, named in the error message.
+    """
+    if cue_positions is None:
+        return np.empty((0, 2))
+    cues = np.asarray(cue_positions, dtype=np.float64)
+    if cues.size == 0:
+        return np.empty((0, 2))
+    if cues.ndim != 2 or cues.shape[1] != 2:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs cue_positions of shape (n_cues, 2); got {cues.shape}.",
+                fix="pass one (x, y) row per cue",
+            )
+        )
+    if not np.all(np.isfinite(cues)):
+        raise ValueError(
+            _format_error(
+                f"{call}() needs finite cue_positions; row "
+                f"{int(np.flatnonzero(~np.isfinite(cues).all(axis=1))[0])} "
+                "is NaN or infinite.",
+                fix="pass the measured position of every cue, or drop the cues "
+                "whose position is unknown",
+            )
+        )
+    return cues
+
+
+def _sight_lines(
     binning: Binning,
     arena: Arena,
-    *,
-    fov: FieldOfView | float | None,
-    n_rays: int,
     boundary_source: Literal["physical", "analysis"],
-) -> None:
-    """Raise the errors `_viewshed` raises for these options, in its order."""
-    from neurospatial.geometry import boundary_geometry
+    indexes: LookupIndexes,
+) -> Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]]:
+    """Line-of-sight test from one observer to many targets, walls built once.
 
-    _angular_range(fov)
-    _check_n_rays(n_rays)
-    boundary_geometry(binning, arena, boundary_source)
+    Raises the boundary source's errors now. The returned test takes an
+    observer that ``valid_observers`` accepts, shape (2,), and finite
+    targets, shape (n_targets, 2), and returns a bool per target, as
+    ``batch_line_of_sight_clear`` does.
+    """
+    from neurospatial.geometry import (
+        analysis_interior,
+        boundary_geometry,
+        clear_segments,
+        physical_clear_segments,
+    )
+
+    walls = boundary_geometry(binning, arena, boundary_source)
+    if boundary_source == "physical":
+        return lambda observer, targets: physical_clear_segments(
+            arena, observer, targets
+        )
+    interior = analysis_interior(binning, arena, indexes)
+    return lambda observer, targets: clear_segments(walls, observer, targets, interior)
+
+
+def _in_view(
+    fov: FieldOfView | None,
+    position: NDArray[np.float64],
+    heading: float,
+    targets: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Egocentric bearing of each target and whether it is inside ``fov``.
+
+    A target at the observer's own position is inside every field of view.
+
+    Returns
+    -------
+    bearings : ndarray, shape (n_targets,)
+        Egocentric bearings in radians, (-pi, pi]: 0 = ahead, +pi/2 = left.
+    in_fov : ndarray of bool, shape (n_targets,)
+    """
+    offsets = targets - position
+    bearings = _wrap_egocentric(np.arctan2(offsets[:, 1], offsets[:, 0]) - heading)
+    if fov is None:
+        return bearings, np.ones(len(targets), dtype=bool)
+    in_fov = np.asarray(fov.contains_angle(bearings), dtype=bool)
+    return bearings, in_fov | np.all(offsets == 0, axis=1)
 
 
 def _viewshed(
@@ -774,47 +944,23 @@ def _viewshed(
     position: NDArray[np.float64],
     heading: float,
     *,
-    fov: FieldOfView | float | None,
-    n_rays: int,
-    cue_positions: NDArray[np.float64] | None,
+    fov: FieldOfView | None,
+    cue_positions: NDArray[np.float64],
     boundary_source: Literal["physical", "analysis"],
-    indexes: LookupIndexes | None = None,
+    clear: Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]],
+    indexes: LookupIndexes,
 ) -> ViewshedResult:
-    """Compute a viewshed from the bins and domain; see :func:`compute_viewshed`.
+    """Compute one viewshed; see :func:`compute_viewshed`.
 
-    ``indexes`` keeps the locator's search structures across the frames of
-    one trajectory; None keeps them for this viewshed only.
+    ``fov`` and ``cue_positions`` are already resolved, ``clear`` comes from
+    :func:`_sight_lines`, and ``indexes`` keeps the locator's search
+    structures across the frames of one trajectory.
     """
-    from neurospatial.ops.egocentric import compute_egocentric_bearing
+    from neurospatial.geometry import valid_observers
 
-    position = np.asarray(position, dtype=np.float64)
-    n_bins = binning.bins.n_bins
-    indexes = CallIndexes() if indexes is None else indexes
-
-    min_angle, max_angle, fov_obj, full_circle = _angular_range(fov)
-    # Before np.linspace, which raises a bare TypeError for a non-integer.
-    _check_n_rays(n_rays)
-
-    # Generate ray angles (in egocentric coordinates).
-    # For the full circle, -pi and +pi are the same direction (behind), so
-    # exclude the closing endpoint to avoid double-counting that ray. For a
-    # bounded FOV both endpoints are distinct and should be kept.
-    ray_angles_ego = np.linspace(min_angle, max_angle, n_rays, endpoint=not full_circle)
-
-    # Convert to allocentric
-    ray_angles_allo = ray_angles_ego + heading
-
-    from neurospatial.geometry import (
-        analysis_interior,
-        boundary_geometry,
-        physical_ray_hits,
-        ray_hits,
-        valid_observers,
-    )
-
-    walls = boundary_geometry(binning, arena, boundary_source)
-    if position.shape != (2,):
-        raise ValueError("position must have shape (2,).")
+    position = _observer(position)
+    centers = binning.bins.centers
+    n_bins = len(centers)
     observed = bool(np.all(np.isfinite(position)) and np.isfinite(heading))
     if (
         not observed
@@ -824,145 +970,27 @@ def _viewshed(
     ):
         # A missing observation is missing, not a view of nothing.
         return ViewshedResult(
-            np.empty(0, dtype=np.intp),
-            np.empty(0, dtype=np.intp),
-            np.empty(0),
-            np.empty(0),
-            np.zeros(n_bins) if observed else np.full(n_bins, np.nan),
-            _total_bins=n_bins,
+            visibility_map=np.zeros(n_bins) if observed else np.full(n_bins, np.nan),
+            visible_cues=np.empty(0, dtype=np.intp),
+            cue_distances=np.empty(0),
+            cue_bearings=np.empty(0),
         )
-    # Enclose both known walls and retained bin centers; no fixed 200-unit cap.
-    coordinates = np.vstack(
-        (np.array(walls.bounds).reshape(2, 2), binning.bins.centers)
-    )
-    max_distance = max(
-        float(np.hypot.reduce(coordinates - position, axis=1).max()) * 2, 1.0
-    )
-    n_steps = 100
-    origins = np.broadcast_to(position, (n_rays, 2))
-    hits = (
-        physical_ray_hits(arena, origins, ray_angles_allo, max_distance)
-        if boundary_source == "physical"
-        else ray_hits(
-            walls,
-            origins,
-            ray_angles_allo,
-            max_distance,
-            analysis_interior(binning, arena, indexes),
-        )
-    )
-    hit_distance = np.hypot.reduce(hits - position, axis=1)
-    ray_lengths = np.where(np.isfinite(hit_distance), hit_distance, max_distance)
 
-    # Pre-compute direction vectors for all rays: shape (n_rays, 2)
-    dx = np.cos(ray_angles_allo)
-    dy = np.sin(ray_angles_allo)
-    directions = np.column_stack([dx, dy])  # (n_rays, 2)
-
-    # Create ray sample points: distances along ray
-    distances = np.linspace(0, 1, n_steps, endpoint=False)  # strictly before contact
-
-    # Generate all ray points at once: (n_rays, n_steps, 2)
-    # position: (2,), directions: (n_rays, 2), distances: (n_steps,)
-    ray_points_all = (
-        position[np.newaxis, np.newaxis, :]
-        + directions[:, np.newaxis, :]
-        * (ray_lengths[:, np.newaxis] * distances)[..., np.newaxis]
-    )
-
-    # A zero-length ray ends on the observer's wall; it exposes no cell interior.
-    ray_points_all[ray_lengths == 0] = np.nan
-
-    # Reshape for batch bin_at query: (n_rays * n_steps, 2)
-    flat_ray_points = ray_points_all.reshape(-1, 2)
-    flat_bin_indices = locate(
-        binning, arena, flat_ray_points, indexes, call="compute_viewshed"
-    )
-
-    # Reshape back: (n_rays, n_steps)
-    bin_indices_2d = flat_bin_indices.reshape(n_rays, n_steps)
-
-    # Sample analysis bins before the first chosen wall contact. Missing bins
-    # do not occlude physical rays.
-    occlusion_scores = np.zeros(n_bins, dtype=np.float64)
-    ray_counts = np.zeros(n_bins, dtype=np.float64)
-    visible_bin_mask = np.zeros(n_bins, dtype=bool)
-
-    for ray_idx in range(n_rays):
-        valid_bins = bin_indices_2d[ray_idx]
-        valid_bins = valid_bins[valid_bins >= 0]
-
-        # Use numpy's unique and bincount for fast accumulation
-        unique_bins, counts = np.unique(valid_bins, return_counts=True)
-        visible_bin_mask[unique_bins] = True
-        occlusion_scores[unique_bins] += counts.astype(np.float64)
-        ray_counts[unique_bins] += counts.astype(np.float64)
-
-    visible_bins = np.where(visible_bin_mask)[0].astype(np.intp)
-
-    # Normalize occlusion scores
-    max_count = np.max(ray_counts) if np.max(ray_counts) > 0 else 1.0
-    occlusion_map = np.where(ray_counts > 0, occlusion_scores / max_count, 0.0)
-
-    # Check cue visibility (vectorized)
-    if cue_positions is not None:
-        cue_positions = np.asarray(cue_positions, dtype=np.float64)
-        n_cues = len(cue_positions)
-
-        if n_cues > 0:
-            # Compute bearings (already vectorized)
-            bearings = compute_egocentric_bearing(
-                position.reshape(1, -1), np.array([heading]), cue_positions
-            )[0]
-
-            # Compute distances (vectorized)
-            cue_dists = np.linalg.norm(cue_positions - position, axis=1)
-
-            # Check FOV (vectorized) - FieldOfView.contains_angle handles arrays
-            if fov_obj is not None:
-                in_fov = fov_obj.contains_angle(bearings)
-            else:
-                in_fov = np.ones(n_cues, dtype=bool)
-
-            # Only check line of sight for cues in FOV (vectorized batch check)
-            fov_indices = np.where(in_fov)[0]
-            if len(fov_indices) > 0:
-                los_clear = batch_line_of_sight_clear(
-                    binning,
-                    arena,
-                    position,
-                    cue_positions[fov_indices],
-                    boundary_source=boundary_source,
-                    indexes=indexes,
-                )
-                # Build visibility mask
-                visible_mask = np.zeros(n_cues, dtype=bool)
-                visible_mask[fov_indices] = los_clear
-
-                visible_cue_indices = np.where(visible_mask)[0]
-                visible_cues = visible_cue_indices.astype(np.intp)
-                cue_distances = cue_dists[visible_cue_indices]
-                cue_bearings = bearings[visible_cue_indices]
-            else:
-                visible_cues = np.array([], dtype=np.intp)
-                cue_distances = np.array([], dtype=np.float64)
-                cue_bearings = np.array([], dtype=np.float64)
-        else:
-            visible_cues = np.array([], dtype=np.intp)
-            cue_distances = np.array([], dtype=np.float64)
-            cue_bearings = np.array([], dtype=np.float64)
-    else:
-        visible_cues = np.array([], dtype=np.intp)
-        cue_distances = np.array([], dtype=np.float64)
-        cue_bearings = np.array([], dtype=np.float64)
-
+    # Bin centers and cues get one test: inside the field of view, then a
+    # clear straight line from the observer.
+    targets = np.vstack((centers, cue_positions))
+    bearings, in_fov = _in_view(fov, position, heading, targets)
+    candidates = np.flatnonzero(in_fov)
+    visible = np.zeros(len(targets), dtype=bool)
+    if len(candidates):
+        visible[candidates] = clear(position, targets[candidates])
+    visible_cues = np.flatnonzero(visible[n_bins:])
+    cue_rows = n_bins + visible_cues
     return ViewshedResult(
-        visible_bins=visible_bins,
+        visibility_map=visible[:n_bins].astype(np.float64),
         visible_cues=visible_cues,
-        cue_distances=cue_distances,
-        cue_bearings=cue_bearings,
-        occlusion_map=occlusion_map,
-        _total_bins=n_bins,
+        cue_distances=np.hypot.reduce(targets[cue_rows] - position, axis=1),
+        cue_bearings=bearings[cue_rows],
     )
 
 
@@ -1006,24 +1034,25 @@ def compute_view_field(
     heading: float,
     *,
     fov: FieldOfView | float | None = None,
-    n_rays: int = 360,
     boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> NDArray[np.bool_]:
     """Compute binary visibility mask from observer position.
+
+    A bin is visible when the direction to its center lies inside the field
+    of view and the straight line to its center crosses no wall, as in
+    :func:`compute_viewshed`.
 
     Parameters
     ----------
     env : Environment
         The environment to analyze.
     position : NDArray[np.float64], shape (2,)
-        Observer position.
+        Observer position (environment units).
     heading : float
-        Observer heading in radians.
+        Observer heading in radians (allocentric: 0 = East, +pi/2 = North).
     fov : FieldOfView, float, or None, default None
-        Field of view constraint.
-    n_rays : int, default 360
-        Number of rays to cast.
-
+        Field of view constraint; a float is the total angle in radians.
+        None is the full circle.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
@@ -1044,24 +1073,21 @@ def compute_view_field(
     Examples
     --------
     >>> import numpy as np
+    >>> from shapely.geometry import box
     >>> from neurospatial import Environment
     >>> from neurospatial.ops.visibility import compute_view_field
-    >>> rng = np.random.default_rng(42)
-    >>> positions = rng.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> mask = compute_view_field(
-    ...     env, np.array([50.0, 50.0]), heading=0.0, boundary_source="analysis"
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0)
+    >>> facing_north = compute_view_field(
+    ...     env, np.array([50.0, 50.0]), heading=np.pi / 2, fov=np.pi / 2
     ... )
-    >>> mask.dtype == bool
+    >>> bool(np.all(env.bin_centers[facing_north, 1] > 50.0))
     True
     """
     _require_observation("compute_view_field", position, heading)
     result = compute_viewshed(
-        env, position, heading, fov=fov, n_rays=n_rays, boundary_source=boundary_source
+        env, position, heading, fov=fov, boundary_source=boundary_source
     )
-    mask = np.zeros(result.occlusion_map.shape[0], dtype=bool)
-    mask[result.visible_bins] = True
-    return mask
+    return np.asarray(result.visibility_map == 1.0)
 
 
 def visible_cues(
@@ -1117,82 +1143,51 @@ def visible_cues(
     >>> from neurospatial import Environment
     >>> from neurospatial.ops.visibility import visible_cues
 
-    Create environment and check cue visibility:
+    A box with a wall at x = 50 from y = 20 to y = 80; the animal is west of
+    the wall, facing East:
 
-    >>> positions = np.random.rand(100, 2) * 100
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> cues = np.array([[50, 50], [80, 20]])  # 2 cues
+    >>> from shapely.geometry import LineString, box
+    >>> from neurospatial.arena import OpenArena
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((10, 10), dtype=bool),
+    ...     grid_edges=(np.arange(0.0, 101.0, 10.0),) * 2,
+    ...     arena=OpenArena(
+    ...         box(0, 0, 100, 100), walls=(LineString([(50, 20), (50, 80)]),)
+    ...     ),
+    ... )
+    >>> cues = np.array([[40.0, 50.0], [80.0, 50.0], [10.0, 50.0]])
     >>> visible, distances, bearings = visible_cues(
-    ...     env,
-    ...     position=np.array([25, 25]),
-    ...     heading=0.0,
-    ...     cue_positions=cues,
-    ...     boundary_source="analysis",
-    ... )  # doctest: +SKIP
+    ...     env, np.array([25.0, 50.0]), 0.0, cues, fov=np.pi
+    ... )
+    >>> visible.tolist()  # ahead; behind the wall; behind the animal
+    [True, False, False]
+    >>> distances.round(1).tolist()
+    [15.0, nan, nan]
     """
-    from neurospatial.ops.egocentric import compute_egocentric_bearing
-
-    position = np.asarray(position, dtype=np.float64)
-    cue_positions = np.asarray(cue_positions, dtype=np.float64)
-    n_cues = len(cue_positions)
+    position = _observer(position)
     _require_observation("visible_cues", position, heading)
-    if n_cues and not np.all(np.isfinite(cue_positions)):
-        raise ValueError(
-            _format_error(
-                "visible_cues() needs finite cue_positions; row "
-                f"{int(np.flatnonzero(~np.isfinite(cue_positions).all(axis=1))[0])} "
-                "is NaN or infinite.",
-                fix="pass the measured position of every cue, or drop the cues "
-                "whose position is unknown",
-            )
-        )
+    fov_obj = _field_of_view(fov)
+    cue_positions = _cue_array(cue_positions, "visible_cues")
+    n_cues = len(cue_positions)
 
-    if n_cues == 0:
-        return (
-            np.array([], dtype=bool),
-            np.array([], dtype=np.float64),
-            np.array([], dtype=np.float64),
-        )
-
-    # Parse FOV
-    if fov is None:
-        fov_obj = None
-    elif isinstance(fov, (int, float)):
-        fov_obj = FieldOfView.symmetric(float(fov) / 2)
-    else:
-        fov_obj = fov
-
-    # Compute distances and bearings (vectorized)
-    distances = np.linalg.norm(cue_positions - position, axis=1)
-    bearings = compute_egocentric_bearing(
-        position.reshape(1, -1), np.array([heading]), cue_positions
-    )[0]
-
-    # Check FOV (vectorized) - FieldOfView.contains_angle handles arrays
-    if fov_obj is not None:
-        in_fov = fov_obj.contains_angle(bearings)
-    else:
-        in_fov = np.ones(n_cues, dtype=bool)
-
-    # Only check line of sight for cues in FOV (vectorized batch check)
+    distances = np.hypot.reduce(cue_positions - position, axis=1)
+    bearings, in_fov = _in_view(fov_obj, position, heading, cue_positions)
     visible = np.zeros(n_cues, dtype=bool)
-    fov_indices = np.where(in_fov)[0]
-
-    if len(fov_indices) > 0:
-        los_clear = batch_line_of_sight_clear(
+    candidates = np.flatnonzero(in_fov)
+    if len(candidates):
+        visible[candidates] = batch_line_of_sight_clear(
             env.binning,
             env.arena,
             position,
-            cue_positions[fov_indices],
+            cue_positions[candidates],
             boundary_source=boundary_source,
         )
-        visible[fov_indices] = los_clear
 
-    # Set NaN for non-visible
-    result_distances = np.where(visible, distances, np.nan)
-    result_bearings = np.where(visible, bearings, np.nan)
-
-    return visible, result_distances, result_bearings
+    return (
+        visible,
+        np.where(visible, distances, np.nan),
+        np.where(visible, bearings, np.nan),
+    )
 
 
 def compute_viewshed_trajectory(
@@ -1201,27 +1196,28 @@ def compute_viewshed_trajectory(
     headings: NDArray[np.float64],
     *,
     fov: FieldOfView | float | None = None,
-    n_rays: int = 360,
     cue_positions: NDArray[np.float64] | None = None,
     boundary_source: Literal["physical", "analysis"] = "physical",
 ) -> list[ViewshedResult]:
     """Compute viewshed at each point along a trajectory.
+
+    Each frame is :func:`compute_viewshed` from that frame's position and
+    heading; the walls are built once for the whole trajectory.
 
     Parameters
     ----------
     env : Environment
         The environment.
     positions : NDArray[np.float64], shape (n_time, 2)
-        Positions along trajectory.
+        Positions along trajectory (environment units).
     headings : NDArray[np.float64], shape (n_time,)
-        Headings at each position.
+        Allocentric headings in radians at each position (0 = East,
+        +pi/2 = North).
     fov : FieldOfView, float, or None, default None
-        Field of view constraint.
-    n_rays : int, default 360
-        Number of rays per viewshed.
+        Field of view constraint; a float is the total angle in radians.
+        None is the full circle.
     cue_positions : NDArray[np.float64], shape (n_cues, 2), optional
-        Cue positions to check.
-
+        Cue positions to check; must be finite.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
@@ -1232,24 +1228,35 @@ def compute_viewshed_trajectory(
     list of ViewshedResult
         Viewshed result at each trajectory point. A frame with a NaN or
         infinite position or heading is a missing observation: its
-        ``occlusion_map`` is NaN and its ``visibility_fraction`` is NaN, so
+        ``visibility_map`` is NaN and its ``visibility_fraction`` is NaN, so
         it is not mistaken for a frame from which nothing was visible.
+
+    Raises
+    ------
+    ValueError
+        If ``positions`` is not ``(n_time, 2)``, ``headings`` is not
+        ``(n_time,)``, ``fov`` is not a valid field of view, or
+        ``cue_positions`` is not finite with shape ``(n_cues, 2)``.
     """
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
+    _check_samples("compute_viewshed_trajectory", positions, headings)
 
     binning, arena = env.binning, env.arena
     indexes = CallIndexes()
+    fov_obj = _field_of_view(fov)
+    cues = _cue_array(cue_positions, "compute_viewshed_trajectory")
+    clear = _sight_lines(binning, arena, boundary_source, indexes)
     return [
         _viewshed(
             binning,
             arena,
             positions[i],
             headings[i],
-            fov=fov,
-            n_rays=n_rays,
-            cue_positions=cue_positions,
+            fov=fov_obj,
+            cue_positions=cues,
             boundary_source=boundary_source,
+            clear=clear,
             indexes=indexes,
         )
         for i in range(len(positions))
@@ -1263,7 +1270,6 @@ def visibility_occupancy(
     headings: NDArray[np.float64],
     *,
     fov: FieldOfView | float | None = None,
-    n_rays: int = 360,
     boundary_source: Literal["physical", "analysis"] = "physical",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -1274,7 +1280,9 @@ def visibility_occupancy(
     Each sampling interval ``[times[k], times[k + 1])`` adds its duration to
     every bin visible from sample ``k`` (its position and heading), the same
     start-sample rule :meth:`Environment.occupancy` uses. The last sample has
-    no interval and adds no time.
+    no interval and adds no time. Visibility is decided per bin as in
+    :func:`compute_viewshed`: the bin center is inside the field of view
+    with a clear line of sight.
 
     Parameters
     ----------
@@ -1290,10 +1298,8 @@ def visibility_occupancy(
         Allocentric headings in radians at each position. A NaN heading is a
         missing sample, like a NaN position.
     fov : FieldOfView, float, or None, default None
-        Field of view constraint.
-    n_rays : int, default 360
-        Number of rays per viewshed.
-
+        Field of view constraint; a float is the total angle in radians.
+        None is the full circle.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
@@ -1357,7 +1363,7 @@ def visibility_occupancy(
     >>> positions = np.full((5, 2), 10.0)
     >>> headings = np.zeros(5)
     >>> seen = visibility_occupancy(
-    ...     env, times, positions, headings, n_rays=36, boundary_source="analysis"
+    ...     env, times, positions, headings, boundary_source="analysis"
     ... )
     >>> round(float(seen.max()), 6)  # 0.2 s before the pause + 0.1 s after
     0.3
@@ -1400,10 +1406,11 @@ def visibility_occupancy(
     resolved_epochs = as_intervals(epochs, name="epochs")
 
     binning, arena = env.binning, env.arena
-    # Checked here because no viewshed is computed when no interval is usable.
-    _check_viewshed_options(
-        binning, arena, fov=fov, n_rays=n_rays, boundary_source=boundary_source
-    )
+    # Resolved before any interval check, so bad options raise even when no
+    # interval is usable.
+    fov_obj = _field_of_view(fov)
+    indexes = CallIndexes()
+    clear = _sight_lines(binning, arena, boundary_source, indexes)
     occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
     if n_time < 2:
         return occupancy
@@ -1424,7 +1431,7 @@ def visibility_occupancy(
     )
 
     dt = np.diff(times)
-    indexes = CallIndexes()
+    no_cues = np.empty((0, 2))
     # Viewsheds are per-frame; compute them only for frames that add time.
     for i in np.flatnonzero(usable & (dt > 0)):
         result = _viewshed(
@@ -1432,12 +1439,12 @@ def visibility_occupancy(
             arena,
             positions[i],
             headings[i],
-            fov=fov,
-            n_rays=n_rays,
-            cue_positions=None,
+            fov=fov_obj,
+            cue_positions=no_cues,
             boundary_source=boundary_source,
+            clear=clear,
             indexes=indexes,
         )
-        np.add.at(occupancy, result.visible_bins, dt[i])
+        occupancy[result.visible_bins] += dt[i]
 
     return occupancy

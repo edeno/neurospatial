@@ -754,7 +754,7 @@ view.plot(vmin=0)
 print("View information (bits/spike):", view.view_spatial_information())
 ```
 
-`gaze_model="ray_cast"` or `"boundary"` projects toward a boundary instead.
+`gaze_model="ray_cast"` takes the first wall along the gaze instead.
 Projected locations outside the environment lack support. View and position
 maps generally have different occupancy and correlated predictors, so a larger
 view-information score alone does not demonstrate a spatial view cell. Match
