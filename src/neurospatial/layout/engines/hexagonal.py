@@ -47,9 +47,7 @@ class HexagonalLayout(_NeighborPairsMixin):
     _build_params_used: dict[str, Any]
 
     # Layout Specific
-    hexagon_width: float | None = None
     hex_radius_: float | None = None
-    hex_orientation_: float | None = None
     grid_offset_x_: float | None = None
     grid_offset_y_: float | None = None
 
@@ -61,9 +59,7 @@ class HexagonalLayout(_NeighborPairsMixin):
         self.grid_edges = ()
         self.grid_shape = None
         self.active_mask = None
-        self.hexagon_width = None
         self.hex_radius_ = None
-        self.hex_orientation_ = None
         self.grid_offset_x_ = None
         self.grid_offset_y_ = None
 
@@ -106,7 +102,6 @@ class HexagonalLayout(_NeighborPairsMixin):
 
         """
         self._begin_build()
-        self.hexagon_width = hexagon_width
         (
             full_grid_bin_centers,
             self.grid_shape,
@@ -116,9 +111,8 @@ class HexagonalLayout(_NeighborPairsMixin):
         ) = _create_hex_grid(
             positions=positions,
             dimension_range=dimension_ranges,
-            hexagon_width=self.hexagon_width,
+            hexagon_width=hexagon_width,
         )
-        self.hex_orientation_ = 0.0  # point-up
 
         # Warn if the grid is very large.
         check_grid_size_safety(self.grid_shape)
@@ -194,11 +188,7 @@ class HexagonalLayout(_NeighborPairsMixin):
         """Return the active hexagons in bin order with owned center coordinates."""
         if self.hex_radius_ is None or self.bin_centers is None:
             raise LayoutNotBuiltError(type(self).__name__, "bin_shapes")
-        return HexagonShapes(
-            self.bin_centers,
-            self.hex_radius_,
-            float(self.hex_orientation_) if self.hex_orientation_ is not None else 0.0,
-        )
+        return HexagonShapes(self.bin_centers, self.hex_radius_, 0.0)  # point-up
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """Calculate the area of each hexagonal bin.

@@ -22,7 +22,7 @@ def test_hexagon_shapes_match_layout(built_environment):
     assert isinstance(shapes, HexagonShapes)
     source = native_layout(env)
     assert shapes.radius == source.hex_radius_
-    assert shapes.orientation == source.hex_orientation_
+    assert shapes.orientation == 0.0
     np.testing.assert_array_equal(shapes.centers, env.bin_centers)
     assert not shapes.centers.flags.writeable
 
