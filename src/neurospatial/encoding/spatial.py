@@ -5991,7 +5991,6 @@ def place_cell_significance(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
-    n_jobs: int = 1,
     backend: BackendType = "numpy",
     warn_on_drop: bool = False,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -6003,10 +6002,10 @@ def place_cell_significance(
     """Test place tuning against circular spike-time shifts.
 
     The test statistic is Skaggs spatial information (bits/spike) of each
-    unit's rate map. Recompute the population map for the supplied arrays and
-    for each shifted train, using exactly the observed map's valid intervals.
-    Shuffles preserve counts on the compressed analyzed clock and never enter
-    recording gaps. This costs about n_shuffles population-map recomputes.
+    unit's rate map. The trajectory is binned once; each shifted train is
+    recounted and smoothed with exactly the observed map's analyzed intervals,
+    occupancy and bandwidth. Shuffles preserve counts on the compressed
+    analyzed clock and never enter recording gaps.
     The result's is_significant property uses 0.05; compare p_value < alpha
     for another level.
 
@@ -6094,27 +6093,9 @@ def place_cell_significance(
         started before, or continued after, the spike recording. The result
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
-    n_jobs : int, default=1
-        Number of parallel jobs for spike counting. Use -1 for all CPUs.
-        1 means sequential processing (no parallelization overhead).
     backend : {"numpy", "jax", "auto"}, default="numpy"
-        Computation backend for rate map smoothing:
-
-        - ``"numpy"``: Use NumPy for all computations. Works everywhere.
-        - ``"jax"``: Use JAX for rate computation. Requires JAX installation.
-          Enables GPU acceleration and JAX transformations (jit, grad).
-        - ``"auto"``: Use JAX if available, otherwise NumPy.
-
-        Note: Binning operations (spike counting, occupancy) always use NumPy.
-        Only the smoothing/rate computation uses the selected backend. For
-        ``method="glm"``, a resolved ``jax`` backend runs the penalized-Poisson
-        fit + REML through an optional **float32** JAX mirror of the NumPy/SciPy
-        core (``backend="jax"`` requires the ``jax`` extra, like the ratio
-        methods; ``"auto"`` uses it when available and otherwise the NumPy core).
-        The float32 mirror matches the float64 core to ~1e-6 at a fixed penalty (a
-        touch looser under automatic REML, which picks a slightly different
-        ``lambda``) and is markedly faster on populations. The returned
-        diagnostics stay float64 either way.
+        Backend for rate-map smoothing (``"auto"`` uses JAX when installed);
+        binning always uses NumPy.
     warn_on_drop : bool, default=False
         Report dropped spikes in the observed fit when True. Null-fit warnings are suppressed.
     dtype : {np.float32, np.float64}, default=np.float64
@@ -6176,18 +6157,243 @@ def place_cell_significance(
     >>> results[0].n_shuffles
     20
     """
+    observed, null, ids, _ = _spatial_shuffle(
+        env,
+        spike_times,
+        times,
+        positions,
+        statistics=("spatial_information",),
+        call="place_cell_significance",
+        boundary_source="physical",
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
+        backend=backend,
+        warn_on_drop=warn_on_drop,
+        dtype=dtype,
+        unit_ids=unit_ids,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+    )
+    from neurospatial.encoding._significance import to_shuffle_results
 
-    from neurospatial._exceptions import _format_error
+    return to_shuffle_results(observed, null, ids)
+
+
+# Statistics recomputed from every shifted spike train, in result column order.
+_CELL_TYPE_STATISTICS = ("spatial_information", "grid_score", "border_score")
+
+
+class _ShuffleMaps(NamedTuple):
+    """Trajectory binning and estimator settings shared by every shifted map."""
+
+    times: NDArray[np.float64]  # (n_time,)
+    positions: NDArray[np.float64]  # (n_time, n_dims)
+    interval_mask: NDArray[np.bool_]  # (n_time - 1,) analyzed intervals
+    occupancy: NDArray[np.float64]  # (n_bins,) seconds
+    occupied: NDArray[np.bool_]  # (n_bins,) occupancy support of the metrics
+    method: str
+    bandwidth: float
+    min_occupancy: float
+    fill_value: float | None
+    backend: ResolvedBackend
+    dtype: type[np.float32] | type[np.float64]
+
+
+def _shuffle_rate_maps(
+    env: Environment, spike_times: list[NDArray[np.float64]], maps: _ShuffleMaps
+) -> NDArray[np.float64]:
+    """Supported rate maps of spike trains on the shared trajectory binning.
+
+    Matches ``_supported_rates(compute_spatial_rates(...))`` for the same
+    trains and settings, without re-binning the trajectory.
+
+    Returns
+    -------
+    ndarray, shape (n_units, n_bins)
+        Rates in Hz, NaN outside the occupancy support.
+    """
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+    from neurospatial.encoding._spatial_counts import _bin_spike_train_with_stats
+
+    counts = np.zeros((len(spike_times), env.n_bins), dtype=np.float64)
+    for i, train in enumerate(spike_times):
+        counts[i] = _bin_spike_train_with_stats(
+            env,
+            train,
+            maps.times,
+            maps.positions,
+            interval_mask=maps.interval_mask,
+        )[0]
+    rates = smooth_rate_maps_batch(
+        env,
+        counts,
+        maps.occupancy,
+        method=cast("Any", maps.method),
+        bandwidth=maps.bandwidth,
+        min_occupancy=maps.min_occupancy,
+        backend=maps.backend,
+        dtype=maps.dtype,
+    )
+    if maps.fill_value is not None:
+        rates = _fill_nan(rates, maps.fill_value)
+    stored = np.asarray(rates).astype(maps.dtype, copy=False)
+    return np.where(maps.occupied, stored.astype(np.float64), np.nan)
+
+
+def _spatial_scores(
+    env: Environment,
+    spike_times: list[NDArray[np.float64]],
+    maps: _ShuffleMaps,
+    statistics: tuple[str, ...],
+    boundary_source: BoundarySource,
+) -> NDArray[np.float64]:
+    """Score each unit's rate map with each named statistic.
+
+    Returns
+    -------
+    ndarray, shape (n_units, len(statistics))
+        Spatial information (bits/spike), grid score and border score, in the
+        order of ``statistics``.
+    """
+    from neurospatial.encoding._metrics import (
+        batch_border_scores,
+        batch_grid_scores,
+        batch_spatial_information,
+    )
+
+    rates = _shuffle_rate_maps(env, spike_times, maps)
+    columns = []
+    for name in statistics:
+        if name == "spatial_information":
+            columns.append(np.asarray(batch_spatial_information(rates, maps.occupancy)))
+        elif name == "grid_score":
+            columns.append(batch_grid_scores(env, rates).scores)
+        else:
+            columns.append(
+                batch_border_scores(env, rates, boundary_source=boundary_source).scores
+            )
+    return np.column_stack(columns).reshape(len(spike_times), len(statistics))
+
+
+def _unscored_statistics(
+    env: Environment,
+    rates: NDArray[np.float64],
+    statistics: tuple[str, ...],
+    boundary_source: BoundarySource,
+) -> tuple[dict[str, str], tuple[str, ...]]:
+    """Statistics that cannot be scored on ``env``, with the reason for each.
+
+    Returns
+    -------
+    unavailable : dict of str to str
+        Reason for every statistic that is not scored.
+    inapplicable : tuple of str
+        The subset that does not apply to the environment at all: grid and
+        border cells are defined on 2-D maps, so a 1-D or 3-D environment has
+        none. The rest could apply but are not measurable here.
+    """
+    from neurospatial.encoding._metrics import batch_border_scores, batch_grid_scores
+
+    unavailable: dict[str, str] = {}
+    inapplicable: list[str] = []
+    for name in statistics:
+        if name == "spatial_information":
+            continue
+        if env.n_dims != 2:
+            unavailable[name] = (
+                f"{name} is defined on 2-D maps; this environment is "
+                f"{env.n_dims}-D, so no unit is a "
+                f"{'grid' if name == 'grid_score' else 'border'} cell."
+            )
+            inapplicable.append(name)
+            continue
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                if name == "grid_score":
+                    batch_grid_scores(env, rates[:1])
+                else:
+                    batch_border_scores(env, rates[:1], boundary_source=boundary_source)
+        except NotImplementedError as exc:
+            unavailable[name] = str(exc)
+    return unavailable, tuple(inapplicable)
+
+
+def _spatial_shuffle(
+    env: Environment,
+    spike_times: SpikeTrainsLike,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    statistics: tuple[str, ...],
+    call: str,
+    boundary_source: BoundarySource,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"],
+    bandwidth: float | None,
+    min_occupancy: float | None,
+    fill_value: float | None,
+    penalty: float | None,
+    rank: int | None,
+    pooled: bool,
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    spike_window: Any,
+    backend: BackendType,
+    warn_on_drop: bool,
+    dtype: type[np.float32] | type[np.float64],
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    n_shuffles: int,
+    min_shift: float,
+    rng: np.random.Generator | int | None,
+) -> tuple[
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[Any],
+    tuple[dict[str, str], tuple[str, ...]],
+]:
+    """Circularly shift each unit's spikes and rescore its rate map.
+
+    The trajectory is binned once: the analyzed intervals, occupancy and
+    smoothing settings of the observed map are reused for every shifted
+    train, and each shift keeps the unit's spike count on the analyzed clock
+    without entering recording gaps. Every requested statistic is computed
+    from the same shifted trains.
+
+    Returns
+    -------
+    observed : ndarray, shape (n_units, len(statistics))
+        Observed scores; NaN columns for statistics that cannot be scored.
+    null : ndarray, shape (n_shuffles, n_units, len(statistics))
+        Scores of the shifted trains.
+    unit_ids : ndarray, shape (n_units,)
+        Resolved unit labels in input order.
+    unscored : tuple
+        ``(unavailable, inapplicable)`` from ``_unscored_statistics``.
+    """
     from neurospatial._intervals import resolve_time_windows, run_time_bounds
     from neurospatial._results import resolve_unit_ids
     from neurospatial._spikes import _as_spike_trains_with_ids
-    from neurospatial.encoding._significance import (
-        run_shuffle_test,
-        snapshot_options,
-        to_shuffle_results,
-    )
+    from neurospatial.encoding._backend import validate_and_resolve_backend
+    from neurospatial.encoding._provenance import occupancy_support
+    from neurospatial.encoding._significance import run_shuffle_test, snapshot_options
     from neurospatial.encoding._spatial_counts import (
         _spatial_interval_mask,
+        require_allocentric,
         resolve_speed,
     )
     from neurospatial.encoding._validation import (
@@ -6199,7 +6405,7 @@ def place_cell_significance(
     if method == "glm":
         raise ValueError(
             _format_error(
-                "place_cell_significance does not support method='glm'.",
+                f"{call} does not support method='glm'.",
                 why="Why: pooled REML couples units, so shifted single-unit fits would not be the observed model",
                 fix="pass method='diffusion_kde', 'gaussian_kde' or 'binned'",
             )
@@ -6209,12 +6415,7 @@ def place_cell_significance(
     times = np.array(times, dtype=np.float64, copy=True)
     positions = np.array(positions, dtype=np.float64, copy=True)
     ids = np.array(
-        resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=input_ids,
-            context="place_cell_significance",
-        ),
+        resolve_unit_ids(unit_ids, len(trains), input_ids=input_ids, context=call),
         copy=True,
     )
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -6229,7 +6430,6 @@ def place_cell_significance(
         "speed": speed,
         "min_speed": min_speed,
         "max_gap": max_gap,
-        "n_jobs": n_jobs,
         "backend": backend,
         "warn_on_drop": warn_on_drop,
         "dtype": dtype,
@@ -6240,57 +6440,68 @@ def place_cell_significance(
         spike_window=resolved_spike_window,
         unit_ids=ids,
     )
-    _validate_env_argument(
-        env,
-        context="place_cell_significance",
-        arguments="spike_times, times, positions",
-    )
-    from neurospatial.encoding._spatial_counts import require_allocentric
-
-    require_allocentric(env, "place_cell_significance()")
-    validate_trajectory(
-        times, positions=positions, context="place_cell_significance", n_dims=env.n_dims
-    )
+    _validate_env_argument(env, context=call, arguments="spike_times, times, positions")
+    require_allocentric(env, f"{call}()")
+    validate_trajectory(times, positions=positions, context=call, n_dims=env.n_dims)
     for train in trains:
-        validate_spike_times(train, context="place_cell_significance")
-    breaks = validate_break_before(
-        break_before, len(times), call="place_cell_significance"
-    )
-    options["break_before"] = breaks
-    resolved_speed = resolve_speed(
-        times,
-        positions,
-        options["speed"],
-        min_speed,
-        max_gap=max_gap,
-        break_before=options["break_before"],
-    )
+        validate_spike_times(train, context=call)
+    options["break_before"] = validate_break_before(break_before, len(times), call=call)
     positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
     mask = _spatial_interval_mask(
         env,
         times,
         positions_2d,
-        speed=resolved_speed,
+        speed=resolve_speed(
+            times,
+            positions,
+            options["speed"],
+            min_speed,
+            max_gap=max_gap,
+            break_before=options["break_before"],
+        ),
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         break_before=options["break_before"],
     )
-    windows = run_time_bounds(times, mask)
+    # The observed map resolves the estimator defaults, its occupancy and the
+    # caller's data-quality warnings once; every shifted map reuses them.
+    reference = compute_spatial_rates(env, trains, times, positions, **options)
+    occupancy = np.asarray(reference.occupancy, dtype=np.float64)
+    maps = _ShuffleMaps(
+        times=times,
+        positions=positions_2d,
+        interval_mask=mask,
+        occupancy=occupancy,
+        occupied=occupancy_support(reference),
+        method=method,
+        bandwidth=cast("float", reference.bandwidth),
+        min_occupancy=reference.min_occupancy,
+        fill_value=fill_value,
+        backend=validate_and_resolve_backend(backend),
+        dtype=options["dtype"],
+    )
+    unscored = _unscored_statistics(
+        env, _shuffle_rate_maps(env, trains, maps), statistics, boundary_source
+    )
+    scored = tuple(name for name in statistics if name not in unscored[0])
 
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        return compute_spatial_rates(
-            env, shifted, times, positions, **options
-        ).spatial_information()
+        return _spatial_scores(env, shifted, maps, scored, boundary_source)
 
-    observed, null = run_shuffle_test(
+    observed_scored, null_scored = run_shuffle_test(
         statistic,
         trains,
-        windows,
+        run_time_bounds(times, mask),
         ids,
         n_shuffles=n_shuffles,
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, ids)
+    columns = [statistics.index(name) for name in scored]
+    observed = np.full((len(trains), len(statistics)), np.nan)
+    null = np.full((n_shuffles, len(trains), len(statistics)), np.nan)
+    observed[:, columns] = observed_scored.reshape(len(trains), len(scored))
+    null[:, :, columns] = null_scored.reshape(n_shuffles, len(trains), len(scored))
+    return observed, null, ids, unscored
