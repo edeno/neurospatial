@@ -68,7 +68,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from scipy import fft, ndimage, stats
@@ -691,7 +690,7 @@ def _spatial_autocorrelation_graph(
     correlations : NDArray[np.float64], shape (n_distance_bins,)
         Autocorrelation at each distance.
     """
-    from scipy.sparse.csgraph import dijkstra
+    from neurospatial.ops.distance import pairwise_distances
 
     # Filter out NaN bins
     valid_bins = np.where(np.isfinite(firing_rate))[0]
@@ -702,36 +701,26 @@ def _spatial_autocorrelation_graph(
     valid_rates = firing_rate[valid_bins]
     n_valid = len(valid_bins)
 
-    # Compute pairwise geodesic distances using scipy (much faster than networkx)
-    adj_matrix = nx.adjacency_matrix(
-        env.connectivity, nodelist=range(env.n_bins), weight="distance"
-    ).tocsr()
-
-    dist_matrix = dijkstra(
-        adj_matrix,
-        directed=False,
-        indices=valid_bins,
-        return_predecessors=False,
-    )[:, valid_bins]  # Shape: (n_valid, n_valid)
+    dist_matrix = pairwise_distances(env.connectivity, valid_bins)  # (n_valid, n_valid)
 
     # Vectorized extraction of upper triangle (avoid nested loops)
     triu_indices = np.triu_indices(n_valid, k=1)
-    pairwise_distances = dist_matrix[triu_indices]
+    pair_distances = dist_matrix[triu_indices]
     rates_i = valid_rates[triu_indices[0]]
     rates_j = valid_rates[triu_indices[1]]
 
     # Filter out infinite distances (disconnected pairs)
-    finite_mask = np.isfinite(pairwise_distances)
-    pairwise_distances = pairwise_distances[finite_mask]
+    finite_mask = np.isfinite(pair_distances)
+    pair_distances = pair_distances[finite_mask]
     rates_i = rates_i[finite_mask]
     rates_j = rates_j[finite_mask]
 
-    if len(pairwise_distances) == 0:
+    if len(pair_distances) == 0:
         raise ValueError("No valid bin pairs found (graph may be disconnected)")
 
     # Determine max distance
     if max_distance is None:
-        max_distance = float(np.max(pairwise_distances))
+        max_distance = float(np.max(pair_distances))
 
     # Create distance bins
     distance_bin_edges = np.linspace(0, max_distance, n_distance_bins + 1)
@@ -739,9 +728,7 @@ def _spatial_autocorrelation_graph(
 
     # Vectorized bin assignment using searchsorted
     # Match original behavior: d_min <= d < d_max (excludes values at exactly max_distance)
-    bin_indices = (
-        np.searchsorted(distance_bin_edges, pairwise_distances, side="right") - 1
-    )
+    bin_indices = np.searchsorted(distance_bin_edges, pair_distances, side="right") - 1
     # Values at or beyond last edge get bin_indices >= n_distance_bins, mark as invalid
     bin_indices = np.where(bin_indices >= n_distance_bins, -1, bin_indices)
     # Values below first edge also invalid
