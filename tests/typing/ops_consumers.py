@@ -56,7 +56,6 @@ if TYPE_CHECKING:
         WaveletBasisConsumer,
     )
     from neurospatial.ops.basis import _diffusion_generator
-    from neurospatial.ops.mapping import _pull_back_nearest
     from neurospatial.ops.transforms import AffineND
     from neurospatial.ops.visibility import ViewshedResult, compute_viewshed
 
@@ -117,7 +116,6 @@ if TYPE_CHECKING:
         analysis_interior(binning, arena)(centers)
         valid_observers(binning, arena, centers, "physical")
         line_of_sight_clear(binning, arena, centers[0], centers[1])
-        _pull_back_nearest(values, centers[:, 0].astype(np.int64), values > 0)
         _diffusion_generator(
             centers, env.bin_center_tree(), env.get_diffusion_geometry()
         )

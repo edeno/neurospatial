@@ -460,3 +460,19 @@ class TestResampleFieldDiffuseNaN:
 
         assert not np.any(np.isnan(diffuse))
         assert np.isfinite(diffuse.sum())
+
+
+class TestResampleFieldInfiniteValues:
+    """An infinite value has no nearest or average reading, so it is refused."""
+
+    @pytest.mark.parametrize("value", [np.inf, -np.inf])
+    @pytest.mark.parametrize("method", ["nearest", "diffuse"])
+    def test_infinite_field_value_is_refused(self, value, method):
+        from neurospatial.ops.mapping import resample_field
+
+        src_env, dst_env = _src_and_extending_dst_envs()
+        field = np.ones(src_env.n_bins)
+        field[3] = value
+
+        with pytest.raises(ValueError, match="infinite values"):
+            resample_field(field, src_env, dst_env, method=method, bandwidth=2.0)

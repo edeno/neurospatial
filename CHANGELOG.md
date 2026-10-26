@@ -6,6 +6,10 @@
 
 Results that change:
 
+- `resample_field` reads the source field with `env.interpolate(mode="nearest")`
+  instead of its own copy of that lookup, so it refuses a field with an
+  infinite value, for both methods, as `interpolate` does. Finite fields
+  resample to identical values.
 - `stats.wrap_angle` returns its documented (-π, π]: a half-turn either way
   is now +π, not -π. Egocentric bearings use the same function, so the
   value just above π, which rounded to -π, now also stays at +π.

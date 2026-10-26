@@ -530,6 +530,8 @@ def resample_field(
     ------
     ValueError
         If field size doesn't match source environment,
+        if the field has an infinite value (NaN marks a missing bin; an
+        infinite value has no defined nearest or average value),
         if method is invalid,
         if bandwidth is missing/invalid for diffuse method,
         or if environments have different dimensions.
@@ -687,20 +689,12 @@ def resample_field(
             f"destination has {dst_centers.shape[1]}D."
         )
 
-    # A destination bin is outside the source when its center lies in no
-    # source bin, by the source's own containment rule (Environment.bin_at);
-    # a distance-to-nearest-center threshold would let bins well outside the
-    # source copy its edge values. Inside, a bin takes the value of the nearest
-    # source bin center, as Environment.interpolate(mode="nearest") does. The
-    # source caches its KD-tree, so repeated resampling does not rebuild it.
-    outside_source = src_env.bin_at(dst_centers) < 0
-    nearest_source_bins = _nearest_bin_query(
-        src_centers,
-        src_env.bin_center_tree(),
-        dst_centers,
-        tie_break="lowest_index",
-    )
-    resampled = _pull_back_nearest(field, nearest_source_bins, outside_source)
+    # Each destination bin reads the nearest source bin center's value, NaN
+    # where its center lies in no source bin by the source's own containment
+    # rule; a distance-to-nearest-center threshold would let bins well outside
+    # the source copy its edge values. The source caches its KD-tree, so
+    # repeated resampling does not rebuild it.
+    resampled = src_env.interpolate(field, dst_centers, mode="nearest")
     if method == "nearest":
         return resampled
     assert bandwidth is not None  # Already validated above
@@ -714,34 +708,5 @@ def resample_field(
         dst_env.diffuse(resampled, bandwidth=bandwidth, mode="average"),
         dtype=np.float64,
     )
-    smoothed[outside_source] = np.nan
+    smoothed[src_env.bin_at(dst_centers) < 0] = np.nan
     return smoothed
-
-
-def _pull_back_nearest(
-    field: NDArray[np.float64],
-    nearest_source_bins: NDArray[np.int64],
-    outside_source: NDArray[np.bool_],
-) -> NDArray[np.float64]:
-    """Give each destination bin the value of its nearest source bin center.
-
-    Parameters
-    ----------
-    field : ndarray of float64, shape (n_src_bins,)
-        Values on the source bins.
-    nearest_source_bins : ndarray of int64, shape (n_dst_bins,)
-        Nearest source bin of each destination bin center.
-    outside_source : ndarray of bool, shape (n_dst_bins,)
-        Destination bins whose centers lie in no source bin.
-
-    Returns
-    -------
-    ndarray of float64, shape (n_dst_bins,)
-        Pulled-back values; NaN where the source value is NaN or the
-        destination bin is outside the source.
-    """
-    resampled: NDArray[np.float64] = field[nearest_source_bins].astype(
-        np.float64, copy=True
-    )
-    resampled[outside_source] = np.nan
-    return resampled
