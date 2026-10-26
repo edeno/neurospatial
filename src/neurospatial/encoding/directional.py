@@ -2027,6 +2027,25 @@ class _DirectionalCounts(NamedTuple):
     analysis_settings: dict[str, Any]
 
 
+def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
+    """Refuse a smoothing bandwidth that is not a finite number > 0."""
+    from neurospatial.encoding._base import _real_scalar
+
+    if bandwidth is None:
+        return
+    value = _real_scalar(bandwidth)
+    if value is None or not (np.isfinite(value) and value > 0):
+        raise ValueError(
+            _format_error(
+                f"bandwidth={bandwidth!r} is not a smoothing width.",
+                why="Why: the tuning curve is smoothed with a circular Gaussian "
+                f"of this standard deviation, in {angle_unit}.",
+                fix="pass a finite bandwidth > 0, or bandwidth=None for an "
+                "unsmoothed tuning curve.",
+            )
+        )
+
+
 def _count_directional(
     spike_trains: Sequence[NDArray[np.float64]],
     times: NDArray[np.float64],
@@ -2081,6 +2100,7 @@ def _count_directional(
     )
     from neurospatial.encoding._provenance import rate_analysis_settings
 
+    _check_smoothing_bandwidth(bandwidth, angle_unit)
     # Counts and occupancy share one frame mask, including a single unit.
     prepared, bin_centers = prepare_directional_binning(
         times,
@@ -2099,11 +2119,12 @@ def _count_directional(
     # bin spacing may differ from the requested bin_size
     actual_bin_size_rad = 2 * np.pi / len(bin_centers)
 
-    # Convert bandwidth to radians for storage
-    if angle_unit == "deg":
-        bandwidth_rad = np.radians(bandwidth) if bandwidth else None
-    else:
-        bandwidth_rad = bandwidth
+    # Store the bandwidth in radians.
+    bandwidth_rad = (
+        None
+        if bandwidth is None
+        else float(np.radians(bandwidth) if angle_unit == "deg" else bandwidth)
+    )
 
     settings = rate_analysis_settings(
         prepared.support,
