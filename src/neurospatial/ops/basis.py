@@ -104,6 +104,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import MissingFaces, require_cartesian
 
 if TYPE_CHECKING:
@@ -338,6 +339,62 @@ def _select_centers_grid() -> NDArray[np.int_]:
     )
 
 
+def _validate_centers(centers: Any, n_bins: int) -> NDArray[np.int_]:
+    """Return ``centers`` as bin indices, refusing values that are not bins.
+
+    Parameters
+    ----------
+    centers : array-like of int, shape (n_centers,)
+        Bin indices of the basis centers.
+    n_bins : int
+        Number of bins in the environment.
+
+    Returns
+    -------
+    NDArray[np.int_], shape (n_centers,)
+        The same indices.
+
+    Raises
+    ------
+    TypeError
+        If ``centers`` is not an integer array: a fractional value would be
+        truncated to a different bin.
+    ValueError
+        If ``centers`` is not 1-D or holds an index outside ``[0, n_bins)``,
+        such as the outside marker -1, which would wrap to the last bin.
+    """
+    array = np.asarray(centers)
+    if not np.issubdtype(array.dtype, np.integer):
+        raise TypeError(
+            _format_error(
+                f"centers must be integer bin indices, got dtype {array.dtype}.",
+                why="A fractional center would be truncated to a different bin.",
+                fix="pass bin indices, e.g. env.bin_at(points) or "
+                "select_basis_centers(env, n_centers=...)",
+            )
+        )
+    if array.ndim != 1:
+        raise ValueError(
+            _format_error(
+                f"centers must be a 1-D array of bin indices, got shape {array.shape}.",
+                fix="pass one bin index per basis center",
+            )
+        )
+    invalid = array[(array < 0) | (array >= n_bins)]
+    if invalid.size:
+        raise ValueError(
+            _format_error(
+                f"centers holds {invalid.size} value(s) that are not bins of this "
+                f"environment (valid: 0 to {n_bins - 1}), e.g. {int(invalid[0])}.",
+                why="-1 is env.bin_at's marker for a point outside the "
+                "environment, and a negative index would wrap to the last bin.",
+                fix="drop centers whose point is outside the environment, or "
+                "choose centers with select_basis_centers(env, n_centers=...)",
+            )
+        )
+    return array.astype(np.int_, copy=False)
+
+
 def _normalize_basis(
     basis: NDArray[np.float64],
     mode: Literal["unit", "max", "none"],
@@ -400,7 +457,7 @@ def geodesic_rbf_basis(
     env : Environment
         Environment.
     centers : NDArray[np.int_] or None
-        Node indices for basis centers. If None, auto-select using
+        Bin indices (0 to ``n_bins - 1``) for basis centers. If None, auto-select using
         n_centers and center_method.
     bandwidth : float or sequence of float
         RBF bandwidth in environment units (typically cm).
@@ -458,7 +515,11 @@ def geodesic_rbf_basis(
     ValueError
         If bandwidth contains non-positive values.
         If centers is None and n_centers is None.
+        If centers holds an index that is not a bin, such as the outside
+        marker -1.
         If environment graph is disconnected and some bins are unreachable.
+    TypeError
+        If centers is not an integer array.
 
     Notes
     -----
@@ -531,7 +592,7 @@ def geodesic_rbf_basis(
         centers = select_basis_centers(
             env, n_centers=n_centers, method=center_method, rng=rng
         )
-    centers = np.asarray(centers, dtype=np.int_)
+    centers = _validate_centers(centers, env.n_bins)
 
     # Handle bandwidth and validate
     bandwidths = np.atleast_1d(bandwidth).astype(np.float64)
@@ -662,7 +723,7 @@ def heat_kernel_wavelet_basis(
     env : Environment
         Environment with connectivity graph.
     centers : NDArray[np.int_] or None
-        Node indices for wavelet centers. If None, auto-select.
+        Bin indices (0 to ``n_bins - 1``) for wavelet centers. If None, auto-select.
     scales : sequence of float, default=(0.5, 1.0, 2.0, 4.0)
         Diffusion time in units of bin spacing². The kernel's standard
         deviation on a uniform Cartesian grid is ``sqrt(2 * scale)`` bins,
@@ -689,6 +750,10 @@ def heat_kernel_wavelet_basis(
     ValueError
         If scales contains non-positive values.
         If centers is None and n_centers is None.
+        If centers holds an index that is not a bin, such as the outside
+        marker -1.
+    TypeError
+        If centers is not an integer array.
     NotImplementedError
         If the layout has no finite-volume geometry builder.
 
@@ -754,7 +819,7 @@ def heat_kernel_wavelet_basis(
         centers = select_basis_centers(
             env, n_centers=n_centers, method=center_method, rng=rng
         )
-    centers = np.asarray(centers, dtype=np.int_)
+    centers = _validate_centers(centers, env.n_bins)
 
     # Validate scales
     scales_arr = np.asarray(scales, dtype=np.float64)
@@ -847,7 +912,7 @@ def chebyshev_filter_basis(
     env : Environment
         Environment with connectivity graph.
     centers : NDArray[np.int_] or None
-        Node indices for filter centers. If None, auto-select.
+        Bin indices (0 to ``n_bins - 1``) for filter centers. If None, auto-select.
     max_degree : int, default=5
         Maximum polynomial degree, which controls spatial extent.
         A degree-k basis function is nonzero only for bins within k
@@ -884,6 +949,10 @@ def chebyshev_filter_basis(
     ValueError
         If max_degree < 0.
         If centers is None and n_centers is None.
+        If centers holds an index that is not a bin, such as the outside
+        marker -1.
+    TypeError
+        If centers is not an integer array.
 
     Notes
     -----
@@ -955,7 +1024,7 @@ def chebyshev_filter_basis(
         centers = select_basis_centers(
             env, n_centers=n_centers, method=center_method, rng=rng
         )
-    centers = np.asarray(centers, dtype=np.int_)
+    centers = _validate_centers(centers, env.n_bins)
 
     # Validate max_degree
     if max_degree < 0:

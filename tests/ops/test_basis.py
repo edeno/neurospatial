@@ -127,6 +127,38 @@ def disconnected_env():
     return Environment.from_samples(positions, bin_size=2.0)
 
 
+_BASIS_FUNCTIONS = [
+    pytest.param(geodesic_rbf_basis, id="geodesic_rbf"),
+    pytest.param(heat_kernel_wavelet_basis, id="heat_kernel_wavelet"),
+    pytest.param(chebyshev_filter_basis, id="chebyshev_filter"),
+]
+
+
+@pytest.mark.parametrize("basis_function", _BASIS_FUNCTIONS)
+class TestExplicitCenters:
+    """Centers are bin indices; anything else is refused, not reinterpreted."""
+
+    def test_outside_marker_is_refused(self, basis_function, simple_2d_env):
+        """-1 (env.bin_at's outside marker) would wrap to the last bin."""
+        with pytest.raises(ValueError, match=r"-1.*outside") as exc:
+            basis_function(simple_2d_env, centers=np.array([0, -1]))
+        assert "\nFix:" in str(exc.value)
+
+    def test_index_past_last_bin_is_refused(self, basis_function, simple_2d_env):
+        with pytest.raises(ValueError, match="centers"):
+            basis_function(simple_2d_env, centers=np.array([simple_2d_env.n_bins]))
+
+    def test_fractional_center_is_refused(self, basis_function, simple_2d_env):
+        """2.7 would silently truncate to bin 2."""
+        with pytest.raises(TypeError, match="integer bin indices"):
+            basis_function(simple_2d_env, centers=np.array([2.7]))
+
+    def test_integer_list_is_accepted(self, basis_function, simple_2d_env):
+        from_list = basis_function(simple_2d_env, centers=[0, 5])
+        from_array = basis_function(simple_2d_env, centers=np.array([0, 5]))
+        assert_allclose(from_list, from_array)
+
+
 # =============================================================================
 # TestSelectBasisCenters
 # =============================================================================
@@ -256,7 +288,7 @@ class TestGeodesicRBFBasis:
 
         basis = geodesic_rbf_basis(
             maze_env_with_wall,
-            centers=np.array([center_bin]),
+            centers=center_bin,
             bandwidth=3.0,
             normalize="none",
         )
@@ -355,7 +387,7 @@ class TestHeatKernelWaveletBasis:
 
         basis = heat_kernel_wavelet_basis(
             maze_env_with_wall,
-            centers=np.array([center_bin]),
+            centers=center_bin,
             scales=[0.5],  # Small scale to see gradient
             normalize="none",
         )
