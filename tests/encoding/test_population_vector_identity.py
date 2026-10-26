@@ -37,7 +37,7 @@ def env() -> Environment:
 
 @pytest.fixture
 def make(env):
-    def make(rates, ids, occupancy=None, *, on=None, min_occupancy=None):
+    def make(rates, ids, occupancy=None, *, on=None, min_occupancy=0.0):
         on = env if on is None else on
         return SpatialRatesResult(
             firing_rates=np.asarray(rates, dtype=float),
@@ -46,9 +46,7 @@ def make(env):
             method="binned",
             bandwidth=5.0,
             unit_ids=None if ids is None else list(ids),
-            analysis_settings=(
-                None if min_occupancy is None else {"min_occupancy": min_occupancy}
-            ),
+            min_occupancy=min_occupancy,
         )
 
     return make

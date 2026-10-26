@@ -7,7 +7,7 @@ This module provides functions for writing spatial analysis results
 Schema note
 -----------
 The estimator is stored under the metadata key ``"method"``
-(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.4"``). Schema ``2.1`` persists the
+(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.5"``). Schema ``2.1`` persists the
 ``method="glm"`` GAM diagnostics (``coefficients``, ``penalty``,
 ``penalty_weights``, ``rank``, ``deviance``, ``converged``, ``n_iter``,
 ``reml_objective``). Schema ``2.2`` adds the per-neuron-``lambda``
@@ -22,6 +22,9 @@ explicit unit labels and assumed coverage; their missing provenance cannot be
 recovered from the stored labels or rate maps.
 Schema ``2.4`` adds resolved ``analysis_settings`` (including epochs, observed
 intervals and occupancy thresholds). Older files report these as unknown.
+Schema ``2.5`` adds ``min_occupancy``, the occupancy threshold in seconds that
+defines ``spatial_support`` (files without it are refused), and each unit's
+``n_spikes_outside_intervals`` (``null`` when unknown).
 
 ``read_place_field`` enforces the schema **major** version: it reads only tables
 whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0``,
@@ -46,7 +49,7 @@ and ignores the unknown per-unit columns -- silently reconstructing a
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -92,7 +95,7 @@ DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 #      reads back method-conditionally (glm -> pooled=True, ratio -> None).
 # 2.3: adds generated-unit-label provenance and spike-recording windows.
 # 2.4: records resolved analysis settings for reproducible spatial support.
-SPATIAL_RATES_SCHEMA_VERSION: str = "2.4"
+SPATIAL_RATES_SCHEMA_VERSION: str = "2.5"
 
 # The reader accepts any table sharing this MAJOR version (minor bumps only add
 # optional fields, so 2.0/2.1/... are mutually readable); other majors (missing,
@@ -719,6 +722,12 @@ def write_spatial_rates(
         "unit_table_columns": unit_table_columns,
         "occupancy_name": occupancy_name,
         "unit_ids_generated": bool(result._unit_ids_generated),
+        "min_occupancy": float(result.min_occupancy),
+        "n_spikes_outside_intervals": (
+            None
+            if result.n_spikes_outside_intervals is None
+            else result.n_spikes_outside_intervals.tolist()
+        ),
         "analysis_settings": result.analysis_settings,
         "spike_window": (
             None if result.spike_window is None else result.spike_window.tolist()
@@ -1240,6 +1249,25 @@ def read_place_field(
         unit_table=unit_table,
         _unit_ids_generated=unit_ids_generated,
         spike_window=spike_window,
+        min_occupancy=_recorded_min_occupancy(meta, name),
+        n_spikes_outside_intervals=(
+            None
+            if meta.get("n_spikes_outside_intervals") is None
+            else np.asarray(meta["n_spikes_outside_intervals"], dtype=np.int64)
+        ),
         analysis_settings=meta.get("analysis_settings"),
         **gam_fields,  # type: ignore[arg-type]
     )
+
+
+def _recorded_min_occupancy(meta: dict[str, Any], name: str) -> float:
+    """The occupancy threshold in seconds that defines the maps' support."""
+    if "min_occupancy" not in meta:
+        raise ValueError(
+            f"Spatial rates '{name}' records no min_occupancy (schema "
+            f"{meta.get('schema_version')!r}).\n"
+            "Why: spatial_support is derived from the occupancy threshold, and "
+            "files before schema 2.5 did not store it.\n"
+            "Fix: recompute the rates and write them again with write_spatial_rates."
+        )
+    return float(meta["min_occupancy"])

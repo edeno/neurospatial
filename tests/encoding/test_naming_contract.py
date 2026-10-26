@@ -105,3 +105,70 @@ def test_has_place_field_exported_from_encoding() -> None:
     import neurospatial.encoding as enc
 
     assert hasattr(enc, "has_place_field")
+
+
+# ---------------------------------------------------------------------------
+# One metric name across families and verbs
+# ---------------------------------------------------------------------------
+
+
+def _family_results(trajectory) -> dict[str, object]:
+    from shapely.geometry import box
+
+    from neurospatial.encoding import (
+        compute_boundary_vector_rates,
+        compute_directional_rates,
+        compute_egocentric_rates,
+        compute_spatial_rates,
+        compute_view_rates,
+    )
+
+    _env, times, positions, headings, spike_times = trajectory
+    arena = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
+    objects = np.array([[50.0, 50.0]])
+    return {
+        "spatial": compute_spatial_rates(arena, spike_times, times, positions),
+        "directional": compute_directional_rates(spike_times, times, headings),
+        "view": compute_view_rates(arena, spike_times, times, positions, headings),
+        "object_vector": compute_egocentric_rates(
+            arena, spike_times, times, positions, headings, objects
+        ),
+        "boundary_vector": compute_boundary_vector_rates(
+            arena, spike_times, times, positions, headings, direction_frame="egocentric"
+        ),
+    }
+
+
+def test_peak_firing_rate_has_one_name_in_every_verb(trajectory) -> None:
+    """summary(), summary_table() and the method share the name peak_firing_rate."""
+    for name, population in _family_results(trajectory).items():
+        table = population.summary_table()
+        assert table.columns[0] == "peak_firing_rate", name
+        assert "peak_rate" not in table.columns
+        assert table.attrs["units"]["peak_firing_rate"] == "Hz"
+        unit = population[0]
+        assert unit.summary()["peak_firing_rate"] == pytest.approx(
+            table["peak_firing_rate"].iloc[0], nan_ok=True
+        )
+        np.testing.assert_allclose(
+            table["peak_firing_rate"], population.peak_firing_rate()
+        )
+
+
+def test_spatial_information_has_one_name_in_spatial_and_view_results(
+    trajectory,
+) -> None:
+    """Skaggs information is spatial_information in methods, summaries and tables."""
+    results = _family_results(trajectory)
+    for name in ("spatial", "view"):
+        population = results[name]
+        table = population.summary_table()
+        np.testing.assert_allclose(
+            table["spatial_information"], population.spatial_information()
+        )
+        assert table.attrs["units"]["spatial_information"] == "bits/spike"
+        unit = population[0]
+        assert unit.summary()["spatial_information"] == pytest.approx(
+            float(unit.spatial_information()), nan_ok=True
+        )
+        assert not any(c == "spatial_info" or "view_spatial" in c for c in table)

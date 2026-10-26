@@ -1181,15 +1181,12 @@ def _centered(
 def _estimator(rates: SpatialRatesResult | SpatialRateResult) -> dict[str, Any]:
     """The estimator settings that shape a rate map, JSON-safe.
 
-    ``min_occupancy`` is recorded as the threshold the comparison applied:
-    a missing or ``None`` value means no threshold, as in
-    ``occupancy_support``, and is recorded as ``0.0``.
+    ``min_occupancy`` is the threshold the comparison applied, in seconds.
     """
-    settings = rates.analysis_settings or {}
     return {
         "method": rates.method,
-        "bandwidth": None if rates.bandwidth is None else float(rates.bandwidth),
-        "min_occupancy": float(settings.get("min_occupancy") or 0.0),
+        "bandwidth": rates.bandwidth,
+        "min_occupancy": rates.min_occupancy,
     }
 
 

@@ -2128,7 +2128,7 @@ class TestDirectionalRatesResultSummaryTable:
     @pytest.mark.parametrize(
         ("column", "expected"),
         [
-            ("peak_rate", lambda r: r.peak_firing_rate()),
+            ("peak_firing_rate", lambda r: r.peak_firing_rate()),
             ("mean_vector_length", lambda r: r.mean_vector_lengths()),
             ("preferred_direction", lambda r: r.preferred_directions()),
             ("preferred_direction_deg", lambda r: np.degrees(r.preferred_directions())),
@@ -2360,7 +2360,7 @@ class TestDirectionalRatesResultSummaryTable:
 
         df = result.summary_table()
         peaks = result.peak_firing_rate()
-        np.testing.assert_allclose(df["peak_rate"].values, peaks)
+        np.testing.assert_allclose(df["peak_firing_rate"].values, peaks)
 
     def test_summary_table_is_hd_cell_matches_method(
         self,
@@ -4152,3 +4152,34 @@ class TestBackendParity:
                 jax_result[unit].null_scores, ref[unit].null_scores, rtol=1e-6
             )
             assert jax_result[unit].p_value == ref[unit].p_value
+
+
+@pytest.mark.parametrize("bandwidth", [0.0, -0.1, np.nan, np.inf])
+@pytest.mark.parametrize("angle_unit", ["rad", "deg"])
+def test_directional_rates_refuse_a_bandwidth_that_cannot_smooth(
+    bandwidth: float, angle_unit: str
+) -> None:
+    """A zero, negative or non-finite width is refused, never read as unsmoothed."""
+    from neurospatial.encoding import (
+        compute_directional_rate,
+        compute_directional_rates,
+    )
+
+    rng = np.random.default_rng(0)
+    times = np.linspace(0.0, 100.0, 1000)
+    headings = rng.uniform(-np.pi, np.pi, 1000)
+    spikes = np.sort(np.random.default_rng(1).uniform(0.0, 100.0, 50))
+    if angle_unit == "deg":
+        headings = np.degrees(headings)
+    for compute, spike_times in (
+        (compute_directional_rate, spikes),
+        (compute_directional_rates, [spikes]),
+    ):
+        with pytest.raises(ValueError, match="is not a smoothing width"):
+            compute(
+                spike_times,
+                times,
+                headings,
+                bandwidth=bandwidth,
+                angle_unit=angle_unit,
+            )

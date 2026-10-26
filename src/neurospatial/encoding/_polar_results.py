@@ -9,15 +9,22 @@ compute alike; each family keeps its own public methods and documentation.
 from __future__ import annotations
 
 from collections.abc import Hashable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.encoding._base import _to_numpy
+from neurospatial.encoding._base import KERNEL_ESTIMATORS, BandwidthRule, _to_numpy
 
 if TYPE_CHECKING:
     import pandas as pd
+
+
+POLAR_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
+    {**KERNEL_ESTIMATORS, "binned": "none"}
+)
+"""Polar estimators: ``"binned"`` is the raw bin rate and does not smooth."""
 
 
 class _PolarRateMixin:
@@ -31,6 +38,7 @@ class _PolarRateMixin:
 
     env: Any
     direction_frame: str
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = POLAR_ESTIMATORS
 
     @property
     def distance_range(self) -> tuple[float, float]:
@@ -186,28 +194,32 @@ def polar_summary_frame(
     extra: Mapping[str, NDArray[Any]],
     extra_units: Mapping[str, str],
     thresholds: Mapping[str, float] | None,
+    classification: Mapping[str, NDArray[Any]] | None = None,
 ) -> pd.DataFrame:
     """One row per unit with the peak and its distance and direction.
 
-    The columns are ``peak_rate``, ``preferred_distance``,
+    The columns are ``peak_firing_rate``, ``preferred_distance``,
     ``preferred_direction_deg`` and ``preferred_direction``, then ``extra``
-    (a family's metrics, with any classification last). Singular and
-    population results get identical columns.
+    (a family's metrics), ``n_spikes_outside_intervals`` and any
+    ``classification``. Singular and population results get identical
+    columns.
     """
     import pandas as pd
 
     peaks = np.atleast_2d(result.peak_location())
     columns = {
-        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
+        "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
         "preferred_distance": peaks[:, 0],
         "preferred_direction_deg": np.degrees(peaks[:, 1]),
         "preferred_direction": peaks[:, 1],
         **extra,
+        **result._accounting_columns(),
+        **(classification or {}),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["direction_frame"] = result.direction_frame
     df.attrs["units"] = {
-        "peak_rate": "Hz",
+        "peak_firing_rate": "Hz",
         "preferred_distance": result.env.units or "",
         "preferred_direction": "rad",
         "preferred_direction_deg": "deg",

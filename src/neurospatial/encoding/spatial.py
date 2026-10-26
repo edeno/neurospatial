@@ -48,7 +48,7 @@ from collections import deque
 from collections.abc import Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -58,13 +58,20 @@ from neurospatial._observation import validate_break_before
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
-    UnitSelectionMixin,
     _copy_analysis_settings,
-    label_at,
+    _copy_unit_table,
     read_only_copy,
 )
-from neurospatial.encoding._base import SpatialResultMixin, _is_jax_array, _to_numpy
+from neurospatial.encoding._base import (
+    KERNEL_ESTIMATORS,
+    BandwidthRule,
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _is_jax_array,
+    _to_numpy,
+)
 from neurospatial.encoding._metrics import BatchScoresResult
+from neurospatial.encoding._provenance import spikes_outside_intervals
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
@@ -571,52 +578,9 @@ def _check_gam_result_invariant(
             )
 
 
-def _check_rates_match_env(
-    kind: str,
-    rates: ArrayLike,
-    occupancy: ArrayLike,
-    env: Environment,
-    *,
-    rates_ndim: int,
-) -> None:
-    """Refuse firing rates or occupancy whose bins are not ``env``'s bins.
-
-    ``rates`` is ``(n_bins,)`` when ``rates_ndim=1`` (single unit) and
-    ``(n_units, n_bins)`` when ``rates_ndim=2`` (population); ``occupancy``
-    is ``(n_bins,)``.
-    """
-    n_bins = env.n_bins
-    rates_shape, occupancy_shape = np.shape(rates), np.shape(occupancy)
-    why = (
-        "each rate and occupancy value belongs to one bin of the environment "
-        "the rates were estimated on"
-    )
-    fix = (
-        "pass the Environment used to compute these rates, or recompute them "
-        "on this environment"
-    )
-    if len(rates_shape) != rates_ndim:
-        expected = "(n_bins,)" if rates_ndim == 1 else "(n_units, n_bins)"
-        raise ValueError(
-            _format_error(
-                f"{kind}: firing rates have shape {rates_shape}, not {expected} "
-                f"over the env's {n_bins} bins.",
-                why=why,
-                fix=fix,
-            )
-        )
-    if rates_shape[-1] != n_bins or occupancy_shape != (n_bins,):
-        occupancy_bins = (
-            occupancy_shape[0] if len(occupancy_shape) == 1 else occupancy_shape
-        )
-        raise ValueError(
-            _format_error(
-                f"{kind}: firing rates have {rates_shape[-1]} bins and occupancy "
-                f"{occupancy_bins}, but env has {n_bins}.",
-                why=why,
-                fix=fix,
-            )
-        )
+SPATIAL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
+    {**KERNEL_ESTIMATORS, "binned": "nonnegative", "glm": "none"}
+)
 
 
 def _index_per_unit(value: Any, idx: int) -> Any:
@@ -713,14 +677,15 @@ def _spatial_summary_frame(
         border = np.full(len(rates), np.nan)
         unavailable["border_score"] = str(exc)
     columns: dict[str, Any] = {
-        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
-        "spatial_info": info,
+        "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
+        "spatial_information": info,
         "sparsity": np.asarray(batch_sparsity(rates, occupancy)),
         "grid_score": grid,
         "border_score": border,
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **_glm_summary_columns(result),
+        **result._accounting_columns(),
     }
     if include_classification:
         labels = _label_from_scores(info, grid, border, **PLACE_GRID_BORDER_THRESHOLDS)
@@ -734,10 +699,9 @@ def _spatial_summary_frame(
     df.attrs["border_field_minimum"] = _border_field_minimum(result.env)
     if unavailable:
         df.attrs["unavailable_metrics"] = unavailable
-    df.attrs["method"] = result.method
     df.attrs["units"] = {
-        "peak_rate": "Hz",
-        "spatial_info": "bits/spike",
+        "peak_firing_rate": "Hz",
+        "spatial_information": "bits/spike",
         "peak_x": result.env.units or "",
         "peak_y": result.env.units or "",
     }
@@ -748,7 +712,7 @@ def _spatial_summary_frame(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class SpatialRateResult(SpatialResultMixin):
+class SpatialRateResult(SingleUnitRateMixin):
     """Result of spatial rate computation for a single neuron.
 
     This class wraps a spatial firing rate map with its associated metadata
@@ -802,6 +766,20 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         own scalar values and ``penalty_selected_by_reml`` its provenance
         (``False`` = pooled-``λ`` fallback zero-spike unit); ``pooled`` records
         the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved epochs, observed intervals, gap/speed/occupancy gates and
         estimator settings. None for manually constructed results.
@@ -813,10 +791,6 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         position was recorded.
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed rather than supplied.
-
-    _unit_ids_generated : bool, default=False
-        Internal identity provenance. True only for generated unit labels;
-        preserves positional pairing when maps are handed to a decoder.
 
     Notes
     -----
@@ -890,17 +864,21 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     penalty_selected_by_reml: bool | None = None
     pooled: bool | None = None
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
 
     _unit_ids_generated: bool = field(
-        default=False, repr=False, compare=False, kw_only=True
+        default=False, kw_only=True, repr=False, compare=False
     )
 
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, compare=False, repr=False
     )
+
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = SPATIAL_ESTIMATORS
 
     def summary_table(
         self,
@@ -940,8 +918,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         ``df.attrs["classification_thresholds"]``. For shuffle significance,
         call place_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         Examples
         --------
@@ -970,13 +948,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     def _headline_metrics(self) -> dict[str, float]:
         """Cheap metrics for the singular summary (NaN when undefined)."""
         return {
-            "spatial_info": float(self.spatial_information()),
+            "spatial_information": float(self.spatial_information()),
             "sparsity": float(self.sparsity()),
         }
 
-    def __post_init__(self) -> None:
-        if self.unit_id is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
+    def _check_family(self) -> None:
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
         # (and correctly per-unit-shaped) for method="glm" with bandwidth=None, or
         # all absent for a ratio method. n_units=None -> the singular per-unit slice.
@@ -999,14 +975,6 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             },
             n_units=None,
         )
-        _check_rates_match_env(
-            "SpatialRateResult",
-            self.firing_rate,
-            self.occupancy,
-            self.env,
-            rates_ndim=1,
-        )
-        self._own_arrays()
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map.
@@ -1634,9 +1602,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         return self.spatial_information() >= min_info
 
 
+@_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
+class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
     """Result of spatial rate computation for multiple neurons.
 
     This class wraps spatial firing rate maps for a population of neurons
@@ -1733,6 +1702,20 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         provided. A unit_id column or named/non-default index aligns rows
         by identity; an unnamed default RangeIndex uses unit order.
         Mismatched or duplicate labels raise ValueError.
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved epochs, observed intervals, gap/speed/occupancy gates and
         estimator settings. None for manually constructed results.
@@ -1744,10 +1727,6 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         ``None`` records assumed recording coverage.
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed rather than supplied.
-
-    _unit_ids_generated : bool, default=False
-        Internal identity provenance. True only for generated unit labels;
-        preserves positional pairing when maps are handed to a decoder.
 
     Notes
     -----
@@ -1853,23 +1832,25 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
     penalty_selected_by_reml: NDArray[np.bool_] | None = None
     pooled: bool | None = None
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
 
     _unit_ids_generated: bool = field(
-        default=False, repr=False, compare=False, kw_only=True
+        default=False, kw_only=True, repr=False, compare=False
     )
 
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, compare=False, repr=False
     )
 
-    def __post_init__(self) -> None:
-        if self.unit_ids is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
-        from neurospatial._results import align_unit_table, resolve_unit_ids
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = SPATIAL_ESTIMATORS
 
+    def _check_family(self) -> None:
         n_units = int(np.asarray(self.firing_rates).shape[0])
         # Enforce the None-iff-glm invariant (GAM diagnostics travel together):
         # populated and correctly (rank, n_units)/(rank,)/(n_units,)-shaped for
@@ -1893,38 +1874,6 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             },
             n_units=n_units,
         )
-        _check_rates_match_env(
-            "SpatialRatesResult",
-            self.firing_rates,
-            self.occupancy,
-            self.env,
-            rates_ndim=2,
-        )
-
-        object.__setattr__(
-            self,
-            "unit_ids",
-            resolve_unit_ids(self.unit_ids, n_units),
-        )
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="SpatialRatesResult"
-            ),
-        )
-        self._own_arrays()
-
-    def __len__(self) -> int:
-        """Return number of units.
-
-        Returns
-        -------
-        int
-            Number of neurons (first dimension of firing_rates).
-        """
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        return int(rates.shape[0])
 
     def __getitem__(self, idx: int) -> SpatialRateResult:
         """Get single-neuron result by index.
@@ -1959,7 +1908,6 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         True
         """
         idx = self._unit_position(idx)
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         # Slice the per-unit GAM fields; shared / batch-scalar fields carry
         # through unchanged. All ``None`` for ratio results (the ``is not None``
         # guards keep them ``None``).
@@ -1970,16 +1918,12 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         # ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` /
         # ``penalty_selected_by_reml`` slice per-unit when they are per-unit
         # vectors (pooled=False); a shared scalar or ``None`` carries through.
-        return SpatialRateResult(
-            firing_rate=rates[idx],
-            occupancy=self.occupancy,
+        return self._unit_result(
+            SpatialRateResult,
+            idx,
             env=self.env,
             method=self.method,
             bandwidth=self.bandwidth,
-            unit_id=label_at(self.unit_ids, idx),
-            _unit_ids_generated=self._unit_ids_generated,
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
             coefficients=coefficients,
             penalty=_index_per_unit(self.penalty, idx),
             penalty_weights=self.penalty_weights,
@@ -1994,34 +1938,6 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             ),
             pooled=self.pooled,
         )
-
-    def __iter__(self) -> Iterator[SpatialRateResult]:
-        """Iterate over single-neuron results.
-
-        Yields
-        ------
-        SpatialRateResult
-            Result for each neuron in order.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from neurospatial.encoding.spatial import compute_spatial_rates
-        >>> rng = np.random.default_rng(0)
-        >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> times = np.linspace(0, 50, 500)
-        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
-        >>> results = compute_spatial_rates(
-        ...     env, spike_times, times, positions, bandwidth=10.0
-        ... )
-        >>> peaks = [float(r.peak_firing_rate()) for r in results]
-        >>> len(peaks)
-        3
-        """
-        for i in range(len(self)):
-            yield self[i]
 
     def peak_locations(self) -> NDArray[np.float64]:
         """Locations of peak firing for all neurons (batch accessor).
@@ -2696,8 +2612,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
 
             - peak_x: x-coordinate of peak firing location
             - peak_y: y-coordinate of peak firing location (NaN for 1D)
-            - peak_rate: maximum firing rate (Hz)
-            - spatial_info: spatial information (bits/spike)
+            - peak_firing_rate: maximum firing rate (Hz)
+            - spatial_information: spatial information (bits/spike)
             - sparsity: sparsity measure (0-1)
             - grid_score: grid score (hexagonal periodicity)
             - border_score: border score (boundary proximity tuning)
@@ -2713,8 +2629,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         ``df.attrs["classification_thresholds"]``. For shuffle significance,
         call place_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
@@ -2723,8 +2639,8 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         **Common pandas workflows**:
 
         - Filter: ``df[df["cell_type"] == "place"]``
-        - Sort: ``df.sort_values("spatial_info", ascending=False)``
-        - Top-N: ``df.nlargest(10, "peak_rate")``
+        - Sort: ``df.sort_values("spatial_information", ascending=False)``
+        - Top-N: ``df.nlargest(10, "peak_firing_rate")``
 
         Examples
         --------
@@ -2751,7 +2667,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         >>> place_cells = df[df["cell_type"] == "place"]
 
         >>> # Sort by spatial information
-        >>> top_cells = df.sort_values("spatial_info", ascending=False)
+        >>> top_cells = df.sort_values("spatial_information", ascending=False)
 
         >>> # Custom unit identifiers
         >>> df = result.summary_table(unit_ids=["unit_0", "unit_1", "unit_2"])
@@ -3698,6 +3614,9 @@ default="diffusion_kde"
         # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
         # ``pooled=True`` fields are already scalars and pass through untouched.
         return SpatialRateResult(
+            n_spikes_outside_intervals=int(
+                spikes_outside_intervals([spike_times], support.time_support)[0]
+            ),
             analysis_settings=settings,
             spike_window=resolved_spike_window,
             firing_rate=single_firing_rate,
@@ -3745,6 +3664,10 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRateResult(
+        n_spikes_outside_intervals=int(
+            spikes_outside_intervals([spike_times], support.time_support)[0]
+        ),
+        min_occupancy=min_occupancy,
         analysis_settings=settings,
         spike_window=resolved_spike_window,
         firing_rate=firing_rate,
@@ -4274,6 +4197,9 @@ default="diffusion_kde"
         # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
         # straight through from the fit; they are scalar/None under pooled=True.
         return SpatialRatesResult(
+            n_spikes_outside_intervals=spikes_outside_intervals(
+                spike_times_list, support.time_support
+            ),
             analysis_settings=settings,
             unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
@@ -4330,6 +4256,10 @@ default="diffusion_kde"
             occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
+            n_spikes_outside_intervals=spikes_outside_intervals(
+                spike_times_list, support.time_support
+            ),
+            min_occupancy=min_occupancy,
             analysis_settings=settings,
             unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
@@ -4397,6 +4327,10 @@ default="diffusion_kde"
 
     # Return result
     return SpatialRatesResult(
+        n_spikes_outside_intervals=spikes_outside_intervals(
+            spike_times_list, support.time_support
+        ),
+        min_occupancy=min_occupancy,
         analysis_settings=settings,
         unit_table=getattr(spike_times, "unit_table", None),
         spike_window=resolved_spike_window,

@@ -635,13 +635,13 @@ class TestComputeViewRateResultMethods:
         assert isinstance(peak, np.ndarray)
         assert peak.shape == (2,)  # 2D environment
 
-    def test_result_has_view_spatial_information_method(
+    def test_result_has_spatial_information_method(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
     ) -> None:
-        """Result should have view_spatial_information() method that works."""
+        """Result should have spatial_information() method that works."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
@@ -653,7 +653,7 @@ class TestComputeViewRateResultMethods:
             headings,
             boundary_source="analysis",
         )
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         assert isinstance(info, float)
         assert info >= 0.0
 
@@ -2090,7 +2090,7 @@ def test_gaze_offsets_recover_a_left_gaze_cell_only_on_the_left(left_gaze_cell):
     )
     assert np.linalg.norm(left.peak_location() - target) <= 10.0
     assert np.linalg.norm(right.peak_location() - target) > 20.0
-    assert left.view_spatial_information() > 3 * right.view_spatial_information()
+    assert left.spatial_information() > 3 * right.spatial_information()
 
 
 def test_view_rate_peaks_at_the_viewed_location_not_the_position(left_gaze_cell):
@@ -2112,4 +2112,4 @@ def test_view_rate_peaks_at_the_viewed_location_not_the_position(left_gaze_cell)
     place = compute_spatial_rate(
         env, spikes, times, positions, method="binned", min_occupancy=1.0
     )
-    assert view.view_spatial_information() > 5 * place.spatial_information()
+    assert view.spatial_information() > 5 * place.spatial_information()

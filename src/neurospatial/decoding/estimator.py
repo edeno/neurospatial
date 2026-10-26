@@ -452,7 +452,7 @@ warn_on_drop
         config: _EncodingConfig = (
             rates.method,
             rates.bandwidth,
-            settings.get("min_occupancy"),
+            None if rates.method == "glm" else rates.min_occupancy,
             settings.get("penalty"),
             settings.get("rank", rates.rank),
         )

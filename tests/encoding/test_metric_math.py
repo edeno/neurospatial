@@ -86,9 +86,9 @@ def test_silent_unit_summary_agrees_with_summary_table():
     table = rates.summary_table(boundary_source="analysis")
     for position, unit in enumerate(rates):
         summary = unit.summary()
-        for key in ["spatial_info", "sparsity"]:
+        for key in ["spatial_information", "sparsity"]:
             assert_allclose(summary[key], table[key].iloc[position], equal_nan=True)
-    assert np.isnan(table["spatial_info"].iloc[0])
+    assert np.isnan(table["spatial_information"].iloc[0])
     assert np.isnan(table["sparsity"].iloc[0])
 
 

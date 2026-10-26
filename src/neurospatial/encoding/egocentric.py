@@ -44,7 +44,7 @@ neurospatial.ops.egocentric : Egocentric coordinate transforms
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterator, Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
@@ -59,8 +59,12 @@ from neurospatial._intervals import (
     run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
-from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial.encoding._base import (
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _to_numpy,
+)
 from neurospatial.encoding._polar_results import (
     _PolarRateMixin,
     polar_summary_frame,
@@ -152,7 +156,8 @@ def _object_vector_summary_frame(
     return polar_summary_frame(
         result,
         index=index,
-        extra={
+        extra={},
+        classification={
             "is_object_vector_cell": _object_vector_classify(
                 rates, occupancy, **OBJECT_VECTOR_THRESHOLDS
             )
@@ -164,7 +169,7 @@ def _object_vector_summary_frame(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
+class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     """Result of object-vector rate computation for a single neuron.
 
     This class wraps an object-vector firing rate map (firing rate by distance
@@ -188,6 +193,11 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
+    method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
+        Estimator used. ``"binned"`` is the raw rate in each polar bin.
+    bandwidth : float or None, default=None
+        Kernel bandwidth in the environment's length units for the kernel
+        methods; ``None`` for ``"binned"``, which does not smooth.
 
     Attributes
     ----------
@@ -210,6 +220,20 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
 
     Other Parameters
     ----------------
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         family-specific settings. Preserved by indexing and table/xarray
@@ -218,7 +242,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     Notes
     -----
     ``spatial_support`` is a boolean mask over this result's bins. A bin must
-    have positive occupancy, meet the recorded minimum occupancy and have
+    have positive occupancy, be occupied for at least ``min_occupancy`` and have
     finite rates for every unit. Angular and polar results use their own bin
     coordinates; unsupported bins are not evidence of neural silence.
 
@@ -268,18 +292,24 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     occupancy: ArrayLike
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_id: int | str | None = None
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
+    def _check_family(self) -> None:
         _check_direction_frame(self.direction_frame, context="ObjectVectorRateResult")
-        self._own_arrays()
 
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
@@ -296,8 +326,8 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         The direction frame is in ``df.attrs["direction_frame"]``.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         Examples
         --------
@@ -658,9 +688,12 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         )
 
 
+@_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelectionMixin):
+class ObjectVectorRatesResult(
+    _PolarRateMixin, PopulationRateMixin[ObjectVectorRateResult]
+):
     """Result of object-vector rate computation for multiple neurons.
 
     This class wraps object-vector firing rate maps for a population of neurons
@@ -682,6 +715,11 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
+    method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
+        Estimator used. ``"binned"`` is the raw rate in each polar bin.
+    bandwidth : float or None, default=None
+        Kernel bandwidth in the environment's length units for the kernel
+        methods; ``None`` for ``"binned"``, which does not smooth.
 
     Attributes
     ----------
@@ -710,6 +748,20 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
 
     Other Parameters
     ----------------
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         family-specific settings. Preserved by indexing and table/xarray
@@ -718,7 +770,7 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     Notes
     -----
     ``spatial_support`` is a boolean mask over this result's bins. A bin must
-    have positive occupancy, meet the recorded minimum occupancy and have
+    have positive occupancy, be occupied for at least ``min_occupancy`` and have
     finite rates for every unit. Angular and polar results use their own bin
     coordinates; unsupported bins are not evidence of neural silence.
 
@@ -779,70 +831,27 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     occupancy: ArrayLike
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
+    min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
+    def _check_family(self) -> None:
         _check_direction_frame(self.direction_frame, context="ObjectVectorRatesResult")
-        n_units = int(np.asarray(self.firing_rates).shape[0])
-        object.__setattr__(
-            self,
-            "unit_ids",
-            resolve_unit_ids(self.unit_ids, n_units),
-        )
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="ObjectVectorRatesResult"
-            ),
-        )
-        self._own_arrays()
-
-    def __len__(self) -> int:
-        """Return the number of units.
-
-        Returns
-        -------
-        int
-            Number of neurons in the batch.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
-        >>> rng = np.random.default_rng(0)
-        >>> times = np.linspace(0, 100, 1000)
-        >>> positions = rng.uniform(10, 90, (1000, 2))
-        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
-        >>> object_positions = np.array([[50.0, 50.0]])
-        >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ...     np.sort(rng.uniform(0, 100, 50)),
-        ... ]
-        >>> result = compute_egocentric_rates(
-        ...     None,
-        ...     spike_times,
-        ...     times,
-        ...     positions,
-        ...     headings,
-        ...     object_positions,
-        ...     distance_range=(0.0, 50.0),
-        ... )
-        >>> len(result)
-        3
-        """
-        return len(self.firing_rates)  # type: ignore[arg-type]
 
     def __getitem__(self, idx: int) -> ObjectVectorRateResult:
         """Get single-neuron result by index.
@@ -884,53 +893,14 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         >>> isinstance(single, ObjectVectorRateResult)
         True
         """
-        idx = self._unit_position(idx)
-        return ObjectVectorRateResult(
-            firing_rate=self.firing_rates[idx],  # type: ignore[index]
-            occupancy=self.occupancy,
+        return self._unit_result(
+            ObjectVectorRateResult,
+            idx,
             env=self.env,
-            unit_id=label_at(self.unit_ids, idx),
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
             direction_frame=self.direction_frame,
+            method=self.method,
+            bandwidth=self.bandwidth,
         )
-
-    def __iter__(self) -> Iterator[ObjectVectorRateResult]:
-        """Iterate over single-neuron results.
-
-        Yields
-        ------
-        ObjectVectorRateResult
-            Object-vector rate result in the same frame for each neuron in order.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
-        >>> rng = np.random.default_rng(0)
-        >>> times = np.linspace(0, 100, 1000)
-        >>> positions = rng.uniform(10, 90, (1000, 2))
-        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
-        >>> object_positions = np.array([[50.0, 50.0]])
-        >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ... ]
-        >>> result = compute_egocentric_rates(
-        ...     None,
-        ...     spike_times,
-        ...     times,
-        ...     positions,
-        ...     headings,
-        ...     object_positions,
-        ...     distance_range=(0.0, 50.0),
-        ... )
-        >>> peaks = [float(single.firing_rate.max()) for single in result]
-        >>> len(peaks)
-        2
-        """
-        for i in range(len(self)):
-            yield self[i]
 
     def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the object-vector rate map for a specific neuron.
@@ -1250,7 +1220,7 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         pd.DataFrame
             One row per unit, indexed by ``unit_id``, with columns:
 
-            - peak_rate: maximum firing rate (Hz)
+            - peak_firing_rate: maximum firing rate (Hz)
             - preferred_distance: preferred distance to the object, in the
               environment's length units (``df.attrs["units"]``)
             - preferred_direction_deg: preferred direction (degrees in
@@ -1272,8 +1242,8 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         The direction frame is in ``df.attrs["direction_frame"]``.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
@@ -1283,7 +1253,7 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
 
         - Filter: ``df[df["is_object_vector_cell"] == True]``
         - Sort: ``df.sort_values("preferred_distance")``
-        - Top-N: ``df.nlargest(10, "peak_rate")``
+        - Top-N: ``df.nlargest(10, "peak_firing_rate")``
 
         Examples
         --------
@@ -1310,7 +1280,7 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'is_object_vector_cell']
+        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'n_spikes_outside_intervals', 'is_object_vector_cell']
         >>> len(df)
         3
         >>> df.index.name
@@ -1401,7 +1371,7 @@ def _egocentric_firing_rate(
     occupancy: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
-    bandwidth: float,
+    bandwidth: float | None,
     min_occupancy: float,
     backend: ResolvedBackend,
 ) -> ArrayLike:
@@ -1418,8 +1388,8 @@ def _egocentric_firing_rate(
     method : {"diffusion_kde", "gaussian_kde", "binned"}
         ``"binned"`` returns the raw bin rate (see ``_raw_polar_rate``); the
         kernel methods smooth via ``smooth_rate_map``.
-    bandwidth : float
-        Smoothing bandwidth, in environment units. Unused for ``"binned"``.
+    bandwidth : float or None
+        Smoothing bandwidth, in environment units; ``None`` for ``"binned"``.
     min_occupancy : float
         Bins with occupancy below this value are treated as unvisited.
     backend : {"numpy", "jax"}
@@ -1444,6 +1414,7 @@ def _egocentric_firing_rate(
 
     from neurospatial.encoding._smoothing import smooth_rate_map
 
+    assert bandwidth is not None  # resolved for every kernel method
     return smooth_rate_map(
         polar_env,
         spike_counts,
@@ -2034,8 +2005,9 @@ class _ObjectVectorCounts(NamedTuple):
     spike_counts: NDArray[np.float64]  # (n_units, n_bins), unsmoothed
     occupancy: NDArray[np.float64]  # (n_bins,) seconds
     polar_env: PolarEnvironment  # polar geometry (distance in env units, angle in rad)
-    bandwidth: float  # resolved smoothing bandwidth
+    bandwidth: float | None  # resolved kernel bandwidth; None for "binned"
     analysis_settings: dict[str, Any]
+    n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
 
 
 def _count_object_vectors(
@@ -2104,13 +2076,16 @@ def _count_object_vectors(
         Seconds spent in each polar bin.
     polar_env : PolarEnvironment
         Polar geometry carrying the environment's length units.
-    bandwidth : float
-        Resolved smoothing bandwidth.
+    bandwidth : float or None
+        Resolved kernel bandwidth; ``None`` for ``"binned"``.
     analysis_settings : dict
         Provenance settings for the result.
     """
     from neurospatial.encoding._egocentric_counts import prepare_egocentric_binning
-    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._provenance import (
+        rate_analysis_settings,
+        spikes_outside_intervals,
+    )
     from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
 
     # Keep the prepared polar geometry separate from the allocentric env.
@@ -2136,14 +2111,12 @@ def _count_object_vectors(
     # Polar graph distances are physical lengths; angles remain radians.
     polar_env = polar_env.with_metadata(units=env.units if env is not None else None)
     bandwidth = (
-        resolve_spatial_bandwidth(polar_env, bandwidth)
-        if method != "binned"
-        else (1.0 if bandwidth is None else bandwidth)
+        None if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth)
     )
     settings = rate_analysis_settings(
         prepared.support,
         method=method,
-        bandwidth=bandwidth if method != "binned" else None,
+        bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=backend,
         direction_frame="allocentric" if headings is None else "egocentric",
@@ -2153,7 +2126,14 @@ def _count_object_vectors(
         metric=metric,
         objects=object_names,
     )
-    return _ObjectVectorCounts(spike_counts, occupancy, polar_env, bandwidth, settings)
+    return _ObjectVectorCounts(
+        spike_counts,
+        occupancy,
+        polar_env,
+        bandwidth,
+        settings,
+        spikes_outside_intervals(spike_trains, prepared.support),
+    )
 
 
 def _object_vector_rate(
@@ -2275,10 +2255,14 @@ def _object_vector_rate(
 
     # Return result
     return ObjectVectorRateResult(
+        min_occupancy=min_occupancy,
         direction_frame="allocentric" if headings is None else "egocentric",
         firing_rate=firing_rate,
         occupancy=occupancy_out,
         env=counts.polar_env,
+        method=method,
+        bandwidth=counts.bandwidth,
+        n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )
@@ -2933,7 +2917,7 @@ def _object_vector_rates(
     # Normalize spike times to canonical list-of-arrays format and resolve the
     # per-unit identity labels (defaults to arange). A labelled input keeps its
     # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, _ = as_labelled_spike_trains(
+    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
         spike_times, unit_ids, context=context
     )
     n_neurons = len(spike_times_list)
@@ -3012,6 +2996,7 @@ def _object_vector_rates(
 
             firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
     else:
+        assert counts.bandwidth is not None  # resolved for every kernel method
         # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
         firing_rates = smooth_rate_maps_batch(
             counts.polar_env,
@@ -3034,11 +3019,16 @@ def _object_vector_rates(
 
     # Return result
     return ObjectVectorRatesResult(
+        min_occupancy=min_occupancy,
         direction_frame="allocentric" if headings is None else "egocentric",
         firing_rates=firing_rates,
         occupancy=occupancy_out,
         env=counts.polar_env,
-        unit_ids=resolved_unit_ids,
+        method=method,
+        bandwidth=counts.bandwidth,
+        unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_table=getattr(spike_times, "unit_table", None),
+        n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )

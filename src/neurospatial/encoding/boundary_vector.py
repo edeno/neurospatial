@@ -46,7 +46,7 @@ Alexander, A. S., et al. (2020). Egocentric boundary vector tuning of the
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -54,8 +54,12 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._observation import validate_break_before
-from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
-from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial.encoding._base import (
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _to_numpy,
+)
 from neurospatial.encoding._polar_results import (
     _PolarRateMixin,
     polar_summary_frame,
@@ -151,7 +155,7 @@ def _boundary_summary(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
+class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     """Firing rate of one unit by distance and direction to walls.
 
     Parameters
@@ -171,6 +175,11 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
     boundary_source : {"physical", "analysis"}
         Which walls the rays stopped at.
+    method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
+        Estimator used. ``"binned"`` is the raw rate in each polar bin.
+    bandwidth : float or None, default=None
+        Kernel bandwidth in the environment's length units for the kernel
+        methods; ``None`` for ``"binned"``, which does not smooth.
     unit_id : int or str or None
         Identifier for this unit; set by indexing a population result.
 
@@ -183,6 +192,20 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
 
     Other Parameters
     ----------------
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         binning settings.
@@ -198,17 +221,23 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_id: int | str | None = None
+    min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
+    def _check_family(self) -> None:
         _check_boundary_labels(self.direction_frame, self.boundary_source)
-        self._own_arrays()
 
     def _family_attrs(self) -> dict[str, Any]:
         return {"boundary_source": self.boundary_source}
@@ -219,7 +248,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         Returns
         -------
         pandas.DataFrame
-            One row indexed by ``unit_id``: ``peak_rate``,
+            One row indexed by ``unit_id``: ``peak_firing_rate``,
             ``preferred_distance``, ``preferred_direction_deg``,
             ``preferred_direction`` and ``distance_information``. The frame
             and wall source are in ``df.attrs``.
@@ -289,10 +318,11 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
 
+@_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
 class BoundaryVectorRatesResult(
-    _PolarRateMixin, SpatialResultMixin, UnitSelectionMixin
+    _PolarRateMixin, PopulationRateMixin[BoundaryVectorRateResult]
 ):
     """Firing rates of several units by distance and direction to walls.
 
@@ -323,6 +353,20 @@ class BoundaryVectorRatesResult(
 
     Other Parameters
     ----------------
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         binning settings.
@@ -338,55 +382,41 @@ class BoundaryVectorRatesResult(
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+    min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
+    def _check_family(self) -> None:
         _check_boundary_labels(self.direction_frame, self.boundary_source)
-        n_units = int(np.asarray(self.firing_rates).shape[0])
-        object.__setattr__(self, "unit_ids", resolve_unit_ids(self.unit_ids, n_units))
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="BoundaryVectorRatesResult"
-            ),
-        )
-        self._own_arrays()
 
     def _family_attrs(self) -> dict[str, Any]:
         return {"boundary_source": self.boundary_source}
 
-    def __len__(self) -> int:
-        """Number of units."""
-        return int(np.asarray(self.firing_rates).shape[0])
-
     def __getitem__(self, idx: int) -> BoundaryVectorRateResult:
         """The single-unit result at position ``idx``; ``sel(unit_id=...)`` by label."""
-        idx = self._unit_position(idx)
-        return BoundaryVectorRateResult(
-            firing_rate=self.firing_rates[idx],  # type: ignore[index]
-            occupancy=self.occupancy,
+        return self._unit_result(
+            BoundaryVectorRateResult,
+            idx,
             env=self.env,
             direction_frame=self.direction_frame,
             boundary_source=self.boundary_source,
-            unit_id=label_at(self.unit_ids, idx),
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
+            method=self.method,
+            bandwidth=self.bandwidth,
         )
-
-    def __iter__(self) -> Iterator[BoundaryVectorRateResult]:
-        """Each unit's single-unit result, in order."""
-        for i in range(len(self)):
-            yield self[i]
 
     def preferred_distances(self) -> NDArray[np.float64]:
         """Distance to the wall at each unit's peak rate, shape (n_units,)."""
@@ -694,7 +724,7 @@ def compute_boundary_vector_rates(
     ...     env, spikes, times, positions, headings, direction_frame="egocentric"
     ... )
     >>> list(rates.summary_table().columns)
-    ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information']
+    ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information', 'n_spikes_outside_intervals']
     """
     return _boundary_vector_rates(
         env,
@@ -782,11 +812,15 @@ def compute_boundary_vector_rate(
     )
     unit = population[0]
     return BoundaryVectorRateResult(
+        min_occupancy=unit.min_occupancy,
         firing_rate=unit.firing_rate,
         occupancy=unit.occupancy,
         env=unit.env,
         direction_frame=unit.direction_frame,
         boundary_source=unit.boundary_source,
+        method=unit.method,
+        bandwidth=unit.bandwidth,
+        n_spikes_outside_intervals=unit.n_spikes_outside_intervals,
         spike_window=unit.spike_window,
         analysis_settings=unit.analysis_settings,
     )
@@ -818,7 +852,10 @@ def _boundary_vector_rates(
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._egocentric_counts import _create_egocentric_environment
-    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._provenance import (
+        rate_analysis_settings,
+        spikes_outside_intervals,
+    )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         _warn_if_fully_masked,
@@ -848,7 +885,7 @@ def _boundary_vector_rates(
     require_known_bandwidth(env.units, bandwidth, method, context=context)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    spike_trains, resolved_unit_ids, _ = as_labelled_spike_trains(
+    spike_trains, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
         spike_times, unit_ids, context=context
     )
     times = np.asarray(times, dtype=np.float64)
@@ -928,12 +965,17 @@ def _boundary_vector_rates(
         n_direction_bins=int(n_direction_bins),
     )
     return BoundaryVectorRatesResult(
+        min_occupancy=min_occupancy,
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=polar_env,
         direction_frame=direction_frame,
         boundary_source=boundary_source,
-        unit_ids=resolved_unit_ids,
+        method=method,
+        bandwidth=resolved_bandwidth,
+        unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_table=getattr(spike_times, "unit_table", None),
+        n_spikes_outside_intervals=spikes_outside_intervals(spike_trains, support),
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )
