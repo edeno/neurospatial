@@ -1432,8 +1432,7 @@ class Environment(Generic[_C]):
         self,
         positions: NDArray[np.float64],
         *,
-        tie_break: TieBreakStrategy
-        | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
+        tie_break: TieBreakStrategy = "lowest_index",
         return_dist: bool = False,
         max_distance: float | None = None,
         max_distance_factor: float | None = None,
@@ -1446,9 +1445,11 @@ class Environment(Generic[_C]):
             Coordinates to compare with bin centers, such as the animal's
             positions, in the environment's stored coordinates:
             ``(distance, angle)`` rows on an egocentric polar environment.
-        tie_break : TieBreakStrategy or str, default=TieBreakStrategy.LOWEST_INDEX
-            Select the lowest bin ID among ties, or use "closest_center" for
-            the tree's nearest candidate.
+        tie_break : {"lowest_index", "closest_center"}, default="lowest_index"
+            For a point equidistant from several centers: "lowest_index"
+            returns the tied bin with the smallest ID, so boundary points are
+            reproducible; "closest_center" returns whichever tied center the
+            KD-tree finds first, not necessarily the lowest ID.
         return_dist : bool, default=False
             Also return the distances to the selected centers, in the
             environment's length units.

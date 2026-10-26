@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
@@ -27,7 +25,7 @@ def nearest_bin(
     points: NDArray[np.float64],
     *,
     coordinates: CartesianSystem | EgocentricPolarSystem,
-    tie_break: TieBreakStrategy | Literal["lowest_index", "closest_center"],
+    tie_break: TieBreakStrategy,
     return_dist: bool,
     max_distance: float | None,
     max_distance_factor: float | None,

@@ -87,7 +87,7 @@ The functions are unchanged:
 ```python
 # Before: from neurospatial.ops.binning import regions_to_mask
 from neurospatial.ops.mapping import regions_to_mask, resample_field
-from neurospatial.ops import TieBreakStrategy  # also exported from ops
+from neurospatial.ops import TieBreakStrategy  # a Literal type alias
 ```
 
 ## Environments are immutable values
