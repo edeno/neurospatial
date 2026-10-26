@@ -194,3 +194,12 @@ def test_accepts_uniform_anisotropic_edges():
     edges = (np.linspace(0.0, 1.0, 11), np.linspace(0.0, 30.0, 11))
     env = Environment.from_grid_mask(np.ones((10, 10), dtype=bool), grid_edges=edges)
     np.testing.assert_allclose(env.bin_sizes, 0.3, rtol=1e-12)
+
+
+def test_a_transposed_mask_is_refused():
+    """A mask whose shape is not the grid's, such as its transpose, is refused."""
+    with pytest.raises(ValueError, match=r"active_mask shape \(2, 3\) must match"):
+        MaskedGridLayout().build(
+            active_mask=np.ones((2, 3), dtype=bool),
+            grid_edges=(np.arange(4.0), np.arange(3.0)),
+        )

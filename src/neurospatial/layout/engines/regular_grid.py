@@ -4,8 +4,6 @@ from typing import Any, ClassVar
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
-from neurospatial.geometry import GridBinningSpec
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (
@@ -244,75 +242,3 @@ class RegularGridLayout(_GridMixin):
         self._assign_cells(
             full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
         )
-
-
-def regular_grid_from_cells(
-    grid_edges: tuple[NDArray[np.float64], ...],
-    active_mask: NDArray[np.bool_],
-    cell_centers: NDArray[np.float64],
-    *,
-    connect_diagonal_neighbors: bool,
-    grid_spec: GridBinningSpec | None = None,
-) -> RegularGridLayout:
-    """Build a regular grid over explicit cells, without inferring them.
-
-    Integer-factor re-binning uses this to build the coarse grid it has
-    already partitioned; the cell centers are taken as given.
-
-    Parameters
-    ----------
-    grid_edges : tuple of ndarray
-        Uniformly spaced cell edges along each axis.
-    active_mask : ndarray of bool, shape (n_0, ..., n_{d-1})
-        Active cells, with one entry per cell of ``grid_edges``.
-    cell_centers : ndarray of float64, shape (n_cells, n_dims)
-        Center of every cell, active or not, in flat grid order.
-    connect_diagonal_neighbors : bool
-        Whether cells that share only a corner are neighbors.
-    grid_spec : GridBinningSpec, optional
-        Anchor and frame that later re-binning keeps. By default, the first
-        edge of each axis with the identity frame.
-
-    Returns
-    -------
-    RegularGridLayout
-        Built layout whose ``binning()`` publishes the given cells.
-
-    Raises
-    ------
-    ValueError
-        If ``active_mask`` or ``cell_centers`` does not match the cells of
-        ``grid_edges``.
-    """
-    grid_shape = tuple(len(edges) - 1 for edges in grid_edges)
-    if np.shape(active_mask) != grid_shape:
-        raise ValueError(
-            _format_error(
-                f"active_mask has shape {np.shape(active_mask)}, but grid_edges "
-                f"describe a grid of shape {grid_shape}.",
-                why="Why: the mask marks each cell of the grid as active or "
-                "not, so it needs one entry per cell.",
-                fix="pass a mask with shape tuple(len(e) - 1 for e in grid_edges)",
-            )
-        )
-    expected_centers = (int(np.prod(grid_shape)), len(grid_edges))
-    if np.shape(cell_centers) != expected_centers:
-        raise ValueError(
-            _format_error(
-                f"cell_centers has shape {np.shape(cell_centers)}, but the grid "
-                f"has {expected_centers[0]} cells in {expected_centers[1]} "
-                "dimensions.",
-                why="Why: every cell, active or not, needs one center, in flat "
-                "grid order.",
-                fix="pass one row per cell, shape (prod(grid_shape), len(grid_edges))",
-            )
-        )
-    layout = RegularGridLayout()
-    layout.grid_edges = grid_edges
-    layout.grid_shape = grid_shape
-    layout.active_mask = active_mask
-    layout.dimension_ranges = tuple((edges[0], edges[-1]) for edges in grid_edges)
-    layout._assign_cells(cell_centers, connect_diagonal=connect_diagonal_neighbors)
-    if grid_spec is not None:
-        layout._grid_spec = grid_spec
-    return layout

@@ -39,12 +39,13 @@ from neurospatial.geometry import (
     prepare_bins,
     transform_binning,
 )
-from neurospatial.layout import LayoutType, _built_layout_data
-from neurospatial.layout.base import LayoutEngine
-from neurospatial.layout.engines.masked_grid import MaskedGridLayout
-from neurospatial.layout.engines.regular_grid import regular_grid_from_cells
-from neurospatial.layout.factories import _size_parameter
-from neurospatial.layout.helpers.utils import check_grid_size_safety
+from neurospatial.layout import (
+    LayoutType,
+    MaskedGridLayout,
+    _size_parameter,
+    check_grid_size_safety,
+    regular_grid_pairs,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
@@ -511,22 +512,7 @@ def _require_native_grid_navigation(
 
     grid = binning.rectilinear
     assert grid is not None
-    # Only adjacency is needed from this grid. Unit cells in index coordinates
-    # avoid computing unused physical edge lengths at extreme coordinate scales.
-    index_centers = (
-        np.column_stack(
-            np.unravel_index(np.arange(grid.active_mask.size), grid.shape)
-        ).astype(np.float64)
-        + 0.5
-    )
-    graph = regular_grid_from_cells(
-        tuple(np.arange(n + 1, dtype=np.float64) for n in grid.shape),
-        grid.active_mask,
-        index_centers,
-        connect_diagonal_neighbors=connect_diagonal,
-    ).connectivity
-    assert graph is not None
-    pairs = np.asarray(list(graph.edges()), dtype=np.intp).reshape(-1, 2)
+    pairs = regular_grid_pairs(grid.active_mask, connect_diagonal=connect_diagonal)
     candidate_links = BinConnections.from_arrays(
         pairs,
         np.hypot.reduce(bins.centers[pairs[:, 1]] - bins.centers[pairs[:, 0]], axis=1),
@@ -718,17 +704,23 @@ def _rebin_factor(
 
     # Connect only eligible coarse cells. The coarse grid keeps the source's
     # binning specification, when it has one, for later re-binning.
-    layout = regular_grid_from_cells(
-        coarse_edges,
-        keep.reshape(coarse_shape),
-        coarse_bin_centers,
+    layout = MaskedGridLayout()
+    layout.build(
+        active_mask=keep.reshape(coarse_shape),
+        grid_edges=coarse_edges,
         connect_diagonal_neighbors=connect_diagonal,
-        grid_spec=binning.grid_spec,
     )
-    coarse, _ = _built_layout_data(cast("LayoutEngine", layout))
+    coarse = layout.binning()
     derivation = _Derivation(
-        # The coarse bins keep the source's layout label.
-        replace(coarse, kind=binning.kind),
+        # The coarse bins keep the source's layout label and binning
+        # specification, when it has one.
+        replace(
+            coarse,
+            kind=binning.kind,
+            grid_spec=binning.grid_spec
+            if binning.grid_spec is not None
+            else coarse.grid_spec,
+        ),
         "rebin",
         build_params={
             "bin_size": tuple(

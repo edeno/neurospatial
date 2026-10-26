@@ -13,6 +13,13 @@ from neurospatial.layout._scale_bar import (
 from neurospatial.layout._scale_bar import _compute_nice_length as _compute_nice_length
 from neurospatial.layout._scale_bar import _format_scale_label as _format_scale_label
 from neurospatial.layout.engines._polar import _PolarGridLayout as _PolarGridLayout
+from neurospatial.layout.factories import _size_parameter as _size_parameter
+from neurospatial.layout.helpers.regular_grid import (
+    regular_grid_pairs as regular_grid_pairs,
+)
+from neurospatial.layout.helpers.utils import (
+    check_grid_size_safety as check_grid_size_safety,
+)
 
 from ._labels import LayoutType, find_layout_type
 from .base import LayoutEngine
@@ -30,8 +37,8 @@ from .factories import (
 )
 from .helpers.utils import get_centers, get_n_bins
 
-# The ``_`` names imported here are internal helpers shared with other
-# neurospatial packages; they are not public API.
+# The names imported here that are not in ``__all__`` are internal helpers
+# shared with other neurospatial packages; they are not public API.
 __all__ = [
     "GraphLayout",
     "HexagonalLayout",
