@@ -617,10 +617,10 @@ def resample_field(
     smooth(valid)``. Only bins covered by the source contribute weight, so
     covered bins adjacent to an uncovered region are **not** biased toward zero,
     and a ``NaN`` in the source field is interpolated rather than propagating.
-    The heat kernel has full support across each connected diffusion component,
-    so any bin in a component that contains at least one valid bin is filled
-    (weighted by distance — near valid bins dominate). A bin is left ``NaN`` only
-    if it is outside the source or lies in a component with no valid bin at all.
+    Near valid bins dominate each average. A bin is left ``NaN`` if it is
+    outside the source, or if the valid weight reaching it is below the
+    truncation-noise floor of ``dst_env.smooth(..., mode="average")``, as for a
+    bin many ``bandwidth`` away from every valid bin.
 
     **Dimension requirements**: Both environments must have the same number
     of dimensions (e.g., both 2D).
