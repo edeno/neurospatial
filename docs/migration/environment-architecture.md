@@ -1340,11 +1340,13 @@ assert set(arm[east]) == {1}
 
 ## Grid analyses on layouts without square lags raise `NotImplementedError`
 
-The FFT autocorrelogram behind grid scores needs a 2-D grid of rectangular
+The autocorrelogram behind grid scores needs a 2-D grid of rectangular
 cells, one width along each axis. `spatial_autocorrelation` used to raise
-`ValueError` for tracks, meshes and sparse grids, and accepted hexagonal
-environments with wrong results. It now raises `NotImplementedError` for all
-of them, naming `spatial_autocorrelation_radial`, which works on every layout.
+`ValueError` for tracks and meshes, and accepted hexagonal environments with
+wrong results. It now raises `NotImplementedError` for all of them, naming
+`spatial_autocorrelation_radial`, which works on every layout. Grids with
+many inactive cells are accepted: inactive cells are left out of each lag
+like unvisited bins.
 Polar environments raise `CartesianOnlyError` (a `TypeError`), here and for
 wall-based measures such as `border_score`:
 
@@ -1364,8 +1366,11 @@ except NotImplementedError:
     distances, correlations = spatial_autocorrelation_radial(track, rate)
 ```
 
-Rate-map `grid_score()` and `summary_table()` report NaN on these
-environments, as before for tracks and meshes.
+Rate-map `grid_score()`, `grid_scores()` and `batch_grid_scores()` raise the
+same `NotImplementedError` on these environments. `summary_table()` reports a
+NaN grid score, explains it in `attrs["unavailable_metrics"]["grid_score"]`,
+and labels a spatially tuned cell `"undetermined"` rather than `"place"`,
+since it could be a grid cell.
 
 ## Grid orientation is in radians, in the environment's frame
 
