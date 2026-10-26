@@ -332,7 +332,7 @@ def test_is_place_cell_spatial_info(ou_2min_env, ou_2min, noise_trains):
         for tr in trains
     ]
     np.testing.assert_array_equal(flags, rates.classify())
-    assert sum(flags) == 15
+    assert sum(flags) == 14
     assert all(
         rates[i].is_place_cell(criterion="spatial_info") == flags[i] for i in range(20)
     )

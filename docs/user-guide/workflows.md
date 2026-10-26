@@ -1389,7 +1389,7 @@ result = compute_spatial_rates(
 firing_rate_maps = result.firing_rates  # Shape: (n_units, n_bins)
 ```
 
-`compute_spatial_rates` handles spike-to-position interpolation, occupancy
+`compute_spatial_rates` handles spike-to-position assignment, occupancy
 normalization, and smoothing for the whole population in one call, returning a
 `SpatialRatesResult` whose `unit_ids` line up with `firing_rates`. Prefer it
 over a manual per-neuron loop.

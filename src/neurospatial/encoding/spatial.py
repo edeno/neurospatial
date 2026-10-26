@@ -1492,7 +1492,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         Runs :func:`detect_place_fields` on this map. Independent 0.5 Hz
         Poisson units with no spatial tuning had a detected
-        field in 11, 9, 20, 20 and 16 of 20 units at 1, 2, 5, 10 and 20 minutes
+        field in 11, 11, 20, 20 and 16 of 20 units at 1, 2, 5, 10 and 20 minutes
         (30 Hz Ornstein-Uhlenbeck trajectory in a 100 x 100 cm arena, 5 cm bins,
         diffusion KDE with a 5 cm bandwidth). Use
         ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls false
@@ -1565,7 +1565,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         """Classify one neuron using an explicitly chosen criterion.
 
         There is no default criterion. ``criterion="spatial_info"`` thresholds
-        plug-in spatial information, which flagged 19/20 and 15/20 untuned
+        plug-in spatial information, which flagged 19/20 and 14/20 untuned
         0.5 Hz Poisson units at 1 and 2 minutes. ``criterion="shuffle"`` tests
         it against circularly shifted spike trains. Use the shuffle when the
         verdict must control false positives under that null (slow), or spatial
@@ -1590,9 +1590,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
         For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
         bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
-        10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
-        The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
-        Field detection flagged 11, 9, 20, 20 and 16 of 20. For publication,
+        10 and 20 minutes was 0.86, 0.54, 0.22, 0.11 and 0.05 bits/spike.
+        The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
+        Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
         report a circular-shift test and its assumptions instead of a cutoff verdict.
         For a shuffle test, call place_cell_significance(...) or
         is_place_cell(..., criterion='shuffle') with the raw arrays; a result
@@ -2423,9 +2423,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
         For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
         bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
-        10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
-        The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
-        Field detection flagged 11, 9, 20, 20 and 16 of 20. For publication,
+        10 and 20 minutes was 0.86, 0.54, 0.22, 0.11 and 0.05 bits/spike.
+        The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
+        Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
         report a circular-shift test and its assumptions instead of a cutoff verdict.
         None thresholds resolve through PLACE_GRID_BORDER_THRESHOLDS.
         For a shuffle test, call place_cell_significance(...)
@@ -2584,9 +2584,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
         For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
         bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
-        10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
-        The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
-        Field detection flagged 11, 9, 20, 20 and 16 of 20. For publication,
+        10 and 20 minutes was 0.86, 0.54, 0.22, 0.11 and 0.05 bits/spike.
+        The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
+        Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
         report a circular-shift test and its assumptions instead of a cutoff verdict.
         None thresholds resolve through PLACE_SPATIAL_INFO_THRESHOLDS.
         For a shuffle test, call place_cell_significance(...)
@@ -3346,8 +3346,8 @@ default="diffusion_kde"
         gap check.
     time_allocation : {"start", "linear"}, default="start"
         How trajectory intervals contribute dwell time. ``"start"`` assigns
-        each eligible interval to its starting bin and requires both endpoints
-        inside the environment. ``"linear"`` follows the straight segment
+        each eligible interval, and the spikes in it, to its starting bin and
+        requires both endpoints inside the environment. ``"linear"`` follows the straight segment
         between finite endpoints and retains its exact portions inside the
         effective planar cells and arena, including entry and re-entry. Spike
         counts and occupancy use the same retained half-open time spans;
@@ -3820,8 +3820,8 @@ default="diffusion_kde"
         gap check.
     time_allocation : {"start", "linear"}, default="start"
         How trajectory intervals contribute dwell time. ``"start"`` assigns
-        each eligible interval to its starting bin and requires both endpoints
-        inside the environment. ``"linear"`` follows the straight segment
+        each eligible interval, and the spikes in it, to its starting bin and
+        requires both endpoints inside the environment. ``"linear"`` follows the straight segment
         between finite endpoints and retains its exact portions inside the
         effective planar cells and arena, including entry and re-entry. All
         units and the shared occupancy use the same retained half-open spans;
@@ -5235,7 +5235,7 @@ def has_place_field(
     Computes the rate map with :func:`compute_spatial_rate` and runs
     :func:`detect_place_fields` on it. Independent 0.5 Hz Poisson units with
     no spatial tuning had a detected
-    field in 11, 9, 20, 20 and 16 of 20 units at 1, 2, 5, 10 and 20 minutes
+    field in 11, 11, 20, 20 and 16 of 20 units at 1, 2, 5, 10 and 20 minutes
     (30 Hz Ornstein-Uhlenbeck trajectory in a 100 x 100 cm arena, 5 cm bins,
     diffusion KDE with a 5 cm bandwidth). Use
     ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls false
@@ -5490,7 +5490,7 @@ def is_place_cell(
     """Classify one neuron using an explicitly chosen criterion.
 
     There is no default criterion. ``criterion="spatial_info"`` thresholds
-    plug-in spatial information, which flagged 19/20 and 15/20 untuned
+    plug-in spatial information, which flagged 19/20 and 14/20 untuned
     0.5 Hz Poisson units at 1 and 2 minutes. ``criterion="shuffle"`` tests
     it against circularly shifted spike trains. Use the shuffle when the
     verdict must control false positives under that null (slow), or spatial
@@ -5695,9 +5695,9 @@ def is_place_cell(
     (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
     For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
     bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
-    10 and 20 minutes was 0.86, 0.53, 0.22, 0.11 and 0.05 bits/spike.
-    The 0.5 screen flagged 19/20, 15/20, 0/20, 0/20 and 0/20, respectively.
-    Field detection flagged 11, 9, 20, 20 and 16 of 20. For publication,
+    10 and 20 minutes was 0.86, 0.54, 0.22, 0.11 and 0.05 bits/spike.
+    The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
+    Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
     report a circular-shift test and its assumptions instead of a cutoff verdict.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.

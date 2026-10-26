@@ -525,49 +525,31 @@ class TestBinningInputValidation:
             compute_occupancy(simple_env, trajectory_data["times"], positions_3d)
 
 
-class TestSpikeInterpolationRegression:
-    """Regression tests guarding against snapshot-instead-of-interpolated binning.
+class TestSpikeAllocationMatchesOccupancy:
+    """A spike goes to the bin that receives its interval's dwell time."""
 
-    A previous refactor mapped each spike to the bin of its most recent
-    trajectory frame instead of its interpolated position. With sparse
-    sampling or fast movement this shifts spikes to the previous bin —
-    a silent rate-map error.
-    """
+    def test_start_allocation_counts_spike_at_start_frame(self) -> None:
+        """Under "start", t=0.75 between samples at 0 and 10 counts in the 0 bin."""
+        from neurospatial.encoding._spatial_counts import (
+            bin_spike_train,
+            compute_occupancy,
+        )
 
-    def test_spike_between_samples_uses_interpolated_position(self) -> None:
-        """A spike at t=0.75 with samples at 0/10/20 maps to the 7.5 bin, not 0."""
-        from neurospatial import Environment
-        from neurospatial.encoding._spatial_counts import bin_spike_train
-
-        # 1D environment with bins of width 5 spanning [0, 20].
         sample_positions = np.linspace(0.0, 20.0, 100).reshape(-1, 1)
         env = Environment.from_samples(sample_positions, bin_size=5.0)
-
-        # Sparse trajectory: three samples at t=0, 1, 2 with positions 0, 10, 20.
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0], [10.0], [20.0]])
 
-        # Single spike at t=0.75; linear interpolation gives position 7.5
-        # which falls in the same bin as 7.5 (a different bin from position 0).
-        spike_times = np.array([0.75])
+        counts = bin_spike_train(env, np.array([0.75]), times, positions, max_gap=None)
+        occupancy = compute_occupancy(env, times, positions, max_gap=None)
+        start_bin = env.bin_at(np.array([[0.0]]))[0]
+        assert counts[start_bin] == 1.0
+        assert counts.sum() == 1.0
+        # The interval's second (and its whole dwell time) went to the same bin.
+        assert occupancy[start_bin] == 1.0
 
-        # The 1 s sampling here exceeds the default max_gap (0.5 s), so disable
-        # gap gating to isolate the interpolation behavior this test targets.
-        counts = bin_spike_train(env, spike_times, times, positions, max_gap=None)
-
-        # Identify the bin that interpolated position 7.5 lives in, vs the
-        # bin that the snapshot position 0.0 lives in. The two must differ
-        # for this regression test to be meaningful, and the spike count
-        # must land in the interpolated bin.
-        interp_bin = env.bin_at(np.array([[7.5]]))[0]
-        snapshot_bin = env.bin_at(np.array([[0.0]]))[0]
-        assert interp_bin != snapshot_bin, "test setup not exercising the bug"
-        assert counts[interp_bin] == 1.0
-        assert counts[snapshot_bin] == 0.0
-
-    def test_batch_matches_single_under_interpolation(self) -> None:
+    def test_batch_matches_single(self) -> None:
         """bin_spike_trains must match bin_spike_train per neuron exactly."""
-        from neurospatial import Environment
         from neurospatial.encoding._spatial_counts import (
             bin_spike_train,
             bin_spike_trains,
@@ -577,16 +559,56 @@ class TestSpikeInterpolationRegression:
         env = Environment.from_samples(sample_positions, bin_size=5.0)
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0], [10.0], [20.0]])
-        spike_lists = [
-            np.array([0.75]),
-            np.array([0.25, 1.5]),
-            np.array([]),
-        ]
+        spike_lists = [np.array([0.75]), np.array([0.25, 1.5]), np.array([])]
 
-        batch_counts, _ = bin_spike_trains(env, spike_lists, times, positions)
+        batch_counts, _ = bin_spike_trains(
+            env, spike_lists, times, positions, max_gap=None
+        )
         for i, spikes in enumerate(spike_lists):
-            single = bin_spike_train(env, spikes, times, positions)
+            single = bin_spike_train(env, spikes, times, positions, max_gap=None)
             np.testing.assert_array_equal(batch_counts[i], single)
+
+    @pytest.mark.parametrize("time_allocation", ["start", "linear"])
+    def test_uniform_neuron_has_flat_binned_map(self, time_allocation) -> None:
+        """A 2000 Hz untuned neuron crossing 2 cm bins at 75 cm/s reads 2000 Hz.
+
+        Counting spikes at their interpolated position while start allocation
+        gave the dwell time to the start frame scattered the rate by
+        CV 0.23 around the true value; matched allocation leaves Poisson noise
+        (CV about 0.04).
+        """
+        from neurospatial.encoding import compute_spatial_rate
+
+        rng = np.random.default_rng(3)
+        laps = []
+        for _ in range(15):
+            offset = rng.uniform(0, 2.5)
+            laps.append(np.arange(offset, 100, 2.5))
+            laps.append(np.arange(100 - offset, 0, -2.5))
+        x = np.concatenate(laps)
+        positions = np.column_stack([x, 5 + rng.uniform(-0.5, 0.5, len(x))])
+        times = np.arange(len(x)) / 30.0
+        env = Environment.from_samples(positions, bin_size=2.0, units="cm")
+        rate = 2000.0
+        spikes = np.sort(
+            np.random.default_rng(4).uniform(
+                times[0], times[-1], int(rate * (times[-1] - times[0]))
+            )
+        )
+        result = compute_spatial_rate(
+            env,
+            spikes,
+            times,
+            positions,
+            method="binned",
+            bandwidth=0.0,
+            time_allocation=time_allocation,
+        )
+        firing_rate = np.asarray(result.firing_rate)
+        observed = np.isfinite(firing_rate)
+        assert observed.sum() > 90
+        assert np.std(firing_rate[observed]) / rate < 0.06
+        assert np.median(firing_rate[observed]) == pytest.approx(rate, rel=0.02)
 
 
 # ==============================================================================
@@ -927,7 +949,7 @@ class TestWarnOnDrop:
             x
             for x in w
             if issubclass(x.category, UserWarning)
-            and "interpolated to positions outside" in str(x.message)
+            and "mapped to positions outside" in str(x.message)
         ]
         assert len(inactive_warnings) == 1
         assert counts.sum() == 0
@@ -1080,9 +1102,7 @@ class TestWarnOnDrop:
                 env, spike_times, times, positions
             )
 
-        assert not [
-            x for x in w if "interpolated to positions outside" in str(x.message)
-        ]
+        assert not [x for x in w if "mapped to positions outside" in str(x.message)]
         assert spike_counts.shape == (3, env.n_bins)
         assert spike_counts.sum() == 0
         assert occupancy.sum() == 0
@@ -1122,7 +1142,7 @@ class TestWarnOnDrop:
             x
             for x in w
             if issubclass(x.category, UserWarning)
-            and "interpolated to positions outside" in str(x.message)
+            and "mapped to positions outside" in str(x.message)
         ]
         assert len(time_warnings) == 1, (
             f"Expected exactly 1 time-window warning, got {len(time_warnings)}"
