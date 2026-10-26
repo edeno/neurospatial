@@ -220,12 +220,17 @@ ax = plot_population_coverage(env, result, show_field_count=True)
 
 The `PopulationCoverageResult` object contains:
 
-- `coverage_fraction`: Fraction of bins covered (0.0-1.0)
-- `uncovered_bins`: Indices of gaps
+- `coverage_fraction`: Fraction of observed bins covered (0.0-1.0)
+- `uncovered_bins`: Indices of gaps (observed bins outside every field)
 - `uncovered_positions`: Coordinates of gaps
 - `field_count`: Number of place fields per bin
 - `n_neurons`, `n_place_cells`, `n_fields`: Population statistics
 - `place_fields`: Detected fields for each neuron
+- `is_observed`: Bins with a finite rate for at least one neuron
+
+A bin that is NaN in every rate map was never visited (or fell below
+`min_occupancy`); it is neither covered nor a gap. Compute the rates with the
+default `fill_value=None` so these bins stay NaN.
 
 **Computed properties** (standard hippocampal metrics):
 
@@ -233,7 +238,7 @@ The `PopulationCoverageResult` object contains:
 - `fields_per_place_cell`: n_fields / n_place_cells (typical: 1.0-2.0)
 - `mean_redundancy`: Average fields per covered bin (Wilson & McNaughton 1993)
 
-Coverage is the fraction of bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
+Coverage is the fraction of observed bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
 
 ### Field Density Map
 

@@ -64,58 +64,150 @@ _PV = _Caller(
 class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
     """Results from population coverage analysis.
 
+    Every count and bin set is derived from the detected fields and the
+    observed bins, so they cannot disagree.
+
+    Parameters
+    ----------
+    place_fields : sequence of PlaceFieldsResult, length n_neurons
+        Detected place fields for each neuron (output of
+        :func:`detect_place_fields`). A plain list of bin-index arrays is
+        converted to a ``PlaceFieldsResult``.
+    is_observed : NDArray[np.bool_], shape (n_bins,)
+        Bins with a finite rate for at least one neuron. Unobserved bins are
+        neither covered nor gaps.
+    bin_centers : NDArray[np.floating], shape (n_bins, n_dims)
+        Bin coordinates, used to locate gaps.
+
     Attributes
     ----------
-    coverage_fraction : float
-        Fraction of environment bins covered by at least one place field (0.0-1.0).
-    is_covered : NDArray[np.bool_]
-        Boolean mask of shape (n_bins,) indicating which bins are covered.
-    field_count : NDArray[np.int64]
-        Integer array of shape (n_bins,) counting place fields per bin.
-    covered_bins : NDArray[np.intp]
-        Indices of bins with at least one place field.
-    uncovered_bins : NDArray[np.intp]
-        Indices of bins lacking coverage (gaps).
-    uncovered_positions : NDArray[np.floating]
-        Coordinates of uncovered bins, shape (n_uncovered, n_dims).
     n_neurons : int
-        Total number of neurons in the population.
+        Number of neurons, ``len(place_fields)``.
     n_place_cells : int
-        Number of neurons with at least one detected place field.
+        Number of neurons with at least one detected field.
     n_fields : int
-        Total number of place fields detected across all neurons.
-    place_fields : list[PlaceFieldsResult]
-        Detected place fields for each neuron (output of detect_place_fields).
-        Each PlaceFieldsResult is iterable / indexable / sized like a
-        list[NDArray[np.int64]] but also carries `excluded_reason` and
-        `n_excluded` for cells filtered by an explicit spatial-map-mean cutoff.
+        Total number of fields across neurons.
+    field_count : NDArray[np.int64], shape (n_bins,)
+        Number of fields containing each bin.
+    is_covered : NDArray[np.bool_], shape (n_bins,)
+        Bins inside at least one field.
+    covered_bins : NDArray[np.intp]
+        Indices of covered bins.
+    uncovered_bins : NDArray[np.intp]
+        Indices of observed bins outside every field (gaps).
+    uncovered_positions : NDArray[np.floating], shape (n_uncovered, n_dims)
+        Coordinates of the gaps.
+    coverage_fraction : float
+        Covered bins divided by observed bins (0-1); NaN when no bin was
+        observed.
     place_cell_fraction : float
-        Computed property: n_place_cells / n_neurons, a descriptive segmentation fraction.
+        n_place_cells / n_neurons, a descriptive segmentation fraction.
     fields_per_place_cell : float
-        Computed property: n_fields / n_place_cells.
+        n_fields / n_place_cells.
     mean_redundancy : float
-        Computed property: average field_count over covered bins.
+        Average field_count over covered bins.
     """
 
-    coverage_fraction: float
-    is_covered: NDArray[np.bool_]
-    field_count: NDArray[np.int64]
-    covered_bins: NDArray[np.intp]
-    uncovered_bins: NDArray[np.intp]
-    uncovered_positions: NDArray[np.floating]
-    n_neurons: int
-    n_place_cells: int
-    n_fields: int
-    # Per-neuron PlaceFieldsResult; iterates as list[NDArray[np.int64]]
-    # for backwards-compatible len/iter access, and exposes
-    # excluded_reason / n_excluded for population-level map-mean
-    # accounting.
     place_fields: Sequence[PlaceFieldsResult]
+    is_observed: NDArray[np.bool_]
+    bin_centers: NDArray[np.floating]
 
     def __post_init__(self) -> None:
-        """Own the arrays and prevent replacing per-unit fields."""
-        object.__setattr__(self, "place_fields", tuple(self.place_fields))
+        """Validate, own the arrays and prevent replacing per-unit fields."""
+        place_fields = tuple(
+            fields
+            if isinstance(fields, PlaceFieldsResult)
+            else PlaceFieldsResult(fields=list(fields))
+            for fields in self.place_fields
+        )
+        is_observed = np.asarray(self.is_observed, dtype=bool)
+        bin_centers = np.asarray(self.bin_centers)
+        if is_observed.ndim != 1 or bin_centers.ndim != 2:
+            raise ValueError(
+                _format_error(
+                    f"is_observed must be (n_bins,) and bin_centers (n_bins, n_dims); "
+                    f"got {is_observed.shape} and {bin_centers.shape}.",
+                    why="Why: coverage is counted per bin",
+                    fix="use population_coverage(env, firing_rates) to build the result",
+                )
+            )
+        if len(bin_centers) != len(is_observed):
+            raise ValueError(
+                _format_error(
+                    f"is_observed has {len(is_observed)} bins but bin_centers has "
+                    f"{len(bin_centers)}.",
+                    why="Why: both describe the same environment bins",
+                    fix="pass env.bin_centers for the environment of the rate maps",
+                )
+            )
+        n_bins = len(is_observed)
+        for neuron, fields in enumerate(place_fields):
+            for bins in fields:
+                if bins.size and bins.max() >= n_bins:
+                    raise ValueError(
+                        _format_error(
+                            f"place_fields[{neuron}] has bin {int(bins.max())}, but "
+                            f"there are only {n_bins} bins.",
+                            why="Why: field bins index the environment bins",
+                            fix="detect fields on rate maps from this environment",
+                        )
+                    )
+        object.__setattr__(self, "place_fields", place_fields)
+        object.__setattr__(self, "is_observed", is_observed)
+        object.__setattr__(self, "bin_centers", bin_centers)
         self._own_arrays()
+
+    @property
+    def n_neurons(self) -> int:
+        """Number of neurons."""
+        return len(self.place_fields)
+
+    @property
+    def n_place_cells(self) -> int:
+        """Number of neurons with at least one detected field."""
+        return sum(len(fields) > 0 for fields in self.place_fields)
+
+    @property
+    def n_fields(self) -> int:
+        """Total number of detected fields across neurons."""
+        return sum(len(fields) for fields in self.place_fields)
+
+    @property
+    def field_count(self) -> NDArray[np.int64]:
+        """Number of fields containing each bin, shape (n_bins,)."""
+        count = np.zeros(len(self.is_observed), dtype=np.int64)
+        for fields in self.place_fields:
+            for bins in fields:
+                np.add.at(count, bins, 1)
+        return count
+
+    @property
+    def is_covered(self) -> NDArray[np.bool_]:
+        """Bins inside at least one field, shape (n_bins,)."""
+        return self.field_count > 0
+
+    @property
+    def covered_bins(self) -> NDArray[np.intp]:
+        """Indices of bins inside at least one field."""
+        return np.flatnonzero(self.is_covered)
+
+    @property
+    def uncovered_bins(self) -> NDArray[np.intp]:
+        """Indices of observed bins outside every field (gaps)."""
+        return np.flatnonzero(self.is_observed & ~self.is_covered)
+
+    @property
+    def uncovered_positions(self) -> NDArray[np.floating]:
+        """Coordinates of the gaps, shape (n_uncovered, n_dims)."""
+        return self.bin_centers[self.uncovered_bins]
+
+    @property
+    def coverage_fraction(self) -> float:
+        """Covered bins as a fraction of observed bins; NaN if none observed."""
+        n_observed = int(self.is_observed.sum())
+        if n_observed == 0:
+            return np.nan
+        return float((self.is_covered & self.is_observed).sum() / n_observed)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -132,7 +224,8 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
     def place_cell_fraction(self) -> float:
         """Fraction of neurons with at least one segmented map region.
 
-        The legacy name does not imply a cell-type test or place-cell prevalence.
+        The name does not imply a cell-type test or place-cell prevalence.
+        NaN when there are no neurons.
 
         References
         ----------
@@ -140,7 +233,7 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
                hippocampal ensemble code for space. Science, 261(5124), 1055-1058.
         """
         if self.n_neurons == 0:
-            return 0.0
+            return np.nan
         return self.n_place_cells / self.n_neurons
 
     @property
@@ -148,16 +241,18 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         """Average number of segmented fields per map containing a field.
 
         This descriptive ratio depends on the segmentation settings and is
-        not a cell-type classification.
+        not a cell-type classification. NaN when no map has a field.
 
         References
         ----------
         .. [1] Fenton, A. A., et al. (2008). Unmasking the CA1 ensemble place
-               code by exposures to small and large environments.
-               Journal of Neuroscience, 28(50), 13566-13577.
+               code by exposures to small and large environments: more place
+               cells and multiple, irregularly arranged, and expanded place
+               fields in the larger space. Journal of Neuroscience, 28(44),
+               11250-11262.
         """
         if self.n_place_cells == 0:
-            return 0.0
+            return np.nan
         return self.n_fields / self.n_place_cells
 
     @property
@@ -166,7 +261,7 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
 
         Measures the degree of overlapping representation. Higher values
         indicate more robust population coding with multiple cells
-        representing each location.
+        representing each location. NaN when no bin is covered.
 
         References
         ----------
@@ -175,7 +270,7 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         """
         n_covered = len(self.covered_bins)
         if n_covered == 0:
-            return 0.0
+            return np.nan
         return float(self.field_count[self.covered_bins].mean())
 
     def __str__(self) -> str:
@@ -240,7 +335,7 @@ def population_coverage(
     n_jobs : int, default=1
         Number of parallel jobs for per-neuron place-field detection. Use
         ``-1`` for all CPUs. ``1`` means sequential processing (no joblib
-        overhead). Results are byte-for-byte identical regardless of
+        overhead). Results are identical regardless of
         ``n_jobs`` (joblib preserves submission order). Note: per-neuron
         map-mean-exclusion ``UserWarning``\s from ``detect_place_fields``
         are not surfaced when ``n_jobs != 1`` (joblib worker warnings are
@@ -250,11 +345,12 @@ def population_coverage(
     Returns
     -------
     PopulationCoverageResult
-        Comprehensive coverage statistics including:
-        - coverage_fraction: fraction of bins covered (0.0-1.0)
-        - uncovered_bins: indices of gaps
-        - uncovered_positions: coordinates of gaps
-        - place_fields: detected fields for each neuron
+        Coverage statistics, including ``coverage_fraction`` (covered
+        fraction of observed bins), ``uncovered_bins`` and
+        ``uncovered_positions`` (gaps) and ``place_fields`` (detected fields
+        per neuron). Bins that are NaN for every neuron were not observed:
+        they are neither covered nor gaps. Compute the rates with
+        ``fill_value=None`` (the default) so unvisited bins stay NaN.
 
     Raises
     ------
@@ -337,13 +433,8 @@ def population_coverage(
     if max_mean_rate <= 0:
         raise ValueError(f"max_mean_rate must be positive, got {max_mean_rate}")
 
-    n_bins = env.n_bins
     n_neurons = firing_rates.shape[0]
 
-    # Detect place fields for each neuron. detect_place_fields returns
-    # a PlaceFieldsResult that is iterable and sized like a
-    # list[NDArray]; the existing len/iter/concatenate calls below work
-    # on it without explicit `.fields` reach-in.
     if n_jobs == 1:
         all_fields: list[PlaceFieldsResult] = []
         for neuron_idx in range(n_neurons):
@@ -361,9 +452,7 @@ def population_coverage(
     else:
         from joblib import Parallel, delayed
 
-        # joblib preserves submission order, so all_fields is in neuron order
-        # and the downstream aggregation is byte-for-byte identical to the
-        # sequential path.
+        # joblib preserves submission order, so all_fields is in neuron order.
         all_fields = list(
             Parallel(n_jobs=n_jobs)(
                 delayed(detect_place_fields)(
@@ -380,41 +469,10 @@ def population_coverage(
             )
         )
 
-    # Count fields and compute coverage
-    field_count = np.zeros(n_bins, dtype=np.int64)
-    n_fields = 0
-    n_place_cells = 0
-
-    for neuron_fields in all_fields:
-        if len(neuron_fields) > 0:
-            n_place_cells += 1
-            n_fields += len(neuron_fields)
-            # Concatenate all field bins for this neuron and use np.add.at for vectorized increment
-            all_bins = np.concatenate(list(neuron_fields))
-            np.add.at(field_count, all_bins, 1)
-
-    # (Drop the now-unused local re-import; PlaceFieldsResult is imported
-    # at module scope.)
-    # Compute coverage
-    is_covered = field_count > 0
-    coverage_fraction = float(is_covered.sum() / n_bins)
-
-    # Find covered and uncovered bins
-    covered_bins = np.where(is_covered)[0]
-    uncovered_bins = np.where(~is_covered)[0]
-    uncovered_positions = env.bin_centers[uncovered_bins]
-
     return PopulationCoverageResult(
-        coverage_fraction=coverage_fraction,
-        is_covered=is_covered,
-        field_count=field_count,
-        covered_bins=covered_bins,
-        uncovered_bins=uncovered_bins,
-        uncovered_positions=uncovered_positions,
-        n_neurons=n_neurons,
-        n_place_cells=n_place_cells,
-        n_fields=n_fields,
         place_fields=all_fields,
+        is_observed=np.isfinite(firing_rates).any(axis=0),
+        bin_centers=env.bin_centers,
     )
 
 
@@ -494,7 +552,7 @@ def plot_population_coverage(
             env.plot_field(field_to_plot, ax=ax)
             ax.set_ylabel("Field count")
         else:
-            field_to_plot = result.is_covered.astype(float)
+            field_to_plot = np.where(result.is_observed, result.is_covered, np.nan)
             env.plot_field(field_to_plot, ax=ax)
             ax.set_ylabel("Coverage")
 
@@ -526,7 +584,8 @@ def plot_population_coverage(
         if show_field_count:
             env.plot_field(result.field_count.astype(float), ax=ax, cmap="viridis")
         else:
-            binary_field = result.is_covered.astype(float)
+            # Unobserved bins stay NaN: they are neither covered nor gaps.
+            binary_field = np.where(result.is_observed, result.is_covered, np.nan)
             cmap = ListedColormap(["white", covered_color])
             env.plot_field(binary_field, ax=ax, cmap=cmap, vmin=0, vmax=1)
 
@@ -567,7 +626,7 @@ def field_density_map(
     ----------
     all_place_fields : list of (list of array OR PlaceFieldsResult)
         Place fields for each cell. Each element may be either a bare
-        ``list[NDArray[np.int64]]`` (legacy hand-built input) or a
+        ``list[NDArray[np.int64]]`` (hand-built input) or a
         ``PlaceFieldsResult`` (the canonical return of
         :func:`detect_place_fields`); both forms iterate as
         ``Iterable[NDArray[np.int64]]``.

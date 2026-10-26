@@ -291,16 +291,9 @@ CASES = [
     (
         PopulationCoverageResult,
         {
-            "coverage_fraction": 0.5,
-            "is_covered": np.array([True, False]),
-            "field_count": np.array([1, 0]),
-            "covered_bins": np.array([0], dtype=np.intp),
-            "uncovered_bins": np.array([1], dtype=np.intp),
-            "uncovered_positions": np.array([[5.0, 0.0]]),
-            "n_neurons": 1,
-            "n_place_cells": 1,
-            "n_fields": 1,
-            "place_fields": [],
+            "place_fields": [[np.array([0])]],
+            "is_observed": np.array([True, True]),
+            "bin_centers": np.array([[0.0, 0.0], [5.0, 0.0]]),
         },
     ),
 ]
@@ -380,16 +373,9 @@ def test_place_field_bins_are_owned_and_read_only(how):
     given = [bins]
     result = PlaceFieldsResult(fields=given)
     coverage = PopulationCoverageResult(
-        coverage_fraction=1.0,
-        is_covered=np.ones(3, dtype=bool),
-        field_count=np.ones(3, dtype=int),
-        covered_bins=np.arange(3),
-        uncovered_bins=np.zeros(0, dtype=np.intp),
-        uncovered_positions=np.zeros((0, 2)),
-        n_neurons=1,
-        n_place_cells=1,
-        n_fields=1,
         place_fields=[result],
+        is_observed=np.ones(3, dtype=bool),
+        bin_centers=np.zeros((3, 2)),
     )
     if how == "pickle":
         result, coverage = pickle.loads(pickle.dumps((result, coverage)))
