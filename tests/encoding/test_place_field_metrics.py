@@ -1202,6 +1202,14 @@ class TestSpatialCoverage:
         # Should cover 0% of environment
         assert_allclose(coverage, 0.0)
 
+    def test_spatial_coverage_counts_only_observed_bins(self):
+        """Unvisited (NaN) bins are missing, not uncovered."""
+        from neurospatial.encoding._metrics import spatial_coverage_single_cell
+
+        assert spatial_coverage_single_cell(np.array([5.0, 5.0, np.nan, np.nan])) == 1.0
+        assert spatial_coverage_single_cell(np.array([5.0, 0.0, np.nan])) == 0.5
+        assert np.isnan(spatial_coverage_single_cell(np.full(4, np.nan)))
+
 
 class TestFieldShapeMetrics:
     """Tests for field shape metrics."""

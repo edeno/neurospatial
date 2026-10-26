@@ -1292,6 +1292,25 @@ class TestSpatialRateResultRegionCoverage:
         for region in expected:
             assert coverage[region] == pytest.approx(expected[region])
 
+    def test_region_coverage_of_a_silent_map_is_nan(
+        self,
+        env_with_regions: Environment,
+    ) -> None:
+        """No firing means no field, so its coverage is undefined, not 0."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        n_bins = env_with_regions.n_bins
+        result = SpatialRateResult(
+            firing_rate=np.zeros(n_bins),
+            occupancy=np.ones(n_bins),
+            env=env_with_regions,
+            method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        coverage = result.region_coverage()
+        assert set(coverage) == {"north", "south", "center"}
+        assert all(np.isnan(value) for value in coverage.values())
+
 
 # ==============================================================================
 # Test SpatialRatesResult batch methods

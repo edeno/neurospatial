@@ -1259,8 +1259,8 @@ def spatial_coverage_single_cell(
     Returns
     -------
     float
-        Fraction of bins with firing rate > threshold, in range [0, 1].
-        Returns NaN if all firing rates are NaN.
+        Fraction of observed (finite-rate) bins with firing rate > threshold,
+        in range [0, 1]. NaN if every rate is NaN.
 
     Notes
     -----
@@ -1271,7 +1271,7 @@ def spatial_coverage_single_cell(
         C = \\frac{\\sum_i \\mathbb{1}[r_i > \\theta]}{N}
 
     where :math:`r_i` is firing rate in bin :math:`i`, :math:`\\theta` is
-    the threshold, and :math:`N` is the total number of bins.
+    the threshold, and :math:`N` is the number of bins with a finite rate.
 
     **Interpretation**:
 
@@ -1285,8 +1285,10 @@ def spatial_coverage_single_cell(
     - Inverse of selectivity: high coverage -> low selectivity
     - Complementary to sparsity: both measure spatial specificity
 
-    **NaN handling**: NaN values in firing_rate are treated as bins with
-    zero firing (below threshold).
+    **NaN handling**: NaN bins (unvisited, or below the occupancy threshold)
+    were not observed. They are excluded from both the count and the total,
+    so a cell is not called selective because part of the arena went
+    unsampled.
 
     Examples
     --------
@@ -1311,19 +1313,7 @@ def spatial_coverage_single_cell(
            the spatial firing of hippocampal complex-spike cells. J Neurosci 7(7).
     """
     firing_rate = np.asarray(firing_rate)
-
-    # Handle NaN values (treat as below threshold)
-    valid_mask = np.isfinite(firing_rate)
-
-    if not np.any(valid_mask):
+    observed = firing_rate[np.isfinite(firing_rate)]
+    if observed.size == 0:
         return np.nan
-
-    # Count bins above threshold
-    n_above = np.sum(firing_rate[valid_mask] > threshold)
-
-    # Total number of bins (including NaN bins as zeros)
-    n_total = len(firing_rate)
-
-    coverage = n_above / n_total
-
-    return float(coverage)
+    return float(np.mean(observed > threshold))

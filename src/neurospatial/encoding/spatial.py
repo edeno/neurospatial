@@ -1424,7 +1424,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Returns
         -------
         dict[str, float]
-            Mapping from region name to coverage fraction [0, 1].
+            Mapping from region name to coverage fraction [0, 1], NaN for
+            every region when the map has no positive rate.
             Coverage = (region bins in field) / (total region bins).
 
         Notes
@@ -1465,11 +1466,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         # Threshold field at fraction of peak
         peak_rate = np.nanmax(firing_rate)
-        if peak_rate == 0 or np.isnan(peak_rate):
-            # No firing, return zero coverage for all regions
+        if not peak_rate > 0:
+            # Without firing there is no field, so its coverage is undefined.
             if regions is None:
                 regions = list(self.env.regions.keys())
-            return dict.fromkeys(regions, 0.0)
+            return dict.fromkeys(regions, np.nan)
 
         field_mask = firing_rate >= threshold * peak_rate
         field_bins = np.where(field_mask)[0]
