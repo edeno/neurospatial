@@ -32,6 +32,7 @@ from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_positive_integer
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
@@ -99,11 +100,7 @@ def _validated_probabilities(
             f"Unrecognized mode '{mode}'. "
             "Supported: 'nearest' or 'inverse-distance-weighted'."
         )
-    if mode == "inverse-distance-weighted" and (
-        isinstance(n_neighbors, (bool, np.bool_))
-        or not isinstance(n_neighbors, numbers.Integral)
-        or n_neighbors < 1
-    ):
+    if mode == "inverse-distance-weighted" and not is_positive_integer(n_neighbors):
         raise ValueError(
             f"In 'inverse-distance-weighted' mode, n_neighbors must be "
             f"an integer >= 1 (got n_neighbors={n_neighbors!r})."

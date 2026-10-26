@@ -9,6 +9,7 @@ into downstream computations.
 
 from __future__ import annotations
 
+import numbers
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -258,6 +259,18 @@ def format_times_positions_error(
         + "\n- ".join(problems)
         + "\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, "
         "so mis-shaped or unsorted timestamps give wrong numbers.\n" + fix
+    )
+
+
+def is_positive_integer(value: object) -> bool:
+    """Whether ``value`` is an integer of at least 1, booleans excluded.
+
+    Python and NumPy integers both count; ``True`` is not read as 1.
+    """
+    return (
+        not isinstance(value, (bool, np.bool_))
+        and isinstance(value, numbers.Integral)
+        and int(value) > 0
     )
 
 

@@ -15,7 +15,6 @@ conversion in one call and return the converted array.
 # ruff: noqa: N806  - uppercase matrix names (A, R, X) follow mathematical convention
 from __future__ import annotations
 
-import numbers
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -23,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_positive_integer
 from neurospatial.geometry import ReadOnlyState, _check_homogeneous
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
@@ -682,14 +682,6 @@ def calibrate_from_landmarks(
     return result @ flip_y(frame_height)
 
 
-def _is_positive_integer(value: object) -> bool:
-    return (
-        not isinstance(value, (bool, np.bool_))
-        and isinstance(value, (numbers.Integral, np.integer))
-        and int(value) > 0
-    )
-
-
 @dataclass(frozen=True, eq=False)
 class VideoCalibration:
     """Video-to-environment coordinate calibration.
@@ -773,7 +765,7 @@ class VideoCalibration:
                 )
             )
         size: tuple[object, ...] = tuple(self.frame_size_px)
-        if len(size) != 2 or not all(_is_positive_integer(n) for n in size):
+        if len(size) != 2 or not all(is_positive_integer(n) for n in size):
             raise ValueError(
                 _format_error(
                     "frame_size_px must be two positive integers (width, height), "

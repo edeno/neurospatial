@@ -37,6 +37,7 @@ import shapely
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._validation import is_positive_integer
 from neurospatial.geometry import (
     CallIndexes,
     boundary_geometry,
@@ -69,11 +70,7 @@ def boundary_directions(*, n_directions: int) -> NDArray[np.float64]:
         ``Environment.from_polar_egocentric(angle_range=(-np.pi, np.pi), ...)``
         with ``angle_bin_size=2 * np.pi / n_directions``.
     """
-    if (
-        isinstance(n_directions, (bool, np.bool_))
-        or not isinstance(n_directions, (int, np.integer))
-        or n_directions < 1
-    ):
+    if not is_positive_integer(n_directions):
         raise ValueError(
             _format_error(
                 f"n_directions must be a positive integer, got {n_directions!r}.",
