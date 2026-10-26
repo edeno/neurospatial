@@ -254,25 +254,21 @@ def plot_grid(
     return ax
 
 
-def plot_polygon_grid(
-    ax: Axes | None = None, *, outline: Outline, **grid_kwargs: Any
-) -> Axes:
-    """Draw a masked rectangular grid and the outline of its defining polygon.
+def _draw_outline(ax: Axes, outline: Outline) -> None:
+    """Draw every ring of the arena outline, holes included, as black lines.
 
-    ``grid_kwargs`` are the options of :func:`plot_grid`.
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to draw on.
+    outline : Outline
+        Polygon or multipolygon arena boundary.
     """
-    ax = plot_grid(ax, **grid_kwargs)
-    polygon = outline.geometry
-    poly_patch_kwargs = {"fc": "none", "ec": "black", "lw": 1.5}
-    if hasattr(polygon, "geoms"):
-        for geom in polygon.geoms:
-            if hasattr(geom, "exterior"):
-                x, y = geom.exterior.xy
-                ax.fill(x, y, **poly_patch_kwargs)
-    elif hasattr(polygon, "exterior"):
-        x, y = polygon.exterior.xy
-        ax.fill(x, y, **poly_patch_kwargs)
-    return ax
+    geometry = outline.geometry
+    parts = geometry.geoms if hasattr(geometry, "geoms") else (geometry,)
+    for patch in _polygon_patches(parts):
+        patch.set(facecolor="none", edgecolor="black", linewidth=1.5)
+        ax.add_patch(patch)
 
 
 def _generic_graph_plot(

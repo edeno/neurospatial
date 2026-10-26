@@ -248,6 +248,9 @@
   track layout before binning, with the gap count it needs. It was refused
   after binning by `TrackLinearization`, which the caller never named; a
   string raised a bare `IndexError` and an infinite gap warned first.
+- `Environment.plot` draws the arena outline with its holes, so an arena
+  with an obstacle no longer looks solid, and draws it for every layout that
+  has one: a rotated or clipped polygon environment drew no outline.
 - Hexagonal environments recorded away from the origin keep their cells
   after `apply_transform` moves them, for example to center the arena at
   (0, 0). The cells (used by `plot_field`, boundary bins, physical-border

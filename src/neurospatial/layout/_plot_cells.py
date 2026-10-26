@@ -30,13 +30,13 @@ from neurospatial.geometry import (
     require_grid_context,
 )
 from neurospatial.layout._plotting import (
+    _draw_outline,
     _grid_mesh,
     _polygon_corners,
     _polygon_patches,
     plot_grid,
     plot_hexagons,
     plot_polygon_cells,
-    plot_polygon_grid,
     plot_track,
     plot_triangles,
 )
@@ -201,14 +201,6 @@ def _grid_cells(
             **kwargs,
         )
     assert binning.rectilinear is not None
-    if binning.outline is not None:
-        return plot_polygon_grid(
-            ax,
-            rectilinear=binning.rectilinear,
-            outline=binning.outline,
-            **common,
-            **kwargs,
-        )
     return plot_grid(ax, rectilinear=binning.rectilinear, **common, **kwargs)
 
 
@@ -493,16 +485,21 @@ def _point_field(
 
 @dataclass(frozen=True)
 class _Renderer:
-    """The two drawings of one cell shape: its cells, and a field over them."""
+    """The two drawings of one cell shape: its cells, and a field over them.
+
+    ``draws_outline`` is True when ``cells`` draws the binning's outline
+    itself, with options of its own; otherwise :func:`_plot_binning` draws it.
+    """
 
     cells: Callable[..., Axes]
     field: Callable[..., Any]
+    draws_outline: bool = False
 
 
 _RENDERERS: dict[CellShape, _Renderer] = {
     "track": _Renderer(_track_cells, _track_field),
     "hexagons": _Renderer(_hexagon_cells, _hexagon_field),
-    "triangles": _Renderer(_triangle_cells, _triangle_field),
+    "triangles": _Renderer(_triangle_cells, _triangle_field, draws_outline=True),
     "polygons": _Renderer(_polygon_cells, _polygon_field),
     "grid": _Renderer(_grid_cells, _grid_field),
     "points": _Renderer(_point_cells, _point_field),
@@ -516,7 +513,7 @@ def _plot_binning(
     ax: Axes | None = None,
     **kwargs: Any,
 ) -> Axes:
-    """Draw the bins' cells and connectivity graph.
+    """Draw the bins' cells and connectivity graph, and the arena outline.
 
     Parameters
     ----------
@@ -536,7 +533,10 @@ def _plot_binning(
     matplotlib.axes.Axes
     """
     renderer = _RENDERERS[_cell_shape(binning)]
-    return renderer.cells(binning, connectivity, title, ax, **kwargs)
+    ax = renderer.cells(binning, connectivity, title, ax, **kwargs)
+    if binning.outline is not None and not renderer.draws_outline:
+        _draw_outline(ax, binning.outline)
+    return ax
 
 
 def _plot_binning_field(
