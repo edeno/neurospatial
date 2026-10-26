@@ -2377,6 +2377,11 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             - "border": Border cell (high border score, passes spatial info threshold)
             - "place": Place cell (high spatial info, not grid or border)
             - "unclassified": Does not meet criteria for any spatial cell type
+            - "undetermined": Passes the information gate but the grid score
+              is unavailable (layouts without a regular grid of rectangular
+              cells: hexagonal, track, mesh), so it may be a grid cell. A
+              ``UserWarning`` gives the reason, as ``summary_table()``
+              records it in ``attrs['unavailable_metrics']``.
 
         Notes
         -----
@@ -2461,8 +2466,13 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         )
         n_neurons = len(self)
         spatial_info = self.spatial_information()
+        grid_unavailable = None
         if grid_scores is None:
-            grid_scores_arr = self.grid_scores().scores
+            try:
+                grid_scores_arr = self.grid_scores().scores
+            except NotImplementedError as exc:
+                grid_scores_arr = np.full(n_neurons, np.nan)
+                grid_unavailable = str(exc)
         else:
             grid_scores_arr = np.asarray(grid_scores, dtype=np.float64)
             if grid_scores_arr.ndim != 1 or grid_scores_arr.shape[0] != n_neurons:
@@ -2479,7 +2489,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
                 raise ValueError(
                     f"border_scores must be a 1-D array of length {n_neurons} (one per neuron), got shape {border_scores_arr.shape}"
                 )
-        return _label_from_scores(
+        labels = _label_from_scores(
             spatial_info,
             grid_scores_arr,
             border_scores_arr,
@@ -2487,6 +2497,19 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             min_grid_score=min_grid_score,
             min_border_score=min_border_score,
         )
+        if grid_unavailable is not None:
+            # Without a grid score, a tuned cell may be a grid cell; do not
+            # report it as a place cell, as summary_table() does.
+            labels[labels == "place"] = "undetermined"
+            warnings.warn(
+                "label_cell_types: the grid score is unavailable on this "
+                "environment, so spatially tuned cells that are not border "
+                "cells are labeled 'undetermined' rather than 'place'. "
+                f"Reason: {grid_unavailable}",
+                UserWarning,
+                stacklevel=2,
+            )
+        return labels
 
     def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as place cells (single-type boolean predicate).

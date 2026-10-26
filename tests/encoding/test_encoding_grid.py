@@ -263,7 +263,7 @@ class TestFFTAutocorrelationNeedsRectangularCells:
     def test_summary_table_reports_no_grid_score_on_a_hexagonal_layout(
         self, hexagonal_env_and_rate
     ) -> None:
-        from neurospatial import compute_spatial_rate
+        from neurospatial import compute_spatial_rate, compute_spatial_rates
         from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
 
         env, _ = hexagonal_env_and_rate
@@ -285,6 +285,13 @@ class TestFFTAutocorrelationNeedsRectangularCells:
         assert np.isnan(table["grid_score"]).all()
         assert "Hexagonal" in table.attrs["unavailable_metrics"]["grid_score"]
         assert table["cell_type"].iloc[0] == "undetermined"
+
+        # label_cell_types agrees with the table and says why.
+        population = compute_spatial_rates(env, [spike_times], times, positions)
+        with pytest.warns(UserWarning, match="grid score is unavailable") as caught:
+            labels = population.label_cell_types(boundary_source="analysis")
+        assert "Hexagonal" in str(caught[0].message)
+        np.testing.assert_array_equal(labels, ["undetermined"])
 
     def test_inactive_cells_are_left_out_like_unvisited_bins(self) -> None:
         from neurospatial.encoding.grid import spatial_autocorrelation
