@@ -658,13 +658,11 @@ def map_probabilities(
         target_probs = np.zeros(n_tgt, dtype=float)
         np.add.at(target_probs, nearest, source_probs)
         return target_probs
-    if mode == "inverse-distance-weighted":
-        return _map_inverse_distance_weighted(
-            tree,
-            src_centers,
-            source_probs,
-            n_tgt,
-            n_neighbors,
-            eps,
-        )
-    raise ValueError(f"Unrecognized mode '{mode}'.")
+    return _map_inverse_distance_weighted(
+        tree,
+        src_centers,
+        source_probs,
+        n_tgt,
+        n_neighbors,
+        eps,
+    )

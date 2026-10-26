@@ -45,7 +45,7 @@ def nearest_bin(
     require_position_columns(
         points, binning.bins.n_dims, call="Environment.nearest_bin"
     )
-    resolved = _validate_nearest_options(tie_break, max_distance, max_distance_factor)
+    _validate_nearest_options(tie_break, max_distance, max_distance_factor)
     if coordinates.kind == "polar":
         centers, tree = cache.get(
             EMBEDDED_KDTREE, lambda: _embedded_tree(binning, coordinates)
@@ -63,7 +63,7 @@ def nearest_bin(
             centers,
             tree,
             rows,
-            tie_break=resolved,
+            tie_break=tie_break,
             return_dist=return_dist,
             max_distance=max_distance,
             max_distance_factor=max_distance_factor,

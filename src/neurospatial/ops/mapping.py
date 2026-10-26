@@ -118,9 +118,8 @@ def _validate_nearest_options(
     tie_break: TieBreakStrategy,
     max_distance: float | None,
     max_distance_factor: float | None,
-) -> TieBreakStrategy:
+) -> None:
     """Validate the tie-break name and the distance controls."""
-    # Validate parameters
     if max_distance is not None and max_distance_factor is not None:
         raise ValueError(
             "Cannot specify both max_distance and max_distance_factor. "
@@ -140,8 +139,6 @@ def _validate_nearest_options(
             f"Invalid tie_break value: {tie_break!r}. Must be one of: "
             f"{list(_TIE_BREAKS)}"
         )
-
-    return tie_break
 
 
 def _lowest_tied_index(
@@ -269,12 +266,6 @@ def _nearest_bin_query(
                 bin_indices[tied_rows] = _lowest_tied_index(
                     bin_centers, kdtree, points[tied_rows], distances[tied_rows]
                 )
-
-    else:
-        raise ValueError(
-            f"Invalid tie_break mode: {tie_break!r}. "
-            f"Must be 'lowest_index' or 'closest_center'."
-        )
 
     # Check if any points are outside the environment based on distance threshold
     if max_distance is not None or max_distance_factor is not None:
