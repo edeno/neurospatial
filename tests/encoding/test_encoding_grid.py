@@ -420,15 +420,30 @@ class TestFFTAutocorrelationLagsArePhysical:
         assert properties.score > 0.9
         assert abs(properties.scale - spacing) < pixel
 
+    @staticmethod
+    def _grid_cell_session(env_from, seed):
+        """A 40 cm grid cell recorded over a 100 x 74 cm box."""
+        from neurospatial.simulation import GridCellModel, generate_poisson_spikes
+
+        times = np.arange(18000) / 30.0
+        positions = np.random.default_rng(seed).uniform(
+            [0.0, 0.0], [100.0, 74.0], (len(times), 2)
+        )
+        env = env_from(positions)
+        rate = GridCellModel(env, grid_spacing=40.0, max_rate=20.0).firing_rate(
+            positions
+        )
+        spike_times = generate_poisson_spikes(rate, times, seed=seed + 1)
+        return env, spike_times, times, positions
+
     @pytest.mark.parametrize("bin_size", [5.0, 3.3, 2.0])
     def test_from_samples_grids_get_a_grid_score(self, bin_size) -> None:
         from neurospatial import compute_spatial_rate
 
-        stimulus = np.random.default_rng(7)
-        times = np.arange(6000) / 30.0
-        positions = stimulus.uniform(0.0, 50.0, size=(len(times), 2))
-        spike_times = np.sort(np.random.default_rng(8).uniform(0, times[-1], 300))
-        env = Environment.from_samples(positions, bin_size=bin_size)
+        env, spike_times, times, positions = self._grid_cell_session(
+            lambda positions: Environment.from_samples(positions, bin_size=bin_size),
+            seed=7,
+        )
         # Cells are exactly bin_size wide on both axes.
         np.testing.assert_array_equal(
             [np.diff(edge)[0] for edge in env.grid_edges], [bin_size, bin_size]
@@ -436,8 +451,8 @@ class TestFFTAutocorrelationLagsArePhysical:
 
         result = compute_spatial_rate(env, spike_times, times, positions)
 
-        assert np.isfinite(result.grid_score())
-        assert np.isfinite(result.summary_table()["grid_score"]).all()
+        assert result.grid_score() > 0.4
+        assert (result.summary_table()["grid_score"] > 0.4).all()
 
     def test_from_polygon_grid_gets_a_grid_score(self) -> None:
         from shapely.geometry import box
@@ -445,16 +460,16 @@ class TestFFTAutocorrelationLagsArePhysical:
         from neurospatial import compute_spatial_rate
 
         # Cell widths that differ by a few percent between the axes.
-        env = Environment.from_polygon(box(0, 0, 50, 37), bin_size=(3.0, 2.9))
+        env, spike_times, times, positions = self._grid_cell_session(
+            lambda _: Environment.from_polygon(box(0, 0, 100, 74), bin_size=(3.0, 2.9)),
+            seed=9,
+        )
         widths = [np.diff(edge)[0] for edge in env.grid_edges]
         assert abs(widths[0] / widths[1] - 1.0) > 0.01
-        times = np.arange(6000) / 30.0
-        positions = np.random.default_rng(9).uniform([0, 0], [50, 37], (len(times), 2))
-        spike_times = np.sort(np.random.default_rng(10).uniform(0, times[-1], 300))
 
         result = compute_spatial_rate(env, spike_times, times, positions)
 
-        assert np.isfinite(result.grid_score())
+        assert result.grid_score() > 0.4
 
     def test_result_grid_scale_is_in_length_units(self) -> None:
         from neurospatial import compute_spatial_rate

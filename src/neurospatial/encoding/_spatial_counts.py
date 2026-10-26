@@ -4,7 +4,8 @@ This module converts spike trains and trajectories into discrete spike counts
 and occupancy arrays that can be processed by the smoothing layer.
 
 The functions in this module handle:
-1. Spike interpolation from continuous spike times to bin positions
+1. Assigning each spike to the bin that receives its sampling interval's
+   dwell time
 2. Occupancy computation from continuous trajectory to time-per-bin
 3. Batch processing of multiple neurons with joblib parallelization
 
@@ -16,7 +17,6 @@ Output shapes:
 The binning layer is intentionally separated from smoothing to allow:
 - Reusing occupancy across multiple neurons
 - Precomputing position bins for efficiency
-- Future JAX implementations to leverage different parallelization strategies
 """
 
 from __future__ import annotations
@@ -235,8 +235,7 @@ def resolve_speed(
     min_speed : float or None
         Speed threshold. When ``None``, NO speed filtering happens: this
         returns ``None`` and the caller passes nothing speed-related to
-        ``env.occupancy`` (so ``max_gap`` etc. stay exactly as before — the
-        output is byte-for-byte unchanged). It is an error to pass ``speed``
+        ``env.occupancy``. It is an error to pass ``speed``
         without ``min_speed`` (see Raises): a bare ``speed`` would otherwise be
         silently ignored, asymmetric with ``env.occupancy`` (which raises on
         ``min_speed`` without ``speed``).
@@ -283,8 +282,7 @@ def resolve_speed(
                 "min_speed=<threshold> to enable speed filtering, or omit "
                 "speed."
             )
-        # No filtering requested: return None so callers leave env.occupancy
-        # exactly as before (byte-for-byte unchanged output).
+        # No filtering requested: callers pass no speed gate.
         return None
 
     times = np.asarray(times, dtype=np.float64)
@@ -397,14 +395,22 @@ def _bin_spike_train_with_stats(
         ``times[-1]`` belongs to no interval. Exclusions by this mask are
         intentional and do not count toward inactive-bin drop warnings.
 
+    linear_intervals : LinearSpatialIntervals or None
+        Prepared ``time_allocation="linear"`` intervals. ``None`` means
+        ``"start"`` allocation.
+
     Returns
     -------
     spike_counts : ndarray, shape (n_bins,)
-        Counts after time, interval and interpolated-position gates.
+        Counts after time and interval gates. Under ``"start"`` allocation a
+        spike takes the bin of its interval's start frame, the same bin that
+        receives that interval's dwell time. Under ``"linear"`` allocation it
+        takes the bin of its interpolated position, matching the dwell time
+        split along the segment.
     n_time_dropped : int
         Spikes outside ``[times[0], times[-1])``.
     n_bin_dropped : int
-        Interval-valid spikes whose interpolated positions are outside bins.
+        Interval-valid spikes whose position is outside every bin.
     n_total : int
         Input spike count.
     n_after_time : int
@@ -422,33 +428,41 @@ def _bin_spike_train_with_stats(
     spike_times_valid = spike_times[valid_time_mask]
     n_time_dropped = n_total - len(spike_times_valid)
 
+    spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
     if len(spike_times_valid) > 0:
-        spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
-        spike_times_valid = spike_times_valid[interval_mask[spike_interval]]
-    if linear_intervals is not None and len(spike_times_valid) > 0:
+        keep = interval_mask[spike_interval]
+        spike_times_valid = spike_times_valid[keep]
+        spike_interval = spike_interval[keep]
+
+    if linear_intervals is None:
+        # Start allocation: the interval's whole dwell time goes to its start
+        # frame's bin, so its spikes must go there too. Interpolating the spike
+        # position instead would put spikes in the next bin while the time
+        # stays in this one, biasing the rate along the direction of travel.
+        n_after_time = len(spike_times_valid)
+        if n_after_time == 0:
+            return spike_counts, n_time_dropped, 0, n_total, 0
+        spike_bins = env.bin_at(positions[spike_interval])
+    else:
         runs = linear_intervals.support.runs
         if len(runs) == 0:
             spike_times_valid = spike_times_valid[:0]
-        else:
+        elif len(spike_times_valid) > 0:
             run = np.searchsorted(runs[:, 0], spike_times_valid, side="right") - 1
             keep = (run >= 0) & (spike_times_valid < runs[np.maximum(run, 0), 1])
             spike_times_valid = spike_times_valid[keep]
+        n_after_time = len(spike_times_valid)
+        if n_after_time == 0:
+            return spike_counts, n_time_dropped, 0, n_total, 0
+        # Linear allocation splits each interval's dwell time along the
+        # straight segment between its samples, so spikes take the bin of
+        # their interpolated position.
+        n_dims = positions.shape[1]
+        spike_positions = np.empty((n_after_time, n_dims), dtype=np.float64)
+        for d in range(n_dims):
+            spike_positions[:, d] = np.interp(spike_times_valid, times, positions[:, d])
+        spike_bins = env.bin_at(spike_positions)
 
-    n_after_time = len(spike_times_valid)
-
-    if n_after_time == 0:
-        return spike_counts, n_time_dropped, 0, n_total, 0
-
-    # Linearly interpolate spike positions from the trajectory in each
-    # dimension, then map to a bin.  Using the most recent trajectory frame
-    # (snapshot) instead of interp would shift spikes that fall between
-    # samples to the previous bin under fast movement / sparse sampling.
-    n_dims = positions.shape[1]
-    spike_positions = np.empty((n_after_time, n_dims), dtype=np.float64)
-    for d in range(n_dims):
-        spike_positions[:, d] = np.interp(spike_times_valid, times, positions[:, d])
-
-    spike_bins = env.bin_at(spike_positions)
     valid_bins = spike_bins[spike_bins >= 0]
     n_bin_dropped = n_after_time - len(valid_bins)
 
@@ -676,8 +690,7 @@ def _spatial_interval_mask(
         spike_window=spike_window,
         break_before=break_before,
     )
-    # Complete-case rule: spikes are placed by interpolating between an
-    # interval's two samples, so an interval counts only when both samples are
+    # Complete-case rule: an interval counts only when both of its samples are
     # tracked inside the environment. One whose end sample is a dropout (NaN)
     # or outside is left out of the spike counts and the occupancy alike,
     # rather than imputing where the animal was.
@@ -922,7 +935,7 @@ def _emit_inactive_bin_warning(
         return
     warnings.warn(
         f"{n_bin_dropped}/{n_after_time} spikes "
-        f"({100 * frac:.0f}%) {scope}interpolated to positions outside "
+        f"({100 * frac:.0f}%) {scope}mapped to positions outside "
         f"the active environment bins (bin index -1). "
         f"Check that positions are in the same coordinate frame as the "
         f"environment and that spike_times and times share units (both seconds). "
@@ -952,9 +965,9 @@ def bin_spike_train(
 ) -> NDArray[np.float64]:
     """Bin spike train into spatial bins.
 
-    Converts continuous spike times to spike counts per spatial bin by
-    interpolating spike positions from the trajectory and counting spikes
-    in each bin.
+    Converts continuous spike times to spike counts per spatial bin. Each
+    spike goes to the bin that receives its sampling interval's dwell time
+    (see Notes).
 
     Parameters
     ----------
@@ -1005,8 +1018,10 @@ def bin_spike_train(
         supplied, it already includes all requested gates and windows, so
         these helpers do not recalculate or renormalize them.
     time_allocation : {"start", "linear"}, default="start"
-        Start allocation keeps complete intervals with both endpoints inside.
-        Linear allocation uses exact retained planar segment support.
+        Start allocation keeps complete intervals with both endpoints inside
+        and assigns each interval, with its spikes, to its start sample's bin.
+        Linear allocation uses exact retained planar segment support and
+        assigns spikes to their interpolated position.
     linear_intervals : LinearSpatialIntervals or None
         Prepared linear support shared with occupancy and other units.
 
@@ -1023,10 +1038,14 @@ def bin_spike_train(
 
     Notes
     -----
-    Spikes are interpolated to positions using linear interpolation of
-    spike times onto the trajectory. Spikes outside the trajectory time
-    range are excluded. Spikes that fall in invalid bins (outside the
-    environment) are excluded from counts.
+    A spike in sampling interval ``[times[k], times[k + 1])`` is counted in
+    the same bin as that interval's dwell time: the bin of ``positions[k]``
+    under ``"start"`` allocation, and the bin of the spike's linearly
+    interpolated position under ``"linear"`` allocation (which splits the
+    interval's time along the segment). Matching numerator and denominator
+    keeps the rate of an untuned neuron flat. Spikes outside the trajectory
+    time range are excluded, and spikes whose position is outside the
+    environment bins are excluded from counts.
 
     The default ``warn_on_drop=True`` guards against common unit
     mismatches (e.g. spike_times in milliseconds while times is in
@@ -1315,8 +1334,7 @@ def bin_spike_trains(
         :func:`resolve_speed`.
     min_speed : float or None
         Minimum speed threshold (physical units / second). When ``None``
-        (default) no speed filtering happens and the output is byte-for-byte
-        unchanged. When set, low-speed intervals are excluded from BOTH
+        (default) no speed filtering happens. When set, low-speed intervals are excluded from BOTH
         occupancy and spike counts.
     max_gap : float or None
         Maximum time gap in seconds. Intervals with ``dt > max_gap`` are

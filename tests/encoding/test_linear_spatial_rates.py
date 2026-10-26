@@ -334,7 +334,8 @@ def test_default_allocation_preserves_explicit_start_results(function):
     np.testing.assert_array_equal(default._get_rates(), explicit._get_rates())
     assert default.analysis_settings == explicit.analysis_settings
     np.testing.assert_array_equal(default.occupancy, [2.0, 0.0])
-    np.testing.assert_array_equal(default._get_rates().reshape(-1), [1.0, np.nan])
+    # All four spikes fall in the interval whose 2 s dwell goes to bin 0.
+    np.testing.assert_array_equal(default._get_rates().reshape(-1), [2.0, np.nan])
     assert default.analysis_settings["observed_intervals"] == [[0.0, 2.0]]
 
 

@@ -180,25 +180,30 @@ class TestSmoothRateMapDiffusionKDE:
         # Larger bandwidth should have lower peak (more spread)
         assert result_large[center_idx] < result_small[center_idx]
 
-    def test_respects_graph_connectivity(self, simple_env):
-        """Smoothing should only spread along connected bins."""
-        # Create spike counts at edge of environment
-        n_bins = simple_env.n_bins
-        spike_counts = np.zeros(n_bins, dtype=np.float64)
-        spike_counts[0] = 10.0  # Corner spike
+    def test_respects_graph_connectivity(self):
+        """Spikes in one of two disconnected rooms never raise the other's rate.
 
-        occupancy = np.ones(n_bins, dtype=np.float64)
-
-        result = smooth_rate_map(
-            simple_env,
-            spike_counts,
-            occupancy,
-            method="diffusion_kde",
-            bandwidth=2.0,
+        The rooms are 6 cm apart, closer than the 4 cm bandwidth's reach, so a
+        Euclidean kernel leaks across; the graph diffusion cannot.
+        """
+        room = np.array([[i, j] for i in range(0, 11) for j in range(0, 11)], float)
+        env = Environment.from_samples(
+            np.vstack([room, room + np.array([16.0, 0.0])]), bin_size=2.0
         )
+        right = env.bin_centers[:, 0] > 13
+        spike_counts = np.zeros(env.n_bins)
+        spike_counts[np.flatnonzero(~right)[-1]] = 10.0  # near the gap
+        occupancy = np.ones(env.n_bins)
+        kwargs = {"bandwidth": 4.0}
 
-        # Result should be non-negative everywhere
-        assert np.all(result[np.isfinite(result)] >= 0)
+        diffusion = smooth_rate_map(
+            env, spike_counts, occupancy, method="diffusion_kde", **kwargs
+        )
+        euclidean = smooth_rate_map(
+            env, spike_counts, occupancy, method="gaussian_kde", **kwargs
+        )
+        assert np.all(np.asarray(diffusion)[right] == 0.0)
+        assert np.nanmax(np.asarray(euclidean)[right]) > 0.01
 
     def test_preserves_total_mass_approximately(
         self, simple_env, spike_counts_center, uniform_occupancy
@@ -212,15 +217,9 @@ class TestSmoothRateMapDiffusionKDE:
             bandwidth=2.0,
         )
 
-        # Total spikes (density-weighted) should be approximately conserved
-        # For uniform occupancy, just compare sums
-        raw_rate = spike_counts_center / uniform_occupancy
-        raw_total = np.nansum(raw_rate)
-        smoothed_total = np.nansum(result)
-
-        # Should be within 50% (smoothing can redistribute mass)
-        assert smoothed_total > 0
-        assert abs(smoothed_total - raw_total) / raw_total < 0.5
+        # Density-mode diffusion conserves mass and leaves uniform occupancy
+        # uniform, so with 1 s per bin the rates sum to the spike count.
+        assert np.nansum(result) == pytest.approx(spike_counts_center.sum(), rel=1e-9)
 
     def test_handles_zero_occupancy_bins(self, simple_env, spike_counts_center):
         """Bins with zero raw occupancy get rate from smoothed neighbors.
@@ -973,6 +972,50 @@ class TestDiffusionKdeUnresolvedFarField:
         assert far.size == 0 or far.min() > 3 * bandwidth
 
 
+class TestGaussianKdeFarField:
+    """gaussian_kde stops extrapolating where the other estimators do."""
+
+    @pytest.mark.parametrize("backend", ["numpy", "jax"])
+    @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+    def test_far_field_is_missing(self, half_visited_arena, batch, backend):
+        if backend == "jax":
+            pytest.importorskip("jax")
+        env, spike_counts, occupancy = half_visited_arena
+        bandwidth = 5.0
+        kwargs = {"method": "gaussian_kde", "bandwidth": bandwidth, "backend": backend}
+        if batch:
+            rate = smooth_rate_maps_batch(
+                env, spike_counts[None, :], occupancy, **kwargs
+            )[0]
+        else:
+            rate = smooth_rate_map(env, spike_counts, occupancy, **kwargs)
+        rate = np.asarray(rate)
+
+        occupied = env.bin_centers[occupancy > 0]
+        distance = np.min(
+            np.linalg.norm(env.bin_centers[:, None, :] - occupied[None, :, :], axis=2),
+            axis=1,
+        )
+        finite = np.isfinite(rate)
+        # Near the visits the estimate is kept; 150 cm (30 bandwidths) away it
+        # was a finite extrapolation before.
+        assert np.all(finite[distance <= 3 * bandwidth])
+        assert not np.any(finite[distance > 10 * bandwidth])
+        # The kept region matches diffusion_kde's to within two bandwidths.
+        diffusion = np.isfinite(
+            np.asarray(
+                smooth_rate_map(
+                    env,
+                    spike_counts,
+                    occupancy,
+                    method="diffusion_kde",
+                    bandwidth=bandwidth,
+                )
+            )
+        )
+        assert abs(distance[finite].max() - distance[diffusion].max()) <= 2 * bandwidth
+
+
 class TestEigenbasisCacheReuse:
     """Cross-neuron reuse is now automatic via the cached eigenbasis.
 
@@ -1018,74 +1061,43 @@ class TestEigenbasisCacheReuse:
 
 
 # =============================================================================
-# Backward Compatibility Tests
+# Order of operations
 # =============================================================================
 
 
-class TestBackwardCompatibility:
-    """Tests verifying compatibility with existing place.py implementations."""
+def test_kde_divides_smoothed_counts_and_binned_smooths_the_ratio(
+    simple_env, spike_counts_center, non_uniform_occupancy
+):
+    """With uneven occupancy the two orders give different maps."""
+    bandwidth = 2.0
+    density = simple_env.compute_kernel(bandwidth=bandwidth, mode="density")
+    average = simple_env.compute_kernel(bandwidth=bandwidth, mode="average")
+    kde_reference = (density @ spike_counts_center) / (density @ non_uniform_occupancy)
+    raw_rate = spike_counts_center / non_uniform_occupancy
+    binned_reference = (average @ raw_rate) / (average @ np.ones(simple_env.n_bins))
 
-    def test_matches_diffusion_kde_from_place(
-        self, simple_env, spike_counts_center, uniform_occupancy
-    ):
-        """Result should match _diffusion_kde from place.py."""
-        # We'll verify this by checking the algorithm produces expected behavior
-        # rather than importing the internal function
-
-        result = smooth_rate_map(
+    kde = np.asarray(
+        smooth_rate_map(
             simple_env,
             spike_counts_center,
-            uniform_occupancy,
+            non_uniform_occupancy,
             method="diffusion_kde",
-            bandwidth=2.0,
+            bandwidth=bandwidth,
         )
-
-        # Basic sanity checks that match diffusion_kde behavior
-        center_idx = simple_env.n_bins // 2
-        assert result[center_idx] > 0  # Peak at spike location
-        assert result[center_idx] == np.nanmax(result)  # Peak is maximum
-
-    def test_smoothing_order_diffusion_kde(
-        self, simple_env, spike_counts_center, uniform_occupancy
-    ):
-        """diffusion_kde should smooth before normalizing (correct KDE order)."""
-        # This is the mathematically correct order:
-        # 1. Smooth spike counts
-        # 2. Smooth occupancy
-        # 3. Normalize: smoothed_spikes / smoothed_occupancy
-
-        result = smooth_rate_map(
+    )
+    binned = np.asarray(
+        smooth_rate_map(
             simple_env,
             spike_counts_center,
-            uniform_occupancy,
-            method="diffusion_kde",
-            bandwidth=2.0,
-        )
-
-        # With uniform occupancy, smoothed rate should be smoothed spikes / 1.0
-        # Peak should be less than raw spike count / occupancy
-        center_idx = simple_env.n_bins // 2
-        raw_peak = spike_counts_center[center_idx] / uniform_occupancy[center_idx]
-        assert result[center_idx] < raw_peak  # Smoothing reduces peak
-
-    def test_smoothing_order_binned(
-        self, simple_env, spike_counts_center, uniform_occupancy
-    ):
-        """binned should normalize then smooth (legacy order)."""
-        # This is the legacy order (for backward compatibility):
-        # 1. Normalize: spike_counts / occupancy
-        # 2. Smooth result
-
-        result = smooth_rate_map(
-            simple_env,
-            spike_counts_center,
-            uniform_occupancy,
+            non_uniform_occupancy,
             method="binned",
-            bandwidth=2.0,
+            bandwidth=bandwidth,
         )
-
-        # Result should still be valid
-        assert np.any(np.isfinite(result))
+    )
+    peak = kde_reference.max()
+    assert_allclose(kde, kde_reference, atol=1e-6 * peak)
+    assert_allclose(binned, binned_reference, atol=1e-6 * peak)
+    assert np.max(np.abs(kde_reference - binned_reference)) > 0.05 * peak
 
 
 # =============================================================================

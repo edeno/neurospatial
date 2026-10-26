@@ -220,12 +220,17 @@ ax = plot_population_coverage(env, result, show_field_count=True)
 
 The `PopulationCoverageResult` object contains:
 
-- `coverage_fraction`: Fraction of bins covered (0.0-1.0)
-- `uncovered_bins`: Indices of gaps
+- `coverage_fraction`: Fraction of observed bins covered (0.0-1.0)
+- `uncovered_bins`: Indices of gaps (observed bins outside every field)
 - `uncovered_positions`: Coordinates of gaps
 - `field_count`: Number of place fields per bin
 - `n_neurons`, `n_place_cells`, `n_fields`: Population statistics
 - `place_fields`: Detected fields for each neuron
+- `is_observed`: Bins with a finite rate for at least one neuron
+
+A bin that is NaN in every rate map was never visited (or fell below
+`min_occupancy`); it is neither covered nor a gap. Compute the rates with the
+default `fill_value=None` so these bins stay NaN.
 
 **Computed properties** (standard hippocampal metrics):
 
@@ -233,7 +238,7 @@ The `PopulationCoverageResult` object contains:
 - `fields_per_place_cell`: n_fields / n_place_cells (typical: 1.0-2.0)
 - `mean_redundancy`: Average fields per covered bin (Wilson & McNaughton 1993)
 
-Coverage is the fraction of bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
+Coverage is the fraction of observed bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
 
 ### Field Density Map
 
@@ -825,11 +830,11 @@ counts flagged by the screen, not cells with ground-truth tuning.
 
 | Minutes (approximate spikes) | Egocentric information median / flags (0.3) | Place information median / flags (0.5) | Detected fields | View flags (0.5) | HD flags |
 | --- | --- | --- | --- | --- | --- |
-| 1 (30) | 2.12 / 20/20 | 0.86 / 19/20 | 20/20 | 19/20 | 0/20 |
-| 2 (60) | 1.41 / 20/20 | 0.53 / 15/20 | 20/20 | 19/20 | 0/20 |
+| 1 (30) | 2.12 / 20/20 | 0.86 / 19/20 | 11/20 | 19/20 | 0/20 |
+| 2 (60) | 1.41 / 20/20 | 0.54 / 14/20 | 11/20 | 19/20 | 0/20 |
 | 5 (150) | 0.70 / 20/20 | 0.22 / 0/20 | 20/20 | 0/20 | 0/20 |
 | 10 (300) | 0.41 / 20/20 | 0.11 / 0/20 | 20/20 | 0/20 | 0/20 |
-| 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 20/20 | 0/20 | 0/20 |
+| 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 16/20 | 0/20 | 0/20 |
 
 The allocentric object-vector information screen also flagged 20/20 in the
 10-minute fixture. HD's screen combines the rate-weighted mean vector length

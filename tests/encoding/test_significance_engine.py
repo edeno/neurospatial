@@ -47,20 +47,43 @@ def test_finite_upper_tail_ranks_and_undefined_observation():
             [[np.nan, 4.0, np.nan]],
         ]
     )
+    # The third unit has no finite null score, so its p-value is undefined,
+    # not 1.0.
     np.testing.assert_array_equal(
-        shuffle_pvalues(observed, null), [[0.75, np.nan, 1.0]]
+        shuffle_pvalues(observed, null), [[0.75, np.nan, np.nan]]
     )
 
 
 def test_results_preserve_labels_and_finite_null_zscore():
     observed = np.array([[3.0], [1.0]])
     null = np.array([[[1.0], [1.0]], [[2.0], [1.0]], [[np.nan], [1.0]]])
-    results = to_shuffle_results(observed, null, np.array([11, 37]))
+    with pytest.warns(UserWarning, match=r"1 non-finite null score.*unit 11"):
+        results = to_shuffle_results(observed, null, np.array([11, 37]))
     assert list(results) == [11, 37]
     assert results[11].z_score == 3
     assert np.isnan(results[37].z_score)
     assert results[11].shuffle_type == "circular_time_shift"
     assert results[11].n_shuffles == 3
+
+
+def test_all_nonfinite_null_gives_nan_p_value():
+    """A null with no finite score cannot rank the observation."""
+    observed = np.array([[0.5], [0.2]])
+    null = np.array([[[np.nan], [0.1]], [[np.inf], [0.3]]])
+    with pytest.warns(UserWarning, match=r"2 non-finite null score.*unit 'a'"):
+        results = to_shuffle_results(observed, null, np.array(["a", "b"]))
+    assert np.isnan(results["a"].p_value)
+    assert not results["a"].is_significant
+    assert results["b"].p_value == pytest.approx(2 / 3)
+
+
+def test_undefined_observation_does_not_warn_about_its_null():
+    observed = np.array([[np.nan]])
+    null = np.full((3, 1, 1), np.nan)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        results = to_shuffle_results(observed, null, np.array([0]))
+    assert np.isnan(results[0].p_value)
 
 
 def test_observed_warning_once_null_warnings_suppressed():

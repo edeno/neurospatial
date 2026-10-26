@@ -95,23 +95,15 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
         return int(self.scores.shape[0])
 
     def __getitem__(self, idx: Any) -> Any:
-        # Delegate to the ndarray's own __getitem__ so all forms of
-        # ndarray indexing work transparently: integer (-> scalar float),
-        # slice (-> 1-D ndarray), boolean mask (-> 1-D ndarray), array
-        # of indices (-> 1-D ndarray). The downstream code that used to
-        # write `scores[~np.isnan(scores)]` against a plain ndarray
-        # keeps working when `scores` is a BatchScoresResult.
+        # ndarray indexing: integer -> float, slice/mask/index array -> 1-D.
         return self.scores[idx]
 
     def __array__(
         self, dtype: Any = None, copy: bool | None = None
     ) -> NDArray[np.float64]:
-        # NumPy ufuncs (np.isnan, np.where, etc.) call __array__ when
-        # given a non-ndarray input. Returning the underlying scores
-        # array lets callers use BatchScoresResult anywhere they used
-        # to use a plain (n_neurons,) array of scores. The ``copy``
-        # keyword is required by NumPy 2's array protocol -- without it
-        # ``np.asarray(result, copy=False)`` raises in NumPy 2.
+        # NumPy functions (np.isnan, np.where, ...) call __array__ on a
+        # non-ndarray input, so the result works wherever an (n_neurons,)
+        # score array does. NumPy 2's array protocol passes ``copy``.
         #
         # We mirror plain ndarray semantics: copy=False with a dtype that
         # requires a cast must raise, because the request is impossible
@@ -137,12 +129,7 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
 
     @property
     def shape(self) -> tuple[int, ...]:
-        """Shape of the underlying scores array, ``(n_neurons,)``.
-
-        Pass-through to ``self.scores.shape`` so callers reading
-        ``result.shape`` can keep doing so when the function previously
-        returned a plain ndarray.
-        """
+        """Shape of the underlying scores array, ``(n_neurons,)``."""
         return self.scores.shape
 
     @property
@@ -202,7 +189,8 @@ def spatial_information(
     -------
     float | jax.Array
         Spatial information in bits per spike (if base=2.0).
-        Returns 0.0 if mean rate is zero or undefined.
+        NaN for a silent map (mean rate 0), an all-NaN map or zero total
+        occupancy: bits per spike are undefined without spikes.
         Returns float for NumPy input, JAX scalar for JAX input.
 
     Raises
@@ -307,7 +295,8 @@ def batch_spatial_information(
     Returns
     -------
     ndarray | jax.Array, shape (n_neurons,)
-        Spatial information in bits per spike for each neuron.
+        Spatial information in bits per spike for each neuron, NaN for a
+        silent or all-NaN map or zero total occupancy.
         Returns NumPy array for NumPy input, JAX array for JAX input.
 
     Raises
@@ -395,7 +384,7 @@ def sparsity(
     -------
     float | jax.Array
         Sparsity value in range [0, 1]. Lower values indicate sparser firing.
-        Returns 0.0 if denominator is zero or undefined.
+        NaN for a silent map, an all-NaN map or zero total occupancy.
         Returns float for NumPy input, JAX scalar for JAX input.
 
     Raises
@@ -494,7 +483,8 @@ def batch_sparsity(
     Returns
     -------
     ndarray | jax.Array, shape (n_neurons,)
-        Sparsity values in range [0, 1] for each neuron.
+        Sparsity values in range [0, 1] for each neuron, NaN for a silent or
+        all-NaN map or zero total occupancy.
         Returns NumPy array for NumPy input, JAX array for JAX input.
 
     Raises
@@ -1157,8 +1147,8 @@ def mutual_information(
     migration = (
         "mutual_information requires a 2-D joint position-response histogram. "
         "Mean firing rates and occupancy do not determine mutual information. "
-        "Use information_per_second(firing_rate, occupancy) for the previous "
-        "Skaggs calculation in bits/second."
+        "For a rate map, use information_per_second(firing_rate, occupancy) "
+        "for the Skaggs information rate in bits/second."
     )
     if occupancy is not None:
         raise ValueError(migration)
@@ -1212,8 +1202,8 @@ def spatial_coverage_single_cell(
     Returns
     -------
     float
-        Fraction of bins with firing rate > threshold, in range [0, 1].
-        Returns NaN if all firing rates are NaN.
+        Fraction of observed (finite-rate) bins with firing rate > threshold,
+        in range [0, 1]. NaN if every rate is NaN.
 
     Notes
     -----
@@ -1224,7 +1214,7 @@ def spatial_coverage_single_cell(
         C = \\frac{\\sum_i \\mathbb{1}[r_i > \\theta]}{N}
 
     where :math:`r_i` is firing rate in bin :math:`i`, :math:`\\theta` is
-    the threshold, and :math:`N` is the total number of bins.
+    the threshold, and :math:`N` is the number of bins with a finite rate.
 
     **Interpretation**:
 
@@ -1238,8 +1228,10 @@ def spatial_coverage_single_cell(
     - Inverse of selectivity: high coverage -> low selectivity
     - Complementary to sparsity: both measure spatial specificity
 
-    **NaN handling**: NaN values in firing_rate are treated as bins with
-    zero firing (below threshold).
+    **NaN handling**: NaN bins (unvisited, or below the occupancy threshold)
+    were not observed. They are excluded from both the count and the total,
+    so a cell is not called selective because part of the arena went
+    unsampled.
 
     Examples
     --------
@@ -1264,19 +1256,7 @@ def spatial_coverage_single_cell(
            the spatial firing of hippocampal complex-spike cells. J Neurosci 7(7).
     """
     firing_rate = np.asarray(firing_rate)
-
-    # Handle NaN values (treat as below threshold)
-    valid_mask = np.isfinite(firing_rate)
-
-    if not np.any(valid_mask):
+    observed = firing_rate[np.isfinite(firing_rate)]
+    if observed.size == 0:
         return np.nan
-
-    # Count bins above threshold
-    n_above = np.sum(firing_rate[valid_mask] > threshold)
-
-    # Total number of bins (including NaN bins as zeros)
-    n_total = len(firing_rate)
-
-    coverage = n_above / n_total
-
-    return float(coverage)
+    return float(np.mean(observed > threshold))

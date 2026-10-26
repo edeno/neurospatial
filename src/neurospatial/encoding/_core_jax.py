@@ -10,10 +10,10 @@ compute_firing_rate_single
     Convert spike counts and occupancy to firing rate for single neuron.
 compute_firing_rates_batch
     Convert spike counts and occupancy to firing rates for multiple neurons.
-smooth_rate_map_single
-    Apply spatial smoothing to a single firing rate map.
-smooth_rate_maps_batch
-    Apply spatial smoothing to multiple firing rate maps.
+spatial_information_single, spatial_information_batch
+    Skaggs spatial information (bits per spike).
+sparsity_single, sparsity_batch
+    Skaggs sparsity.
 
 Notes
 -----
@@ -33,13 +33,13 @@ See Also
 neurospatial.encoding._backend : Backend selection infrastructure.
 neurospatial.encoding._core_numpy : NumPy implementation of these functions.
 neurospatial.encoding._metrics : Shared metric implementations.
-neurospatial.encoding._smoothing : Detailed smoothing implementations.
+neurospatial.encoding._smoothing : Rate-map smoothing.
 """
 
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import jax
 
@@ -61,8 +61,6 @@ if TYPE_CHECKING:
 __all__ = [
     "compute_firing_rate_single",
     "compute_firing_rates_batch",
-    "smooth_rate_map_single",
-    "smooth_rate_maps_batch",
     "sparsity_batch",
     "sparsity_single",
     "spatial_information_batch",
@@ -214,150 +212,6 @@ def _firing_rates_batch_kernel(
     return jnp.where(valid, spike_counts / occupancy, jnp.nan)
 
 
-def smooth_rate_map_single(
-    firing_rate: Array,
-    adjacency: Array,
-    *,
-    bandwidth: float = 5.0,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-) -> Array:
-    """Apply spatial smoothing to a single firing rate map.
-
-    Parameters
-    ----------
-    firing_rate : jax.Array, shape (n_bins,)
-        Unsmoothed firing rate map (Hz).
-    adjacency : jax.Array, shape (n_bins, n_bins)
-        Adjacency matrix encoding spatial connectivity between bins.
-        Used for graph-based smoothing methods. For diffusion_kde and
-        gaussian_kde, this should be a row-normalized kernel/weight matrix.
-    bandwidth : float, default=5.0
-        Smoothing bandwidth in physical units (e.g., cm). The interpretation
-        depends on the smoothing method. For "binned" method with bandwidth=0,
-        the input is returned unchanged.
-    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
-        Smoothing method to apply:
-
-        - ``"diffusion_kde"``: Graph-based boundary-aware kernel density
-          estimation using heat diffusion on the connectivity graph.
-        - ``"gaussian_kde"``: Standard Gaussian kernel smoothing, treating
-          the rate map as a 2D image.
-        - ``"binned"``: Returns input unchanged (no smoothing applied).
-
-    Returns
-    -------
-    jax.Array, shape (n_bins,)
-        Smoothed firing rate map.
-
-    Notes
-    -----
-    The ``"diffusion_kde"`` method is recommended for environments with
-    irregular boundaries or obstacles, as it respects the connectivity
-    structure and avoids bleeding across barriers.
-
-    This function is designed to be compatible with JAX transformations
-    like ``jit`` for efficient computation.
-
-    This function expects the adjacency/kernel matrix to already be computed.
-    For higher-level smoothing that computes kernels from Environment objects,
-    use :func:`neurospatial.encoding._smoothing.smooth_rate_map`.
-
-    Examples
-    --------
-    >>> import jax.numpy as jnp
-    >>> from neurospatial.encoding._core_jax import smooth_rate_map_single
-    >>> firing_rate = jnp.array([0.0, 1.0, 5.0, 1.0, 0.0], dtype=jnp.float64)
-    >>> adjacency = jnp.eye(5, dtype=jnp.float64)  # Identity - no smoothing
-    >>> smoothed = smooth_rate_map_single(
-    ...     firing_rate, adjacency, bandwidth=2.0, method="binned"
-    ... )  # doctest: +SKIP
-    >>> smoothed  # doctest: +SKIP
-    Array([0., 1., 5., 1., 0.], dtype=float64)
-    """
-    firing_rate = jnp.asarray(firing_rate)
-    adjacency = jnp.asarray(adjacency)
-    if method == "binned":
-        return firing_rate
-    out: Array = _smooth_rate_map_single_kernel(firing_rate, adjacency)
-    return out
-
-
-@jax.jit
-def _smooth_rate_map_single_kernel(firing_rate: Array, adjacency: Array) -> Array:
-    return adjacency @ firing_rate
-
-
-def smooth_rate_maps_batch(
-    firing_rates: Array,
-    adjacency: Array,
-    *,
-    bandwidth: float = 5.0,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-) -> Array:
-    """Apply spatial smoothing to multiple firing rate maps.
-
-    Batch version of :func:`smooth_rate_map_single` that operates on
-    multiple neurons efficiently using JAX vectorization.
-
-    Parameters
-    ----------
-    firing_rates : jax.Array, shape (n_neurons, n_bins)
-        Unsmoothed firing rate maps for each neuron (Hz).
-    adjacency : jax.Array, shape (n_bins, n_bins)
-        Adjacency matrix encoding spatial connectivity between bins.
-        Shared across all neurons. For diffusion_kde and gaussian_kde,
-        this should be a row-normalized kernel/weight matrix.
-    bandwidth : float, default=5.0
-        Smoothing bandwidth in physical units (e.g., cm).
-    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
-        Smoothing method to apply. See :func:`smooth_rate_map_single` for
-        detailed descriptions of each method.
-
-    Returns
-    -------
-    jax.Array, shape (n_neurons, n_bins)
-        Smoothed firing rate maps for each neuron.
-
-    Notes
-    -----
-    This function applies the same smoothing kernel to all neurons,
-    which is more efficient than calling :func:`smooth_rate_map_single`
-    in a loop when the adjacency matrix and bandwidth are shared.
-
-    When using JAX, this function can leverage ``vmap`` for automatic
-    vectorization over neurons.
-
-    Examples
-    --------
-    >>> import jax.numpy as jnp
-    >>> from neurospatial.encoding._core_jax import smooth_rate_maps_batch
-    >>> firing_rates = jnp.array(
-    ...     [
-    ...         [0.0, 1.0, 5.0, 1.0, 0.0],
-    ...         [1.0, 3.0, 1.0, 0.0, 0.0],
-    ...     ],
-    ...     dtype=jnp.float64,
-    ... )
-    >>> adjacency = jnp.eye(5, dtype=jnp.float64)
-    >>> smoothed = smooth_rate_maps_batch(
-    ...     firing_rates, adjacency, bandwidth=2.0, method="binned"
-    ... )  # doctest: +SKIP
-    >>> smoothed.shape  # doctest: +SKIP
-    (2, 5)
-    """
-    firing_rates = jnp.asarray(firing_rates)
-    adjacency = jnp.asarray(adjacency)
-    if method == "binned":
-        return firing_rates
-    out: Array = _smooth_rate_maps_batch_kernel(firing_rates, adjacency)
-    return out
-
-
-@jax.jit
-def _smooth_rate_maps_batch_kernel(firing_rates: Array, adjacency: Array) -> Array:
-    return (adjacency @ firing_rates.T).T
-
-
 def spatial_information_single(
     firing_rate: Array,
     occupancy: Array,
@@ -385,7 +239,8 @@ def spatial_information_single(
     -------
     jax.Array (scalar)
         Spatial information in bits per spike (if base=2.0).
-        Returns 0.0 if mean rate is zero or undefined.
+        NaN for a silent map (mean rate 0), an all-NaN map or zero total
+        occupancy: bits per spike are undefined without spikes.
 
     Notes
     -----
@@ -450,7 +305,7 @@ def _spatial_information_kernel(
         0.0,
     )
     information = jnp.maximum(jnp.sum(contribution), 0.0)
-    return jnp.where((mean_rate > 0) & (occ_sum > 0), information, 0.0)
+    return jnp.where((mean_rate > 0) & (occ_sum > 0), information, jnp.nan)
 
 
 # Cached vmap of the per-neuron information kernel. Building vmap once at
@@ -534,7 +389,7 @@ def sparsity_single(
     -------
     jax.Array (scalar)
         Sparsity value in range [0, 1]. Lower values indicate sparser firing.
-        Returns 0.0 if denominator is zero or undefined.
+        NaN for a silent map, an all-NaN map or zero total occupancy.
 
     Notes
     -----
@@ -590,7 +445,7 @@ def _sparsity_kernel(firing_rate: Array, occupancy: Array) -> Array:
     sparsity_value = jnp.where(
         denominator > 0,
         numerator / jnp.where(denominator > 0, denominator, 1.0),
-        0.0,
+        jnp.nan,
     )
     return jnp.clip(sparsity_value, 0.0, 1.0)
 

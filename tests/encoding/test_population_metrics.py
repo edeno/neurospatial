@@ -22,142 +22,62 @@ from neurospatial.encoding.population import (
 matplotlib.use("Agg")  # Use non-interactive backend for testing
 
 
+def _coverage_result(place_fields, is_observed):
+    is_observed = np.asarray(is_observed, dtype=bool)
+    bin_centers = np.column_stack(
+        [np.arange(len(is_observed), dtype=float), np.zeros(len(is_observed))]
+    )
+    return PopulationCoverageResult(
+        place_fields=place_fields, is_observed=is_observed, bin_centers=bin_centers
+    )
+
+
 class TestPopulationCoverageResult:
-    """Test PopulationCoverageResult dataclass."""
+    """Counts and bin sets are derived from the fields and observed bins."""
+
+    def test_derived_counts_and_bins(self) -> None:
+        result = _coverage_result(
+            [
+                [np.array([0, 1]), np.array([3])],
+                [np.array([1, 2])],
+                [],
+                [],
+            ],
+            [True, True, True, True, True, False],
+        )
+        assert result.n_neurons == 4
+        assert result.n_place_cells == 2
+        assert result.n_fields == 3
+        np.testing.assert_array_equal(result.field_count, [1, 2, 1, 1, 0, 0])
+        np.testing.assert_array_equal(result.covered_bins, [0, 1, 2, 3])
+        # Bin 5 was never observed, so it is not a gap.
+        np.testing.assert_array_equal(result.uncovered_bins, [4])
+        np.testing.assert_array_equal(result.uncovered_positions, [[4.0, 0.0]])
+        assert result.coverage_fraction == pytest.approx(4 / 5)
+        assert result.place_cell_fraction == pytest.approx(0.5)
+        assert result.fields_per_place_cell == pytest.approx(1.5)
+        assert result.mean_redundancy == pytest.approx(5 / 4)
+        text = str(result)
+        assert "80.0%" in text and "2/4" in text and "1 bins" in text
 
     def test_dataclass_frozen(self) -> None:
-        """Test that PopulationCoverageResult is immutable."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.5,
-            is_covered=np.array([True, False]),
-            field_count=np.array([1, 0]),
-            covered_bins=np.array([0]),
-            uncovered_bins=np.array([1]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=1,
-            n_place_cells=1,
-            n_fields=1,
-            place_fields=[[np.array([0])]],
-        )
+        result = _coverage_result([[np.array([0])]], [True, True])
         with pytest.raises(AttributeError):
-            result.coverage_fraction = 0.9  # type: ignore[misc]
+            result.is_observed = np.ones(2, dtype=bool)  # type: ignore[misc]
 
-    def test_str_representation(self) -> None:
-        """Test human-readable string representation."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.75,
-            is_covered=np.array([True, True, True, False]),
-            field_count=np.array([2, 1, 1, 0]),
-            covered_bins=np.array([0, 1, 2]),
-            uncovered_bins=np.array([3]),
-            uncovered_positions=np.array([[10.0, 10.0]]),
-            n_neurons=5,
-            n_place_cells=3,
-            n_fields=4,
-            place_fields=[[], [], [], [], []],
-        )
-        result_str = str(result)
-        assert "75.0%" in result_str
-        assert "3/5" in result_str
-        assert "60.0%" in result_str  # place_cell_fraction
-        assert "1.3" in result_str  # fields_per_place_cell
-        assert "1 bins" in result_str  # gaps
+    def test_undefined_ratios_are_nan(self) -> None:
+        """0/0 ratios are undefined, not zero."""
+        empty = _coverage_result([], [False, False])
+        assert np.isnan(empty.place_cell_fraction)
+        assert np.isnan(empty.coverage_fraction)
+        no_fields = _coverage_result([[], []], [True, True])
+        assert np.isnan(no_fields.fields_per_place_cell)
+        assert np.isnan(no_fields.mean_redundancy)
+        assert no_fields.coverage_fraction == 0.0
 
-    def test_place_cell_fraction(self) -> None:
-        """Test place_cell_fraction computed property."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.5,
-            is_covered=np.array([True, False]),
-            field_count=np.array([1, 0]),
-            covered_bins=np.array([0]),
-            uncovered_bins=np.array([1]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=10,
-            n_place_cells=4,
-            n_fields=5,
-            place_fields=[],
-        )
-        assert result.place_cell_fraction == pytest.approx(0.4)
-
-    def test_place_cell_fraction_zero_neurons(self) -> None:
-        """Test place_cell_fraction when n_neurons is zero."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.0,
-            is_covered=np.array([False]),
-            field_count=np.array([0]),
-            covered_bins=np.array([], dtype=np.intp),
-            uncovered_bins=np.array([0]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=0,
-            n_place_cells=0,
-            n_fields=0,
-            place_fields=[],
-        )
-        assert result.place_cell_fraction == 0.0
-
-    def test_fields_per_place_cell(self) -> None:
-        """Test fields_per_place_cell computed property."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.5,
-            is_covered=np.array([True, False]),
-            field_count=np.array([1, 0]),
-            covered_bins=np.array([0]),
-            uncovered_bins=np.array([1]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=10,
-            n_place_cells=4,
-            n_fields=6,
-            place_fields=[],
-        )
-        assert result.fields_per_place_cell == pytest.approx(1.5)
-
-    def test_fields_per_place_cell_zero_place_cells(self) -> None:
-        """Test fields_per_place_cell when no place cells detected."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.0,
-            is_covered=np.array([False]),
-            field_count=np.array([0]),
-            covered_bins=np.array([], dtype=np.intp),
-            uncovered_bins=np.array([0]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=5,
-            n_place_cells=0,
-            n_fields=0,
-            place_fields=[],
-        )
-        assert result.fields_per_place_cell == 0.0
-
-    def test_mean_redundancy(self) -> None:
-        """Test mean_redundancy computed property."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.75,
-            is_covered=np.array([True, True, True, False]),
-            field_count=np.array([3, 2, 1, 0]),  # Mean of [3, 2, 1] = 2.0
-            covered_bins=np.array([0, 1, 2]),
-            uncovered_bins=np.array([3]),
-            uncovered_positions=np.array([[10.0, 10.0]]),
-            n_neurons=5,
-            n_place_cells=3,
-            n_fields=6,
-            place_fields=[],
-        )
-        assert result.mean_redundancy == pytest.approx(2.0)
-
-    def test_mean_redundancy_no_coverage(self) -> None:
-        """Test mean_redundancy when no bins are covered."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.0,
-            is_covered=np.array([False, False]),
-            field_count=np.array([0, 0]),
-            covered_bins=np.array([], dtype=np.intp),
-            uncovered_bins=np.array([0, 1]),
-            uncovered_positions=np.array([[1.0, 1.0], [2.0, 2.0]]),
-            n_neurons=5,
-            n_place_cells=0,
-            n_fields=0,
-            place_fields=[],
-        )
-        assert result.mean_redundancy == 0.0
+    def test_field_bins_must_index_the_bins(self) -> None:
+        with pytest.raises(ValueError, match="only 2 bins"):
+            _coverage_result([[np.array([0, 5])]], [True, True])
 
 
 class TestPopulationCoverage:
@@ -224,7 +144,7 @@ class TestPopulationCoverage:
         rates = np.full((2, simple_env.n_bins), 25.0)
         result = population_coverage(simple_env, rates)
         assert result.coverage_fraction == pytest.approx(1.0)
-        assert result.n_place_cells == 2  # Legacy name: units with segmented regions.
+        assert result.n_place_cells == 2  # Units with segmented regions.
         assert all(fields.excluded_reason is None for fields in result.place_fields)
 
     def test_single_neuron(self, simple_env: Environment) -> None:
@@ -238,9 +158,23 @@ class TestPopulationCoverage:
 
         result = population_coverage(simple_env, firing_rates, min_size=1)
         assert result.n_neurons == 1
-        if result.n_place_cells > 0:
-            assert result.n_place_cells == 1
-            assert len(result.place_fields[0]) > 0
+        assert result.n_place_cells == 1
+        assert len(result.place_fields[0]) == 1
+        np.testing.assert_array_equal(
+            result.covered_bins, np.sort([0, *simple_env.neighbors(bins=0)])
+        )
+
+    def test_unobserved_bins_are_not_gaps(self, simple_env: Environment) -> None:
+        """Bins NaN for every neuron were not visited: neither covered nor gaps."""
+        n_bins = simple_env.n_bins
+        firing_rates = np.full((1, n_bins), np.nan)
+        observed = np.array([0, *simple_env.neighbors(bins=0)])
+        firing_rates[0, observed] = 5.0
+        firing_rates[0, 0] = 10.0
+
+        result = population_coverage(simple_env, firing_rates, min_size=1)
+        assert result.coverage_fraction == 1.0
+        assert len(result.uncovered_bins) == 0
 
     def test_field_count_matches_density_map(self, simple_env: Environment) -> None:
         """Verify field_count matches field_density_map output."""
@@ -276,10 +210,10 @@ class TestPopulationCoverage:
             firing_rates[i, i * 10 : (i + 1) * 10] = np.linspace(10.0, 1.0, 10)
 
         result = population_coverage(simple_env, firing_rates, min_size=1)
-        neurons_with_fields = sum(
-            1 for fields in result.place_fields if len(fields) > 0
-        )
-        assert result.n_place_cells == neurons_with_fields
+        assert result.n_place_cells == 3
+        assert [len(fields) > 0 for fields in result.place_fields] == [True] * 3 + [
+            False
+        ] * 2
 
     def test_place_fields_format(self, simple_env: Environment) -> None:
         """Verify place_fields structure matches detect_place_fields output."""
@@ -915,7 +849,8 @@ class TestPopulationVectorCorrelation:
         a = np.random.default_rng(2).random((12, 40))
         order = np.roll(np.arange(12), 1)
         pv = population_vector_correlation(a, a[order])
-        assert np.all(pv < 0.99)
+        # Independent random maps: correlations scatter around zero, not one.
+        assert abs(np.median(pv)) < 0.2
 
     def test_nan_rate_makes_location_nan(self, random_maps) -> None:
         a, c = random_maps
