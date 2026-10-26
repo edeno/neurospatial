@@ -52,7 +52,6 @@ class HexagonalLayout(_NeighborPairsMixin):
     hex_orientation_: float | None = None
     grid_offset_x_: float | None = None
     grid_offset_y_: float | None = None
-    _locator: HexLocator | None = None
 
     def __init__(self) -> None:
         """Initialize a HexagonalLayout engine."""
@@ -67,7 +66,6 @@ class HexagonalLayout(_NeighborPairsMixin):
         self.hex_orientation_ = None
         self.grid_offset_x_ = None
         self.grid_offset_y_ = None
-        self._locator = None
 
     @capture_build_params(data=("positions", "dimension_ranges"))
     def build(
@@ -161,33 +159,14 @@ class HexagonalLayout(_NeighborPairsMixin):
         # The extent of the active hexagons, corners included.
         self.dimension_ranges = component_extent(shapes=self.bin_shapes())
         self._own_arrays("bin_centers", "active_mask")
-        self._build_locator()
-
-    def _build_locator(self) -> None:
-        """Snapshot hexagonal geometry and the active-bin mapping."""
-        if (
-            self.grid_offset_x_ is None
-            or self.grid_offset_y_ is None
-            or self.hex_radius_ is None
-            or self.grid_shape is None
-            or self.active_mask is None
-        ):
-            raise LayoutNotBuiltError(type(self).__name__, "locator")
-        assert len(self.grid_shape) == 2
+        n_rows, n_cols = self.grid_shape
         self._locator = HexLocator(
             self.grid_offset_x_,
             self.grid_offset_y_,
             self.hex_radius_,
-            (self.grid_shape[0], self.grid_shape[1]),
+            (n_rows, n_cols),
             mask_active_map(self.active_mask),
         )
-
-    def locator(self) -> HexLocator:
-        """Return the owned locator, building it on first use."""
-        if self._locator is None:
-            self._build_locator()
-        assert self._locator is not None
-        return self._locator
 
     def binning(self) -> Binning:
         """Return owned hexagons, lookup and lazy hexagon-side faces.

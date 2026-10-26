@@ -55,7 +55,6 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         NDArray[np.int_] | None
     )  # Store original indices of active ones
     _boundary_polygon_stored: Polygon | None  # Store the actual polygon object
-    _locator: MeshLocator | None = None
 
     def __init__(self) -> None:
         self.bin_centers = np.empty((0, 2), dtype=float)
@@ -68,7 +67,6 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         self._full_delaunay_tri = None
         self._active_original_simplex_indices = None
         self._boundary_polygon_stored = None
-        self._locator = None
 
     @capture_build_params(data=("boundary_polygon",))
     def build(self, boundary_polygon: Polygon, *, point_spacing: float) -> None:
@@ -162,25 +160,12 @@ class TriangularMeshLayout(_NeighborPairsMixin):
         self.active_mask = np.zeros(n_total_delaunay_triangles, dtype=bool)
         self.active_mask[active_original_indices] = True
         self._own_arrays("bin_centers", "active_mask")
-        self._build_locator()
-
-    def _build_locator(self) -> None:
-        """Snapshot triangulation, active-bin mapping and the boundary."""
-        if self._full_delaunay_tri is None or self.active_mask is None:
-            raise LayoutNotBuiltError(type(self).__name__, "locator")
         self._locator = MeshLocator(
             self._full_delaunay_tri.points,
             self._full_delaunay_tri.simplices,
             mask_active_map(self.active_mask),
-            self._boundary_polygon_stored,
+            boundary_polygon,
         )
-
-    def locator(self) -> MeshLocator:
-        """Return the owned locator, building it on first use."""
-        if self._locator is None:
-            self._build_locator()
-        assert self._locator is not None
-        return self._locator
 
     def binning(self) -> Binning:
         """Return owned triangles, lookup and lazy shared-edge faces.

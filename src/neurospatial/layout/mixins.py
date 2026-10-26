@@ -6,10 +6,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError, _format_error
+from neurospatial._results import read_only_copy
 from neurospatial.geometry import (
     Binning,
     GridBinningSpec,
-    NearestBinLocator,
+    Locator,
     RectilinearGrid,
     RectilinearLocator,
     graph_from_binning,
@@ -21,13 +22,6 @@ from neurospatial.layout.helpers.regular_grid import regular_grid_pairs
 
 if TYPE_CHECKING:
     import matplotlib.axes
-
-
-def _read_only(array: NDArray[np.generic]) -> NDArray[np.generic]:
-    """A read-only copy of ``array``."""
-    owned = np.array(array, copy=True)
-    owned.setflags(write=False)
-    return owned
 
 
 def _no_active_bins_message(engine: str, cause: str, fix: str) -> str:
@@ -46,27 +40,29 @@ def _no_active_bins_message(engine: str, cause: str, fix: str) -> str:
 # Neighbor pairs and the graph derived from them
 # ---------------------------------------------------------------------------
 class _NeighborPairsMixin:
-    """Neighbor pairs computed by ``build()`` and a graph derived on request.
+    """Neighbor pairs and point lookup computed by ``build()``, and a derived graph.
 
     An engine's ``build()`` stores its neighbor pairs and their distances with
-    ``_set_neighbor_pairs``, and its ``binning()`` passes them on. The
-    ``connectivity`` graph is a convenience built from that binning on first
-    access; rebuilding the engine discards it.
+    ``_set_neighbor_pairs`` and its point locator in ``_locator``, and its
+    ``binning()`` passes them on. The ``connectivity`` graph is a convenience
+    built from that binning on first access; rebuilding the engine discards it.
     """
 
     layout_type: ClassVar[str]
     _pairs: NDArray[np.intp] | None = None
     _pair_distances: NDArray[np.float64] | None = None
     _connectivity: nx.Graph | None = None
+    _locator: Locator | None = None
 
     def _begin_build(self) -> None:
         """Mark the engine unbuilt until ``build()`` sets its pairs again.
 
-        A build that fails partway then leaves ``binning()`` raising
-        :class:`LayoutNotBuiltError`, not mixing old and new state.
+        A build that fails partway then leaves ``binning()`` and ``locator()``
+        raising :class:`LayoutNotBuiltError`, not mixing old and new state.
         """
         self._pairs = self._pair_distances = None
         self._connectivity = None
+        self._locator = None
 
     def _own_arrays(self, *names: str) -> None:
         """Replace the named arrays, or tuples of arrays, with read-only copies.
@@ -77,9 +73,9 @@ class _NeighborPairsMixin:
         for name in names:
             value = getattr(self, name)
             if isinstance(value, tuple):
-                setattr(self, name, tuple(_read_only(array) for array in value))
+                setattr(self, name, tuple(read_only_copy(array) for array in value))
             elif value is not None:
-                setattr(self, name, _read_only(value))
+                setattr(self, name, read_only_copy(value))
 
     @property
     def is_linearized_track(self) -> bool:
@@ -108,6 +104,12 @@ class _NeighborPairsMixin:
         if self._pairs is None or self._pair_distances is None:
             raise LayoutNotBuiltError(type(self).__name__, "binning")
         return self._pairs, self._pair_distances
+
+    def locator(self) -> Locator:
+        """Return the built layout's point locator, or raise if unbuilt."""
+        if self._locator is None:
+            raise LayoutNotBuiltError(type(self).__name__, "locator")
+        return self._locator
 
     @property
     def connectivity(self) -> nx.Graph:
@@ -160,48 +162,6 @@ class _NeighborPairsMixin:
         )
 
 
-# ---------------------------------------------------------------------------
-# KD-tree mixin (nearest-bin lookup)
-# ---------------------------------------------------------------------------
-class _KDTreeMixin:
-    """Mixin providing nearest-bin lookup through an owned data locator.
-
-    Layouts call ``_build_kdtree`` after finalizing their bin centers. The
-    locator builds its KD-tree lazily and keeps the original bin-index mapping.
-    """
-
-    _locator: NearestBinLocator | None = None
-
-    def _build_kdtree(self, points_for_tree: NDArray[np.float64]) -> None:
-        """Prepare nearest-bin lookup over the bin centers.
-
-        Parameters
-        ----------
-        points_for_tree : ndarray of float64, shape (n_bins, n_dims)
-            Bin centers, in bin order.
-
-        Raises
-        ------
-        ValueError
-            If the centers are not a 2-D array.
-        """
-        if points_for_tree.ndim != 2:
-            raise ValueError(
-                "points_for_tree must be a 2D array with shape (n_points, n_dims).",
-            )
-        self._locator = NearestBinLocator(points_for_tree)
-
-    def locator(self) -> NearestBinLocator:
-        """Return the built layout's owned nearest-bin locator."""
-        if self._locator is None:
-            centers = getattr(self, "bin_centers", None)
-            if centers is None or len(centers) == 0:
-                raise LayoutNotBuiltError(type(self).__name__, "locator")
-            self._build_kdtree(centers)
-        assert self._locator is not None
-        return self._locator
-
-
 class _GridMixin(_NeighborPairsMixin):
     """Mixin for grid-based layout engines (e.g., RegularGrid, ShapelyPolygon).
 
@@ -220,40 +180,7 @@ class _GridMixin(_NeighborPairsMixin):
     bin_centers: NDArray[np.float64] | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
     layout_type: ClassVar[str]
-    _locator: RectilinearLocator | None = None
     _grid_spec: GridBinningSpec | None = None
-
-    def _build_locator(self, *, connect_diagonal: bool | None = None) -> None:
-        """Snapshot cells and explicit native construction choices together.
-
-        ``connect_diagonal`` is supplied by builders, independently of whether
-        the current mask happens to contain any diagonal pair. ``locator()``
-        building the lookup on first use omits it: the grid spec is then left
-        as it is, never inferred from the mask.
-        """
-        if self.grid_edges is None or self.grid_shape is None:
-            raise LayoutNotBuiltError(type(self).__name__, "locator")
-        self._locator = RectilinearLocator(
-            self.grid_edges,
-            self.grid_shape,
-            np.ones(self.grid_shape, dtype=bool)
-            if self.active_mask is None
-            else self.active_mask,
-        )
-
-        if connect_diagonal is not None:
-            self._grid_spec = GridBinningSpec(
-                np.array([edge[0] for edge in self.grid_edges]),
-                np.eye(len(self.grid_edges) + 1),
-                bool(connect_diagonal),
-            )
-
-    def locator(self) -> RectilinearLocator:
-        """Return the owned locator, building it on first use."""
-        if self._locator is None:
-            self._build_locator()
-        assert self._locator is not None
-        return self._locator
 
     def _assign_cells(
         self, full_grid_bin_centers: NDArray[np.float64], *, connect_diagonal: bool
@@ -271,7 +198,11 @@ class _GridMixin(_NeighborPairsMixin):
             Whether cells that share only a corner are neighbors. Recorded in
             the grid's binning specification even when no such pair is active.
         """
-        assert self.active_mask is not None and self.grid_shape is not None
+        assert (
+            self.active_mask is not None
+            and self.grid_shape is not None
+            and self.grid_edges is not None
+        )
         if not self.active_mask.any():
             raise ValueError(
                 _no_active_bins_message(
@@ -289,7 +220,15 @@ class _GridMixin(_NeighborPairsMixin):
             pairs, euclidean_pair_distances(self.bin_centers, pairs)
         )
         self._own_arrays("bin_centers", "active_mask", "grid_edges")
-        self._build_locator(connect_diagonal=connect_diagonal)
+        self._locator = RectilinearLocator(
+            self.grid_edges, self.grid_shape, self.active_mask
+        )
+        # Recorded as given, whether or not any diagonal pair is active.
+        self._grid_spec = GridBinningSpec(
+            np.array([edge[0] for edge in self.grid_edges]),
+            np.eye(len(self.grid_edges) + 1),
+            bool(connect_diagonal),
+        )
 
     def binning(self) -> Binning:
         """Return owned bins, lookup, lazy grid faces and grid components.

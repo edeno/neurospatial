@@ -585,7 +585,7 @@ def test_located_bin_dtype_is_intp():
     )
     assert grid.binning().locator.locate(points)[-1] == -1
 
-    # GraphLayout is the _KDTreeMixin path (the historical int32 source).
+    # GraphLayout is the nearest-bin path (the historical int32 source).
     track = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
     assert track._binning.locator.locate(np.array([[10.0, 0.0]])).dtype == np.intp
 
@@ -816,6 +816,8 @@ def test_a_failed_rebuild_leaves_the_engine_unbuilt():
         )
     with pytest.raises(LayoutNotBuiltError):
         layout.binning()
+    with pytest.raises(LayoutNotBuiltError):
+        layout.locator()
 
 
 @pytest.mark.parametrize("layout_kind", list_available_layouts())

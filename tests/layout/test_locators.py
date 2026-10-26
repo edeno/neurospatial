@@ -9,7 +9,6 @@ from dataclasses import FrozenInstanceError, fields, replace
 
 import numpy as np
 import pytest
-from environment_helpers import native_layout
 from hypothesis import given
 from hypothesis import strategies as st
 from scipy.spatial import Delaunay, cKDTree
@@ -489,24 +488,3 @@ def test_empty_nearest_lookup_still_validates_axes():
     )
     with pytest.raises(ValueError, match="dimension"):
         locator.locate(np.empty((0, 3)))
-
-
-def test_legacy_layout_rebuilds_missing_locator(
-    built_environment, request, locator_parity
-):
-    """Saved layout data can recreate a missing memoized locator."""
-    env = copy.deepcopy(built_environment)
-    layout = native_layout(env)
-    previous = layout.locator()
-    del layout._locator
-    restored = layout.locator()
-    assert restored is not previous
-    assert restored is layout.locator()
-    case = request.node.callspec.params["built_environment"]
-    points = locator_parity[f"{case}/lookup/random/points"]
-    np.testing.assert_array_equal(
-        restored.locate(points),
-        previous.locate(points)
-        if case.startswith("mesh")
-        else locator_parity[f"{case}/lookup/random/values"],
-    )
