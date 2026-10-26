@@ -620,8 +620,11 @@ estimated tuning curve. A fixed cutoff is a screen. `hd.tuning_pvalue()` tests
 for one preferred direction given how long the animal faced each heading, so
 uneven heading dwell time alone does not make a cell look tuned; it assumes
 spikes are independent given heading, and bursting or slow rate drift make
-its p-value too small. A circular-shift test on the raw recording is the
-verdict when its stationarity assumptions fit the experiment:
+its p-value too small. Mean vector length uses only visited headings, so check
+`hd.largest_unvisited_arc()`: when the animal never faced an arc wider than
+90°, untuned cells get inflated MVLs and the screen warns. A circular-shift
+test on the raw recording is the verdict when its stationarity assumptions fit
+the experiment:
 
 <!-- docs-test: run -->
 ```python

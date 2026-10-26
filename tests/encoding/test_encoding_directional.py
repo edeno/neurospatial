@@ -4288,3 +4288,103 @@ class TestHeadingRange:
         assert result.summary()["direction_frame"] == "allocentric"
         assert result[0].summary()["direction_frame"] == "allocentric"
         assert result.summary_table().attrs["direction_frame"] == "allocentric"
+
+
+# ==============================================================================
+# Heading coverage
+# ==============================================================================
+
+
+class TestHeadingCoverage:
+    """MVL over a partial heading range is inflated; the screen says so."""
+
+    @pytest.fixture(scope="class")
+    def limited_session(self) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+        """Headings within ±60° of East and 20 untuned 2 Hz units."""
+        times = np.arange(0.0, 600.0, 1 / 30)
+        headings = np.random.default_rng(0).uniform(-np.pi / 3, np.pi / 3, times.size)
+        rng = np.random.default_rng(1)
+        trains = [np.sort(rng.uniform(0.0, times[-1], 1200)) for _ in range(20)]
+        return times, headings, trains
+
+    def test_largest_unvisited_arc(self) -> None:
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        n = 12
+        occupancy = np.ones(n)
+        occupancy[[3, 4, 5, 11, 0]] = 0.0  # runs of 3 and of 2 across the wrap
+        result = DirectionalRateResult(
+            firing_rate=np.where(occupancy > 0, 1.0, np.nan),
+            occupancy=occupancy,
+            bin_centers=np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n,
+            bin_size=2 * np.pi / n,
+            bandwidth=None,
+        )
+        assert result.largest_unvisited_arc() == pytest.approx(3 * 2 * np.pi / n)
+
+    def test_wrapping_run_and_full_coverage(self) -> None:
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        n = 12
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        occupancy = np.ones(n)
+        occupancy[[10, 11, 0, 1]] = 0.0
+        result = DirectionalRatesResult(
+            firing_rates=np.ones((2, n)),
+            occupancy=occupancy,
+            bin_centers=centers,
+            bin_size=2 * np.pi / n,
+            bandwidth=None,
+        )
+        assert result.largest_unvisited_arc() == pytest.approx(4 * 2 * np.pi / n)
+        full = DirectionalRatesResult(
+            firing_rates=np.ones((2, n)),
+            occupancy=np.ones(n),
+            bin_centers=centers,
+            bin_size=2 * np.pi / n,
+            bandwidth=None,
+        )
+        assert full.largest_unvisited_arc() == 0.0
+
+    def test_limited_headings_warn_where_mvl_verdict_is_made(
+        self, limited_session
+    ) -> None:
+        from neurospatial.encoding.directional import (
+            compute_directional_rates,
+            is_head_direction_cell,
+        )
+
+        times, headings, trains = limited_session
+        result = compute_directional_rates(trains, times, headings)
+        # Untuned cells over a 120° arc look tuned by MVL alone.
+        assert np.median(result.mean_vector_lengths()) > 0.7
+        assert result.largest_unvisited_arc() == pytest.approx(
+            np.radians(240), abs=result.bin_size
+        )
+        with pytest.warns(UserWarning, match="unvisited"):
+            flags = result.classify()
+        # The occupancy-corrected test keeps the screen from passing them.
+        assert flags.sum() <= 2
+        with pytest.warns(UserWarning, match='criterion="shuffle"'):
+            table = result.summary_table()
+        assert table.attrs["largest_unvisited_arc"] == pytest.approx(
+            result.largest_unvisited_arc()
+        )
+        with pytest.warns(UserWarning, match="unvisited"):
+            result[0].is_head_direction_cell()
+        with pytest.warns(UserWarning, match="unvisited"):
+            is_head_direction_cell(trains[0], times, headings)
+
+    def test_full_heading_coverage_does_not_warn(self, biased_heading_session) -> None:
+        import warnings
+
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times, headings = biased_heading_session
+        spikes = np.sort(np.random.default_rng(3).uniform(0.0, times[-1], 600))
+        result = compute_directional_rate(spikes, times, headings)
+        assert result.largest_unvisited_arc() < np.pi / 2
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result.is_head_direction_cell()
+            result.summary_table()

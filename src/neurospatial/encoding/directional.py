@@ -47,6 +47,7 @@ neurospatial.stats.circular : Circular statistics utilities
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -71,6 +72,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._significance import (
     check_criterion,
@@ -299,6 +301,56 @@ def _directional_tuning_width(rates: NDArray, bin_size: float) -> float:
     return float(finite.mean())
 
 
+_MAX_UNVISITED_ARC = np.pi / 2
+
+
+def _largest_unvisited_arc(occupancy: ArrayLike) -> float:
+    """Longest circular run of unvisited heading bins, in radians.
+
+    Parameters
+    ----------
+    occupancy : ndarray of shape (n_bins,)
+        Unsmoothed time per heading bin, seconds; the bins tile the circle.
+
+    Returns
+    -------
+    float
+        Run length times the bin width ``2π / n_bins``: 0 when every bin was
+        visited, 2π when none was.
+    """
+    occupancy = np.asarray(occupancy, dtype=np.float64)
+    n_bins = occupancy.size
+    unvisited = ~(occupancy > 0)
+    if unvisited.all():
+        return float(2 * np.pi)
+    # Start the scan just after a visited bin so a run crossing the wrap is
+    # counted once.
+    start = int(np.flatnonzero(~unvisited)[0]) + 1
+    run = np.roll(unvisited, -start).astype(np.int8)
+    edges = np.diff(np.concatenate([[0], run, [0]]))
+    lengths = np.flatnonzero(edges == -1) - np.flatnonzero(edges == 1)
+    longest = int(lengths.max()) if lengths.size else 0
+    return float(longest * 2 * np.pi / n_bins)
+
+
+def _warn_if_headings_incomplete(occupancy: ArrayLike) -> None:
+    """Warn that an MVL verdict is unreliable when a wide heading arc is unvisited."""
+    arc = _largest_unvisited_arc(occupancy)
+    if arc <= _MAX_UNVISITED_ARC:
+        return
+    warnings.warn(
+        f"The animal never faced a {np.degrees(arc):.0f}° arc of headings "
+        f"(largest_unvisited_arc() = {arc:.2f} rad). Mean vector length uses "
+        "only visited headings, so it is inflated for untuned cells (about "
+        "0.3 when 270° are visited, 0.4 when 240° are) and the MVL screen is "
+        "unreliable. For a verdict, use is_head_direction_cell(..., "
+        'criterion="shuffle") or head_direction_cell_significance(...) with '
+        "the raw arrays.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def _head_direction_classify(
     rates: NDArray,
     occupancy: NDArray,
@@ -309,6 +361,7 @@ def _head_direction_classify(
     alpha: float,
 ) -> NDArray[np.bool_]:
     """The shared MVL and occupancy-corrected tuning-test screen."""
+    _warn_if_headings_incomplete(occupancy)
     mvls = np.array(
         [_directional_mean_vector_length(row, bin_centers) for row in rates]
     )
@@ -364,9 +417,11 @@ def _directional_summary_frame(
         "tuning_width": "rad",
         "tuning_width_deg": "deg",
         "tuning_pvalue": "",
+        "largest_unvisited_arc": "rad",
     }
     df.attrs["classification_thresholds"] = dict(HEAD_DIRECTION_THRESHOLDS)
     df.attrs["direction_frame"] = result.direction_frame
+    df.attrs["largest_unvisited_arc"] = _largest_unvisited_arc(occupancy)
     df.attrs.update(result._analysis_attrs())
     return df
 
@@ -792,7 +847,10 @@ class DirectionalRateResult(SpatialResultMixin):
 
         where r_i is the firing rate and θ_i is the bin center.
 
-        The cutoff of 0.4 used by
+        Only visited bins enter the sum, so an untuned cell recorded while
+        the animal faced a limited range of headings has an inflated MVL
+        (about 0.3 when 270° are visited, 0.4 when 240° are). Check
+        :meth:`largest_unvisited_arc`. The cutoff of 0.4 used by
         :meth:`is_head_direction_cell` is a common screening convention;
         check it against the MVL distribution of your own recordings.
 
@@ -921,6 +979,40 @@ class DirectionalRateResult(SpatialResultMixin):
         """
         return float(np.degrees(self.tuning_width()))
 
+    def largest_unvisited_arc(self) -> float:
+        """Widest arc of headings the animal never faced, in radians.
+
+        Mean vector length and preferred direction use only visited heading
+        bins. When a wide arc is never visited, an untuned cell's tuning curve
+        covers only part of the circle and its MVL is inflated (about 0.3
+        when 270° are visited, 0.4 when 240° are). The MVL screen warns when
+        this arc exceeds 90°.
+
+        Returns
+        -------
+        float
+            Longest run of zero-occupancy bins times the bin width, in
+            [0, 2π]; 0 when every heading bin was visited.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> occupancy = np.ones(n_bins)
+        >>> occupancy[:15] = 0.0  # a 90° arc never faced
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=np.where(occupancy > 0, 2.0, np.nan),
+        ...     occupancy=occupancy,
+        ...     bin_centers=np.linspace(-np.pi, np.pi, n_bins, endpoint=False),
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
+        >>> round(float(np.degrees(result.largest_unvisited_arc())))
+        90
+        """
+        return _largest_unvisited_arc(self.occupancy)
+
     def tuning_pvalue(self) -> float:
         """Test for one preferred direction, given where the animal faced.
 
@@ -1028,6 +1120,12 @@ class DirectionalRateResult(SpatialResultMixin):
         -------
         bool
             True if the neuron passes both criteria.
+
+        Warns
+        -----
+        UserWarning
+            When the animal never faced a heading arc wider than 90°
+            (:meth:`largest_unvisited_arc`), because MVL is then inflated.
 
         Examples
         --------
@@ -1635,6 +1733,19 @@ class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
 
         return widths
 
+    def largest_unvisited_arc(self) -> float:
+        """Widest arc of headings the animal never faced, in radians.
+
+        Shared by all units, because they share occupancy. See
+        :meth:`DirectionalRateResult.largest_unvisited_arc`.
+
+        Returns
+        -------
+        float
+            Longest run of zero-occupancy bins times the bin width, in [0, 2π].
+        """
+        return _largest_unvisited_arc(self.occupancy)
+
     def tuning_pvalues(self) -> NDArray[np.float64]:
         """Occupancy-corrected tuning-test p-value for every neuron.
 
@@ -1701,6 +1812,12 @@ class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
         numpy.ndarray
             Boolean array of shape (n_neurons,). True indicates the neuron
             passes the screen.
+
+        Warns
+        -----
+        UserWarning
+            When the animal never faced a heading arc wider than 90°
+            (:meth:`largest_unvisited_arc`), because MVL is then inflated.
 
         Examples
         --------
@@ -2706,6 +2823,12 @@ def is_head_direction_cell(
     ------
     ValueError
         If the criterion, inputs, or mode-specific keywords are invalid.
+
+    Warns
+    -----
+    UserWarning
+        In threshold mode, when the animal never faced a heading arc wider
+        than 90°, because mean vector length is then inflated.
 
     Notes
     -----
