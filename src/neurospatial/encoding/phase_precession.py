@@ -358,6 +358,14 @@ class PhasePrecessionResult(ResultMixin):
         return self.interpretation()
 
 
+class _InsufficientSpikesError(ValueError):
+    """The spikes cannot support a phase-position fit.
+
+    Raised for too few valid spikes or spike positions that do not vary;
+    :func:`has_phase_precession` screens such cells as ``False``.
+    """
+
+
 def _slope_grid(
     positions: NDArray[np.float64], slope_bounds: tuple[float, float]
 ) -> NDArray[np.float64]:
@@ -579,10 +587,10 @@ def compute_phase_precession(
     Raises
     ------
     ValueError
-        If there are fewer than ``min_spikes`` valid spikes, the spike
-        positions do not vary, ``position_range`` is not increasing,
-        ``n_shuffles`` is negative, or ``slope_bounds`` would need more than
-        20,000 grid points to resolve.
+        If ``angle_unit`` is unknown, there are fewer than ``min_spikes``
+        valid spikes, the spike positions do not vary, ``position_range`` is
+        not increasing, ``n_shuffles`` is negative, or ``slope_bounds`` would
+        need more than 20,000 grid points to resolve.
 
     See Also
     --------
@@ -636,6 +644,11 @@ def compute_phase_precession(
     """
     from scipy.stats import circmean
 
+    if angle_unit not in ("rad", "deg"):
+        raise ValueError(
+            f"angle_unit must be 'rad' or 'deg', got {angle_unit!r}.\n"
+            "Fix: pass the unit your phases are in."
+        )
     # Convert to arrays and radians if needed
     positions = np.asarray(positions, dtype=np.float64)
     phases = np.asarray(phases, dtype=np.float64)
@@ -649,8 +662,14 @@ def compute_phase_precession(
 
     # Validate paired inputs (handles length mismatch, NaN removal)
     positions, phases = _validate_paired_input(
-        positions, phases, "positions", "phases", min_samples=min_spikes
+        positions, phases, "positions", "phases", min_samples=0
     )
+    if len(positions) < min_spikes:
+        raise _InsufficientSpikesError(
+            f"Need at least min_spikes={min_spikes} spikes with finite position "
+            f"and phase, got {len(positions)}.\n"
+            "Fix: pool more passes through the field, or lower min_spikes."
+        )
 
     # Wrap phases to [0, 2*pi] to ensure consistent residual calculation
     # during optimization. Input phases may be in any range after angle_unit
@@ -658,7 +677,7 @@ def compute_phase_precession(
     phases = phases % (2 * np.pi)
 
     if np.ptp(positions) == 0:
-        raise ValueError(
+        raise _InsufficientSpikesError(
             f"All {len(positions)} spike positions equal {positions[0]}, so no "
             "phase-position slope can be fit.\n"
             "Fix: pass spikes from a pass through the place field, where "
@@ -748,6 +767,7 @@ def has_phase_precession(
     slope_bounds: tuple[float, float] = (-2 * np.pi, 2 * np.pi),
     position_range: tuple[float, float] | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
+    min_spikes: int = 10,
     n_shuffles: int = 200,
     rng: int | np.random.Generator | None = None,
 ) -> bool:
@@ -772,6 +792,9 @@ def has_phase_precession(
         :func:`compute_phase_precession`.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input phases.
+    min_spikes : int, default=10
+        Minimum number of spikes with finite position and phase; fewer
+        screen as ``False``.
     n_shuffles : int, default=200
         Number of permutation shuffles for the p-value. A smaller default
         than :func:`compute_phase_precession` (1000) keeps screening fast since this
@@ -784,17 +807,21 @@ def has_phase_precession(
     -------
     bool
         True if significant phase precession detected (p < alpha,
-        r >= min_correlation, and negative slope).
+        r >= min_correlation, and negative slope). False also when the
+        spikes cannot support a fit: fewer than ``min_spikes`` valid spikes,
+        or spike positions that do not vary.
+
+    Raises
+    ------
+    ValueError
+        If an argument is invalid: mismatched ``positions`` and ``phases``
+        lengths, unknown ``angle_unit``, negative ``n_shuffles``,
+        ``slope_bounds`` that are not increasing or too wide to resolve, or
+        a ``position_range`` with ``end <= start``.
 
     See Also
     --------
     compute_phase_precession : Full analysis with metrics.
-
-    Notes
-    -----
-    Genuine input errors (length mismatch, invalid ``angle_unit``) raise
-    rather than returning ``False``. Only an insufficient-data ``ValueError``
-    from the fit (too few valid spikes) maps to ``False``.
 
     Examples
     --------
@@ -806,15 +833,6 @@ def has_phase_precession(
     >>> has_phase_precession(positions, phases)  # doctest: +SKIP
     False
     """
-    from neurospatial._validation import validate_lengths
-
-    # Validate inputs OUTSIDE the try so genuine input errors propagate.
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
-    positions = np.asarray(positions, dtype=np.float64)
-    phases = np.asarray(phases, dtype=np.float64)
-    validate_lengths({"positions": positions, "phases": phases})
-
     try:
         result = compute_phase_precession(
             positions,
@@ -822,11 +840,11 @@ def has_phase_precession(
             slope_bounds=slope_bounds,
             position_range=position_range,
             angle_unit=angle_unit,
+            min_spikes=min_spikes,
             n_shuffles=n_shuffles,
             rng=rng,
         )
-    except ValueError:
-        # Too few spikes after NaN-dropping -> cannot assess precession.
+    except _InsufficientSpikesError:
         return False
     return (
         result.p_value < alpha

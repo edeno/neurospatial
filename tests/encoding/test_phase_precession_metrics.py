@@ -465,6 +465,47 @@ class TestHasPhasePrecession:
 
         assert result is False
 
+    def test_too_few_spikes_or_fixed_position_is_false(self) -> None:
+        """Data that cannot support a fit screen as False rather than raise."""
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        phases = np.random.default_rng(3).uniform(0, 2 * np.pi, 30)
+        assert has_phase_precession(np.linspace(0, 40, 30), phases, min_spikes=31) is (
+            False
+        )
+        assert has_phase_precession(np.full(30, 12.0), phases) is False
+
+    def test_precessing_cell_on_a_long_track_in_mm(self) -> None:
+        """Position units do not change the screen: a 2000 mm track works."""
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        stimulus = np.random.default_rng(7)
+        positions_mm = stimulus.uniform(0, 2000, 200)
+        phases = (
+            np.pi - 2 * np.pi * positions_mm / 2000 + stimulus.vonmises(0, 4, 200)
+        ) % (2 * np.pi)
+        assert has_phase_precession(positions_mm, phases, rng=0) is True
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"n_shuffles": -1}, "n_shuffles"),
+            ({"slope_bounds": (-1e5, 1e5)}, "20,000"),
+            ({"slope_bounds": (1.0, -1.0)}, "slope_bounds"),
+            ({"position_range": (40.0, 0.0)}, "position_range"),
+            ({"angle_unit": "grad"}, "angle_unit"),
+        ],
+    )
+    def test_configuration_errors_raise(self, kwargs, match) -> None:
+        """A bad argument raises instead of screening the cell as False."""
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        stimulus = np.random.default_rng(7)
+        positions = stimulus.uniform(0, 40, 100)
+        phases = stimulus.uniform(0, 2 * np.pi, 100)
+        with pytest.raises(ValueError, match=match):
+            has_phase_precession(positions, phases, **kwargs)
+
     def test_custom_thresholds(self) -> None:
         """Custom thresholds should affect result."""
         from neurospatial.encoding.phase_precession import has_phase_precession
