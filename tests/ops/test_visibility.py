@@ -121,30 +121,89 @@ class TestFieldOfView:
         # Outside binocular zone
         assert not fov.is_binocular(np.pi / 3)  # 60 degrees
 
-    def test_blind_spot_behind(self):
-        """blind_spot_behind excludes rear regions."""
+    def test_rat_blind_spot_is_the_range_behind_the_edges(self):
+        """The rat's 40-degree blind spot is the gap between its edges."""
         from neurospatial.ops.visibility import FieldOfView
 
-        # Rat-like FOV with blind spot behind
-        fov = FieldOfView(
-            left_angle=5 * np.pi / 6,  # 150 degrees left
-            right_angle=-5 * np.pi / 6,  # 150 degrees right
-            blind_spot_behind=np.pi / 6,  # 30 degree blind spot
-        )
-
-        # Directly behind should be excluded
+        fov = FieldOfView.rat()
+        assert_allclose(fov.total_angle_degrees, 320.0)
         assert not fov.contains_angle(np.pi)
         assert not fov.contains_angle(-np.pi)
+        assert not fov.contains_angle(np.radians(170.0))
+        assert not fov.contains_angle(np.radians(-170.0))
+        assert fov.contains_angle(np.radians(155.0))
+        assert fov.contains_angle(np.radians(-155.0))
 
-        # Just outside blind spot should be included
-        assert fov.contains_angle(5 * np.pi / 6 - 0.1)
-
-    def test_validation_left_right_order(self):
-        """Validation fails if left_angle < right_angle."""
+    def test_left_is_positive_and_right_is_negative(self):
+        """A left-only field of view sees +angles (left), not -angles."""
         from neurospatial.ops.visibility import FieldOfView
 
-        with pytest.raises(ValueError, match="left_angle"):
-            FieldOfView(left_angle=-np.pi / 2, right_angle=np.pi / 2)
+        fov = FieldOfView(left_angle=np.pi / 2, right_angle=0.1)
+        assert fov.contains_angle(0.5)
+        assert not fov.contains_angle(-0.5)
+        assert not fov.contains_angle(0.0)
+        assert_allclose(fov.total_angle, np.pi / 2 - 0.1)
+
+    def test_behind_wraps_to_plus_pi(self):
+        """Directly behind is +pi, matching egocentric bearings."""
+        from neurospatial.ops.visibility import FieldOfView
+
+        reaches_behind_on_the_left = FieldOfView(left_angle=np.pi, right_angle=0.0)
+        assert reaches_behind_on_the_left.contains_angle(-np.pi)
+        assert reaches_behind_on_the_left.contains_angle(3 * np.pi)
+        assert not reaches_behind_on_the_left.contains_angle(-np.pi / 2)
+
+    def test_nan_angle_is_outside(self):
+        from neurospatial.ops.visibility import FieldOfView
+
+        fov = FieldOfView.symmetric(np.pi)
+        assert not fov.contains_angle(np.nan)
+        np.testing.assert_array_equal(
+            fov.contains_angle(np.array([np.nan, 0.0])), [False, True]
+        )
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"left_angle": -np.pi / 2, "right_angle": np.pi / 2}, "right_angle <="),
+            ({"left_angle": 10.0, "right_angle": -10.0}, "<= pi"),
+            ({"left_angle": np.pi, "right_angle": -4.0}, "-pi <="),
+            ({"left_angle": np.nan, "right_angle": -1.0}, "finite"),
+            ({"left_angle": 1.0, "right_angle": np.nan}, "finite"),
+            (
+                {
+                    "left_angle": 1.0,
+                    "right_angle": -1.0,
+                    "binocular_half_angle": np.inf,
+                },
+                "finite",
+            ),
+            (
+                {"left_angle": 1.0, "right_angle": -1.0, "binocular_half_angle": -0.1},
+                "binocular_half_angle",
+            ),
+            (
+                {"left_angle": 1.0, "right_angle": -0.5, "binocular_half_angle": 0.6},
+                "binocular_half_angle",
+            ),
+            (
+                {"left_angle": 1.0, "right_angle": 0.1, "binocular_half_angle": 0.2},
+                "binocular_half_angle",
+            ),
+        ],
+    )
+    def test_validation_refuses_impossible_fields(self, kwargs, match):
+        """Angles must be finite, ordered within [-pi, pi], binocular inside."""
+        from neurospatial.ops.visibility import FieldOfView
+
+        with pytest.raises(ValueError, match=match):
+            FieldOfView(**kwargs)
+
+    def test_symmetric_wider_than_a_circle_raises(self):
+        from neurospatial.ops.visibility import FieldOfView
+
+        with pytest.raises(ValueError, match="<= pi"):
+            FieldOfView.symmetric(half_angle=4.0)
 
     def test_frozen_dataclass(self):
         """FieldOfView is immutable (frozen dataclass)."""

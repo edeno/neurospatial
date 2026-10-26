@@ -116,23 +116,32 @@ __all__ = [
 class FieldOfView:
     """Field of view specification for visibility analysis.
 
-    Defines the angular extent of what an animal can see, with support for
-    asymmetric fields, binocular regions, and blind spots.
+    Defines the egocentric angular extent of what an animal can see, with an
+    optional binocular region straight ahead. Angles are egocentric radians:
+    0 = ahead, +pi/2 = left, -pi/2 = right, +/-pi = behind. The field of view
+    is the closed range ``[right_angle, left_angle]``; the directions behind
+    the animal outside it form the blind spot.
 
     Attributes
     ----------
     left_angle : float
-        Maximum angle to the left in radians. Positive value (e.g., pi/2 = 90
-        degrees left).
+        Leftmost visible direction in radians, in ``[right_angle, pi]``
+        (e.g., pi/2 = 90 degrees left).
     right_angle : float
-        Maximum angle to the right in radians. Negative value (e.g., -pi/2 =
-        90 degrees right).
+        Rightmost visible direction in radians, in ``[-pi, left_angle]``
+        (e.g., -pi/2 = 90 degrees right).
     binocular_half_angle : float, optional
-        Half-angle of binocular overlap region centered on 0. Default is 0.0
-        (no binocular region).
-    blind_spot_behind : float, optional
-        Half-angle of blind spot centered on +-pi (behind). Default is 0.0
-        (no blind spot).
+        Half-angle in radians of the binocular overlap region centered on 0
+        (straight ahead). Default is 0.0 (no binocular region). A positive
+        value must fit inside the field of view:
+        ``binocular_half_angle <= min(left_angle, -right_angle)``.
+
+    Raises
+    ------
+    ValueError
+        If an angle is not finite, the angles are not ordered
+        ``-pi <= right_angle <= left_angle <= pi``, or the binocular region
+        is negative or extends past the field of view.
 
     Examples
     --------
@@ -148,12 +157,12 @@ class FieldOfView:
     Use species-specific presets:
 
     >>> fov_rat = FieldOfView.rat()
-    >>> 290 < fov_rat.total_angle_degrees < 340
-    True
+    >>> round(fov_rat.total_angle_degrees)  # a 40-degree blind spot behind
+    320
 
     >>> fov_primate = FieldOfView.primate()
-    >>> 150 < fov_primate.total_angle_degrees < 200
-    True
+    >>> round(fov_primate.total_angle_degrees)
+    180
 
     Check if an angle is within the field of view:
 
@@ -162,29 +171,65 @@ class FieldOfView:
     True
     >>> fov.contains_angle(np.pi)  # Behind
     False
+
+    A field of view covering only the left side:
+
+    >>> left_only = FieldOfView(left_angle=np.pi / 2, right_angle=0.1)
+    >>> left_only.contains_angle(0.5), left_only.contains_angle(-0.5)
+    (True, False)
     """
 
     left_angle: float
     right_angle: float
     binocular_half_angle: float = 0.0
-    blind_spot_behind: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate field of view parameters."""
-        if self.left_angle < self.right_angle:
+        angles = {
+            "left_angle": self.left_angle,
+            "right_angle": self.right_angle,
+            "binocular_half_angle": self.binocular_half_angle,
+        }
+        bad = [name for name, value in angles.items() if not np.isfinite(value)]
+        if bad:
             raise ValueError(
-                f"left_angle ({self.left_angle:.3f}) must be >= right_angle "
-                f"({self.right_angle:.3f}). "
-                "Note: left_angle should be positive, right_angle negative."
+                _format_error(
+                    "FieldOfView needs finite angles; got "
+                    + ", ".join(f"{name}={angles[name]}" for name in bad)
+                    + ".",
+                    fix="give every angle as a finite number of radians",
+                )
             )
-        if self.binocular_half_angle < 0:
+        if not -np.pi <= self.right_angle <= self.left_angle <= np.pi:
             raise ValueError(
-                f"binocular_half_angle must be non-negative, "
-                f"got {self.binocular_half_angle}"
+                _format_error(
+                    "FieldOfView needs -pi <= right_angle <= left_angle <= pi; "
+                    f"got left_angle={self.left_angle:.3f}, "
+                    f"right_angle={self.right_angle:.3f}.",
+                    why="Why: angles are egocentric radians (0 = ahead, "
+                    "+pi/2 = left, -pi/2 = right), and the field of view is "
+                    "the range from right_angle to left_angle.",
+                    fix="pass the left edge as left_angle and the right edge "
+                    "as right_angle, both in [-pi, pi]; a full circle is "
+                    "left_angle=pi, right_angle=-pi",
+                )
             )
-        if self.blind_spot_behind < 0:
+        half = self.binocular_half_angle
+        if half < 0 or (
+            half > 0 and not self.right_angle <= -half <= half <= self.left_angle
+        ):
             raise ValueError(
-                f"blind_spot_behind must be non-negative, got {self.blind_spot_behind}"
+                _format_error(
+                    f"FieldOfView binocular_half_angle={half:.3f} does not fit "
+                    f"in the field of view [{self.right_angle:.3f}, "
+                    f"{self.left_angle:.3f}].",
+                    why="Why: the binocular region is the range "
+                    "[-binocular_half_angle, binocular_half_angle] straight "
+                    "ahead that both eyes see, so it lies inside the field of "
+                    "view.",
+                    fix="pass 0 for no binocular region, or a half-angle no "
+                    "larger than min(left_angle, -right_angle)",
+                )
             )
 
     @classmethod
@@ -194,7 +239,7 @@ class FieldOfView:
         Parameters
         ----------
         half_angle : float
-            Half-angle of the field of view in radians.
+            Half-angle of the field of view in radians, in ``[0, pi]``.
             The total FOV will be 2 * half_angle.
 
         Returns
@@ -216,9 +261,9 @@ class FieldOfView:
     def rat(cls) -> FieldOfView:
         """Field of view for a rat.
 
-        Rats have a ~300-320 degree field of view with a ~40-60 degree
-        blind spot directly behind, and a ~40-60 degree binocular region
-        in front.
+        Rats see about 320 degrees, with a 40-degree blind spot directly
+        behind (20 degrees each side) and a binocular region of about 50
+        degrees in front.
 
         Returns
         -------
@@ -229,34 +274,29 @@ class FieldOfView:
         ----------
         Wallace, D. J., et al. (2013). Vision Research, 78, 1-10.
         """
-        # ~320 degree total FOV (160 each side from center)
-        # ~20 degree blind spot each side behind
-        # ~25 degree binocular half-angle
         return cls(
-            left_angle=np.pi * 160 / 180,  # 160 degrees
+            left_angle=np.pi * 160 / 180,
             right_angle=-np.pi * 160 / 180,
-            binocular_half_angle=np.pi * 25 / 180,  # 25 degrees
-            blind_spot_behind=np.pi * 20 / 180,  # 20 degrees each side
+            binocular_half_angle=np.pi * 25 / 180,
         )
 
     @classmethod
     def mouse(cls) -> FieldOfView:
         """Field of view for a mouse.
 
-        Mice have a similar field of view to rats, with a large lateral
-        field and small blind spot behind.
+        Mice have a field of view similar to rats: about 310 degrees, with a
+        50-degree blind spot directly behind and a binocular region of about
+        40 degrees in front.
 
         Returns
         -------
         FieldOfView
             Mouse-like field of view.
         """
-        # Similar to rat
         return cls(
-            left_angle=np.pi * 155 / 180,  # 155 degrees
+            left_angle=np.pi * 155 / 180,
             right_angle=-np.pi * 155 / 180,
-            binocular_half_angle=np.pi * 20 / 180,  # 20 degrees
-            blind_spot_behind=np.pi * 25 / 180,  # 25 degrees each side
+            binocular_half_angle=np.pi * 20 / 180,
         )
 
     @classmethod
@@ -272,10 +312,9 @@ class FieldOfView:
             Primate-like field of view.
         """
         return cls(
-            left_angle=np.pi * 90 / 180,  # 90 degrees
+            left_angle=np.pi * 90 / 180,
             right_angle=-np.pi * 90 / 180,
-            binocular_half_angle=np.pi * 60 / 180,  # 60 degrees
-            blind_spot_behind=0.0,  # No additional blind spot
+            binocular_half_angle=np.pi * 60 / 180,
         )
 
     @property
@@ -285,7 +324,7 @@ class FieldOfView:
         Returns
         -------
         float
-            Total angle from left_angle to right_angle.
+            Angle from right_angle to left_angle, in ``[0, 2 * pi]``.
         """
         return self.left_angle - self.right_angle
 
@@ -308,7 +347,9 @@ class FieldOfView:
         Parameters
         ----------
         angle : float or NDArray
-            Egocentric angle(s) in radians. 0=ahead, pi/2=left, -pi/2=right.
+            Egocentric angle(s) in radians: 0 = ahead, pi/2 = left,
+            -pi/2 = right. Wrapped to (-pi, pi] first, so directly behind is
+            +pi. NaN is never inside.
 
         Returns
         -------
@@ -326,21 +367,8 @@ class FieldOfView:
         False
         """
         angle = np.asarray(angle)
-
-        # Wrap angle to (-pi, pi]
-        wrapped = (angle + np.pi) % (2 * np.pi) - np.pi
-
-        # Check if within left/right bounds
+        wrapped = _wrap_egocentric(angle)
         in_bounds = (wrapped <= self.left_angle) & (wrapped >= self.right_angle)
-
-        # Check if in blind spot behind
-        if self.blind_spot_behind > 0:
-            # Blind spot is centered on +-pi
-            # An angle is in blind spot if |angle| > pi - blind_spot_behind
-            in_blind_spot = np.abs(wrapped) > (np.pi - self.blind_spot_behind)
-            in_bounds = in_bounds & ~in_blind_spot
-
-        # Return scalar if input was scalar
         if angle.ndim == 0:
             return bool(in_bounds)
         return in_bounds
@@ -353,7 +381,7 @@ class FieldOfView:
         Parameters
         ----------
         angle : float or NDArray
-            Egocentric angle(s) in radians.
+            Egocentric angle(s) in radians, wrapped to (-pi, pi] first.
 
         Returns
         -------
@@ -378,13 +406,15 @@ class FieldOfView:
             return np.zeros_like(angle, dtype=bool) if np.ndim(angle) > 0 else False
 
         angle = np.asarray(angle)
-        wrapped = (angle + np.pi) % (2 * np.pi) - np.pi
-
-        in_binocular = np.abs(wrapped) <= self.binocular_half_angle
-
+        in_binocular = np.abs(_wrap_egocentric(angle)) <= self.binocular_half_angle
         if angle.ndim == 0:
             return bool(in_binocular)
         return in_binocular
+
+
+def _wrap_egocentric(angle: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Wrap egocentric angles to (-pi, pi], so directly behind is +pi."""
+    return np.asarray((angle - np.pi) % (-2 * np.pi) + np.pi)
 
 
 @dataclass(frozen=True, eq=False)
