@@ -644,6 +644,34 @@ class TestDirectionOfTravel:
         assert pooled_distance.correlation > 3 * pooled_raw.correlation
 
 
+class TestFieldCutByTrackEnd:
+    """normalized_slope is the phase change across position_range only."""
+
+    def test_slope_is_kept_and_normalized_slope_scales_with_the_range(self) -> None:
+        """A field 60% on the track: slope is right, normalized_slope is partial."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(15)
+        field_start, width = -11.7, 28.7  # field runs past the track end at 0
+        positions, phases = _field_spikes(stimulus, field_start, width, 400, 2.0)
+        on_track = positions >= 0.0
+        positions, phases = positions[on_track], phases[on_track]
+        visited = compute_phase_precession(positions, phases, n_shuffles=0)
+        whole = compute_phase_precession(
+            positions,
+            phases,
+            position_range=(field_start, field_start + width),
+            n_shuffles=0,
+        )
+        true_slope = -5.0 / width
+        assert visited.slope == pytest.approx(true_slope, abs=0.02)
+        assert whole.slope == pytest.approx(true_slope, abs=0.02)
+        assert whole.normalized_slope == pytest.approx(-5.0, abs=0.5)
+        visited_width = visited.position_range[1] - visited.position_range[0]
+        assert visited.normalized_slope == pytest.approx(visited.slope * visited_width)
+        assert visited_width < 0.65 * width
+
+
 class TestSlopeAtBoundWarning:
     """A fit whose best slope sits on a slope bound warns and says why."""
 

@@ -282,7 +282,16 @@ class PhasePrecessionResult(ResultMixin):
 
         ``slope * (position_range[1] - position_range[0])``: the slope in
         units of the range, which ``slope_bounds`` constrains. ``-2*pi`` is
-        one full theta cycle of precession across the field.
+        one full theta cycle of precession across the range.
+
+        It describes the whole field only when ``position_range`` covers the
+        whole field. With the default range (the spike extent), or for a
+        field cut by the end of the track, the range is the visited part of
+        the field, and ``normalized_slope`` is the phase change across that
+        part: about -3 rad instead of -5 rad for a simulated field 60% on
+        the track. ``slope`` (rad per position unit) is unaffected, so
+        compare cells by ``slope``, or pass the field's full extent as
+        ``position_range`` (it may extend past the track end).
         """
         return self.slope * (self.position_range[1] - self.position_range[0])
 
@@ -620,7 +629,11 @@ def compute_phase_precession(
         ``end > start``. Positions are rescaled so ``start`` maps to 0 and
         ``end`` to 1 before fitting, and ``offset`` is the fitted phase at
         ``start``. Pass the field boundaries so the slope search covers one
-        cycle per field. Default: the minimum and maximum spike position.
+        cycle per field; the range may extend past the spikes or the track
+        end for a field cut by the end of the track. Default: the minimum
+        and maximum spike position, which is shorter than the field, so
+        ``normalized_slope`` is then the phase change across the visited
+        part of the field.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input phases.
     min_spikes : int, default=10
