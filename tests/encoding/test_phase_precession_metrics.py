@@ -1029,3 +1029,98 @@ class TestPhasePrecessionSlopeMagnitude:
         assert np.isclose(default.slope, true_slope, atol=0.02)
         assert np.isclose(field.slope, true_slope, atol=0.02)
         assert np.isclose(field.normalized_slope, true_slope * 100.0, atol=0.5)
+
+
+class TestPhasePrecessionShufflePvalue:
+    """p_value is a shuffle p-value at the fitted slope; correlation is descriptive."""
+
+    def test_phase_precession_p_value_tracks_fitted_slope(
+        self, precessing_spikes
+    ) -> None:
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        d = precessing_spikes
+        n_shuffles = 200
+        true_fit = compute_phase_precession(
+            d["positions"], d["phases"], n_shuffles=n_shuffles, rng=0
+        )
+        assert true_fit.p_value < 0.05
+        assert true_fit.slope < 0
+
+        # Pin the SHUFFLE mechanics: a permutation p-value with +1 smoothing
+        # (count+1)/(n_shuffles+1) can never fall below 1/(n_shuffles+1). The
+        # OLD slope-free circular_linear_correlation p-value returned exactly
+        # 0.0 on this strong fixture, violating this floor — so reverting p_value
+        # to that analytic value would fail here.
+        smoothing_floor = 1.0 / (n_shuffles + 1)
+        assert true_fit.p_value >= smoothing_floor
+
+        # Shuffled phases against the same positions destroy the relationship.
+        shuffled = compute_phase_precession(
+            d["positions"], d["phase_shuffled"], n_shuffles=n_shuffles, rng=0
+        )
+        assert shuffled.p_value > 0.5
+
+    def test_phase_precession_p_value_deterministic(self, precessing_spikes) -> None:
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        d = precessing_spikes
+        a = compute_phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
+        b = compute_phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
+        assert a.p_value == b.p_value
+
+    def test_phase_precession_correlation_is_descriptive(
+        self, precessing_spikes
+    ) -> None:
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+        from neurospatial.stats.circular import circular_linear_correlation
+
+        d = precessing_spikes
+        result = compute_phase_precession(
+            d["positions"], d["phases"], n_shuffles=200, rng=0
+        )
+        assert 0.0 <= result.correlation <= 1.0
+        wrapped = d["phases"] % (2 * np.pi)
+        expected, _ = circular_linear_correlation(
+            angles=wrapped, linear_values=d["positions"]
+        )
+        assert result.correlation == pytest.approx(expected, rel=1e-9)
+
+
+class TestHasPhasePrecessionValidation:
+    """has_phase_precession input checks and cost."""
+
+    def test_has_phase_precession_raises_on_length_mismatch(self) -> None:
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        positions = np.linspace(0, 50, 100)
+        phases = np.linspace(0, 2 * np.pi, 90)
+        with pytest.raises(ValueError):
+            has_phase_precession(positions, phases)
+
+    def test_has_phase_precession_default_work_is_bounded(
+        self, precessing_spikes
+    ) -> None:
+        """The default call completes and uses a bounded shuffle count.
+
+        Replaces an earlier wall-clock ``elapsed < 2.0`` assertion that was
+        inherently flaky: the suite runs under ``pytest -n auto`` (xdist), which
+        saturates every core, so a sub-second op wall-clocks to 2.5-3.7s on CI
+        runners and the bound failed across all Linux/Windows jobs. The real
+        intent -- guard against a pathologically expensive default (e.g. an
+        accidental huge ``n_shuffles``) -- is enforced deterministically here by
+        bounding the default shuffle count and confirming the call returns.
+        """
+        import inspect
+
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        default_shuffles = (
+            inspect.signature(has_phase_precession).parameters["n_shuffles"].default
+        )
+        assert isinstance(default_shuffles, int)
+        assert default_shuffles <= 1000
+
+        d = precessing_spikes
+        result = has_phase_precession(d["positions"], d["phases"], rng=0)
+        assert isinstance(result, bool)
