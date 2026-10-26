@@ -232,9 +232,10 @@ class ProbabilityTargetConsumer(
 ):
     """Cartesian bins that receive probabilities from their nearest centers.
 
-    ``map_probabilities`` reads ``bin_center_tree`` once, at its boundary, and
-    ``bin_at`` for source centers farther than one bin spacing from every
-    target center, to tell whether they still lie inside a target bin.
+    ``map_probabilities`` reads ``bin_center_tree`` and ``bin_spacing`` once,
+    at its boundary, and ``bin_at`` for source centers farther than that
+    limit from every target center, to tell whether they still lie inside a
+    target bin.
     """
 
 

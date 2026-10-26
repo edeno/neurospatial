@@ -286,14 +286,18 @@ Pass `source_transform=` to first move the source bin centers into the
 target's coordinates. It is one `AffineND`: fit it from landmarks with
 `estimate_transform(source_landmarks, target_landmarks)`, or compose the
 factories, such as `rotate_2d(angle, center=c)` for a turn about the arena
-center `c` (a rotation without `center=` turns about the origin). Source bins
-that hold probability but land outside every target bin, and farther than one
-target bin spacing from every target bin center, would be piled onto the
-target's edge bins; when they hold more than 1e-6 of the probability the
-mapping is refused and reports their share. A smaller share, such as the far
-tail of a decoded posterior, goes to its nearest target bin. Pass
-`max_distance=` to set a distance limit instead, or `max_distance=math.inf` to
-accept any distance.
+center `c` (a rotation without `center=` turns about the origin).
+
+Source bins that hold probability but land outside the target would be piled
+onto the target's edge bins. A source center is outside when it lies in no
+target bin and farther than `max_distance` from every target bin center; by
+default that limit is the target's `bin_spacing`, so a small unvisited hole in
+the target does not count. When the bins outside hold more than
+`max_outside_fraction` of the probability (default 1e-6) the mapping is
+refused and reports their share. A smaller share, such as the far tail of a
+decoded posterior, goes to its nearest target bin. Raise
+`max_outside_fraction` to accept a known mismatch, or pass
+`max_distance=math.inf` to accept any distance.
 
 Here the second session recorded the same square arena turned 30 degrees about
 its center, and a posterior decoded in session 2 is mapped onto session 1's

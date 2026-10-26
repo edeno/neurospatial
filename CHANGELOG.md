@@ -105,13 +105,16 @@ Breaking API changes:
   `apply_similarity_transform` are removed; the new `rotate_2d(angle, *,
   center=None)` builds a rotation in radians, about `center` when given, so
   turning an arena about its center no longer needs `c - s * R @ c`.
-- `map_probabilities` refuses to map when more than 1e-6 of the probability
-  sits on source bins whose centers land outside every target bin and more
-  than one target bin spacing from every target bin center (a smaller share,
-  such as a posterior's far tail, goes to its nearest bin); `max_distance`
-  sets a distance instead, and `math.inf` keeps the old nearest-bin
-  assignment. It also refuses non-finite
-  probabilities and `eps <= 0`. `ProbabilityMappingParams` is removed.
+- `map_probabilities` refuses to map when more than `max_outside_fraction`
+  (new, default 1e-6) of the probability lies outside the target: on source
+  bins whose centers are in no target bin and farther than `max_distance`
+  (default `target_env.bin_spacing`) from every target bin center. One rule
+  covers both limits, so an explicit `max_distance` also keeps centers that
+  lie inside a coarser target bin. A smaller share, such as a posterior's far
+  tail, goes to its nearest bin; raise `max_outside_fraction` to accept a
+  known mismatch, and `max_distance=math.inf` keeps the old nearest-bin
+  assignment. It also refuses non-finite probabilities and `eps <= 0`.
+  `ProbabilityMappingParams` is removed.
 - `compute_diffusion_kernels` and `geodesic_rbf_basis` take `bandwidth=`
   instead of `sigma=`.
 - `geodesic_distance_matrix` loses `n_states`. `distance_field`,

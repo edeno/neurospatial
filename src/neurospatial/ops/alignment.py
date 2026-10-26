@@ -206,23 +206,52 @@ def _check_max_distance(max_distance: object) -> None:
         raise ValueError(f"max_distance must be zero or more, got {max_distance!r}.")
 
 
-# Share of the probability that may lie beyond the limit and still be mapped to
-# its nearest target bin. Decoded posteriors are positive on every bin, so their
-# far tail always reaches past a smaller target; at 1e-6 of the total it adds
-# nothing visible to the edge bins that receive it.
-_NEGLIGIBLE_STRANDED_SHARE = 1e-6
+def _check_max_outside_fraction(max_outside_fraction: object) -> None:
+    """Refuse a ``max_outside_fraction`` that is not a number from 0 to 1."""
+    if isinstance(max_outside_fraction, (bool, np.bool_)) or not isinstance(
+        max_outside_fraction, (numbers.Real, np.floating, np.integer)
+    ):
+        raise TypeError(
+            "max_outside_fraction must be a number from 0 to 1, got "
+            f"{max_outside_fraction!r}."
+        )
+    if not 0.0 <= float(max_outside_fraction) <= 1.0:
+        raise ValueError(
+            "max_outside_fraction must be from 0 to 1 (a share of the total "
+            f"probability), got {max_outside_fraction!r}."
+        )
 
 
-def _require_mass_within(
+def _outside_target(
+    target_env: ProbabilityTargetConsumer,
+    centers: NDArray[np.float64],
+    nearest_distance: NDArray[np.float64],
+    holds_mass: NDArray[np.bool_],
+    limit: float,
+) -> NDArray[np.bool_]:
+    """Source bins holding mass whose center lies farther than ``limit`` from the target.
+
+    The distance from a center to the target is 0 inside a target bin, by the
+    target's own containment rule (``bin_at``), so a coarser or elongated bin
+    keeps every point it holds; elsewhere it is the distance to the nearest
+    target bin center. Only centers beyond ``limit`` of every center can be
+    outside, so only those are looked up.
+    """
+    outside = holds_mass & (nearest_distance > limit)
+    if np.any(outside):
+        candidates = np.flatnonzero(outside)
+        outside[candidates[target_env.bin_at(centers[candidates]) >= 0]] = False
+    return outside
+
+
+def _require_mass_inside(
     source_probs: NDArray[np.float64],
     nearest_distance: NDArray[np.float64],
-    beyond: NDArray[np.bool_],
+    outside: NDArray[np.bool_],
     limit: str,
+    max_outside_fraction: float,
 ) -> None:
-    """Refuse to move more than a negligible share of mass ``beyond`` the limit.
-
-    A share up to ``_NEGLIGIBLE_STRANDED_SHARE`` of the total goes to its
-    nearest target bin, like the rest.
+    """Refuse when more than ``max_outside_fraction`` of the mass lies ``outside``.
 
     Parameters
     ----------
@@ -230,33 +259,36 @@ def _require_mass_within(
     nearest_distance : NDArray[np.float64], shape (n_source_bins,)
         Distance from each transformed source bin center to the nearest
         target bin center.
-    beyond : NDArray[np.bool_], shape (n_source_bins,)
-        Source bins whose transformed center no target bin may receive.
+    outside : NDArray[np.bool_], shape (n_source_bins,)
+        Source bins holding mass whose center lies outside the target.
     limit : str
-        The rule ``beyond`` applied, completing "lies ...".
+        The distance limit, completing "farther than ...".
+    max_outside_fraction : float
+        Largest share of the total probability that may lie outside.
     """
-    beyond = beyond & (source_probs > 0)
-    if not np.any(beyond):
+    if not np.any(outside):
         return
     total = float(source_probs.sum())
-    stranded = float(source_probs[beyond].sum())
-    if stranded <= _NEGLIGIBLE_STRANDED_SHARE * total:
+    stranded = float(source_probs[outside].sum())
+    if stranded <= max_outside_fraction * total:
         return
     raise ValueError(
         _format_error(
             f"{100 * stranded / total:.3g}% of the source probability "
-            f"({int(beyond.sum())} source bins) lies {limit}; the farthest is "
-            f"{float(nearest_distance[beyond].max()):.4g} from a target bin "
-            "center.",
+            f"({int(outside.sum())} source bins) lies outside the target, "
+            f"farther than {limit} from every target bin (the farthest "
+            f"{float(nearest_distance[outside].max()):.4g} from a bin center); "
+            f"max_outside_fraction={max_outside_fraction:g} allows "
+            f"{100 * max_outside_fraction:.3g}%.",
             why="nearest-bin mapping would pile that mass onto the target's "
             "edge bins, which it never belonged to",
             fix="check source_transform: it must map source coordinates into "
             "the target's, as estimate_transform(source_landmarks, "
             "target_landmarks) does, and rotate_2d(angle) turns about the "
-            "origin unless given center=. If the mismatch is expected, pass "
-            "a larger max_distance, or "
-            "max_distance=math.inf to give every source bin its nearest "
-            "target bin however far away",
+            "origin unless given center=. If the mismatch is expected, raise "
+            "max_outside_fraction to accept that share on the edge bins, or "
+            "pass a larger max_distance (math.inf gives every source bin its "
+            "nearest target bin however far away)",
         )
     )
 
@@ -271,6 +303,7 @@ def map_probabilities(
     eps: float = IDW_MIN_DISTANCE,
     source_transform: AffineND | None = None,
     max_distance: float | None = None,
+    max_outside_fraction: float = 1e-6,
 ) -> NDArray[np.float64]:
     """Map probabilities on source_env onto target_env.
 
@@ -305,17 +338,22 @@ def map_probabilities(
         ``rotate_2d(angle, center=c)``. None uses the source centers as they
         are.
     max_distance : float or None, default=None
-        Farthest a transformed source bin center may be from every target bin
-        center while it holds probability, in the target's length units.
-        None accepts a center that lies inside a target bin (``bin_at``), so
-        coarser or elongated target bins of the same arena receive all their
-        mass, or that lies within the target's typical bin spacing (the
-        median distance between neighboring bin centers) of a target center,
-        so a small unvisited hole in the target does not refuse the map.
-        ``math.inf`` sends every source bin to its nearest target bin however
-        far away. A share of at most 1e-6 of the probability beyond the limit,
-        such as a posterior's far tail, is mapped to its nearest bin rather
-        than refused.
+        Farthest a transformed source bin center may lie from the target, in
+        the target's length units: the distance is 0 inside a target bin
+        (``bin_at``), so coarser or elongated target bins of the same arena
+        receive all their mass, and otherwise the distance to the nearest
+        target bin center. None uses ``target_env.bin_spacing``, so a small
+        unvisited hole in the target does not refuse the map. ``math.inf``
+        sends every source bin to its nearest target bin however far away.
+    max_outside_fraction : float, default=1e-6
+        Largest share of the total probability that may lie farther than
+        ``max_distance`` from the target; it still goes to its nearest target
+        bin. The default accepts a decoded posterior's far tail, which is
+        positive on every bin and so always reaches past a smaller target,
+        but adds no visible amount to the edge bins that receive it, while a
+        misaligned map or a spread distribution such as occupancy strands far
+        more. Raise it to accept a known mismatch; 0 refuses any mass
+        outside.
 
     Returns
     -------
@@ -329,14 +367,13 @@ def map_probabilities(
     ValueError
         If `source_probs` has incorrect shape or NaN, infinite or negative
         values; if dims mismatch, `source_transform` included; if `mode` is
-        unknown; if `n_neighbors`,
-        `eps` or `max_distance` is invalid; or if more than 1e-6 of the
-        probability lies beyond `max_distance` (by default, outside every
-        target bin and farther than one bin spacing from its centers; the
-        message reports how much).
+        unknown; if `n_neighbors`, `eps`, `max_distance` or
+        `max_outside_fraction` is invalid; or if more than
+        `max_outside_fraction` of the probability lies outside the target
+        (the message reports how much).
     TypeError
-        If `max_distance` is not a number or None, or `source_transform` is
-        not an AffineND or None.
+        If `max_distance` is not a number or None, `max_outside_fraction` is
+        not a number, or `source_transform` is not an AffineND or None.
     CartesianOnlyError
         If either environment is polar: bins are matched by nearest Cartesian
         bin center after a similarity transform.
@@ -396,7 +433,7 @@ def map_probabilities(
     ... )  # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ...
-    ValueError: ...% of the source probability ... lies outside every target bin and farther than one target bin spacing (5) from every target bin center; ...
+    ValueError: ...% of the source probability (... source bins) lies outside the target, farther than one target bin spacing (5) from every target bin ...
 
     """
     source_probs = _validated_probabilities(
@@ -404,6 +441,7 @@ def map_probabilities(
     )
     _check_source_transform(source_transform, source_env.n_dims)
     _check_max_distance(max_distance)
+    _check_max_outside_fraction(max_outside_fraction)
     for argument, env in (("source_env", source_env), ("target_env", target_env)):
         require_cartesian(
             env.coordinate_system,
@@ -444,24 +482,21 @@ def map_probabilities(
     # silent all-zero map.
     nearest_distance, nearest = tree.query(src_centers, k=1)
     if max_distance is None:
-        spacing = target_env.bin_spacing
-        beyond = nearest_distance > spacing
-        # A center inside a target bin belongs to it however elongated the
-        # bin; only the rest needs the target's containment test.
-        check = beyond & (source_probs > 0)
-        if np.any(check):
-            beyond[check] = target_env.bin_at(src_centers[check]) < 0
-        limit = (
-            "outside every target bin and farther than one target bin "
-            f"spacing ({spacing:.4g}) from every target bin center"
-        )
+        limit = target_env.bin_spacing
+        described = f"one target bin spacing ({limit:.4g})"
     else:
-        beyond = nearest_distance > float(max_distance)
-        limit = (
-            f"farther than max_distance={float(max_distance):.4g} from every "
-            "target bin center"
-        )
-    _require_mass_within(source_probs, nearest_distance, beyond, limit)
+        limit = float(max_distance)
+        described = f"max_distance={limit:.4g}"
+    outside = _outside_target(
+        target_env, src_centers, nearest_distance, source_probs > 0, limit
+    )
+    _require_mass_inside(
+        source_probs,
+        nearest_distance,
+        outside,
+        described,
+        float(max_outside_fraction),
+    )
 
     # Perform the requested mapping
     if mode == "nearest":

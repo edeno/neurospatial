@@ -25,6 +25,11 @@ class MockEnvironment:
     def bin_center_tree(self):
         return cKDTree(self.bin_centers)
 
+    def bin_at(self, positions):
+        """Point bins: a position is in a bin only on its center."""
+        distance, nearest = self.bin_center_tree().query(np.asarray(positions))
+        return np.where(distance == 0, nearest, -1)
+
     @property
     def bin_spacing(self):
         """Median nearest-neighbor distance, as Environment.bin_spacing."""
@@ -408,6 +413,64 @@ class TestMapProbabilitiesMaxDistance:
         with pytest.raises(ValueError, match=r"0\.001% of the source probability"):
             map_probabilities(
                 src_env, tgt_env, np.array([1.0 - 1e-5, 1e-5]), max_distance=50.0
+            )
+
+    def test_default_limit_is_one_target_bin_spacing(self):
+        """Centers within one target spacing of a target center are kept."""
+        tgt_env = MockEnvironment(np.array([[0.0, 0.0], [1.0, 0.0]]), 2)
+        near = MockEnvironment(np.array([[0.0, 0.0], [1.8, 0.0]]), 2)
+        far = MockEnvironment(np.array([[0.0, 0.0], [2.5, 0.0]]), 2)
+        probs = np.array([0.5, 0.5])
+        np.testing.assert_allclose(map_probabilities(near, tgt_env, probs), [0.5, 0.5])
+        with pytest.raises(ValueError, match=r"one target bin spacing \(1\)"):
+            map_probabilities(far, tgt_env, probs)
+
+    def test_inside_a_target_bin_is_never_outside(self):
+        """A center inside a coarse bin is at distance 0, whatever max_distance."""
+        from neurospatial import Environment
+
+        samples = np.random.default_rng(0).uniform(0, 100, (2000, 2))
+        fine = Environment.from_samples(samples, bin_size=5.0)
+        coarse = Environment.from_samples(samples, bin_size=10.0)
+        probs = np.full(fine.n_bins, 1.0 / fine.n_bins)
+        assert np.all(coarse.bin_at(fine.bin_centers) >= 0)
+        mapped = map_probabilities(fine, coarse, probs, max_distance=0.0)
+        assert mapped.sum() == pytest.approx(1.0)
+
+    def test_max_outside_fraction_sets_the_verdict(self):
+        """The same 1e-5 outside share is refused, then accepted and conserved."""
+        src_env = MockEnvironment(np.array([[0.0, 0.0], [100.0, 0.0]]), 2)
+        tgt_env = MockEnvironment(np.array([[0.0, 0.0], [1.0, 0.0]]), 2)
+        probs = np.array([1.0 - 1e-5, 1e-5])
+        with pytest.raises(ValueError, match="max_outside_fraction=1e-06 allows"):
+            map_probabilities(src_env, tgt_env, probs)
+        mapped = map_probabilities(src_env, tgt_env, probs, max_outside_fraction=1e-4)
+        np.testing.assert_allclose(mapped, [1.0 - 1e-5, 1e-5], rtol=0, atol=1e-15)
+        assert mapped.sum() == pytest.approx(1.0)
+
+    def test_zero_fraction_refuses_any_mass_outside(self):
+        src_env = MockEnvironment(np.array([[0.0, 0.0], [100.0, 0.0]]), 2)
+        tgt_env = MockEnvironment(np.array([[0.0, 0.0], [1.0, 0.0]]), 2)
+        with pytest.raises(ValueError, match="lies outside the target"):
+            map_probabilities(
+                src_env, tgt_env, np.array([1.0 - 1e-12, 1e-12]), max_outside_fraction=0
+            )
+
+    @pytest.mark.parametrize(
+        ("fraction", "error"),
+        [
+            (-0.1, ValueError),
+            (1.5, ValueError),
+            (np.nan, ValueError),
+            ("a", TypeError),
+            (True, TypeError),
+        ],
+    )
+    def test_refuses_invalid_max_outside_fraction(self, fraction, error):
+        src_env = MockEnvironment(np.array([[0.0, 0.0]]), 2)
+        with pytest.raises(error, match="max_outside_fraction"):
+            map_probabilities(
+                src_env, src_env, np.array([1.0]), max_outside_fraction=fraction
             )
 
     @pytest.mark.parametrize(
