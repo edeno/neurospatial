@@ -1944,6 +1944,44 @@ def _validate_object_vector_metric(
         )
 
 
+def _require_planar_env(env: Environment, operation: str, *, measures: str) -> None:
+    """Refuse a polar, 1-D or 3-D environment for a map built from (x, y) positions.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment passed with the positions.
+    operation : str
+        The refused call, e.g. ``"compute_object_vector_rate()"``.
+    measures : str
+        What the map measures from the positions, e.g. ``"distance and
+        direction to the nearest object"``.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    ValueError
+        If ``env`` is not two-dimensional.
+    """
+    from neurospatial.geometry import require_cartesian
+
+    require_cartesian(
+        env.coordinate_system,
+        operation,
+        why=f"It measures {measures} from the animal's allocentric positions.",
+        fix="pass the allocentric environment the positions were recorded in",
+    )
+    if env.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"{operation} needs a 2-D environment; got a {env.n_dims}-D one.",
+                why=f"Why: {measures} are measured in the plane, from (x, y) positions",
+                fix="build the environment from the animal's 2-D (x, y) positions",
+            )
+        )
+
+
 def _check_object_vector_env(
     env: Environment | None, headings: NDArray[np.float64] | None, *, context: str
 ) -> None:
@@ -1966,6 +2004,10 @@ def _check_object_vector_env(
     ------
     TypeError
         If ``env`` is given and is not an environment.
+    CartesianOnlyError
+        If ``env`` is polar.
+    ValueError
+        If ``env`` is not two-dimensional.
     """
     from neurospatial.encoding._validation import _validate_env_argument
 
@@ -1978,6 +2020,11 @@ def _check_object_vector_env(
                 if headings is None
                 else "spike_times, times, positions, headings, object_positions"
             ),
+        )
+        _require_planar_env(
+            env,
+            f"{context}()",
+            measures="distance and direction to the nearest object",
         )
 
 
@@ -3891,6 +3938,11 @@ def _object_vector_significance(
             env,
             context=context,
             arguments=arguments,
+        )
+        _require_planar_env(
+            env,
+            f"{context}()",
+            measures="distance and direction to the nearest object",
         )
     validate_trajectory(times, positions=positions, headings=headings, context=context)
     for train in trains:

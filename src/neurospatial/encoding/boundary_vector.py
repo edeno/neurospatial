@@ -831,10 +831,16 @@ def _boundary_vector_rates(
         validate_spike_trains,
         validate_trajectory,
     )
-    from neurospatial.encoding.egocentric import _raw_polar_rate
+    from neurospatial.encoding.egocentric import (
+        _raw_polar_rate,
+        _require_planar_env,
+    )
 
     _validate_env_argument(
         env, context=context, arguments="spike_times, times, positions[, headings]"
+    )
+    _require_planar_env(
+        env, f"{context}()", measures="distance and direction to the walls"
     )
     _check_boundary_labels(direction_frame, boundary_source)
     _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)

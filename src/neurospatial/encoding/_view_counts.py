@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     interval_valid_mask,
     start_allocated_occupancy,
@@ -90,6 +91,8 @@ def require_allocentric_view(env: Environment, operation: str) -> None:
     ------
     CartesianOnlyError
         If ``env`` is polar.
+    ValueError
+        If ``env`` is not two-dimensional.
     """
     require_cartesian(
         env.coordinate_system,
@@ -99,6 +102,14 @@ def require_allocentric_view(env: Environment, operation: str) -> None:
         fix="compute view rates on the allocentric environment the positions "
         "were recorded in",
     )
+    if env.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"{operation} needs a 2-D environment; got a {env.n_dims}-D one.",
+                why="Why: gaze is cast in the plane from (x, y) positions and headings",
+                fix="build the environment from the animal's 2-D (x, y) positions",
+            )
+        )
 
 
 def _precompute_view_bins(
