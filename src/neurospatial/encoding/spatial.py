@@ -134,42 +134,87 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
 
     Attributes
     ----------
-    fields : list of NDArray[np.int64], length n_fields
-        Each element is a 1-D array of bin indices belonging to one
-        place field. Empty list if no fields were detected, or if the
-        map was excluded by the ``max_mean_rate`` filter.
-    excluded_reason : str | None
-        ``None`` when the map passed all filters and ``fields``
-        reflects the actual detection result. A non-None string when a
-        filter caused detection to short-circuit. The only value used
-        currently is ``"mean_rate_above_threshold"`` (explicit map-mean cutoff);
-        future filters (e.g. ``"all_nan_rate_map"``) may add more.
+    fields : tuple of NDArray[np.int64], length n_fields
+        One read-only 1-D array of bin indices per detected field, in order
+        of decreasing peak rate. Empty if no field was detected or the map
+        was excluded by the ``max_mean_rate`` filter.
+    excluded_reason : {"mean_rate_above_threshold"} or None
+        ``None`` when ``fields`` is the detection result.
+        ``"mean_rate_above_threshold"`` when the explicit ``max_mean_rate``
+        filter excluded the map before detection.
     n_excluded : int
-        ``1`` if ``excluded_reason`` is set, else ``0``. Provided so
-        downstream population aggregation can sum exclusions across
-        neurons without parsing the reason string.
+        ``1`` if ``excluded_reason`` is set, else ``0``, so population
+        aggregation can sum exclusions without parsing the reason.
 
     Notes
     -----
-    The result is iterable and indexable like a ``list[NDArray[np.int64]]``
-    so callers that previously wrote ``for f in detect_place_fields(...)``
-    or ``len(detect_place_fields(...))`` keep working.
+    The result is iterable, indexable and sized like its ``fields``, and is
+    truthy when at least one field was detected.
     """
 
     fields: Sequence[NDArray[np.int64]]
-    excluded_reason: str | None = None
-    n_excluded: int = 0
+    excluded_reason: Literal["mean_rate_above_threshold"] | None = None
 
     def __post_init__(self) -> None:
-        """Own each field's bins and prevent replacing fields."""
-        object.__setattr__(
-            self, "fields", tuple(read_only_copy(bins) for bins in self.fields)
-        )
+        """Validate and own each field's bins and prevent replacing fields."""
+        if self.excluded_reason not in (None, "mean_rate_above_threshold"):
+            raise ValueError(
+                _format_error(
+                    f"excluded_reason must be None or 'mean_rate_above_threshold', "
+                    f"got {self.excluded_reason!r}.",
+                    why="Why: it names the filter that excluded the map",
+                    fix="pass excluded_reason=None for a detection result",
+                )
+            )
+        if self.excluded_reason is not None and len(self.fields) > 0:
+            raise ValueError(
+                _format_error(
+                    "An excluded map cannot have fields.",
+                    why="Why: the map-mean filter excludes the map before detection",
+                    fix="pass fields=[] with excluded_reason, or excluded_reason=None",
+                )
+            )
+        owned = []
+        for i, bins in enumerate(self.fields):
+            array = np.asarray(bins)
+            numeric = array.size == 0 or (
+                np.issubdtype(array.dtype, np.number)
+                and not np.issubdtype(array.dtype, np.complexfloating)
+            )
+            if (
+                array.ndim != 1
+                or not numeric
+                or not np.all(np.isfinite(array))
+                or not np.array_equal(array, np.round(array))
+            ):
+                raise ValueError(
+                    _format_error(
+                        f"fields[{i}] must be a 1-D array of integer bin indices, "
+                        f"got shape {array.shape} and dtype {array.dtype}.",
+                        why="Why: each field is the set of bins it covers",
+                        fix="pass integer bin indices, e.g. np.flatnonzero(mask)",
+                    )
+                )
+            if array.size and array.min() < 0:
+                raise ValueError(
+                    _format_error(
+                        f"fields[{i}] contains negative bin indices.",
+                        why="Why: bin indices count from 0",
+                        fix="pass non-negative bin indices",
+                    )
+                )
+            owned.append(read_only_copy(array.astype(np.int64)))
+        object.__setattr__(self, "fields", tuple(owned))
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore owned field arrays after copying."""
         super().__setstate__(state)
         self.__post_init__()
+
+    @property
+    def n_excluded(self) -> int:
+        """``1`` if a filter excluded the map, else ``0``."""
+        return int(self.excluded_reason is not None)
 
     def __len__(self) -> int:
         return len(self.fields)
@@ -181,9 +226,6 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         return iter(self.fields)
 
     def __bool__(self) -> bool:
-        # Truthy iff at least one field was detected. Matches the
-        # ergonomic of `if detect_place_fields(...): ...` against the
-        # old list[NDArray] return.
         return len(self.fields) > 0
 
     def summary(self) -> dict[str, Any]:
@@ -210,7 +252,7 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         return {
             "n_fields": len(self.fields),
             "total_bins": total_bins,
-            "n_excluded": int(self.n_excluded),
+            "n_excluded": self.n_excluded,
             "excluded_reason": self.excluded_reason,
         }
 
@@ -5089,7 +5131,7 @@ def detect_place_fields(
                 stacklevel=2,
             )
             return PlaceFieldsResult(
-                fields=[], excluded_reason="mean_rate_above_threshold", n_excluded=1
+                fields=[], excluded_reason="mean_rate_above_threshold"
             )
 
     min_peak = max(

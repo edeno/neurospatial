@@ -142,9 +142,7 @@ def test_place_fields_result_surface() -> None:
     assert df["bin"].tolist() == [0, 1, 5]
 
     # Empty / excluded result yields an empty tidy frame with the columns.
-    excluded = PlaceFieldsResult(
-        fields=[], excluded_reason="mean_rate_above_threshold", n_excluded=1
-    )
+    excluded = PlaceFieldsResult(fields=[], excluded_reason="mean_rate_above_threshold")
     assert excluded.summary()["n_excluded"] == 1
     empty_df = excluded.to_dataframe()
     assert list(empty_df.columns) == ["field", "bin"]
