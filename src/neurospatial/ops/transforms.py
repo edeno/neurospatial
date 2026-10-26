@@ -996,11 +996,23 @@ def flip_y_data(
     return transform(np.asanyarray(data, dtype=float))
 
 
+def _check_cm_per_px(cm_per_px: float) -> None:
+    if not (np.isfinite(cm_per_px) and cm_per_px > 0):
+        raise ValueError(
+            _format_error(
+                f"cm_per_px must be a positive, finite number, got {cm_per_px!r}.",
+                why="it is the length in centimeters of one video pixel",
+                fix="measure it from a scale bar or a known arena dimension "
+                "(calibrate_from_scale_bar does this from two pixel points)",
+            )
+        )
+
+
 def convert_to_cm(
     data_px: NDArray[np.float64] | tuple | list,
     frame_size_px: tuple[float, float],
     *,
-    cm_per_px: float = 1.0,
+    cm_per_px: float,
 ) -> NDArray[np.float64]:
     """Convert pixel coordinates to centimeter coordinates.
 
@@ -1014,15 +1026,27 @@ def convert_to_cm(
         Input coordinates in pixel space, shape (..., 2).
     frame_size_px : tuple[float, float]
         Size of the video frame in pixels (width, height).
-    cm_per_px : float, optional
-        Conversion factor from pixels to centimeters (default is 1.0).
+    cm_per_px : float
+        Length of one pixel in centimeters. Required: there is no default
+        that would not silently relabel pixels as centimeters.
 
     Returns
     -------
     NDArray[np.float64]
         Converted coordinates in centimeters, shape (..., 2).
 
+    Raises
+    ------
+    ValueError
+        If ``cm_per_px`` is not a positive, finite number.
+
+    Examples
+    --------
+    >>> convert_to_cm(np.array([[100.0, 80.0]]), (640, 480), cm_per_px=0.5)
+    array([[ 50., 200.]])
+
     """
+    _check_cm_per_px(cm_per_px)
     transform = scale_2d(cm_per_px) @ flip_y(frame_height_px=frame_size_px[1])
     return transform(np.asanyarray(data_px, dtype=float))
 
@@ -1031,7 +1055,7 @@ def convert_to_pixels(
     data_cm: NDArray[np.float64] | tuple | list,
     frame_size_px: tuple[float, float],
     *,
-    cm_per_px: float = 1.0,
+    cm_per_px: float,
 ) -> NDArray[np.float64]:
     """Convert centimeter coordinates to pixel coordinates with y-flip.
 
@@ -1041,19 +1065,25 @@ def convert_to_pixels(
         Input coordinates in centimeter space, shape (..., 2).
     frame_size_px : tuple[float, float]
         Size of the video frame in pixels (width, height).
-    cm_per_px : float, default=1.0
-        Conversion factor from pixels to centimeters.
+    cm_per_px : float
+        Length of one pixel in centimeters. Required, as for `convert_to_cm`.
 
     Returns
     -------
     NDArray[np.float64]
         Converted coordinates in pixel space, shape (..., 2).
 
+    Raises
+    ------
+    ValueError
+        If ``cm_per_px`` is not a positive, finite number.
+
     Notes
     -----
     Inverse of `convert_to_cm`. Internally constructs ``flip_y(H) @ scale_2d(1/cm_per_px)``.
 
     """
+    _check_cm_per_px(cm_per_px)
     transform = flip_y(frame_height_px=frame_size_px[1]) @ scale_2d(1.0 / cm_per_px)
     return transform(np.asanyarray(data_cm, dtype=float))
 

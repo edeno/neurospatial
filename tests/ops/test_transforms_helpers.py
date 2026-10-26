@@ -58,12 +58,17 @@ class TestConvertToCm:
         )
         np.testing.assert_allclose(result[0], expected_cm, atol=1e-10)
 
-    def test_convert_to_cm_default_scale_is_identity_up_to_flip(self):
-        """With cm_per_px=1.0 the conversion is just the y-flip."""
-        point = np.array([[3.0, 4.0]])
-        cm = convert_to_cm(point, frame_size_px=(10.0, 10.0))
-        flipped = flip_y_data(point, frame_size_px=(10.0, 10.0))
-        np.testing.assert_allclose(cm, flipped, atol=1e-10)
+    @pytest.mark.parametrize("convert", [convert_to_cm, convert_to_pixels])
+    def test_pixel_size_is_required(self, convert):
+        """No default scale: pixels are never silently relabelled as cm."""
+        with pytest.raises(TypeError, match="cm_per_px"):
+            convert(np.array([[100.0, 100.0]]), (640, 480))
+
+    @pytest.mark.parametrize("convert", [convert_to_cm, convert_to_pixels])
+    @pytest.mark.parametrize("cm_per_px", [0.0, -0.5, np.nan, np.inf])
+    def test_pixel_size_must_be_positive_and_finite(self, convert, cm_per_px):
+        with pytest.raises(ValueError, match="cm_per_px must be a positive"):
+            convert(np.array([[1.0, 1.0]]), (10, 10), cm_per_px=cm_per_px)
 
 
 class TestConvertToPixels:
