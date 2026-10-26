@@ -736,10 +736,11 @@ class TestRateMapCoherenceProperties:
     """Property-based tests for rate map coherence metric.
 
     Coherence measures spatial smoothness of firing.
-    Formula: correlation between each bin and mean of its neighbors
+    Formula: Fisher z (arctanh) of the correlation between each bin and the
+    mean of its neighbors
 
     Mathematical properties:
-    - Range: [-1, 1] (correlation coefficient)
+    - tanh(coherence) is the Pearson correlation, in [-1, 1]
     - Smooth fields → high coherence (> 0.5)
     - Random noise → low coherence (~ 0)
     """
@@ -749,8 +750,10 @@ class TestRateMapCoherenceProperties:
         st.integers(min_value=0, max_value=10000),
     )
     @settings(deadline=None)  # Use profile's max_examples
-    def test_coherence_range_property(self, n_positions: int, seed: int):
-        """Property: coherence is in [-1, 1] for all valid inputs."""
+    def test_coherence_is_fisher_z_of_neighbor_correlation(
+        self, n_positions: int, seed: int
+    ):
+        """Property: coherence is arctanh of the bin/neighbor-mean Pearson r."""
         # Create simple environment
         rng = np.random.default_rng(seed)
         positions = rng.standard_normal((n_positions, 2)) * 10
@@ -767,11 +770,18 @@ class TestRateMapCoherenceProperties:
 
         coherence = rate_map_coherence(env, firing_rate)
 
-        # Property: -1 <= coherence <= 1 (correlation coefficient range)
-        if not np.isnan(coherence):
-            assert -1.0 <= coherence <= 1.0, (
-                f"Coherence {coherence} outside valid range [-1, 1]"
-            )
+        # Independent computation from the connectivity graph.
+        graph = env.connectivity
+        has_neighbors = [node for node in graph.nodes if graph.degree(node) > 0]
+        rates = firing_rate[has_neighbors]
+        neighbor_means = np.array(
+            [np.mean(firing_rate[list(graph.neighbors(n))]) for n in has_neighbors]
+        )
+        if len(rates) < 2 or np.std(rates) == 0 or np.std(neighbor_means) == 0:
+            assert np.isnan(coherence)
+        else:
+            r = np.corrcoef(rates, neighbor_means)[0, 1]
+            assert coherence == pytest.approx(np.arctanh(r), rel=1e-9, abs=1e-12)
 
     @given(
         st.integers(min_value=100, max_value=300),

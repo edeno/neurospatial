@@ -354,49 +354,48 @@ def field_stability(
 def rate_map_coherence(
     env: Environment,
     firing_rate: NDArray[np.float64],
-    *,
-    method: Literal["pearson", "spearman"] = "pearson",
 ) -> float:
     """Compute spatial coherence of a firing rate map.
 
-    Spatial coherence measures the smoothness of spatial firing patterns by
-    computing the correlation between each bin's firing rate and the mean rate
-    of its spatial neighbors. High coherence indicates smooth, spatially
-    structured firing. Low coherence indicates noisy or scattered firing.
-
-    This metric was introduced by Muller & Kubie (1989) to assess the quality
-    of place field representations.
+    Spatial coherence (Muller & Kubie, 1989) measures the smoothness of
+    spatial firing: the Fisher z-transform (arctanh) of the Pearson
+    correlation between each bin's firing rate and the mean rate of its
+    spatial neighbors. High coherence indicates smooth, spatially structured
+    firing. Low coherence indicates noisy or scattered firing.
 
     Parameters
     ----------
     env : Environment
         Spatial environment containing bin centers and connectivity.
     firing_rate : NDArray[np.float64], shape (n_bins,)
-        Spatial firing rate map (Hz or spikes/second).
-    method : {'pearson', 'spearman'}, optional
-        Correlation method. Default is 'pearson'.
-        - 'pearson': Pearson correlation (linear relationship)
-        - 'spearman': Spearman correlation (monotonic relationship)
+        Spatial firing rate map (Hz or spikes/second). NaN marks an
+        unsampled bin.
 
     Returns
     -------
     float
-        Spatial coherence in range [-1, 1]. Returns NaN if:
+        Spatial coherence, the Fisher z ``arctanh(r)`` of the correlation
+        ``r``: 0 for no correlation and unbounded (``inf`` when ``r == 1``).
+        ``np.tanh(coherence)`` recovers ``r``. Returns NaN if:
         - All firing rates are zero or constant (no variance)
         - All rates are NaN
-        - Insufficient valid bins after NaN removal
+        - Fewer than two bins have a rate and a fully observed neighborhood
 
     Notes
     -----
     **Algorithm**:
 
     1. For each bin i, compute mean firing rate of neighbors: m_i = mean(r_j) for j in neighbors(i)
-    2. Compute correlation between bin rates r_i and neighbor means m_i
-    3. Coherence = corr(r, m)
+    2. Compute the Pearson correlation r between bin rates r_i and neighbor means m_i
+    3. Coherence = arctanh(r)
+
+    Muller & Kubie (1989) report this z-transformed correlation, as does the
+    BNT MATLAB toolbox's ``analyses.coherence`` by default. Some packages
+    return ``r`` itself; check which one before comparing numbers.
 
     **Interpretation**:
 
-    - **High coherence (> 0.7)**: Smooth, spatially structured firing (good place field)
+    - **High coherence (> 0.7, r > 0.6)**: Smooth, spatially structured firing
     - **Medium coherence (0.3-0.7)**: Some spatial structure but with noise
     - **Low coherence (< 0.3)**: Noisy, poorly defined spatial firing
 
@@ -404,7 +403,10 @@ def rate_map_coherence(
 
     This implementation uses `env.connectivity` to determine spatial neighbors,
     making it applicable to irregular environments and graphs with obstacles.
-    For regular grids, results should match Muller & Kubie (1989) approach.
+    Muller & Kubie (1989) average the eight surrounding pixels of a square
+    grid, the neighborhood of a grid built with diagonal connectivity (the
+    ``Environment.from_samples`` default). Bins with an unsampled (NaN)
+    neighbor are left out rather than treating the missing rate as zero.
 
     References
     ----------
@@ -484,15 +486,9 @@ def rate_map_coherence(
     if np.std(bin_rates) == 0 or np.std(neighbor_rate_means) == 0:
         return np.nan
 
-    # Compute correlation
-    if method == "pearson":
-        coherence, _ = stats.pearsonr(bin_rates, neighbor_rate_means)
-    elif method == "spearman":
-        coherence, _ = stats.spearmanr(bin_rates, neighbor_rate_means)
-    else:
-        raise ValueError(f"Unknown method: {method}. Use 'pearson' or 'spearman'.")
-
-    return float(coherence)
+    correlation, _ = stats.pearsonr(bin_rates, neighbor_rate_means)
+    with np.errstate(divide="ignore"):
+        return float(np.arctanh(correlation))
 
 
 def in_out_field_ratio(

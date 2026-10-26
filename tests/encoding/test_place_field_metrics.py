@@ -694,7 +694,6 @@ class TestRateMapCoherence:
     - Perfectly smooth fields (expected high coherence)
     - Random noise (expected low coherence)
     - Edge cases (NaN handling, constant firing)
-    - Different correlation methods (Pearson vs. Spearman)
     """
 
     def test_rate_map_coherence_uniform_rate(self):
@@ -807,27 +806,6 @@ class TestRateMapCoherence:
             "Coherence should handle NaNs unless all values are NaN"
         )
 
-    def test_rate_map_coherence_method_parameter(self):
-        """Test that method parameter works (pearson vs spearman)."""
-        rng = np.random.default_rng(42)
-        positions = (
-            rng.standard_normal((500, 2)) * 20
-        )  # Reduced from 2000 - sufficient for coherence test
-        env = Environment.from_samples(positions, bin_size=4.0)
-
-        # Smooth field
-        firing_rate = np.ones(env.n_bins) * 5.0
-        firing_rate[: len(firing_rate) // 2] = 3.0
-
-        from neurospatial.encoding._field_metrics import rate_map_coherence
-
-        coherence_pearson = rate_map_coherence(env, firing_rate, method="pearson")
-        coherence_spearman = rate_map_coherence(env, firing_rate, method="spearman")
-
-        # Both should be valid
-        assert -1.0 <= coherence_pearson <= 1.0
-        assert -1.0 <= coherence_spearman <= 1.0
-
     def test_rate_map_coherence_return_type(self):
         """Test that coherence returns scalar float."""
         rng = np.random.default_rng(42)
@@ -844,26 +822,35 @@ class TestRateMapCoherence:
         assert np.ndim(coherence) == 0, "Coherence should be scalar"
         assert isinstance(coherence, (float, np.floating)) or np.isnan(coherence)
 
-    def test_rate_map_coherence_range(self):
-        """Test that coherence is always in [-1, 1]."""
+    def test_rate_map_coherence_is_fisher_z_of_neighbor_correlation(self):
+        """Coherence is arctanh of Pearson r between rates and neighbor means.
+
+        Muller & Kubie (1989) report the Fisher z of this correlation.
+        """
+        from scipy.stats import pearsonr
+
+        from neurospatial.encoding._field_metrics import rate_map_coherence
+
+        x, y = np.meshgrid(np.arange(0.5, 40.0), np.arange(0.5, 40.0))
+        env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
         rng = np.random.default_rng(42)
-        # Test multiple random environments
-        for _ in range(5):
-            positions = rng.standard_normal((2000, 2)) * 15
-            env = Environment.from_samples(positions, bin_size=3.0)
+        centers = env.bin_centers
+        firing_rate = 5.0 * np.exp(
+            -np.sum((centers - [20.0, 20.0]) ** 2, axis=1) / (2 * 6.0**2)
+        ) + rng.uniform(0, 1.0, env.n_bins)
 
-            # Random firing rate
-            firing_rate = rng.random(env.n_bins) * 5.0
+        graph = env.connectivity
+        neighbor_means = np.array(
+            [
+                np.mean(firing_rate[list(graph.neighbors(node))])
+                for node in range(env.n_bins)
+            ]
+        )
+        r = pearsonr(firing_rate, neighbor_means).statistic
 
-            from neurospatial.encoding._field_metrics import rate_map_coherence
-
-            coherence = rate_map_coherence(env, firing_rate)
-
-            # Coherence should be in valid range or NaN
-            if not np.isnan(coherence):
-                assert -1.0 <= coherence <= 1.0, (
-                    f"Coherence {coherence} out of range [-1, 1]"
-                )
+        coherence = rate_map_coherence(env, firing_rate)
+        assert coherence == pytest.approx(np.arctanh(r), rel=1e-12)
+        assert coherence > r  # z exceeds r for positive r
 
 
 class TestSelectivity:
@@ -2160,21 +2147,6 @@ class TestRateMapCoherenceEdgeCases:
         coherence = rate_map_coherence(env, firing_rate)
         # May return NaN for zero variance
         assert isinstance(coherence, (float, np.floating))
-
-    def test_rate_map_coherence_invalid_method_raises_error(self):
-        """Test rate_map_coherence raises ValueError for invalid method."""
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((1000, 2)) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        from neurospatial.encoding._field_metrics import rate_map_coherence
-
-        firing_rate = rng.random(env.n_bins) * 5.0
-
-        with pytest.raises(
-            ValueError, match=r"Unknown method.*Use 'pearson' or 'spearman'"
-        ):
-            rate_map_coherence(env, firing_rate, method="invalid")
 
 
 class TestSelectivityEdgeCases:
