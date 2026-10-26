@@ -302,12 +302,12 @@ def _select_centers_farthest_point(
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
     """Select centers using greedy farthest-point sampling with geodesic distance."""
-    import networkx as nx
     from scipy.sparse.csgraph import shortest_path
 
-    # Get adjacency matrix for shortest path computation
-    adjacency = nx.to_scipy_sparse_array(
-        connectivity, nodelist=range(n_bins), weight="distance", format="csr"
+    from neurospatial.ops.distance import _bin_adjacency
+
+    adjacency = _bin_adjacency(
+        connectivity, weight="distance", operation="select_basis_centers()"
     )
 
     # Start with a random point
@@ -649,8 +649,9 @@ def geodesic_rbf_basis(
     chebyshev_filter_basis : Strictly hop-local alternative
     select_basis_centers : Manual center selection
     """
-    import networkx as nx
     from scipy.sparse.csgraph import shortest_path
+
+    from neurospatial.ops.distance import _bin_adjacency
 
     centers = _resolve_centers(env, centers, n_centers, center_method, rng, "basis")
 
@@ -674,9 +675,8 @@ def geodesic_rbf_basis(
 
     # Compute distances from all centers at once using scipy's optimized implementation
     # This is ~5-10x faster than per-center Dijkstra
-    # Row/column i must be bin i, whatever order the graph's nodes were added.
-    adjacency = nx.to_scipy_sparse_array(
-        env.connectivity, nodelist=range(n_bins), weight="distance", format="csr"
+    adjacency = _bin_adjacency(
+        env.connectivity, weight="distance", operation="geodesic_rbf_basis()"
     )
     distances = shortest_path(
         csgraph=adjacency,
