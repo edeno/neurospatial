@@ -637,12 +637,16 @@ def compute_phase_precession(
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input phases.
     min_spikes : int, default=10
-        Minimum number of spikes required for analysis.
+        Minimum number of spikes required for analysis. The shuffle p-value
+        stays calibrated at 10 spikes: on simulated untuned spikes,
+        ``p_value < 0.05`` occurred in 5.3% of 300 cells.
     n_shuffles : int, default=1000
         Number of permutation shuffles used to build the null distribution
         for the p-value. Each shuffle re-fits the slope on the shuffled
-        phase-position pairing (see Notes). Larger values give finer
-        p-value resolution at higher cost.
+        phase-position pairing (see Notes). The smallest attainable
+        p-value is ``1 / (n_shuffles + 1)``, and the Monte Carlo standard
+        error of a p-value near 0.05 is about ``sqrt(0.05 * 0.95 /
+        n_shuffles)``, 0.007 for 1000 shuffles.
     rng : int, numpy.random.Generator, or None, optional
         Seed or generator for the permutation shuffles. Pass a fixed value
         for a deterministic ``p_value``.
@@ -709,8 +713,8 @@ def compute_phase_precession(
     ``-2*pi`` across the range, five times too shallow, with p = 0.002 in
     simulation. Restricting the spikes to one field and passing its bounds
     as ``position_range`` recovered the true slope. Spikes with no
-    phase-position relationship also fit at a bound often (27% of simulated
-    untuned cells); their ``p_value`` is then large and the slope means
+    phase-position relationship also fit at a bound often (19-29% of
+    simulated untuned cells with 10 to 200 spikes); their ``p_value`` is then large and the slope means
     nothing. :func:`has_phase_precession` warns only when the fit is
     significant.
 
@@ -978,8 +982,11 @@ def has_phase_precession(
         screen as ``False``.
     n_shuffles : int, default=200
         Number of permutation shuffles for the p-value. A smaller default
-        than :func:`compute_phase_precession` (1000) keeps screening fast since this
-        function is intended for filtering many neurons.
+        than :func:`compute_phase_precession` (1000) keeps screening fast
+        since this function is intended for filtering many neurons; 200
+        shuffles resolve p-values down to 1/201 and give a Monte Carlo
+        standard error of about 0.015 near ``p = 0.05``. Use more for a
+        cell whose p-value is close to ``alpha``.
     rng : int, numpy.random.Generator, or None, optional
         Seed or generator for the shuffles. Pass a fixed value for a
         deterministic result.
