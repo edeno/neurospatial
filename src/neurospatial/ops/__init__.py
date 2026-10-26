@@ -44,7 +44,6 @@ from neurospatial.ops._transitions import (
 )
 from neurospatial.ops._types import KernelMode
 from neurospatial.ops.alignment import (
-    ProbabilityMappingParams,
     apply_similarity_transform,
     get_2d_rotation_matrix,
     map_probabilities,
@@ -191,7 +190,6 @@ from neurospatial.ops.visibility import (
 __all__ = [
     "MRFBasis",
     # Alignment
-    "ProbabilityMappingParams",
     "apply_similarity_transform",
     "get_2d_rotation_matrix",
     "map_probabilities",

@@ -7,7 +7,6 @@ from scipy.spatial import cKDTree
 from neurospatial.environment import CartesianSystem
 from neurospatial.ops.alignment import (
     IDW_MIN_DISTANCE,
-    ProbabilityMappingParams,
     apply_similarity_transform,
     get_2d_rotation_matrix,
     map_probabilities,
@@ -237,29 +236,67 @@ class TestMapProbabilities:
         assert tgt_probs.size == 0
 
 
-class TestProbabilityMappingParams:
-    """Tests for ProbabilityMappingParams dataclass."""
+class TestMapProbabilitiesValidation:
+    """Invalid inputs are refused before any mass is moved."""
 
-    def test_valid_params(self):
-        """Test valid parameter creation."""
-        src_bins = np.array([[0, 0], [1, 0]])
-        tgt_bins = np.array([[0, 0], [1, 0]])
-        src_probs = np.array([0.5, 0.5])
-        src_env = MockEnvironment(src_bins, 2)
-        tgt_env = MockEnvironment(tgt_bins, 2)
-        params = ProbabilityMappingParams(src_env, tgt_env, src_probs)
-        assert params.n_source_bins == 2
-        assert params.n_target_bins == 2
+    @staticmethod
+    def _envs():
+        bins = np.array([[0.0, 0.0], [1.0, 0.0]])
+        return MockEnvironment(bins, 2), MockEnvironment(bins, 2)
 
     def test_invalid_mode(self):
-        """Test error for invalid mapping mode."""
-        src_bins = np.array([[0, 0]])
-        tgt_bins = np.array([[0, 0]])
-        src_probs = np.array([1.0])
-        src_env = MockEnvironment(src_bins, 2)
-        tgt_env = MockEnvironment(tgt_bins, 2)
+        src_env, tgt_env = self._envs()
         with pytest.raises(ValueError, match="Unrecognized mode"):
-            ProbabilityMappingParams(src_env, tgt_env, src_probs, mode="invalid")
+            map_probabilities(src_env, tgt_env, np.array([0.5, 0.5]), mode="invalid")
+
+    @pytest.mark.parametrize("bad", [np.nan, np.inf])
+    def test_refuses_non_finite_probabilities(self, bad):
+        """NaN passes a ``probs < 0`` check; it must still be refused."""
+        src_env, tgt_env = self._envs()
+        with pytest.raises(ValueError, match="NaN or infinite values in 1 bin"):
+            map_probabilities(src_env, tgt_env, np.array([0.5, bad]))
+
+    def test_refuses_negative_probabilities(self):
+        src_env, tgt_env = self._envs()
+        with pytest.raises(ValueError, match="nonnegative"):
+            map_probabilities(src_env, tgt_env, np.array([1.5, -0.5]))
+
+    @pytest.mark.parametrize("eps", [0.0, -1e-3, np.nan])
+    def test_refuses_eps_that_is_not_positive(self, eps):
+        """eps = 0 gives NaN weights at a target center; eps < 0 wrong ones."""
+        src_env, tgt_env = self._envs()
+        with pytest.raises(ValueError, match="eps must be a positive"):
+            map_probabilities(
+                src_env,
+                tgt_env,
+                np.array([0.5, 0.5]),
+                mode="inverse-distance-weighted",
+                n_neighbors=2,
+                eps=eps,
+            )
+
+    def test_accepts_numpy_integer_neighbor_count(self):
+        src_env, tgt_env = self._envs()
+        probs = np.array([0.5, 0.5])
+        options = {"mode": "inverse-distance-weighted"}
+        np.testing.assert_array_equal(
+            map_probabilities(
+                src_env, tgt_env, probs, n_neighbors=np.int64(2), **options
+            ),
+            map_probabilities(src_env, tgt_env, probs, n_neighbors=2, **options),
+        )
+
+    @pytest.mark.parametrize("n_neighbors", [0, 1.5, True])
+    def test_refuses_invalid_neighbor_count(self, n_neighbors):
+        src_env, tgt_env = self._envs()
+        with pytest.raises(ValueError, match="n_neighbors must be an integer"):
+            map_probabilities(
+                src_env,
+                tgt_env,
+                np.array([0.5, 0.5]),
+                mode="inverse-distance-weighted",
+                n_neighbors=n_neighbors,
+            )
 
 
 class TestMapProbabilitiesInverseDistanceWeighted:

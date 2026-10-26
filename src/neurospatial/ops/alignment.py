@@ -49,14 +49,15 @@ that correspond to the active bins of these environments.
 
 from __future__ import annotations
 
+import numbers
 import warnings
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -69,89 +70,80 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
-    "ProbabilityMappingParams",
     "apply_similarity_transform",
     "get_2d_rotation_matrix",
     "map_probabilities",
 ]
 
 
-@dataclass(frozen=True)
-class ProbabilityMappingParams:
-    """Validated parameters for probability mapping between environments.
+def _validated_probabilities(
+    source_env: BinsConsumer,
+    target_env: BinsConsumer,
+    source_probs: NDArray[np.float64],
+    mode: str,
+    n_neighbors: object,
+    eps: float,
+) -> NDArray[np.float64]:
+    """Check the arguments of ``map_probabilities`` and return the probabilities.
 
-    This dataclass encapsulates and validates all parameters required for
-    mapping probabilities from a source environment to a target environment.
-    Validation occurs automatically in __post_init__.
-
-    Parameters
-    ----------
-    source_env : Environment
-        Source environment.
-    target_env : Environment
-        Target environment.
-    source_probs : NDArray[np.float64]
-        Source probability array, shape (n_source_bins,).
-    mode : Literal["nearest", "inverse-distance-weighted"]
-        Mapping mode.
-    n_neighbors : int
-        Number of neighbors for inverse-distance-weighted mode.
-
-    Raises
-    ------
-    ValueError
-        If any validation check fails.
-
+    Returns
+    -------
+    NDArray[np.float64], shape (source_env.n_bins,)
+        ``source_probs`` as a float array.
     """
+    if source_env.n_dims != target_env.n_dims:
+        raise ValueError(
+            f"Source and target environments must have the same number of dimensions: "
+            f"{source_env.n_dims} != {target_env.n_dims}."
+        )
 
-    source_env: BinsConsumer
-    target_env: BinsConsumer
-    source_probs: NDArray[np.float64]
-    mode: Literal["nearest", "inverse-distance-weighted"] = "nearest"
-    n_neighbors: int = 1
-
-    def __post_init__(self) -> None:
-        """Validate all parameters."""
-        # Check dimension compatibility
-        if self.source_env.n_dims != self.target_env.n_dims:
-            raise ValueError(
-                f"Source and target environments must have the same number of dimensions: "
-                f"{self.source_env.n_dims} != {self.target_env.n_dims}."
+    probs = np.asarray(source_probs, dtype=np.float64)
+    n_src = source_env.n_bins
+    if probs.ndim != 1 or probs.shape[0] != n_src:
+        raise ValueError(
+            f"source_probs must be a 1D array of length {n_src}, got shape "
+            f"{probs.shape}."
+        )
+    bad = np.flatnonzero(~np.isfinite(probs))
+    if bad.size:
+        raise ValueError(
+            _format_error(
+                f"source_probs has NaN or infinite values in {bad.size} bin(s), "
+                f"first at bin {bad[0]}.",
+                why="mapped probability is summed into target bins, so one NaN "
+                "would make a target bin, and the total, NaN",
+                fix="set bins without an estimate to 0 if they carry no "
+                "probability, or restrict the map to bins that have one",
             )
+        )
+    if np.any(probs < 0):
+        raise ValueError("source_probs must be nonnegative.")
 
-        # Validate probability array
-        n_src = self.source_env.n_bins
-        if self.source_probs.ndim != 1 or self.source_probs.shape[0] != n_src:
-            raise ValueError(f"source_probs must be a 1D array of length {n_src}.")
-
-        if np.any(self.source_probs < 0):
-            raise ValueError("source_probs must be nonnegative.")
-
-        # Validate mode
-        if self.mode not in ("nearest", "inverse-distance-weighted"):
-            raise ValueError(
-                f"Unrecognized mode '{self.mode}'. "
-                "Supported: 'nearest' or 'inverse-distance-weighted'."
+    if mode not in ("nearest", "inverse-distance-weighted"):
+        raise ValueError(
+            f"Unrecognized mode '{mode}'. "
+            "Supported: 'nearest' or 'inverse-distance-weighted'."
+        )
+    if mode == "inverse-distance-weighted" and (
+        isinstance(n_neighbors, (bool, np.bool_))
+        or not isinstance(n_neighbors, numbers.Integral)
+        or n_neighbors < 1
+    ):
+        raise ValueError(
+            f"In 'inverse-distance-weighted' mode, n_neighbors must be "
+            f"an integer >= 1 (got n_neighbors={n_neighbors!r})."
+        )
+    if not (np.isfinite(eps) and eps > 0):
+        raise ValueError(
+            _format_error(
+                f"eps must be a positive, finite distance, got {eps!r}.",
+                why="inverse-distance weights are 1 / (distance + eps); eps = 0 "
+                "divides by zero for a source bin on a target center and a "
+                "negative eps gives wrong or negative weights",
+                fix="leave eps at its default, a distance far below any bin size",
             )
-
-        # Validate n_neighbors for IDW mode
-        if self.mode == "inverse-distance-weighted" and (
-            not isinstance(self.n_neighbors, int) or self.n_neighbors < 1
-        ):
-            raise ValueError(
-                f"In 'inverse-distance-weighted' mode, n_neighbors must be "
-                f"an integer >= 1 (got n_neighbors={self.n_neighbors})."
-            )
-
-    @property
-    def n_source_bins(self) -> int:
-        """Number of bins in source environment."""
-        return int(self.source_env.n_bins)
-
-    @property
-    def n_target_bins(self) -> int:
-        """Number of bins in target environment."""
-        return int(self.target_env.n_bins)
+        )
+    return probs
 
 
 def get_2d_rotation_matrix(angle: float) -> NDArray[np.float64]:
@@ -470,9 +462,10 @@ def map_probabilities(
             weighted by inverse distance, and summing contributions.
     n_neighbors : int
         Number of neighbors to use when mode="inverse-distance-weighted"
-        (ignored if mode="nearest").
+        (ignored if mode="nearest"). Any integer type, at least 1.
     eps : float, default=IDW_MIN_DISTANCE
-        Small constant to avoid division by zero in IDW weights.
+        Small positive distance added before inverting distances in IDW
+        weights, so a source bin on a target center does not divide by zero.
     source_scale : float, default=1.0
         Uniform scaling factor to multiply every source bin-center by before querying.
     source_rotation_matrix : Optional[NDArray[np.float64]]
@@ -494,7 +487,9 @@ def map_probabilities(
     Raises
     ------
     ValueError
-        If `source_probs` has incorrect shape, or if dims mismatch.
+        If `source_probs` has incorrect shape or NaN, infinite or negative
+        values; if dims mismatch; if `mode` is unknown; or if `n_neighbors`
+        or `eps` is invalid.
     CartesianOnlyError
         If either environment is polar: bins are matched by nearest Cartesian
         bin center after a similarity transform.
@@ -543,13 +538,8 @@ def map_probabilities(
     ... )
 
     """
-    # Validate inputs using dataclass
-    params = ProbabilityMappingParams(
-        source_env=source_env,
-        target_env=target_env,
-        source_probs=source_probs,
-        mode=mode,
-        n_neighbors=n_neighbors,
+    source_probs = _validated_probabilities(
+        source_env, target_env, source_probs, mode, n_neighbors, eps
     )
     for argument, env in (("source_env", source_env), ("target_env", target_env)):
         require_cartesian(
@@ -564,8 +554,8 @@ def map_probabilities(
                 "environment"
             ),
         )
-    n_src = params.n_source_bins
-    n_tgt = params.n_target_bins
+    n_src = source_env.n_bins
+    n_tgt = target_env.n_bins
 
     # Handle empty environments
     if n_src == 0 or n_tgt == 0:
