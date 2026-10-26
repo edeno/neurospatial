@@ -67,6 +67,7 @@ TABLE_COLUMNS = {
         "preferred_direction",
         "tuning_width",
         "tuning_pvalue",
+        "spike_count_dispersion",
         "n_spikes_outside_intervals",
         "is_head_direction_cell",
     ],

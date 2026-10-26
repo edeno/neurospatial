@@ -1061,11 +1061,6 @@ class TestTuningPvalue:
         counts[10], counts[11] = 60.0, 40.0
         assert self._result(counts, np.full(n, 0.5)).tuning_pvalue() < 1e-10
 
-    def test_fewer_than_three_spikes_is_nan(self) -> None:
-        counts = np.zeros(12)
-        counts[3] = 2.0
-        assert np.isnan(self._result(counts, np.full(12, 1.0)).tuning_pvalue())
-
     def test_counts_rebuilt_from_unsmoothed_rate(self) -> None:
         """Without spike_counts, counts are firing_rate * occupancy."""
         from neurospatial.encoding.directional import DirectionalRateResult
@@ -1086,7 +1081,10 @@ class TestTuningPvalue:
         )
 
     def test_population_matches_single_units(self, biased_heading_session) -> None:
-        from neurospatial.encoding.directional import compute_directional_rates
+        from neurospatial.encoding.directional import (
+            compute_directional_rate,
+            compute_directional_rates,
+        )
 
         times, headings = biased_heading_session
         trains = [
@@ -1101,6 +1099,204 @@ class TestTuningPvalue:
         )
         table = result.summary_table()
         np.testing.assert_allclose(table["tuning_pvalue"], result.tuning_pvalues())
+        np.testing.assert_allclose(
+            table["spike_count_dispersion"], result.spike_count_dispersion
+        )
+        single = compute_directional_rate(trains[1], times, headings)
+        assert single.spike_count_dispersion == pytest.approx(
+            result[1].spike_count_dispersion, rel=1e-12
+        )
+        assert single.tuning_pvalue() == pytest.approx(
+            result.tuning_pvalues()[1], rel=1e-12
+        )
+
+    def test_fewer_than_fifty_spikes_is_nan(self) -> None:
+        """Below 50 spikes the χ² reference distribution is not trusted."""
+        n = 12
+        counts = np.zeros(n)
+        counts[3] = 49.0
+        assert np.isnan(self._result(counts, np.full(n, 1.0)).tuning_pvalue())
+        counts[3] = 50.0
+        assert self._result(counts, np.full(n, 1.0)).tuning_pvalue() < 1e-10
+
+
+# Heading diffusion constant (rad² / s) of the wandering-heading session.
+_HEADING_DIFFUSION = 2.0
+
+
+@pytest.fixture(scope="module")
+def wandering_heading_session() -> tuple[np.ndarray, np.ndarray]:
+    """Ten minutes at 30 Hz with a heading that diffuses around the circle.
+
+    For a Brownian heading with diffusion constant D, the heading unit
+    vector has autocorrelation ``exp(-D |τ| / 2)``, so headings stay
+    correlated for about a second, as in a freely moving animal.
+    """
+    times = np.arange(0.0, 600.0, 1 / 30)
+    steps = np.random.default_rng(20).normal(
+        0.0, np.sqrt(_HEADING_DIFFUSION / 30), times.size
+    )
+    return times, np.angle(np.exp(1j * np.cumsum(steps)))
+
+
+def _bursting_spikes(
+    times: np.ndarray, rate: np.ndarray, mean_burst: float, seed: int
+) -> np.ndarray:
+    """Bursts at ``rate / mean_burst``, each a geometric number of spikes 4 ms apart."""
+    events = _frame_poisson_spikes(times, rate / mean_burst, seed=seed)
+    sizes = np.random.default_rng(seed + 1).geometric(1.0 / mean_burst, events.size)
+    spikes = np.repeat(events, sizes) + 0.004 * (
+        np.arange(sizes.sum()) - np.repeat(np.cumsum(sizes) - sizes, sizes)
+    )
+    return np.sort(spikes[spikes < times[-1]])
+
+
+class TestTuningPvalueDispersion:
+    """The tuning test stays calibrated for bursting and drifting cells."""
+
+    def test_heading_correlation_time_matches_diffusion(
+        self, wandering_heading_session
+    ) -> None:
+        """∫ exp(-D|τ|/2) dτ = 4 / D for a diffusing heading."""
+        from neurospatial.encoding._directional_counts import (
+            prepare_directional_binning,
+        )
+        from neurospatial.encoding._directional_dispersion import (
+            heading_correlation_time,
+        )
+
+        times, headings = wandering_heading_session
+        prepared, centers = prepare_directional_binning(times, headings, None)
+        window = heading_correlation_time(prepared, centers)
+        assert window == pytest.approx(4.0 / _HEADING_DIFFUSION, rel=0.25)
+
+    def test_independent_headings_give_one_sample_window(
+        self, biased_heading_session
+    ) -> None:
+        from neurospatial.encoding._directional_counts import (
+            prepare_directional_binning,
+        )
+        from neurospatial.encoding._directional_dispersion import (
+            heading_correlation_time,
+        )
+
+        times, headings = biased_heading_session
+        prepared, centers = prepare_directional_binning(times, headings, None)
+        window = heading_correlation_time(prepared, centers)
+        assert window == pytest.approx(1 / 30, rel=0.1)
+
+    @pytest.mark.parametrize("mean_burst", [1.0, 2.5, 4.0])
+    def test_dispersion_matches_burst_size(
+        self, wandering_heading_session, mean_burst
+    ) -> None:
+        """Geometric bursts of mean b have count variance / mean = 2b - 1."""
+        from neurospatial.encoding import compute_directional_rates
+
+        times, headings = wandering_heading_session
+        rate = np.full(times.size, 3.0)
+        trains = [
+            _bursting_spikes(times, rate, mean_burst, seed=100 + 2 * k)
+            for k in range(20)
+        ]
+        result = compute_directional_rates(trains, times, headings)
+        median = np.median(result.spike_count_dispersion)
+        assert median == pytest.approx(2 * mean_burst - 1, rel=0.15)
+        assert result.analysis_settings["dispersion_window"] == pytest.approx(
+            4.0 / _HEADING_DIFFUSION, rel=0.25
+        )
+
+    def test_bursting_flat_cells_are_calibrated(
+        self, wandering_heading_session
+    ) -> None:
+        """Untuned cells firing bursts of 2.5 spikes reject near alpha.
+
+        Treating burst spikes as independent rejects about half of these
+        cells at alpha = 0.05.
+        """
+        from neurospatial.encoding import compute_directional_rates
+
+        times, headings = wandering_heading_session
+        rate = np.full(times.size, 3.0)
+        trains = [
+            _bursting_spikes(times, rate, 2.5, seed=1000 + 2 * k) for k in range(200)
+        ]
+        pvalues = compute_directional_rates(trains, times, headings).tuning_pvalues()
+        assert np.all(np.isfinite(pvalues))
+        assert 0.01 <= np.mean(pvalues < 0.05) <= 0.10
+
+    def test_slow_rate_drift_is_calibrated(self, wandering_heading_session) -> None:
+        """A rate that drifts over 30 s is not mistaken for heading tuning."""
+        from neurospatial.encoding import compute_directional_rates
+
+        times, headings = wandering_heading_session
+        dt = times[1] - times[0]
+        rng = np.random.default_rng(7)
+        decay = np.exp(-dt / 30.0)
+        trains = []
+        for k in range(100):
+            log_rate = np.empty(times.size)
+            log_rate[0] = rng.normal(0.0, 0.5)
+            noise = rng.normal(0.0, 0.5 * np.sqrt(1 - decay**2), times.size)
+            for i in range(1, times.size):
+                log_rate[i] = decay * log_rate[i - 1] + noise[i]
+            trains.append(
+                _frame_poisson_spikes(times, 3.0 * np.exp(log_rate), seed=5000 + k)
+            )
+        pvalues = compute_directional_rates(trains, times, headings).tuning_pvalues()
+        assert np.mean(pvalues < 0.05) <= 0.10
+
+    def test_bursting_hd_cells_are_detected(self, wandering_heading_session) -> None:
+        """Broad tuning (κ = 0.5) is still detected in bursting cells."""
+        from neurospatial.encoding import compute_directional_rates
+
+        times, headings = wandering_heading_session
+        trains = [
+            _bursting_spikes(
+                times,
+                1.0 + 5.0 * np.exp(0.5 * (np.cos(headings - pref) - 1.0)),
+                2.5,
+                seed=3000 + 2 * k,
+            )
+            for k, pref in enumerate(np.linspace(-3.0, 3.0, 20))
+        ]
+        result = compute_directional_rates(trains, times, headings)
+        assert np.all(result.spike_count_dispersion > 3.0)
+        assert np.all(result.tuning_pvalues() < 0.05)
+
+    def test_one_burst_is_not_a_head_direction_cell(
+        self, wandering_heading_session
+    ) -> None:
+        """Three spikes of one burst have MVL 1 but cannot show tuning."""
+        from neurospatial.encoding import compute_directional_rate
+
+        times, headings = wandering_heading_session
+        spikes = 100.0 + np.array([0.0, 0.004, 0.008])
+        result = compute_directional_rate(spikes, times, headings)
+        assert result.mean_vector_length() == pytest.approx(1.0)
+        assert np.isnan(result.tuning_pvalue())
+        assert not result.is_head_direction_cell()
+
+    def test_statistic_is_divided_by_dispersion(self) -> None:
+        """p = (1 + T / (φ dof))^(-dof/2): the quasi-Poisson F test."""
+        from dataclasses import replace
+
+        n = 36
+        rng = np.random.default_rng(3)
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        counts = rng.poisson(6.0 * np.exp(0.3 * (np.cos(centers - 1.0) - 1.0)))
+        poisson = TestTuningPvalue._result(counts, np.full(n, 0.4))
+        statistic = -2.0 * np.log(poisson.tuning_pvalue())
+
+        corrected = replace(poisson, spike_count_dispersion=4.0, dispersion_dof=100)
+        expected = (1.0 + statistic / (4.0 * 100)) ** (-50)
+        assert corrected.tuning_pvalue() == pytest.approx(expected, rel=1e-10)
+        # Underdispersion is not credited: φ is floored at 1.
+        under = replace(poisson, spike_count_dispersion=0.5, dispersion_dof=100)
+        one = replace(poisson, spike_count_dispersion=1.0, dispersion_dof=100)
+        assert under.tuning_pvalue() == pytest.approx(one.tuning_pvalue())
+        # An unestimable dispersion leaves the test undefined.
+        missing = replace(poisson, spike_count_dispersion=np.nan, dispersion_dof=100)
+        assert np.isnan(missing.tuning_pvalue())
 
 
 # ==============================================================================
@@ -3429,7 +3625,7 @@ class TestDirectionalRateResultNaNHandling:
 
         result = DirectionalRateResult(
             firing_rate=firing_rate,
-            occupancy=np.ones(n_bins) * 0.5,
+            occupancy=np.full(n_bins, 2.0),
             bin_centers=bin_centers,
             bin_size=np.pi / 30,
             bandwidth=None,

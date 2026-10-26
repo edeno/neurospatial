@@ -633,9 +633,12 @@ print("Rate-weighted mean vector length:", hd.mean_vector_length())
 Inspect angular occupancy as well as rates. Mean vector length describes the
 estimated tuning curve. A fixed cutoff is a screen. `hd.tuning_pvalue()` tests
 for one preferred direction given how long the animal faced each heading, so
-uneven heading dwell time alone does not make a cell look tuned; it assumes
-spikes are independent given heading, and bursting or slow rate drift make
-its p-value too small. Mean vector length uses only visited headings, so check
+uneven heading dwell time alone does not make a cell look tuned. Real cells
+fire in bursts and drift in rate, so their spike counts vary more than
+independent spikes would; the test estimates that extra variability from spike
+counts in time windows (`hd.spike_count_dispersion`, 1 for independent spikes,
+about 2b - 1 for bursts of b spikes) and divides its statistic by it. It needs
+at least 50 spikes and returns NaN below that. Mean vector length uses only visited headings, so check
 `hd.largest_unvisited_arc()`: when the animal never faced an arc wider than
 90°, untuned cells get inflated MVLs and the screen warns. A circular-shift
 test on the raw recording is the verdict when its stationarity assumptions fit
@@ -946,10 +949,10 @@ counts flagged by the screen, not cells with ground-truth tuning.
 
 The allocentric object-vector information screen also flagged 20/20 in the
 10-minute fixture. HD's screen combines the rate-weighted mean vector length
-with an occupancy-corrected test of one preferred direction (a Poisson score
-test with heading occupancy as exposure), which keeps its false-positive rate
-near `alpha` for untuned cells under uneven heading sampling when spikes are
-independent given heading.
+with an occupancy-corrected test of one preferred direction (a score test with
+heading occupancy as exposure, divided by the estimated spike-count
+dispersion), which keeps its false-positive rate near `alpha` for untuned
+cells under uneven heading sampling, including bursting cells.
 
 `has_place_field()` preserves field detection. `is_place_cell()` requires
 `criterion="spatial_info"` (screen) or `"shuffle"` (circular-shift verdict).
