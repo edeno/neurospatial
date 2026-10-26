@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import itertools
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 import networkx as nx
@@ -22,6 +22,40 @@ def add_edge_with_distance(graph: nx.Graph, u: Any, v: Any) -> None:
     p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
     p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
     graph.add_edge(u, v, distance=float(np.linalg.norm(p2 - p1)))
+
+
+def refuse_coincident_nodes(graph: nx.Graph, edges: Iterable[tuple[Any, Any]]) -> None:
+    """Refuse a track edge whose two nodes are at the same position.
+
+    Parameters
+    ----------
+    graph : networkx.Graph
+        Track graph whose nodes have ``pos``.
+    edges : iterable of (node, node)
+        Edges of ``graph`` to check.
+
+    Raises
+    ------
+    ValueError
+        Naming the first edge of zero length and its nodes' position.
+    """
+    for u, v in edges:
+        pos_u = np.asarray(graph.nodes[u]["pos"], dtype=float)
+        pos_v = np.asarray(graph.nodes[v]["pos"], dtype=float)
+        if np.linalg.norm(pos_v - pos_u) > 0:
+            continue
+        raise ValueError(
+            _format_error(
+                f"Track edge {u!r}-{v!r} joins coincident nodes: both are at "
+                f"{tuple(pos_u.tolist())}, so the edge has zero length.",
+                why="Why: each edge is a straight segment of the track, binned "
+                "along its length; a segment with no length has no bins and no "
+                "direction.",
+                fix="keep one node at that position and attach the other's edges "
+                "to it (for linear_track, drop the repeated waypoint), or correct "
+                "one of the two positions",
+            )
+        )
 
 
 def maze_track_graph(
@@ -65,7 +99,8 @@ def maze_track_graph(
     ------
     ValueError
         If `node_positions` does not contain the expected number of nodes for
-        `kind`, or if `kind` is unknown.
+        `kind`, if `kind` is unknown, if two joined nodes are at the same
+        position, or if the segments overlap.
     """
     labels = list(node_positions.keys())
     graph = nx.Graph()
@@ -137,6 +172,7 @@ def maze_track_graph(
             )
         )
 
+    refuse_coincident_nodes(graph, edge_order)
     _refuse_overlapping_segments(graph, edge_order, kind)
     return graph, edge_order
 

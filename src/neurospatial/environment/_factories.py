@@ -34,6 +34,7 @@ from neurospatial.layout.helpers.track_graphs import (
     add_edge_with_distance,
     example_node_positions,
     maze_track_graph,
+    refuse_coincident_nodes,
 )
 from neurospatial.regions import Regions
 
@@ -655,15 +656,6 @@ def _linear_track(
         add_edge_with_distance(graph, i, i + 1)
         edge_order.append((i, i + 1))
 
-    total_length = sum(float(graph.edges[u, v]["distance"]) for u, v in edge_order)
-    if total_length <= 0.0:
-        source = "endpoints" if endpoints is not None else "waypoints"
-        raise ValueError(
-            f"linear_track {source} are coincident (total track length is 0); "
-            f"a 1-D track needs at least two distinct points. Got points: "
-            f"{points}."
-        )
-
     return _from_graph(
         cls,
         graph,
@@ -748,17 +740,6 @@ def _maze(
             "cannot be used to infer maze topology."
         )
 
-    total_length = sum(float(graph.edges[u, v]["distance"]) for u, v in edge_order)
-    if total_length <= 0.0:
-        node_pos = {
-            n: tuple(float(c) for c in graph.nodes[n]["pos"]) for n in graph.nodes
-        }
-        raise ValueError(
-            f"maze({kind!r}) node positions are coincident (total track "
-            "length is 0); a 1-D track needs at least two distinct points. "
-            f"Got node positions: {node_pos}."
-        )
-
     return _from_graph(
         cls,
         graph,
@@ -818,6 +799,8 @@ def _from_graph(
         "bin_size": bin_size,
     }
 
+    # The track geometry refuses a zero-length segment too, without naming it.
+    refuse_coincident_nodes(graph, graph.edges)
     segments = np.array(
         [[graph.nodes[u]["pos"], graph.nodes[v]["pos"]] for u, v in graph.edges],
         dtype=np.float64,

@@ -28,6 +28,7 @@ from neurospatial.layout.helpers.neighbor_pairs import (
     euclidean_pair_distances,
     order_neighbor_pairs,
 )
+from neurospatial.layout.helpers.track_graphs import refuse_coincident_nodes
 from neurospatial.layout.helpers.utils import get_centers
 from neurospatial.layout.validation import validate_cell_size
 
@@ -50,8 +51,7 @@ def _get_graph_bins(
 
     An edge of length ``L`` gets ``ceil(L / bin_size)`` bins of length
     ``L / ceil(L / bin_size)``, so bins are at most ``bin_size`` long and can
-    differ in length between edges. An edge whose nodes coincide gets one
-    zero-length bin. A positive gap becomes one inactive bin.
+    differ in length between edges. A positive gap becomes one inactive bin.
 
     Parameters
     ----------
@@ -86,6 +86,7 @@ def _get_graph_bins(
         - If any node in `edge_order` is missing from `graph`, or an entry
           is not an edge of `graph`.
         - If any node of `graph` lacks a 'pos' attribute.
+        - If an edge of `edge_order` joins two nodes at the same position.
 
     """
     bin_size = float(validate_cell_size(bin_size, scalar_only=True)[0])
@@ -130,6 +131,7 @@ def _get_graph_bins(
     node_positions = nx.get_node_attributes(graph, "pos")
     if len(node_positions) < len(graph.nodes):
         raise ValueError("All nodes must have a 'pos' attribute (x,y,…).")
+    refuse_coincident_nodes(graph, edge_order)
 
     # (u, v) and (v, u) map to the same edge ID.
     edge_id_map: dict[frozenset, int] = {
@@ -145,8 +147,7 @@ def _get_graph_bins(
         pos_u = np.asarray(node_positions[u], dtype=float)
         pos_v = np.asarray(node_positions[v], dtype=float)
         segment_length = float(np.linalg.norm(pos_v - pos_u))
-        # If the two nodes coincide, create exactly one bin of zero length
-        n_bins = 1 if segment_length <= 0.0 else int(np.ceil(segment_length / bin_size))
+        n_bins = int(np.ceil(segment_length / bin_size))
         # Create (n_bins + 1) edges from cursor to cursor + segment_length
         edges_segment = np.linspace(
             cursor,

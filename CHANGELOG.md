@@ -233,6 +233,13 @@
   `nan_color` with its own alpha keeps it there as on hexagons and polygons.
 - `ImageMaskLayout` cell centers use the edge-midpoint rule of the other grid
   engines, which can move them by a few ULPs.
+- A track edge between two nodes at the same position is refused by name
+  (`Track edge 1-2 joins coincident nodes: ...`) in `Environment.maze`,
+  `linear_track`, `from_graph` and `GraphLayout`. Only an all-coincident track
+  was refused clearly; one repeated position failed later with
+  "segments must have positive representable lengths" or "TrackLinearization
+  edges[0] must be finite and strictly increasing", and a maze first warned
+  about an invalid divide.
 
 ### Spatial geometry review
 

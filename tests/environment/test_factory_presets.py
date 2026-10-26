@@ -11,6 +11,8 @@ is positions-based.
 
 from __future__ import annotations
 
+import itertools
+
 import networkx as nx
 import numpy as np
 import pytest
@@ -568,3 +570,56 @@ class TestGraphLinearization:
         np.testing.assert_allclose(
             env.to_linear(np.asarray(query, float)), expected, atol=1e-9
         )
+
+
+@pytest.mark.filterwarnings("error")
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(
+            lambda: Environment.maze(
+                kind="t",
+                node_positions={
+                    "stem_end": (0, 0),
+                    "junction": (0, 50),
+                    "left": (0, 50),
+                    "right": (30, 50),
+                },
+                bin_size=5.0,
+            ),
+            id="maze",
+        ),
+        pytest.param(
+            lambda: Environment.linear_track(
+                node_positions=[(0, 0), (10, 0), (10, 0), (20, 0)], bin_size=2.0
+            ),
+            id="linear_track",
+        ),
+        pytest.param(
+            lambda: Environment.from_graph(
+                _graph_with_positions([(0, 0), (10, 0), (10, 0)]),
+                edge_order=[(0, 1), (1, 2)],
+                edge_spacing=0.0,
+                bin_size=2.0,
+            ),
+            id="from_graph",
+        ),
+    ],
+)
+def test_one_edge_between_coincident_nodes_is_refused_by_name(build):
+    """A track with one zero-length edge names that edge, without NumPy warnings.
+
+    Only an all-coincident track was refused by name; one repeated position
+    failed in the track geometry with "segments must have positive
+    representable lengths", after a divide-by-zero warning for mazes.
+    """
+    with pytest.raises(ValueError, match="joins coincident nodes"):
+        build()
+
+
+def _graph_with_positions(positions: list[tuple[float, float]]) -> nx.Graph:
+    graph = nx.Graph()
+    for node, pos in enumerate(positions):
+        graph.add_node(node, pos=pos)
+    graph.add_edges_from(itertools.pairwise(range(len(positions))))
+    return graph

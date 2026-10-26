@@ -335,3 +335,31 @@ def test_separate_tracks_crossing_at_one_point_keep_their_junction_faces():
 
     np.testing.assert_allclose(junction_faces(first), [1.0])
     np.testing.assert_allclose(junction_faces(both), [1.0, 1.0])
+
+
+def _track_with_a_repeated_position() -> tuple[nx.Graph, list[tuple[int, int]]]:
+    """A straight track whose middle edge joins two nodes at one position."""
+    graph = nx.Graph()
+    for node, pos in enumerate([(0.0, 0.0), (10.0, 0.0), (10.0, 0.0), (20.0, 0.0)]):
+        graph.add_node(node, pos=pos)
+    edge_order = [(0, 1), (1, 2), (2, 3)]
+    graph.add_edges_from(edge_order)
+    return graph, edge_order
+
+
+def test_an_edge_between_coincident_nodes_is_refused_by_name():
+    """A zero-length edge has no bins, so the build names it instead of failing later.
+
+    Before, the edge got one zero-width bin that the track linearization then
+    refused with "edges[0] must be finite and strictly increasing".
+    """
+    graph, edge_order = _track_with_a_repeated_position()
+    with pytest.raises(ValueError, match=r"edge 1-2 joins coincident nodes") as excinfo:
+        GraphLayout().build(
+            graph_definition=graph,
+            edge_order=edge_order,
+            edge_spacing=0.0,
+            bin_size=2.0,
+        )
+    assert "\nWhy: " in str(excinfo.value)
+    assert "\nFix: " in str(excinfo.value)

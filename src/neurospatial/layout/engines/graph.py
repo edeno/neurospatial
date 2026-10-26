@@ -110,7 +110,8 @@ class GraphLayout(_NeighborPairsMixin):
         ValueError
             If `edge_order` is empty, `bin_size` is not positive, a node of
             `edge_order` is not in the graph, an entry of `edge_order` is not
-            an edge of the graph, a node lacks 'pos',
+            an edge of the graph, a node lacks 'pos', an edge joins two nodes
+            at the same position,
             `edge_spacing` has the wrong length, or an edge's 'distance' is
             not the distance between its nodes.
 
