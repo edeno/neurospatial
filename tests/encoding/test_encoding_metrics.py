@@ -859,15 +859,7 @@ class TestBatchGridScoresNonRegularGrid:
 
     @pytest.fixture
     def env_dense_random_grid(self):
-        """RegularGrid built from random samples (still passes FFT detector).
-
-        500 uniform-random samples over a 100×100 area at bin_size=5
-        produces a regular 2D grid with ``>=50%`` of bins active, which
-        ``_detect_grid_method`` classifies as ``fft``. The fixture name
-        used to be ``env_sparse_grid`` but the env is *not* actually
-        sparse — for the truly-irregular (graph-layout) contract see
-        ``test_batch_grid_scores_graph_env_legitimate_nan`` below.
-        """
+        """RegularGrid built from 500 uniform-random samples at bin_size=5."""
         from neurospatial import Environment
 
         rng = np.random.default_rng(42)
@@ -875,16 +867,7 @@ class TestBatchGridScoresNonRegularGrid:
         return Environment.from_samples(positions, bin_size=5.0)
 
     def test_batch_grid_scores_dense_random_env_smoke(self, env_dense_random_grid):
-        """Smoke test: dense-enough random env still takes the FFT path.
-
-        The fixture is FFT-eligible, so ``batch_grid_scores`` runs the
-        per-neuron grid_score loop end-to-end. The contract pinned here
-        is just that (a) the call doesn't raise, (b) the result is the
-        expected ``BatchScoresResult`` shape, and (c) ``failures`` is
-        not polluted with caught-exception flags. The
-        legitimate-NaN-on-irregular-env contract is pinned below in
-        ``test_batch_grid_scores_graph_env_legitimate_nan``.
-        """
+        """A grid built from random samples gets per-neuron scores, no failures."""
         from neurospatial.encoding._metrics import (
             BatchScoresResult,
             batch_grid_scores,
@@ -900,53 +883,45 @@ class TestBatchGridScoresNonRegularGrid:
         assert result.shape == (2,)
         assert not result.failures.any()
 
-    def test_batch_grid_scores_graph_env_legitimate_nan(self):
-        """Irregular env -> NaN with failures=False, no warning.
+    @pytest.mark.parametrize("layout", ["graph", "hexagonal"])
+    def test_batch_grid_scores_refuses_layouts_without_a_rectangular_grid(self, layout):
+        """Batch refuses what the single-cell autocorrelogram refuses.
 
-        Grid score requires a regular 2D grid (the FFT autocorrelation
-        path); on irregular envs there is no grid score by construction.
-        That is an environment-level legitimate-NaN, not a per-neuron
-        computation failure — the failures mask must stay False so
-        callers using ``np.isnan(scores) & ~failures`` to count
-        legitimate-NaNs see the right count, and no
-        "computation failed for N neurons" UserWarning fires. This is
-        the regression for the review-response: prior
-        to the fix, irregular envs flooded ``failures`` with True for
-        every neuron because the catch-all caught the env-level
-        ValueError from the new spatial_autocorrelation contract.
+        A track or hexagonal layout has no rectangular lag grid, so there is
+        no grid score; an all-NaN result would read as "computed, not a grid
+        cell" and let a tuned grid cell be labeled a place cell.
         """
-        import warnings
-
         import networkx as nx
 
         from neurospatial import Environment
-        from neurospatial.encoding._metrics import (
-            BatchScoresResult,
-            batch_grid_scores,
-        )
+        from neurospatial.encoding._metrics import batch_grid_scores
+        from neurospatial.encoding.grid import spatial_autocorrelation
 
-        graph = nx.path_graph(8)
-        for i, node in enumerate(graph.nodes):
-            graph.nodes[node]["pos"] = (float(i) * 5.0, 0.0)
-        for u, v in graph.edges:
-            graph.edges[u, v]["distance"] = 5.0
-        env = Environment.from_graph(
-            graph,
-            edge_order=list(graph.edges),
-            edge_spacing=0.0,
-            bin_size=2.0,
-        )
+        if layout == "graph":
+            graph = nx.path_graph(8)
+            for i, node in enumerate(graph.nodes):
+                graph.nodes[node]["pos"] = (float(i) * 5.0, 0.0)
+            for u, v in graph.edges:
+                graph.edges[u, v]["distance"] = 5.0
+            env = Environment.from_graph(
+                graph, edge_order=list(graph.edges), edge_spacing=0.0, bin_size=2.0
+            )
+        else:
+            grid = np.stack(np.meshgrid(*[np.linspace(0, 40, 41)] * 2), -1)
+            env = Environment.from_samples(
+                grid.reshape(-1, 2), bin_size=4.0, layout="Hexagonal"
+            )
         firing_rates = np.random.default_rng(0).random((2, env.n_bins))
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")  # promote any warning to an error
-            result = batch_grid_scores(env, firing_rates)
+        with pytest.raises(NotImplementedError) as single:
+            spatial_autocorrelation(env, firing_rates[0])
+        with pytest.raises(NotImplementedError) as batch:
+            batch_grid_scores(env, firing_rates)
 
-        assert isinstance(result, BatchScoresResult)
-        assert result.shape == (2,)
-        assert np.all(np.isnan(result.scores))
-        assert not result.failures.any()
-        assert result.n_failures == 0
+        assert "spatial_autocorrelation_radial" in str(batch.value)
+        assert str(batch.value) == str(single.value).replace(
+            "spatial_autocorrelation()", "batch_grid_scores()"
+        )
 
 
 class TestBatchScoresFailuresMask:

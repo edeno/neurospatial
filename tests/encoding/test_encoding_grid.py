@@ -266,20 +266,45 @@ class TestFFTAutocorrelationNeedsRectangularCells:
         distances, correlations = spatial_autocorrelation_radial(env, rate)
         assert distances.shape == correlations.shape
 
-    def test_summary_table_reports_no_grid_score_on_a_hexagonal_layout(
+    def test_result_grid_score_refuses_a_hexagonal_layout(
         self, hexagonal_env_and_rate
     ) -> None:
         from neurospatial import compute_spatial_rate
 
         env, _ = hexagonal_env_and_rate
-        stimulus = np.random.default_rng(3)
         times = np.arange(6000) / 30.0
-        positions = stimulus.uniform(-20, 20, size=(len(times), 2))
+        positions = np.random.default_rng(3).uniform(-20, 20, size=(len(times), 2))
         spike_times = np.sort(np.random.default_rng(4).uniform(0, times[-1], 400))
+        result = compute_spatial_rate(env, spike_times, times, positions)
 
-        table = compute_spatial_rate(env, spike_times, times, positions).summary_table()
+        with pytest.raises(NotImplementedError, match="spatial_autocorrelation_radial"):
+            result.grid_score()
 
+    def test_summary_table_reports_no_grid_score_on_a_hexagonal_layout(
+        self, hexagonal_env_and_rate
+    ) -> None:
+        from neurospatial import compute_spatial_rate
+        from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+
+        env, _ = hexagonal_env_and_rate
+        times = np.arange(0.0, 600.0, 1 / 30)
+        positions = 20 * np.column_stack(
+            [np.sin(0.31 * times), np.sin(0.47 * times + 0.4)]
+        )
+        model = PlaceCellModel(env, center=[5.0, -5.0], width=5.0, max_rate=15.0)
+        spike_times = generate_poisson_spikes(
+            model.firing_rate(positions), times, seed=5
+        )
+        result = compute_spatial_rate(env, spike_times, times, positions)
+
+        table = result.summary_table(boundary_source="analysis")
+
+        # The cell is spatially tuned, but without a grid score it may be a
+        # grid cell: it is undetermined, not a place cell.
+        assert table["spatial_info"].iloc[0] >= 0.5
         assert np.isnan(table["grid_score"]).all()
+        assert "Hexagonal" in table.attrs["unavailable_metrics"]["grid_score"]
+        assert table["cell_type"].iloc[0] == "undetermined"
 
     def test_inactive_cells_are_left_out_like_unvisited_bins(self) -> None:
         from neurospatial.encoding.grid import spatial_autocorrelation
