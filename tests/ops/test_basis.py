@@ -715,3 +715,42 @@ def test_chebyshev_support_stays_within_k_face_hops(uniform_grid):
     for degree, row in enumerate(basis):
         assert_allclose(row[hops > degree], 0, atol=1e-12)
         assert np.all(row[hops == degree] != 0)
+
+
+def _path_graph(node_order):
+    """Path 0-1-2-3-4 (1 cm edges) whose nodes are inserted in ``node_order``."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_nodes_from(node_order)
+    graph.add_edges_from(((i, i + 1) for i in range(4)), distance=1.0)
+    return graph
+
+
+@pytest.mark.parametrize("node_order", [[4, 2, 0, 3, 1], [1, 0, 2, 4, 3]])
+def test_graph_distances_follow_bin_ids_not_node_insertion_order(node_order):
+    """Bin ids index the matrices built from the graph, whatever the node order."""
+    from types import SimpleNamespace
+
+    ordered = SimpleNamespace(n_bins=5, n_dims=1, connectivity=_path_graph(range(5)))
+    shuffled = SimpleNamespace(n_bins=5, n_dims=1, connectivity=_path_graph(node_order))
+
+    basis = geodesic_rbf_basis(
+        shuffled, centers=np.array([0]), bandwidth=1.0, normalize="none"
+    )
+    assert_allclose(basis[0], np.exp(-(np.arange(5.0) ** 2) / 2.0))
+    assert_allclose(
+        basis,
+        geodesic_rbf_basis(
+            ordered, centers=np.array([0]), bandwidth=1.0, normalize="none"
+        ),
+    )
+    for seed in range(3):
+        np.testing.assert_array_equal(
+            select_basis_centers(
+                shuffled, n_centers=3, method="farthest_point", rng=seed
+            ),
+            select_basis_centers(
+                ordered, n_centers=3, method="farthest_point", rng=seed
+            ),
+        )

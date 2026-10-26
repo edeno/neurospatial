@@ -292,7 +292,9 @@ def _select_centers_farthest_point(
     from scipy.sparse.csgraph import shortest_path
 
     # Get adjacency matrix for shortest path computation
-    adjacency = nx.to_scipy_sparse_array(connectivity, weight="distance", format="csr")
+    adjacency = nx.to_scipy_sparse_array(
+        connectivity, nodelist=range(n_bins), weight="distance", format="csr"
+    )
 
     # Start with a random point
     centers = [int(rng.integers(0, n_bins))]
@@ -614,8 +616,9 @@ def geodesic_rbf_basis(
 
     # Compute distances from all centers at once using scipy's optimized implementation
     # This is ~5-10x faster than per-center Dijkstra
+    # Row/column i must be bin i, whatever order the graph's nodes were added.
     adjacency = nx.to_scipy_sparse_array(
-        env.connectivity, weight="distance", format="csr"
+        env.connectivity, nodelist=range(n_bins), weight="distance", format="csr"
     )
     distances = shortest_path(
         csgraph=adjacency,
