@@ -460,3 +460,48 @@ class TestEdgeWeightMustExist:
     def test_weight_none_counts_edges(self, graph):
         assert_allclose(distance_field(graph, [0], weight=None), [0.0, 1.0, 2.0])
         assert_allclose(distance_field(graph, [0]), [0.0, 2.5, 5.0])
+
+
+_LINE_CENTERS = np.arange(5, dtype=float)[:, None]
+
+_BIN_QUERIES = {
+    "field-geodesic": lambda graph, bins: distance_field(graph, bins),
+    "field-euclidean": lambda graph, bins: distance_field(
+        graph, bins, metric="euclidean", bin_centers=_LINE_CENTERS
+    ),
+    "pairwise": lambda graph, bins: pairwise_distances(graph, bins),
+    "neighbors-geodesic": lambda graph, bins: neighbors_within(graph, bins, radius=1.0),
+    "neighbors-euclidean": lambda graph, bins: neighbors_within(
+        graph, bins, radius=1.0, metric="euclidean", bin_centers=_LINE_CENTERS
+    ),
+}
+
+
+class TestInvalidBinsAreRefused:
+    """Every distance function refuses a bin that is not a node, for every metric.
+
+    -1 marks a sample outside the environment: reading it as the last bin,
+    or dropping it with a warning, would give a distance it does not have.
+    """
+
+    @pytest.fixture
+    def graph(self) -> nx.Graph:
+        graph = nx.path_graph(5)
+        nx.set_edge_attributes(graph, 1.0, "distance")
+        return graph
+
+    @pytest.mark.parametrize("query", list(_BIN_QUERIES))
+    @pytest.mark.parametrize("bins", [[0, -1], [999]], ids=["outside", "unknown"])
+    def test_non_node_bin_is_refused(self, graph, query, bins):
+        with pytest.raises(nx.NodeNotFound, match="are not nodes of the graph"):
+            _BIN_QUERIES[query](graph, bins)
+
+    @pytest.mark.parametrize("query", list(_BIN_QUERIES))
+    @pytest.mark.parametrize(
+        "bins",
+        [np.array([0.0, 4.9]), np.array([True, False])],
+        ids=["fractional", "boolean"],
+    )
+    def test_non_integer_bins_are_refused(self, graph, query, bins):
+        with pytest.raises(TypeError, match="must be integer bin indices"):
+            _BIN_QUERIES[query](graph, bins)
