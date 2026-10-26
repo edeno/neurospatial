@@ -29,6 +29,11 @@ Results that change:
   source with the source's edge value. A destination bin outside the source
   environment is now NaN. A source track built without `track_width` is
   refused, since its extent is unknown.
+- `resample_field(method="diffuse")` treats missing (NaN) source values the
+  way `env.smooth(mode="average")` does. It averaged over the observed bins
+  without the support floor, so far from every observed bin it divided
+  truncation noise by noise: one observation of 5 on a 100-bin line gave 19
+  negative bins down to -53,000. Those bins are now NaN.
 - `graph_convolve(normalize=False)` read NaN as 0 (an all-NaN field became
   zeros). A bin whose kernel puts weight on a NaN bin is now NaN.
 - `spatial_basis` in 3-D sized its bandwidths by the square root of the

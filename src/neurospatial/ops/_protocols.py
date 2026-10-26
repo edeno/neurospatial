@@ -228,9 +228,7 @@ class ResampleSourceConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol
     def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
 
-class ResampleTargetConsumer(
-    CartesianConsumer, BinCentersConsumer, DiffusionGeometryConsumer, Protocol
-):
+class ResampleTargetConsumer(CartesianConsumer, BinCentersConsumer, Protocol):
     """Cartesian bins that receive a resampled field and may diffuse it.
 
     ``diffuse`` is read once at the public boundary of ``resample_field``: the

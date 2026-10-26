@@ -11,7 +11,6 @@ These are core primitives used throughout neurospatial and by downstream package
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal, TypeAlias, overload
 
 import numpy as np
@@ -557,7 +556,10 @@ def resample_field(
     resampled : NDArray[np.float64], shape (dst_env.n_bins,)
         Field resampled onto destination environment bins. Destination bins
         whose centers lie in no source bin (``src_env.bin_at`` returns -1) are
-        ``np.nan``.
+        ``np.nan``. With "diffuse", missing (NaN) source values are averaged
+        over as ``dst_env.smooth(..., mode="average")`` does: a missing bin is
+        filled from observed neighbours, and a bin too far from every observed
+        bin for the smoothing to resolve its value stays ``np.nan``.
 
     Raises
     ------
@@ -737,19 +739,18 @@ def resample_field(
     if method == "nearest":
         return resampled
     assert bandwidth is not None  # Already validated above
-    # The destination's diffusion operator is extracted here, at the public
-    # boundary: its truncated eigenbasis is cached by the destination
-    # environment, so repeated resampling onto it does not rebuild the basis.
-    geometry = dst_env.get_diffusion_geometry()
-    return _smooth_pulled_back(
-        resampled,
-        outside_source,
-        lambda columns: np.asarray(
-            dst_env.diffuse(columns, bandwidth=bandwidth, mode="average")
-        ),
-        n_components=geometry.n_components,
-        labels=geometry.labels,
+    # The pulled-back field is intensive, so it is averaged over its valid
+    # bins exactly as env.smooth(mode="average") averages a rate map with
+    # missing bins: a NaN bin gets no weight and is filled from valid
+    # neighbours, and a bin whose smoothed support is truncation noise stays
+    # NaN rather than reporting noise / noise. The destination caches its
+    # eigenbasis, so repeated resampling onto it does not rebuild it.
+    smoothed = np.array(
+        dst_env.diffuse(resampled, bandwidth=bandwidth, mode="average"),
+        dtype=np.float64,
     )
+    smoothed[outside_source] = np.nan
+    return smoothed
 
 
 def _pull_back_nearest(
@@ -779,57 +780,3 @@ def _pull_back_nearest(
     )
     resampled[outside_source] = np.nan
     return resampled
-
-
-def _smooth_pulled_back(
-    resampled: NDArray[np.float64],
-    outside_source: NDArray[np.bool_],
-    smooth_average: Callable[[NDArray[np.float64]], NDArray[np.float64]],
-    *,
-    n_components: int,
-    labels: NDArray[np.int_],
-) -> NDArray[np.float64]:
-    """Smooth a pulled-back intensive field over its valid destination bins.
-
-    A pullback field is *intensive* (a rate map / probability density sampled
-    onto the destination), so it is smoothed with the row-stochastic average
-    operator (masked Nadaraya-Watson), not the mass-conserving transition
-    kernel: uncovered / NaN bins contribute *no weight* rather than a real 0
-    that pulls covered neighbours toward zero. Only a bin outside the source or
-    in a component with no valid bin is left NaN (no far-field floor), and the
-    signed numerator is never clipped.
-
-    Parameters
-    ----------
-    resampled : ndarray of float64, shape (n_bins,)
-        Pulled-back values, NaN outside the source or where the source value
-        is missing.
-    outside_source : ndarray of bool, shape (n_bins,)
-        Destination bins outside the source; they stay NaN. Bins whose source
-        value is NaN are filled from their valid neighbours.
-    smooth_average : callable
-        The destination's ``mode="average"`` diffusion of a
-        ``(n_bins, n_fields)`` batch.
-    n_components : int
-        Number of connected components of the destination's diffusion graph.
-    labels : ndarray of int, shape (n_bins,)
-        Component of each destination bin.
-
-    Returns
-    -------
-    ndarray of float64, shape (n_bins,)
-        Smoothed values, NaN outside the source.
-    """
-    from neurospatial.ops.diffusion import _masked_diffusion_average
-
-    valid = (~outside_source) & np.isfinite(resampled)
-    smoothed = _masked_diffusion_average(
-        smooth_average,
-        resampled[:, None],
-        valid[:, None],
-        labels,
-        n_components,
-        floor=None,
-    )[:, 0]
-    smoothed[outside_source] = np.nan
-    return smoothed

@@ -450,6 +450,29 @@ class TestResampleFieldMathematicalProperties:
 
         np.testing.assert_allclose(result, 5.0, rtol=1e-10)
 
+    def test_diffuse_never_reports_noise_far_from_the_data(self):
+        """An average of one observation of 5 is 5 wherever it is defined.
+
+        Far from the observed bin both smoothed sums are truncation noise;
+        their ratio reached -53,000 when resampling skipped the support floor
+        that env.smooth applies. Those bins are NaN instead.
+        """
+        env = Environment.from_samples(np.arange(0.5, 100.0)[:, None], bin_size=1.0)
+        field = np.full(env.n_bins, np.nan)
+        observed = int(env.bin_at(np.array([[50.5]]))[0])
+        field[observed] = 5.0
+
+        result = resample_field(field, env, env, method="diffuse", bandwidth=5.0)
+
+        defined = np.isfinite(result)
+        assert defined[observed]
+        np.testing.assert_allclose(result[defined], 5.0, rtol=1e-3)
+        assert not defined.all()
+        np.testing.assert_array_equal(
+            result,
+            env.smooth(field, bandwidth=5.0, mode="average"),
+        )
+
 
 class TestResampleFieldOutsideSource:
     """A destination bin outside the source has no value: NaN, never an edge copy."""

@@ -1233,7 +1233,7 @@ def _masked_diffusion_average(
     labels: NDArray[np.int_],
     n_components: int,
     *,
-    floor: float | Callable[[], float] | None,
+    floor: float | Callable[[], float],
 ) -> NDArray[np.float64]:
     """Average intensive fields over their valid bins with the diffusion operator.
 
@@ -1244,11 +1244,11 @@ def _masked_diffusion_average(
     weights are smoothed together in one batch, ``[values | weights]``.
 
     A bin is NaN when its connected ``W``-component holds no valid bin (exact
-    and truncation-proof; see :func:`_component_support_mask`) or, when
-    ``floor`` is given, when its smoothed weight is at most ``floor`` times the
-    largest weight in its component (see :func:`_above_component_floor`). Far
-    from every valid bin both smoothed sums approach the apply's truncation
-    noise, so their ratio would be noise too. The numerator is never floored,
+    and truncation-proof; see :func:`_component_support_mask`) or when its
+    smoothed weight is at most ``floor`` times the largest weight in its
+    component (see :func:`_above_component_floor`). Far from every valid bin
+    both smoothed sums approach the apply's truncation noise, so their ratio
+    would be noise too: one observation of 5 averaged to -53,000 there. The numerator is never floored,
     so signed fields keep their sign; the denominator is floored at
     ``_DIFFUSE_DENOM_EPS`` to keep the division finite.
 
@@ -1264,11 +1264,11 @@ def _masked_diffusion_average(
         Per-bin ``W``-component id.
     n_components : int
         Number of components.
-    floor : float, callable or None
-        The far-field gate: a relative floor on the smoothed weight, or None
-        for the component-support gate alone. Each caller states its own. A
-        callable is evaluated after smoothing, for a floor that depends on the
-        operator the smoothing resolved (``env.diffusion_accuracy``).
+    floor : float or callable
+        The far-field gate: a relative floor on the smoothed weight. Each
+        caller states its own. A callable is evaluated after smoothing, for a
+        floor that depends on the operator the smoothing resolved
+        (``env.diffusion_accuracy``).
 
     Returns
     -------
@@ -1283,9 +1283,8 @@ def _masked_diffusion_average(
     numerator = smoothed[:, :n_fields].T
     weights = smoothed[:, n_fields:].T
     support = _component_support_mask(labels, n_components, valid.T)
-    if floor is not None:
-        relative = floor() if callable(floor) else floor
-        support &= _above_component_floor(labels, n_components, weights, relative)
+    relative = floor() if callable(floor) else floor
+    support &= _above_component_floor(labels, n_components, weights, relative)
     denominator = np.maximum(weights, _DIFFUSE_DENOM_EPS)
     with np.errstate(divide="ignore", invalid="ignore"):
         averaged = np.where(support, numerator / denominator, np.nan)
