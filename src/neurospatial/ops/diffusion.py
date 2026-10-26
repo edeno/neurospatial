@@ -456,7 +456,7 @@ def _block_eigenbasis(
             "to the no-shift-invert which='SM' solver, which may return a "
             "lower-quality eigenbasis. Consider a larger bandwidth.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         eigvals, eigvecs = scipy.sparse.linalg.eigsh(block, k=rank, which="SM", v0=v0)
 
