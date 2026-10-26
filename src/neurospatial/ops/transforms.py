@@ -932,8 +932,9 @@ def from_rotation_matrix(
     Parameters
     ----------
     rotation_matrix : NDArray[np.float64], shape (n_dims, n_dims)
-        Rotation matrix (orthogonal matrix with det(rotation_matrix) = 1).
-        For 3D, use scipy.spatial.transform.Rotation to generate.
+        Rotation matrix: orthogonal (``R @ R.T == I`` within 1e-6) with
+        determinant +1. For 3D, use scipy.spatial.transform.Rotation to
+        generate.
     translation : NDArray[np.float64], shape (n_dims,), optional
         Translation vector. If None, no translation is applied.
 
@@ -941,6 +942,12 @@ def from_rotation_matrix(
     -------
     AffineND
         Affine transformation combining rotation and optional translation.
+
+    Raises
+    ------
+    ValueError
+        If ``rotation_matrix`` is not square, not orthogonal, or a reflection
+        (determinant -1), or ``translation`` has the wrong shape.
 
     Examples
     --------
@@ -961,14 +968,38 @@ def from_rotation_matrix(
 
     >>> transform = from_rotation_matrix(rot_mat, translation=np.array([10, 20, 30]))
     >>> points = np.array([[1, 0, 0]])
-    >>> transform(points)  # doctest: +SKIP
-    array([[10., 21., 30.]])
+    >>> np.allclose(transform(points), [[10, 21, 30]])
+    True
     """
     rot = np.asarray(rotation_matrix, dtype=float)
     if rot.ndim != 2 or rot.shape[0] != rot.shape[1]:
         raise ValueError(f"Rotation matrix must be square, got shape {rot.shape}")
 
     n_dims = rot.shape[0]
+    if not np.all(np.isfinite(rot)) or not np.allclose(
+        rot @ rot.T, np.eye(n_dims), rtol=0, atol=1e-6
+    ):
+        raise ValueError(
+            _format_error(
+                "rotation_matrix is not orthogonal: R @ R.T differs from the "
+                "identity by up to "
+                f"{np.max(np.abs(rot @ rot.T - np.eye(n_dims))):.3g}.",
+                why="a rotation keeps lengths and angles; this matrix would also "
+                "scale or shear the points",
+                fix="build the rotation with scipy.spatial.transform.Rotation "
+                "(.as_matrix()), or wrap a general linear map in AffineND",
+            )
+        )
+    if np.linalg.det(rot) < 0:
+        raise ValueError(
+            _format_error(
+                "rotation_matrix has determinant -1: it is a reflection, not a "
+                "rotation.",
+                why="a reflection mirrors the arena, which a rotation never does",
+                fix="check the axis order or sign of the matrix; to reflect on "
+                "purpose, build the transform with AffineND(matrix)",
+            )
+        )
     A = np.eye(n_dims + 1)
     A[:n_dims, :n_dims] = rot
 

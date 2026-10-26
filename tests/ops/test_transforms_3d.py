@@ -225,6 +225,20 @@ class Test3DFactoryFunctions:
         with pytest.raises(ValueError, match="must be square"):
             from_rotation_matrix(R)
 
+    @pytest.mark.parametrize(
+        ("matrix", "problem"),
+        [
+            (2 * np.eye(3), "not orthogonal"),
+            (np.array([[1.0, 0.5], [0.0, 1.0]]), "not orthogonal"),
+            (np.diag([1.0, 1.0, -1.0]), "reflection"),
+            (np.array([[0.0, 1.0], [1.0, 0.0]]), "reflection"),
+        ],
+    )
+    def test_from_rotation_matrix_refuses_non_rotations(self, matrix, problem):
+        """Only proper rotations pass; scaling, shear and reflections are refused."""
+        with pytest.raises(ValueError, match=problem):
+            from_rotation_matrix(matrix)
+
     def test_from_rotation_matrix_translation_shape_mismatch(self):
         """Test that translation shape mismatch raises error."""
         R = np.eye(3)
