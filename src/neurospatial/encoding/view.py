@@ -2110,6 +2110,7 @@ def _compute_view_rates(
         method=method,
         bandwidth=bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_table=getattr(spike_times, "unit_table", None),
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )

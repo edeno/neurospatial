@@ -378,3 +378,19 @@ def test_spike_trains_unit_table_is_copied_on_read() -> None:
     )
     trains.unit_table.drop(index=0, inplace=True)
     assert trains.unit_table["depth"].tolist() == [10.0, 20.0]
+
+
+def test_spike_trains_metadata_reaches_every_family(
+    family: str, recording: dict[str, Any]
+) -> None:
+    """Labels and unit_table on SpikeTrains reach the population result."""
+    import pandas as pd
+
+    from neurospatial.encoding import SpikeTrains
+
+    table = pd.DataFrame({"unit_id": [4, 5, 6], "region": ["CA1", "CA3", "CA1"]})
+    trains = SpikeTrains(recording["spike_times"], unit_ids=[4, 5, 6], unit_table=table)
+    result = FAMILIES[family]({**recording, "spike_times": trains})
+    assert result.unit_ids.tolist() == [4, 5, 6]
+    assert result._unit_ids_generated is False
+    pd.testing.assert_frame_equal(result.unit_table, trains.unit_table)

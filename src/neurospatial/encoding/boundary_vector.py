@@ -946,6 +946,7 @@ def _boundary_vector_rates(
         method=method,
         bandwidth=resolved_bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_table=getattr(spike_times, "unit_table", None),
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )

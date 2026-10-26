@@ -2708,6 +2708,7 @@ def compute_directional_rates(
             bandwidth=bandwidth_rad,
             spike_counts=empty_counts,
             unit_ids=resolved_unit_ids if labels_supplied else None,
+            unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
             analysis_settings=settings,
         )
@@ -2764,6 +2765,7 @@ def compute_directional_rates(
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts_all,
         unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_table=getattr(spike_times, "unit_table", None),
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )
