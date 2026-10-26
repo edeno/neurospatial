@@ -6,6 +6,12 @@
 
 Results that change:
 
+- `env.nearest_bin` breaks ties with the same rule as `env.bin_at` on
+  nearest-center layouts (tracks): centers equally near within rounding at
+  the coordinates' magnitude, lowest bin index. The former fixed 1e-10
+  tolerance missed ties far from the origin, so a point midway between two
+  bins of a track at 3.7 km, or of a grid in millimeters at 1 km, could take
+  the higher bin.
 - `resample_field` reads the source field with `env.interpolate(mode="nearest")`
   instead of its own copy of that lookup, so it refuses a field with an
   infinite value, for both methods, as `interpolate` does. Finite fields

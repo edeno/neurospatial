@@ -17,7 +17,12 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
-from neurospatial.geometry import CallIndexes, region_bin_masks, require_cartesian
+from neurospatial.geometry import (
+    CallIndexes,
+    _nearest_lowest_index,
+    region_bin_masks,
+    require_cartesian,
+)
 
 if TYPE_CHECKING:
     from neurospatial.geometry import Arena, Binning
@@ -141,46 +146,6 @@ def _validate_nearest_options(
         )
 
 
-def _lowest_tied_index(
-    bin_centers: NDArray[np.float64],
-    kdtree: cKDTree,
-    points: NDArray[np.float64],
-    nearest: NDArray[np.float64],
-) -> NDArray[np.int64]:
-    """Lowest index among the centers equidistant (within 1e-10) to each point.
-
-    Only the centers in a ball just wider than each point's nearest distance
-    can tie, so their distances are computed instead of all centers'.
-
-    Parameters
-    ----------
-    bin_centers : ndarray, shape (n_bins, n_dims)
-    kdtree : scipy.spatial.cKDTree
-        Tree over ``bin_centers``.
-    points : ndarray, shape (n_points, n_dims)
-    nearest : ndarray, shape (n_points,)
-        Distance from each point to its nearest center, from ``kdtree``.
-
-    Returns
-    -------
-    ndarray of int64, shape (n_points,)
-    """
-    # The margin covers the tie tolerance and rounding differences between
-    # the tree's distances and np.linalg.norm.
-    radius = nearest * (1.0 + 1e-12) + 2e-10
-    candidates = kdtree.query_ball_point(
-        points, radius, workers=-1, return_sorted=False
-    )
-    counts = np.fromiter(map(len, candidates), dtype=np.intp, count=len(points))
-    index = np.concatenate(candidates).astype(np.int64)
-    row = np.repeat(np.arange(len(points)), counts)
-    starts = np.r_[0, np.cumsum(counts)[:-1]]
-    distance = np.linalg.norm(bin_centers[index] - points[row], axis=1)
-    row_min = np.minimum.reduceat(distance, starts)
-    tied = np.abs(distance - row_min[row]) < 1e-10
-    return np.minimum.reduceat(np.where(tied, index, np.iinfo(np.int64).max), starts)
-
-
 @overload
 def _nearest_bin_query(
     bin_centers: NDArray[np.float64],
@@ -225,21 +190,14 @@ def _nearest_bin_query(
         Query coordinates in the same stored coordinate columns.
     """
     # Query KD-tree
-    if tie_break == "closest_center" or len(bin_centers) == 1:
+    if tie_break == "closest_center":
         distances, indices = kdtree.query(points, k=1, workers=-1)
         bin_indices: NDArray[np.int64] = indices.astype(np.int64)
     else:
-        # The distances come back sorted, so a point has tied centers exactly
-        # when its second-nearest is within 1e-10 of its nearest. Only those
-        # rows need the exact lowest-index search, however many centers tie.
-        distances_k2, indices_k2 = kdtree.query(points, k=2, workers=-1)
-        distances = distances_k2[:, 0]
-        bin_indices = indices_k2[:, 0].astype(np.int64)
-        tied_rows = np.flatnonzero(np.abs(distances_k2[:, 1] - distances) < 1e-10)
-        if tied_rows.size:
-            bin_indices[tied_rows] = _lowest_tied_index(
-                bin_centers, kdtree, points[tied_rows], distances[tied_rows]
-            )
+        # The same tie rule as bin_at on a nearest-center layout: equal within
+        # rounding at the coordinates' magnitude, in any length unit.
+        nearest, distances = _nearest_lowest_index(kdtree, points)
+        bin_indices = nearest.astype(np.int64)
 
     # Check if any points are outside the environment based on distance threshold
     if max_distance is not None or max_distance_factor is not None:

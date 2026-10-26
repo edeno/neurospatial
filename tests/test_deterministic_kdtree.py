@@ -523,3 +523,104 @@ class TestIntegrationWithEnvironment:
         per_sample = env.bin_at(positions)
         runs = per_sample[np.r_[True, per_sample[1:] != per_sample[:-1]]]
         np.testing.assert_array_equal(seq1, runs)
+
+
+# ============================================================================
+# Test Suite: one tie rule for nearest-bin lookup and nearest-center bin_at
+# ============================================================================
+
+
+def _lookup_both_ways(centers, points):
+    """Bins from nearest_bin's query and from a nearest-center layout's bin_at."""
+    from scipy.spatial import cKDTree
+
+    from neurospatial.geometry import NearestBinLocator
+    from neurospatial.ops import _nearest_bin_query
+
+    by_query = _nearest_bin_query(centers, cKDTree(centers), points)
+    by_locator = NearestBinLocator(centers).locate(points)
+    return by_query, by_locator
+
+
+def _grid_ties():
+    """A 6 x 5 grid of unit cells and points equidistant from 2 or 4 centers."""
+    xs, ys = np.meshgrid(np.arange(6) + 0.5, np.arange(5) + 0.5, indexing="ij")
+    centers = np.column_stack([xs.ravel(), ys.ravel()])
+    edges = np.array([[x, y + 0.5] for x in np.arange(6) + 0.5 for y in range(4)])
+    corners = np.array([[x, y] for x in range(1, 6) for y in range(1, 5)])
+    points = np.vstack([edges, corners])
+    # Every center at the minimum distance ties; the lowest index wins.
+    distance = np.linalg.norm(centers[None] - points[:, None], axis=2)
+    tied = np.isclose(distance, distance.min(axis=1, keepdims=True))
+    expected = np.where(tied, np.arange(len(centers)), len(centers)).min(axis=1)
+    return centers, points, expected
+
+
+class TestOneTieRule:
+    """nearest_bin and nearest-center bin_at break ties the same way."""
+
+    def test_grid_edge_and_corner_ties_pick_the_lowest_index(self):
+        centers, points, expected = _grid_ties()
+        by_query, by_locator = _lookup_both_ways(centers, points)
+        np.testing.assert_array_equal(by_query, expected)
+        np.testing.assert_array_equal(by_locator, expected)
+
+    def test_twenty_four_way_tie_picks_the_lowest_index(self):
+        angles = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+        ring = 10.0 * np.column_stack([np.cos(angles), np.sin(angles)])
+        # Put the lowest index on the far side of the KD-tree's first pick.
+        centers = ring[np.roll(np.arange(24), 7)]
+        by_query, by_locator = _lookup_both_ways(centers, np.zeros((1, 2)))
+        assert by_query.tolist() == [0]
+        assert by_locator.tolist() == [0]
+
+    @pytest.mark.parametrize(
+        ("scale", "offset"),
+        [
+            (1.0, 0.0),
+            (0.01, 0.0),
+            (0.1, 1e6),
+            (0.001, 1e7),
+            (25.4, 3.7e6),
+            (1 / 3, -2.5e6),
+        ],
+        ids=["cm", "m", "mm-far", "m-very-far", "inch-far", "thirds-far"],
+    )
+    def test_ties_hold_in_any_unit_and_far_from_origin(self, scale, offset):
+        # Far from the origin the coordinates round, so tied distances differ
+        # by more than any fixed tolerance; the tolerance scales with them.
+        centers, points, expected = _grid_ties()
+        by_query, by_locator = _lookup_both_ways(
+            centers * scale + offset, points * scale + offset
+        )
+        np.testing.assert_array_equal(by_query, expected)
+        np.testing.assert_array_equal(by_locator, expected)
+
+    def test_both_paths_agree_off_ties(self):
+        rng = np.random.default_rng(11)
+        centers = rng.uniform(0, 50, (400, 2))
+        points = rng.uniform(-5, 55, (5000, 2))
+        by_query, by_locator = _lookup_both_ways(centers, points)
+        np.testing.assert_array_equal(by_query, by_locator)
+
+    @pytest.mark.parametrize("offset", [0.0, 3.7e6], ids=["origin", "far"])
+    def test_track_nearest_bin_matches_bin_at_between_bins(self, offset):
+        """On a track, bin_at uses the nearest center, so both calls agree."""
+        import networkx as nx
+
+        graph = nx.Graph()
+        graph.add_node(0, pos=(offset, offset))
+        graph.add_node(1, pos=(offset + 40.3, offset))
+        graph.add_node(2, pos=(offset + 40.3, offset + 30.1))
+        graph.add_edge(0, 1)
+        graph.add_edge(1, 2)
+        env = Environment.from_graph(
+            graph, edge_order=[(0, 1), (1, 2)], bin_size=2.1, track_width=4.0
+        )
+        centers = env.bin_centers
+        between = (centers[:-1] + centers[1:]) / 2
+
+        by_nearest = env.nearest_bin(between)
+        np.testing.assert_array_equal(by_nearest, env.bin_at(between))
+        # A point midway between consecutive bins belongs to the lower one.
+        np.testing.assert_array_equal(by_nearest, np.arange(len(between)))
