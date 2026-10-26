@@ -34,32 +34,13 @@ from neurospatial.encoding._field_metrics import rate_map_coherence
 from neurospatial.encoding._metrics import selectivity, sparsity
 from neurospatial.encoding._metrics import spatial_information as skaggs_information
 from neurospatial.ops import normalize_field
-from neurospatial.ops.alignment import get_2d_rotation_matrix
-from neurospatial.ops.transforms import AffineND, from_rotation_matrix
+from neurospatial.ops.transforms import rotate_2d
 from neurospatial.stats.circular import (
     circular_mean,
     circular_variance,
     mean_resultant_length,
     wrap_angle,
 )
-
-
-def rotate_2d(angle_radians: float) -> AffineND:
-    """
-    Helper to create a 2D rotation transform from angle in radians.
-
-    Parameters
-    ----------
-    angle_radians : float
-        Rotation angle in radians
-
-    Returns
-    -------
-    AffineND
-        2D rotation transformation
-    """
-    rot_matrix = get_2d_rotation_matrix(angle_radians)
-    return from_rotation_matrix(rot_matrix)
 
 
 @pytest.mark.slow

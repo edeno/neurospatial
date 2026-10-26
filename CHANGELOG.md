@@ -98,7 +98,13 @@ Breaking API changes:
 - `convert_to_cm` and `convert_to_pixels` require `cm_per_px` (it defaulted to
   1, labelling pixels as cm). `from_rotation_matrix` refuses matrices that
   are not rotations.
-- `get_2d_rotation_matrix(angle)` takes radians, like every other angle.
+- `map_probabilities` takes the source alignment as one `AffineND`,
+  `source_transform=`, instead of `source_scale`, `source_rotation_matrix`
+  and `source_translation_vector`, so `estimate_transform(source_landmarks,
+  target_landmarks)` passes straight in. `get_2d_rotation_matrix` and
+  `apply_similarity_transform` are removed; the new `rotate_2d(angle, *,
+  center=None)` builds a rotation in radians, about `center` when given, so
+  turning an arena about its center no longer needs `c - s * R @ c`.
 - `map_probabilities` refuses to map when more than 1e-6 of the probability
   sits on source bins whose centers land outside every target bin and more
   than one target bin spacing from every target bin center (a smaller share,

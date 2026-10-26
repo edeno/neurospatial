@@ -92,12 +92,11 @@ Layout engines for discretizing continuous space.
 
 ### [neurospatial.ops.alignment](neurospatial/ops/alignment.md)
 
-Transform and align spatial representations.
+Move probability between the bins of aligned environments.
 
 **Key Functions:**
 
 - `map_probabilities()`: Move probability mass (posteriors, occupancy) onto another environment's bins
-- `get_2d_rotation_matrix()`: Create a 2D rotation matrix from an angle in radians
 
 ### [neurospatial.ops.transforms](neurospatial/ops/transforms.md)
 

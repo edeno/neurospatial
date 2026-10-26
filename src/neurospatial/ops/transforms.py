@@ -1,8 +1,8 @@
 """Coordinate transforms and video calibration.
 
 `AffineND` is one composable, homogeneous affine transform for points of any
-dimension. Build one with a factory (`translate`, `scale_2d`, `flip_y`,
-`identity`, `translate_3d`, `scale_3d`, `from_rotation_matrix`,
+dimension. Build one with a factory (`translate`, `scale_2d`, `rotate_2d`,
+`flip_y`, `identity`, `translate_3d`, `scale_3d`, `from_rotation_matrix`,
 `identity_nd`), estimate one from landmark pairs with `estimate_transform`, or
 calibrate video pixels to centimeters with `calibrate_from_scale_bar`,
 `calibrate_from_landmarks` and `VideoCalibration`. Compose transforms with
@@ -34,6 +34,7 @@ __all__ = [
     # 2D factory functions
     "flip_y",
     "identity",
+    "rotate_2d",
     "scale_2d",
     "translate",
     # 3D factory functions
@@ -410,6 +411,61 @@ def translate(tx: float = 0.0, ty: float = 0.0) -> AffineND:
 
     """
     return AffineND(np.array([[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]]))
+
+
+def rotate_2d(
+    angle: float, *, center: tuple[float, float] | NDArray[np.float64] | None = None
+) -> AffineND:
+    """Create a counter-clockwise rotation by ``angle`` radians.
+
+    Parameters
+    ----------
+    angle : float
+        Rotation angle in radians. Positive turns counter-clockwise (from
+        East toward North).
+    center : (x, y) or None, default=None
+        Point the rotation turns about. None turns about the coordinate
+        origin; to turn an arena in place, pass its center.
+
+    Returns
+    -------
+    AffineND
+        Rotation transformation.
+
+    Raises
+    ------
+    ValueError
+        If ``angle`` is not finite or ``center`` is not two finite numbers.
+
+    Examples
+    --------
+    A quarter turn about the origin:
+
+    >>> transform = rotate_2d(np.pi / 2)
+    >>> np.allclose(transform(np.array([[1.0, 0.0]])), [[0.0, 1.0]])
+    True
+
+    A half turn about an arena center (50, 50) keeps the center in place:
+
+    >>> transform = rotate_2d(np.pi, center=(50.0, 50.0))
+    >>> np.allclose(
+    ...     transform(np.array([[50.0, 50.0], [60.0, 50.0]])), [[50, 50], [40, 50]]
+    ... )
+    True
+
+    """
+    if not np.isfinite(angle):
+        raise ValueError(f"angle must be a finite number of radians, got {angle!r}.")
+    cos, sin = np.cos(angle), np.sin(angle)
+    A = np.array([[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]])
+    if center is not None:
+        pivot = np.asarray(center, dtype=np.float64)
+        if pivot.shape != (2,) or not np.isfinite(pivot).all():
+            raise ValueError(
+                f"center must be two finite coordinates (x, y), got {center!r}."
+            )
+        A[:2, 2] = pivot - A[:2, :2] @ pivot
+    return AffineND(A)
 
 
 def flip_y(frame_height_px: float) -> AffineND:

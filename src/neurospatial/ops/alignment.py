@@ -4,16 +4,11 @@ Moves probability distributions between the bins of different `Environment`
 instances (2D, 3D or higher), for example a posterior decoded in one session
 onto another session's bins.
 
-1.  **Geometric transformations**: `apply_similarity_transform` scales, rotates
-    and translates points, such as a source environment's bin centers, into a
-    target environment's coordinates. `get_2d_rotation_matrix` builds a 2D
-    rotation from an angle in radians; for 3D rotations, use
-    `scipy.spatial.transform.Rotation`.
-
-2.  **Probability mapping**: `map_probabilities` gives each (optionally
-    transformed) source bin's probability to the nearest target bin, summing
-    the mass that lands in the same target bin, and refuses mass that lands
-    farther than a target bin spacing from every target bin.
+`map_probabilities` gives each source bin's probability to the nearest target
+bin, summing the mass that lands in the same target bin, and refuses mass that
+lands farther than a target bin spacing from every target bin. An `AffineND`
+(from `estimate_transform` or the factories in `neurospatial.ops.transforms`)
+first moves the source bin centers into the target's coordinates.
 
 Use it for posteriors and occupancy probabilities from experiments where the
 arena moved, turned or was rescaled, or that were binned differently. Mass is
@@ -34,6 +29,7 @@ from neurospatial._constants import IDW_MIN_DISTANCE
 from neurospatial._exceptions import _format_error
 from neurospatial._validation import is_positive_integer
 from neurospatial.geometry import require_cartesian
+from neurospatial.ops.transforms import AffineND
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
@@ -44,11 +40,7 @@ if TYPE_CHECKING:
         ProbabilityTargetConsumer,
     )
 
-__all__ = [
-    "apply_similarity_transform",
-    "get_2d_rotation_matrix",
-    "map_probabilities",
-]
+__all__ = ["map_probabilities"]
 
 
 def _validated_probabilities(
@@ -117,185 +109,6 @@ def _validated_probabilities(
     return probs
 
 
-def get_2d_rotation_matrix(angle: float) -> NDArray[np.float64]:
-    """Create a 2D counter-clockwise rotation matrix for a given angle.
-
-    Parameters
-    ----------
-    angle : float
-        The rotation angle in radians. Positive is counter-clockwise (from
-        East toward North).
-
-    Returns
-    -------
-    NDArray[np.float64]
-        The 2x2 rotation matrix.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> rotation_matrix = get_2d_rotation_matrix(np.pi / 2)
-    >>> np.allclose(rotation_matrix, [[0, -1], [1, 0]])
-    True
-
-    Rotate a point 90 degrees counter-clockwise:
-
-    >>> point = np.array([[1, 0]])
-    >>> np.allclose(point @ rotation_matrix.T, [[0, 1]])
-    True
-
-    """
-    cos_theta = np.cos(angle)
-    sin_theta = np.sin(angle)
-
-    rotation_matrix = np.array([[cos_theta, -sin_theta], [sin_theta, cos_theta]])
-    return rotation_matrix
-
-
-def apply_similarity_transform(
-    points: NDArray[np.float64],
-    rotation_matrix: NDArray[np.float64],
-    scale: float,
-    translation_vector: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Applies a similarity transformation (rotation, scaling, translation)
-    to a set of points.
-    The transformation is applied as: P_transformed = scale * (R @ P.T).T + t
-
-    Parameters
-    ----------
-    points : NDArray[np.float64]
-        Points to transform, shape (n_points, n_dims).
-    rotation_matrix : NDArray[np.float64]
-        Rotation matrix, shape (n_dims, n_dims).
-    scale : float
-        Uniform scaling factor.
-    translation_vector : NDArray[np.float64]
-        Translation vector, shape (n_dims,).
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Transformed points, shape (n_points, n_dims).
-        If `points` is empty, returns an empty array of shape (0, n_dims).
-
-    Raises
-    ------
-    ValueError
-        If dimensionality mismatches occur or rotation matrix is not square.
-
-    Examples
-    --------
-    Apply a combined rotation, scale, and translation:
-
-    >>> import numpy as np
-    >>> from neurospatial.ops.alignment import (
-    ...     apply_similarity_transform,
-    ...     get_2d_rotation_matrix,
-    ... )
-    >>> # Define points
-    >>> points = np.array([[1, 0], [0, 1], [1, 1]])
-    >>> # Rotate 90 degrees
-    >>> rotation = get_2d_rotation_matrix(np.pi / 2)
-    >>> # Scale by 2
-    >>> scale = 2.0
-    >>> # Translate by (10, 20)
-    >>> translation = np.array([10, 20])
-    >>> transformed = apply_similarity_transform(points, rotation, scale, translation)
-    >>> print(transformed)
-    [[10. 22.]
-     [ 8. 20.]
-     [ 8. 22.]]
-
-    """
-    points = np.asarray(points)
-    rotation_matrix = np.asarray(rotation_matrix)
-    translation_vector = np.asarray(translation_vector)
-    if points.ndim != 2:
-        raise ValueError(
-            f"Points must be a 2D array of shape (n_points, n_dims), got shape "
-            f"{points.shape}"
-        )
-    n_dims = points.shape[1]
-
-    if points.shape[0] == 0:
-        return np.zeros((0, n_dims), dtype=points.dtype)
-
-    if rotation_matrix.shape != (n_dims, n_dims):
-        raise ValueError(
-            f"Rotation matrix shape {rotation_matrix.shape} "
-            f"is not compatible with points_dims {n_dims}.",
-        )
-    if not np.isscalar(scale):
-        raise ValueError("Scale must be a scalar.")
-    if translation_vector.shape != (n_dims,):
-        raise ValueError(
-            f"Translation vector shape {translation_vector.shape} "
-            f"is not compatible with points_dims {n_dims}.",
-        )
-
-    # 1. Rotate
-    rotated_points = (rotation_matrix @ points.T).T
-    # 2. Scale
-    scaled_points = scale * rotated_points
-    # 3. Translate
-    transformed_points = scaled_points + translation_vector
-    return np.asarray(transformed_points, dtype=np.float64)
-
-
-def _transform_source_bin_centers(
-    source_centers: NDArray[np.float64],
-    source_scale: float,
-    source_rotation_matrix: NDArray[np.float64] | None,
-    source_translation_vector: NDArray[np.float64] | None,
-) -> NDArray[np.float64]:
-    """Apply scale, rotation, and translation transforms to source bin centers.
-
-    Parameters
-    ----------
-    source_centers : NDArray[np.float64]
-        Source bin centers, shape (n_bins, n_dims).
-    source_scale : float
-        Scaling factor to apply.
-    source_rotation_matrix : NDArray[np.float64] or None
-        Optional rotation matrix (n_dims × n_dims). For 2D, use `get_2d_rotation_matrix()`.
-        For 3D, use `scipy.spatial.transform.Rotation.as_matrix()`.
-    source_translation_vector : NDArray[np.float64] or None
-        Optional translation vector.
-
-    Returns
-    -------
-    NDArray[np.float64]
-        Transformed bin centers.
-
-    Raises
-    ------
-    ValueError
-        If rotation matrix or translation vector have invalid shapes.
-
-    """
-    n_dims = source_centers.shape[1]
-    rotation = np.eye(n_dims)
-    if source_rotation_matrix is not None:
-        rotation = np.asarray(source_rotation_matrix, dtype=float)
-        if rotation.shape != (n_dims, n_dims):
-            raise ValueError(
-                f"source_rotation_matrix must be a square matrix of shape "
-                f"({n_dims}, {n_dims}) to match source_centers dimensionality, "
-                f"got shape {rotation.shape}."
-            )
-    translation = np.zeros(n_dims)
-    if source_translation_vector is not None:
-        translation = np.asarray(source_translation_vector, dtype=float)
-        if translation.shape != (n_dims,):
-            raise ValueError(
-                f"source_translation_vector must be 1D of length {n_dims}",
-            )
-    return apply_similarity_transform(
-        source_centers, rotation, float(source_scale), translation
-    )
-
-
 def _map_inverse_distance_weighted(
     tree: cKDTree,
     src_centers: NDArray[np.float64],
@@ -356,6 +169,29 @@ def _map_inverse_distance_weighted(
     return target_probs
 
 
+def _check_source_transform(source_transform: object, n_dims: int) -> None:
+    """Refuse a ``source_transform`` that is not an ``n_dims`` AffineND or None."""
+    if source_transform is None:
+        return
+    if not isinstance(source_transform, AffineND):
+        raise TypeError(
+            _format_error(
+                "source_transform must be an AffineND or None, got "
+                f"{type(source_transform).__name__}.",
+                why="the source bin centers are mapped into the target's "
+                "coordinates by one affine transform",
+                fix="fit one with estimate_transform(source_landmarks, "
+                "target_landmarks), or build one with rotate_2d, scale_2d, "
+                "translate or from_rotation_matrix and compose them with @",
+            )
+        )
+    if source_transform.n_dims != n_dims:
+        raise ValueError(
+            f"source_transform is {source_transform.n_dims}-D but the "
+            f"environments are {n_dims}-D."
+        )
+
+
 def _check_max_distance(max_distance: object) -> None:
     """Refuse a ``max_distance`` that is not None or a real number >= 0."""
     if max_distance is None:
@@ -414,10 +250,11 @@ def _require_mass_within(
             "center.",
             why="nearest-bin mapping would pile that mass onto the target's "
             "edge bins, which it never belonged to",
-            fix="check the alignment: scale and rotation act about the "
-            "coordinate origin, so rotating about an arena center c needs "
-            "source_translation_vector = c - source_scale * R @ c. If the "
-            "mismatch is expected, pass a larger max_distance, or "
+            fix="check source_transform: it must map source coordinates into "
+            "the target's, as estimate_transform(source_landmarks, "
+            "target_landmarks) does, and rotate_2d(angle) turns about the "
+            "origin unless given center=. If the mismatch is expected, pass "
+            "a larger max_distance, or "
             "max_distance=math.inf to give every source bin its nearest "
             "target bin however far away",
         )
@@ -432,16 +269,14 @@ def map_probabilities(
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest",
     n_neighbors: int = 1,
     eps: float = IDW_MIN_DISTANCE,
-    source_scale: float = 1.0,
-    source_rotation_matrix: NDArray[np.float64] | None = None,
-    source_translation_vector: NDArray[np.float64] | None = None,
+    source_transform: AffineND | None = None,
     max_distance: float | None = None,
 ) -> NDArray[np.float64]:
     """Map probabilities on source_env onto target_env.
 
-    The source bin centers can first be scaled, rotated and translated into
-    the target's coordinates; each source bin's mass then moves to the
-    nearest target bin (or is split among its nearest target bins).
+    The source bin centers can first be moved into the target's coordinates
+    by ``source_transform``; each source bin's mass then moves to the nearest
+    target bin (or is split among its nearest target bins).
 
     Parameters
     ----------
@@ -462,18 +297,13 @@ def map_probabilities(
     eps : float, default=IDW_MIN_DISTANCE
         Small positive distance added before inverting distances in IDW
         weights, so a source bin on a target center does not divide by zero.
-    source_scale : float, default=1.0
-        Uniform scaling factor to multiply every source bin-center by before
-        querying. Scaling is about the coordinate origin.
-    source_rotation_matrix : Optional[NDArray[np.float64]]
-        If not None, must be a square rotation matrix (shape (n_dims, n_dims)).
-        For 2D environments, use `get_2d_rotation_matrix()`.
-        For 3D environments, use `scipy.spatial.transform.Rotation.as_matrix()`.
-        Applied to source bin centers after scaling but before translation,
-        about the coordinate origin, not the arena's center.
-    source_translation_vector : Optional[NDArray[np.float64]]
-        If not None, must be a 1D array of length n_dims. Applied to source bin centers
-        after scaling and rotation.
+    source_transform : AffineND or None, default=None
+        Map from source coordinates to target coordinates, applied to the
+        source bin centers, with as many dimensions as the environments. Fit
+        it from landmark pairs with ``estimate_transform(source_landmarks,
+        target_landmarks)``, or compose factories such as
+        ``rotate_2d(angle, center=c)``. None uses the source centers as they
+        are.
     max_distance : float or None, default=None
         Farthest a transformed source bin center may be from every target bin
         center while it holds probability, in the target's length units.
@@ -498,13 +328,15 @@ def map_probabilities(
     ------
     ValueError
         If `source_probs` has incorrect shape or NaN, infinite or negative
-        values; if dims mismatch; if `mode` is unknown; if `n_neighbors`,
+        values; if dims mismatch, `source_transform` included; if `mode` is
+        unknown; if `n_neighbors`,
         `eps` or `max_distance` is invalid; or if more than 1e-6 of the
         probability lies beyond `max_distance` (by default, outside every
         target bin and farther than one bin spacing from its centers; the
         message reports how much).
     TypeError
-        If `max_distance` is not a number or None.
+        If `max_distance` is not a number or None, or `source_transform` is
+        not an AffineND or None.
     CartesianOnlyError
         If either environment is polar: bins are matched by nearest Cartesian
         bin center after a similarity transform.
@@ -521,9 +353,9 @@ def map_probabilities(
     Use this for posteriors and occupancy probabilities, and
     :func:`~neurospatial.ops.resample_field` for rate maps.
 
-    The transform is ``x' = R @ (source_scale * x) + t``. Scale and rotation
-    act about the coordinate origin: to rotate an arena by ``R`` about its
-    center ``c``, pass ``source_translation_vector = c - source_scale * R @ c``.
+    A rotation or scaling factory acts about the coordinate origin unless
+    told otherwise: ``rotate_2d(angle, center=c)`` turns an arena about its
+    center ``c``.
 
     Examples
     --------
@@ -533,30 +365,21 @@ def map_probabilities(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.alignment import (
-    ...     get_2d_rotation_matrix,
-    ...     map_probabilities,
-    ... )
+    >>> from neurospatial.ops import map_probabilities, rotate_2d
     >>> rng = np.random.default_rng(0)
     >>> session1 = rng.uniform(0, 100, (5000, 2))
-    >>> center = np.array([50.0, 50.0])
-    >>> turn = get_2d_rotation_matrix(np.pi / 6)
-    >>> session2 = (session1 - center) @ turn.T + center
+    >>> turn = rotate_2d(np.pi / 6, center=(50.0, 50.0))
+    >>> session2 = turn(session1)
     >>> target_env = Environment.from_samples(session1, bin_size=5.0)
     >>> source_env = Environment.from_samples(session2, bin_size=5.0)
     >>> # A posterior peaked where session 2 puts session 1's point (20, 70)
-    >>> peak = (np.array([20.0, 70.0]) - center) @ turn.T + center
+    >>> peak = turn(np.array([[20.0, 70.0]]))
     >>> distance = np.linalg.norm(source_env.bin_centers - peak, axis=1)
     >>> posterior = np.exp(-0.5 * (distance / 5.0) ** 2)
     >>> posterior /= posterior.sum()
     >>> # Undo the turn about the arena center, not about the origin
-    >>> back = get_2d_rotation_matrix(-np.pi / 6)
     >>> mapped = map_probabilities(
-    ...     source_env,
-    ...     target_env,
-    ...     posterior,
-    ...     source_rotation_matrix=back,
-    ...     source_translation_vector=center - back @ center,
+    ...     source_env, target_env, posterior, source_transform=turn.inverse()
     ... )
     >>> bool(np.isclose(mapped.sum(), 1.0))
     True
@@ -569,7 +392,7 @@ def map_probabilities(
 
     >>> occupancy = np.full(source_env.n_bins, 1.0 / source_env.n_bins)
     >>> map_probabilities(
-    ...     source_env, target_env, occupancy, source_rotation_matrix=back
+    ...     source_env, target_env, occupancy, source_transform=rotate_2d(-np.pi / 6)
     ... )  # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ...
@@ -579,6 +402,7 @@ def map_probabilities(
     source_probs = _validated_probabilities(
         source_env, target_env, source_probs, mode, n_neighbors, eps
     )
+    _check_source_transform(source_transform, source_env.n_dims)
     _check_max_distance(max_distance)
     for argument, env in (("source_env", source_env), ("target_env", target_env)):
         require_cartesian(
@@ -605,12 +429,10 @@ def map_probabilities(
         )
         return np.zeros(n_tgt, dtype=float)
 
-    # Transform source bin centers
-    src_centers = _transform_source_bin_centers(
-        source_env.bin_centers,
-        source_scale,
-        source_rotation_matrix,
-        source_translation_vector,
+    src_centers = (
+        source_env.bin_centers
+        if source_transform is None
+        else source_transform(source_env.bin_centers)
     )
 
     # The target environment's cached KD-tree over its bin centers.

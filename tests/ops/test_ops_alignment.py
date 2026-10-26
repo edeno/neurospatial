@@ -1,4 +1,4 @@
-"""Tests for probability mapping and similarity transforms between environments."""
+"""Tests for probability mapping between environments."""
 
 import math
 
@@ -7,12 +7,8 @@ import pytest
 from scipy.spatial import cKDTree
 
 from neurospatial.environment import CartesianSystem
-from neurospatial.ops.alignment import (
-    IDW_MIN_DISTANCE,
-    apply_similarity_transform,
-    get_2d_rotation_matrix,
-    map_probabilities,
-)
+from neurospatial.ops.alignment import IDW_MIN_DISTANCE, map_probabilities
+from neurospatial.ops.transforms import estimate_transform, rotate_2d, scale_2d
 
 
 # Minimal mock Environment class for testing
@@ -38,98 +34,6 @@ class MockEnvironment:
         return float(np.median(distances[:, 1]))
 
 
-class TestGet2dRotationMatrix:
-    """get_2d_rotation_matrix takes radians, like every angle in the package."""
-
-    def test_angle_is_in_radians(self):
-        """A quarter turn is pi / 2; 90 would be read as 90 radians."""
-        np.testing.assert_allclose(
-            get_2d_rotation_matrix(np.pi / 2) @ [1.0, 0.0], [0.0, 1.0], atol=1e-12
-        )
-        assert not np.allclose(get_2d_rotation_matrix(90) @ [1.0, 0.0], [0.0, 1.0])
-
-    def test_identity(self):
-        """A zero angle returns the identity matrix."""
-        R = get_2d_rotation_matrix(0.0)
-        np.testing.assert_allclose(R, np.eye(2), atol=1e-8)
-
-    def test_90_degrees(self):
-        """A quarter turn (pi / 2) is counter-clockwise."""
-        R = get_2d_rotation_matrix(np.pi / 2)
-        expected = np.array([[0, -1], [1, 0]])
-        np.testing.assert_allclose(R, expected, atol=1e-8)
-
-    def test_180_degrees(self):
-        """A half turn (pi)."""
-        R = get_2d_rotation_matrix(np.pi)
-        expected = np.array([[-1, 0], [0, -1]])
-        np.testing.assert_allclose(R, expected, atol=1e-8)
-
-    def test_negative_angle(self):
-        """A negative angle turns clockwise."""
-        R = get_2d_rotation_matrix(-np.pi / 2)
-        expected = np.array([[0, 1], [-1, 0]])
-        np.testing.assert_allclose(R, expected, atol=1e-8)
-
-
-class TestApplySimilarityTransform:
-    """Tests for apply_similarity_transform function."""
-
-    def test_identity_transform(self):
-        """Test identity transformation."""
-        points = np.array([[1, 2], [3, 4]])
-        R = np.eye(2)
-        s = 1.0
-        t = np.zeros(2)
-        transformed = apply_similarity_transform(points, R, s, t)
-        np.testing.assert_allclose(transformed, points)
-
-    def test_rotation_scale_translate(self):
-        """Test combined rotation, scaling, and translation."""
-        points = np.array([[1, 0], [0, 1]])
-        R = get_2d_rotation_matrix(np.pi / 2)
-        s = 2.0
-        t = np.array([1, 1])
-        transformed = apply_similarity_transform(points, R, s, t)
-        expected = np.array([[1, 3], [-1, 1]])
-        np.testing.assert_allclose(transformed, expected, atol=1e-8)
-
-    def test_empty_points(self):
-        """Test with empty points array."""
-        points = np.empty((0, 2))
-        R = np.eye(2)
-        s = 1.0
-        t = np.zeros(2)
-        transformed = apply_similarity_transform(points, R, s, t)
-        assert transformed.size == 0
-
-    def test_invalid_shapes(self):
-        """Test error on invalid shapes."""
-        points = np.array([[1, 2, 3]])  # 3D point
-        R = np.eye(2)  # 2D rotation
-        s = 1.0
-        t = np.zeros(2)  # 2D translation
-        with pytest.raises(ValueError):
-            apply_similarity_transform(points, R, s, t)
-
-    @pytest.mark.parametrize("points", [np.array([1.0, 2.0]), np.array(3.0)])
-    def test_points_must_be_two_dimensional(self, points):
-        """A single point given as a 1-D array raises the documented ValueError."""
-        with pytest.raises(ValueError, match="Points must be a 2D array"):
-            apply_similarity_transform(points, np.eye(2), 1.0, np.zeros(2))
-
-    def test_scale_only(self):
-        """Test scaling only."""
-        points = np.array([[1, 2], [3, 4]])
-        R = np.eye(2)
-        t = np.zeros(2)
-        transformed = apply_similarity_transform(
-            points, R, scale=2.0, translation_vector=t
-        )
-        expected = np.array([[2, 4], [6, 8]])
-        np.testing.assert_allclose(transformed, expected)
-
-
 class TestMapProbabilities:
     """Tests for map_probabilities function."""
 
@@ -150,11 +54,39 @@ class TestMapProbabilities:
         src_probs = np.array([0.7, 0.3])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        R = get_2d_rotation_matrix(np.pi / 2)
         tgt_probs = map_probabilities(
-            src_env, tgt_env, src_probs, source_rotation_matrix=R
+            src_env, tgt_env, src_probs, source_transform=rotate_2d(np.pi / 2)
         )
         np.testing.assert_allclose(tgt_probs, [0.7, 0.3])
+
+    def test_fitted_transform_plugs_in(self):
+        """estimate_transform(source landmarks, target landmarks) is the argument."""
+        src_bins = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        known = rotate_2d(np.pi / 3, center=(0.5, 0.5)) @ scale_2d(2.0)
+        tgt_env = MockEnvironment(known(src_bins), 2)
+        fitted = estimate_transform(src_bins, known(src_bins), kind="similarity")
+        mapped = map_probabilities(
+            MockEnvironment(src_bins, 2),
+            tgt_env,
+            np.array([0.2, 0.3, 0.5]),
+            source_transform=fitted,
+        )
+        np.testing.assert_allclose(mapped, [0.2, 0.3, 0.5])
+
+    def test_source_transform_must_be_an_affine_of_the_same_dimension(self):
+        src_env = MockEnvironment(np.array([[0.0, 0.0], [1.0, 0.0]]), 2)
+        probs = np.array([0.5, 0.5])
+        with pytest.raises(TypeError, match="AffineND or None"):
+            map_probabilities(src_env, src_env, probs, source_transform=np.eye(3))
+        with pytest.raises(ValueError, match="3-D but the environments are 2-D"):
+            map_probabilities(
+                src_env,
+                src_env,
+                probs,
+                source_transform=estimate_transform(
+                    np.eye(4)[:, :3], np.eye(4)[:, :3], kind="rigid"
+                ),
+            )
 
     def test_duplicate_mapping(self):
         """Test multiple source bins mapping to same target bin."""
@@ -213,7 +145,9 @@ class TestMapProbabilities:
         src_probs = np.array([0.6, 0.4])
         src_env = MockEnvironment(src_bins, 2)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        tgt_probs = map_probabilities(src_env, tgt_env, src_probs, source_scale=2.0)
+        tgt_probs = map_probabilities(
+            src_env, tgt_env, src_probs, source_transform=scale_2d(2.0)
+        )
         np.testing.assert_allclose(tgt_probs, [0.6, 0.4])
 
     def test_map_probabilities_nan_centers_raises(self):
@@ -429,14 +363,12 @@ class TestMapProbabilitiesMaxDistance:
         """
         fine, coarse = square
         probs = np.full(fine.n_bins, 1.0 / fine.n_bins)
-        rotation = get_2d_rotation_matrix(np.pi / 4)
-        moved = 0.9 * fine.bin_centers @ rotation.T
+        turn = rotate_2d(np.pi / 4) @ scale_2d(0.9)
+        moved = turn(fine.bin_centers)
         distance, _ = coarse.bin_center_tree().query(moved)
         expected = f"{np.mean(distance > 10.0):.1%} of the source probability"
         with pytest.raises(ValueError, match=expected) as error:
-            map_probabilities(
-                fine, coarse, probs, source_rotation_matrix=rotation, source_scale=0.9
-            )
+            map_probabilities(fine, coarse, probs, source_transform=turn)
         assert "one target bin spacing (10)" in str(error.value)
         assert "math.inf" in str(error.value)
 
@@ -444,8 +376,7 @@ class TestMapProbabilitiesMaxDistance:
             fine,
             coarse,
             probs,
-            source_rotation_matrix=rotation,
-            source_scale=0.9,
+            source_transform=turn,
             max_distance=math.inf,
         )
         assert anywhere.sum() == pytest.approx(1.0)

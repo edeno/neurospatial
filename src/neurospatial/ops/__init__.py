@@ -45,11 +45,7 @@ from neurospatial.ops._transitions import (
 from neurospatial.ops._types import KernelMode
 
 # Alignment operations
-from neurospatial.ops.alignment import (
-    apply_similarity_transform,
-    get_2d_rotation_matrix,
-    map_probabilities,
-)
+from neurospatial.ops.alignment import map_probabilities
 
 # Basis functions (GLM spatial basis)
 from neurospatial.ops.basis import (
@@ -164,6 +160,7 @@ from neurospatial.ops.transforms import (
     from_rotation_matrix,
     identity,
     identity_nd,
+    rotate_2d,
     scale_2d,
     scale_3d,
     simple_scale,
@@ -189,8 +186,6 @@ from neurospatial.ops.visibility import (
 __all__ = [
     "MRFBasis",
     # Alignment
-    "apply_similarity_transform",
-    "get_2d_rotation_matrix",
     "map_probabilities",
     # Binning
     "TieBreakStrategy",
@@ -237,6 +232,7 @@ __all__ = [
     # Transforms - 2D factories
     "flip_y",
     "identity",
+    "rotate_2d",
     "scale_2d",
     "translate",
     # Transforms - 3D factories

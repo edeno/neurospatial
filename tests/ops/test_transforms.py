@@ -1,7 +1,6 @@
-"""Tests for transforms.py calibration helpers.
+"""Tests for transforms.py: the 2-D rotation factory and calibration helpers.
 
-These tests cover the video calibration functions added in v0.5.0
-for pixel↔cm coordinate conversion.
+The calibration tests cover pixel↔cm coordinate conversion.
 """
 
 import numpy as np
@@ -13,8 +12,45 @@ from neurospatial.ops.transforms import (
     calibrate_from_landmarks,
     calibrate_from_scale_bar,
     flip_y,
+    rotate_2d,
     scale_2d,
 )
+
+
+class TestRotate2d:
+    """rotate_2d takes radians and turns counter-clockwise, about a chosen center."""
+
+    def test_angle_is_in_radians_and_counter_clockwise(self):
+        assert_allclose(
+            rotate_2d(np.pi / 2)(np.array([[1.0, 0.0]])), [[0.0, 1.0]], atol=1e-12
+        )
+        assert_allclose(
+            rotate_2d(-np.pi / 2)(np.array([[1.0, 0.0]])), [[0.0, -1.0]], atol=1e-12
+        )
+        assert not np.allclose(rotate_2d(90)(np.array([[1.0, 0.0]])), [[0.0, 1.0]])
+
+    def test_zero_angle_is_the_identity(self):
+        assert_allclose(rotate_2d(0.0).A, np.eye(3))
+
+    def test_center_stays_in_place_and_distances_are_kept(self):
+        center = np.array([50.0, 20.0])
+        turn = rotate_2d(0.7, center=center)
+        points = np.array([[50.0, 20.0], [60.0, 20.0], [50.0, 35.0]])
+        moved = turn(points)
+        assert_allclose(moved[0], center, atol=1e-12)
+        assert_allclose(
+            np.linalg.norm(moved - center, axis=1),
+            np.linalg.norm(points - center, axis=1),
+        )
+        assert_allclose(turn.inverse()(moved), points, atol=1e-12)
+
+    @pytest.mark.parametrize(
+        ("angle", "center"),
+        [(np.nan, None), (np.inf, None), (1.0, (1.0, np.nan)), (1.0, (1.0, 2.0, 3.0))],
+    )
+    def test_non_finite_angle_or_bad_center_is_refused(self, angle, center):
+        with pytest.raises(ValueError):
+            rotate_2d(angle, center=center)
 
 
 class TestCalibrateFromScaleBar:

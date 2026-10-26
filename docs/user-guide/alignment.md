@@ -282,10 +282,11 @@ nearest target bin and the masses are summed, so the total is kept. Use it for
 posteriors and occupancy probabilities, not for rate maps. To move a rate map
 onto other bins, use `resample_field`, which copies each rate.
 
-The source bin centers are first scaled, rotated and translated into the
-target's coordinates, as `x' = R @ (source_scale * x) + t`. Scale and rotation
-act about the coordinate origin, so to undo a turn `R` about the arena center
-`c`, pass `source_translation_vector = c - source_scale * R @ c`. Source bins
+Pass `source_transform=` to first move the source bin centers into the
+target's coordinates. It is one `AffineND`: fit it from landmarks with
+`estimate_transform(source_landmarks, target_landmarks)`, or compose the
+factories, such as `rotate_2d(angle, center=c)` for a turn about the arena
+center `c` (a rotation without `center=` turns about the origin). Source bins
 that hold probability but land outside every target bin, and farther than one
 target bin spacing from every target bin center, would be piled onto the
 target's edge bins; when they hold more than 1e-6 of the probability the
@@ -302,36 +303,33 @@ bins:
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial.ops import get_2d_rotation_matrix, map_probabilities
+from neurospatial.ops import map_probabilities, rotate_2d
 
 rng = np.random.default_rng(0)
 session1 = rng.uniform(0, 100, (5000, 2))
-center = np.array([50.0, 50.0])
-turn = get_2d_rotation_matrix(np.pi / 6)  # radians, counter-clockwise
-session2 = (session1 - center) @ turn.T + center
+# Radians, counter-clockwise, about the arena center
+turn = rotate_2d(np.pi / 6, center=(50.0, 50.0))
+session2 = turn(session1)
 target_env = Environment.from_samples(session1, bin_size=5.0, units="cm")
 source_env = Environment.from_samples(session2, bin_size=5.0, units="cm")
 
 # A posterior peaked where session 2 puts session 1's point (20, 70)
-peak = (np.array([20.0, 70.0]) - center) @ turn.T + center
+peak = turn(np.array([[20.0, 70.0]]))
 distance = np.linalg.norm(source_env.bin_centers - peak, axis=1)
 posterior = np.exp(-0.5 * (distance / 5.0) ** 2)
 posterior /= posterior.sum()
 
-back = get_2d_rotation_matrix(-np.pi / 6)
+# Map session 2's coordinates back into session 1's
 mapped = map_probabilities(
-    source_env,
-    target_env,
-    posterior,
-    source_rotation_matrix=back,
-    source_translation_vector=center - back @ center,
+    source_env, target_env, posterior, source_transform=turn.inverse()
 )
 assert np.isclose(mapped.sum(), 1.0)
 assert np.linalg.norm(target_env.bin_centers[mapped.argmax()] - [20, 70]) < 5
 ```
 
 For 3D environments, build the rotation with
-`scipy.spatial.transform.Rotation(...).as_matrix()` and pass it the same way.
+`from_rotation_matrix(scipy.spatial.transform.Rotation(...).as_matrix())`, or
+fit it with `estimate_transform`, and pass it the same way.
 
 ## Complete Alignment Workflow
 
