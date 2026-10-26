@@ -4,6 +4,7 @@ from typing import Any, ClassVar
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry import grid_cell_centers
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.utils import check_grid_size_safety
@@ -127,16 +128,10 @@ class ImageMaskLayout(_GridMixin):
             (y_edges[0], y_edges[-1]),
         )
 
-        x_centers = (np.arange(n_cols) + 0.5) * pixel_size_x
-        y_centers = (np.arange(n_rows) + 0.5) * pixel_size_y
-        # indexing="ij" over (x_centers, y_centers): outer loop x, inner loop y,
-        # giving the same x-major ravel order as grid_shape == (n_cols, n_rows).
-        xv, yv = np.meshgrid(x_centers, y_centers, indexing="ij")
-        full_grid_bin_centers = np.stack((xv.ravel(), yv.ravel()), axis=1)
-
         # image_mask is (rows, cols) == (y, x); transpose to (x, y) so its ravel
-        # aligns row-for-row with full_grid_bin_centers above.
+        # aligns row-for-row with the x-major cell centers of grid_shape.
         self.active_mask = np.ascontiguousarray(image_mask.T)
         self._assign_cells(
-            full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
+            grid_cell_centers(self.grid_edges),
+            connect_diagonal=connect_diagonal_neighbors,
         )
