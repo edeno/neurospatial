@@ -3179,6 +3179,25 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   and the `"gaussian_kde"` method) use the dense matrix exponential, since
   the heat kernel has no zero entries: a 2,601-bin kernel takes 1.0 s instead
   of 29 s. Values agree to within 1e-15.
+- Graph distances run one multi-source shortest-path search and build the
+  bin adjacency in one pass over the edges. `distance_field` from 1,000
+  sources on a 10,404-bin grid takes 14 ms instead of 0.9 s; geodesic
+  `compute_egocentric_distance` to moving targets (20,000 samples) takes
+  1.5 s instead of 55 s; geodesic `neighbors_within` for 463 centers takes
+  25 ms instead of 0.2 s and returns each neighborhood sorted. Distances are
+  bit-identical, and geodesic `decoding_error` shares the same search.
+- `graph_convolve(normalize=True)` normalizes with two matrix-vector
+  products instead of copying the kernel matrix twice: on 4,615 bins, peak
+  memory drops from 341 MB to 0.2 MB and time from 19 ms to 2.4 ms.
+- Linear time allocation (`time_allocation="linear"`) locates every
+  trajectory piece in one call instead of one call per sample: 20,000
+  samples on a 2-D grid, hexagonal or polygon environment take about half
+  the time, with bit-identical occupancy.
+- Every bin-graph operation (geodesic basis functions, `neighbor_reduce` and
+  random-walk transitions included) reads the graph through one adjacency
+  builder, so all of them refuse a graph whose nodes are not the bins
+  `0 .. n_bins - 1` or whose edges lack the distance attribute, instead of
+  silently counting edges.
 - Position lookup in a polygon arena (`from_polygon`) or a masked triangular
   mesh tests points against a prepared polygon: containment of a million
   points in a 257-vertex arena takes 0.045 s instead of 0.30 s, with
