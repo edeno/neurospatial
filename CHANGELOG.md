@@ -3200,7 +3200,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   random-walk transitions included) reads the graph through one adjacency
   builder, so all of them refuse a graph whose nodes are not the bins
   `0 .. n_bins - 1` or whose edges lack the distance attribute, instead of
-  silently counting edges.
+  silently counting edges. They also refuse a directed graph or a
+  multigraph: `distance_field` ignored edge direction while
+  `neighbors_within` followed it, and parallel edges summed their lengths.
 - Position lookup in a polygon arena (`from_polygon`) or a masked triangular
   mesh tests points against a prepared polygon: containment of a million
   points in a 257-vertex arena takes 0.045 s instead of 0.30 s, with
