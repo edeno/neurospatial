@@ -787,7 +787,6 @@ def has_phase_precession(
     phases: NDArray[np.float64],
     *,
     alpha: float = 0.05,
-    min_correlation: float = 0.2,
     slope_bounds: tuple[float, float] = (-2 * np.pi, 2 * np.pi),
     position_range: tuple[float, float] | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
@@ -797,6 +796,9 @@ def has_phase_precession(
 ) -> bool:
     """Quick check for significant phase precession.
 
+    The screen is the shuffle test of :func:`compute_phase_precession`:
+    ``p_value < alpha`` with a negative fitted slope.
+
     Parameters
     ----------
     positions : ndarray of shape (n_spikes,)
@@ -805,8 +807,6 @@ def has_phase_precession(
         Spike phase relative to LFP theta in radians or degrees.
     alpha : float, default=0.05
         Significance level for the shuffle test.
-    min_correlation : float, default=0.2
-        Minimum correlation coefficient required.
     slope_bounds : tuple of float, default=(-2*pi, 2*pi)
         Search range for the phase change across the position range, in
         radians; see :func:`compute_phase_precession`.
@@ -830,8 +830,8 @@ def has_phase_precession(
     Returns
     -------
     bool
-        True if significant phase precession detected (p < alpha,
-        r >= min_correlation, and negative slope). False also when the
+        True if significant phase precession detected (``p_value < alpha``
+        and a negative slope). False also when the
         spikes cannot support a fit: fewer than ``min_spikes`` valid spikes,
         or spike positions that do not vary.
 
@@ -846,6 +846,18 @@ def has_phase_precession(
     See Also
     --------
     compute_phase_precession : Full analysis with metrics.
+
+    Notes
+    -----
+    The shuffle p-value is calibrated: on spikes with no phase-position
+    relationship, ``p_value < 0.05`` occurred in 2.3-5.3% of 300 simulated
+    cells for each of 10, 20, 50 and 200 spikes. Because only negative
+    slopes count, the screen's false-positive rate is about ``alpha / 2``.
+    There is no correlation cutoff: the circular-linear ``correlation``
+    of untuned spikes shrinks with the spike count (it reached 0.2 in 87%
+    of untuned 10-spike cells and 2% of 200-spike cells), so a fixed cutoff
+    means a different error rate at every spike count, and real but weak
+    precession can have a small correlation and a small p-value.
 
     Examples
     --------
@@ -870,11 +882,7 @@ def has_phase_precession(
         )
     except _InsufficientSpikesError:
         return False
-    return (
-        result.p_value < alpha
-        and result.correlation >= min_correlation
-        and result.slope < 0
-    )
+    return result.p_value < alpha and result.slope < 0
 
 
 def plot_phase_precession(

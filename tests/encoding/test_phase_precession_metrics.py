@@ -401,9 +401,7 @@ class TestHasPhasePrecession:
             2 * np.pi
         )
 
-        result = has_phase_precession(
-            positions, phases, alpha=0.05, min_correlation=0.2, rng=0
-        )
+        result = has_phase_precession(positions, phases, alpha=0.05, rng=0)
 
         assert result is True
 
@@ -415,9 +413,7 @@ class TestHasPhasePrecession:
         positions = rng.uniform(0, 100, 50)
         phases = rng.uniform(0, 2 * np.pi, 50)
 
-        result = has_phase_precession(
-            positions, phases, alpha=0.05, min_correlation=0.2, rng=0
-        )
+        result = has_phase_precession(positions, phases, alpha=0.05, rng=0)
 
         assert result is False
 
@@ -506,29 +502,70 @@ class TestHasPhasePrecession:
         with pytest.raises(ValueError, match=match):
             has_phase_precession(positions, phases, **kwargs)
 
-    def test_custom_thresholds(self) -> None:
-        """Custom thresholds should affect result."""
-        from neurospatial.encoding.phase_precession import has_phase_precession
+    def test_detects_weak_precession_with_low_correlation(self) -> None:
+        """A weakly coupled precessing cell is detected by its shuffle p-value.
 
-        rng = np.random.default_rng(42)
-        positions = np.linspace(0, 50, 100)
-        true_slope = -0.1
-        phases = (np.pi + true_slope * positions + rng.normal(0, 0.2, 100)) % (
+        Phase coupling is weak (von Mises kappa 0.5) and the circular-linear
+        correlation is only about 0.09, yet the fitted precession is far
+        stronger than chance; the screen depends on the calibrated p-value,
+        not on a correlation cutoff.
+        """
+        from neurospatial.encoding.phase_precession import (
+            compute_phase_precession,
+            has_phase_precession,
+        )
+
+        stimulus = np.random.default_rng(2)
+        width = 28.7  # cm
+        positions = stimulus.uniform(0, width, 287)
+        phases = (5.5 - 5.0 * positions / width + stimulus.vonmises(0, 0.5, 287)) % (
             2 * np.pi
         )
+        result = compute_phase_precession(positions, phases, n_shuffles=200, rng=0)
+        assert result.correlation < 0.1
+        assert result.p_value < 0.01
+        assert has_phase_precession(positions, phases, rng=0) is True
 
-        # With strict thresholds, may not pass
-        result_strict = has_phase_precession(
-            positions, phases, alpha=0.01, min_correlation=0.5
-        )
-        # With lenient thresholds, more likely to pass
-        result_lenient = has_phase_precession(
-            positions, phases, alpha=0.1, min_correlation=0.1
+    def test_false_positive_rate_without_phase_coupling(self) -> None:
+        """Untuned spikes screen positive at most at rate alpha.
+
+        The shuffle p-value is calibrated even at min_spikes=10, and only
+        negative slopes count, so the expected rate is about alpha / 2.
+        """
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        stimulus = np.random.default_rng(5)
+        hits = [
+            has_phase_precession(
+                stimulus.uniform(0, 30, 10),
+                stimulus.uniform(0, 2 * np.pi, 10),
+                n_shuffles=99,
+                rng=rep,
+            )
+            for rep in range(300)
+        ]
+        assert np.mean(hits) <= 0.05
+
+    def test_alpha_sets_the_screen(self) -> None:
+        """The screen is p_value < alpha with a negative slope."""
+        from neurospatial.encoding.phase_precession import (
+            compute_phase_precession,
+            has_phase_precession,
         )
 
-        # Lenient should be at least as permissive as strict
-        if result_strict:
-            assert result_lenient is True
+        stimulus = np.random.default_rng(42)
+        positions = stimulus.uniform(0, 40, 25)
+        phases = (
+            np.pi - 2 * np.pi * positions / 40 + stimulus.vonmises(0, 0.7, 25)
+        ) % (2 * np.pi)
+        p_value = compute_phase_precession(
+            positions, phases, n_shuffles=200, rng=0
+        ).p_value
+        assert 0.0 < p_value < 1.0
+        assert has_phase_precession(positions, phases, alpha=p_value, rng=0) is False
+        assert (
+            has_phase_precession(positions, phases, alpha=p_value + 1e-9, rng=0) is True
+        )
 
 
 class TestPlotPhasePrecession:
