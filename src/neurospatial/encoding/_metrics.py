@@ -670,9 +670,9 @@ def batch_grid_scores(
     # ValueError. Callers who want a 1D distance-correlation profile
     # should use `spatial_autocorrelation_radial` directly and feed the
     # result into `periodicity_score`.
-    from neurospatial.encoding.grid import _detect_grid_method
+    from neurospatial.encoding.grid import _has_rectangular_grid
 
-    if _detect_grid_method(env) != "fft":
+    if not _has_rectangular_grid(env):
         scores.fill(np.nan)
         return BatchScoresResult(scores=scores, failures=failures)
 

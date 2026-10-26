@@ -281,16 +281,27 @@ class TestFFTAutocorrelationNeedsRectangularCells:
 
         assert np.isnan(table["grid_score"]).all()
 
-    def test_sparse_grid_is_refused_with_the_same_error(self) -> None:
+    def test_inactive_cells_are_left_out_like_unvisited_bins(self) -> None:
         from neurospatial.encoding.grid import spatial_autocorrelation
 
+        # Most of the grid is inactive, as for a narrow arena inside its
+        # bounding box; those cells are missing bins, not silent ones.
         mask = np.zeros((10, 10), dtype=bool)
         mask[:3, :] = True
         env = Environment.from_grid_mask(mask, grid_edges=(np.arange(11.0),) * 2)
         rate = np.random.default_rng(2).random(env.n_bins)
+        strip = Environment.from_grid_mask(
+            np.ones((3, 10), dtype=bool),
+            grid_edges=(np.arange(4.0), np.arange(11.0)),
+        )
 
-        with pytest.raises(NotImplementedError, match="only 30 of its 100"):
-            spatial_autocorrelation(env, rate)
+        autocorr = spatial_autocorrelation(env, rate)
+        expected = spatial_autocorrelation(strip, rate)
+
+        assert autocorr.shape == (19, 19)
+        # Shifts past the strip's three rows have no overlap at all.
+        assert np.isnan(autocorr[:7]).all() and np.isnan(autocorr[12:]).all()
+        np.testing.assert_allclose(autocorr[7:12], expected, atol=1e-12)
 
 
 class TestFFTAutocorrelationLagsArePhysical:
@@ -494,11 +505,6 @@ def _pixel_size_cases():
             )
         )
 
-    def sparse():
-        mask = np.zeros((10, 10), dtype=bool)
-        mask[:3, :] = True
-        return Environment.from_grid_mask(mask, grid_edges=(np.arange(11.0),) * 2)
-
     grid = np.stack(np.meshgrid(np.linspace(0, 40, 41), np.linspace(0, 40, 41)), -1)
     return {
         "hexagonal": lambda: Environment.from_samples(
@@ -508,7 +514,6 @@ def _pixel_size_cases():
             endpoints=[(0.0, 0.0), (40.0, 0.0)], bin_size=2.0
         ),
         "uneven": uneven,
-        "sparse": sparse,
         "polar": lambda: Environment.from_polar_egocentric(
             distance_range=(0.0, 30.0),
             angle_range=(-np.pi, np.pi),

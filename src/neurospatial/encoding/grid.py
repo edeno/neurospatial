@@ -66,7 +66,7 @@ Brandon, M. P., Bogaard, A. R., Libby, C. P., Connerney, M. A., Guber, K., &
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -222,9 +222,10 @@ def spatial_autocorrelation(
         If all firing rates are NaN or constant.
     NotImplementedError
         If ``env`` is not a regular 2D grid of rectangular cells, one width
-        along each axis, with at least half of them active, for example a
-        hexagonal, mesh, track or 3D environment, or a grid with uneven edges
-        (use :func:`spatial_autocorrelation_radial` instead).
+        along each axis, for example a hexagonal, mesh, track or 3D
+        environment, or a grid with uneven edges (use
+        :func:`spatial_autocorrelation_radial` instead). Inactive grid cells
+        are fine: they are missing bins, left out like unvisited ones.
     CartesianOnlyError
         If ``env`` is polar: a ``(distance, angle)`` grid is not a Cartesian
         lattice, so its 2D autocorrelogram and grid score are meaningless.
@@ -279,7 +280,7 @@ def spatial_autocorrelation(
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
-    _require_fft_grid(env, "spatial_autocorrelation()")
+    _require_rectangular_grid(env, "spatial_autocorrelation()")
     _validate_autocorr_input(env, firing_rate)
 
     rate_map = np.full(env.grid_shape, np.nan)
@@ -289,8 +290,8 @@ def spatial_autocorrelation(
     return _square_lags(autocorr, cell_widths)
 
 
-def _require_fft_grid(env: Environment, operation: str) -> None:
-    """Refuse environments without a regular 2D grid for the FFT lag map.
+def _require_rectangular_grid(env: Environment, operation: str) -> None:
+    """Refuse environments without a regular 2D grid for the 2D lag map.
 
     Parameters
     ----------
@@ -304,9 +305,8 @@ def _require_fft_grid(env: Environment, operation: str) -> None:
     CartesianOnlyError
         If ``env`` is polar.
     NotImplementedError
-        If ``env`` has no 2D grid of rectangular cells, its cells along an
-        axis are not one width, or fewer than half of its grid cells are
-        active.
+        If ``env`` has no 2D grid of rectangular cells or its cells along
+        an axis are not one width.
     """
     require_cartesian(
         env.coordinate_system,
@@ -317,14 +317,14 @@ def _require_fft_grid(env: Environment, operation: str) -> None:
             "Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    if _detect_grid_method(env) == "fft":
+    if _has_rectangular_grid(env):
         return
     if len(env.grid_edges) != 2:
         found = (
             f"this environment's {env.layout_type} layout has no 2D grid of "
             "rectangular cells"
         )
-    elif not _uniform_spacing(env.grid_edges):
+    else:
         axis = next(
             axis
             for axis, edge in enumerate(env.grid_edges)
@@ -335,14 +335,12 @@ def _require_fft_grid(env: Environment, operation: str) -> None:
             f"its cells along axis {axis} are not all one width: widths "
             f"range from {widths.min():.6g} to {widths.max():.6g}"
         )
-    else:
-        found = f"only {env.n_bins} of its {env.active_mask.size} grid cells are active"
     raise NotImplementedError(
         _format_error(
             f"{operation} needs a regular 2D grid of rectangular cells, one width "
-            f"along each axis, with at least half of them active; {found}.",
+            f"along each axis; {found}.",
             why=(
-                "Why: the FFT shifts the rate map one cell at a time along "
+                "Why: the autocorrelogram shifts the rate map one cell at a time along "
                 "rows and columns, so each shift is one distance only when "
                 "the cells along an axis share one width."
             ),
@@ -379,8 +377,8 @@ def autocorrelation_pixel_size(env: Environment) -> float:
         If ``env`` is polar.
     NotImplementedError
         If :func:`spatial_autocorrelation` refuses ``env``: no regular 2D
-        grid of rectangular cells (hexagonal, mesh, track or 3D layouts),
-        uneven cells along an axis, or fewer than half of the cells active.
+        grid of rectangular cells (hexagonal, mesh, track or 3D layouts) or
+        uneven cells along an axis.
 
     Examples
     --------
@@ -393,7 +391,7 @@ def autocorrelation_pixel_size(env: Environment) -> float:
     >>> autocorrelation_pixel_size(env)
     2.0
     """
-    _require_fft_grid(env, "autocorrelation_pixel_size()")
+    _require_rectangular_grid(env, "autocorrelation_pixel_size()")
     return min(float(np.median(np.diff(edge))) for edge in env.grid_edges)
 
 
@@ -527,37 +525,16 @@ def _validate_autocorr_input(
         )
 
 
-def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
+def _has_rectangular_grid(env: Environment) -> bool:
+    """Whether ``env`` is a 2D grid of rectangular cells, one width per axis.
+
+    Hexagonal lattices also have a 2D grid shape but no rectangular cell
+    edges: their rows are offset, so shifting the map by whole cells is not a
+    2D lag. A shift of k cells is one distance only when the cells along an
+    axis share one width; the two axes may differ, and the lags are rescaled
+    to them.
     """
-    Detect whether environment supports FFT-based autocorrelation.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment to check.
-
-    Returns
-    -------
-    method : {'fft', 'graph'}
-        'fft' if environment is a regular 2D grid of rectangular cells,
-        'graph' otherwise.
-    """
-    # Hexagonal lattices also have a 2D grid shape, but no rectangular cell
-    # edges: their rows are offset, so an FFT over them is not a 2D lag map.
-    if len(env.grid_edges) != 2:
-        return "graph"
-    # A lag of k cells is a distance only when the cells along an axis share
-    # one width; the two axes may differ, and the lags are rescaled to them.
-    if not _uniform_spacing(env.grid_edges):
-        return "graph"
-
-    # Check if grid is reasonably regular (not too sparse): if less than 50%
-    # of bins are active, treat it as irregular.
-    active_mask = env.active_mask
-    if np.sum(active_mask) / active_mask.size < 0.5:
-        return "graph"
-
-    return "fft"
+    return len(env.grid_edges) == 2 and _uniform_spacing(env.grid_edges)
 
 
 # Cell widths may differ by this fraction of the median width and still count
