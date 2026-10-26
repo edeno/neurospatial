@@ -1085,9 +1085,12 @@ def chebyshev_filter_basis(
     # Estimate largest eigenvalue for rescaling
     lambda_max = _estimate_spectral_radius(symmetric)
 
-    # Rescale Laplacian to [-1, 1]: L_scaled = 2*L/lambda_max - I
-    laplacian_scaled = (2.0 / lambda_max) * laplacian - sparse.identity(
-        n_bins, format="csr"
+    # Rescale Laplacian to [-1, 1]: L_scaled = 2*L/lambda_max - I. When no two
+    # bins share a face, L = 0 and every eigenvalue is 0, which any positive
+    # scale maps to -1, so L_scaled = -I.
+    identity = sparse.identity(n_bins, format="csr")
+    laplacian_scaled = (
+        (2.0 / lambda_max) * laplacian - identity if lambda_max > 0 else -identity
     )
 
     # Create delta vectors at centers

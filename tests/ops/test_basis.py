@@ -670,6 +670,24 @@ def test_chebyshev_couples_face_neighbors_only(uniform_grid, spacing):
     assert_allclose(basis[1, corner], 0.0, atol=1e-15)
 
 
+def test_chebyshev_bins_sharing_no_face_keep_isolated_filters():
+    """Bins touching only at a corner have a zero generator: T_k = (-1)^k delta.
+
+    With every eigenvalue 0 there is no spectral radius to rescale by; each
+    filter stays on its own bin instead of dividing by zero.
+    """
+    edges = np.array([0.0, 1.0, 2.0])
+    env = Environment.from_grid_mask(
+        np.array([[True, False], [False, True]]), grid_edges=(edges, edges)
+    )
+    assert env.n_bins == 2
+
+    basis = chebyshev_filter_basis(
+        env, centers=np.array([0]), max_degree=3, normalize="none"
+    )
+    assert_allclose(basis, [[1, 0], [-1, 0], [1, 0], [-1, 0]], atol=1e-15)
+
+
 def test_chebyshev_filter_is_bin_size_independent(uniform_grid):
     """The rescaled operator, and so every filter, is the same at any bin size."""
     small, large = uniform_grid(1.0, n=8), uniform_grid(2.5, n=8)
