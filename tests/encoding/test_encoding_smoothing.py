@@ -973,6 +973,50 @@ class TestDiffusionKdeUnresolvedFarField:
         assert far.size == 0 or far.min() > 3 * bandwidth
 
 
+class TestGaussianKdeFarField:
+    """gaussian_kde stops extrapolating where the other estimators do."""
+
+    @pytest.mark.parametrize("backend", ["numpy", "jax"])
+    @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+    def test_far_field_is_missing(self, half_visited_arena, batch, backend):
+        if backend == "jax":
+            pytest.importorskip("jax")
+        env, spike_counts, occupancy = half_visited_arena
+        bandwidth = 5.0
+        kwargs = {"method": "gaussian_kde", "bandwidth": bandwidth, "backend": backend}
+        if batch:
+            rate = smooth_rate_maps_batch(
+                env, spike_counts[None, :], occupancy, **kwargs
+            )[0]
+        else:
+            rate = smooth_rate_map(env, spike_counts, occupancy, **kwargs)
+        rate = np.asarray(rate)
+
+        occupied = env.bin_centers[occupancy > 0]
+        distance = np.min(
+            np.linalg.norm(env.bin_centers[:, None, :] - occupied[None, :, :], axis=2),
+            axis=1,
+        )
+        finite = np.isfinite(rate)
+        # Near the visits the estimate is kept; 150 cm (30 bandwidths) away it
+        # was a finite extrapolation before.
+        assert np.all(finite[distance <= 3 * bandwidth])
+        assert not np.any(finite[distance > 10 * bandwidth])
+        # The kept region matches diffusion_kde's to within two bandwidths.
+        diffusion = np.isfinite(
+            np.asarray(
+                smooth_rate_map(
+                    env,
+                    spike_counts,
+                    occupancy,
+                    method="diffusion_kde",
+                    bandwidth=bandwidth,
+                )
+            )
+        )
+        assert abs(distance[finite].max() - distance[diffusion].max()) <= 2 * bandwidth
+
+
 class TestEigenbasisCacheReuse:
     """Cross-neuron reuse is now automatic via the cached eigenbasis.
 
