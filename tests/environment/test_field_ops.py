@@ -59,11 +59,10 @@ class TestNormalizeField:
         with pytest.raises(ValueError, match=r"Field contains negative values"):
             normalize_field(field)
 
-    def test_normalize_with_eps(self):
-        """eps parameter prevents division by near-zero."""
+    def test_normalize_tiny_values(self):
+        """A field of tiny positive values still normalizes to a distribution."""
         field = np.array([1e-15, 1e-15, 1e-15])
-        # Should not raise, uses eps
-        normalized = normalize_field(field, eps=1e-12)
+        normalized = normalize_field(field)
         assert np.isclose(normalized.sum(), 1.0)
 
     def test_normalize_nan_values_raise(self):

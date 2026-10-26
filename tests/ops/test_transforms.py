@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial.ops.transforms import (
-    Affine2D,
+    AffineND,
     calibrate_from_landmarks,
     calibrate_from_scale_bar,
     flip_y,
@@ -49,7 +49,7 @@ class TestCalibrateFromScaleBar:
         )
 
         # Check that transform is correctly computed
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_diagonal_scale_bar(self):
         """Diagonal scale bar computes Euclidean distance correctly."""
@@ -89,15 +89,15 @@ class TestCalibrateFromScaleBar:
         bottom_point_cm = transform(bottom_point_px)
         assert_allclose(bottom_point_cm[0, 1], 0.0, atol=1e-10)
 
-    def test_returns_affine2d(self):
-        """Returns an Affine2D instance."""
+    def test_returns_affine_nd(self):
+        """Returns an AffineND instance."""
         transform = calibrate_from_scale_bar(
             p1_px=(0.0, 0.0),
             p2_px=(100.0, 0.0),
             known_length_cm=10.0,
             frame_size_px=(640, 480),
         )
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_zero_length_raises(self):
         """Zero-length scale bar raises ValueError."""
@@ -198,14 +198,14 @@ class TestCalibrateFromLandmarks:
             kind="rigid",
         )
 
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_similarity_transform(self):
         """Similarity (scale + rotation + translation) transform."""
         # Create landmarks with uniform scale
         landmarks_px = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
-        # 2x scale
-        landmarks_cm = np.array([[0, 0], [200, 0], [200, 200], [0, 200]], dtype=float)
+        # 2x scale; image row 0 is the top of the arena, so y points up in cm.
+        landmarks_cm = np.array([[0, 200], [200, 200], [200, 0], [0, 0]], dtype=float)
 
         transform = calibrate_from_landmarks(
             landmarks_px=landmarks_px,
@@ -214,7 +214,15 @@ class TestCalibrateFromLandmarks:
             kind="similarity",
         )
 
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
+        assert_allclose(transform(landmarks_px), landmarks_cm, atol=1e-10)
+
+    def test_mirrored_landmarks_are_refused(self):
+        """Landmarks listed in image orientation are a mirror image after the y flip."""
+        landmarks_px = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
+        landmarks_cm = 2 * landmarks_px
+        with pytest.raises(ValueError, match="mirror image"):
+            calibrate_from_landmarks(landmarks_px, landmarks_cm, (100, 100))
 
     def test_affine_transform(self):
         """Full affine transform from landmarks."""
@@ -229,7 +237,7 @@ class TestCalibrateFromLandmarks:
             kind="affine",
         )
 
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
     def test_roundtrip_accuracy(self):
         """Pixel→cm→pixel roundtrip within tolerance."""
@@ -286,6 +294,13 @@ class TestCalibrateFromLandmarks:
                 frame_size_px=(640, 480),
                 kind="similarity",
             )
+
+    def test_non_finite_landmark_is_named(self):
+        """A landmark that was not annotated is reported by its row."""
+        corners_px = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
+        corners_cm = np.array([[0, 0], [50, 0], [50, 50], [np.nan, 50]])
+        with pytest.raises(ValueError, match=r"landmarks_cm has NaN .* row\(s\) \[3\]"):
+            calibrate_from_landmarks(corners_px, corners_cm, (100, 100))
 
     def test_mismatched_landmark_count_raises(self):
         """Different number of px and cm landmarks raises ValueError."""
@@ -346,7 +361,7 @@ class TestVideoCalibration:
         )
 
         assert calib.frame_size_px == (640, 480)
-        assert isinstance(calib.transform_px_to_cm, Affine2D)
+        assert isinstance(calib.transform_px_to_cm, AffineND)
 
     def test_cm_per_px_property(self):
         """cm_per_px returns approximate scale factor."""
@@ -373,7 +388,7 @@ class TestVideoCalibration:
         """Rotating or reflecting calibrated axes does not change their scale."""
         from neurospatial.ops.transforms import VideoCalibration
 
-        rotation = Affine2D(
+        rotation = AffineND(
             np.array(
                 [
                     [np.cos(angle), -np.sin(angle), 10],
@@ -457,6 +472,45 @@ class TestVideoCalibration:
         assert "transform_px_to_cm" in d
         assert "frame_size_px" in d
         assert d["frame_size_px"] == [640, 480]
+
+    def test_is_immutable_so_the_inverse_cannot_go_stale(self):
+        """The inverse is fixed with the forward transform at construction."""
+        from dataclasses import FrozenInstanceError
+
+        from neurospatial.ops.transforms import VideoCalibration
+
+        calib = VideoCalibration(scale_2d(0.5), (640, 480))
+        with pytest.raises(FrozenInstanceError):
+            calib.transform_px_to_cm = scale_2d(2.0)
+        with pytest.raises(TypeError):
+            VideoCalibration(scale_2d(0.5), (640, 480), scale_2d(2.0))
+        assert_allclose(calib.transform_cm_to_px.A, scale_2d(2.0).A)
+
+    def test_equality_compares_transform_and_frame_size(self):
+        from neurospatial.ops.transforms import VideoCalibration
+
+        calib = VideoCalibration(scale_2d(0.5), (640, 480))
+        assert calib == VideoCalibration(scale_2d(0.5), (640, 480))
+        assert calib != VideoCalibration(scale_2d(0.5), (320, 240))
+        assert calib != VideoCalibration(scale_2d(0.25), (640, 480))
+        assert calib == VideoCalibration.from_dict(calib.to_dict())
+
+    @pytest.mark.parametrize(
+        "frame_size", [(-5, 0), (640,), (640.5, 480), (True, 480), (0, 480)]
+    )
+    def test_refuses_invalid_frame_size(self, frame_size):
+        from neurospatial.ops.transforms import VideoCalibration
+
+        with pytest.raises(ValueError, match="two positive integers"):
+            VideoCalibration(scale_2d(0.5), frame_size)
+
+    def test_refuses_a_transform_that_is_not_2d(self):
+        from neurospatial.ops.transforms import VideoCalibration, scale_3d
+
+        with pytest.raises(ValueError, match="2D transform"):
+            VideoCalibration(scale_3d(0.5), (640, 480))
+        with pytest.raises(TypeError, match="AffineND"):
+            VideoCalibration(np.eye(3), (640, 480))
 
 
 class TestCalibrationEdgeCases:

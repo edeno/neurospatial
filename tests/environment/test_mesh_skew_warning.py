@@ -24,7 +24,7 @@ from neurospatial.environment._comparison import (
 )
 from neurospatial.geometry import TriangleShapes, triangle_skew_message
 from neurospatial.layout import create_layout
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 _SKEW = "non-K-orthogonal"
 
@@ -146,7 +146,7 @@ def test_well_shaped_mesh_never_warns() -> None:
 def test_a_mesh_that_cannot_smooth_raises_without_the_skew_warning() -> None:
     # Shearing the coordinates leaves cells whose faces are not certified.
     shear = np.array([[1.0, 1.5, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
-    env = _square_mesh().apply_transform(Affine2D(shear))
+    env = _square_mesh().apply_transform(AffineND(shear))
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         with pytest.raises(NotImplementedError, match="finite-volume cell geometry"):
@@ -213,7 +213,7 @@ def test_skew_counts_match_the_per_edge_loop(build) -> None:
 def _combined() -> Environment:
     """A skewed mesh beside a well-shaped one, far apart."""
     square = _square_mesh().apply_transform(
-        Affine2D(np.array([[1.0, 0.0, 500.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+        AffineND(np.array([[1.0, 0.0, 500.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
     )
     return Environment.combine({"skewed": _sheared_mesh(), "square": square})
 

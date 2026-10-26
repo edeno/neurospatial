@@ -66,7 +66,7 @@ if TYPE_CHECKING:
     from neurospatial._video_io import VideoReaderProtocol
     from neurospatial.animation.skeleton import Skeleton
     from neurospatial.encoding.spatial import SpatialRatesResult
-    from neurospatial.ops.transforms import Affine2D, VideoCalibration
+    from neurospatial.ops.transforms import AffineND, VideoCalibration
 
 
 # =============================================================================
@@ -2874,7 +2874,7 @@ class VideoOverlay(_Overlay):
             transform_to_env = None
             if self.calibration is not None:
                 from neurospatial.animation.calibration import _calibration_units_per_cm
-                from neurospatial.ops.transforms import Affine2D, scale_2d
+                from neurospatial.ops.transforms import AffineND, scale_2d
 
                 # cv2.resize maps output pixel centers to input pixel centers:
                 # old = (new + 0.5) * (input_size / output_size) - 0.5.
@@ -2882,7 +2882,7 @@ class VideoOverlay(_Overlay):
                 crop_x, crop_y = (0, 0) if self.crop is None else self.crop[:2]
                 width, height = original_size if self.crop is None else self.crop[2:]
                 scale_x, scale_y = width / processed_size[0], height / processed_size[1]
-                processed_to_original = Affine2D(
+                processed_to_original = AffineND(
                     np.array(
                         [
                             [scale_x, 0, crop_x + (scale_x - 1) / 2],
@@ -3348,7 +3348,7 @@ class VideoData:
         Video source. Either a pre-loaded array of shape (n_video_frames, height,
         width, 3) with dtype uint8, or a VideoReaderProtocol-compliant reader.
         Copies of the data share the reader; it is closed by its owner.
-    transform_to_env : Affine2D or None
+    transform_to_env : AffineND or None
         Transform from video pixel coordinates to environment coordinates.
         If None, the frame is stretched over ``env_bounds``.
     env_bounds : tuple of float
@@ -3376,7 +3376,7 @@ class VideoData:
 
     frame_indices: NDArray[np.int_]
     reader: NDArray[np.uint8] | VideoReaderProtocol
-    transform_to_env: Affine2D | None
+    transform_to_env: AffineND | None
     env_bounds: tuple[float, float, float, float]
     alpha: float
     z_order: Literal["below", "above"]

@@ -51,6 +51,20 @@ def test_no_spike_trains_parameter_name():
     assert not offenders, sorted(offenders)
 
 
+def test_physical_smoothing_width_is_named_bandwidth():
+    """A physical kernel width is ``bandwidth`` on every public function.
+
+    ``neurospatial.ops`` primitives (``compute_diffusion_kernels``,
+    ``geodesic_rbf_basis``) are covered along with the analysis functions.
+    """
+    offenders = [
+        f"{function.__module__}.{function.__name__}"
+        for function, parameters in public_functions()
+        if "sigma" in parameters
+    ]
+    assert not offenders, sorted(offenders)
+
+
 def test_env_is_first():
     offenders = []
     for function, parameters in public_functions():
@@ -210,7 +224,6 @@ REQUIRED_DATA_NAMES = {
     *("landmarks_px", "landmarks_cm", "p1_px", "p2_px", "known_length_cm"),
     *("data_px", "data_cm", "src", "dst", "frame_size_px", "frame_height_px"),
     *("px_per_cm", "rotation_matrix", "scale", "translation_vector"),
-    "angle_degrees",
 }
 
 # Required arguments that are data in these functions only.
@@ -221,7 +234,6 @@ REQUIRED_DATA_ARGUMENTS = {
     ("get_layout_parameters", "layout_type"),
     # Sizes of the data the function describes.
     ("field_density_map", "n_bins"),
-    ("geodesic_distance_matrix", "n_states"),
     ("marchenko_pastur_threshold", "n_neurons"),
     ("marchenko_pastur_threshold", "n_time_bins"),
 }

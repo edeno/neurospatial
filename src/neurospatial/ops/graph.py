@@ -17,10 +17,6 @@ Examples
 Import via ops package:
 
 >>> from neurospatial.ops import neighbor_reduce, graph_convolve
-
-Notes
------
-Moved from neurospatial.primitives in package reorganization.
 """
 
 from __future__ import annotations
@@ -71,7 +67,9 @@ def neighbor_reduce(
     -------
     result : array, shape (n_bins,)
         Field values after neighborhood aggregation. Bins with no neighbors
-        return NaN.
+        return NaN, and so does every bin with a NaN (missing) value in its
+        neighborhood, for every ``op``: a missing neighbor is neither zero
+        nor ignored.
 
     Raises
     ------
@@ -85,7 +83,7 @@ def neighbor_reduce(
 
     - **Coherence**: Spatial correlation between firing rate and neighbor average
       (Muller & Kubie 1989). Computed as correlation of field and
-      ``neighbor_reduce(field, env, op='mean')``.
+      ``neighbor_reduce(env, field, op='mean')``.
     - **Smoothness**: Measure how much field values differ from local neighborhood.
     - **Local statistics**: Compute local variability (op='std') or extrema
       (op='max'/'min').
@@ -96,6 +94,15 @@ def neighbor_reduce(
     2. Optionally include self in neighborhood
     3. Apply reduction operation (sum, mean, max, min, std)
     4. Handle isolated nodes (no neighbors) → return NaN
+
+    **Missing values (NaN)**: a NaN neighbor makes the result NaN for every
+    ``op``, since the sum, mean, extremes and spread of a neighborhood with an
+    unobserved bin are unknown. To aggregate only the observed neighbors, pass
+    ``op="mean"`` with ``weights`` that are zero at missing bins and a finite
+    placeholder value there, for example
+    ``neighbor_reduce(env, np.where(observed, field, 0.0), weights=observed.astype(float))``;
+    a bin whose neighbors are all missing then has zero total weight and
+    stays NaN.
 
     **Performance**: ``sum`` and ``mean`` are vectorized as a sparse
     matrix-vector product against the CSR adjacency matrix (O(n_edges)).
@@ -126,14 +133,16 @@ def neighbor_reduce(
     >>> field = np.arange(env.n_bins, dtype=float)
     >>> # Mean of neighbors
     >>> neighbor_mean = neighbor_reduce(env, field, op="mean")
-    >>> # Center bin (4) has neighbors [1, 3, 5, 7]
-    >>> # Mean = (1 + 3 + 5 + 7) / 4 = 4.0
-    >>> print(f"Center neighbor mean: {neighbor_mean[4]:.1f}")  # doctest: +SKIP
+    >>> # from_samples connects diagonal neighbors too, so the center bin (4)
+    >>> # has 8 neighbors: every other bin. Their mean is (36 - 4) / 8 = 4.0.
+    >>> sorted(env.connectivity.neighbors(4))
+    [0, 1, 2, 3, 5, 6, 7, 8]
+    >>> print(f"Center neighbor mean: {neighbor_mean[4]:.1f}")
     Center neighbor mean: 4.0
 
     See Also
     --------
-    Environment.smooth : Gaussian smoothing using distance-based kernels
+    Environment.smooth : Boundary-aware finite-volume diffusion smoothing
     graph_convolve : General convolution with custom kernels
 
     References
@@ -308,8 +317,11 @@ def graph_convolve(
     kernel : callable or array
         Kernel specification, either:
         - **Callable**: Function mapping distances → weights.
-          Signature: ``kernel(distances: NDArray) -> NDArray``
-          where distances has shape (n_bins,).
+          Signature: ``kernel(distances: NDArray) -> NDArray``. It is called
+          once with the full geodesic distance matrix, shape
+          ``(n_bins, n_bins)`` (``inf`` between disconnected bins), and must
+          return weights of the same shape, ``[i, j]`` weighting source bin
+          ``j`` at bin ``i``.
         - **Array**: Precomputed kernel matrix of shape (n_bins, n_bins)
           where kernel[i, j] is the weight from bin j to bin i.
     normalize : bool, default=True
@@ -320,8 +332,10 @@ def graph_convolve(
     Returns
     -------
     result : array, shape (n_bins,)
-        Convolved field values. NaN values in input field are handled by
-        skipping them in the convolution and renormalizing weights.
+        Convolved field values. With ``normalize=True`` each bin is the
+        weighted average of the observed (non-NaN) source bins its kernel
+        reaches, and NaN where it reaches none. With ``normalize=False`` a
+        bin is NaN wherever a nonzero kernel weight falls on a NaN source.
 
     Raises
     ------
@@ -337,16 +351,29 @@ def graph_convolve(
     - **Mexican hat**: Difference of Gaussians for edge detection
     - **Custom kernels**: Any distance-based or precomputed weights
 
-    **NaN Handling**: NaN values in the field are excluded from the convolution
-    by treating them as zero contribution and renormalizing the weights. This
-    prevents NaN propagation while maintaining local normalization.
+    **Missing values (NaN)**: NaN marks a bin with no observation, which is
+    not a value of zero.
+
+    - ``normalize=True`` averages over the observed source bins only
+      (Nadaraya-Watson), like ``Environment.smooth(mode="average")``: missing
+      bins get no weight, so they neither pull their neighbors toward zero nor
+      spread NaN. A missing bin that the kernel connects to observed bins
+      receives their weighted average; this estimate does not make the bin
+      observed, so keep the original support mask. A bin whose kernel reaches
+      no observed bin is NaN.
+    - ``normalize=False`` returns the raw weighted sum, which is unknown
+      wherever a nonzero weight falls on a missing value: those bins are NaN.
+      Weights of exactly zero ignore a missing source, so a precomputed
+      kernel matrix can exclude missing bins explicitly. A kernel with full
+      support, such as a Gaussian of graph distance, makes the whole
+      connected part NaN; fill the field explicitly or normalize instead.
 
     **Algorithm**:
 
-    1. For each bin, compute pairwise distances to all other bins
-    2. Apply kernel function or lookup precomputed weights
-    3. Optionally normalize weights to sum to 1
-    4. Compute weighted sum, excluding NaN values in field
+    1. Compute the all-pairs graph distance matrix (callable kernels)
+    2. Apply the kernel function, or take the precomputed weights
+    3. Optionally normalize each row over its observed source bins
+    4. Compute the weighted sum
 
     **Performance**: Time complexity O(n_bins²) for callable kernels (computing
     distances), O(n_bins²) for matrix multiplication with precomputed kernels.
@@ -368,8 +395,10 @@ def graph_convolve(
     >>> def box_kernel(distances):
     ...     return np.where(distances <= 1.5, 1.0, 0.0)
     >>> result = graph_convolve(env, field, box_kernel, normalize=True)
-    >>> print(f"Max value: {result.max():.3f}")  # doctest: +SKIP
-    Max value: 0.111
+    >>> # The corner bins reach 4 bins (themselves, two edges and the center),
+    >>> # so the spike is a quarter of their average; the center reaches all 9.
+    >>> print(f"Max value: {result.max():.3f}, center: {result[4]:.3f}")
+    Max value: 0.250, center: 0.111
 
     **Balanced center-surround contrast**:
 
@@ -399,7 +428,7 @@ def graph_convolve(
 
     See Also
     --------
-    Environment.smooth : Gaussian smoothing with distance-based kernels
+    Environment.smooth : Boundary-aware finite-volume diffusion smoothing
     neighbor_reduce : Local aggregation over graph neighborhoods
 
     References
@@ -422,9 +451,7 @@ def graph_convolve(
 
         # Compute all pairwise geodesic distances at once: O(n_bins * E log V)
         # This is much faster than O(n_bins^2 * E log V) from individual Dijkstra calls
-        dist_matrix = geodesic_distance_matrix(
-            env.connectivity, env.n_bins, weight="distance"
-        )
+        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
 
         # Apply kernel function to entire distance matrix (vectorized)
         # Most kernel functions (e.g., Gaussian, exponential) are ufunc-compatible
@@ -438,28 +465,24 @@ def graph_convolve(
                 f"got {kernel_matrix.shape}"
             )
 
-    # Handle NaN values in field
-    valid_mask = ~np.isnan(field)
-    field_clean = np.where(valid_mask, field, 0.0)
+    # NaN marks a missing source value, not zero activity.
+    missing = np.isnan(field)
+    field_clean = np.where(missing, 0.0, field)
 
-    # Normalize kernel weights per bin if requested (vectorized)
     if normalize:
-        # For each bin (row), normalize weights to sum to 1
-        # But only over valid (non-NaN) source bins
-        # valid_mask has shape (n_bins,), kernel_matrix has shape (n_bins, n_bins)
-        valid_weights = kernel_matrix * valid_mask[np.newaxis, :]  # broadcast mask
-        weight_sums = valid_weights.sum(axis=1, keepdims=True)  # shape (n_bins, 1)
-        # Avoid division by zero: where sum is 0, keep as 0
-        kernel_matrix = np.where(weight_sums > 0, valid_weights / weight_sums, 0.0)
+        # Nadaraya-Watson: average over the observed source bins only.
+        observed_weights = kernel_matrix * ~missing[np.newaxis, :]
+        weight_sums = observed_weights.sum(axis=1)
+        supported = weight_sums > 0
+        result: NDArray[np.float64] = np.full(env.n_bins, np.nan, dtype=np.float64)
+        result[supported] = (
+            observed_weights[supported] @ field_clean / weight_sums[supported]
+        )
+        return result
 
-    # Perform convolution: result[i] = sum_j kernel[i, j] * field[j]
-    result: NDArray[np.float64] = kernel_matrix @ field_clean
-
-    # For normalized case, bins with no valid neighbors get NaN
-    # For unnormalized case, all bins should have values (kernel always applied)
-    if normalize:
-        # Check if any weight was applied
-        has_valid_neighbor: NDArray[np.bool_] = kernel_matrix.sum(axis=1) > 0
-        result = np.where(has_valid_neighbor, result, np.nan)
-
+    # A raw weighted sum is unknown wherever a nonzero weight meets a missing
+    # value; a weight of exactly zero ignores it.
+    result = np.asarray(kernel_matrix @ field_clean, dtype=np.float64)
+    if missing.any():
+        result[(kernel_matrix[:, missing] != 0).any(axis=1)] = np.nan
     return result

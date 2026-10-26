@@ -19,7 +19,7 @@ from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.io import from_dict, to_dict
 from neurospatial.layout import create_layout
-from neurospatial.ops.transforms import Affine2D, AffineND
+from neurospatial.ops.transforms import AffineND
 
 
 def _grid(n_dims=2, diagonal=True):
@@ -125,7 +125,7 @@ def test_transformed_normals_follow_actual_face_tangents(linear):
     matrix = np.eye(3)
     matrix[:2, :2] = linear
     matrix[:2, -1] = [3.0, -2.0]
-    child = env.apply_transform(Affine2D(matrix))
+    child = env.apply_transform(AffineND(matrix))
     values = child._binning.face_normals.values
     source = env._binning.face_normals.values
     tangents = np.column_stack((-source[:, 1], source[:, 0])) @ np.asarray(linear).T
@@ -269,7 +269,7 @@ def test_rotated_hex_normals_use_source_lattice_at_large_offsets(offset):
             [0.0, 0.0, 1.0],
         ]
     )
-    child = env.apply_transform(Affine2D(matrix))
+    child = env.apply_transform(AffineND(matrix))
     expected = env._binning.face_normals.values @ matrix[:2, :2].T
     np.testing.assert_allclose(child._binning.face_normals.values, expected, atol=1e-12)
     loaded = from_dict(to_dict(child))
@@ -395,7 +395,7 @@ def test_zero_area_contact_stays_navigation_only_after_solver_refusal():
     contact = np.flatnonzero(old.A == 0)[0]
     parent = Environment.from_bins(replace(env._binning, faces=KnownFaces(old)))
     matrix = np.array([[1.0, 0.3, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
-    child = from_dict(to_dict(parent.apply_transform(Affine2D(matrix))))
+    child = from_dict(to_dict(parent.apply_transform(AffineND(matrix))))
     np.testing.assert_array_equal(child.edge_pairs, parent.edge_pairs)
     np.testing.assert_array_equal(child._binning.face_normals.values[contact], 0.0)
     assert not child._binning.faces.available

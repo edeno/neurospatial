@@ -20,7 +20,7 @@ from neurospatial.geometry._components import TriangleShapes
 from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.io import from_dict, to_dict
 from neurospatial.layout import create_layout
-from neurospatial.ops.transforms import Affine2D, estimate_transform
+from neurospatial.ops.transforms import AffineND, estimate_transform
 
 _CARTESIAN_CASES = [
     "grid8",
@@ -40,7 +40,7 @@ def _affine(linear=None, offset=(0.0, 0.0)):
     if linear is not None:
         matrix[:2, :2] = linear
     matrix[:2, 2] = offset
-    return Affine2D(matrix)
+    return AffineND(matrix)
 
 
 def _keep_bins(env):
@@ -348,7 +348,7 @@ def test_out_and_back_track_rotates_with_its_revisited_bins(angle):
             [0.0, 0.0, 1.0],
         ]
     )
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     moved = env.apply_transform(transform)
     np.testing.assert_allclose(
         moved.bin_centers, transform(env.bin_centers), atol=1e-12
@@ -942,9 +942,9 @@ def test_hexagon_and_triangle_lattices_survive_maps_and_subsets(built_environmen
     keep = np.arange(env.n_bins) != 3
     derived = {
         "translated": env.apply_transform(
-            Affine2D(np.array([[1.0, 0.0, 5.0], [0.0, 1.0, -3.0], [0.0, 0.0, 1.0]]))
+            AffineND(np.array([[1.0, 0.0, 5.0], [0.0, 1.0, -3.0], [0.0, 0.0, 1.0]]))
         ),
-        "rotated": env.apply_transform(Affine2D(np.vstack((rotation, [0, 0, 1])))),
+        "rotated": env.apply_transform(AffineND(np.vstack((rotation, [0, 0, 1])))),
         "subset": env.subset(mask=keep),
     }
     for name, child in derived.items():
@@ -965,7 +965,7 @@ def test_rotated_rectangular_grid_has_no_world_aligned_shape():
     )
     angle = 0.4
     rotated = grid.apply_transform(
-        Affine2D(
+        AffineND(
             np.array(
                 [
                     [np.cos(angle), -np.sin(angle), 0.0],

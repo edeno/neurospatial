@@ -31,7 +31,7 @@ from neurospatial.annotation._state import AnnotationModeState, make_unique_name
 from neurospatial.annotation.project import (
     AnnotationProject,
     AnnotationShape,
-    _copy_calibration,
+    _checked_calibration,
 )
 from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
@@ -206,7 +206,7 @@ class AnnotationProjectSession:
         calibration = (
             None
             if self.calibration is None
-            else _copy_calibration(self.calibration, (width, height))
+            else _checked_calibration(self.calibration, (width, height))
         )
         return _EditingState(
             capture_shapes(self.layer, previous),

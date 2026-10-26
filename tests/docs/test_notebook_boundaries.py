@@ -9,7 +9,7 @@ from matplotlib.transforms import Affine2D as MplAffine2D
 
 from neurospatial import Environment
 from neurospatial.events import population_peri_event_histogram
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 jupytext = pytest.importorskip("jupytext")
 ROOT = Path(__file__).resolve().parents[2]
@@ -89,7 +89,7 @@ def test_video_preview_maps_pixel_centers_to_their_calibrated_positions(
     env = Environment.from_grid_mask(
         np.ones((15, 15), dtype=bool), grid_edges=(np.arange(16.0) * 10,) * 2
     )
-    transform = Affine2D(np.array(matrix))
+    transform = AffineND(np.array(matrix))
     landmarks = np.array([[20, 10], [110, 10], [110, 90], [20, 90]])
     marker = np.array([45.0, 30.0])
     namespace = {

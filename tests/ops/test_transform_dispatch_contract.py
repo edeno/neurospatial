@@ -44,7 +44,7 @@ def test_bound_and_unbound_transforms_preserve_the_same_geometry(n_dims):
     )
 
 
-@pytest.mark.parametrize("invalid", ["dimension", "none", "singular"])
+@pytest.mark.parametrize("invalid", ["dimension", "none"])
 def test_invalid_transforms_raise_actionable_errors(invalid):
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
@@ -59,27 +59,12 @@ def test_invalid_transforms_raise_actionable_errors(invalid):
         transform = None
         error_type, message = (
             TypeError,
-            "apply_transform() takes an AffineND or Affine2D transform, got NoneType.",
-        )
-    else:
-        transform = AffineND(np.diag([0.0, 1.0, 1.0]))
-        error_type, message = (
-            ValueError,
-            (
-                "Environment transform must be invertible.\n"
-                "Why: a singular transform collapses bins and cannot preserve containment.\n"
-                "Fix: use nonzero scale factors and an invertible affine matrix."
-            ),
+            "apply_transform() takes an AffineND transform, got NoneType.",
         )
     with pytest.raises(error_type) as error:
         env.apply_transform(transform)
-    # The type and dimension refusals go on to say why and how to fix it.
-    shown = (
-        str(error.value).splitlines()[0]
-        if invalid in ("none", "dimension")
-        else str(error.value)
-    )
-    assert shown == message
+    # The refusals go on to say why and how to fix it.
+    assert str(error.value).splitlines()[0] == message
 
 
 def test_polar_bound_and_unbound_calls_raise_the_same_refusal():

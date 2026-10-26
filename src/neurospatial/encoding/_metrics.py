@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -158,6 +158,7 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.geometry._boundaries import BoundarySource
 
 __all__ = [
     "batch_border_scores",
@@ -751,7 +752,7 @@ def batch_border_scores(
     threshold: float = 0.3,
     min_area: float = 0.0,
     metric: str = "geodesic",
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> BatchScoresResult:
     """Compute border scores for multiple neurons.
 

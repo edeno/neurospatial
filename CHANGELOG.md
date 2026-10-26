@@ -2,6 +2,103 @@
 
 ## [Unreleased]
 
+### Operations review (`neurospatial.ops`)
+
+Results that change:
+
+- Viewsheds are exact. `compute_viewshed`, `compute_view_field`,
+  `compute_viewshed_trajectory` and `visibility_occupancy` sampled each of 360
+  rays at 100 points, so bins smaller than the sample spacing were skipped:
+  in an open 200 cm box with 1 cm bins, 22–66% of the bins counted as
+  visible, and `visibility_occupancy` gave 0 s to most of the box. A bin is
+  now visible when the direction to its center is in the field of view and
+  the straight line to its center crosses no wall. `n_rays` is removed.
+  `visibility_occupancy` over 1000 frames runs in 0.6 s instead of 9–39 s.
+- `ViewshedResult.occlusion_map` counted ray samples per bin (high near the
+  observer), not visibility. It is replaced by `visibility_map`: 1 visible,
+  0 hidden, NaN for a missing observation. `visible_bins`, `n_visible_bins`
+  and `visibility_fraction` derive from it, and the constructor checks that
+  its fields agree.
+- Linear occupancy (`time_allocation="linear"`) on 1-D grids and on grids of
+  three or more dimensions now counts an interval that crosses the edge of the
+  environment like 2-D layouts do. An interval entering from outside added
+  nothing; it now adds the time its path spends inside. With
+  `return_seconds=False`, an interval leaving the environment added a whole
+  count; it now adds the inside fraction. 2-D layouts are unchanged.
+- `resample_field` filled destination bins up to 10 source bins beyond the
+  source with the source's edge value. A destination bin outside the source
+  environment is now NaN. A source track built without `track_width` is
+  refused, since its extent is unknown.
+- `resample_field(method="diffuse")` treats missing (NaN) source values the
+  way `env.smooth(mode="average")` does. It averaged over the observed bins
+  without the support floor, so far from every observed bin it divided
+  truncation noise by noise: one observation of 5 on a 100-bin line gave 19
+  negative bins down to -53,000. Those bins are now NaN.
+- `graph_convolve(normalize=False)` read NaN as 0 (an all-NaN field became
+  zeros). A bin whose kernel puts weight on a NaN bin is now NaN.
+- `spatial_basis` in 3-D sized its bandwidths by the square root of the
+  extents' product, about 11 times too broad for a 120 cm cube; it now uses
+  their geometric mean.
+- `chebyshev_filter_basis` weighted neighbors by edge length, so diagonal
+  neighbors coupled more strongly than face neighbors and bins touching only
+  at a corner coupled most. It now uses the same finite-volume operator as
+  smoothing; values change and layouts without cell faces are refused.
+- `estimate_transform` returned a singular transform for collinear landmarks
+  and an identity rotation for coincident ones; both now raise, as do
+  non-finite landmarks (naming the row). The similarity scale is the
+  least-squares estimate, which changes fits on noisy landmarks slightly.
+- The distance functions indexed their matrices by graph insertion order but
+  read them by node id, so a graph built out of order gave wrong distances.
+  They now refuse a graph whose nodes are not `0 .. n_bins - 1`, and refuse
+  a `weight` attribute that some edge lacks (a misspelt name counted hops).
+- The `geodesic_rbf_basis` design-matrix recipe used `env.bin_sequence`,
+  which drops repeated bins, so rows no longer matched time bins. The
+  examples now use `env.bin_at(positions)` and drop outside samples.
+
+Breaking API changes:
+
+- `Affine2D` is removed; the 2-D factories return `AffineND`. `AffineND`
+  refuses a matrix that is not finite, homogeneous and invertible, stores it
+  read-only, compares with `==` by value, and refuses points whose last axis
+  does not match (an `(x, y, likelihood)` array was silently reshaped).
+- `VideoCalibration` is frozen, computes its inverse when built, and requires
+  a positive integer frame size.
+- `convert_to_cm` and `convert_to_pixels` require `cm_per_px` (it defaulted to
+  1, labelling pixels as cm). `from_rotation_matrix` refuses matrices that
+  are not rotations.
+- `get_2d_rotation_matrix(angle)` takes radians, like every other angle.
+- `map_probabilities` refuses to map when more than 1e-6 of the probability
+  sits on source bins whose centers land outside every target bin and more
+  than one target bin spacing from every target bin center (a smaller share,
+  such as a posterior's far tail, goes to its nearest bin); `max_distance`
+  sets a distance instead, and `math.inf` keeps the old nearest-bin
+  assignment. It also refuses non-finite
+  probabilities and `eps <= 0`. `ProbabilityMappingParams` is removed.
+- `compute_diffusion_kernels` and `geodesic_rbf_basis` take `bandwidth=`
+  instead of `sigma=`.
+- `geodesic_distance_matrix` loses `n_states`. `distance_field`,
+  `neighbors_within` (both metrics) and the basis functions refuse `-1`,
+  out-of-range and non-integer bins instead of dropping them, truncating them
+  or reading `-1` as the last bin.
+- `FieldOfView` loses `blind_spot_behind` (the presets already encode it
+  through `left_angle`/`right_angle`) and refuses non-finite or crossed
+  bounds. `compute_viewed_location` defaults to `max_distance=None` (reach
+  every wall; the 100-unit default returned NaN in larger arenas) and loses
+  `method="boundary"`, which ran the same code as `"ray_cast"`; the view
+  encoders and `SpatialViewCellModel` lose `gaze_model="boundary"`.
+- `EgocentricFrame` is removed; use `allocentric_to_egocentric` and
+  `egocentric_to_allocentric`. Geodesic `compute_egocentric_distance`
+  refuses a target outside every bin instead of returning a NaN column, and `allocentric_to_egocentric` refuses a `points` time axis that
+  differs from `positions`.
+- `TieBreakStrategy` is a string `Literal`; the enum is removed.
+- `normalize_field` refuses arrays that are not 1-D (a `(n_time, n_bins)`
+  array was normalized as one distribution) and loses its unused `eps`.
+  `apply_kernel` refuses NaN fields, pointing to `env.smooth`, and refuses
+  `bin_sizes` with `mode="forward"`. `select_basis_centers` loses
+  `method="grid"`, which always raised.
+- Visibility, egocentric and alignment functions check that positions,
+  headings and points have matching lengths and shapes.
+
 ### Spike, interval and result inputs
 
 - Spike times must be finite everywhere. Decoding (`bin_spikes_in_time`,

@@ -44,7 +44,7 @@ jobs:
         run: |
           uv run pytest tests/nwb \
             tests/ops/test_differential.py::test_operators_raise_without_finite_volume_geometry \
-            tests/ops/test_basis.py::test_heat_kernel_raises_without_finite_volume_geometry \
+            tests/ops/test_basis.py::test_diffusion_bases_raise_without_finite_volume_geometry \
             -n 0 -q
         env:
           MPLBACKEND: Agg

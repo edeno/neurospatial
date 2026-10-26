@@ -16,13 +16,13 @@ def test_resumed_donut_wall_and_landmark_export_preserves_scientific_geometry(tm
     from neurospatial.annotation._draft import add_polygons
     from neurospatial.annotation._napari_widget import setup_shapes_layer_for_annotation
     from neurospatial.annotation.core import _process_annotation_results
-    from neurospatial.ops.transforms import Affine2D, VideoCalibration
+    from neurospatial.ops.transforms import AffineND, VideoCalibration
 
     viewer = napari.Viewer(show=False)
     resumed = napari.Viewer(show=False)
     try:
         layer = setup_shapes_layer_for_annotation(viewer)
-        calibration = VideoCalibration(Affine2D(np.diag([0.5, -0.5, 1.0])), (60, 50))
+        calibration = VideoCalibration(AffineND(np.diag([0.5, -0.5, 1.0])), (60, 50))
         polygon = Polygon(
             [(1, -1), (20, -1), (20, -20), (1, -20)],
             [[(3, -3), (7, -3), (7, -7), (3, -7)]],

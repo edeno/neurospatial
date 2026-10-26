@@ -13,7 +13,7 @@ from neurospatial.annotation.converters import (
     shapes_to_regions,
     shapes_to_walls_and_landmarks,
 )
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 from neurospatial.regions import Region
 
 
@@ -90,7 +90,7 @@ class TestShapesToRegions:
                 [0.0, 0.0, 1.0],
             ]
         )
-        transform = Affine2D(scale_matrix)
+        transform = AffineND(scale_matrix)
         calibration = VideoCalibration(transform, frame_size_px=(640, 480))
 
         # Square in napari (row, col): corners at (0,0), (0,10), (10,10), (10,0)
@@ -382,7 +382,7 @@ class TestCalibrationRoundTrip:
                 [0.0, 0.0, 1.0],
             ]
         )
-        transform = Affine2D(scale_matrix)
+        transform = AffineND(scale_matrix)
         calibration = VideoCalibration(transform, frame_size_px=(640, 480))
 
         # Original points in pixels
@@ -407,7 +407,7 @@ class TestCalibrationRoundTrip:
                 [0.0, 0.0, 1.0],
             ]
         )
-        transform = Affine2D(matrix)
+        transform = AffineND(matrix)
         calibration = VideoCalibration(transform, frame_size_px=(640, 480))
 
         # Point at (100, 50) pixels should become (0, 0) cm
@@ -430,7 +430,7 @@ class TestCalibrationRoundTrip:
                 [0.0, 0.0, 1.0],
             ]
         )
-        transform = Affine2D(scale_matrix)
+        transform = AffineND(scale_matrix)
         calibration = VideoCalibration(transform, frame_size_px=(640, 480))
 
         # Simple unit square in napari (row, col) format
@@ -591,7 +591,7 @@ def calibration_transform(draw, scale_range=(0.01, 10.0)):
             [0.0, 0.0, 1.0],
         ]
     )
-    return VideoCalibration(Affine2D(matrix), frame_size_px=(640, 480))
+    return VideoCalibration(AffineND(matrix), frame_size_px=(640, 480))
 
 
 class TestHypothesisShapesToRegions:
@@ -694,7 +694,7 @@ class TestHypothesisShapesToRegions:
         )
         area_cal = regions_cal["square"].data.area
 
-        # Get scale factor from calibration's internal transform (Affine2D uses A attribute)
+        # Get scale factor from the calibration's transform matrix
         scale = calibration.transform_px_to_cm.A[0, 0]  # Uniform scale assumed
         expected_area = area_px * (scale**2)
 
@@ -816,7 +816,7 @@ class TestHypothesisCalibrationRoundTrip:
                 [0.0, 0.0, 1.0],
             ]
         )
-        calibration = VideoCalibration(Affine2D(matrix), frame_size_px=(640, 480))
+        calibration = VideoCalibration(AffineND(matrix), frame_size_px=(640, 480))
 
         pts_px = np.array(pts, dtype=float)
 
@@ -863,7 +863,7 @@ class TestShapesToWallsAndLandmarks:
 
     def test_calibration_puts_them_in_world_coordinates(self):
         calibration = VideoCalibration(
-            Affine2D(np.diag([0.5, 0.5, 1.0])), frame_size_px=(640, 480)
+            AffineND(np.diag([0.5, 0.5, 1.0])), frame_size_px=(640, 480)
         )
         walls, landmarks = shapes_to_walls_and_landmarks(
             [_rc([(0, 0), (40, 0)]), _rc([(0, 0), (20, 0), (0, 20), (20, 20)])],

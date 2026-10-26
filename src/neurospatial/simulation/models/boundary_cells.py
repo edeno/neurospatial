@@ -1,6 +1,6 @@
 """Boundary cell models for simulating boundary-distance tuned firing patterns."""
 
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -8,6 +8,7 @@ from scipy.stats import vonmises
 
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
+from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
 
 
@@ -156,7 +157,7 @@ class BoundaryCellModel:
         direction_tolerance: float = np.pi / 4,
         max_rate: float = 15.0,
         baseline_rate: float = 0.01,
-        metric: Literal["geodesic", "euclidean"] = "geodesic",
+        metric: DistanceMetric = "geodesic",
     ) -> None:
         require_cartesian(
             env.coordinate_system,

@@ -21,6 +21,8 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 __all__ = [
     "clamp",
     "combine_fields",
@@ -28,20 +30,14 @@ __all__ = [
 ]
 
 
-def normalize_field(
-    field: NDArray[np.float64],
-    *,
-    eps: float = 1e-12,
-) -> NDArray[np.float64]:
+def normalize_field(field: NDArray[np.float64]) -> NDArray[np.float64]:
     """
     Normalize field to sum to 1 (probability distribution).
 
     Parameters
     ----------
     field : NDArray[np.float64], shape (n_bins,)
-        Field values to normalize. Must be non-negative.
-    eps : float, default=1e-12
-        Small constant for numerical stability (unused, kept for API compatibility).
+        One field to normalize. Must be 1-D, finite and non-negative.
 
     Returns
     -------
@@ -51,7 +47,9 @@ def normalize_field(
     Raises
     ------
     ValueError
-        If field contains negative values, NaN, Inf, is all zeros, or eps is non-positive.
+        If field is not 1-D (normalize each row of a ``(n_time, n_bins)``
+        array with ``field / field.sum(axis=1, keepdims=True)``), or contains
+        negative values, NaN or Inf, or is all zeros.
 
     Examples
     --------
@@ -69,10 +67,17 @@ def normalize_field(
     """
     field = np.asarray(field, dtype=np.float64)
 
-    if eps <= 0:
+    if field.ndim != 1:
         raise ValueError(
-            f"eps must be positive (got {eps}). "
-            "Provide a small positive constant like 1e-12."
+            _format_error(
+                f"normalize_field() takes one 1-D field of shape (n_bins,), got "
+                f"shape {field.shape}.",
+                why="It makes the whole array sum to 1; a (n_time, n_bins) "
+                "array holds one distribution per row, and its rows would not "
+                "each sum to 1.",
+                fix="normalize each row with field / field.sum(axis=1, "
+                "keepdims=True), or pass one row at a time",
+            )
         )
 
     # Validate input
@@ -190,7 +195,8 @@ def combine_fields(
     ------
     ValueError
         If fields is empty, fields have mismatched shapes, weights have wrong
-        length, weights don't sum to 1, or weights provided with max/min mode.
+        length, weights don't sum to 1, weights provided with max/min mode,
+        or mode is not 'mean', 'max' or 'min'.
 
     Examples
     --------

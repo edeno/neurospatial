@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 import numpy as np
 from numpy.typing import NDArray
@@ -62,11 +62,12 @@ from neurospatial.ops import (
     _target_live_rank,
     _validate_occupancy,
 )
+from neurospatial.ops._types import KernelMode
 from neurospatial.ops.diffusion import MRFBasis, heat_kernel_from_W
 
 if TYPE_CHECKING:
     from neurospatial.geometry import Arena
-    from neurospatial.ops import KernelMode
+    from neurospatial.ops._types import ResolvedBackend
 
 # Smoothing a field with NaN (missing) bins leaves a bin NaN when its smoothed
 # support -- the share of its smoothing weight on observed bins -- is at most
@@ -400,7 +401,7 @@ def diffusion_eigenbasis(cache: AnalysisCache) -> _DiffusionEigenbasis:
 
 def _check_kernel_mode(mode: str) -> None:
     """Refuse a diffusion-kernel mode other than the three defined ones."""
-    if mode not in ("transition", "density", "average"):
+    if mode not in get_args(KernelMode):
         raise ValueError(
             f"mode must be one of 'transition', 'density' or 'average' "
             f"(got {mode!r}). Use 'transition' for mass-conserving smoothing of "
@@ -553,7 +554,7 @@ def _diffuse(
     bandwidth: float,
     *,
     mode: KernelMode,
-    backend: Literal["numpy", "jax"] = "numpy",
+    backend: ResolvedBackend = "numpy",
 ) -> NDArray[np.float64]:
     """Validate a field batch and apply the cached truncated heat operator."""
     _check_kernel_mode(mode)

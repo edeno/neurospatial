@@ -43,23 +43,6 @@ class TestDistanceField:
         with pytest.raises(ValueError, match="at least one node"):
             distance_field(linear_graph, sources=[])
 
-    def test_invalid_source_warns(self, linear_graph):
-        """Test that invalid source node generates warning."""
-        with pytest.warns(UserWarning, match="not in graph"):
-            dists = distance_field(linear_graph, sources=[999, 2])
-
-        # Should still compute for valid source
-        expected = np.array([2.0, 1.0, 0.0, 1.0, 2.0])
-        assert np.allclose(dists, expected)
-
-    def test_all_invalid_sources_raises_error(self, linear_graph):
-        """Test that all invalid sources raise error."""
-        with (
-            pytest.raises(ValueError, match="No valid source nodes"),
-            pytest.warns(UserWarning),
-        ):
-            distance_field(linear_graph, sources=[999, 1000])
-
     def test_empty_graph(self):
         """Test distance field on empty graph."""
         G = nx.Graph()
@@ -221,7 +204,7 @@ class TestNeighborsWithinGeodesic:
 
     def test_geodesic_invalid_center_raises(self, linear_graph):
         """Test that invalid center node raises error."""
-        with pytest.raises(nx.NodeNotFound, match="Center node 999 not in graph"):
+        with pytest.raises(nx.NodeNotFound, match=r"bin\(s\) \[999\] are not nodes"):
             neighbors_within(linear_graph, centers=[999], radius=1.0, metric="geodesic")
 
 

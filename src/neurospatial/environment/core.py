@@ -169,8 +169,9 @@ if TYPE_CHECKING:
     from neurospatial.layout import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops import KernelMode
+    from neurospatial.ops._types import DistanceMetric, ResolvedBackend
     from neurospatial.ops.diffusion import MRFBasis
-    from neurospatial.ops.transforms import Affine2D, AffineND
+    from neurospatial.ops.transforms import AffineND
 
 logger = logging.getLogger(__name__)
 
@@ -1432,8 +1433,7 @@ class Environment(Generic[_C]):
         self,
         positions: NDArray[np.float64],
         *,
-        tie_break: TieBreakStrategy
-        | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
+        tie_break: TieBreakStrategy = "lowest_index",
         return_dist: bool = False,
         max_distance: float | None = None,
         max_distance_factor: float | None = None,
@@ -1446,9 +1446,11 @@ class Environment(Generic[_C]):
             Coordinates to compare with bin centers, such as the animal's
             positions, in the environment's stored coordinates:
             ``(distance, angle)`` rows on an egocentric polar environment.
-        tie_break : TieBreakStrategy or str, default=TieBreakStrategy.LOWEST_INDEX
-            Select the lowest bin ID among ties, or use "closest_center" for
-            the tree's nearest candidate.
+        tie_break : {"lowest_index", "closest_center"}, default="lowest_index"
+            For a point equidistant from several centers: "lowest_index"
+            returns the tied bin with the smallest ID, so boundary points are
+            reproducible; "closest_center" returns whichever tied center the
+            KD-tree finds first, not necessarily the lowest ID.
         return_dist : bool, default=False
             Also return the distances to the selected centers, in the
             environment's length units.
@@ -1871,8 +1873,10 @@ class Environment(Generic[_C]):
         return_seconds : bool, default=True
             If True, return time in seconds (time-weighted occupancy).
             If False, return sample counts (unweighted, counts number of
-            intervals starting in each bin). Use True for rate calculations
-            (e.g., firing rates), False for presence/absence analyses.
+            intervals starting in each bin; with ``time_allocation='linear'``
+            each interval is one count split like its duration). Use True for
+            rate calculations (e.g., firing rates), False for presence/absence
+            analyses.
 
         Returns
         -------
@@ -1919,11 +1923,15 @@ class Environment(Generic[_C]):
 
         - time_allocation='linear': Splits Δt proportionally across all bins
           traversed by the straight-line path between consecutive samples.
-          Supported for rectangular grids and exact planar polygon cells.
-          Polygon allocation retains entry and re-entry intervals, excludes
-          holes and outside portions without renormalizing their duration,
-          and refuses proper crossings of a known physical wall. Observation
-          validity is independent of whether the starting point is in a bin.
+          Supported for rectangular grids in any dimension and exact planar
+          polygon cells. It retains entry, exit and re-entry intervals and
+          drops the share of the path in holes, inactive cells or outside the
+          environment without renormalizing: an interval half inside adds
+          half its duration in seconds, or half a count with
+          ``return_seconds=False``, whichever way it travels. Planar polygon
+          allocation refuses proper crossings of a known physical wall.
+          Observation validity is independent of whether the starting point
+          is in a bin.
 
         **Mass conservation**: The sum of the returned occupancy array equals
         the total valid time:
@@ -2820,7 +2828,7 @@ class Environment(Generic[_C]):
     )
     def apply_transform(
         self: Environment[CartesianSystem],
-        transform: AffineND | Affine2D,
+        transform: AffineND,
         *,
         name: str | None = None,
         frame: str | None = None,
@@ -2829,9 +2837,8 @@ class Environment(Generic[_C]):
         """Apply affine transformation to environment, returning a new instance.
 
         Transforms the environment's bin centers, connectivity graph, and regions
-        using an affine transformation. Supports both 2D (Affine2D) and N-D
-        (AffineND) transforms. The transformation must match the environment's
-        dimensionality.
+        using an affine transformation. The transformation must match the
+        environment's dimensionality.
 
         Translation and similarity transforms retain finite-volume smoothing
         and differential operators. Cartesian 2-D/3-D grids retain source axes
@@ -2848,12 +2855,9 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        transform : AffineND or Affine2D
-            Affine transformation to apply. Must match environment dimensionality:
-
-            - For 2D environments: use Affine2D or AffineND with n_dims=2
-            - For 3D environments: use AffineND with n_dims=3
-            - For N-D environments: use AffineND with n_dims=N
+        transform : AffineND
+            Affine transformation to apply. Its ``n_dims`` must match the
+            environment's dimensionality.
 
             Create transforms using factory functions like `translate()`,
             `scale_2d()`, `from_rotation_matrix()`, or compose using `@` operator.
@@ -2893,16 +2897,14 @@ class Environment(Generic[_C]):
         Raises
         ------
         ValueError
-            If transform dimensionality doesn't match environment dimensionality,
-            the transform is not invertible, or a track receives a non-similarity
-            transform. Rebuild such a track from transformed nodes with
+            If transform dimensionality doesn't match environment dimensionality
+            or a track receives a non-similarity transform. Rebuild such a track from transformed nodes with
             ``Environment.from_graph``. Also if the transform changes lengths,
             the environment has units, and ``units`` is omitted.
 
         See Also
         --------
         estimate_transform : Estimate transformation from point correspondences
-        neurospatial.ops.transforms.Affine2D : 2D affine transformation class
         neurospatial.ops.transforms.AffineND : N-D affine transformation class
         neurospatial.ops.transforms.translate : Create translation transform
         neurospatial.ops.transforms.scale_2d : Create scaling transform
@@ -2947,7 +2949,7 @@ class Environment(Generic[_C]):
 
         Rotation (2D):
 
-        >>> from neurospatial.ops.transforms import Affine2D
+        >>> from neurospatial.ops.transforms import AffineND
         >>> # 45-degree rotation
         >>> angle = np.pi / 4
         >>> R = np.array(
@@ -2957,7 +2959,7 @@ class Environment(Generic[_C]):
         ...         [0, 0, 1],
         ...     ]
         ... )
-        >>> transform = Affine2D(R)
+        >>> transform = AffineND(R)
         >>> env_rotated = env.apply_transform(transform)
         >>> # Distances between bin centers are preserved under rotation
         >>> def steps(centers):
@@ -2968,7 +2970,7 @@ class Environment(Generic[_C]):
         Composed transforms (scale, then rotate, then translate):
 
         >>> from neurospatial.ops.transforms import scale_2d
-        >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)
+        >>> T = translate(50, 50) @ AffineND(R) @ scale_2d(1.2)
         >>> env_aligned = env.apply_transform(T, name="aligned")
         >>> np.allclose(env_aligned.bin_centers, T(env.bin_centers))
         True
@@ -4706,7 +4708,7 @@ class Environment(Generic[_C]):
         bins: int | Sequence[int] | NDArray[np.integer] | None = None,
         points: ArrayLike | None = None,
         region: str | None = None,
-        metric: Literal["euclidean", "geodesic"] = "geodesic",
+        metric: DistanceMetric = "geodesic",
     ) -> NDArray[np.float64]:
         """Distance from every bin to the nearest target.
 
@@ -6478,10 +6480,11 @@ class Environment(Generic[_C]):
     ) -> NDArray[np.float64]:
         """Compute the finite-volume diffusion kernel for smoothing operations.
 
-        Wrapper around :func:`neurospatial.ops.diffusion.diffusion_kernel` that
-        resolves this environment's layout geometry and cell volumes, so
-        ``bandwidth`` is the true physical standard deviation (σ) of the
-        smoothing on any supported layout, independent of bin size.
+        Builds the dense heat operator ``exp(-t L)`` from this environment's
+        cached layout geometry and cell volumes, so ``bandwidth`` is the true
+        physical standard deviation (σ) of the smoothing on any supported
+        layout, independent of bin size. :meth:`smooth` and :meth:`diffuse`
+        apply the same operator without building this matrix.
 
         Parameters
         ----------
@@ -6884,7 +6887,7 @@ class Environment(Generic[_C]):
         *,
         bandwidth: float,
         mode: KernelMode,
-        backend: Literal["numpy", "jax"] = "numpy",
+        backend: ResolvedBackend = "numpy",
     ) -> NDArray[np.float64]:
         """Matrix-free finite-volume diffusion smoothing (no ``(n, n)`` kernel).
 

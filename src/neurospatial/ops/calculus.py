@@ -2,10 +2,11 @@
 
 For an oriented edge i -> j of length d, the gradient is (f[j] - f[i]) / d.
 Divergence weights edge flux by the shared-face measure A and divides by the
-cell volume M. Their composition is the continuum-sign Laplacian:
-``div(grad(f)) = -M**-1 (Deg - W) f``, with ``W = A / d``, the generator
-used by ``env.smooth``. The pair satisfies discrete Gauss-Green with edge
-inner-product weights A*d and node inner-product weights M.
+cell volume M. ``env.smooth`` applies ``exp(-t L)`` with the diffusion
+generator ``L = M**-1 (Deg - W)``, ``W = A / d``, so their composition is the
+continuum-sign Laplacian ``div(grad(f)) = -L f``. The pair satisfies discrete
+Gauss-Green with edge inner-product weights A*d and node inner-product
+weights M.
 
 Import from ``neurospatial.ops`` or ``neurospatial.ops.calculus``.
 """
@@ -84,8 +85,9 @@ def gradient(env: GradientConsumer, field: NDArray[np.float64]) -> NDArray[np.fl
     Notes
     -----
     The gradient and divergence satisfy discrete Gauss-Green:
-    ``sum(A*d*grad(f)*q) = -sum(M*f*div(q))``. Their composition is the
-    continuum-sign Laplacian, the negative of the diffusion generator.
+    ``sum(A*d*grad(f)*q) = -sum(M*f*div(q))``. ``env.smooth`` applies
+    ``exp(-t L)`` with ``L = M**-1 (Deg - W)``, ``W = A / d``, so
+    ``div(grad(f)) = -L f``.
 
     Examples
     --------

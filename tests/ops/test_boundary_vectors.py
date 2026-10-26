@@ -145,6 +145,19 @@ def test_headings_must_match_the_direction_frame(box_env, headings, frame, messa
         )
 
 
+@pytest.mark.parametrize(
+    ("measure", "options"),
+    [
+        (compute_boundary_distances, {"direction_frame": "allocentric"}),
+        (nearest_boundary, {}),
+    ],
+    ids=["compute_boundary_distances", "nearest_boundary"],
+)
+def test_wrong_position_columns_name_the_function_called(box_env, measure, options):
+    with pytest.raises(ValueError, match=rf"^{measure.__name__}\(\) got positions"):
+        measure(box_env, np.zeros((2, 3)), **options)
+
+
 def test_nearest_boundary_points_to_the_closest_side(box_env):
     positions = np.array([[20.0, 50.0], [50.0, 90.0], [np.nan, 50.0]])
 

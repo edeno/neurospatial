@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
@@ -16,6 +16,7 @@ from neurospatial.geometry import locate_outline_points, materialize_cells
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.ops._types import DistanceMetric
 
 
 @dataclass(frozen=True)
@@ -263,7 +264,7 @@ def _require_wall_rates(
 
 def _physical_border_score(
     field_bins: NDArray[np.int64],
-    metric: Literal["geodesic", "euclidean"],
+    metric: DistanceMetric,
     geometry: _PhysicalBorderGeometry,
 ) -> float:
     """Use observed wall-length coverage and mean center-to-wall distance.

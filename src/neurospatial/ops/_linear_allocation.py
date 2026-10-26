@@ -243,7 +243,7 @@ def _linear_grid_occupancy(
     bin_indices: NDArray[np.intp],
     *,
     return_seconds: bool,
-) -> NDArray[np.float64]:
+) -> tuple[NDArray[np.bool_], NDArray[np.float64]]:
     """Allocate each valid interval across the grid cells its straight path crosses.
 
     Parameters
@@ -257,17 +257,21 @@ def _linear_grid_occupancy(
     dt : ndarray of float64, shape (n_samples - 1,)
         Time between consecutive samples.
     valid_mask : ndarray of bool, shape (n_samples - 1,)
-        Intervals that pass the observation filters.
+        Intervals that pass the observation filters. Either endpoint may lie
+        outside the environment.
     bin_indices : ndarray of intp, shape (n_samples,)
         Active bin of each sample, or ``-1`` outside the environment.
     return_seconds : bool
         If True, allocate seconds. If False, each interval contributes one
-        count, split in proportion to path length; the share that falls on
-        inactive cells is dropped, as start allocation drops outside samples.
+        count. Either way an interval's weight is split in proportion to path
+        length, and the share on inactive cells or outside the grid is
+        dropped, never moved onto the active cells.
 
     Returns
     -------
-    ndarray of float64, shape (n_bins,)
+    retained : ndarray of bool, shape (n_samples - 1,)
+        Valid intervals whose path reaches an active cell.
+    occupancy : ndarray of float64, shape (n_bins,)
         Seconds (or proportional counts) in each active bin.
     """
     full_to_active = np.full(grid.active_mask.size, -1, dtype=np.intp)
@@ -275,12 +279,14 @@ def _linear_grid_occupancy(
     full_to_active[active] = np.arange(active.size, dtype=np.intp)
 
     occupancy = np.zeros(n_bins, dtype=np.float64)
+    retained = np.zeros_like(valid_mask)
     valid = np.flatnonzero(valid_mask)
     # Blocks follow interval order, so accumulating block by block adds every
     # piece in the same order as a sequential traversal.
     for block in crossing_blocks(positions[valid], positions[valid + 1], grid.edges):
         _accumulate_block(
             occupancy,
+            retained,
             full_to_active,
             grid,
             positions,
@@ -289,11 +295,12 @@ def _linear_grid_occupancy(
             bin_indices,
             return_seconds=return_seconds,
         )
-    return occupancy
+    return retained, occupancy
 
 
 def _accumulate_block(
     occupancy: NDArray[np.float64],
+    retained: NDArray[np.bool_],
     full_to_active: NDArray[np.intp],
     grid: RectilinearGrid,
     positions: NDArray[np.float64],
@@ -309,6 +316,8 @@ def _accumulate_block(
     ----------
     occupancy : ndarray of float64, shape (n_bins,)
         Accumulated seconds (or counts), updated in place.
+    retained : ndarray of bool, shape (n_samples - 1,)
+        Intervals that reached an active cell, updated in place.
     full_to_active : ndarray of intp, shape (n_cells,)
         Active-bin index of each full-grid cell, or ``-1``.
     valid : ndarray of intp, shape (n_block,)
@@ -322,30 +331,26 @@ def _accumulate_block(
     weights = dt[valid] if return_seconds else np.ones(len(valid))
 
     crossing = valid[~within]
+    # Each piece takes its fraction of the whole path's weight, so the share
+    # on inactive cells or off the grid is dropped rather than redistributed.
     interval, cell, time = ray_grid_pieces(
         positions[crossing],
         positions[crossing + 1],
         grid.edges,
         grid.shape,
-        dt[crossing],
+        weights[~within],
         grid.active_mask,
     )
-    if not return_seconds:
-        # Normalize over every crossed cell, active or not, so mass on
-        # inactive cells is dropped rather than redistributed.
-        totals = np.zeros(len(crossing))
-        np.add.at(totals, interval, time)
-        positive = totals[interval] > 0
-        interval, cell = interval[positive], cell[positive]
-        time = (time[positive] / totals[interval]) * weights[~within][interval]
     target = full_to_active[cell]
-    retained = target >= 0
+    active = target >= 0
+    retained[valid[within]] = True
+    retained[crossing[interval[active]]] = True
 
     # Accumulate in interval order, as a sequential traversal would.
     order_key = np.concatenate(
-        [np.flatnonzero(within), np.flatnonzero(~within)[interval[retained]]]
+        [np.flatnonzero(within), np.flatnonzero(~within)[interval[active]]]
     )
-    bins = np.concatenate([start_bin[within], target[retained]])
-    values = np.concatenate([weights[within], time[retained]])
+    bins = np.concatenate([start_bin[within], target[active]])
+    values = np.concatenate([weights[within], time[active]])
     order = np.argsort(order_key, kind="stable")
     np.add.at(occupancy, bins[order], values[order])

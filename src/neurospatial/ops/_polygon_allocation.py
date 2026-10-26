@@ -33,7 +33,6 @@ from neurospatial.geometry import (
     materialize_cells,
     wall_source_frame,
 )
-from neurospatial.ops._linear_allocation import crossing_blocks, ray_grid_pieces
 
 if TYPE_CHECKING:
     from neurospatial.geometry import FramedGrid
@@ -53,7 +52,12 @@ def _source_grid(
 
 @dataclass(frozen=True)
 class _RetainedLinearInterval:
-    """A half-open fraction of one observation interval assigned to one bin."""
+    """A half-open fraction of one observation interval assigned to one bin.
+
+    ``0 <= start_fraction < stop_fraction <= 1``: both builders take the
+    fractions from sorted unique breakpoints in ``[0, 1]``, and a stationary
+    interval is ``(0, 1)``.
+    """
 
     sample_index: int
     start_fraction: float
@@ -292,8 +296,10 @@ def retained_linear_intervals(
         Continuous domain and walls of the same environment.
     times : ndarray, shape (n_samples,)
         Validated timestamps, used to check interval-mask length.
-    positions : ndarray, shape (n_samples, 2)
-        Segment endpoints. Intervals with a non-finite endpoint are excluded.
+    positions : ndarray, shape (n_samples, n_dims)
+        Segment endpoints, ``n_dims == 2`` for planar cells and the bins'
+        dimension for N-D box cells. Intervals with a non-finite endpoint are
+        excluded.
     valid_mask : ndarray of bool, shape (n_samples - 1,)
         Observation validity (gaps, speed and recording windows), independent
         of whether the start point belongs to a retained bin.
@@ -477,9 +483,8 @@ def _polygon_linear_occupancy(
         Observation validity of each interval, independent of geometry.
     return_seconds : bool
         If True, each piece adds its share of the interval's duration. If
-        False, each interval adds one count split by path length. Framed N-D
-        grids normalize that count over the full source grid before inactive
-        cells drop their share, as native N-D linear allocation does.
+        False, each interval adds one count split by path length. Either way
+        the share outside the retained bins is dropped.
     indexes : LookupIndexes, optional
         Keeps the locator's search structures, usually the environment's
         analysis cache. None keeps them for this call only.
@@ -493,35 +498,15 @@ def _polygon_linear_occupancy(
         never renormalized.
     """
     dt = np.diff(times)
-    normalizers = np.ones(len(dt))
-    frame = binning.grid_frame
-    if frame is not None and binning.bins.n_dims != 2 and not return_seconds:
-        _, source_positions = _source_grid(frame, positions)
-        samples = np.flatnonzero(valid_mask)
-        normalizers[samples] = 0.0
-        starts, stops = source_positions[samples], source_positions[samples + 1]
-        for block in crossing_blocks(starts, stops, frame.source.edges):
-            interval, _, fraction = ray_grid_pieces(
-                starts[block],
-                stops[block],
-                frame.source.edges,
-                frame.source.shape,
-                np.ones(block.stop - block.start),
-            )
-            np.add.at(normalizers, samples[block][interval], fraction)
     pieces = retained_linear_intervals(
         binning, arena, times, positions, valid_mask, indexes
     )
     occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
     for piece in pieces:
         weight = dt[piece.sample_index] if return_seconds else 1.0
-        if normalizers[piece.sample_index] <= 0:
-            continue
         occupancy[piece.bin_index] += (
-            (piece.stop_fraction - piece.start_fraction)
-            * weight
-            / normalizers[piece.sample_index]
-        )
+            piece.stop_fraction - piece.start_fraction
+        ) * weight
     return pieces, occupancy
 
 

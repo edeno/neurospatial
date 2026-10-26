@@ -18,7 +18,7 @@ from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout import create_layout
-from neurospatial.ops.transforms import Affine2D, AffineND
+from neurospatial.ops.transforms import AffineND
 
 
 def grid(n_dims=2, hole=True):
@@ -273,7 +273,7 @@ def test_hexagon_conversion_retains_exact_vertices(kind):
         )
     )
     value = matrix(kind=kind)
-    child = env.apply_transform(Affine2D(value))
+    child = env.apply_transform(AffineND(value))
     assert isinstance(child._binning.shapes, PolygonCells)
     coefficients = [*value[0, :2], *value[1, :2], value[0, 2], value[1, 2]]
     for original, actual in zip(
@@ -324,7 +324,7 @@ def test_similarity_inverse_after_cancelling_translations_keeps_lookup_and_stora
     value[:2, :2] *= scale
     if reflect:
         value[:2, 0] *= -1
-    mapping = Affine2D(value)
+    mapping = AffineND(value)
     child = (
         env.apply_transform(mapping)
         .apply_transform(translate(3.0, 2.0))
@@ -369,7 +369,7 @@ def test_hole_ring_order_does_not_change_polygon_identity_after_inverse(angle, r
     )
     if reflect:
         value[:2, 0] *= -1
-    mapping = Affine2D(value)
+    mapping = AffineND(value)
     child = (
         env.apply_transform(mapping)
         .apply_transform(translate(3.0, 2.0))
@@ -424,7 +424,7 @@ def test_rotated_millimetre_grid_far_from_the_origin_is_refused(offset):
     cosine, sine = np.cos(0.3), np.sin(0.3)
     turn = np.array([[cosine, -sine, offset], [sine, cosine, offset], [0, 0, 1.0]])
     with pytest.raises(ValueError, match="recenter or rescale coordinates"):
-        env.apply_transform(Affine2D(turn))
+        env.apply_transform(AffineND(turn))
 
 
 @pytest.mark.parametrize("gap,certified", [(0.0, True), (-1e-15, False)])

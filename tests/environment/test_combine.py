@@ -69,7 +69,7 @@ def test_combined_boundary_uses_exposed_cells_independently_of_bridges(
 
 
 def test_combined_planar_boundary_survives_subset_and_rotation():
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     children = {
         key: Environment.from_grid_mask(
@@ -83,7 +83,7 @@ def test_combined_planar_boundary_survives_subset_and_rotation():
     assert len(subset.boundary_bins) == 10
     angle = 0.3
     rotated = subset.apply_transform(
-        Affine2D(
+        AffineND(
             np.array(
                 [
                     [np.cos(angle), -np.sin(angle), 0.0],
@@ -367,7 +367,7 @@ def test_automatic_bridges_respect_nearest_component_interiors(dims, finite):
 
 @pytest.mark.parametrize("angle", [0.0, 0.1, 0.3, 0.37, 0.7])
 def test_automatic_bridge_can_follow_a_third_components_exterior_boundary(angle):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     third = Environment.from_grid_mask(
         np.ones((1, 1), dtype=bool),
@@ -375,7 +375,7 @@ def test_automatic_bridge_can_follow_a_third_components_exterior_boundary(angle)
         units="cm",
         frame="lab",
     )
-    transform = Affine2D(
+    transform = AffineND(
         np.array(
             [
                 [np.cos(angle), -np.sin(angle), 0.0],
@@ -772,7 +772,7 @@ def test_linear_occupancy_retains_partial_exposure_and_excludes_gap(dims):
 
 
 def test_nested_bridges_are_reported_and_coupled_affine_refuses():
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     inner = Environment.combine(
         {"a": grid(), "b": grid(4)}, bridge_conductances={(("a", 1), ("b", 0)): 0.5}
@@ -781,7 +781,7 @@ def test_nested_bridges_are_reported_and_coupled_affine_refuses():
     assert len(outer.get_bridge_attributes()) == 2
     matrix = np.array([[1.0, 0.3, 0], [0, 1.0, 0], [0, 0, 1.0]])
     with pytest.raises(ValueError, match="conductance"):
-        outer.apply_transform(Affine2D(matrix))
+        outer.apply_transform(AffineND(matrix))
 
 
 @pytest.mark.parametrize("derive", ["subset", "translation"])
@@ -852,14 +852,14 @@ def test_rotated_wall_geometry_is_retained_and_transformed_tracks_are_certified(
     from shapely.geometry import LineString
 
     from neurospatial.arena import OpenArena
-    from neurospatial.ops.transforms import Affine2D, translate
+    from neurospatial.ops.transforms import AffineND, translate
 
     arena = OpenArena(box(0, 0, 4, 4), walls=(LineString([(2, 0), (2, 4)]),))
     original = Environment.from_grid_mask(
         np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0),) * 2, arena=arena
     )
     angle = 0.3
-    transform = Affine2D(
+    transform = AffineND(
         np.array(
             [
                 [np.cos(angle), -np.sin(angle), 0.1],
@@ -986,9 +986,9 @@ def test_shared_face_owner_does_not_depend_on_transforms_or_order(matrix, select
     """Rotating or mirroring each grid keeps the half-open owner of a shared
     face, in either component order, as rotating the combined environment
     does, also when the grids were subsets of larger ones."""
-    from neurospatial.ops import Affine2D
+    from neurospatial.ops import AffineND
 
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     left, right = grid(count=2), grid(2.0, count=2)
     if select:
         # Each grid loses its far cell, so the shared face stays shared.
@@ -1175,7 +1175,7 @@ def test_transformed_combination_arena_shares_the_bins_inverse(angle):
     requires; re-inverting the inverse would round differently."""
     from neurospatial.geometry._arena_fit import _composition_arena, validate_arena
     from neurospatial.geometry._coordinates import CartesianSystem
-    from neurospatial.ops import Affine2D
+    from neurospatial.ops import AffineND
 
     matrix = np.array(
         [
@@ -1185,7 +1185,7 @@ def test_transformed_combination_arena_shares_the_bins_inverse(angle):
         ]
     )
     joined = Environment.combine({"left": grid(count=2), "right": grid(2.0, count=2)})
-    moved = joined.apply_transform(Affine2D(matrix))
+    moved = joined.apply_transform(AffineND(matrix))
     locator = moved.binning.locator
     np.testing.assert_array_equal(locator.forward, matrix)
     arena = _composition_arena(locator)
@@ -1288,7 +1288,7 @@ def test_rotated_polygon_arena_of_a_site_is_checked_against_grid_cells(
     center, overlaps
 ):
     from neurospatial.arena import OpenArena
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     site = _unbounded_site_in(OpenArena(box(-0.5, -0.5, 0.5, 0.5)), [0.0, 0.0])
     angle = np.pi / 4
@@ -1299,7 +1299,7 @@ def test_rotated_polygon_arena_of_a_site_is_checked_against_grid_cells(
             [0.0, 0.0, 1.0],
         ]
     )
-    turned = site.apply_transform(Affine2D(matrix)).with_metadata(frame="lab")
+    turned = site.apply_transform(AffineND(matrix)).with_metadata(frame="lab")
     components = {"grid": grid(), "site": turned}
     if overlaps:
         with pytest.raises(ValueError, match=r"[Oo]verlap"):

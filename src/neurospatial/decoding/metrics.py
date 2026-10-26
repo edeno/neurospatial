@@ -28,6 +28,7 @@ from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.ops._types import DistanceMetric
 
 
 def decoding_error(
@@ -35,7 +36,7 @@ def decoding_error(
     decoded_positions: NDArray[np.float64],
     actual_positions: NDArray[np.float64],
     *,
-    metric: Literal["euclidean", "geodesic"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """Compute position error for each time bin.
 
@@ -214,7 +215,7 @@ def median_decoding_error(
     decoded_positions: NDArray[np.float64],
     actual_positions: NDArray[np.float64],
     *,
-    metric: Literal["euclidean", "geodesic"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
 ) -> float:
     """Compute the median decoding error, ignoring NaN.
 

@@ -390,7 +390,7 @@ def test_recentred_hexagon_cells_are_the_bins(origin, angle):
     with "Canonical hexagon centers disagree with published bin centers".
     """
     from neurospatial.layout import create_layout
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     env = Environment.from_layout(
         create_layout(
@@ -404,7 +404,7 @@ def test_recentred_hexagon_cells_are_the_bins(origin, angle):
     )
     shift = -rotation @ np.full(2, origin + 15.0)
     moved = env.apply_transform(
-        Affine2D(np.block([[rotation, shift[:, None]], [0, 0, 1]]))
+        AffineND(np.block([[rotation, shift[:, None]], [0, 0, 1]]))
     )
     cells = materialize_cells(moved._binning)
     centroids = np.array([cell.centroid.coords[0] for cell in cells])

@@ -22,7 +22,7 @@ from neurospatial.geometry import (
 )
 from neurospatial.geometry._derive import _classification
 from neurospatial.landmarks import Landmark, Landmarks
-from neurospatial.ops.transforms import Affine2D, AffineND
+from neurospatial.ops.transforms import AffineND
 from neurospatial.regions import Region, Regions
 
 
@@ -37,7 +37,7 @@ def _apply_transform(
 ) -> _Derivation:
     """Transform owned cells, their bounds, arenas, regions and landmarks together."""
     n_dims = binning.bins.n_dims
-    if not isinstance(transform, (AffineND, Affine2D)):
+    if not isinstance(transform, AffineND):
         shape = np.shape(transform) if isinstance(transform, np.ndarray) else None
         given = (
             f"a NumPy array of shape {shape}"
@@ -46,8 +46,7 @@ def _apply_transform(
         )
         raise TypeError(
             _format_error(
-                f"apply_transform() takes an AffineND or Affine2D transform, got "
-                f"{given}.",
+                f"apply_transform() takes an AffineND transform, got {given}.",
                 why="Why: the transform object says the matrix is homogeneous "
                 f"(shape ({n_dims + 1}, {n_dims + 1}) for {n_dims}-D bins, with "
                 "the translation in the last column) and supplies the inverse "
@@ -59,7 +58,7 @@ def _apply_transform(
         )
 
     # Validate dimensionality match
-    transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2
+    transform_dims = transform.n_dims
     if n_dims != transform_dims:
         raise ValueError(
             _format_error(
@@ -73,17 +72,6 @@ def _apply_transform(
                 f"env.apply_transform(AffineND(np.eye({n_dims + 1})))",
             )
         )
-
-    # Containment is evaluated in the original layout's coordinate frame.
-    # A singular transform collapses cells, so there is no unambiguous inverse.
-    try:
-        transform.inverse()
-    except np.linalg.LinAlgError as exc:
-        raise ValueError(
-            "Environment transform must be invertible.\n"
-            "Why: a singular transform collapses bins and cannot preserve containment.\n"
-            "Fix: use nonzero scale factors and an invertible affine matrix."
-        ) from exc
 
     transformed = transform_binning(with_cached_faces(cache, binning), transform)
 
@@ -121,9 +109,7 @@ def _apply_transform(
     )
 
 
-def _transformed_landmark(
-    landmark: Landmark, transform: AffineND | Affine2D
-) -> Landmark:
+def _transformed_landmark(landmark: Landmark, transform: AffineND) -> Landmark:
     """Map a landmark's geometry through ``transform``, keeping its name."""
     data: NDArray[np.float64] | LineString | Polygon
     if isinstance(landmark.data, np.ndarray):
@@ -133,7 +119,7 @@ def _transformed_landmark(
     return Landmark(landmark.name, landmark.kind, data, landmark.metadata)
 
 
-def _transformed_region(region: Region, transform: AffineND | Affine2D) -> Region:
+def _transformed_region(region: Region, transform: AffineND) -> Region:
     """Map a point or polygon region through ``transform``, marking it transformed."""
     if region.kind == "point":
         data: NDArray[np.float64] | Polygon = transform(

@@ -590,11 +590,12 @@ landmarks_px = np.array([
     [590, 430],  # Bottom-right corner in pixels
     [50, 430],   # Bottom-left corner in pixels
 ])
+# Environment y points up, so the top of the image has the largest y
 landmarks_cm = np.array([
-    [0, 0],      # Top-left in cm
-    [100, 0],    # Top-right in cm
-    [100, 80],   # Bottom-right in cm
-    [0, 80],     # Bottom-left in cm
+    [0, 80],     # Top-left in cm
+    [100, 80],   # Top-right in cm
+    [100, 0],    # Bottom-right in cm
+    [0, 0],      # Bottom-left in cm
 ])
 
 transform = calibrate_from_landmarks(

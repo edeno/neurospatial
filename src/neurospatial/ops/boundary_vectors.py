@@ -47,6 +47,7 @@ from neurospatial.geometry import (
 )
 
 if TYPE_CHECKING:
+    from neurospatial.geometry._boundaries import BoundarySource
     from neurospatial.ops._protocols import BinningConsumer
 
 __all__ = ["boundary_directions", "compute_boundary_distances", "nearest_boundary"]
@@ -92,7 +93,7 @@ def compute_boundary_distances(
     direction_frame: Literal["allocentric", "egocentric"],
     n_directions: int = 36,
     max_distance: float | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Distance to the first wall along rays in evenly spaced directions.
 
@@ -168,7 +169,9 @@ def compute_boundary_distances(
     >>> distances.round(1).tolist()  # to the west wall at x = 0 for 135 degrees
     [[28.3, 70.7, 70.7, 28.3]]
     """
-    positions, headings = _check_samples(positions, headings, direction_frame)
+    positions, headings = _check_samples(
+        positions, headings, direction_frame, call="compute_boundary_distances()"
+    )
     directions = boundary_directions(n_directions=n_directions)
     binning, arena = env.binning, env.arena
     walls = boundary_geometry(binning, arena, boundary_source)
@@ -198,7 +201,7 @@ def nearest_boundary(
     env: BinningConsumer,
     positions: NDArray[np.float64],
     *,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Distance and allocentric direction from each sample to the closest wall.
 
@@ -251,7 +254,9 @@ def nearest_boundary(
     >>> float(distances[0]), float(np.degrees(directions[0]))  # west wall
     (20.0, 180.0)
     """
-    positions, _ = _check_samples(positions, None, "allocentric")
+    positions, _ = _check_samples(
+        positions, None, "allocentric", call="nearest_boundary()"
+    )
     binning, arena = env.binning, env.arena
     walls = boundary_geometry(binning, arena, boundary_source)
     observed = valid_observers(
@@ -272,15 +277,20 @@ def _check_samples(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
     direction_frame: str,
+    *,
+    call: str,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
-    """Validate positions and the heading that the direction frame needs."""
+    """Validate positions and the heading that the direction frame needs.
+
+    ``call`` names the public function in error messages.
+    """
     if direction_frame not in ("allocentric", "egocentric"):
         raise ValueError(
             f"direction_frame must be 'allocentric' or 'egocentric', got "
             f"{direction_frame!r}."
         )
     positions = np.asarray(positions, dtype=np.float64)
-    require_position_columns(positions, 2, call="compute_boundary_distances()")
+    require_position_columns(positions, 2, call=call)
     if direction_frame == "allocentric" and headings is not None:
         raise ValueError(
             _format_error(

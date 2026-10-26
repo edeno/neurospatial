@@ -107,6 +107,8 @@ if TYPE_CHECKING:
 
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.environment import Environment
+    from neurospatial.geometry._boundaries import BoundarySource
+    from neurospatial.ops._types import BackendType
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 
@@ -202,7 +204,6 @@ class ViewRateResult(SpatialResultMixin):
         Gaze model used for computing viewed location:
         - "fixed_distance": Point at fixed distance in gaze direction
         - "ray_cast": Intersection with environment boundary
-        - "boundary": Nearest boundary point in gaze direction
     view_distance : float
         Distance parameter for the gaze model (relevant for "fixed_distance").
     method : str
@@ -1205,7 +1206,7 @@ def _check_view_env(env: Environment, *, context: str) -> None:
 
 def _validate_gaze_model(gaze_model: str) -> None:
     """Raise ``ValueError`` unless ``gaze_model`` is a supported gaze model."""
-    valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
+    valid_gaze_models = {"fixed_distance", "ray_cast"}
     if gaze_model not in valid_gaze_models:
         raise ValueError(
             f"Invalid gaze_model: '{gaze_model}'. "
@@ -1261,7 +1262,7 @@ def _count_views(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"],
+    gaze_model: Literal["fixed_distance", "ray_cast"],
     view_distance: float,
     gaze_offsets: NDArray[np.float64] | None,
     max_gap: float | None,
@@ -1271,7 +1272,7 @@ def _count_views(
     bandwidth: float | None,
     min_occupancy: float,
     backend: str,
-    boundary_source: Literal["physical", "analysis"],
+    boundary_source: BoundarySource,
     view_bins: NDArray[np.intp] | None = None,
     n_jobs: int = 1,
     break_before: NDArray[np.bool_] | None = None,
@@ -1354,7 +1355,7 @@ def compute_view_rate(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -1364,8 +1365,8 @@ def compute_view_rate(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    backend: BackendType = "numpy",
+    boundary_source: BoundarySource = "physical",
 ) -> ViewRateResult:
     """Compute view field for one neuron.
 
@@ -1393,14 +1394,13 @@ def compute_view_rate(
         -π/2 = South, wrapped to [-π, π]). Internally combined with
         ``positions`` to project the gaze cone outwards into the
         allocentric arena.
-    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
         Method for computing viewed location:
 
         - **fixed_distance**: Point at fixed distance in gaze direction.
           Fast and simple, good default for most analyses.
         - **ray_cast**: Intersection with environment boundary. More
           realistic for environments with walls.
-        - **boundary**: Nearest boundary point in gaze direction.
 
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
@@ -1667,7 +1667,7 @@ def compute_view_rates(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -1678,9 +1678,9 @@ def compute_view_rates(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> ViewRatesResult:
     """Compute view fields for multiple neurons.
 
@@ -1718,14 +1718,13 @@ def compute_view_rates(
         -π/2 = South, wrapped to [-π, π]). Internally combined with
         ``positions`` to project the gaze cone outwards into the
         allocentric arena.
-    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
         Method for computing viewed location:
 
         - **fixed_distance**: Point at fixed distance in gaze direction.
           Fast and simple, good default for most analyses.
         - **ray_cast**: Intersection with environment boundary. More
           realistic for environments with walls.
-        - **boundary**: Nearest boundary point in gaze direction.
 
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
@@ -1954,7 +1953,7 @@ def _compute_view_rates(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -1965,10 +1964,10 @@ def _compute_view_rates(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     view_bins: NDArray[np.intp] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> ViewRatesResult:
     """Body of :func:`compute_view_rates`; ``view_bins`` reuses gaze geometry."""
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -2116,7 +2115,7 @@ def is_spatial_view_cell(
     min_shift: float | None = None,
     rng: np.random.Generator | int | None = None,
     unit_id: Hashable | None = None,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -2126,8 +2125,8 @@ def is_spatial_view_cell(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    backend: BackendType = "numpy",
+    boundary_source: BoundarySource = "physical",
 ) -> bool:
     """Classify one neuron by the spatial_view_cell screen or circular-shift test.
 
@@ -2150,14 +2149,13 @@ def is_spatial_view_cell(
         -π/2 = South, wrapped to [-π, π]). Internally combined with
         ``positions`` to project the gaze cone outwards into the
         allocentric arena.
-    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
         Method for computing viewed location:
 
         - **fixed_distance**: Point at fixed distance in gaze direction.
           Fast and simple, good default for most analyses.
         - **ray_cast**: Intersection with environment boundary. More
           realistic for environments with walls.
-        - **boundary**: Nearest boundary point in gaze direction.
 
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
@@ -2356,7 +2354,7 @@ def spatial_view_cell_significance(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -2367,12 +2365,12 @@ def spatial_view_cell_significance(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     n_shuffles: int = 1000,
     min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test spatial view tuning against circular spike-time shifts.
 
@@ -2410,14 +2408,13 @@ def spatial_view_cell_significance(
         -π/2 = South, wrapped to [-π, π]). Internally combined with
         ``positions`` to project the gaze cone outwards into the
         allocentric arena.
-    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
         Method for computing viewed location:
 
         - **fixed_distance**: Point at fixed distance in gaze direction.
           Fast and simple, good default for most analyses.
         - **ray_cast**: Intersection with environment boundary. More
           realistic for environments with walls.
-        - **boundary**: Nearest boundary point in gaze direction.
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
         Ignored for ray_cast and boundary models.

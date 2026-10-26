@@ -65,6 +65,7 @@ if TYPE_CHECKING:
     from neurospatial._intervals import TimeSupport
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.environment import EgocentricPolarSystem, Environment
+    from neurospatial.geometry._boundaries import BoundarySource
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
 
@@ -156,7 +157,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     n_distance_bins: int
     n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
-    boundary_source: Literal["physical", "analysis"] = field(kw_only=True)
+    boundary_source: BoundarySource = field(kw_only=True)
     unit_id: int | str | None = None
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
@@ -292,7 +293,7 @@ class BoundaryVectorRatesResult(
     n_distance_bins: int
     n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
-    boundary_source: Literal["physical", "analysis"] = field(kw_only=True)
+    boundary_source: BoundarySource = field(kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
     spike_window: NDArray[np.float64] | None = field(
@@ -422,7 +423,7 @@ def _boundary_frame_bins(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-    boundary_source: Literal["physical", "analysis"],
+    boundary_source: BoundarySource,
 ) -> tuple[NDArray[np.intp], NDArray[np.bool_]]:
     """Polar bin of the wall along each ray, and which samples were observed.
 
@@ -534,7 +535,7 @@ def compute_boundary_vector_rates(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -683,7 +684,7 @@ def compute_boundary_vector_rate(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -759,7 +760,7 @@ def _boundary_vector_rates(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-    boundary_source: Literal["physical", "analysis"],
+    boundary_source: BoundarySource,
     max_gap: float | None,
     epochs: Any,
     break_before: ArrayLike | None,

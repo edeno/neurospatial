@@ -132,6 +132,7 @@ if TYPE_CHECKING:
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
+    from neurospatial.ops._types import DistanceMetric
 
 
 __all__ = [  # noqa: RUF022
@@ -537,7 +538,7 @@ def path_progress(
     *,
     start_bins: NDArray[np.int_],
     goal_bins: NDArray[np.int_],
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """Compute normalized path progress from start to goal (0 -> 1).
 
@@ -660,9 +661,7 @@ def path_progress(
     if env.n_bins < 5000:
         # Small environment - precompute full distance matrix
         if metric == "geodesic":
-            dist_matrix = geodesic_distance_matrix(
-                env.connectivity, env.n_bins, weight="distance"
-            )
+            dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
         else:  # euclidean
             dist_matrix = euclidean_distance_matrix(env.bin_centers)
 
@@ -723,7 +722,7 @@ def distance_to_region(
     env: Environment,
     *,
     target_bins: NDArray[np.int_] | int,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """Compute distance from each trajectory point to target region.
 
@@ -829,7 +828,7 @@ def distance_to_region(
 
             if metric == "geodesic":
                 dist_matrix = geodesic_distance_matrix(
-                    env.connectivity, env.n_bins, weight="distance"
+                    env.connectivity, weight="distance"
                 )
             else:
                 dist_matrix = euclidean_distance_matrix(env.bin_centers)
@@ -860,7 +859,7 @@ def distance_to_reward(
     reward_times: NDArray[np.float64],
     reward_positions: NDArray[np.float64] | None = None,
     *,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
     mode: Literal["nearest", "last", "next"] = "nearest",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -1387,7 +1386,7 @@ def distance_to_boundary(
     *,
     boundary_type: Literal["edge", "obstacle", "region"] = "edge",
     region_name: str | None = None,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """
     Compute distance to environment boundary at each position.
@@ -2320,7 +2319,7 @@ def heading_direction_labels(
 def _polyline_length(
     positions: Any,
     *,
-    metric: Literal["euclidean", "geodesic"],
+    metric: DistanceMetric,
     env: Environment | None,
 ) -> float:
     """Length of one continuous polyline, with no time support.
@@ -2373,7 +2372,7 @@ def _observed_path_length(
     positions: NDArray[np.float64],
     support: ObservationSupport,
     *,
-    metric: Literal["euclidean", "geodesic"],
+    metric: DistanceMetric,
     env: Environment | None,
 ) -> tuple[float, bool]:
     """Path length over usable intervals, and whether every interval counted.
@@ -2416,7 +2415,7 @@ def traveled_path_length(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -2511,7 +2510,7 @@ def shortest_path_length(
     start: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
 ) -> float:
     """Compute shortest path distance from start to goal.
 
@@ -2682,7 +2681,7 @@ def subgoal_efficiency(
     positions: NDArray[np.float64],
     subgoals: NDArray[np.float64],
     *,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
 ) -> SubgoalEfficiencyResult:
     """Compute path efficiency decomposed by subgoals.
 
@@ -2802,7 +2801,7 @@ def compute_path_efficiency(
     positions: ArrayLike,
     goal: ArrayLike,
     *,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: DistanceMetric = "geodesic",
     reference_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -3305,7 +3304,7 @@ def approach_rate(
     positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
-    metric: Literal["geodesic", "euclidean"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -3416,7 +3415,7 @@ def _approach_rate(
     goal: NDArray[np.float64],
     support: ObservationSupport,
     *,
-    metric: Literal["geodesic", "euclidean"],
+    metric: DistanceMetric,
     env: Environment | None,
     call: str,
 ) -> NDArray[np.float64]:
@@ -3494,7 +3493,7 @@ def compute_goal_directed_metrics(
     positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
-    metric: Literal["geodesic", "euclidean"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     min_speed: float | None = None,
     goal_radius: float | None = None,
     max_gap: float | None = 0.5,

@@ -1,7 +1,7 @@
 """Point-to-bin mapping utilities for neurospatial.
 
 This module provides high-performance spatial query utilities including:
-- Batch mapping of points to bins with KD-tree caching
+- Nearest-bin-center queries over a caller's KD-tree
 - Deterministic tie-breaking on bin boundaries
 - Region rasterization to bin masks
 - Field resampling between environments
@@ -11,9 +11,7 @@ These are core primitives used throughout neurospatial and by downstream package
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from enum import Enum
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, TypeAlias, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,36 +30,17 @@ if TYPE_CHECKING:
     from neurospatial.regions import Region, Regions
 
 
-class TieBreakStrategy(Enum):
-    """Strategy for resolving ties when a point is equidistant from multiple bins.
+TieBreakStrategy: TypeAlias = Literal["lowest_index", "closest_center"]
+"""How ``Environment.nearest_bin`` resolves a point equidistant from several centers.
 
-    Attributes
-    ----------
-    LOWEST_INDEX : str
-        Choose the bin with the smallest index among equidistant candidates.
-        This ensures deterministic, reproducible results even when points lie
-        exactly on bin boundaries. Recommended for scientific reproducibility.
+- ``"lowest_index"``: the tied bin with the smallest index, so a point on a
+  bin boundary always gets the same bin. The default.
+- ``"closest_center"``: whichever tied center the KD-tree finds first, which
+  is not necessarily the lowest index. It skips the tie check, so it is a
+  little faster.
+"""
 
-    CLOSEST_CENTER : str
-        Choose the bin whose center is geometrically closest to the point.
-        This breaks numerical ties but may still be non-deterministic for
-        exact ties. Faster than LOWEST_INDEX as it skips secondary checks.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.ops.mapping import TieBreakStrategy
-    >>> env = Environment.from_samples(np.zeros((1, 2)), bin_size=1.0)
-    >>> # Use enum for autocomplete and type safety
-    >>> env.nearest_bin(
-    ...     np.array([[0.1, 0.1]]), tie_break=TieBreakStrategy.CLOSEST_CENTER
-    ... )
-    array([0])
-    """
-
-    LOWEST_INDEX = "lowest_index"
-    CLOSEST_CENTER = "closest_center"
+_TIE_BREAKS: tuple[TieBreakStrategy, ...] = ("lowest_index", "closest_center")
 
 
 def _estimate_typical_bin_spacing(
@@ -136,11 +115,11 @@ def _typical_bin_spacing(
 
 
 def _validate_nearest_options(
-    tie_break: TieBreakStrategy | Literal["lowest_index", "closest_center"],
+    tie_break: TieBreakStrategy,
     max_distance: float | None,
     max_distance_factor: float | None,
 ) -> TieBreakStrategy:
-    """Validate distance controls and normalize the supported tie-break strings."""
+    """Validate the tie-break name and the distance controls."""
     # Validate parameters
     if max_distance is not None and max_distance_factor is not None:
         raise ValueError(
@@ -156,15 +135,11 @@ def _validate_nearest_options(
             f"max_distance_factor must be positive, got {max_distance_factor}"
         )
 
-    # Convert string to enum if needed (backwards compatibility)
-    if isinstance(tie_break, str):
-        try:
-            tie_break = TieBreakStrategy(tie_break)
-        except ValueError:
-            raise ValueError(
-                f"Invalid tie_break value: '{tie_break}'. "
-                f"Must be one of: {[e.value for e in TieBreakStrategy]}"
-            ) from None
+    if tie_break not in _TIE_BREAKS:
+        raise ValueError(
+            f"Invalid tie_break value: {tie_break!r}. Must be one of: "
+            f"{list(_TIE_BREAKS)}"
+        )
 
     return tie_break
 
@@ -209,12 +184,34 @@ def _lowest_tied_index(
     return np.minimum.reduceat(np.where(tied, index, np.iinfo(np.int64).max), starts)
 
 
+@overload
 def _nearest_bin_query(
     bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
     points: NDArray[np.float64],
     *,
-    tie_break: TieBreakStrategy = TieBreakStrategy.LOWEST_INDEX,
+    tie_break: TieBreakStrategy = ...,
+    return_dist: Literal[False] = ...,
+    max_distance: float | None = ...,
+    max_distance_factor: float | None = ...,
+) -> NDArray[np.int64]: ...
+@overload
+def _nearest_bin_query(
+    bin_centers: NDArray[np.float64],
+    kdtree: cKDTree,
+    points: NDArray[np.float64],
+    *,
+    tie_break: TieBreakStrategy = ...,
+    return_dist: bool,
+    max_distance: float | None = ...,
+    max_distance_factor: float | None = ...,
+) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
+def _nearest_bin_query(
+    bin_centers: NDArray[np.float64],
+    kdtree: cKDTree,
+    points: NDArray[np.float64],
+    *,
+    tie_break: TieBreakStrategy = "lowest_index",
     return_dist: bool = False,
     max_distance: float | None = None,
     max_distance_factor: float | None = None,
@@ -231,12 +228,12 @@ def _nearest_bin_query(
         Query coordinates in the same stored coordinate columns.
     """
     # Query KD-tree
-    if tie_break == TieBreakStrategy.CLOSEST_CENTER:
+    if tie_break == "closest_center":
         # Fast path: just use nearest neighbor
         distances, indices = kdtree.query(points, k=1, workers=-1)
         bin_indices: NDArray[np.int64] = indices.astype(np.int64)
 
-    elif tie_break == TieBreakStrategy.LOWEST_INDEX:
+    elif tie_break == "lowest_index":
         # Deterministic path: find all ties and pick lowest index.
         # We first query only the k=10 nearest candidates as a fast approximation:
         # the lowest-index winner almost always lies among the nearest few. If a
@@ -542,22 +539,27 @@ def resample_field(
     method : {"nearest", "diffuse"}, optional
         Resampling method. Default is "nearest".
 
-        - "nearest": KD-tree nearest-neighbor lookup (fast, preserves values)
+        - "nearest": value of the nearest source bin center (fast, preserves
+          values), for destination bins inside the source
         - "diffuse": nearest-neighbor pullback followed by a boundary-aware,
           valid-bin-normalized diffusion **average** of the pulled-back field.
           For **intensive** fields only (rate maps / probability densities); it
           does not conserve mass, so do not use it for spike counts, occupancy,
           or any extensive/mass quantity.
     bandwidth : float, optional
-        Smoothing bandwidth for diffuse method (in spatial units).
-        Required when method="diffuse", ignored for method="nearest".
+        Smoothing bandwidth for the diffuse method, in the destination
+        environment's length units (``dst_env.units``). Required when
+        method="diffuse", ignored for method="nearest".
 
     Returns
     -------
     resampled : NDArray[np.float64], shape (dst_env.n_bins,)
         Field resampled onto destination environment bins. Destination bins
-        whose centers fall outside the source environment (no source bin within
-        range) are set to ``np.nan``.
+        whose centers lie in no source bin (``src_env.bin_at`` returns -1) are
+        ``np.nan``. With "diffuse", missing (NaN) source values are averaged
+        over as ``dst_env.smooth(..., mode="average")`` does: a missing bin is
+        filled from observed neighbours, and a bin too far from every observed
+        bin for the smoothing to resolve its value stays ``np.nan``.
 
     Raises
     ------
@@ -569,6 +571,9 @@ def resample_field(
     CartesianOnlyError
         If either environment is polar: bins are matched by nearest Cartesian
         bin center.
+    NotImplementedError
+        If the source is a track built without ``track_width``: its centerline
+        does not say which destination bins lie on it.
 
     See Also
     --------
@@ -599,9 +604,12 @@ def resample_field(
 
     **Method Details**:
 
-    **Nearest method**: Uses KD-tree to find nearest source bin for each
-    destination bin center. Fast and preserves exact field values from source.
-    No interpolation or smoothing is applied.
+    **Nearest method**: A destination bin whose center lies in a source bin
+    takes the value of the nearest source bin center (lowest index on ties),
+    found with the source's KD-tree; one whose center lies in no source bin is
+    NaN, however close it is to the source's edge. This is
+    ``src_env.interpolate(field, dst_env.bin_centers, mode="nearest")``. No
+    interpolation or smoothing is applied.
 
     **Diffuse method**: Applies nearest-neighbor mapping, then a masked
     (valid-bin-normalized) diffusion average — Nadaraya-Watson with the
@@ -714,128 +722,61 @@ def resample_field(
             f"destination has {dst_centers.shape[1]}D."
         )
 
-    # The source's nearest-center lookup is read here, at the public boundary:
-    # the source environment caches its KD-tree, so repeated resampling from it
-    # does not rebuild the tree.
-    resampled, outside_source = _pull_back_nearest(
-        field,
+    # A destination bin is outside the source when its center lies in no
+    # source bin, by the source's own containment rule (Environment.bin_at);
+    # a distance-to-nearest-center threshold would let bins well outside the
+    # source copy its edge values. Inside, a bin takes the value of the nearest
+    # source bin center, as Environment.interpolate(mode="nearest") does. The
+    # source caches its KD-tree, so repeated resampling does not rebuild it.
+    outside_source = src_env.bin_at(dst_centers) < 0
+    nearest_source_bins = _nearest_bin_query(
+        src_centers,
+        src_env.bin_center_tree(),
         dst_centers,
-        lambda points: cast(
-            "NDArray[np.int64]",
-            # A destination bin more than 10 typical source spacings from
-            # every source center lies outside the source.
-            src_env.nearest_bin(
-                points,
-                tie_break=TieBreakStrategy.LOWEST_INDEX,
-                max_distance_factor=10.0,
-            ),
-        ),
+        tie_break="lowest_index",
     )
+    resampled = _pull_back_nearest(field, nearest_source_bins, outside_source)
     if method == "nearest":
         return resampled
     assert bandwidth is not None  # Already validated above
-    # The destination's diffusion operator is extracted here, at the public
-    # boundary: its truncated eigenbasis is cached by the destination
-    # environment, so repeated resampling onto it does not rebuild the basis.
-    geometry = dst_env.get_diffusion_geometry()
-    return _smooth_pulled_back(
-        resampled,
-        outside_source,
-        lambda columns: np.asarray(
-            dst_env.diffuse(columns, bandwidth=bandwidth, mode="average")
-        ),
-        n_components=geometry.n_components,
-        labels=geometry.labels,
+    # The pulled-back field is intensive, so it is averaged over its valid
+    # bins exactly as env.smooth(mode="average") averages a rate map with
+    # missing bins: a NaN bin gets no weight and is filled from valid
+    # neighbours, and a bin whose smoothed support is truncation noise stays
+    # NaN rather than reporting noise / noise. The destination caches its
+    # eigenbasis, so repeated resampling onto it does not rebuild it.
+    smoothed = np.array(
+        dst_env.diffuse(resampled, bandwidth=bandwidth, mode="average"),
+        dtype=np.float64,
     )
+    smoothed[outside_source] = np.nan
+    return smoothed
 
 
 def _pull_back_nearest(
     field: NDArray[np.float64],
-    dst_centers: NDArray[np.float64],
-    nearest_source_bin: Callable[[NDArray[np.float64]], NDArray[np.int64]],
-) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    nearest_source_bins: NDArray[np.int64],
+    outside_source: NDArray[np.bool_],
+) -> NDArray[np.float64]:
     """Give each destination bin the value of its nearest source bin center.
 
     Parameters
     ----------
     field : ndarray of float64, shape (n_src_bins,)
         Values on the source bins.
-    dst_centers : ndarray of float64, shape (n_dst_bins, n_dims)
-        Destination bin centers, in the source's coordinates.
-    nearest_source_bin : callable
-        Maps points of shape ``(n_points, n_dims)`` to the nearest source bin,
-        ``-1`` for a point too far from every source center.
+    nearest_source_bins : ndarray of int64, shape (n_dst_bins,)
+        Nearest source bin of each destination bin center.
+    outside_source : ndarray of bool, shape (n_dst_bins,)
+        Destination bins whose centers lie in no source bin.
 
     Returns
     -------
-    resampled : ndarray of float64, shape (n_dst_bins,)
+    ndarray of float64, shape (n_dst_bins,)
         Pulled-back values; NaN where the source value is NaN or the
         destination bin is outside the source.
-    outside_source : ndarray of bool, shape (n_dst_bins,)
-        Destination bins that the nearest-center lookup rejects as outside the
-        source.
     """
-    dst_to_src_indices = nearest_source_bin(dst_centers)
-    # The lookup returns -1 for destination bin centers that fall outside the
-    # source environment. Naive ``field[dst_to_src_indices]`` would silently
-    # resolve -1 to ``field[-1]`` (Python negative indexing). Gather safely with
-    # the negative indices clamped, then mask those positions NaN.
-    outside_source = dst_to_src_indices < 0
-    safe_indices = np.where(outside_source, 0, dst_to_src_indices)
-    resampled: NDArray[np.float64] = field[safe_indices].astype(np.float64, copy=True)
+    resampled: NDArray[np.float64] = field[nearest_source_bins].astype(
+        np.float64, copy=True
+    )
     resampled[outside_source] = np.nan
-    return resampled, outside_source
-
-
-def _smooth_pulled_back(
-    resampled: NDArray[np.float64],
-    outside_source: NDArray[np.bool_],
-    smooth_average: Callable[[NDArray[np.float64]], NDArray[np.float64]],
-    *,
-    n_components: int,
-    labels: NDArray[np.int_],
-) -> NDArray[np.float64]:
-    """Smooth a pulled-back intensive field over its valid destination bins.
-
-    A pullback field is *intensive* (a rate map / probability density sampled
-    onto the destination), so it is smoothed with the row-stochastic average
-    operator (masked Nadaraya-Watson), not the mass-conserving transition
-    kernel: uncovered / NaN bins contribute *no weight* rather than a real 0
-    that pulls covered neighbours toward zero. Only a bin outside the source or
-    in a component with no valid bin is left NaN (no far-field floor), and the
-    signed numerator is never clipped.
-
-    Parameters
-    ----------
-    resampled : ndarray of float64, shape (n_bins,)
-        Pulled-back values, NaN outside the source or where the source value
-        is missing.
-    outside_source : ndarray of bool, shape (n_bins,)
-        Destination bins outside the source; they stay NaN. Bins whose source
-        value is NaN are filled from their valid neighbours.
-    smooth_average : callable
-        The destination's ``mode="average"`` diffusion of a
-        ``(n_bins, n_fields)`` batch.
-    n_components : int
-        Number of connected components of the destination's diffusion graph.
-    labels : ndarray of int, shape (n_bins,)
-        Component of each destination bin.
-
-    Returns
-    -------
-    ndarray of float64, shape (n_bins,)
-        Smoothed values, NaN outside the source.
-    """
-    from neurospatial.ops.diffusion import _masked_diffusion_average
-
-    valid = (~outside_source) & np.isfinite(resampled)
-    smoothed = _masked_diffusion_average(
-        smooth_average,
-        resampled[:, None],
-        valid[:, None],
-        labels,
-        n_components,
-        floor=None,
-    )[:, 0]
-    smoothed[outside_source] = np.nan
-    return smoothed
+    return resampled

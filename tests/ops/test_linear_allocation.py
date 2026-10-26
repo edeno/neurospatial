@@ -66,10 +66,10 @@ def test_inactive_cells_drop_their_share():
     grid = RectilinearGrid(edges, (3, 1), active)
     positions = np.array([[0.5, 0.5], [2.5, 0.5]])
     bins = np.array([0, 1])  # active-bin ids of cells 0 and 2
-    seconds = _linear_grid_occupancy(
+    _, seconds = _linear_grid_occupancy(
         2, grid, positions, np.array([4.0]), np.array([True]), bins, return_seconds=True
     )
-    counts = _linear_grid_occupancy(
+    _, counts = _linear_grid_occupancy(
         2,
         grid,
         positions,
@@ -83,10 +83,35 @@ def test_inactive_cells_drop_their_share():
     np.testing.assert_allclose(counts, [0.25, 0.25])
 
 
+@pytest.mark.parametrize("return_seconds", [True, False])
+def test_share_off_the_grid_is_dropped_in_both_directions(unit_grid, return_seconds):
+    # Along y = 1.5 from x = 2 to x = 6: half the path lies past the grid's
+    # right edge at x = 4, whichever end is the start.
+    positions = np.array([[2.0, 1.5], [6.0, 1.5], [2.0, 1.5], [9.0, 9.0], [8.0, 9.0]])
+    bins = np.array([7, -1, 7, -1, -1])
+    retained, occupancy = _linear_grid_occupancy(
+        12,
+        unit_grid,
+        positions,
+        np.array([4.0, 4.0, 1.0, 1.0]),
+        np.array([True, True, False, True]),
+        bins,
+        return_seconds=return_seconds,
+    )
+    # Each interval gives a quarter of its weight to each of cells (2, 1) and
+    # (3, 1); the half outside is dropped.
+    weight = 4.0 if return_seconds else 1.0
+    expected = np.zeros(12)
+    expected[[7, 10]] = 2 * weight / 4
+    np.testing.assert_allclose(occupancy, expected, rtol=1e-15)
+    # The last path never reaches the grid.
+    np.testing.assert_array_equal(retained, [True, True, False, False])
+
+
 def test_interval_inside_one_bin_and_invalid_intervals(unit_grid):
     positions = np.array([[0.2, 0.2], [0.8, 0.7], [3.5, 2.5]])
     bins = np.array([0, 0, 11])
-    occupancy = _linear_grid_occupancy(
+    retained, occupancy = _linear_grid_occupancy(
         12,
         unit_grid,
         positions,
@@ -98,6 +123,7 @@ def test_interval_inside_one_bin_and_invalid_intervals(unit_grid):
     expected = np.zeros(12)
     expected[0] = 2.0
     np.testing.assert_array_equal(occupancy, expected)
+    np.testing.assert_array_equal(retained, [True, False])
 
 
 def test_crossing_blocks_cover_intervals_in_order_within_budget():
@@ -125,7 +151,7 @@ def test_block_size_does_not_change_occupancy(monkeypatch, return_seconds):
     dt = rng.exponential(0.1, 399)
     valid = rng.random(399) < 0.9
     bins = np.full(400, -1, dtype=np.intp)  # every interval takes the traversal
-    whole = _linear_grid_occupancy(
+    _, whole = _linear_grid_occupancy(
         int(active.sum()),
         grid,
         positions,
@@ -136,7 +162,7 @@ def test_block_size_does_not_change_occupancy(monkeypatch, return_seconds):
     )
     small = functools.partial(_allocation.crossing_blocks, max_crossings=5)
     monkeypatch.setattr(_allocation, "crossing_blocks", small)
-    blocked = _linear_grid_occupancy(
+    _, blocked = _linear_grid_occupancy(
         int(active.sum()),
         grid,
         positions,

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -48,6 +48,7 @@ from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.ops._types import DistanceMetric
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -1310,7 +1311,7 @@ def compute_movement_angular_velocity(
 def compute_step_lengths(
     positions: NDArray[np.float64],
     *,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
 ) -> NDArray[np.float64]:
     """
@@ -1459,9 +1460,7 @@ def compute_step_lengths(
         from neurospatial.ops.distance import geodesic_distance_matrix
 
         # Get full distance matrix (uses scipy.sparse.csgraph.shortest_path)
-        dist_matrix = geodesic_distance_matrix(
-            env.connectivity, env.n_bins, weight="distance"
-        )
+        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
 
         # Outside/missing positions map to -1, which is not a graph node.
         # Never let NumPy interpret it as the last bin.
@@ -1817,7 +1816,7 @@ def mean_square_displacement(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_tau: float | None = None,
     epochs: Any = None,
@@ -2043,9 +2042,7 @@ def mean_square_displacement(
         # This is O(V*E*log(V)) once vs O(n_lags * n_samples * V*log(V)) per lookup
         from neurospatial.ops.distance import geodesic_distance_matrix
 
-        dist_matrix = geodesic_distance_matrix(
-            env.connectivity, env.n_bins, weight="distance"
-        )
+        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
 
     sample_indices = np.arange(n_samples)
     finite_positions = support.sample_valid

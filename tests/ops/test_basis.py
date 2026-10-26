@@ -74,9 +74,14 @@ def test_heat_kernel_uses_faces_after_nwb_round_trip(graph_environment_round_tri
     )
 
 
-def test_heat_kernel_raises_without_finite_volume_geometry(missing_faces_env):
-    with pytest.raises(NotImplementedError, match="heat_kernel_wavelet_basis") as exc:
-        heat_kernel_wavelet_basis(missing_faces_env, centers=np.array([0]))
+@pytest.mark.parametrize(
+    "basis_function", [heat_kernel_wavelet_basis, chebyshev_filter_basis]
+)
+def test_diffusion_bases_raise_without_finite_volume_geometry(
+    missing_faces_env, basis_function
+):
+    with pytest.raises(NotImplementedError, match=basis_function.__name__) as exc:
+        basis_function(missing_faces_env, centers=np.array([0]))
     assert "\nFix:" in str(exc.value)
 
 
@@ -95,19 +100,23 @@ def linear_env():
 
 
 @pytest.fixture
-def maze_env_with_wall():
-    """Environment with a wall blocking direct path (L-shaped)."""
-    positions = []
-    # Left side (0-9, 0-9)
-    for i in range(10):
-        for j in range(10):
-            positions.append([float(i), float(j)])
-    # Bottom right (10-19, 0-4) - creates L-shape
-    for i in range(10, 20):
-        for j in range(5):
-            positions.append([float(i), float(j)])
-    positions = np.array(positions, dtype=float)
-    return Environment.from_samples(positions, bin_size=2.0)
+def walled_env():
+    """A 22 x 20 cm box of 2 cm bins split by a wall open only at the top.
+
+    Returns the environment and three bins: a center at (5, 1), a bin across
+    the wall at (17, 1) and a bin on the open side at (5, 13). Both are 12 cm
+    from the center in a straight line; the path around the wall is about
+    37 cm, the open-side path 12 cm.
+    """
+    edges_x = np.arange(12) * 2.0
+    edges_y = np.arange(11) * 2.0
+    mask = np.ones((11, 10), bool)
+    mask[5, :8] = False  # wall at x in [10, 12), open for y >= 16
+    env = Environment.from_grid_mask(mask, (edges_x, edges_y))
+    center, across, open_side = env.bin_at(
+        np.array([[5.0, 1.0], [17.0, 1.0], [5.0, 13.0]])
+    )
+    return env, int(center), int(across), int(open_side)
 
 
 @pytest.fixture
@@ -125,6 +134,38 @@ def disconnected_env():
     positions = np.vstack([cluster1, cluster2])
     # Large bin_size ensures disconnection
     return Environment.from_samples(positions, bin_size=2.0)
+
+
+_BASIS_FUNCTIONS = [
+    pytest.param(geodesic_rbf_basis, id="geodesic_rbf"),
+    pytest.param(heat_kernel_wavelet_basis, id="heat_kernel_wavelet"),
+    pytest.param(chebyshev_filter_basis, id="chebyshev_filter"),
+]
+
+
+@pytest.mark.parametrize("basis_function", _BASIS_FUNCTIONS)
+class TestExplicitCenters:
+    """Centers are bin indices; anything else is refused, not reinterpreted."""
+
+    def test_outside_marker_is_refused(self, basis_function, simple_2d_env):
+        """-1 (env.bin_at's outside marker) would wrap to the last bin."""
+        with pytest.raises(ValueError, match=r"-1.*outside") as exc:
+            basis_function(simple_2d_env, centers=np.array([0, -1]))
+        assert "\nFix:" in str(exc.value)
+
+    def test_index_past_last_bin_is_refused(self, basis_function, simple_2d_env):
+        with pytest.raises(ValueError, match="centers"):
+            basis_function(simple_2d_env, centers=np.array([simple_2d_env.n_bins]))
+
+    def test_fractional_center_is_refused(self, basis_function, simple_2d_env):
+        """2.7 would silently truncate to bin 2."""
+        with pytest.raises(TypeError, match="integer bin indices"):
+            basis_function(simple_2d_env, centers=np.array([2.7]))
+
+    def test_integer_list_is_accepted(self, basis_function, simple_2d_env):
+        from_list = basis_function(simple_2d_env, centers=[0, 5])
+        from_array = basis_function(simple_2d_env, centers=np.array([0, 5]))
+        assert_allclose(from_list, from_array)
 
 
 # =============================================================================
@@ -180,6 +221,14 @@ class TestSelectBasisCenters:
         with pytest.raises(ValueError, match="at least 1"):
             select_basis_centers(simple_2d_env, n_centers=-5)
 
+    def test_unknown_method_lists_the_available_ones(self, simple_2d_env):
+        """There is no grid method; the error offers the methods that exist."""
+        with pytest.raises(ValueError, match="'grid'") as exc:
+            select_basis_centers(simple_2d_env, n_centers=5, method="grid")
+        message = str(exc.value)
+        assert "'kmeans', 'farthest_point', 'random'" in message
+        assert "'random', 'grid'" not in message
+
     def test_random_method_returns_correct_count(self, simple_2d_env):
         """Random method should return exactly n_centers centers."""
         centers = select_basis_centers(simple_2d_env, n_centers=15, method="random")
@@ -213,26 +262,26 @@ class TestSelectBasisCenters:
 class TestGeodesicRBFBasis:
     """Tests for geodesic RBF basis."""
 
-    def test_output_shape_single_sigma(self, simple_2d_env):
-        """Single sigma should give n_centers rows."""
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=5.0)
+    def test_output_shape_single_bandwidth(self, simple_2d_env):
+        """Single bandwidth should give n_centers rows."""
+        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         assert basis.shape == (10, simple_2d_env.n_bins)
 
-    def test_output_shape_multi_sigma(self, simple_2d_env):
-        """Multiple sigmas should multiply the row count."""
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=[5.0, 10.0])
+    def test_output_shape_multi_bandwidth(self, simple_2d_env):
+        """Multiple bandwidths should multiply the row count."""
+        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=[5.0, 10.0])
         assert basis.shape == (20, simple_2d_env.n_bins)
 
     def test_row_ordering_center_major(self, simple_2d_env):
-        """Rows should be ordered (center, sigma): all sigmas for center 0, then center 1."""
+        """Rows should be ordered (center, bandwidth): all bandwidths for center 0, then center 1."""
         centers = np.array([0, 5])
         basis = geodesic_rbf_basis(
-            simple_2d_env, centers=centers, sigma=[5.0, 10.0], normalize="none"
+            simple_2d_env, centers=centers, bandwidth=[5.0, 10.0], normalize="none"
         )
-        # Row 0: center 0, sigma=5
-        # Row 1: center 0, sigma=10
-        # Row 2: center 1, sigma=5
-        # Row 3: center 1, sigma=10
+        # Row 0: center 0, bandwidth=5
+        # Row 1: center 0, bandwidth=10
+        # Row 2: center 1, bandwidth=5
+        # Row 3: center 1, bandwidth=10
         assert np.argmax(basis[0]) == 0  # center 0
         assert np.argmax(basis[1]) == 0  # center 0
         assert np.argmax(basis[2]) == 5  # center 1
@@ -242,30 +291,35 @@ class TestGeodesicRBFBasis:
         """Basis function should peak at its center."""
         centers = np.array([0, 5, 10])
         basis = geodesic_rbf_basis(
-            simple_2d_env, centers=centers, sigma=5.0, normalize="none"
+            simple_2d_env, centers=centers, bandwidth=5.0, normalize="none"
         )
         for i, c in enumerate(centers):
             assert np.argmax(basis[i]) == c
 
-    def test_respects_walls(self, maze_env_with_wall):
-        """Basis should not leak through walls."""
-        # Find a center on left side
-        center_bin = maze_env_with_wall.bin_at([2.0, 2.0])
-        # Find a bin on right side that's spatially close but geodesically far
-        far_bin = maze_env_with_wall.bin_at([12.0, 2.0])
+    def test_respects_walls(self, walled_env):
+        """Each value is the Gaussian of the path length around the wall."""
+        import networkx as nx
 
-        basis = geodesic_rbf_basis(
-            maze_env_with_wall,
-            centers=np.array([center_bin]),
-            sigma=3.0,
-            normalize="none",
+        env, center, across, open_side = walled_env
+        straight = np.linalg.norm(env.bin_centers[across] - env.bin_centers[center])
+        around = nx.shortest_path_length(
+            env.connectivity, center, across, weight="distance"
         )
+        assert straight == pytest.approx(12.0)
+        assert around > 3 * straight
 
-        # Value at far bin should be much smaller than at center
-        # (geodesic distance is large due to wall)
-        center_value = basis[0, center_bin]
-        far_value = basis[0, far_bin]
-        assert far_value < 0.1 * center_value
+        bandwidth = 6.0
+        basis = geodesic_rbf_basis(
+            env, centers=np.array([center]), bandwidth=bandwidth, normalize="none"
+        )
+        assert basis[0, across] == pytest.approx(
+            np.exp(-(around**2) / (2 * bandwidth**2)), rel=1e-12
+        )
+        assert basis[0, open_side] == pytest.approx(
+            np.exp(-(straight**2) / (2 * bandwidth**2)), rel=1e-12
+        )
+        # The straight-line (leaking) value would be about 10^7 times larger.
+        assert basis[0, across] < 1e-3 * basis[0, open_side]
 
     def test_unit_normalization(self, simple_2d_env):
         """Unit normalization should give L2 norm = 1."""
@@ -283,18 +337,18 @@ class TestGeodesicRBFBasis:
         """No normalization should give raw RBF values (center = 1)."""
         centers = np.array([0])
         basis = geodesic_rbf_basis(
-            simple_2d_env, centers=centers, sigma=5.0, normalize="none"
+            simple_2d_env, centers=centers, bandwidth=5.0, normalize="none"
         )
         # At center, RBF value is exp(0) = 1
         assert_allclose(basis[0, 0], 1.0)
 
-    def test_raises_if_sigma_non_positive(self, simple_2d_env):
-        """Should raise ValueError for non-positive sigma."""
-        with pytest.raises(ValueError, match="sigma values must be positive"):
-            geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=-1.0)
+    def test_raises_if_bandwidth_non_positive(self, simple_2d_env):
+        """Should raise ValueError for non-positive bandwidth."""
+        with pytest.raises(ValueError, match="bandwidth values must be positive"):
+            geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=-1.0)
 
-        with pytest.raises(ValueError, match="sigma values must be positive"):
-            geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=[5.0, 0.0, 10.0])
+        with pytest.raises(ValueError, match="bandwidth values must be positive"):
+            geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=[5.0, 0.0, 10.0])
 
     def test_raises_if_no_centers_specified(self, simple_2d_env):
         """Should raise ValueError if neither centers nor n_centers given."""
@@ -304,7 +358,7 @@ class TestGeodesicRBFBasis:
     def test_raises_if_disconnected_graph(self, disconnected_env):
         """Should raise error if environment graph is disconnected."""
         with pytest.raises(ValueError, match="unreachable"):
-            geodesic_rbf_basis(disconnected_env, n_centers=5, sigma=5.0)
+            geodesic_rbf_basis(disconnected_env, n_centers=5, bandwidth=5.0)
 
 
 # =============================================================================
@@ -345,28 +399,13 @@ class TestHeatKernelWaveletBasis:
         # Also check that large scale has lower peak at center (heat has diffused away)
         assert large_scale[0, center_idx] < small_scale[0, center_idx]
 
-    def test_respects_graph_structure(self, maze_env_with_wall):
-        """Heat diffuses along graph edges, reaching distant bins more slowly."""
-        center_bin = maze_env_with_wall.bin_at([2.0, 2.0])
-        # Nearby bin (on same side of L)
-        nearby_bin = maze_env_with_wall.bin_at([4.0, 2.0])
-        # Far bin (requires going around the L)
-        far_bin = maze_env_with_wall.bin_at([12.0, 2.0])
-
+    def test_respects_walls(self, walled_env):
+        """Heat reaching a bin behind the wall is far below an open bin as near."""
+        env, center, across, open_side = walled_env
         basis = heat_kernel_wavelet_basis(
-            maze_env_with_wall,
-            centers=np.array([center_bin]),
-            scales=[0.5],  # Small scale to see gradient
-            normalize="none",
+            env, centers=np.array([center]), scales=[8.0], normalize="none"
         )
-
-        # Heat should be highest at center, less at nearby, even less at far
-        center_value = basis[0, center_bin]
-        nearby_value = basis[0, nearby_bin]
-        far_value = basis[0, far_bin]
-
-        # Verify heat gradient respects graph distance
-        assert center_value > nearby_value > far_value
+        assert basis[0, across] < 1e-2 * basis[0, open_side]
 
     def test_raises_if_scales_non_positive(self, simple_2d_env):
         """Should raise ValueError for non-positive scales."""
@@ -446,14 +485,14 @@ class TestSpatialBasis:
         assert basis.ndim == 2
         assert basis.shape[1] == simple_2d_env.n_bins
 
-    def test_coverage_affects_sigma(self, simple_2d_env):
+    def test_coverage_affects_bandwidth(self, simple_2d_env):
         """Local coverage should give narrower basis than global."""
         basis_local = spatial_basis(simple_2d_env, coverage="local", n_features=30)
         basis_global = spatial_basis(simple_2d_env, coverage="global", n_features=30)
 
         # After unit normalization:
-        # - Local (small sigma): sharper peaks, values more concentrated → higher std
-        # - Global (large sigma): broader bumps, values more uniform → lower std
+        # - Local (small bandwidth): sharper peaks, values more concentrated → higher std
+        # - Global (large bandwidth): broader bumps, values more uniform → lower std
         local_spread = np.mean([np.std(b) for b in basis_local])
         global_spread = np.mean([np.std(b) for b in basis_global])
         assert local_spread > global_spread
@@ -476,7 +515,7 @@ class TestSpatialBasis:
         ids=["straight", "L-shaped"],
     )
     def test_track_scale_is_the_track_length(self, nodes):
-        """On a track, sigma is a fraction of the 200 cm the animal can run.
+        """On a track, bandwidth is a fraction of the 200 cm the animal can run.
 
         The bounding box of a straight track has zero height, and an L-shaped
         track's bounding box (120 x 80 cm) says nothing about its length.
@@ -488,7 +527,19 @@ class TestSpatialBasis:
         )
         basis = spatial_basis(track, coverage="medium", n_features=12, rng=0)
         expected = geodesic_rbf_basis(
-            track, n_centers=4, sigma=[10.0, 20.0, 40.0], normalize="unit", rng=0
+            track, n_centers=4, bandwidth=[10.0, 20.0, 40.0], normalize="unit", rng=0
+        )
+        assert_allclose(basis, expected)
+
+    def test_three_dimensional_scale_is_the_side_length(self):
+        """In a 120 cm cube, medium coverage is 10% of 120 cm, not of 120**1.5."""
+        edges = np.linspace(0.0, 120.0, 7)
+        cube = Environment.from_grid_mask(np.ones((6, 6, 6), bool), (edges,) * 3)
+        assert [hi - lo for lo, hi in cube.dimension_ranges] == [120.0] * 3
+
+        basis = spatial_basis(cube, coverage="medium", n_features=9, rng=0)
+        expected = geodesic_rbf_basis(
+            cube, n_centers=3, bandwidth=[6.0, 12.0, 24.0], normalize="unit", rng=0
         )
         assert_allclose(basis, expected)
 
@@ -507,7 +558,7 @@ class TestPlotBasisFunctions:
 
         matplotlib.use("Agg")  # Non-interactive backend
 
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=5.0)
+        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         fig = plot_basis_functions(simple_2d_env, basis, n_examples=4)
 
         import matplotlib.pyplot as plt
@@ -521,7 +572,7 @@ class TestPlotBasisFunctions:
 
         matplotlib.use("Agg")
 
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=5.0)
+        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         fig = plot_basis_functions(simple_2d_env, basis, indices=[0, 1, 2])
 
         import matplotlib.pyplot as plt
@@ -584,24 +635,148 @@ class TestEstimateSpectralRadius:
         assert radius == pytest.approx(expected_bound)
 
 
-def test_chebyshev_hop_locality_unchanged(uniform_grid):
-    """Pin the pre-change filter and verify support stays within k graph hops."""
-    from pathlib import Path
+def _face_hops(env, source):
+    """Hop count from ``source`` across shared cell faces (conductance > 0)."""
+    from scipy.sparse.csgraph import shortest_path
 
-    import networkx as nx
+    W = env.get_diffusion_geometry().W.tocsr(copy=True)
+    W.eliminate_zeros()
+    return shortest_path(W, unweighted=True, indices=source)
 
-    env = uniform_grid(1.0, n=4)
-    basis = chebyshev_filter_basis(
-        env, centers=np.array([5]), max_degree=3, normalize="none"
+
+@pytest.mark.parametrize("spacing", [1.0, 2.5])
+def test_chebyshev_couples_face_neighbors_only(uniform_grid, spacing):
+    """On a square grid, T1 is equal at the 4 face neighbors and 0 at corners.
+
+    Corner-touching bins share no face, so no diffusion crosses between them,
+    although the connectivity graph links them (2.83 cm apart for 2 cm bins).
+    """
+    env = uniform_grid(spacing, n=10)
+    center = int(np.argmin(np.linalg.norm(env.bin_centers - 5 * spacing, axis=1)))
+    neighbors = np.array(list(env.connectivity.neighbors(center)))
+    offsets = np.linalg.norm(
+        env.bin_centers[neighbors] - env.bin_centers[center], axis=1
     )
-    expected = np.load(Path(__file__).parent / "data" / "chebyshev_uniform_grid.npy")
-    assert_allclose(basis, expected, rtol=1e-12, atol=1e-12)
+    face = neighbors[np.isclose(offsets, spacing)]
+    corner = neighbors[np.isclose(offsets, spacing * np.sqrt(2))]
+    assert face.size == 4
+    assert corner.size == 4
+
+    basis = chebyshev_filter_basis(
+        env, centers=np.array([center]), max_degree=1, normalize="none"
+    )
+    assert_allclose(basis[1, face], basis[1, face[0]], rtol=1e-12)
+    assert basis[1, face[0]] < 0
+    assert_allclose(basis[1, corner], 0.0, atol=1e-15)
+
+
+def test_chebyshev_bins_sharing_no_face_keep_isolated_filters():
+    """Bins touching only at a corner have a zero generator: T_k = (-1)^k delta.
+
+    With every eigenvalue 0 there is no spectral radius to rescale by; each
+    filter stays on its own bin instead of dividing by zero.
+    """
+    edges = np.array([0.0, 1.0, 2.0])
+    env = Environment.from_grid_mask(
+        np.array([[True, False], [False, True]]), grid_edges=(edges, edges)
+    )
+    assert env.n_bins == 2
+
+    basis = chebyshev_filter_basis(
+        env, centers=np.array([0]), max_degree=3, normalize="none"
+    )
+    assert_allclose(basis, [[1, 0], [-1, 0], [1, 0], [-1, 0]], atol=1e-15)
+
+
+def test_chebyshev_filter_is_bin_size_independent(uniform_grid):
+    """The rescaled operator, and so every filter, is the same at any bin size."""
+    small, large = uniform_grid(1.0, n=8), uniform_grid(2.5, n=8)
+    kwargs = {"centers": np.array([0, 27]), "max_degree": 4, "normalize": "none"}
+    assert_allclose(
+        chebyshev_filter_basis(small, **kwargs),
+        chebyshev_filter_basis(large, **kwargs),
+        rtol=1e-10,
+        atol=1e-12,
+    )
+
+
+def test_chebyshev_uses_the_diffusion_generator(fv_env):
+    """T_k of the rescaled finite-volume generator M^-1 (Deg - W), as env.smooth.
+
+    On grid, hex and a W-maze with junctions, degree 1 is (2 / lambda_max) L - I
+    and the recurrence gives the higher degrees.
+    """
+    from scipy import sparse
+
+    geometry = fv_env.get_diffusion_geometry()
+    W = sparse.csr_matrix(geometry.W)
+    generator = (
+        sparse.diags(1.0 / geometry.volumes)
+        @ (sparse.diags(np.asarray(W.sum(axis=1)).ravel()) - W)
+    ).toarray()
+    lambda_max = np.max(np.linalg.eigvals(generator).real)
+    scaled = 2.0 * generator / lambda_max - np.eye(fv_env.n_bins)
+
+    center = fv_env.n_bins // 2
+    delta = np.zeros(fv_env.n_bins)
+    delta[center] = 1.0
+    expected = [delta, scaled @ delta]
+    for _ in range(2, 4):
+        expected.append(2.0 * scaled @ expected[-1] - expected[-2])
+
+    basis = chebyshev_filter_basis(
+        fv_env, centers=np.array([center]), max_degree=3, normalize="none"
+    )
+    assert_allclose(basis, np.array(expected), rtol=1e-8, atol=1e-10)
+
+
+def test_chebyshev_support_stays_within_k_face_hops(uniform_grid):
+    """A degree-k filter is zero beyond k shared-face steps from its center."""
     env = uniform_grid(1.0, n=10)
     center = 55
     basis = chebyshev_filter_basis(
         env, centers=np.array([center]), max_degree=3, normalize="none"
     )
-    hops = nx.single_source_shortest_path_length(env.connectivity, center)
+    hops = _face_hops(env, center)
     for degree, row in enumerate(basis):
-        outside = [node for node, distance in hops.items() if distance > degree]
-        assert_allclose(row[outside], 0, atol=1e-12)
+        assert_allclose(row[hops > degree], 0, atol=1e-12)
+        assert np.all(row[hops == degree] != 0)
+
+
+def _path_graph(node_order):
+    """Path 0-1-2-3-4 (1 cm edges) whose nodes are inserted in ``node_order``."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_nodes_from(node_order)
+    graph.add_edges_from(((i, i + 1) for i in range(4)), distance=1.0)
+    return graph
+
+
+@pytest.mark.parametrize("node_order", [[4, 2, 0, 3, 1], [1, 0, 2, 4, 3]])
+def test_graph_distances_follow_bin_ids_not_node_insertion_order(node_order):
+    """Bin ids index the matrices built from the graph, whatever the node order."""
+    from types import SimpleNamespace
+
+    ordered = SimpleNamespace(n_bins=5, n_dims=1, connectivity=_path_graph(range(5)))
+    shuffled = SimpleNamespace(n_bins=5, n_dims=1, connectivity=_path_graph(node_order))
+
+    basis = geodesic_rbf_basis(
+        shuffled, centers=np.array([0]), bandwidth=1.0, normalize="none"
+    )
+    assert_allclose(basis[0], np.exp(-(np.arange(5.0) ** 2) / 2.0))
+    assert_allclose(
+        basis,
+        geodesic_rbf_basis(
+            ordered, centers=np.array([0]), bandwidth=1.0, normalize="none"
+        ),
+    )
+    for seed in range(3):
+        np.testing.assert_array_equal(
+            select_basis_centers(
+                shuffled, n_centers=3, method="farthest_point", rng=seed
+            ),
+            select_basis_centers(
+                ordered, n_centers=3, method="farthest_point", rng=seed
+            ),
+        )

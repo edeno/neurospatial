@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial.environment import Environment
+    from neurospatial.ops._types import DistanceMetric
 
 
 def _recording_breaks(times: NDArray[np.float64] | None) -> NDArray[np.intp]:
@@ -983,7 +984,7 @@ class DecodingResult(ResultMixin):
         true_times: NDArray[np.float64],
         true_positions: NDArray[np.float64],
         *,
-        metric: Literal["euclidean", "geodesic"] = "geodesic",
+        metric: DistanceMetric = "geodesic",
         max_gap: float | None = 0.5,
         break_before: ArrayLike | None = None,
     ) -> NDArray[np.float64]:

@@ -517,9 +517,11 @@ approximation, especially for concave or clipped cells.
 `env.occupancy(times, positions)` measures time in seconds, rather than counting
 samples. Its default assigns each valid interval to its starting bin. Use
 `time_allocation="linear"` to split a straight segment over supported cells.
-On polygon cells, this handles entry, exit and re-entry, excludes holes, and
-does not renormalize the retained duration. Gaps, speed and epoch filters still
-apply. A proper crossing of an explicit physical wall raises instead of
+On grids of any dimension and on polygon cells, this handles entry, exit and
+re-entry, excludes holes, and does not renormalize the retained duration: a
+segment half inside the environment adds half its duration, or half a count
+with `return_seconds=False`, whichever way the animal travels. Gaps, speed and
+epoch filters still apply. A proper crossing of an explicit physical wall raises instead of
 interpolating through it; endpoint contact and motion along a wall are allowed
 when a bin owns those points.
 
@@ -643,13 +645,13 @@ import numpy as np
 from shapely.geometry import box
 from neurospatial import Environment
 from neurospatial.encoding import border_score
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
 field = (env.bin_centers[:, 0] < 1).astype(float)
 score = border_score(env, field, metric="euclidean")
 angle = np.pi / 4
-transform = Affine2D(np.array([
+transform = AffineND(np.array([
     [np.cos(angle), -np.sin(angle), 20.0],
     [np.sin(angle), np.cos(angle), 10.0],
     [0.0, 0.0, 1.0],
@@ -727,18 +729,21 @@ observer sees the side it faces. A cue at the first contact is visible; a cue
 behind it is occluded. A lost tracking frame is not an occluded view:
 `visible_cues()` and `compute_view_field()` refuse a NaN or infinite position
 or heading, and `compute_viewshed_trajectory()` keeps such frames missing,
-with an `occlusion_map` of NaN. Stored affine frames
+with a `visibility_map` of NaN. Stored affine frames
 use locally bounded projection errors for boundary contact. Physical mode only
 uses supplied wall evidence; inferred domains do not add unasserted outer walls.
 
-`compute_viewshed()` still samples rays to determine visible-bin coverage;
-wall intersections and cue line of sight use geometric intersections. Missing
-analysis bins do not occlude physical rays, and the sampled bins stop strictly
-before wall contact. Visibility maps remain an approximation whose angular
-coverage depends on `n_rays`.
+`compute_viewshed()` uses the same test for bins as for cues. A bin is
+visible when the direction to its center lies inside the field of view and the
+straight line to its center crosses no wall. The test is exact for each bin, so
+the result does not depend on bin size or distance. A bin whose center is
+hidden counts as hidden even if a corner of it is in view. Missing analysis
+bins do not occlude physical sight lines. The result's `visibility_map` is 1
+for visible bins and 0 for hidden ones. Averaging it over observed frames gives
+the fraction of time each bin was in view.
 
 The source choice is forwarded by the single/population view encoders, shuffle
-tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"` or `"boundary"`,
+tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"`,
 encoding assigns a wall hit to the bin just inside the observer's side. A hit
 outside the retained analysis support makes physical view encoding unavailable
 and raises with guidance when it contributes to the selected recording time.

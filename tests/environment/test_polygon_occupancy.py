@@ -292,7 +292,7 @@ def test_retained_intervals_keep_original_fractional_clock():
 def test_clipped_cell_occupancy_survives_nested_derivations_and_transport(
     round_trip_environment, derivation
 ):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     env = _one_cell_environment().clip(MultiPolygon([box(0, 0, 2, 2), box(4, 0, 6, 2)]))
     positions = np.array([[-1.0, 1.0], [7.0, 1.0]])
@@ -302,7 +302,7 @@ def test_clipped_cell_occupancy_survives_nested_derivations_and_transport(
         expected = [2.0]
     if derivation in {"transform", "chain"}:
         matrix = np.array([[1.0, 0.5, 10.0], [0.0, 2.0, -3.0], [0.0, 0.0, 1.0]])
-        env = env.apply_transform(Affine2D(matrix))
+        env = env.apply_transform(AffineND(matrix))
         positions = positions @ matrix[:2, :2].T + matrix[:2, 2]
     loaded = round_trip_environment(env)
     result = loaded.occupancy(
@@ -313,7 +313,7 @@ def test_clipped_cell_occupancy_survives_nested_derivations_and_transport(
 
 @pytest.mark.parametrize("known_polygon", [False, True])
 def test_rotated_native_cells_allocate_without_rectilinear_capability(known_polygon):
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
@@ -327,7 +327,7 @@ def test_rotated_native_cells_allocate_without_rectilinear_capability(known_poly
             arena=OpenArena(box(0, 0, 2, 2)),
         )
     matrix = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    env = env.apply_transform(Affine2D(matrix))
+    env = env.apply_transform(AffineND(matrix))
     assert env._binning.rectilinear is None
     result = env.occupancy(
         np.array([0.0, 1.0]),

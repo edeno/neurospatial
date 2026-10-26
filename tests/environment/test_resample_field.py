@@ -7,10 +7,11 @@ Tests cover:
 - Nearest-neighbor resampling
 - Diffuse method with smoothing
 - Same vs different resolutions
-- Mass conservation properties
+- Value preservation and bins outside the source
 - Input validation
 """
 
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -429,25 +430,111 @@ class TestResampleFieldMathematicalProperties:
         # Should be very close to identity
         np.testing.assert_allclose(result, field, rtol=1e-10)
 
-    def test_diffuse_approximate_mass_conservation(self):
-        """Test that diffuse method approximately conserves total mass."""
-        rng = np.random.default_rng(42)
+    def test_diffuse_preserves_a_constant_intensive_field(self):
+        """Diffuse averages an intensive field, so a constant rate stays exact.
+
+        It is not mass-conserving (see the resample_field Notes); what it must
+        preserve is the value of a constant rate map, including at the edges.
+        """
         src_data = np.array([[i, j] for i in range(11) for j in range(11)])
         src_env = Environment.from_samples(src_data, bin_size=2.0)
-
-        dst_data = np.array([[i, j] for i in range(11) for j in range(11)])
-        dst_env = Environment.from_samples(dst_data, bin_size=1.0)
-
-        field = rng.random(src_env.n_bins)
+        dst_env = Environment.from_samples(src_data, bin_size=1.0)
 
         result = resample_field(
-            field, src_env, dst_env, method="diffuse", bandwidth=1.0
+            np.full(src_env.n_bins, 5.0),
+            src_env,
+            dst_env,
+            method="diffuse",
+            bandwidth=1.0,
         )
 
-        # Mass may not be exactly conserved (diffusion boundary effects)
-        # but should be approximately preserved
-        src_total = np.sum(field * src_env.bin_sizes)
-        dst_total = np.sum(result * dst_env.bin_sizes)
+        np.testing.assert_allclose(result, 5.0, rtol=1e-10)
 
-        # Allow 20% tolerance due to boundary effects and discretization
-        np.testing.assert_allclose(dst_total, src_total, rtol=0.2)
+    def test_diffuse_never_reports_noise_far_from_the_data(self):
+        """An average of one observation of 5 is 5 wherever it is defined.
+
+        Far from the observed bin both smoothed sums are truncation noise;
+        their ratio reached -53,000 when resampling skipped the support floor
+        that env.smooth applies. Those bins are NaN instead.
+        """
+        env = Environment.from_samples(np.arange(0.5, 100.0)[:, None], bin_size=1.0)
+        field = np.full(env.n_bins, np.nan)
+        observed = int(env.bin_at(np.array([[50.5]]))[0])
+        field[observed] = 5.0
+
+        result = resample_field(field, env, env, method="diffuse", bandwidth=5.0)
+
+        defined = np.isfinite(result)
+        assert defined[observed]
+        np.testing.assert_allclose(result[defined], 5.0, rtol=1e-3)
+        assert not defined.all()
+        np.testing.assert_array_equal(
+            result,
+            env.smooth(field, bandwidth=5.0, mode="average"),
+        )
+
+
+class TestResampleFieldOutsideSource:
+    """A destination bin outside the source has no value: NaN, never an edge copy."""
+
+    @pytest.fixture
+    def arena_and_longer_track(self) -> tuple[Environment, Environment]:
+        """A 20 x 20 cm source and a 60 x 20 cm destination with the same bins."""
+        src = Environment.from_samples(
+            np.array([[i + 0.5, j + 0.5] for i in range(20) for j in range(20)]),
+            bin_size=2.0,
+        )
+        dst = Environment.from_samples(
+            np.array([[i + 0.5, j + 0.5] for i in range(60) for j in range(20)]),
+            bin_size=2.0,
+        )
+        return src, dst
+
+    @pytest.mark.parametrize("method", ["nearest", "diffuse"])
+    def test_bins_beyond_the_source_are_nan(self, arena_and_longer_track, method):
+        src, dst = arena_and_longer_track
+        field = src.bin_centers[:, 0].copy()  # x position, cm
+
+        result = resample_field(field, src, dst, method=method, bandwidth=2.0)
+
+        # The source's bins end at x = 21 cm. A nearest-center rule with a
+        # distance allowance gave x = 22..40 cm the edge value 20.
+        x_edge = src.dimension_ranges[0][1]
+        beyond = dst.bin_centers[:, 0] > x_edge
+        assert beyond.any() and (~beyond).any()
+        assert np.isnan(result[beyond]).all()
+        assert np.isfinite(result[~beyond]).all()
+
+    def test_bins_inside_take_the_source_values(self, arena_and_longer_track):
+        src, dst = arena_and_longer_track
+        field = src.bin_centers[:, 0].copy()
+
+        result = resample_field(field, src, dst, method="nearest")
+
+        # The overlapping bins are the same bins, so each gets its own value.
+        inside = dst.bin_centers[:, 0] <= src.dimension_ranges[0][1]
+        np.testing.assert_array_equal(result[inside], dst.bin_centers[inside, 0])
+
+    def test_identical_geometry_returns_the_field(self):
+        """Same bins: every value comes back, a missing bin stays missing."""
+        data = np.array([[i, j] for i in range(11) for j in range(11)], float)
+        src = Environment.from_samples(data, bin_size=2.0)
+        dst = Environment.from_samples(data, bin_size=2.0)
+        field = np.arange(src.n_bins, dtype=float)
+        field[3] = np.nan
+
+        result = resample_field(field, src, dst, method="nearest")
+
+        np.testing.assert_array_equal(result, field)
+
+    def test_track_without_width_is_refused(self):
+        """A centerline does not say which destination bins lie on the track."""
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0, 0.0))
+        graph.add_node(1, pos=(100.0, 0.0))
+        graph.add_edge(0, 1)
+        src = Environment.from_graph(graph, [(0, 1)], bin_size=5.0)
+        dst = Environment.from_graph(graph, [(0, 1)], bin_size=2.0)
+
+        with pytest.raises(NotImplementedError, match="without track_width"):
+            resample_field(np.ones(src.n_bins), src, dst)

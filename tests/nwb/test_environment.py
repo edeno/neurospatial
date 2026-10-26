@@ -63,7 +63,7 @@ def test_transformed_grid_nwb_round_trip_preserves_binning(empty_nwb, kind):
     """Derived data geometry can be restored without a layout wrapper."""
     from neurospatial import Environment
     from neurospatial.io.nwb import read_environment, write_environment
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     mask = np.ones((3, 3), dtype=bool)
     mask[1, 1] = False
@@ -80,7 +80,7 @@ def test_transformed_grid_nwb_round_trip_preserves_binning(empty_nwb, kind):
         "shear_and_scaling": [[2, 1, 10], [0, 3, 20], [0, 0, 1]],
     }
     aligned = env.apply_transform(
-        Affine2D(np.array(matrices[kind], dtype=float)), units="cm"
+        AffineND(np.array(matrices[kind], dtype=float)), units="cm"
     )
     write_environment(empty_nwb, aligned)
     restored = read_environment(empty_nwb)

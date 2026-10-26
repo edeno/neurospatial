@@ -328,29 +328,6 @@ class TestDistanceFieldEdgeCases:
         assert np.isinf(dists[2])
         assert np.isinf(dists[3])
 
-    def test_source_not_in_graph_warning(self):
-        """Test that invalid source generates warning but continues."""
-        G = nx.Graph()
-        G.add_edge(0, 1, distance=1.0)
-
-        with pytest.warns(UserWarning, match="Source node 999 not in graph"):
-            dists = distance_field(G, sources=[999, 0], metric="geodesic")
-
-        # Should still compute for valid source
-        assert dists[0] == 0.0
-        assert dists[1] == 1.0
-
-    def test_all_sources_invalid(self):
-        """Test that all invalid sources raises error."""
-        G = nx.Graph()
-        G.add_edge(0, 1, distance=1.0)
-
-        with (
-            pytest.raises(ValueError, match="No valid source nodes found"),
-            pytest.warns(UserWarning),
-        ):
-            distance_field(G, sources=[999, 1000], metric="geodesic")
-
 
 class TestDistanceFieldManySources:
     """Test distance_field() with many sources (broadcasted pairwise path)."""

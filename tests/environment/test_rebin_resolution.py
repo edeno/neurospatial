@@ -15,7 +15,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.binning import KnownFaces
 from neurospatial.layout import create_layout
-from neurospatial.ops.transforms import Affine2D, AffineND
+from neurospatial.ops.transforms import AffineND
 
 
 def grid():
@@ -128,7 +128,7 @@ def test_spec_survives_restore_and_is_independent_of_provenance(restore):
 
 
 def test_rebin_retains_grid_frame_and_uses_physical_axis_lengths():
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     angle = 0.4
     matrix = np.array(
@@ -138,7 +138,7 @@ def test_rebin_retains_grid_frame_and_uses_physical_axis_lengths():
             [0, 0, 1],
         ]
     )
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     parent = grid().apply_transform(transform, units="cm")
     coarse = parent.rebin(bin_size=(4.0, 9.0))
     local = np.array([[x, y] for x in [1, 3, 5] for y in [1.5, 4.5]])
@@ -358,7 +358,7 @@ def test_rebinning_after_a_rotation_keeps_the_same_cells():
             [np.cos(angle), -np.sin(angle)],
             [np.sin(angle), np.cos(angle)],
         ]
-        rotated = one.apply_transform(Affine2D(rotation)).rebin(bin_size=1.5)
+        rotated = one.apply_transform(AffineND(rotation)).rebin(bin_size=1.5)
         back = rotated.bin_centers @ rotation[:2, :2]  # inverse of a rotation
         np.testing.assert_allclose(
             np.sort(back, axis=0), np.sort(expected, axis=0), atol=1e-9

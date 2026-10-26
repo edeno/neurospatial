@@ -34,9 +34,11 @@ from __future__ import annotations
 import functools
 import importlib.util
 import sys
-from typing import Any, Literal
+from typing import Any, get_args
 
 import numpy as np
+
+from neurospatial.ops._types import BackendType, ResolvedBackend
 
 __all__ = [
     "SUPPORTED_BACKENDS",
@@ -47,10 +49,7 @@ __all__ = [
 ]
 
 # Valid backend names
-SUPPORTED_BACKENDS: tuple[str, ...] = ("numpy", "jax", "auto")
-
-# Type for backend parameter
-BackendType = Literal["numpy", "jax", "auto"]
+SUPPORTED_BACKENDS: tuple[str, ...] = get_args(BackendType)
 
 
 @functools.lru_cache(maxsize=1)
@@ -162,7 +161,7 @@ def get_backend(name: BackendType) -> Any:
     return np
 
 
-def get_backend_name(name: BackendType) -> Literal["numpy", "jax"]:
+def get_backend_name(name: BackendType) -> ResolvedBackend:
     """Get the actual backend name that will be used.
 
     Resolves ``"auto"`` to the actual backend that would be selected.
@@ -221,7 +220,7 @@ def get_backend_name(name: BackendType) -> Literal["numpy", "jax"]:
     return "numpy"
 
 
-def validate_and_resolve_backend(backend: str) -> Literal["numpy", "jax"]:
+def validate_and_resolve_backend(backend: str) -> ResolvedBackend:
     """Validate backend parameter and resolve 'auto' to actual backend.
 
     Convenience function that combines backend validation with resolution.

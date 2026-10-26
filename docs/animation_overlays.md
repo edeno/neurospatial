@@ -1111,15 +1111,12 @@ class VideoOverlay:
 ### VideoCalibration
 
 ```python
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class VideoCalibration:
-    """Video→environment coordinate calibration."""
-    transform_px_to_cm: Affine2D          # Pixel → cm transform
-    frame_size_px: tuple[int, int]        # (width, height) in pixels
-
-    @property
-    def transform_cm_to_px(self) -> Affine2D:
-        """Inverse transform (cm → pixel)."""
+    """Video→environment coordinate calibration (immutable)."""
+    transform_px_to_cm: AffineND          # Pixel → cm transform (2D)
+    frame_size_px: tuple[int, int]        # (width, height), positive integers
+    transform_cm_to_px: AffineND          # Inverse (cm → pixel), set at construction
 
     @property
     def cm_per_px(self) -> float:

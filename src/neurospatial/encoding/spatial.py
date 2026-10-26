@@ -81,6 +81,8 @@ if TYPE_CHECKING:
     from neurospatial.encoding._spatial_counts import LinearSpatialIntervals
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment import Environment
+    from neurospatial.geometry._boundaries import BoundarySource
+    from neurospatial.ops._types import BackendType, DistanceMetric, ResolvedBackend
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 # ruff: noqa: RUF022 - intentionally grouped by category
@@ -636,7 +638,7 @@ def _spatial_summary_frame(
     *,
     index: Sequence[Hashable],
     include_classification: bool,
-    boundary_source: Literal["physical", "analysis"],
+    boundary_source: BoundarySource,
 ) -> pd.DataFrame:
     """Build spatial metric columns for single and population results."""
     import pandas as pd
@@ -854,7 +856,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         self,
         include_classification: bool = True,
         *,
-        boundary_source: Literal["physical", "analysis"] = "physical",
+        boundary_source: BoundarySource = "physical",
     ) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
 
@@ -1265,9 +1267,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         self,
         threshold: float = 0.3,
         min_area: float = 0.0,
-        metric: Literal["geodesic", "euclidean"] = "geodesic",
+        metric: DistanceMetric = "geodesic",
         *,
-        boundary_source: Literal["physical", "analysis"] = "physical",
+        boundary_source: BoundarySource = "physical",
     ) -> float:
         """Border score (boundary proximity tuning).
 
@@ -2222,9 +2224,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         self,
         threshold: float = 0.3,
         min_area: float = 0.0,
-        metric: Literal["geodesic", "euclidean"] = "geodesic",
+        metric: DistanceMetric = "geodesic",
         *,
-        boundary_source: Literal["physical", "analysis"] = "physical",
+        boundary_source: BoundarySource = "physical",
     ) -> BatchScoresResult:
         """Border scores (boundary proximity tuning) for all neurons.
 
@@ -2304,7 +2306,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         min_border_score: float | None = None,
         grid_scores: NDArray[np.float64] | None = None,
         border_scores: NDArray[np.float64] | None = None,
-        boundary_source: Literal["physical", "analysis"] = "physical",
+        boundary_source: BoundarySource = "physical",
     ) -> NDArray[np.str_]:
         """Label neurons with multi-class spatial cell types.
 
@@ -2538,7 +2540,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         unit_ids: Sequence[str | int] | None = None,
         include_classification: bool = True,
         *,
-        boundary_source: Literal["physical", "analysis"] = "physical",
+        boundary_source: BoundarySource = "physical",
     ) -> pd.DataFrame:
         """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
 
@@ -2713,7 +2715,7 @@ def _compute_glm_spatial_rates(
     rank: int | None,
     pooled: bool = True,
     unit_ids: Any = None,
-    resolved_backend: Literal["numpy", "jax"],
+    resolved_backend: ResolvedBackend,
     dtype: type[np.float32] | type[np.float64],
 ) -> tuple[ArrayLike, Any]:
     """Fit ``method="glm"`` and assemble the full active-bin firing-rate array.
@@ -3122,7 +3124,7 @@ def compute_spatial_rate(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     warn_on_drop: bool = True,
 ) -> SpatialRateResult:
     """Compute spatial firing rate map for one neuron.
@@ -3618,7 +3620,7 @@ def compute_spatial_rates(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
@@ -5111,7 +5113,7 @@ def has_place_field(
     pooled: bool = True,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     warn_on_drop: bool = True,
 ) -> bool:
     """Detect whether the rate map has a place field; this is not a cell-type verdict.
@@ -5360,7 +5362,7 @@ def is_place_cell(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     warn_on_drop: bool = True,
 ) -> bool:
     """Classify one neuron using an explicitly chosen criterion.
@@ -5818,7 +5820,7 @@ def place_cell_significance(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     warn_on_drop: bool = False,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,

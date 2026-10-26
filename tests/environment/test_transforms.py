@@ -627,16 +627,15 @@ class TestSubsetIntegration:
 class TestApplyTransform:
     """Tests for Environment.apply_transform() method.
 
-    Tests affine transformation application to environments, supporting both
-    2D (Affine2D) and N-D (AffineND) transforms.
+    Tests affine transformation application to 2D and N-D environments.
     """
 
     def test_apply_transform_identity_2d(self, medium_2d_env: Environment) -> None:
         """Test applying identity transform leaves environment unchanged."""
-        from neurospatial.ops.transforms import Affine2D
+        from neurospatial.ops.transforms import AffineND
 
         # Identity transform (no change)
-        transform = Affine2D(np.eye(3))
+        transform = AffineND(np.eye(3))
 
         transformed = medium_2d_env.apply_transform(transform)
 
@@ -660,7 +659,7 @@ class TestApplyTransform:
 
     def test_apply_transform_rotation_2d(self, medium_2d_env: Environment) -> None:
         """Test applying 2D rotation transform."""
-        from neurospatial.ops.transforms import Affine2D
+        from neurospatial.ops.transforms import AffineND
 
         # 45-degree rotation
         angle = np.pi / 4
@@ -671,7 +670,7 @@ class TestApplyTransform:
                 [0, 0, 1],
             ]
         )
-        transform = Affine2D(R)
+        transform = AffineND(R)
 
         transformed = medium_2d_env.apply_transform(transform)
 
@@ -708,7 +707,7 @@ class TestApplyTransform:
 
     def test_apply_transform_composition_2d(self, small_2d_env: Environment) -> None:
         """Test applying composed transforms (rotation @ translation)."""
-        from neurospatial.ops.transforms import Affine2D, translate
+        from neurospatial.ops.transforms import AffineND, translate
 
         # Compose: translate then rotate
         rotation_angle = np.pi / 6
@@ -719,7 +718,7 @@ class TestApplyTransform:
                 [0, 0, 1],
             ]
         )
-        rotation = Affine2D(R)
+        rotation = AffineND(R)
         translation = translate(5, 10)
 
         # Apply composed transform (rotation @ translation applies translation first)

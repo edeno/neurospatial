@@ -8,14 +8,14 @@ from matplotlib.colors import to_rgba
 
 from neurospatial import Environment
 from neurospatial.binning import Binning, MissingFaces, NearestBinLocator
-from neurospatial.ops.transforms import Affine2D, scale_2d
+from neurospatial.ops.transforms import AffineND, scale_2d
 
 
 def _rotated_points(n_cells=4):
     edges = np.arange(n_cells + 1, dtype=float)
     env = Environment.from_grid_mask(np.ones((n_cells, n_cells), bool), (edges, edges))
     angle = np.pi / 4
-    rotation = Affine2D(
+    rotation = AffineND(
         np.array(
             [
                 [np.cos(angle), -np.sin(angle), 0.0],

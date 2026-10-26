@@ -7,12 +7,13 @@ import pytest
 class TestMappingImports:
     """The mapping module exports its public names."""
 
-    def test_import_tie_break_strategy(self):
-        """Test TieBreakStrategy can be imported from ops.mapping."""
+    def test_tie_break_strategy_names_the_accepted_strings(self):
+        """TieBreakStrategy is the Literal of the tie_break names."""
+        from typing import get_args
+
         from neurospatial.ops.mapping import TieBreakStrategy
 
-        assert hasattr(TieBreakStrategy, "LOWEST_INDEX")
-        assert hasattr(TieBreakStrategy, "CLOSEST_CENTER")
+        assert get_args(TieBreakStrategy) == ("lowest_index", "closest_center")
 
     def test_import_regions_to_mask(self):
         """Test regions_to_mask can be imported from ops.mapping."""
@@ -55,15 +56,10 @@ class TestNearestBin:
         # All points should map to valid bins (>= 0)
         assert np.all(bins >= 0)
 
-    def test_tie_break_strategy_enum(self, grid_env):
-        """Test using TieBreakStrategy enum from new location."""
-        from neurospatial.ops.mapping import TieBreakStrategy
-
+    def test_unknown_tie_break_is_refused(self, grid_env):
         points = np.array([[5.0, 5.0]])
-        bins = grid_env.nearest_bin(points, tie_break=TieBreakStrategy.LOWEST_INDEX)
-
-        assert bins.shape == (1,)
-        assert bins[0] >= 0
+        with pytest.raises(ValueError, match="Invalid tie_break value: 'lowest'"):
+            grid_env.nearest_bin(points, tie_break="lowest")
 
     def test_lowest_index_tie_break_handles_more_than_ten_ties(self):
         """lowest_index should consider all equidistant bins, not only KDTree k."""
@@ -250,16 +246,13 @@ class TestMapPointsToBinsBehavior:
         assert bins_out[0] == -1
         assert env_out.nearest_bin(point_out)[0] >= 0
 
-    @pytest.mark.parametrize("use_enum", [True, False])
-    def test_closest_center_vs_lowest_index_on_tie(self, regular_grid_env, use_enum):
-        """On an exact tie, lowest_index returns the lower bin; both call paths work.
+    def test_closest_center_vs_lowest_index_on_tie(self, regular_grid_env):
+        """On an exact tie, lowest_index returns the lower bin.
 
         A point at (1.0, 0.0) is exactly equidistant from centers (0, 0) and
         (2, 0). lowest_index must return the lower of the two bin indices;
         closest_center returns one of the two equidistant bins.
         """
-        from neurospatial.ops.mapping import TieBreakStrategy
-
         tie_point = np.array([[1.0, 0.0]])
 
         centers = regular_grid_env.bin_centers
@@ -267,13 +260,12 @@ class TestMapPointsToBinsBehavior:
         idx_20 = int(np.flatnonzero((centers[:, 0] == 2.0) & (centers[:, 1] == 0.0))[0])
         lower_idx = min(idx_00, idx_20)
 
-        lowest = TieBreakStrategy.LOWEST_INDEX if use_enum else "lowest_index"
-        closest = TieBreakStrategy.CLOSEST_CENTER if use_enum else "closest_center"
-
-        bins_lowest = regular_grid_env.nearest_bin(tie_point, tie_break=lowest)
+        bins_lowest = regular_grid_env.nearest_bin(tie_point, tie_break="lowest_index")
         assert bins_lowest[0] == lower_idx
 
-        bins_closest = regular_grid_env.nearest_bin(tie_point, tie_break=closest)
+        bins_closest = regular_grid_env.nearest_bin(
+            tie_point, tie_break="closest_center"
+        )
         # closest_center returns one of the two equidistant bins.
         assert bins_closest[0] in (idx_00, idx_20)
 
@@ -347,15 +339,9 @@ class TestResampleFieldOutOfBounds:
 
         assert resampled.shape == (dst_env.n_bins,)
 
-        # Identify which destination bins fall outside the source coverage.
-        from neurospatial.ops.mapping import TieBreakStrategy
-
-        dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers,
-            tie_break=TieBreakStrategy.LOWEST_INDEX,
-            max_distance_factor=10.0,  # resample_field's outside-source rule
-        )
-        outside = dst_to_src < 0
+        # resample_field's outside-source rule: the center lies in no source bin
+        outside = src_env.bin_at(dst_env.bin_centers) < 0
+        dst_to_src = src_env.nearest_bin(dst_env.bin_centers)
 
         # There must be some out-of-source destination bins for a valid test.
         assert np.any(outside)
@@ -415,17 +401,13 @@ class TestResampleFieldDiffuseNaN:
         (a forward diffusion matmul) and wiped out every reachable bin, leaving
         an all-NaN field.
         """
-        from neurospatial.ops.mapping import TieBreakStrategy, resample_field
+        from neurospatial.ops.mapping import resample_field
 
         src_env, dst_env = _src_and_extending_dst_envs()
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
 
-        dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers,
-            tie_break=TieBreakStrategy.LOWEST_INDEX,
-            max_distance_factor=10.0,  # resample_field's outside-source rule
-        )
-        outside = dst_to_src < 0
+        # resample_field's outside-source rule: the center lies in no source bin
+        outside = src_env.bin_at(dst_env.bin_centers) < 0
         assert np.any(outside)  # the test scenario must have out-of-source bins
         assert np.any(~outside)  # ... and some covered bins
 
@@ -445,17 +427,13 @@ class TestResampleFieldDiffuseNaN:
 
     def test_resample_diffuse_outside_bins_remain_nan(self):
         """Out-of-source bins are re-imposed as NaN after smoothing."""
-        from neurospatial.ops.mapping import TieBreakStrategy, resample_field
+        from neurospatial.ops.mapping import resample_field
 
         src_env, dst_env = _src_and_extending_dst_envs()
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
 
-        dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers,
-            tie_break=TieBreakStrategy.LOWEST_INDEX,
-            max_distance_factor=10.0,  # resample_field's outside-source rule
-        )
-        outside = dst_to_src < 0
+        # resample_field's outside-source rule: the center lies in no source bin
+        outside = src_env.bin_at(dst_env.bin_centers) < 0
         assert np.any(outside)
 
         diffuse = resample_field(

@@ -12,7 +12,7 @@ import shapely
 
 from neurospatial import Environment
 from neurospatial.geometry import materialize_cells
-from neurospatial.ops import Affine2D
+from neurospatial.ops import AffineND
 
 
 def rigid(angle, offset, reflect=False):
@@ -71,7 +71,7 @@ def test_faces_keep_their_bin_under_rigid_maps(built_environment, matrix):
     probes = face_probes(env)
     expected = env.bin_at(probes)
     assert np.count_nonzero(expected >= 0) > len(probes) // 2
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     moved = env.apply_transform(transform)
     np.testing.assert_array_equal(moved.bin_at(transform(probes)), expected)
 
@@ -91,7 +91,7 @@ def test_clipped_and_combined_faces_keep_their_bin(matrix):
             ),
         }
     )
-    transform = Affine2D(matrix)
+    transform = AffineND(matrix)
     # Cell centers, faces and corners of the grids (a clip's cut cells have
     # corners that rounding moves off the grid's faces, so are not probed).
     steps = np.arange(-1.0, 13.0, 1.0)
