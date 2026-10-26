@@ -824,25 +824,6 @@ class TestBatchAPIValidation:
         firing_rates = np.random.default_rng(0).random((2, env.n_bins))
         return env, firing_rates
 
-    def test_batch_grid_scores_rejects_inner_radius_zero(self, regular_env_and_rates):
-        from neurospatial.encoding._metrics import batch_grid_scores
-
-        env, firing_rates = regular_env_and_rates
-        with pytest.raises(ValueError, match=r"inner_radius_fraction must be in"):
-            batch_grid_scores(env, firing_rates, inner_radius_fraction=0.0)
-
-    def test_batch_grid_scores_rejects_outer_below_inner(self, regular_env_and_rates):
-        from neurospatial.encoding._metrics import batch_grid_scores
-
-        env, firing_rates = regular_env_and_rates
-        with pytest.raises(ValueError, match=r"outer_radius_fraction must be in"):
-            batch_grid_scores(
-                env,
-                firing_rates,
-                inner_radius_fraction=0.5,
-                outer_radius_fraction=0.3,
-            )
-
     def test_batch_border_scores_rejects_invalid_metric(self, regular_env_and_rates):
         from neurospatial.encoding._metrics import batch_border_scores
 

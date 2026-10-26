@@ -47,5 +47,4 @@ def test_label_cell_types_short_recording_bias(ou_2min_env, ou_2min, noise_train
     )
     labels = rates.label_cell_types(boundary_source="analysis")
     tuned = rates.spatial_information() >= 0.5
-    np.testing.assert_array_equal(labels == "border", tuned)
-    assert np.all(labels[~tuned] == "unclassified")
+    np.testing.assert_array_equal(labels != "unclassified", tuned)

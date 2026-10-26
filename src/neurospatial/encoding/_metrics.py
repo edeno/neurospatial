@@ -561,9 +561,6 @@ def batch_sparsity(
 def batch_grid_scores(
     env: Environment,
     firing_rates: NDArray[np.float64],
-    *,
-    inner_radius_fraction: float = 0.2,
-    outer_radius_fraction: float = 0.5,
 ) -> BatchScoresResult:
     """Compute grid scores for multiple neurons.
 
@@ -578,12 +575,6 @@ def batch_grid_scores(
         Must be a regular 2D grid for FFT-based autocorrelation.
     firing_rates : ndarray, shape (n_neurons, n_bins)
         Firing rate maps for each neuron in Hz.
-    inner_radius_fraction : float, default=0.2
-        Inner radius of annular region as fraction of autocorrelogram semi-axis.
-        See :func:`~neurospatial.encoding.grid.grid_score` for details.
-    outer_radius_fraction : float, default=0.5
-        Outer radius of annular region as fraction of autocorrelogram semi-axis.
-        See :func:`~neurospatial.encoding.grid.grid_score` for details.
 
     Returns
     -------
@@ -668,21 +659,6 @@ def batch_grid_scores(
             f"env has {env.n_bins} bins"
         )
 
-    # API-level validation: invalid radius fractions are programmer
-    # errors, not per-neuron failures. Raise once before the loop so the
-    # ValueError reaches the caller rather than being swallowed into
-    # ``failures=True`` for every neuron. Mirrors the validation
-    # ``grid_score`` does internally.
-    if not (0 < inner_radius_fraction < 1):
-        raise ValueError(
-            f"inner_radius_fraction must be in (0, 1), got {inner_radius_fraction}"
-        )
-    if not (inner_radius_fraction < outer_radius_fraction <= 1):
-        raise ValueError(
-            f"outer_radius_fraction must be in (inner_radius_fraction, 1], "
-            f"got {outer_radius_fraction} with inner={inner_radius_fraction}"
-        )
-
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
     failures = np.zeros(n_neurons, dtype=np.bool_)
@@ -720,11 +696,7 @@ def batch_grid_scores(
 
         try:
             autocorr = spatial_autocorrelation(env, firing_rate)
-            scores[i] = grid_score(
-                autocorr,
-                inner_radius_fraction=inner_radius_fraction,
-                outer_radius_fraction=outer_radius_fraction,
-            )
+            scores[i] = grid_score(autocorr)
         except (ValueError, RuntimeError):
             # Caught exception: record both NaN and the failure flag so
             # the caller can distinguish this from a legitimate-NaN.

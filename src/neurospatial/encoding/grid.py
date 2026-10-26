@@ -70,7 +70,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import fft, ndimage, stats
+from scipy import fft, ndimage
 from scipy.signal import find_peaks
 
 from neurospatial._exceptions import _format_error
@@ -184,33 +184,36 @@ def spatial_autocorrelation(
     firing_rate: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """
-    Compute 2D FFT-based spatial autocorrelation of a firing rate map.
+    Compute the 2D spatial autocorrelogram of a firing rate map.
 
     Spatial autocorrelation measures the similarity between a cell's firing
     pattern and shifted versions of itself; for grid cells this reveals the
-    characteristic hexagonal periodicity. This entry point computes the
-    circular 2D autocorrelogram and is the input to
-    :func:`grid_score`. For irregular environments without a regular 2D grid
-    layout, use :func:`spatial_autocorrelation_radial` instead, which returns
-    a 1D distance-correlation profile from the connectivity graph.
+    characteristic hexagonal periodicity. This entry point computes the 2D
+    autocorrelogram that :func:`grid_score` and :func:`grid_properties`
+    read. For environments without a regular 2D grid of rectangular cells,
+    use :func:`spatial_autocorrelation_radial` instead, which returns a 1D
+    distance-correlation profile from the connectivity graph.
 
     Parameters
     ----------
     env : Environment
         Spatial environment with a regular 2D grid layout.
     firing_rate : NDArray[np.float64], shape (n_bins,)
-        Spatial firing rate map (Hz or spikes/second).
+        Spatial firing rate map (Hz or spikes/second). NaN marks unvisited
+        bins.
 
     Returns
     -------
-    autocorr : NDArray[np.float64], shape (n_x, n_y)
-        2D autocorrelation map with square pixels; each pixel side is
-        :func:`autocorrelation_pixel_size`, the smaller cell width. Center
-        corresponds to zero lag. Values in [-1, 1]. When the two cell widths
-        are equal (to within 1/100 of a cell across the grid) the map has the
-        environment's grid shape; otherwise the lags along the wider axis are
-        interpolated onto the finer spacing, so the map can be larger along
-        that axis.
+    autocorr : NDArray[np.float64], shape (2 * n_x - 1, 2 * n_y - 1)
+        Pearson correlation of the map with itself at every shift, with
+        square pixels; each pixel side is :func:`autocorrelation_pixel_size`,
+        the smaller cell width. Zero lag is the center pixel and lags run to
+        the full extent of the map in each direction, so for an ``(n_x,
+        n_y)`` grid the map is ``(2 * n_x - 1, 2 * n_y - 1)``. Values in
+        [-1, 1]; NaN at shifts where fewer than 20 pairs of visited bins
+        overlap. When the two cell widths differ (by more than 1/100 of a
+        cell across the grid) the lags along the wider axis are interpolated
+        onto the finer spacing, so the map is larger along that axis.
 
     Raises
     ------
@@ -228,13 +231,17 @@ def spatial_autocorrelation(
 
     Notes
     -----
-    Algorithm:
-
-    1. Reshape firing rate to 2D grid shape
-    2. Subtract the mean of observed bins; set missing centered values to zero
-    3. Compute circular 2D autocorrelation via FFT (periodic boundaries)
-    4. Normalize by the sum of squared centered values at observed bins
-    5. Output shape matches environment grid
+    At each shift ``(dx, dy)`` the map is overlaid on a copy of itself moved
+    by that many cells, without wrapping around the edges, and the value is
+    the Pearson correlation over the pairs of bins that are both visited.
+    Unvisited bins (NaN) and inactive grid cells are left out of each pair
+    set rather than counted as zero firing, so a gap in coverage does not
+    pull correlations toward zero. Shifts with fewer than 20 overlapping
+    pairs are NaN: near the edge of the map so few bins overlap that their
+    correlation is mostly noise. The six
+    sums each correlation needs (pair count, the sums and sums of squares of
+    both sides, and the sum of products) are computed for all shifts at once
+    with zero-padded FFTs.
 
     Interpretation:
 
@@ -243,45 +250,29 @@ def spatial_autocorrelation(
     - **Place cells**: Typically a single central peak, no periodicity.
     - **Non-spatial cells**: Flat or noisy autocorrelation.
 
-    Use :func:`spatial_autocorrelation_radial` when the environment
-    is irregular (tracks, masked grids, graphs) — it returns a 1D
-    distance-correlation profile via the connectivity graph and
-    feeds into :func:`periodicity_score`.
-
     Complexity: ``O(n log n)`` where ``n = n_bins``.
 
     Examples
     --------
-    >>> import numpy as np  # doctest: +SKIP
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.encoding.grid import spatial_autocorrelation  # doctest: +SKIP
-    >>>
-    >>> # Create environment
-    >>> positions = np.random.randn(5000, 2) * 20  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>>
-    >>> # Create grid-like firing pattern
-    >>> firing_rate = np.zeros(env.n_bins)  # doctest: +SKIP
-    >>> # ... populate with grid cell firing pattern ...
-    >>>
-    >>> # FFT method (for regular 2D grid)
-    >>> autocorr_2d = spatial_autocorrelation(env, firing_rate)  # doctest: +SKIP
-    >>> print(autocorr_2d.shape)  # doctest: +SKIP
-    (20, 20)  # doctest: +SKIP
-    >>>
-    >>> # For irregular environments, use spatial_autocorrelation_radial
-    >>> distances, correlations = spatial_autocorrelation_radial(  # doctest: +SKIP
-    ...     env, firing_rate, n_distance_bins=30
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.grid import spatial_autocorrelation
+    >>> edges = np.arange(0.0, 42.0, 2.0)  # 40 cm box, 2 cm bins
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((20, 20), dtype=bool), grid_edges=(edges, edges)
     ... )
-    >>> print(distances.shape, correlations.shape)  # doctest: +SKIP
-    (30,) (30,)  # doctest: +SKIP
+    >>> rate = np.random.default_rng(0).gamma(2.0, 1.0, env.n_bins)
+    >>> autocorr = spatial_autocorrelation(env, rate)
+    >>> autocorr.shape
+    (39, 39)
+    >>> float(autocorr[19, 19])  # zero lag
+    1.0
 
     See Also
     --------
     grid_score : Compute grid score from this 2D autocorrelogram.
     spatial_autocorrelation_radial : 1D distance-correlation profile
         for irregular environments.
-    periodicity_score : Graph-based periodicity metric.
 
     References
     ----------
@@ -291,7 +282,9 @@ def spatial_autocorrelation(
     _require_fft_grid(env, "spatial_autocorrelation()")
     _validate_autocorr_input(env, firing_rate)
 
-    autocorr = _spatial_autocorrelation_fft(env, firing_rate)
+    rate_map = np.full(env.grid_shape, np.nan)
+    rate_map[env.active_mask] = firing_rate
+    autocorr = _linear_autocorrelation(rate_map)
     cell_widths = tuple(float(np.median(np.diff(edge))) for edge in env.grid_edges)
     return _square_lags(autocorr, cell_widths)
 
@@ -590,75 +583,78 @@ def _uniform_spacing(edges: tuple[NDArray[np.float64], ...]) -> bool:
     return True
 
 
-def _spatial_autocorrelation_fft(
-    env: Environment,
-    firing_rate: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """
-    Compute 2D spatial autocorrelation using FFT (for regular grids).
+# A lag's correlation needs at least this many pairs of visited bins that
+# overlap at that lag; fewer leave it NaN. Near the map's edge the overlap
+# shrinks to a few bins whose correlation is mostly noise.
+_MIN_OVERLAP_BINS = 20
+
+
+def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Pearson correlation of a rate map with itself at every 2D lag.
+
+    For each lag the map is shifted against itself without wrap-around, and
+    the correlation is taken over the pairs of bins that are both finite at
+    that lag. Missing bins (NaN) are left out of every sum, not set to zero.
 
     Parameters
     ----------
-    env : Environment
-        Environment (must be regular 2D grid).
-    firing_rate : NDArray[np.float64], shape (n_bins,)
-        Firing rate map.
+    rate_map : ndarray of float64, shape (n_x, n_y)
+        Rate map on the grid, NaN at unvisited or inactive bins.
 
     Returns
     -------
-    autocorr : NDArray[np.float64], shape (n_x, n_y)
-        2D autocorrelation map.
-
-    Raises
-    ------
-    ValueError
-        If environment is not a regular 2D grid.
+    ndarray of float64, shape (2 * n_x - 1, 2 * n_y - 1)
+        Correlation at lag ``(i - (n_x - 1), j - (n_y - 1))`` at index
+        ``(i, j)``: zero lag is the center. NaN where fewer than
+        ``_MIN_OVERLAP_BINS`` pairs overlap or either side of the overlap is
+        constant.
     """
-    grid_shape = env.grid_shape
-    if len(grid_shape) != 2:
-        raise ValueError(
-            f"FFT method requires 2D grid, got {len(grid_shape)}D grid. "
-            "Use spatial_autocorrelation_radial for non-2D environments."
+    valid = np.isfinite(rate_map)
+    # Standardizing first keeps the summed moments near one, so the
+    # differences of sums below lose no precision; Pearson correlation does
+    # not change under it.
+    values = rate_map[valid]
+    standardized = np.where(valid, (rate_map - values.mean()) / values.std(), 0.0)
+    shape = tuple(2 * n - 1 for n in rate_map.shape)
+    padded = tuple(fft.next_fast_len(n, real=True) for n in shape)
+
+    def spectrum(array: NDArray[np.float64]) -> NDArray[np.complex128]:
+        return np.asarray(fft.rfft2(array, s=padded))
+
+    def overlap_sum(
+        first: NDArray[np.complex128], second: NDArray[np.complex128]
+    ) -> NDArray[np.float64]:
+        # sum_i a[i] * b[i + lag] over the zero-padded maps, for every lag up
+        # to n - 1 in each direction; the padding leaves no wrap-around.
+        circular = fft.irfft2(np.conj(first) * second, s=padded)
+        rows = np.r_[padded[0] - shape[0] // 2 : padded[0], : shape[0] // 2 + 1]
+        cols = np.r_[padded[1] - shape[1] // 2 : padded[1], : shape[1] // 2 + 1]
+        return np.asarray(circular[np.ix_(rows, cols)], dtype=np.float64)
+
+    mask_f = spectrum(valid.astype(np.float64))
+    x_f = spectrum(standardized)
+    xx_f = spectrum(standardized**2)
+    n_pairs = np.rint(overlap_sum(mask_f, mask_f))
+    sum_first = overlap_sum(x_f, mask_f)
+    sum_second = overlap_sum(mask_f, x_f)
+    sum_squares_first = overlap_sum(xx_f, mask_f)
+    sum_squares_second = overlap_sum(mask_f, xx_f)
+    sum_products = overlap_sum(x_f, x_f)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        covariance = n_pairs * sum_products - sum_first * sum_second
+        variance_first = n_pairs * sum_squares_first - sum_first**2
+        variance_second = n_pairs * sum_squares_second - sum_second**2
+        # A side of the overlap whose values are all equal has a variance of
+        # rounding error only: its correlation is undefined.
+        floor = 1e-9 * n_pairs**2
+        defined = (
+            (n_pairs >= _MIN_OVERLAP_BINS)
+            & (variance_first > floor)
+            & (variance_second > floor)
         )
-
-    # Reshape to 2D grid (grid_shape is now guaranteed to be tuple[int, int])
-    rate_map_2d = np.full(grid_shape, np.nan, dtype=np.float64)
-
-    # Fill in values from firing_rate
-    # Need to map flat bin indices to grid indices
-    rate_map_2d[env.active_mask] = firing_rate
-
-    # Missing bins contribute no centered signal, including inactive grid cells.
-    valid_mask = np.isfinite(rate_map_2d)
-
-    # Normalize: subtract mean of valid bins
-    valid_rates = rate_map_2d[valid_mask]
-    if len(valid_rates) == 0:
-        raise ValueError("No valid (non-NaN) firing rates")
-
-    mean_rate = np.mean(valid_rates)
-    rate_map_normalized = np.where(valid_mask, rate_map_2d - mean_rate, 0.0)
-
-    # Compute 2D autocorrelation via FFT
-    # autocorr(r) = IFFT(|FFT(rate_map)|^2)
-    fft_rate = fft.fft2(rate_map_normalized)
-    power_spectrum = np.abs(fft_rate) ** 2
-    autocorr = fft.ifft2(power_spectrum).real
-
-    # Shift zero lag to center
-    autocorr = fft.fftshift(autocorr)
-
-    # Normalize by the observed centered energy. This ensures zero lag is 1
-    # and, by Cauchy-Schwarz, circular correlations stay in [-1, 1].
-    variance = np.var(valid_rates)
-    if variance == 0:
-        raise ValueError("Firing rate has zero variance")
-
-    n_valid = np.sum(valid_mask)
-    autocorr = autocorr / (variance * n_valid)
-
-    # Return as NDArray[np.float64]
-    return np.asarray(autocorr, dtype=np.float64)
+        autocorr = covariance / np.sqrt(variance_first * variance_second)
+    return np.where(defined, np.clip(autocorr, -1.0, 1.0), np.nan)
 
 
 def _spatial_autocorrelation_graph(
@@ -774,203 +770,138 @@ def _spatial_autocorrelation_graph(
     return distance_bin_centers, correlations
 
 
-def grid_score(
-    autocorr_2d: NDArray[np.float64],
-    *,
-    inner_radius_fraction: float = 0.2,
-    outer_radius_fraction: float = 0.5,
-) -> float:
+def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     """
     Compute grid score from 2D spatial autocorrelation.
 
     Grid score quantifies hexagonal periodicity by measuring rotational symmetry
     in the autocorrelogram. Hexagonal grids show high correlation at 60° and 120°
     rotations (hexagon vertices) and low correlation at 30°, 90°, 150° rotations.
-    Implements the algorithm from Sargolini et al. (2006).
 
     Parameters
     ----------
     autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
-        2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
-        Zero lag at index ``n // 2`` along each axis, where
-        ``scipy.fft.fftshift`` puts it. An even axis's first entry, the most
-        negative lag, has no positive partner and is not used, so rotations
-        are about the zero-lag pixel.
-    inner_radius_fraction : float, optional
-        Inner radius of annular region as fraction of image semi-axis.
-        Default is 0.2 (20% of half-width). Must be in (0, 1).
-    outer_radius_fraction : float, optional
-        Outer radius of annular region as fraction of image semi-axis.
-        Default is 0.5 (50% of half-width). Must be in (inner_radius_fraction, 1].
+        2D spatial autocorrelogram, as :func:`spatial_autocorrelation` returns
+        it: zero lag at index ``n // 2`` along each axis, NaN at lags without
+        a correlation. An even axis's first entry, the most negative lag, has
+        no positive partner and is not used, so rotations are about the
+        zero-lag pixel.
 
     Returns
     -------
     score : float
         Grid score in range [-2, 2]. Higher values indicate stronger hexagonal
-        periodicity. Returns NaN if:
-        - Autocorrelation has NaN or infinite values in annular region
-        - Annular region is too small (< 10 pixels)
-        - Rotation correlation fails
+        periodicity. NaN when the autocorrelogram has no central peak
+        bounded inside the map (no correlation above the central-peak
+        threshold at zero lag, or a region that reaches the map's edge or its
+        undefined lags), or when fewer than three ring radii fit between the
+        central peak and the edge of the defined lags.
 
     Notes
     -----
-    **Algorithm** (Sargolini et al., 2006):
+    **Algorithm**, the expanding-annulus grid score of the Moser group's
+    analysis toolbox (BNT ``gridnessScore``) and opexebo:
 
-    1. Define annular region between inner and outer radii (excludes central peak)
-    2. Rotate autocorrelogram by angles: 30°, 60°, 90°, 120°, 150°
-    3. Compute Pearson correlation between original and rotated within annulus
-    4. Grid score = min(r60, r120) - max(r30, r90, r150)
+    1. Central peak: the connected region of lags around zero lag where the
+       correlation exceeds 0.2 of its zero-lag value. Its inner radius is
+       the radius of a disk of the same area, so it grows with the size of
+       the firing fields.
+    2. Rotate the autocorrelogram by 30°, 60°, 90°, 120° and 150° about zero
+       lag.
+    3. For each outer radius from just outside the central peak to the edge
+       of the map, in steps of one pixel, take the annulus between the
+       central peak and that radius, and compute the Pearson correlation
+       between the autocorrelogram and each rotation over the lags defined
+       in the map and in all five rotations:
+       ``min(r60, r120) - max(r30, r90, r150)``.
+    4. The score is the largest mean of three consecutive radii.
+
+    Sweeping the outer radius makes the score independent of the grid
+    spacing and of the arena size, as long as the first ring of peaks lies
+    inside the map; a fixed annulus misses the ring of a widely spaced grid.
 
     **Interpretation**:
 
-    - **score > 0.4**: Strong hexagonal grid (typical threshold for grid cells)
-    - **score ≈ 0**: No hexagonal structure (place cells, non-spatial cells)
-    - **score < 0**: Anti-hexagonal structure (rare)
-
-    **Annular region selection**:
-
-    The annular region should:
-    - Exclude central peak (inner_radius > 0)
-    - Capture first ring of grid peaks (outer_radius chosen based on expected spacing)
-    - Typical values: inner=0.2, outer=0.5 (works for most grid cells)
-
-    If you know the expected grid spacing in bins, you can set radii accordingly:
-    - inner_radius ≈ 0.5 × spacing (exclude center)
-    - outer_radius ≈ 1.5 × spacing (capture first ring)
-
-    **Differences from opexebo**:
-
-    This implementation is compatible with opexebo's grid_score but with these differences:
-    - Works on autocorrelogram from neurospatial's spatial_autocorrelation
-    - Annular region defined as fraction of image size (opexebo uses absolute pixels)
-    - Uses scipy.ndimage.rotate for rotations (same as opexebo)
+    - **score > 0.4**: hexagonal grid (a common grid-cell threshold)
+    - **score ≈ 0**: no hexagonal structure (place cells, non-spatial cells)
+    - **score < 0**: four-fold or other non-hexagonal symmetry
 
     Examples
     --------
-    >>> import numpy as np  # doctest: +SKIP
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.encoding.grid import (
-    ...     spatial_autocorrelation,
-    ...     grid_score,
-    ... )  # doctest: +SKIP
-    >>>
-    >>> # Create environment
-    >>> positions = np.random.randn(5000, 2) * 20  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>>
-    >>> # Create grid cell firing pattern (simplified example)
-    >>> firing_rate = np.zeros(env.n_bins)  # doctest: +SKIP
-    >>> # ... populate with hexagonal grid pattern ...
-    >>>
-    >>> # Compute autocorrelation
-    >>> autocorr_2d = spatial_autocorrelation(env, firing_rate)  # doctest: +SKIP
-    >>>
-    >>> # Compute grid score
-    >>> score = grid_score(autocorr_2d)  # doctest: +SKIP
-    >>> print(f"Grid score: {score:.3f}")  # doctest: +SKIP
-    Grid score: 0.623  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+    >>> edges = np.arange(0.0, 102.5, 2.5)  # 100 cm box, 2.5 cm bins
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+    ... )
+    >>> wavenumber = 4 * np.pi / (np.sqrt(3) * 40.0)  # 40 cm grid spacing
+    >>> rate = sum(
+    ...     np.cos(wavenumber * env.bin_centers @ [np.cos(a), np.sin(a)])
+    ...     for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
+    ... )
+    >>> score = grid_score(spatial_autocorrelation(env, np.exp(rate)))
+    >>> bool(score > 0.4)
+    True
 
     See Also
     --------
     spatial_autocorrelation : Compute 2D autocorrelation map
-    periodicity_score : Graph-based alternative for irregular topologies
+    grid_properties : Score, spacing and orientation together
 
     References
     ----------
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
-    # Validate inputs
     if autocorr_2d.ndim != 2:
         raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
 
-    if not (0 < inner_radius_fraction < 1):
-        raise ValueError(
-            f"inner_radius_fraction must be in (0, 1), got {inner_radius_fraction}"
-        )
-
-    if not (inner_radius_fraction < outer_radius_fraction <= 1):
-        raise ValueError(
-            f"outer_radius_fraction must be in (inner_radius_fraction, 1], "
-            f"got {outer_radius_fraction} with inner={inner_radius_fraction}"
-        )
-
-    # Handle NaN/inf
-    if not np.all(np.isfinite(autocorr_2d)):
+    centered = _zero_lag_centered(np.asarray(autocorr_2d, dtype=np.float64))
+    central_radius = _central_peak_radius(centered)
+    if np.isnan(central_radius):
+        return np.nan
+    edge = (min(centered.shape) - 1) // 2
+    radii = np.arange(int(np.ceil(_MIN_OUTER_RADIUS * central_radius)), edge + 1)
+    if radii.size < _N_SCORE_RADII:
         return np.nan
 
-    # Radii are fractions of half the map's smaller side, as before centering.
-    semi_axis = min(autocorr_2d.shape) / 2
+    distance = _lag_distance(centered.shape)
+    used = np.isfinite(centered) & (distance > central_radius) & (distance <= edge)
+    rotations = []
+    for angle in _ROTATION_ANGLES:
+        rotated, defined = _rotate_about_zero_lag(centered, angle)
+        rotations.append(rotated)
+        used &= defined
 
-    # Rotate about zero lag: an odd map centered on it, so ndimage.rotate's
-    # center ((n - 1) / 2) and the annulus center are the zero-lag pixel.
-    autocorr_2d = _zero_lag_centered(autocorr_2d)
-    height, width = autocorr_2d.shape
+    # Pearson correlation in every annulus at once: cumulative sums over the
+    # lags sorted by distance, read at each outer radius.
+    order = np.argsort(distance[used], kind="stable")
+    x = centered[used][order]
+    end = np.searchsorted(distance[used][order], radii, side="right")
+    n = end.astype(np.float64)
 
-    # Create annular mask (ring region between inner and outer radii)
-    center_y, center_x = (height - 1) / 2, (width - 1) / 2
+    def at_radii(values: NDArray[np.float64]) -> NDArray[np.float64]:
+        return np.concatenate([[0.0], np.cumsum(values)])[end]
 
-    inner_radius = inner_radius_fraction * semi_axis
-    outer_radius = outer_radius_fraction * semi_axis
+    sum_x, sum_xx = at_radii(x), at_radii(x**2)
+    correlations = []
+    for rotated in rotations:
+        y = rotated[used][order]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            covariance = n * at_radii(x * y) - sum_x * at_radii(y)
+            variance = (n * sum_xx - sum_x**2) * (n * at_radii(y**2) - at_radii(y) ** 2)
+            correlations.append(
+                np.where(variance > 0, covariance / np.sqrt(variance), np.nan)
+            )
+    r30, r60, r90, r120, r150 = correlations
+    per_radius = np.minimum(r60, r120) - np.maximum(np.maximum(r30, r90), r150)
 
-    # Create coordinate grids
-    y, x = np.ogrid[:height, :width]
-    distance_from_center = np.sqrt((y - center_y) ** 2 + (x - center_x) ** 2)
-
-    # Annular mask
-    annular_mask = (distance_from_center >= inner_radius) & (
-        distance_from_center <= outer_radius
-    )
-
-    # Check if annular region is large enough
-    if np.sum(annular_mask) < 10:
-        # Too few pixels for reliable correlation
+    window = np.lib.stride_tricks.sliding_window_view(per_radius, _N_SCORE_RADII)
+    means = window.mean(axis=1)
+    if not np.any(np.isfinite(means)):
         return np.nan
-
-    # Rotation angles (degrees)
-    angles = [30, 60, 90, 120, 150]
-
-    # Compute correlation for each rotation
-    correlations = {}
-
-    for angle in angles:
-        # Rotate autocorrelation map
-        rotated = ndimage.rotate(
-            autocorr_2d, angle, reshape=False, order=1, mode="constant", cval=0.0
-        )
-
-        # Extract values in annular region for original and rotated
-        orig_vals = autocorr_2d[annular_mask]
-        rot_vals = rotated[annular_mask]
-
-        # Remove NaN/inf from rotated (interpolation may introduce them)
-        valid = np.isfinite(orig_vals) & np.isfinite(rot_vals)
-
-        if np.sum(valid) < 10:
-            # Not enough valid points
-            return np.nan
-
-        orig_vals_clean = orig_vals[valid]
-        rot_vals_clean = rot_vals[valid]
-
-        # Check for zero variance
-        if np.std(orig_vals_clean) == 0 or np.std(rot_vals_clean) == 0:
-            return np.nan
-
-        # Compute Pearson correlation
-        corr, _ = stats.pearsonr(orig_vals_clean, rot_vals_clean)
-        correlations[angle] = corr
-
-    # Grid score = min(r60, r120) - max(r30, r90, r150)
-    r60 = correlations[60]
-    r120 = correlations[120]
-    r30 = correlations[30]
-    r90 = correlations[90]
-    r150 = correlations[150]
-
-    score = min(r60, r120) - max(r30, r90, r150)
-
-    return float(score)
+    return float(np.nanmax(means))
 
 
 def periodicity_score(
@@ -1181,103 +1112,186 @@ def _zero_lag_centered(autocorr_2d: NDArray[np.float64]) -> NDArray[np.float64]:
     ]
 
 
+# Rotations compared by the grid score, in degrees: a hexagonal lattice maps
+# onto itself at 60 and 120 and away from itself at 30, 90 and 150.
+_ROTATION_ANGLES = (30.0, 60.0, 90.0, 120.0, 150.0)
+# The grid score is the largest mean over this many consecutive annulus radii.
+_N_SCORE_RADII = 3
+# The smallest outer annulus radius, in central-peak radii. A neighboring
+# field lies at least one central-peak diameter from zero lag, so a narrower
+# annulus holds only the shoulder of the central peak.
+_MIN_OUTER_RADIUS = 2.0
+# The central peak is the region around zero lag where the correlation exceeds
+# this fraction of its zero-lag value.
+_CENTRAL_PEAK_THRESHOLD = 0.2
+
+
+def _lag_distance(shape: tuple[int, ...]) -> NDArray[np.float64]:
+    """Distance in pixels of every lag from the center of an odd-sized map."""
+    offsets = np.ogrid[tuple(slice(-(n // 2), n // 2 + 1) for n in shape)]
+    return np.asarray(np.sqrt(sum(offset**2 for offset in offsets)), dtype=np.float64)
+
+
+def _central_peak_radius(centered: NDArray[np.float64]) -> float:
+    """Radius in pixels of the central peak of a zero-lag-centered map.
+
+    The central peak is the set of lags reached from zero lag by stepping to
+    4-connected neighbors whose correlation does not rise and stays above
+    ``_CENTRAL_PEAK_THRESHOLD`` of the zero-lag value. A neighboring field
+    rises out of the dip around the central peak, so it is not included even
+    when that dip stays above the threshold. The radius is that of a disk of
+    the same area.
+
+    Parameters
+    ----------
+    centered : ndarray of float64, shape (n_x, n_y)
+        Autocorrelogram with odd axes and zero lag at the middle index.
+
+    Returns
+    -------
+    float
+        Equivalent radius in pixels, or NaN when the zero-lag correlation is
+        not positive or the peak reaches the map's edge or an undefined
+        (NaN) lag, so its extent is unknown.
+    """
+    center = tuple(n // 2 + 1 for n in centered.shape)
+    # A NaN border marks the map's edge like an undefined lag.
+    values = np.pad(centered, 1, constant_values=np.nan)
+    peak = values[center]
+    if not peak > 0:
+        return np.nan
+    above = np.nan_to_num(values, nan=-np.inf) > _CENTRAL_PEAK_THRESHOLD * peak
+    region = np.zeros(values.shape, dtype=bool)
+    region[center] = True
+    while True:
+        downhill = np.zeros_like(region)
+        for axis in (0, 1):
+            for step in (1, -1):
+                from_region = np.roll(region, step, axis=axis)
+                downhill |= from_region & (values <= np.roll(values, step, axis=axis))
+        grown = downhill & above & ~region
+        if not grown.any():
+            break
+        region |= grown
+    if np.any(ndimage.binary_dilation(region) & np.isnan(values)):
+        return np.nan
+    return float(np.sqrt(np.count_nonzero(region) / np.pi))
+
+
+def _rotate_about_zero_lag(
+    centered: NDArray[np.float64], angle: float
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Rotate a zero-lag-centered map, marking lags the rotation leaves undefined.
+
+    Parameters
+    ----------
+    centered : ndarray of float64, shape (n_x, n_y)
+        Map with odd axes and zero lag at the middle index; NaN where
+        undefined.
+    angle : float
+        Rotation in degrees.
+
+    Returns
+    -------
+    rotated : ndarray of float64, shape (n_x, n_y)
+        Bilinear rotation about the zero-lag pixel.
+    defined : ndarray of bool, shape (n_x, n_y)
+        Lags whose interpolated value uses only defined lags inside the map.
+    """
+    valid = np.isfinite(centered)
+    rotated = ndimage.rotate(
+        np.where(valid, centered, 0.0), angle, reshape=False, order=1, cval=0.0
+    )
+    coverage = ndimage.rotate(
+        valid.astype(np.float64), angle, reshape=False, order=1, cval=0.0
+    )
+    return np.asarray(rotated, dtype=np.float64), coverage > 1.0 - 1e-9
+
+
 def _find_autocorr_peaks(
     autocorr_2d: NDArray[np.float64],
     *,
-    min_distance: int = 5,
-    threshold_rel: float = 0.1,
-    exclude_center_radius: float | None = None,
-    max_peaks: int = 7,
+    threshold_rel: float,
+    max_peaks: int,
 ) -> NDArray[np.float64]:
     """
-    Find peaks in 2D autocorrelogram, excluding central peak.
+    Find the peaks of a 2D autocorrelogram nearest its central peak.
+
+    A peak is a local maximum outside the central peak (see
+    :func:`grid_score`) whose correlation is at least ``threshold_rel`` times
+    the zero-lag correlation. Peaks closer together than the central peak's
+    radius are one field, of which the higher is kept. Both lengths come from
+    the field size in the map, so the search does not depend on the pixel
+    size.
 
     Parameters
     ----------
     autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
-        2D autocorrelation map with center at zero lag.
-    min_distance : int, optional
-        Minimum distance between peaks in pixels. Default is 5.
-    threshold_rel : float, optional
-        Minimum peak height as fraction of max value. Default is 0.1.
-    exclude_center_radius : float, optional
-        Radius around center to exclude (excludes central peak).
-        If None, uses 10% of the smaller dimension.
-    max_peaks : int, optional
-        Maximum number of peaks to return. Default is 7 (center + 6 surrounding).
+        2D autocorrelogram with zero lag at index ``n // 2`` along each axis;
+        NaN at undefined lags.
+    threshold_rel : float
+        Minimum peak correlation as a fraction of the zero-lag correlation.
+    max_peaks : int
+        Maximum number of peaks to return.
 
     Returns
     -------
     peak_coords : NDArray[np.float64], shape (n_peaks, 2)
-        Peak coordinates relative to center, as ``(x_offset, y_offset)``:
-        axis 0 of the map runs along the environment's x and axis 1 along
-        y, as :func:`spatial_autocorrelation` lays it out. Sorted by
-        distance from center (closest first).
+        Peak coordinates relative to zero lag, in pixels, as
+        ``(x_offset, y_offset)``: axis 0 of the map runs along the
+        environment's x and axis 1 along y, as :func:`spatial_autocorrelation`
+        lays it out. Sorted by distance from zero lag (closest first). Empty
+        when the map has no bounded central peak.
     """
     from skimage.feature import peak_local_max
 
-    autocorr_2d = _zero_lag_centered(autocorr_2d)
-    height, width = autocorr_2d.shape
-    center_y, center_x = (height - 1) / 2, (width - 1) / 2
-
-    # Determine center exclusion radius
-    if exclude_center_radius is None:
-        exclude_center_radius = min(height, width) * 0.1
-
-    # Find peaks using skimage
-    # threshold_abs is relative to the autocorrelogram range
-    valid_vals = autocorr_2d[np.isfinite(autocorr_2d)]
-    if len(valid_vals) == 0:
-        return np.array([]).reshape(0, 2)
-
-    threshold_abs = threshold_rel * (np.max(valid_vals) - np.min(valid_vals))
-
-    # Handle NaN by replacing with minimum value
-    autocorr_clean = np.where(np.isfinite(autocorr_2d), autocorr_2d, np.min(valid_vals))
-
-    try:
-        peaks = peak_local_max(
-            autocorr_clean,
-            min_distance=min_distance,
-            threshold_abs=threshold_abs,
-            exclude_border=True,
-            num_peaks=max_peaks * 2,  # Get extras to filter
-        )
-    except Exception:
-        # Fallback if peak_local_max fails
-        return np.array([]).reshape(0, 2)
-
-    if len(peaks) == 0:
-        return np.array([]).reshape(0, 2)
-
-    # Convert to center-relative coordinates. ``peaks`` from
-    # ``peak_local_max`` is (axis 0, axis 1); the autocorrelogram's axis 0
-    # runs along the environment's x and axis 1 along y, as
-    # ``spatial_autocorrelation`` lays it out, so the offsets are (x, y).
-    peak_coords_relative = peaks.astype(np.float64) - np.array([center_y, center_x])
-
-    # Compute distances from center (Euclidean — independent of axis order).
-    distances = np.sqrt(
-        peak_coords_relative[:, 0] ** 2 + peak_coords_relative[:, 1] ** 2
+    centered = _zero_lag_centered(np.asarray(autocorr_2d, dtype=np.float64))
+    central_radius = _central_peak_radius(centered)
+    if np.isnan(central_radius):
+        return np.empty((0, 2))
+    center = np.array([n // 2 for n in centered.shape])
+    valid = np.isfinite(centered)
+    floor = np.min(centered[valid]) - 1.0
+    peaks = peak_local_max(
+        np.where(valid, centered, floor),
+        min_distance=max(1, int(np.floor(central_radius))),
+        threshold_abs=threshold_rel * centered[tuple(center)],
+        exclude_border=False,
     )
+    offsets = peaks.astype(np.float64) - center
+    distances = np.hypot(offsets[:, 0], offsets[:, 1])
+    outside = distances > central_radius
+    order = np.argsort(distances[outside], kind="stable")[:max_peaks]
+    return np.asarray(offsets[outside][order], dtype=np.float64)
 
-    # Exclude central peak (within exclude_center_radius)
-    non_central = distances > exclude_center_radius
-    peak_coords_relative = peak_coords_relative[non_central]
-    distances = distances[non_central]
 
-    if len(peak_coords_relative) == 0:
-        return np.array([]).reshape(0, 2)
-
-    # Sort by distance from center
-    sort_idx = np.argsort(distances)
-    peak_coords_relative = peak_coords_relative[sort_idx]
-
-    # Limit to max_peaks
-    if len(peak_coords_relative) > max_peaks:
-        peak_coords_relative = peak_coords_relative[:max_peaks]
-
-    return np.asarray(peak_coords_relative, dtype=np.float64)
+def _validate_peak_arguments(
+    autocorr_2d: NDArray[np.float64],
+    bin_size: float,
+    n_peaks: int,
+    threshold_rel: float,
+) -> None:
+    """Check the arguments shared by :func:`grid_scale` and :func:`grid_properties`."""
+    if autocorr_2d.ndim != 2:
+        raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
+    if not bin_size > 0:
+        raise ValueError(
+            f"bin_size must be positive (env units, e.g., cm), got {bin_size}. "
+            "Pass autocorrelation_pixel_size(env), the side of the "
+            "autocorrelogram's pixels."
+        )
+    if isinstance(n_peaks, bool) or not isinstance(n_peaks, (int, np.integer)):
+        raise TypeError(f"n_peaks must be an integer, got {n_peaks!r}")
+    if n_peaks < 3:
+        raise ValueError(
+            f"n_peaks must be >= 3, got {n_peaks}: the spacing is the median "
+            "distance to at least three peaks of the first ring."
+        )
+    if not 0 <= threshold_rel < 1:
+        raise ValueError(
+            f"threshold_rel must be in [0, 1), got {threshold_rel}: it is the "
+            "minimum peak correlation as a fraction of the zero-lag correlation."
+        )
 
 
 def grid_scale(
@@ -1285,7 +1299,6 @@ def grid_scale(
     *,
     bin_size: float,
     n_peaks: int = 6,
-    min_distance: int = 5,
     threshold_rel: float = 0.1,
 ) -> float:
     """
@@ -1298,58 +1311,68 @@ def grid_scale(
     Parameters
     ----------
     autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
-        2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
-        Should be centered (zero lag at center).
+        2D spatial autocorrelogram from :func:`spatial_autocorrelation`, zero
+        lag at index ``n // 2`` along each axis.
     bin_size : float
-        Size of each spatial bin in physical units (e.g., cm).
-        Used to convert pixel distances to physical distances.
-    n_peaks : int, optional
-        Number of peaks to use for computing scale. Default is 6 (first ring).
-        For noisy data, using fewer peaks may be more robust.
-    min_distance : int, optional
-        Minimum distance between peaks in pixels. Default is 5.
-    threshold_rel : float, optional
-        Minimum peak height as fraction of autocorrelogram range. Default is 0.1.
+        Side of the autocorrelogram's square pixels in the environment's
+        units (e.g., cm). Pass ``autocorrelation_pixel_size(env)``, which
+        differs from the environment's bin size when its two cell widths
+        differ.
+    n_peaks : int, default=6
+        Number of nearest peaks used: 6 is the first ring of a hexagonal
+        lattice. At least 3.
+    threshold_rel : float, default=0.1
+        Minimum peak correlation as a fraction of the zero-lag correlation
+        (which is 1 for :func:`spatial_autocorrelation`). In [0, 1).
 
     Returns
     -------
     scale : float
-        Grid spacing in physical units (same as bin_size).
-        Returns NaN if fewer than 3 peaks are detected.
+        Grid spacing in the units of ``bin_size``. NaN if fewer than 3 peaks
+        are found.
+
+    Raises
+    ------
+    ValueError
+        If ``autocorr_2d`` is not 2D, ``bin_size`` is not positive,
+        ``n_peaks < 3`` or ``threshold_rel`` is outside [0, 1).
+    TypeError
+        If ``n_peaks`` is not an integer.
 
     Notes
     -----
     **Algorithm**:
 
-    1. Find local maxima in autocorrelogram using peak detection
-    2. Exclude central peak (self-correlation)
-    3. Sort remaining peaks by distance from center
-    4. Take n_peaks closest peaks (typically 6 for hexagonal grid)
-    5. Compute median distance to these peaks
-    6. Convert from pixels to physical units using bin_size
-
-    **Interpretation**:
-
-    - Scale represents the spacing between grid field centers
-    - For hexagonal grids, all 6 first-ring peaks should be at similar distances
-    - High variance in peak distances suggests poor grid regularity
-
-    **Relationship to grid_score**:
-
-    - grid_score measures rotational symmetry (quality of hexagonal pattern)
-    - grid_scale measures the characteristic period (spacing between fields)
-    - Both are needed to fully characterize a grid cell
+    1. Find the central peak as :func:`grid_score` does.
+    2. Find local maxima outside it with correlation at least
+       ``threshold_rel``; maxima closer together than the central peak's
+       radius are one field. Both lengths follow the field size, so the
+       spacing does not depend on the pixel size.
+    3. Take the ``n_peaks`` maxima nearest zero lag and return the median of
+       their distances, converted to physical units with ``bin_size``.
 
     Examples
     --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.encoding.grid import (
-    ...     spatial_autocorrelation,
+    ...     autocorrelation_pixel_size,
     ...     grid_scale,
-    ... )  # doctest: +SKIP
-    >>> autocorr = spatial_autocorrelation(env, firing_rate)  # doctest: +SKIP
-    >>> scale = grid_scale(autocorr, bin_size=2.0)  # doctest: +SKIP
-    >>> print(f"Grid spacing: {scale:.1f} cm")  # doctest: +SKIP
-    Grid spacing: 42.5 cm  # doctest: +SKIP
+    ...     spatial_autocorrelation,
+    ... )
+    >>> edges = np.arange(0.0, 102.5, 2.5)  # 100 cm box, 2.5 cm bins
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+    ... )
+    >>> wavenumber = 4 * np.pi / (np.sqrt(3) * 40.0)  # 40 cm grid spacing
+    >>> rate = sum(
+    ...     np.cos(wavenumber * env.bin_centers @ [np.cos(a), np.sin(a)])
+    ...     for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
+    ... )
+    >>> autocorr = spatial_autocorrelation(env, np.exp(rate))
+    >>> scale = grid_scale(autocorr, bin_size=autocorrelation_pixel_size(env))
+    >>> bool(abs(scale - 40.0) < 2.5)
+    True
 
     See Also
     --------
@@ -1362,139 +1385,92 @@ def grid_scale(
         Microstructure of a spatial map in the entorhinal cortex. Nature,
         436(7052), 801-806.
     """
-    # Validate inputs
-    if autocorr_2d.ndim != 2:
-        raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
-
-    if bin_size <= 0:
-        raise ValueError(
-            f"bin_size must be positive (env units, e.g., cm), got {bin_size}"
-        )
-
-    if n_peaks < 1:
-        raise ValueError(f"n_peaks must be >= 1, got {n_peaks}")
-
-    # Find peaks
+    _validate_peak_arguments(autocorr_2d, bin_size, n_peaks, threshold_rel)
     peak_coords = _find_autocorr_peaks(
-        autocorr_2d,
-        min_distance=min_distance,
-        threshold_rel=threshold_rel,
-        max_peaks=n_peaks + 1,  # Extra in case some are filtered
+        autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
     )
-
     if len(peak_coords) < 3:
-        # Not enough peaks to compute reliable scale
         return np.nan
-
-    # Compute distances from center (peaks are already center-relative)
-    distances_pixels = np.sqrt(peak_coords[:, 0] ** 2 + peak_coords[:, 1] ** 2)
-
-    # Use up to n_peaks closest peaks
-    distances_to_use = distances_pixels[: min(n_peaks, len(distances_pixels))]
-
-    # Compute median distance and convert to physical units
-    scale = float(np.median(distances_to_use)) * bin_size
-
-    return scale
+    return float(np.median(np.hypot(peak_coords[:, 0], peak_coords[:, 1]))) * bin_size
 
 
 def grid_properties(
     autocorr_2d: NDArray[np.float64],
     *,
     bin_size: float,
-    inner_radius_fraction: float = 0.2,
-    outer_radius_fraction: float = 0.5,
     n_peaks: int = 6,
-    min_distance: int = 5,
     threshold_rel: float = 0.1,
 ) -> GridProperties:
     """
     Compute all grid cell metrics from 2D autocorrelogram.
 
-    This function efficiently computes grid score, scale, orientation, and
-    peak coordinates from a single pass of peak detection. Use this instead
-    of calling grid_score and grid_scale separately when
-    you need multiple metrics.
+    Computes grid score, spacing, orientation and the peaks they are read
+    from in one call; the spacing equals :func:`grid_scale` with the same
+    arguments and the score equals :func:`grid_score`.
 
     Parameters
     ----------
     autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
-        2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
+        2D spatial autocorrelogram from :func:`spatial_autocorrelation`.
         Zero lag at index ``n // 2`` along each axis; axis 0 runs along the
         environment's x and axis 1 along y, so orientation is measured in
         the environment's frame.
     bin_size : float
-        Size of each spatial bin in physical units (e.g., cm).
-        Used to convert pixel distances to physical distances.
-    inner_radius_fraction : float, optional
-        Inner radius for grid_score annular region as fraction of image semi-axis.
-        Default is 0.2 (20% of half-width).
-    outer_radius_fraction : float, optional
-        Outer radius for grid_score annular region. Default is 0.5.
-    n_peaks : int, optional
-        Number of peaks to use for scale and orientation. Default is 6.
-    min_distance : int, optional
-        Minimum distance between peaks in pixels. Default is 5.
-    threshold_rel : float, optional
-        Minimum peak height as fraction of autocorrelogram range. Default is 0.1.
+        Side of the autocorrelogram's square pixels in the environment's
+        units (e.g., cm). Pass ``autocorrelation_pixel_size(env)``, which
+        differs from the environment's bin size when its two cell widths
+        differ.
+    n_peaks : int, default=6
+        Number of nearest peaks used for spacing and orientation: 6 is the
+        first ring of a hexagonal lattice. At least 3.
+    threshold_rel : float, default=0.1
+        Minimum peak correlation as a fraction of the zero-lag correlation.
+        In [0, 1).
 
     Returns
     -------
     GridProperties
-        Dataclass containing:
-        - score: Grid score [-2, 2]
-        - scale: Grid spacing in physical units
-        - orientation: lattice angle in radians [0, pi/3), from +x (East)
-          counterclockwise toward +y (North), modulo pi/3
-        - orientation_std: Standard deviation of orientation, in radians
-        - peak_coords: Detected peak coordinates (n_peaks, 2)
-        - n_peaks: Number of peaks detected
+        Score, spacing, orientation, orientation spread and the peaks used.
+
+    Raises
+    ------
+    ValueError
+        If ``autocorr_2d`` is not 2D, ``bin_size`` is not positive,
+        ``n_peaks < 3`` or ``threshold_rel`` is outside [0, 1).
+    TypeError
+        If ``n_peaks`` is not an integer.
 
     Notes
     -----
-    **When to use this function**:
-
-    - When you need multiple grid metrics (more efficient than separate calls)
-    - When you want access to detected peak coordinates
-    - When building analysis pipelines that need all grid properties
-
-    **Efficiency**:
-
-    This function performs peak detection once and reuses results for both
-    scale and orientation computation. The grid_score is computed separately
-    using the rotation-correlation method.
-
-    **Relationship to individual functions**:
-
-    The results are equivalent to calling:
-    - `grid_score(autocorr_2d, ...)` - matches exactly
-    - `grid_scale(autocorr_2d, bin_size=..., ...)` - may differ slightly
-
-    Note: `grid_properties` performs peak detection once and reuses results,
-    while `grid_scale` performs an independent peak
-    detection. Due to the stochastic nature of peak detection near thresholds,
-    scale and orientation values may differ slightly (typically <1%) between
-    `grid_properties` and individual function calls. For exact consistency,
-    use `grid_properties` when you need multiple metrics.
+    Peaks are found as in :func:`grid_scale`. Orientation is the mean angle
+    of the peaks modulo 60 degrees, after moving angles near the 0/60
+    boundary to the side most peaks are on. Scale and orientation are NaN
+    when fewer than 3 peaks are found.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.grid import spatial_autocorrelation, grid_properties
-
-    >>> # Create environment and compute autocorrelation
-    >>> positions = np.random.randn(5000, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>> # firing_rate = ... (grid cell activity)
-    >>> # autocorr = spatial_autocorrelation(env, firing_rate)
-
-    >>> # Get all grid properties at once
-    >>> # props = grid_properties(autocorr, bin_size=2.0)
-    >>> # print(f"Score: {props.score:.2f}")
-    >>> # print(f"Scale: {props.scale:.1f} cm")
-    >>> # print(f"Orientation: {np.degrees(props.orientation):.1f} degrees")
-    >>> # print(f"Detected {props.n_peaks} peaks")
+    >>> from neurospatial.encoding.grid import (
+    ...     autocorrelation_pixel_size,
+    ...     grid_properties,
+    ...     spatial_autocorrelation,
+    ... )
+    >>> edges = np.arange(0.0, 102.5, 2.5)  # 100 cm box, 2.5 cm bins
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+    ... )
+    >>> wavenumber = 4 * np.pi / (np.sqrt(3) * 40.0)  # 40 cm grid spacing
+    >>> rate = sum(
+    ...     np.cos(wavenumber * env.bin_centers @ [np.cos(a), np.sin(a)])
+    ...     for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
+    ... )
+    >>> props = grid_properties(
+    ...     spatial_autocorrelation(env, np.exp(rate)),
+    ...     bin_size=autocorrelation_pixel_size(env),
+    ... )
+    >>> bool(props.score > 0.4), bool(abs(props.scale - 40.0) < 2.5)
+    (True, True)
 
     See Also
     --------
@@ -1509,34 +1485,13 @@ def grid_properties(
     Hafting et al. (2005). Microstructure of a spatial map in the entorhinal
         cortex. Nature, 436(7052), 801-806.
     """
-    # Validate inputs
-    if autocorr_2d.ndim != 2:
-        raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
-
-    if bin_size <= 0:
-        raise ValueError(
-            f"bin_size must be positive (env units, e.g., cm), got {bin_size}"
-        )
-
-    # Compute grid score (uses rotation-correlation method)
-    score = grid_score(
-        autocorr_2d,
-        inner_radius_fraction=inner_radius_fraction,
-        outer_radius_fraction=outer_radius_fraction,
-    )
-
-    # Find peaks once for scale and orientation
+    _validate_peak_arguments(autocorr_2d, bin_size, n_peaks, threshold_rel)
+    score = grid_score(autocorr_2d)
     peak_coords = _find_autocorr_peaks(
-        autocorr_2d,
-        min_distance=min_distance,
-        threshold_rel=threshold_rel,
-        max_peaks=n_peaks + 1,
+        autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
     )
-
     n_detected = len(peak_coords)
-
     if n_detected < 3:
-        # Not enough peaks for reliable scale/orientation
         return GridProperties(
             score=score,
             scale=np.nan,
@@ -1546,17 +1501,10 @@ def grid_properties(
             n_peaks=n_detected,
         )
 
-    # Compute scale from peak distances
-    distances_pixels = np.sqrt(peak_coords[:, 0] ** 2 + peak_coords[:, 1] ** 2)
-    distances_to_use = distances_pixels[: min(n_peaks, len(distances_pixels))]
-    scale = float(np.median(distances_to_use)) * bin_size
+    scale = float(np.median(np.hypot(peak_coords[:, 0], peak_coords[:, 1]))) * bin_size
 
-    # Compute orientation from the angles of the same n_peaks nearest peaks
-    # as the scale: the extra peak detected as a spare can lie on the second
-    # ring, at another angle. peak_coords is (x, y), so arctan2(y, x) reads
-    # peak_coords[:, 1] (y) and peak_coords[:, 0] (x).
-    ring = peak_coords[: min(n_peaks, len(peak_coords))]
-    orientations = np.arctan2(ring[:, 1], ring[:, 0]) % _HEX_PERIOD
+    # peak_coords is (x, y), so arctan2(y, x) reads column 1 then column 0.
+    orientations = np.arctan2(peak_coords[:, 1], peak_coords[:, 0]) % _HEX_PERIOD
 
     # Axis flip correction
     adjusted = np.where(

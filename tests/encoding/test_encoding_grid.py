@@ -146,7 +146,7 @@ class TestEncodingGridFunctionality:
         result = spatial_autocorrelation(env, firing_rate)
 
         assert result.ndim == 2
-        assert result.shape == env.grid_shape
+        assert result.shape == tuple(2 * n - 1 for n in env.grid_shape)
 
     def test_spatial_autocorrelation_graph_runs(self, env_and_data) -> None:
         """spatial_autocorrelation (graph) should run and return tuple."""
@@ -364,7 +364,7 @@ class TestFFTAutocorrelationLagsArePhysical:
 
         autocorr = spatial_autocorrelation(env, rate)
 
-        assert autocorr.shape == env.grid_shape
+        assert autocorr.shape == tuple(2 * n - 1 for n in env.grid_shape)
 
     @pytest.mark.parametrize(
         ("x_width", "y_width"), [(2.0, 2.0), (2.0, 3.0), (3.0, 2.0), (2.0, 2.6)]

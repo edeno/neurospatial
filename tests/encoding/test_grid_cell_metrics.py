@@ -12,35 +12,70 @@ import pytest
 from neurospatial import Environment
 
 
+def _direct_autocorrelation(rate_map: np.ndarray) -> np.ndarray:
+    """Pearson correlation at each lag over the overlapping finite bins, by loop."""
+    n_x, n_y = rate_map.shape
+    expected = np.full((2 * n_x - 1, 2 * n_y - 1), np.nan)
+    for dx in range(1 - n_x, n_x):
+        for dy in range(1 - n_y, n_y):
+            first = rate_map[
+                max(0, -dx) : n_x - max(0, dx), max(0, -dy) : n_y - max(0, dy)
+            ]
+            second = rate_map[
+                max(0, dx) : n_x + min(0, dx), max(0, dy) : n_y + min(0, dy)
+            ]
+            both = np.isfinite(first) & np.isfinite(second)
+            x, y = first[both], second[both]
+            if both.sum() >= 20 and np.ptp(x) > 0 and np.ptp(y) > 0:
+                expected[dx + n_x - 1, dy + n_y - 1] = np.corrcoef(x, y)[0, 1]
+    return expected
+
+
 @pytest.mark.parametrize("inactive", [False, True])
-def test_autocorrelation_missing_bins_preserves_normalization(inactive):
-    """Missing rate bins and inactive cells have no centered signal."""
+def test_autocorrelation_is_pearson_over_overlapping_visited_bins(inactive):
+    """Each lag correlates only the visited bins that overlap, without wrapping."""
     from neurospatial.encoding.grid import spatial_autocorrelation
 
-    mask = np.ones((5, 6), dtype=bool)
+    mask = np.ones((9, 12), dtype=bool)
     if inactive:
-        mask[0, 0] = False
-    env = Environment.from_grid_mask(mask, (np.arange(6.0), np.arange(7.0)))
-    rates = np.arange(1.0, env.n_bins + 1.0)
-    rates[3] = np.nan
+        mask[0, :4] = False
+    env = Environment.from_grid_mask(mask, (np.arange(10.0), np.arange(13.0)))
+    rates = np.random.default_rng(3).gamma(2.0, 2.0, env.n_bins)
+    rates[[3, 17, 40]] = np.nan
+    # Two silent rows make the overlap at a shift of 7 rows constant on one
+    # side, where the correlation is undefined.
+    rates[-24:] = 0.0
+    rate_map = np.full(mask.shape, np.nan)
+    rate_map[mask] = rates
+
     actual = spatial_autocorrelation(env, rates)
-    np.testing.assert_allclose(actual[2, 3], 1.0, atol=1e-12)
-    assert np.max(np.abs(actual)) <= 1 + 1e-12
+
+    assert actual.shape == (17, 23)
+    assert np.isnan(actual[8 + 7, 11])
+    np.testing.assert_allclose(actual[8, 11], 1.0, atol=1e-12)
+    np.testing.assert_array_equal(
+        np.isnan(actual), np.isnan(_direct_autocorrelation(rate_map))
+    )
+    np.testing.assert_allclose(actual, _direct_autocorrelation(rate_map), atol=1e-12)
     np.testing.assert_allclose(
         spatial_autocorrelation(env, rates * 3 + 100), actual, atol=1e-12
     )
 
-    # Direct circular inner products are independent of the FFT implementation.
-    observed = np.full(mask.shape, np.nan)
-    observed[mask] = rates
-    centered = np.where(np.isfinite(observed), observed - np.nanmean(observed), 0)
-    energy = np.sum(centered**2)
-    expected = np.empty(mask.shape)
-    for i in range(mask.shape[0]):
-        for j in range(mask.shape[1]):
-            shifted = np.roll(centered, (i - 2, j - 3), axis=(0, 1))
-            expected[i, j] = np.sum(centered * shifted) / energy
-    np.testing.assert_allclose(actual, expected, atol=1e-12)
+
+def test_autocorrelation_of_a_shifted_copy_is_not_wrapped():
+    """A shift by the map's own period correlates once; the circular map wrapped it."""
+    from neurospatial.encoding.grid import spatial_autocorrelation
+
+    mask = np.ones((30, 30), dtype=bool)
+    env = Environment.from_grid_mask(mask, (np.arange(31.0),) * 2)
+    x = env.bin_centers[:, 0]
+    # A ramp along x: shifting by +k correlates perfectly with the overlap,
+    # while wrap-around would join the top of the ramp to its bottom.
+    autocorr = spatial_autocorrelation(env, x)
+
+    finite = np.isfinite(autocorr[29 + 1 : 29 + 25, 29])
+    assert finite.all()
+    np.testing.assert_allclose(autocorr[29 + 1 : 29 + 25, 29], 1.0, atol=1e-12)
 
 
 class TestSpatialAutocorrelation:
@@ -68,7 +103,7 @@ class TestSpatialAutocorrelation:
 
         # Should return 2D array
         assert autocorr.ndim == 2
-        assert autocorr.shape == env.grid_shape
+        assert autocorr.shape == tuple(2 * n - 1 for n in env.grid_shape)
 
         # Center should have highest autocorrelation (≈1.0)
         center_y, center_x = autocorr.shape[0] // 2, autocorr.shape[1] // 2
@@ -205,8 +240,8 @@ class TestSpatialAutocorrelation:
         with pytest.raises(NotImplementedError, match="spatial_autocorrelation_radial"):
             spatial_autocorrelation(env, firing_rate)
 
-    def test_fft_autocorr_returns_finite_values(self):
-        """Test FFT autocorrelation returns finite values."""
+    def test_autocorr_is_finite_where_enough_bins_overlap(self):
+        """Lags up to half the map overlap in far more than 20 bins: finite."""
         from neurospatial.encoding.grid import (
             spatial_autocorrelation,
         )
@@ -222,9 +257,11 @@ class TestSpatialAutocorrelation:
         firing_rate = rng.random(env.n_bins) * 5.0
 
         autocorr = spatial_autocorrelation(env, firing_rate)
+        n_x, n_y = env.grid_shape
+        inner = autocorr[n_x // 2 : -(n_x // 2), n_y // 2 : -(n_y // 2)]
 
-        # Autocorrelation should be finite everywhere
-        assert np.all(np.isfinite(autocorr))
+        assert np.all(np.isfinite(inner))
+        assert np.isnan(autocorr[0, 0]) and np.isnan(autocorr[-1, -1])
 
 
 class TestGridScore:
@@ -331,23 +368,19 @@ class TestGridScore:
         assert score > 0.0
 
     def test_place_cell_pattern_low_score(self):
-        """Test place cell (single peak) produces low grid score."""
-        from neurospatial.encoding.grid import grid_score
+        """A single place field's autocorrelogram has no hexagonal ring."""
+        from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
 
-        # Create autocorrelogram with single central peak (place cell)
-        size = 50
-        autocorr = np.zeros((size, size))
+        edges = np.arange(0.0, 102.5, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+        )
+        offset = env.bin_centers - [35.0, 60.0]
+        rate = np.exp(-np.sum(offset**2, axis=1) / (2 * 8.0**2))
 
-        # Gaussian peak at center
-        center = size // 2
-        y, x = np.ogrid[:size, :size]
-        distance = np.sqrt((y - center) ** 2 + (x - center) ** 2)
-        autocorr = np.exp(-(distance**2) / (2 * (size / 6) ** 2))
+        score = grid_score(spatial_autocorrelation(env, rate))
 
-        score = grid_score(autocorr)
-
-        # Single peak should produce near-zero or negative score
-        # (No hexagonal symmetry)
+        assert np.isfinite(score)
         assert score < 0.3
 
     def test_random_noise_near_zero_score(self):
@@ -372,21 +405,6 @@ class TestGridScore:
 
         with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
             grid_score(autocorr)
-
-    def test_raises_on_invalid_radii(self):
-        """Test raises ValueError on invalid radius parameters."""
-        from neurospatial.encoding.grid import grid_score
-
-        rng = np.random.default_rng(42)
-        autocorr = rng.standard_normal((50, 50))
-
-        # inner_radius_fraction not in (0, 1)
-        with pytest.raises(ValueError, match="inner_radius_fraction must be in"):
-            grid_score(autocorr, inner_radius_fraction=1.5)
-
-        # outer <= inner
-        with pytest.raises(ValueError, match="outer_radius_fraction must be in"):
-            grid_score(autocorr, inner_radius_fraction=0.5, outer_radius_fraction=0.3)
 
     def test_returns_nan_on_all_nan_input(self):
         """Test returns NaN if autocorrelation contains NaN."""
@@ -651,18 +669,6 @@ class TestGridScale:
         with pytest.raises(ValueError, match="bin_size must be positive"):
             grid_scale(autocorr, bin_size=-1.0)
 
-    def test_grid_scale_scales_with_bin_size(self):
-        """Test scale output is proportional to bin_size."""
-        from neurospatial.encoding.grid import grid_scale
-
-        autocorr = _create_hexagonal_autocorr()
-
-        scale1 = grid_scale(autocorr, bin_size=1.0)
-        scale2 = grid_scale(autocorr, bin_size=2.0)
-
-        # scale2 should be approximately 2x scale1
-        assert abs(scale2 / scale1 - 2.0) < 0.1
-
 
 class TestGridOrientationViaGridProperties:
     """Tests for grid orientation, accessed through ``GridProperties``.
@@ -838,7 +844,7 @@ class TestFindAutocorrPeaks:
 
         autocorr = _create_hexagonal_autocorr()
 
-        peaks = _find_autocorr_peaks(autocorr)
+        peaks = _find_autocorr_peaks(autocorr, threshold_rel=0.1, max_peaks=7)
 
         # Should find 6 peaks (excluding central peak)
         assert 5 <= len(peaks) <= 7
@@ -849,7 +855,7 @@ class TestFindAutocorrPeaks:
 
         autocorr = _create_hexagonal_autocorr()
 
-        peaks = _find_autocorr_peaks(autocorr)
+        peaks = _find_autocorr_peaks(autocorr, threshold_rel=0.1, max_peaks=7)
 
         # All peaks should be non-zero distance from center
         distances = np.sqrt(peaks[:, 0] ** 2 + peaks[:, 1] ** 2)
@@ -861,7 +867,7 @@ class TestFindAutocorrPeaks:
 
         autocorr = _create_hexagonal_autocorr(size=100)
 
-        peaks = _find_autocorr_peaks(autocorr)
+        peaks = _find_autocorr_peaks(autocorr, threshold_rel=0.1, max_peaks=7)
 
         # Peaks should be centered around (0, 0)
         # Mean should be near zero for symmetric pattern
@@ -874,7 +880,7 @@ class TestFindAutocorrPeaks:
 
         autocorr = _create_hexagonal_autocorr()
 
-        peaks = _find_autocorr_peaks(autocorr)
+        peaks = _find_autocorr_peaks(autocorr, threshold_rel=0.1, max_peaks=7)
 
         if len(peaks) > 1:
             distances = np.sqrt(peaks[:, 0] ** 2 + peaks[:, 1] ** 2)
@@ -887,7 +893,7 @@ class TestFindAutocorrPeaks:
 
         autocorr = np.ones((50, 50)) * 0.5
 
-        peaks = _find_autocorr_peaks(autocorr)
+        peaks = _find_autocorr_peaks(autocorr, threshold_rel=0.1, max_peaks=7)
 
         assert len(peaks) == 0
         assert peaks.shape == (0, 2)

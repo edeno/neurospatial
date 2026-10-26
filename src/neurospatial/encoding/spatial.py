@@ -1161,16 +1161,20 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> from neurospatial.encoding.spatial import compute_spatial_rate
-        >>> rng = np.random.default_rng(0)
-        >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> times = np.linspace(0, 50, 500)
-        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
-        >>> result = compute_spatial_rate(
-        ...     env, spike_times, times, positions, bandwidth=10.0
+        >>> from neurospatial.simulation import GridCellModel, generate_poisson_spikes
+        >>> times = np.arange(0.0, 900.0, 1 / 30)
+        >>> # A Lissajous path covers a 100 cm box smoothly.
+        >>> positions = 50 + 49 * np.column_stack(
+        ...     [np.sin(0.31 * times), np.sin(0.47 * times + 0.4)]
         ... )
-        >>> score = result.grid_score()
-        >>> bool(-2.0 <= score <= 2.0)
+        >>> env = Environment.from_samples(positions, bin_size=4.0)
+        >>> cell = GridCellModel(env, grid_spacing=40.0, max_rate=20.0)
+        >>> rate = cell.firing_rate(positions)
+        >>> spike_times = generate_poisson_spikes(rate, times, seed=1)
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=5.0
+        ... )
+        >>> bool(result.grid_score() > 0.4)
         True
         """
         from neurospatial.encoding.grid import grid_score as gs_func
@@ -1239,17 +1243,22 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> from neurospatial.encoding.spatial import compute_spatial_rate
-        >>> rng = np.random.default_rng(0)
-        >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> times = np.linspace(0, 50, 500)
-        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> from neurospatial.simulation import GridCellModel, generate_poisson_spikes
+        >>> times = np.arange(0.0, 900.0, 1 / 30)
+        >>> # A Lissajous path covers a 100 cm box smoothly.
+        >>> positions = 50 + 49 * np.column_stack(
+        ...     [np.sin(0.31 * times), np.sin(0.47 * times + 0.4)]
+        ... )
+        >>> env = Environment.from_samples(positions, bin_size=4.0)
+        >>> cell = GridCellModel(env, grid_spacing=40.0, max_rate=20.0)
+        >>> rate = cell.firing_rate(positions)
+        >>> spike_times = generate_poisson_spikes(rate, times, seed=1)
         >>> result = compute_spatial_rate(
-        ...     env, spike_times, times, positions, bandwidth=10.0
+        ...     env, spike_times, times, positions, bandwidth=5.0
         ... )
         >>> props = result.grid_properties()
-        >>> type(props).__name__
-        'GridProperties'
+        >>> round(float(props.scale) / 4.0)  # spacing in 4 cm pixels, 40 cm
+        10
         """
         from neurospatial.encoding.grid import (
             autocorrelation_pixel_size,

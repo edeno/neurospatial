@@ -641,8 +641,9 @@ association against that null rather than independence from position or speed.
 
 ### Grid periodicity on a regular 2D arena
 
-Use a regular 2D grid for the FFT autocorrelation. Preserve missing support;
-filling unvisited locations with zero changes the map being analyzed.
+Use a regular 2D grid of rectangular cells for the autocorrelogram. Preserve
+missing support; filling unvisited locations with zero changes the map being
+analyzed.
 
 <!-- docs-test: run -->
 ```python
@@ -659,11 +660,17 @@ score = grid_score(autocorrelation)
 print("Hexagonal rotational-symmetry score:", score)
 ```
 
-The autocorrelation uses circular FFT boundaries and centers observed values;
-its missing-bin treatment does not remove sampling bias. Inspect the rate map,
-autocorrelogram and occupancy together. The annulus and binning affect the
-score, which may be unavailable for small or constant maps. A conventional
-score cutoff is not a calibrated significance test. For an irregular graph,
+At each shift the autocorrelogram is the Pearson correlation between the map
+and its shifted copy over the bins visited in both, without wrapping around
+the arena; shifts with fewer than 20 overlapping bins are NaN. Unvisited bins
+are left out rather than counted as silent, but that does not remove sampling
+bias. The score sweeps an annulus from the edge of the central peak outward
+and keeps the best 60°-versus-30° rotational contrast, so it does not depend
+on the grid spacing as long as the first ring of fields fits in the arena. It
+is NaN when the central peak is not bounded inside the map or the arena is too
+small for an annulus around it. Inspect the rate map, autocorrelogram and
+occupancy together. A conventional score cutoff is not a calibrated
+significance test. For an irregular graph,
 `spatial_autocorrelation_radial` and `periodicity_score` from
 `neurospatial.encoding.grid` describe radial periodicity; a radial profile
 does not establish sixfold symmetry.
