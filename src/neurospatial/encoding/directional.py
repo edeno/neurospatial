@@ -48,7 +48,7 @@ neurospatial.stats.circular : Circular statistics utilities
 from __future__ import annotations
 
 import warnings
-from collections.abc import Hashable, Iterator, Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, cast
@@ -71,9 +71,13 @@ from neurospatial._intervals import (
     run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
+from neurospatial._results import _copy_analysis_settings
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial.encoding._base import (
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _to_numpy,
+)
 from neurospatial.encoding._significance import (
     check_criterion,
     check_mode_keywords,
@@ -425,7 +429,7 @@ def _directional_summary_frame(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class DirectionalRateResult(SpatialResultMixin):
+class DirectionalRateResult(SingleUnitRateMixin):
     """Result of directional rate computation for a single neuron.
 
     This class wraps a directional tuning curve with its associated metadata
@@ -545,10 +549,9 @@ class DirectionalRateResult(SpatialResultMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
-
-    def __post_init__(self) -> None:
-        """Store the arrays as read-only copies."""
-        self._own_arrays()
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _directional_xarray_attrs(self)
@@ -1279,7 +1282,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
+class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     """Result of directional rate computation for multiple neurons.
 
     This class wraps directional tuning curves for a population of neurons
@@ -1420,27 +1423,12 @@ class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _directional_xarray_attrs(self)
-
-    def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
-        n_units = int(np.asarray(self.firing_rates).shape[0])
-        object.__setattr__(
-            self,
-            "unit_ids",
-            resolve_unit_ids(self.unit_ids, n_units),
-        )
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="DirectionalRatesResult"
-            ),
-        )
-        self._own_arrays()
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -1452,17 +1440,6 @@ class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
         # Directional results have no Environment; the bin center is the
         # angular center (radians). Emit it under the shared vocabulary name.
         return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
-
-    def __len__(self) -> int:
-        """Return number of units.
-
-        Returns
-        -------
-        int
-            Number of neurons (first dimension of firing_rates).
-        """
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        return int(rates.shape[0])
 
     def __getitem__(self, idx: int) -> DirectionalRateResult:
         """Get single-neuron result by index.
@@ -1498,48 +1475,15 @@ class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
         (60,)
         """
         idx = self._unit_position(idx)
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         counts = self.spike_counts
-        return DirectionalRateResult(
-            firing_rate=rates[idx],
-            occupancy=self.occupancy,
+        return self._unit_result(
+            DirectionalRateResult,
+            idx,
             bin_centers=self.bin_centers,
             bin_size=self.bin_size,
             bandwidth=self.bandwidth,
             spike_counts=(None if counts is None else np.asarray(counts)[idx]),
-            unit_id=label_at(self.unit_ids, idx),
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
         )
-
-    def __iter__(self) -> Iterator[DirectionalRateResult]:
-        """Iterate over single-neuron results.
-
-        Yields
-        ------
-        DirectionalRateResult
-            Result for each neuron in order.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.directional import DirectionalRatesResult
-        >>> n_bins = 60
-        >>> bin_centers = np.linspace(-np.pi, np.pi, n_bins, endpoint=False)
-        >>> rng = np.random.default_rng(0)
-        >>> results = DirectionalRatesResult(
-        ...     firing_rates=rng.random((3, n_bins)) * 10,
-        ...     occupancy=np.ones(n_bins) * 0.5,
-        ...     bin_centers=bin_centers,
-        ...     bin_size=np.pi / 30,
-        ...     bandwidth=None,
-        ... )
-        >>> peaks = [float(np.max(result.firing_rate)) for result in results]
-        >>> len(peaks)
-        3
-        """
-        for i in range(len(self)):
-            yield self[i]
 
     def plot(
         self,
@@ -2558,7 +2502,7 @@ def compute_directional_rates(
     # Normalize spike times to canonical list-of-arrays format and resolve the
     # per-unit identity labels (defaults to arange). A labelled input keeps its
     # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, _ = as_labelled_spike_trains(
+    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
         spike_times, unit_ids, context="compute_directional_rates"
     )
     n_neurons = len(spike_times_list)
@@ -2640,7 +2584,7 @@ def compute_directional_rates(
             bin_size=actual_bin_size_rad,
             bandwidth=bandwidth_rad,
             spike_counts=empty_counts,
-            unit_ids=resolved_unit_ids,
+            unit_ids=resolved_unit_ids if labels_supplied else None,
             spike_window=resolved_spike_window,
             analysis_settings=settings,
         )
@@ -2696,7 +2640,7 @@ def compute_directional_rates(
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts_all,
-        unit_ids=resolved_unit_ids,
+        unit_ids=resolved_unit_ids if labels_supplied else None,
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )

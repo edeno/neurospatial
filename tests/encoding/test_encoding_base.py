@@ -3,8 +3,6 @@
 This module tests the shared infrastructure for encoding result classes:
 - _to_numpy: Convert arrays (NumPy or JAX) to NumPy
 - _get_array_module: Detect array backend (numpy or jax.numpy)
-- HasOccupancy protocol
-- HasEnvironment protocol
 - SpatialResultMixin: Shared methods for spatial result classes
 """
 
@@ -142,46 +140,6 @@ class TestGetArrayModule:
         jax_arr = jnp.array([1.0, 2.0, 3.0])
         xp = _get_array_module(jax_arr)
         assert xp is jnp
-
-
-# ==============================================================================
-# Test Protocols
-# ==============================================================================
-
-
-class TestHasEnvironmentProtocol:
-    """Tests for the runtime-checkable HasEnvironment protocol.
-
-    The single regression worth catching is the protocol forgetting
-    ``@runtime_checkable`` (which makes ``isinstance`` raise) or the
-    attribute set drifting from the protocol declaration. Both happen
-    when someone refactors the protocol; the per-attribute "should match
-    this dataclass" smoke test is the cheapest way to catch them. The
-    ``HasOccupancy`` mirror of these tests was dropped — same shape,
-    same trivia, single protocol is enough.
-    """
-
-    def test_protocol_is_runtime_checkable(self, simple_env: Environment) -> None:
-        """HasEnvironment protocol should be runtime checkable."""
-        from neurospatial.encoding._base import HasEnvironment
-
-        @dataclass
-        class MockResult:
-            env: Environment
-
-        result = MockResult(env=simple_env)
-        assert isinstance(result, HasEnvironment)
-
-    def test_non_conforming_class_fails(self) -> None:
-        """Classes without env attribute should not satisfy protocol."""
-        from neurospatial.encoding._base import HasEnvironment
-
-        @dataclass
-        class NoEnv:
-            other_field: int
-
-        result = NoEnv(other_field=42)
-        assert not isinstance(result, HasEnvironment)
 
 
 # ==============================================================================

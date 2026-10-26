@@ -44,7 +44,7 @@ neurospatial.ops.egocentric : Egocentric coordinate transforms
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterator, Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
@@ -59,8 +59,12 @@ from neurospatial._intervals import (
     run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
-from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial._results import _copy_analysis_settings
+from neurospatial.encoding._base import (
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _to_numpy,
+)
 from neurospatial.encoding._polar_results import (
     _PolarRateMixin,
     polar_summary_frame,
@@ -164,7 +168,7 @@ def _object_vector_summary_frame(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
+class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     """Result of object-vector rate computation for a single neuron.
 
     This class wraps an object-vector firing rate map (firing rate by distance
@@ -276,10 +280,12 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
+    def _check_family(self) -> None:
         _check_direction_frame(self.direction_frame, context="ObjectVectorRateResult")
-        self._own_arrays()
 
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
@@ -660,7 +666,9 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelectionMixin):
+class ObjectVectorRatesResult(
+    _PolarRateMixin, PopulationRateMixin[ObjectVectorRateResult]
+):
     """Result of object-vector rate computation for multiple neurons.
 
     This class wraps object-vector firing rate maps for a population of neurons
@@ -788,61 +796,12 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
+    def _check_family(self) -> None:
         _check_direction_frame(self.direction_frame, context="ObjectVectorRatesResult")
-        n_units = int(np.asarray(self.firing_rates).shape[0])
-        object.__setattr__(
-            self,
-            "unit_ids",
-            resolve_unit_ids(self.unit_ids, n_units),
-        )
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="ObjectVectorRatesResult"
-            ),
-        )
-        self._own_arrays()
-
-    def __len__(self) -> int:
-        """Return the number of units.
-
-        Returns
-        -------
-        int
-            Number of neurons in the batch.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
-        >>> rng = np.random.default_rng(0)
-        >>> times = np.linspace(0, 100, 1000)
-        >>> positions = rng.uniform(10, 90, (1000, 2))
-        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
-        >>> object_positions = np.array([[50.0, 50.0]])
-        >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ...     np.sort(rng.uniform(0, 100, 50)),
-        ... ]
-        >>> result = compute_egocentric_rates(
-        ...     None,
-        ...     spike_times,
-        ...     times,
-        ...     positions,
-        ...     headings,
-        ...     object_positions,
-        ...     distance_range=(0.0, 50.0),
-        ... )
-        >>> len(result)
-        3
-        """
-        return len(self.firing_rates)  # type: ignore[arg-type]
 
     def __getitem__(self, idx: int) -> ObjectVectorRateResult:
         """Get single-neuron result by index.
@@ -884,53 +843,12 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         >>> isinstance(single, ObjectVectorRateResult)
         True
         """
-        idx = self._unit_position(idx)
-        return ObjectVectorRateResult(
-            firing_rate=self.firing_rates[idx],  # type: ignore[index]
-            occupancy=self.occupancy,
+        return self._unit_result(
+            ObjectVectorRateResult,
+            idx,
             env=self.env,
-            unit_id=label_at(self.unit_ids, idx),
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
             direction_frame=self.direction_frame,
         )
-
-    def __iter__(self) -> Iterator[ObjectVectorRateResult]:
-        """Iterate over single-neuron results.
-
-        Yields
-        ------
-        ObjectVectorRateResult
-            Object-vector rate result in the same frame for each neuron in order.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
-        >>> rng = np.random.default_rng(0)
-        >>> times = np.linspace(0, 100, 1000)
-        >>> positions = rng.uniform(10, 90, (1000, 2))
-        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
-        >>> object_positions = np.array([[50.0, 50.0]])
-        >>> spike_times = [
-        ...     np.sort(rng.uniform(0, 100, 100)),
-        ...     np.sort(rng.uniform(0, 100, 150)),
-        ... ]
-        >>> result = compute_egocentric_rates(
-        ...     None,
-        ...     spike_times,
-        ...     times,
-        ...     positions,
-        ...     headings,
-        ...     object_positions,
-        ...     distance_range=(0.0, 50.0),
-        ... )
-        >>> peaks = [float(single.firing_rate.max()) for single in result]
-        >>> len(peaks)
-        2
-        """
-        for i in range(len(self)):
-            yield self[i]
 
     def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the object-vector rate map for a specific neuron.
@@ -2933,7 +2851,7 @@ def _object_vector_rates(
     # Normalize spike times to canonical list-of-arrays format and resolve the
     # per-unit identity labels (defaults to arange). A labelled input keeps its
     # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, _ = as_labelled_spike_trains(
+    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
         spike_times, unit_ids, context=context
     )
     n_neurons = len(spike_times_list)
@@ -3038,7 +2956,7 @@ def _object_vector_rates(
         firing_rates=firing_rates,
         occupancy=occupancy_out,
         env=counts.polar_env,
-        unit_ids=resolved_unit_ids,
+        unit_ids=resolved_unit_ids if labels_supplied else None,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )

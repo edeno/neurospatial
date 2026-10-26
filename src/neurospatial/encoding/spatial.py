@@ -58,12 +58,15 @@ from neurospatial._observation import validate_break_before
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
-    UnitSelectionMixin,
     _copy_analysis_settings,
-    label_at,
     read_only_copy,
 )
-from neurospatial.encoding._base import SpatialResultMixin, _is_jax_array, _to_numpy
+from neurospatial.encoding._base import (
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _is_jax_array,
+    _to_numpy,
+)
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
@@ -748,7 +751,7 @@ def _spatial_summary_frame(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class SpatialRateResult(SpatialResultMixin):
+class SpatialRateResult(SingleUnitRateMixin):
     """Result of spatial rate computation for a single neuron.
 
     This class wraps a spatial firing rate map with its associated metadata
@@ -813,10 +816,6 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         position was recorded.
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed rather than supplied.
-
-    _unit_ids_generated : bool, default=False
-        Internal identity provenance. True only for generated unit labels;
-        preserves positional pairing when maps are handed to a decoder.
 
     Notes
     -----
@@ -895,7 +894,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     )
 
     _unit_ids_generated: bool = field(
-        default=False, repr=False, compare=False, kw_only=True
+        default=False, kw_only=True, repr=False, compare=False
     )
 
     analysis_settings: dict[str, Any] | None = field(
@@ -974,9 +973,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             "sparsity": float(self.sparsity()),
         }
 
-    def __post_init__(self) -> None:
-        if self.unit_id is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
+    def _check_family(self) -> None:
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
         # (and correctly per-unit-shaped) for method="glm" with bandwidth=None, or
         # all absent for a ratio method. n_units=None -> the singular per-unit slice.
@@ -1006,7 +1003,6 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             self.env,
             rates_ndim=1,
         )
-        self._own_arrays()
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map.
@@ -1636,7 +1632,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
+class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
     """Result of spatial rate computation for multiple neurons.
 
     This class wraps spatial firing rate maps for a population of neurons
@@ -1744,10 +1740,6 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         ``None`` records assumed recording coverage.
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed rather than supplied.
-
-    _unit_ids_generated : bool, default=False
-        Internal identity provenance. True only for generated unit labels;
-        preserves positional pairing when maps are handed to a decoder.
 
     Notes
     -----
@@ -1858,18 +1850,14 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
     )
 
     _unit_ids_generated: bool = field(
-        default=False, repr=False, compare=False, kw_only=True
+        default=False, kw_only=True, repr=False, compare=False
     )
 
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, compare=False, repr=False
     )
 
-    def __post_init__(self) -> None:
-        if self.unit_ids is None:
-            object.__setattr__(self, "_unit_ids_generated", True)
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
+    def _check_family(self) -> None:
         n_units = int(np.asarray(self.firing_rates).shape[0])
         # Enforce the None-iff-glm invariant (GAM diagnostics travel together):
         # populated and correctly (rank, n_units)/(rank,)/(n_units,)-shaped for
@@ -1900,31 +1888,6 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             self.env,
             rates_ndim=2,
         )
-
-        object.__setattr__(
-            self,
-            "unit_ids",
-            resolve_unit_ids(self.unit_ids, n_units),
-        )
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="SpatialRatesResult"
-            ),
-        )
-        self._own_arrays()
-
-    def __len__(self) -> int:
-        """Return number of units.
-
-        Returns
-        -------
-        int
-            Number of neurons (first dimension of firing_rates).
-        """
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        return int(rates.shape[0])
 
     def __getitem__(self, idx: int) -> SpatialRateResult:
         """Get single-neuron result by index.
@@ -1959,7 +1922,6 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         True
         """
         idx = self._unit_position(idx)
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         # Slice the per-unit GAM fields; shared / batch-scalar fields carry
         # through unchanged. All ``None`` for ratio results (the ``is not None``
         # guards keep them ``None``).
@@ -1970,16 +1932,12 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         # ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` /
         # ``penalty_selected_by_reml`` slice per-unit when they are per-unit
         # vectors (pooled=False); a shared scalar or ``None`` carries through.
-        return SpatialRateResult(
-            firing_rate=rates[idx],
-            occupancy=self.occupancy,
+        return self._unit_result(
+            SpatialRateResult,
+            idx,
             env=self.env,
             method=self.method,
             bandwidth=self.bandwidth,
-            unit_id=label_at(self.unit_ids, idx),
-            _unit_ids_generated=self._unit_ids_generated,
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
             coefficients=coefficients,
             penalty=_index_per_unit(self.penalty, idx),
             penalty_weights=self.penalty_weights,
@@ -1994,34 +1952,6 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             ),
             pooled=self.pooled,
         )
-
-    def __iter__(self) -> Iterator[SpatialRateResult]:
-        """Iterate over single-neuron results.
-
-        Yields
-        ------
-        SpatialRateResult
-            Result for each neuron in order.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from neurospatial.encoding.spatial import compute_spatial_rates
-        >>> rng = np.random.default_rng(0)
-        >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> times = np.linspace(0, 50, 500)
-        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
-        >>> results = compute_spatial_rates(
-        ...     env, spike_times, times, positions, bandwidth=10.0
-        ... )
-        >>> peaks = [float(r.peak_firing_rate()) for r in results]
-        >>> len(peaks)
-        3
-        """
-        for i in range(len(self)):
-            yield self[i]
 
     def peak_locations(self) -> NDArray[np.float64]:
         """Locations of peak firing for all neurons (batch accessor).

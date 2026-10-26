@@ -46,7 +46,7 @@ Alexander, A. S., et al. (2020). Egocentric boundary vector tuning of the
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -54,8 +54,12 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._observation import validate_break_before
-from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
-from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial._results import _copy_analysis_settings
+from neurospatial.encoding._base import (
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _to_numpy,
+)
 from neurospatial.encoding._polar_results import (
     _PolarRateMixin,
     polar_summary_frame,
@@ -151,7 +155,7 @@ def _boundary_summary(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
+class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     """Firing rate of one unit by distance and direction to walls.
 
     Parameters
@@ -205,10 +209,12 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
+    def _check_family(self) -> None:
         _check_boundary_labels(self.direction_frame, self.boundary_source)
-        self._own_arrays()
 
     def _family_attrs(self) -> dict[str, Any]:
         return {"boundary_source": self.boundary_source}
@@ -292,7 +298,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
 class BoundaryVectorRatesResult(
-    _PolarRateMixin, SpatialResultMixin, UnitSelectionMixin
+    _PolarRateMixin, PopulationRateMixin[BoundaryVectorRateResult]
 ):
     """Firing rates of several units by distance and direction to walls.
 
@@ -346,47 +352,25 @@ class BoundaryVectorRatesResult(
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
+    def _check_family(self) -> None:
         _check_boundary_labels(self.direction_frame, self.boundary_source)
-        n_units = int(np.asarray(self.firing_rates).shape[0])
-        object.__setattr__(self, "unit_ids", resolve_unit_ids(self.unit_ids, n_units))
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="BoundaryVectorRatesResult"
-            ),
-        )
-        self._own_arrays()
 
     def _family_attrs(self) -> dict[str, Any]:
         return {"boundary_source": self.boundary_source}
 
-    def __len__(self) -> int:
-        """Number of units."""
-        return int(np.asarray(self.firing_rates).shape[0])
-
     def __getitem__(self, idx: int) -> BoundaryVectorRateResult:
         """The single-unit result at position ``idx``; ``sel(unit_id=...)`` by label."""
-        idx = self._unit_position(idx)
-        return BoundaryVectorRateResult(
-            firing_rate=self.firing_rates[idx],  # type: ignore[index]
-            occupancy=self.occupancy,
+        return self._unit_result(
+            BoundaryVectorRateResult,
+            idx,
             env=self.env,
             direction_frame=self.direction_frame,
             boundary_source=self.boundary_source,
-            unit_id=label_at(self.unit_ids, idx),
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
         )
-
-    def __iter__(self) -> Iterator[BoundaryVectorRateResult]:
-        """Each unit's single-unit result, in order."""
-        for i in range(len(self)):
-            yield self[i]
 
     def preferred_distances(self) -> NDArray[np.float64]:
         """Distance to the wall at each unit's peak rate, shape (n_units,)."""
@@ -848,7 +832,7 @@ def _boundary_vector_rates(
     require_known_bandwidth(env.units, bandwidth, method, context=context)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    spike_trains, resolved_unit_ids, _ = as_labelled_spike_trains(
+    spike_trains, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
         spike_times, unit_ids, context=context
     )
     times = np.asarray(times, dtype=np.float64)
@@ -933,7 +917,7 @@ def _boundary_vector_rates(
         env=polar_env,
         direction_frame=direction_frame,
         boundary_source=boundary_source,
-        unit_ids=resolved_unit_ids,
+        unit_ids=resolved_unit_ids if labels_supplied else None,
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )

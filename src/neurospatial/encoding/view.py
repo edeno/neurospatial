@@ -69,7 +69,7 @@ neurospatial.ops.visibility : Visibility and gaze computation
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterator, Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -82,8 +82,12 @@ from neurospatial._intervals import (
     run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
-from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial._results import _copy_analysis_settings
+from neurospatial.encoding._base import (
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _to_numpy,
+)
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
@@ -172,7 +176,7 @@ def _view_summary_frame(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class ViewRateResult(SpatialResultMixin):
+class ViewRateResult(SingleUnitRateMixin):
     """Result of view rate computation for a single neuron.
 
     This class wraps a view field (firing rate by viewed location) with its
@@ -295,10 +299,9 @@ class ViewRateResult(SpatialResultMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
-
-    def __post_init__(self) -> None:
-        """Store the arrays as read-only copies."""
-        self._own_arrays()
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _view_xarray_attrs(self)
@@ -544,7 +547,7 @@ class ViewRateResult(SpatialResultMixin):
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
+class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
     """Result of view rate computation for multiple neurons.
 
     This class wraps view fields for a population of neurons with shared
@@ -675,51 +678,12 @@ class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _view_xarray_attrs(self)
-
-    def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
-        n_units = int(np.asarray(self.firing_rates).shape[0])
-        object.__setattr__(
-            self,
-            "unit_ids",
-            resolve_unit_ids(self.unit_ids, n_units),
-        )
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(self.unit_table, self.unit_ids, context="ViewRatesResult"),
-        )
-        self._own_arrays()
-
-    def __len__(self) -> int:
-        """Return the number of units.
-
-        Returns
-        -------
-        int
-            Number of neurons in the batch.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from shapely.geometry import box
-        >>> from neurospatial import Environment
-        >>> from neurospatial.encoding.view import compute_view_rates
-        >>> rng = np.random.default_rng(0)
-        >>> env = Environment.from_polygon(box(0, 0, 50, 50), bin_size=5.0, units="cm")
-        >>> times = np.linspace(0, 10, 200)
-        >>> trajectory = rng.random((200, 2)) * 50
-        >>> headings = rng.uniform(-np.pi, np.pi, 200)
-        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
-        >>> result = compute_view_rates(env, spike_times, times, trajectory, headings)
-        >>> len(result)
-        3
-        """
-        return len(self.firing_rates)  # type: ignore[arg-type]
 
     def __getitem__(self, idx: int) -> ViewRateResult:
         """Get single-neuron result by index.
@@ -752,47 +716,15 @@ class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
         >>> isinstance(single, ViewRateResult)
         True
         """
-        idx = self._unit_position(idx)
-        return ViewRateResult(
-            firing_rate=self.firing_rates[idx],  # type: ignore[index]
-            occupancy=self.occupancy,
+        return self._unit_result(
+            ViewRateResult,
+            idx,
             env=self.env,
             gaze_model=self.gaze_model,
             view_distance=self.view_distance,
             method=self.method,
             bandwidth=self.bandwidth,
-            unit_id=label_at(self.unit_ids, idx),
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
         )
-
-    def __iter__(self) -> Iterator[ViewRateResult]:
-        """Iterate over single-neuron results.
-
-        Yields
-        ------
-        ViewRateResult
-            View rate result for each neuron in order.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from shapely.geometry import box
-        >>> from neurospatial import Environment
-        >>> from neurospatial.encoding.view import compute_view_rates
-        >>> rng = np.random.default_rng(0)
-        >>> env = Environment.from_polygon(box(0, 0, 50, 50), bin_size=5.0, units="cm")
-        >>> times = np.linspace(0, 10, 200)
-        >>> trajectory = rng.random((200, 2)) * 50
-        >>> headings = rng.uniform(-np.pi, np.pi, 200)
-        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
-        >>> result = compute_view_rates(env, spike_times, times, trajectory, headings)
-        >>> shapes = [single.firing_rate.shape for single in result]
-        >>> len(shapes)
-        3
-        """
-        for i in range(len(self)):
-            yield self[i]
 
     def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the view field for a specific neuron.
@@ -2020,7 +1952,7 @@ def _compute_view_rates(
     # Normalize spike times to canonical list-of-arrays format and resolve the
     # per-unit identity labels (defaults to arange). A labelled input keeps its
     # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, _ = as_labelled_spike_trains(
+    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
         spike_times, unit_ids, context="compute_view_rates"
     )
     n_neurons = len(spike_times_list)
@@ -2108,7 +2040,7 @@ def _compute_view_rates(
         view_distance=view_distance,
         method=method,
         bandwidth=bandwidth,
-        unit_ids=resolved_unit_ids,
+        unit_ids=resolved_unit_ids if labels_supplied else None,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )
