@@ -779,7 +779,7 @@ def test_affine_triangle_shapes_survive_nested_subset_and_round_trip(
         )
         field = np.arange(current.n_bins, dtype=float)
         for operation, renderer in (
-            ("plot", "PatchCollection"),
+            ("plot", "PolyCollection"),
             ("plot_field", "PolyCollection"),
         ):
             figure, axes = plt.subplots()
@@ -832,9 +832,9 @@ def test_retained_affine_triangle_corruption_is_rejected(
         ("grid8", "uniform_scaling", "QuadMesh"),
         ("grid8", "axis_scaling", "QuadMesh"),
         ("grid8", "subset", "QuadMesh"),
-        ("hex", "translation", "PatchCollection"),
-        ("hex", "rotation", "PatchCollection"),
-        ("hex", "uniform_scaling", "PatchCollection"),
+        ("hex", "translation", "PolyCollection"),
+        ("hex", "rotation", "PolyCollection"),
+        ("hex", "uniform_scaling", "PolyCollection"),
         ("hex", "axis_scaling", "PatchCollection"),
         ("hex", "reflection", "PatchCollection"),
         ("mesh", "translation", "PolyCollection"),

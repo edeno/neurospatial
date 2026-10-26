@@ -11,7 +11,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
 import pytest
 from environment_helpers import native_layout
@@ -202,9 +201,7 @@ def _assert_mesh_artists(env, figure, operation):
     axes = figure.axes[0]
     shapes = env._binning.shapes
     collection = axes.collections[0]
-    assert type(collection).__name__ == (
-        "PatchCollection" if operation == "plot" else "PolyCollection"
-    )
+    assert type(collection).__name__ == "PolyCollection"
     paths = collection.get_paths()
     assert len(paths) == env.n_bins
     for path, triangle in zip(paths, shapes.points[shapes.triangles], strict=True):
@@ -270,7 +267,7 @@ def test_plot_field_renderer_by_component(built_environment, request, monkeypatc
         "pixels": "QuadMesh",
         "polar": "QuadMesh",
         "polar_open": "QuadMesh",
-        "hex": "PatchCollection",
+        "hex": "PolyCollection",
         "mesh": "PolyCollection",
         "mesh_boundary": "PolyCollection",
         "track": "FillBetweenPolyCollection",
@@ -347,7 +344,7 @@ def test_plot_field_does_not_read_private_layout_geometry(
     """A drawing can use the snapshot after layout-only geometry is unavailable."""
     attrs = {
         "grid8": ("grid_edges", "grid_shape", "active_mask"),
-        "hex": ("hex_radius_", "hex_orientation_"),
+        "hex": ("hex_radius_",),
         "mesh": ("_full_delaunay_tri", "_active_original_simplex_indices"),
     }
     case = request.node.callspec.params["built_environment"]
@@ -398,7 +395,7 @@ def test_plot_helpers_draw_every_multipolygon_component(drawing):
                 title="Separated arenas",
                 shapes=TriangleShapes(points, triangles),
                 outline=outline,
-                connectivity=nx.empty_graph(2),
+                pairs=np.empty((0, 2), dtype=np.intp),
                 dimension_ranges=[(0.0, 6.0), (0.0, 2.0)],
                 bin_centers=points[triangles].mean(axis=1),
                 show_connectivity=False,
@@ -418,6 +415,7 @@ def test_plot_helpers_draw_every_multipolygon_component(drawing):
                 axes,
                 title="Separated arenas",
                 bin_centers=env.bin_centers,
+                pairs=env.binning.connections.pairs,
                 connectivity=env.connectivity,
                 dimension_ranges=env.dimension_ranges,
                 rectilinear=env._binning.rectilinear,

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from environment_helpers import publish_environment
-from matplotlib.collections import PatchCollection, QuadMesh
+from matplotlib.collections import PolyCollection, QuadMesh
 
 from neurospatial import Environment
 
@@ -34,7 +34,7 @@ class TestPlotField:
         plt.close(fig)
 
     def test_hexagonal_layout_patches(self):
-        """Test that hexagonal layouts use PatchCollection."""
+        """Test that hexagonal layouts use PolyCollection."""
         from neurospatial.layout import create_layout
 
         # Create hex environment using correct parameters
@@ -52,8 +52,8 @@ class TestPlotField:
         fig, ax = plt.subplots()
         result_ax = env.plot_field(field, ax=ax, colorbar=False)
 
-        # Check that PatchCollection was added
-        assert any(isinstance(c, PatchCollection) for c in ax.collections)
+        # Check that PolyCollection was added
+        assert any(isinstance(c, PolyCollection) for c in ax.collections)
         assert result_ax is ax
 
         plt.close(fig)

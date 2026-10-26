@@ -26,10 +26,12 @@ from neurospatial.geometry import (
     PolygonCells,
     TriangleShapes,
     cell_polygons,
+    get_centers,
     require_grid_context,
 )
 from neurospatial.layout._plotting import (
     _grid_mesh,
+    _polygon_corners,
     _polygon_patches,
     plot_grid,
     plot_hexagons,
@@ -42,6 +44,7 @@ from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
+    from matplotlib.collections import Collection
     from matplotlib.colors import Colormap
 
 CellShape = Literal["track", "hexagons", "triangles", "polygons", "grid", "points"]
@@ -122,6 +125,7 @@ def _track_cells(
         title=title,
         linearization=linearization,
         bin_centers=binning.bins.centers,
+        pairs=binning.connections.pairs,
         connectivity=connectivity,
         grid_edges=linearization.grid_edges,
         **kwargs,
@@ -136,7 +140,7 @@ def _hexagon_cells(
         ax,
         title=title,
         centers=binning.shapes.centers,
-        cells=cell_polygons(binning),
+        cells=_polygon_corners(cell_polygons(binning)),
         connectivity=connectivity,
         dimension_ranges=binning.dimension_ranges,
         **kwargs,
@@ -157,7 +161,7 @@ def _triangle_cells(
         title=title,
         shapes=binning.shapes,
         outline=binning.outline,
-        connectivity=connectivity,
+        pairs=binning.connections.pairs,
         dimension_ranges=ranges,
         bin_centers=binning.bins.centers,
         **kwargs,
@@ -186,6 +190,7 @@ def _grid_cells(
         "connectivity": connectivity,
         "dimension_ranges": binning.dimension_ranges,
         "bin_centers": binning.bins.centers,
+        "pairs": binning.connections.pairs,
     }
     if binning.grid_frame is not None:
         return plot_grid(
@@ -223,6 +228,57 @@ def _point_cells(
 # Fields: color each bin by its value and return the color mappable.
 
 
+def _field_cmap(style: _FieldStyle) -> Colormap:
+    """Copy the style's colormap, with NaN bins in ``style.nan_color``.
+
+    NaN bins are transparent when ``nan_color`` is None. The copy keeps the
+    registered colormap unchanged.
+    """
+    import matplotlib.pyplot as plt
+
+    cmap = plt.get_cmap(style.cmap).copy()
+    cmap.set_bad(style.nan_color or "none")
+    return cmap
+
+
+def _patch_field(
+    collection_type: Callable[..., Collection],
+    cells: Any,
+    field: NDArray[np.float64],
+    ax: Axes,
+    style: _FieldStyle,
+    **kwargs: Any,
+) -> Collection:
+    """Add one collection of cells colored by ``field``, NaN cells masked.
+
+    Parameters
+    ----------
+    collection_type : callable
+        Matplotlib collection class built from ``cells``.
+    cells : Any
+        The collection's first argument: patches or corner arrays, one per bin.
+    field : ndarray of float64, shape (n_bins,)
+        One value per bin; NaN marks missing values.
+    ax : matplotlib.axes.Axes
+        Axes to draw on.
+    style : _FieldStyle
+        Colors of the values.
+    **kwargs
+        Passed to ``collection_type``.
+
+    Returns
+    -------
+    matplotlib.collections.Collection
+    """
+    collection = collection_type(
+        cells, cmap=_field_cmap(style), rasterized=style.rasterized, **kwargs
+    )
+    collection.set_array(np.ma.masked_invalid(field))
+    collection.set_clim(style.vmin, style.vmax)
+    ax.add_collection(collection)
+    return collection
+
+
 def _grid_field(
     binning: Binning,
     field: NDArray[np.float64],
@@ -231,8 +287,6 @@ def _grid_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on grid layout using pcolormesh."""
-    import matplotlib.pyplot as plt
-
     grid, frame = require_grid_context(
         binning, "plot_field()", fix="supply rectangular cells"
     )
@@ -248,17 +302,12 @@ def _grid_field(
         grid.shape, grid.active_mask, field, fill_value=np.nan
     )
 
-    # Setup colormap with NaN handling
-    cmap_obj = plt.get_cmap(style.cmap).copy()
-    if style.nan_color is not None:
-        cmap_obj.set_bad(color=style.nan_color, alpha=1.0)
-
     x, y = _grid_mesh(grid, frame)
     mesh = ax.pcolormesh(
         x,
         y,
         grid_data.T,
-        cmap=cmap_obj,
+        cmap=_field_cmap(style),
         vmin=style.vmin,
         vmax=style.vmax,
         rasterized=style.rasterized,
@@ -277,22 +326,13 @@ def _polygon_field(
     **kwargs: Any,
 ) -> Any:
     """Render exact polygon rings with the standard missing-value colors."""
-    import matplotlib.pyplot as plt
     from matplotlib.collections import PatchCollection
 
     shapes = binning.shapes
     assert isinstance(shapes, PolygonCells)
-    cmap_obj = plt.get_cmap(style.cmap).copy()
-    cmap_obj.set_bad(style.nan_color or "none")
-    collection = PatchCollection(
-        _polygon_patches(shapes.polygons),
-        cmap=cmap_obj,
-        rasterized=style.rasterized,
-        **kwargs,
+    collection = _patch_field(
+        PatchCollection, _polygon_patches(shapes.polygons), field, ax, style, **kwargs
     )
-    collection.set_array(np.ma.masked_invalid(field))
-    collection.set_clim(style.vmin, style.vmax)
-    ax.add_collection(collection)
     ax.autoscale_view()
     return collection
 
@@ -304,26 +344,15 @@ def _hexagon_field(
     style: _FieldStyle,
     **kwargs: Any,
 ) -> Any:
-    """Plot field on hexagonal layout using PatchCollection.
+    """Plot field on hexagonal layout using PolyCollection.
 
     NaN bins are drawn in ``nan_color``, or left transparent when it is None.
     """
-    import matplotlib.pyplot as plt
-    from matplotlib.collections import PatchCollection
+    from matplotlib.collections import PolyCollection
 
-    cmap_obj = plt.get_cmap(style.cmap).copy()
-    cmap_obj.set_bad(style.nan_color or "none")
-    collection = PatchCollection(
-        _polygon_patches(cell_polygons(binning)),
-        cmap=cmap_obj,
-        rasterized=style.rasterized,
-        **kwargs,
-    )
-    collection.set_array(np.ma.masked_invalid(field))
-    collection.set_clim(style.vmin, style.vmax)
+    corners = _polygon_corners(cell_polygons(binning))
+    collection = _patch_field(PolyCollection, corners, field, ax, style, **kwargs)
     collection.set_edgecolor("none")
-
-    ax.add_collection(collection)
     return collection
 
 
@@ -335,17 +364,10 @@ def _triangle_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on triangular mesh layout using tripcolor."""
-    import matplotlib.pyplot as plt
-
     shapes = binning.shapes
     assert isinstance(shapes, TriangleShapes)
     triangles = shapes.triangles
     mesh_points = shapes.points
-
-    # Setup colormap with NaN handling
-    cmap_obj = plt.get_cmap(style.cmap).copy()
-    if style.nan_color is not None:
-        cmap_obj.set_bad(color=style.nan_color, alpha=1.0)
 
     # Plot using tripcolor
     mesh = ax.tripcolor(
@@ -353,7 +375,7 @@ def _triangle_field(
         mesh_points[:, 1],
         triangles,
         facecolors=field,
-        cmap=cmap_obj,
+        cmap=_field_cmap(style),
         vmin=style.vmin,
         vmax=style.vmax,
         rasterized=style.rasterized,
@@ -374,7 +396,7 @@ def _track_field(
     linearization = binning.linearization
     assert linearization is not None
     edges, active_mask = linearization.grid_edges, linearization.active_mask
-    x_positions = (edges[0][:-1] + edges[0][1:]) / 2
+    x_positions = get_centers(edges[0])
     values = np.full(x_positions.shape, np.nan, dtype=np.float64)
     values[active_mask.ravel()] = field
 
@@ -400,8 +422,6 @@ def _point_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field using scatter plot (fallback for bins without cell shapes)."""
-    import matplotlib.pyplot as plt
-
     cmap = style.cmap
     nan_color = style.nan_color
     bin_centers = binning.bins.centers
@@ -451,9 +471,8 @@ def _point_field(
             kwargs["s"] = sizes.ravel()[valid_mask]
     else:
         # Matplotlib otherwise drops nonfinite colors instead of showing the
-        # documented missing-support color. Copy so global colormaps stay intact.
-        cmap = plt.get_cmap(cmap).copy()
-        cmap.set_bad(nan_color)
+        # documented missing-support color.
+        cmap = _field_cmap(style)
         kwargs.setdefault("plotnonfinite", True)
     kwargs.setdefault("edgecolors", "none")
 

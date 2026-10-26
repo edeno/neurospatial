@@ -158,8 +158,11 @@ class _NeighborPairsMixin:
         LayoutNotBuiltError
             If the layout has not been built.
         """
+        binning = self.binning()
+        if self._connectivity is None:
+            self._connectivity = graph_from_binning(binning)
         return _plot_binning(
-            self.binning(), self.connectivity, self.layout_type, ax, **kwargs
+            binning, self._connectivity, self.layout_type, ax, **kwargs
         )
 
 

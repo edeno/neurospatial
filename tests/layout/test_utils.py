@@ -3,8 +3,8 @@ import networkx as nx
 import numpy as np
 import pytest
 
+from neurospatial.layout._plotting import _generic_graph_plot
 from neurospatial.layout.helpers.utils import (
-    _generic_graph_plot,
     _infer_dimension_ranges_from_samples,
     get_centers,
     get_n_bins,
