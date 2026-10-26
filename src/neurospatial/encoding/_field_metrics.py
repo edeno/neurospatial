@@ -456,8 +456,9 @@ def rate_map_coherence(
         # All values are identical (constant map, no variance)
         return np.nan
 
-    # Compute mean of neighbors for each bin using neighbor_reduce
-    # Use nanmean to handle NaN values in neighbors
+    # Mean of each bin's neighbors. neighbor_reduce returns NaN for a bin with
+    # any missing neighbor, so only bins whose whole neighborhood is observed
+    # enter the correlation below.
     from neurospatial.ops.graph import neighbor_reduce
 
     neighbor_means = neighbor_reduce(

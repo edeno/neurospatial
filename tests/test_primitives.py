@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.ops.distance import geodesic_distance_matrix
 from neurospatial.ops.graph import graph_convolve, neighbor_reduce
 
 
@@ -248,6 +249,43 @@ class TestNeighborReduce:
         assert result_sum[1] == 5.0  # edge
         assert result_sum[4] == 8.0  # center
 
+    @pytest.mark.parametrize(
+        ("op", "center_value"),
+        [("sum", 8.0), ("mean", 1.0), ("max", 1.0), ("min", 1.0), ("std", 0.0)],
+    )
+    def test_missing_neighbor_makes_every_op_missing(self, op, center_value) -> None:
+        """A NaN neighbor is neither zero nor skipped, for every reduction."""
+        positions = np.array([[i, j] for i in range(3) for j in range(3)], float)
+        env = Environment.from_samples(positions, bin_size=1.0)
+        field = np.ones(env.n_bins)
+        field[4] = np.nan  # the center, a neighbor of every other bin
+
+        result = neighbor_reduce(env, field, op=op)
+
+        assert np.isnan(np.delete(result, 4)).all()
+        # The center's own neighbors are all observed.
+        assert result[4] == center_value
+
+    def test_zero_weights_average_only_observed_neighbors(self) -> None:
+        """The documented recipe: zero weight and a finite placeholder."""
+        positions = np.array([[i, j] for i in range(3) for j in range(3)], float)
+        env = Environment.from_samples(positions, bin_size=1.0)
+        field = np.arange(env.n_bins, dtype=float)
+        field[4] = np.nan
+        observed = ~np.isnan(field)
+
+        result = neighbor_reduce(
+            env,
+            np.where(observed, field, 0.0),
+            op="mean",
+            weights=observed.astype(float),
+        )
+
+        # Bin 0's observed neighbors are 1 and 3 (4 is missing).
+        assert result[0] == 2.0
+        # Every bin has an observed neighbor, so nothing is NaN.
+        assert np.isfinite(result).all()
+
     def test_neighbor_reduce_validation(self) -> None:
         """Test input validation."""
         # Create simple environment
@@ -321,12 +359,11 @@ class TestConvolve:
 
         # Center bin (4) should have non-zero value
         # Bins within radius 1.5 should also have non-zero values
-        assert result.shape == (env.n_bins,)
-        assert result[4] > 0  # Center gets contribution from itself
-
-        # Bins within radius should have values (they "see" the center spike)
-        # Bins outside radius should be 0 (no contribution from center)
-        assert result.sum() > 0  # At least some bins have contributions
+        # Every bin reaches the center (diagonals are sqrt(2) <= 1.5 away), so
+        # each value is 1 / (number of bins its box covers): the center covers
+        # all 9, an edge bin 6 and a corner bin 4.
+        expected = np.array([4, 6, 4, 6, 9, 6, 4, 6, 4], dtype=float) ** -1
+        np.testing.assert_allclose(result, expected, rtol=1e-12)
 
     def test_convolve_mexican_hat(self) -> None:
         """Test convolution with Mexican hat (difference of Gaussians) kernel."""
@@ -438,81 +475,103 @@ class TestConvolve:
         )
         assert np.all(result_unnormalized > result_normalized)
 
-    def test_convolve_nan_handling(self) -> None:
-        """Test that NaN values are handled gracefully."""
-        # Create simple 3x3 grid
-        positions = np.array(
-            [
-                [0, 0],
-                [1, 0],
-                [2, 0],
-                [0, 1],
-                [1, 1],
-                [2, 1],
-                [0, 2],
-                [1, 2],
-                [2, 2],
-            ],
-            dtype=np.float64,
+    @pytest.fixture
+    def grid_3x3(self) -> Environment:
+        """3x3 grid with unit bins; from_samples links diagonal neighbors too."""
+        positions = np.array([[i, j] for i in range(3) for j in range(3)], dtype=float)
+        return Environment.from_samples(positions, bin_size=1.0)
+
+    @staticmethod
+    def _gaussian(distances: np.ndarray) -> np.ndarray:
+        return np.exp(-(distances**2) / 2.0)
+
+    def test_normalized_convolution_averages_observed_bins(self, grid_3x3) -> None:
+        """A missing bin gets no weight: a constant stays exactly constant."""
+        field = np.full(grid_3x3.n_bins, 3.0)
+        field[4] = np.nan
+
+        result = graph_convolve(grid_3x3, field, self._gaussian, normalize=True)
+
+        # Observed bins: the average of observed 3.0 values is exactly 3.0; a
+        # NaN-as-zero implementation would pull them below 3.
+        observed = np.arange(grid_3x3.n_bins) != 4
+        np.testing.assert_allclose(result[observed], 3.0, rtol=1e-12)
+        # The missing bin is filled from its observed neighbors, like
+        # Environment.smooth(mode="average").
+        np.testing.assert_allclose(result[4], 3.0, rtol=1e-12)
+
+    def test_normalized_convolution_is_the_observed_weighted_average(
+        self, grid_3x3
+    ) -> None:
+        """Each bin is sum_j K_ij f_j / sum_j K_ij over observed sources j."""
+        field = np.arange(grid_3x3.n_bins, dtype=float)
+        field[[2, 4]] = np.nan
+        kernel = self._gaussian(geodesic_distance_matrix(grid_3x3.connectivity))
+        observed = ~np.isnan(field)
+        expected = (kernel[:, observed] @ field[observed]) / kernel[:, observed].sum(
+            axis=1
         )
-        env = Environment.from_samples(positions, bin_size=1.0)
 
-        # Field with NaN in center
-        field = np.ones(env.n_bins, dtype=np.float64)
-        field[4] = np.nan  # Center bin
+        result = graph_convolve(grid_3x3, field, self._gaussian, normalize=True)
 
-        # Gaussian kernel
-        def gaussian_kernel(distances: np.ndarray) -> np.ndarray:
-            return np.exp(-(distances**2) / 2.0)
+        np.testing.assert_allclose(result, expected, rtol=1e-12)
 
-        # Convolve (should handle NaN by skipping)
-        result = graph_convolve(env, field, gaussian_kernel, normalize=True)
+    def test_normalized_convolution_of_all_missing_is_missing(self, grid_3x3) -> None:
+        field = np.full(grid_3x3.n_bins, np.nan)
+        with np.errstate(all="raise"):
+            result = graph_convolve(grid_3x3, field, self._gaussian, normalize=True)
+        assert np.isnan(result).all()
 
-        # Bins neighboring center should not be NaN (NaN doesn't propagate)
-        neighbors = list(env.connectivity.neighbors(4))
-        for n in neighbors:
-            # Neighbors should have valid values (ignoring NaN in computation)
-            assert not np.isnan(result[n]), f"Neighbor {n} should not be NaN"
+    def test_raw_convolution_is_missing_where_weight_meets_a_missing_bin(
+        self, grid_3x3
+    ) -> None:
+        """normalize=False never reads a missing value as zero."""
+        field = np.ones(grid_3x3.n_bins)
+        field[4] = np.nan
 
-        # Center bin itself will be NaN (all-NaN neighborhood)
-        # OR handled by implementation (depends on design choice)
-        # Let's allow either behavior (document in implementation)
+        def box(distances: np.ndarray) -> np.ndarray:
+            # Reaches self and the four edge-sharing neighbors (distance 1),
+            # not the diagonals (distance sqrt 2).
+            return (distances <= 1.0).astype(float)
 
-    def test_convolve_compare_with_smooth(self) -> None:
-        """Test that Gaussian convolution matches env.smooth() for Gaussian kernel."""
-        # Create 5x5 grid
-        x = np.arange(5, dtype=np.float64)
-        y = np.arange(5, dtype=np.float64)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=1.0)
+        result = graph_convolve(grid_3x3, field, box, normalize=False)
 
-        # Random field
-        rng = np.random.default_rng(42)
-        field = rng.random(env.n_bins)
+        corners = [0, 2, 6, 8]  # their box excludes the center bin
+        np.testing.assert_array_equal(result[corners], 3.0)
+        assert np.isnan(np.delete(result, corners)).all()
 
-        # Gaussian kernel matching env.smooth()
-        bandwidth = 1.0
+        # A full-support kernel reaches the missing bin from every bin.
+        gaussian = graph_convolve(grid_3x3, field, self._gaussian, normalize=False)
+        assert np.isnan(gaussian).all()
 
-        def gaussian_kernel(distances: np.ndarray) -> np.ndarray:
-            return np.exp(-(distances**2) / (2 * bandwidth**2))
+    def test_raw_convolution_ignores_missing_bins_with_zero_weight(
+        self, grid_3x3
+    ) -> None:
+        """A precomputed matrix can exclude missing bins explicitly."""
+        field = np.ones(grid_3x3.n_bins)
+        field[4] = np.nan
+        kernel = np.ones((grid_3x3.n_bins, grid_3x3.n_bins))
+        kernel[:, 4] = 0.0
 
-        # Convolve with normalization
-        result_convolve = graph_convolve(env, field, gaussian_kernel, normalize=True)
+        result = graph_convolve(grid_3x3, field, kernel, normalize=False)
 
-        # Use env.smooth() with same bandwidth (mode='density' is default Gaussian)
-        result_smooth = env.smooth(field, bandwidth=bandwidth, mode="density")
+        np.testing.assert_array_equal(result, 8.0)
 
-        # Should match closely (may differ slightly due to implementation details)
-        # env.smooth uses kernel_matrix directly, convolve computes on-the-fly
-        assert result_convolve.shape == result_smooth.shape
-        # Allow reasonable tolerance for implementation differences
-        # They should be in the same ballpark (correlation > 0.9)
-        correlation = np.corrcoef(result_convolve, result_smooth)[0, 1]
-        assert correlation > 0.9, (
-            f"convolve() should correlate highly with env.smooth() "
-            f"(got correlation={correlation:.3f})"
-        )
+    def test_convolve_shares_smooth_average_missing_semantics(self, grid_3x3) -> None:
+        """Normalized convolution and smooth(mode="average") treat NaN alike.
+
+        The two smoothers differ (graph-distance kernel vs finite-volume
+        diffusion), but both average over observed bins only, so a constant
+        field with a missing bin comes back constant everywhere from both.
+        """
+        field = np.full(grid_3x3.n_bins, 2.0)
+        field[4] = np.nan
+
+        convolved = graph_convolve(grid_3x3, field, self._gaussian, normalize=True)
+        smoothed = grid_3x3.smooth(field, bandwidth=1.0, mode="average")
+
+        np.testing.assert_allclose(convolved, 2.0, rtol=1e-12)
+        np.testing.assert_allclose(smoothed, 2.0, rtol=1e-6)
 
     def test_convolve_validation(self) -> None:
         """Test input validation."""
