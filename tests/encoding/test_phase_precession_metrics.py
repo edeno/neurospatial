@@ -84,6 +84,24 @@ class TestPhasePrecessionResult:
         assert "PRECESSION" not in interp
         assert "not significant" in interp
 
+    def test_interpretation_reports_numbers_without_strength_labels(self) -> None:
+        """Correlation and fit quality are reported as values, not named bands."""
+        from neurospatial.encoding.phase_precession import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=-0.1,
+            position_range=(0.0, 40.0),
+            offset=1.0,
+            correlation=0.55,
+            p_value=0.01,
+            mean_resultant_length=0.75,
+        )
+        interp = result.interpretation()
+        assert "r=0.550" in interp
+        assert "R=0.750" in interp
+        for label in ("strong", "moderate", "weak", "excellent", "good", "poor"):
+            assert label not in interp.lower()
+
     def test_result_is_immutable(self) -> None:
         """Fields of a computed result cannot be reassigned."""
         from dataclasses import FrozenInstanceError

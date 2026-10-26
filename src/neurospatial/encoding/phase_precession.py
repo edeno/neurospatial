@@ -312,7 +312,10 @@ class PhasePrecessionResult(ResultMixin):
 
         Precession or recession is named only when the fit is significant at
         ``alpha=0.05``; otherwise the fitted slope is reported as not
-        significant.
+        significant. The correlation and the residual mean resultant length
+        are reported as numbers: neither has a calibrated cutoff, and both
+        shrink toward zero as spike count grows for spikes with no
+        phase-position relationship, so the p-value is the evidence.
 
         Returns
         -------
@@ -344,27 +347,14 @@ class PhasePrecessionResult(ResultMixin):
                 "recession is claimed"
             )
 
-        # Correlation strength
-        if self.correlation > 0.5:
-            strength = "strong"
-        elif self.correlation > 0.3:
-            strength = "moderate"
-        elif self.correlation > 0.1:
-            strength = "weak"
-        else:
-            strength = "very weak"
-        lines.append(f"Correlation: {strength} (r={self.correlation:.3f})")
-
-        # Fit quality
-        if self.mean_resultant_length > 0.7:
-            fit = "excellent"
-        elif self.mean_resultant_length > 0.5:
-            fit = "good"
-        elif self.mean_resultant_length > 0.3:
-            fit = "moderate"
-        else:
-            fit = "poor"
-        lines.append(f"Fit quality: {fit} (R={self.mean_resultant_length:.3f})")
+        lines.append(
+            f"Circular-linear correlation r={self.correlation:.3f} "
+            "(descriptive; it does not set the p-value)"
+        )
+        lines.append(
+            f"Residual mean resultant length R={self.mean_resultant_length:.3f} "
+            "(1 when every spike lies on the fitted line)"
+        )
 
         return "\n".join(lines)
 
