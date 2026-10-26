@@ -559,7 +559,7 @@ def compute_egocentric_distance(
         distances = np.sqrt(np.sum(diff**2, axis=-1))
 
     else:  # geodesic
-        from neurospatial.ops.distance import distance_field as compute_distance_field
+        from neurospatial.ops.distance import _geodesic_pair_distances
 
         # env is guaranteed non-None here (validated above)
         assert env is not None
@@ -594,25 +594,13 @@ def compute_egocentric_distance(
             time_varying=targets.ndim == 3,
         )
 
-        # Cache distance fields by target bin: static targets recompute once;
-        # time-varying targets pay only for unique target bins.
-        distance_field_cache: dict[int, NDArray[np.float64]] = {}
-
-        for t in range(n_time):
-            pos_bin = int(pos_bins[t])
-            if pos_bin < 0:
-                # Position outside environment - row stays NaN
-                continue
-            for i in range(n_targets):
-                target_bin = int(target_bins[t, i])
-                if target_bin < 0:
-                    # Missing (NaN) target position - cell stays NaN
-                    continue
-                if target_bin not in distance_field_cache:
-                    distance_field_cache[target_bin] = compute_distance_field(
-                        graph, sources=[target_bin]
-                    )
-                distances[t, i] = distance_field_cache[target_bin][pos_bin]
+        # A position outside the environment or a missing (NaN) target
+        # leaves its cell NaN. Dijkstra runs once per distinct target bin.
+        position_bins = np.broadcast_to(pos_bins[:, np.newaxis], target_bins.shape)
+        measured = (position_bins >= 0) & (target_bins >= 0)
+        distances[measured] = _geodesic_pair_distances(
+            graph, target_bins[measured], position_bins[measured], operation=call
+        )
 
     return distances
 

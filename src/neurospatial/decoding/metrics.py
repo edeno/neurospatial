@@ -25,6 +25,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.geometry import require_cartesian
+from neurospatial.ops.distance import _geodesic_pair_distances
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -147,10 +148,11 @@ def decoding_error(
         | np.any(np.isnan(actual_positions), axis=1)
     )
     if np.any(valid):
-        errors[valid] = _graph_distances(
-            env,
+        errors[valid] = _geodesic_pair_distances(
+            env.connectivity,
             _bins_or_nearest(env, decoded_positions[valid]),
             _bins_or_nearest(env, actual_positions[valid]),
+            operation="decoding_error()",
         )
     return errors
 
@@ -166,48 +168,6 @@ def _bins_or_nearest(
         # off the tracking glitch or decode lies.
         bins[outside] = env.nearest_bin(positions[outside])
     return bins
-
-
-# Distances computed per block of source bins: (block, n_bins) float64 rows
-# stay near 160 MB however large the environment.
-_GRAPH_DISTANCE_BLOCK_VALUES = 20_000_000
-
-
-def _graph_distances(
-    env: Environment, sources: NDArray[np.intp], targets: NDArray[np.intp]
-) -> NDArray[np.float64]:
-    """Shortest-path length along ``env.connectivity`` for each bin pair.
-
-    Runs Dijkstra only from the distinct source bins, in blocks, instead of
-    building the dense ``(n_bins, n_bins)`` all-pairs matrix.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment whose connectivity graph (``distance`` weights) is used.
-    sources, targets : NDArray[np.intp], shape (n_pairs,)
-        Bin index pairs.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_pairs,)
-        Path length per pair; ``inf`` between disconnected components.
-    """
-    import networkx as nx
-    from scipy.sparse.csgraph import dijkstra
-
-    adjacency = nx.to_scipy_sparse_array(
-        env.connectivity, nodelist=range(env.n_bins), weight="distance", format="csr"
-    )
-    unique_sources, source_row = np.unique(sources, return_inverse=True)
-    out = np.empty(len(sources), dtype=np.float64)
-    block = max(1, _GRAPH_DISTANCE_BLOCK_VALUES // max(env.n_bins, 1))
-    for start in range(0, len(unique_sources), block):
-        rows = np.arange(start, min(start + block, len(unique_sources)))
-        lengths = dijkstra(adjacency, directed=False, indices=unique_sources[rows])
-        in_block = (source_row >= rows[0]) & (source_row <= rows[-1])
-        out[in_block] = lengths[source_row[in_block] - rows[0], targets[in_block]]
-    return out
 
 
 def median_decoding_error(
