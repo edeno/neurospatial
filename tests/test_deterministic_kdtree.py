@@ -537,7 +537,7 @@ def _lookup_both_ways(centers, points):
     from neurospatial.geometry import NearestBinLocator
     from neurospatial.ops import _nearest_bin_query
 
-    by_query = _nearest_bin_query(centers, cKDTree(centers), points)
+    by_query = _nearest_bin_query(cKDTree(centers), points)
     by_locator = NearestBinLocator(centers).locate(points)
     return by_query, by_locator
 

@@ -80,7 +80,6 @@ def _validate_nearest_options(
 
 @overload
 def _nearest_bin_query(
-    bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
     points: NDArray[np.float64],
     *,
@@ -90,7 +89,6 @@ def _nearest_bin_query(
 ) -> NDArray[np.int64]: ...
 @overload
 def _nearest_bin_query(
-    bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
     points: NDArray[np.float64],
     *,
@@ -99,7 +97,6 @@ def _nearest_bin_query(
     max_distance: float | None = ...,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
 def _nearest_bin_query(
-    bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
     points: NDArray[np.float64],
     *,
@@ -107,14 +104,13 @@ def _nearest_bin_query(
     return_dist: bool = False,
     max_distance: float | None = None,
 ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
-    """Query explicit centers and their tree using validated distance controls.
+    """Query a tree of bin centers using validated distance controls.
 
     Parameters
     ----------
-    bin_centers : ndarray, shape (n_bins, n_dims)
-        Coordinates indexed by the already constructed kdtree.
     kdtree : scipy.spatial.cKDTree
-        Tree over bin_centers; its lifetime belongs to the caller.
+        Tree over the bin centers, indexed by bin; its lifetime belongs to the
+        caller.
     points : ndarray, shape (n_points, n_dims)
         Query coordinates in the same stored coordinate columns.
     """

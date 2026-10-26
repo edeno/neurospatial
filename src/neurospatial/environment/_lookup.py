@@ -54,11 +54,11 @@ def nearest_bin(
     if max_distance_factor is not None:
         max_distance = max_distance_factor * bin_spacing(cache, binning, coordinates)
     if coordinates.kind == "polar":
-        centers, tree = cache.get(
+        _, tree = cache.get(
             EMBEDDED_KDTREE, lambda: _embedded_tree(binning, coordinates)
         )
     else:
-        centers, tree = binning.bins.centers, center_tree(cache, binning)
+        tree = center_tree(cache, binning)
 
     def query(
         rows: NDArray[np.float64],
@@ -67,7 +67,6 @@ def nearest_bin(
         if rows.ndim == 2 and rows.shape[1] == binning.bins.n_dims:
             rows = coordinates.cartesian_embedding(rows.astype(np.float64))
         return _nearest_bin_query(
-            centers,
             tree,
             rows,
             tie_break=tie_break,
