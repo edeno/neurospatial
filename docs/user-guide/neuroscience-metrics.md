@@ -523,8 +523,11 @@ The peak is at +90° (left) in a distance bin near 15 cm, as simulated.
 `result.plot()` draws the map with distance on one axis and direction on the
 other. A bin whose rate is NaN never had a wall at that distance and
 direction, which means it was not measured, not that the cell was silent.
-Spatial information on this map is biased upward for few spikes, so compare
-it with a shuffled control before calling a cell boundary-tuned.
+Skaggs information is not defined over this whole map, because every sample
+counts once per ray; `result.distance_information()` gives the information
+about wall distance along the preferred direction, where the distance bins do
+partition time. It is biased upward for few spikes, so compare it with a
+shuffled control before calling a cell boundary-tuned.
 `neurospatial.ops.compute_boundary_distances` gives the ray distances
 themselves, and `neurospatial.ops.nearest_boundary` the distance and
 direction to the closest wall at each sample.

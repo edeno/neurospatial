@@ -101,7 +101,7 @@ def test_an_egocentric_boundary_cell_is_recovered(env, session):
         direction_frame="allocentric",
         n_direction_bins=24,
     )
-    assert allocentric.spatial_information() < result.spatial_information()
+    assert allocentric.distance_information() < result.distance_information()
 
 
 def test_every_ray_reaching_a_wall_adds_the_sample_time(env, session):
@@ -293,3 +293,33 @@ def test_unknown_units_need_explicit_lengths(session):
             distance_range=(0.0, 50.0),
             method="gaussian_kde",
         )
+
+
+def test_distance_information_is_skaggs_information_along_the_preferred_ray(
+    env, session
+):
+    """Each ray partitions time by wall distance; the whole map does not."""
+    from neurospatial.encoding import spatial_information
+
+    times, positions, _ = session
+    east = _wall_distance(positions, np.zeros(len(positions)))
+    result = compute_boundary_vector_rate(
+        env, _tuned_spikes(times, east), times, positions, direction_frame="allocentric"
+    )
+    duration = times[-1] - times[0]
+    occupancy = np.asarray(result.occupancy).reshape(
+        result.n_distance_bins, result.n_direction_bins
+    )
+    assert np.all(occupancy.sum(axis=0) <= duration + 1e-9)
+    assert occupancy.sum() > 2 * duration  # summed over rays: not a partition
+
+    rates = np.asarray(result.firing_rate).reshape(occupancy.shape)
+    edges = result.env.grid_edges[1]
+    centers = (edges[:-1] + edges[1:]) / 2
+    column = int(np.argmin(np.abs(centers - result.preferred_direction())))
+    assert abs(centers[column]) <= np.pi / 12 + 1e-12  # one of the two East rays
+    expected = spatial_information(rates[:, column], occupancy[:, column])
+    assert result.distance_information() == pytest.approx(expected)
+    assert result.summary_table()["distance_information"].iloc[0] == pytest.approx(
+        expected
+    )

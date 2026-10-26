@@ -93,21 +93,56 @@ def _check_boundary_labels(direction_frame: str, boundary_source: str) -> None:
         )
 
 
+def _distance_information(
+    result: BoundaryVectorRateResult | BoundaryVectorRatesResult,
+) -> NDArray[np.float64]:
+    """Skaggs information about wall distance along each unit's preferred direction.
+
+    Each ray's distance bins partition the time a wall lay within
+    ``distance_range`` in that direction, so Skaggs information is defined
+    per direction; it is not defined over the whole map, whose occupancy
+    counts every sample once per ray.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_units,)
+        Bits per spike in the direction bin of each unit's peak rate; NaN
+        for a unit with no rate.
+    """
+    from neurospatial.encoding._metrics import batch_spatial_information
+
+    shape = (result.n_distance_bins, result.n_direction_bins)
+    rates = np.atleast_2d(_to_numpy(result._get_rates()))
+    occupancy = np.asarray(_to_numpy(result.occupancy), dtype=np.float64).reshape(shape)
+    grids = rates.reshape(len(rates), *shape)
+    # (n_units, n_direction_bins): information about distance per direction.
+    per_direction = np.stack(
+        [
+            np.asarray(batch_spatial_information(grids[:, :, j], occupancy[:, j]))
+            for j in range(shape[1])
+        ],
+        axis=1,
+    )
+    information = np.full(len(rates), np.nan)
+    observed = np.isfinite(rates).any(axis=1)
+    if observed.any():
+        peak_bins = np.nanargmax(rates[observed], axis=1)
+        columns = peak_bins % shape[1]  # distance-major flat bins
+        information[observed] = per_direction[observed, columns]
+    return information
+
+
 def _boundary_summary(
     result: BoundaryVectorRateResult | BoundaryVectorRatesResult,
     *,
     index: Sequence[Any],
 ) -> pd.DataFrame:
     """The same metric columns for single and population results."""
-    from neurospatial.encoding._metrics import batch_spatial_information
-
-    rates = np.atleast_2d(_to_numpy(result._get_rates()))
-    information = batch_spatial_information(rates, _to_numpy(result.occupancy))
     df = polar_summary_frame(
         result,
         index=index,
-        extra={"spatial_information": np.asarray(information)},
-        extra_units={"spatial_information": "bits/spike"},
+        extra={"distance_information": _distance_information(result)},
+        extra_units={"distance_information": "bits/spike"},
         thresholds=None,
     )
     df.attrs["boundary_source"] = result.boundary_source
@@ -186,7 +221,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         pandas.DataFrame
             One row indexed by ``unit_id``: ``peak_rate``,
             ``preferred_distance``, ``preferred_direction_deg``,
-            ``preferred_direction`` and ``spatial_information``. The frame
+            ``preferred_direction`` and ``distance_information``. The frame
             and wall source are in ``df.attrs``.
         """
         return _boundary_summary(self, index=self._row_unit_ids().tolist())
@@ -217,21 +252,25 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         """
         return float(self._peak_coordinates(1)[0])
 
-    def spatial_information(self) -> float:
-        """Skaggs information of the boundary map, in bits per spike.
+    def distance_information(self) -> float:
+        """Information about wall distance along the preferred direction.
+
+        Skaggs information, in bits per spike, of the rates along the
+        direction bin that holds the peak, with that direction's boundary
+        occupancy as the bin probabilities. Within one direction the
+        distance bins partition the time a wall was in range, so this is a
+        Skaggs information; over the whole map it is not, because every
+        sample is counted once per ray.
 
         Returns
         -------
         float
-            Computed with the boundary occupancy as the bin probabilities. It
-            is biased upward for few spikes; compare it with a shuffled
-            control before calling a cell boundary-tuned.
+            Bits per spike; NaN when no bin has a rate. Plug-in information
+            is biased upward for few spikes, and choosing the direction by
+            its peak adds to that bias, so compare it with shuffled spike
+            trains before calling a cell boundary-tuned.
         """
-        from neurospatial.encoding._metrics import spatial_information
-
-        return spatial_information(
-            _to_numpy(self.firing_rate), _to_numpy(self.occupancy)
-        )
+        return float(_distance_information(self)[0])
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the rate by distance (x axis) and direction (y axis).
@@ -360,15 +399,17 @@ class BoundaryVectorRatesResult(
         """
         return self._peak_coordinates(1)
 
-    def spatial_information(self) -> NDArray[np.float64]:
-        """Skaggs information of each unit's map, bits per spike, shape (n_units,)."""
-        from neurospatial.encoding._metrics import batch_spatial_information
+    def distance_information(self) -> NDArray[np.float64]:
+        """Information about wall distance along each unit's preferred direction.
 
-        return np.asarray(
-            batch_spatial_information(
-                _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
-            )
-        )
+        See :meth:`BoundaryVectorRateResult.distance_information`.
+
+        Returns
+        -------
+        NDArray[np.float64], shape (n_units,)
+            Bits per spike; NaN for a unit with no rate.
+        """
+        return _distance_information(self)
 
     def summary_table(
         self, unit_ids: Sequence[str | int] | None = None
@@ -653,7 +694,7 @@ def compute_boundary_vector_rates(
     ...     env, spikes, times, positions, headings, direction_frame="egocentric"
     ... )
     >>> list(rates.summary_table().columns)
-    ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'spatial_information']
+    ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information']
     """
     return _boundary_vector_rates(
         env,
