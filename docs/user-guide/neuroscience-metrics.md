@@ -670,10 +670,11 @@ on the grid spacing as long as the first ring of fields fits in the arena. It
 is NaN when the central peak is not bounded inside the map or the arena is too
 small for an annulus around it. Inspect the rate map, autocorrelogram and
 occupancy together. A conventional score cutoff is not a calibrated
-significance test. For an irregular graph,
-`spatial_autocorrelation_radial` and `periodicity_score` from
-`neurospatial.encoding.grid` describe radial periodicity; a radial profile
-does not establish sixfold symmetry.
+significance test. On layouts without a rectangular grid (hexagonal bins,
+tracks, meshes) there is no grid score: `summary_table()` records it in
+`attrs["unavailable_metrics"]`. `spatial_autocorrelation_radial` from
+`neurospatial.encoding.grid` gives a distance-correlation profile there, but a
+radial profile does not test for sixfold symmetry.
 
 ### Allocentric and egocentric object vectors
 

@@ -57,12 +57,6 @@ class TestEncodingGridImports:
 
         assert callable(grid_properties)
 
-    def test_import_periodicity_score(self) -> None:
-        """periodicity_score should be importable from encoding.grid."""
-        from neurospatial.encoding.grid import periodicity_score
-
-        assert callable(periodicity_score)
-
 
 class TestEncodingGridFromEncodingInit:
     """Test all imports from neurospatial.encoding (via __init__.py)."""
@@ -193,20 +187,6 @@ class TestEncodingGridFunctionality:
         assert isinstance(props.orientation, float)
         assert isinstance(props.orientation_std, float)
         assert 0.0 <= props.orientation < np.pi / 3
-
-    def test_periodicity_score_runs(self) -> None:
-        """periodicity_score should run and return float."""
-        from neurospatial.encoding.grid import periodicity_score
-
-        # Create perfect sinusoidal correlation profile
-        distances = np.linspace(0, 100, 200)
-        period = 20.0
-        correlations = 0.5 * np.sin(2 * np.pi * distances / period) + 0.5
-
-        score = periodicity_score(distances, correlations, min_peaks=2)
-
-        assert isinstance(score, float)
-        assert 0.0 <= score <= 1.0
 
     def test_grid_properties_runs(self) -> None:
         """grid_properties should run and return GridProperties dataclass."""

@@ -19,7 +19,6 @@ All functions can be imported directly from this module:
 ...     spatial_autocorrelation_radial,
 ...     grid_scale,
 ...     grid_properties,
-...     periodicity_score,
 ...     GridProperties,
 ... )
 
@@ -42,9 +41,6 @@ grid_scale
 grid_properties
     Compute all grid cell metrics (score, scale, orientation,
     orientation_std, peak_coords) from a 2D autocorrelogram.
-periodicity_score
-    Compute periodicity score from a distance-correlation profile
-    (graph-based / radial).
 
 Classes
 -------
@@ -71,7 +67,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 from scipy import fft, ndimage
-from scipy.signal import find_peaks
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
@@ -89,7 +84,6 @@ __all__ = [
     "grid_properties",
     "grid_scale",
     "grid_score",
-    "periodicity_score",
     "spatial_autocorrelation",
     "spatial_autocorrelation_radial",
 ]
@@ -346,7 +340,8 @@ def _require_rectangular_grid(env: Environment, operation: str) -> None:
             ),
             fix=(
                 "use spatial_autocorrelation_radial(env, firing_rate), which "
-                "works on every layout, with periodicity_score"
+                "works on every layout; a radial profile does not test for "
+                "sixfold symmetry"
             ),
         )
     )
@@ -879,193 +874,6 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     if not np.any(np.isfinite(means)):
         return np.nan
     return float(np.nanmax(means))
-
-
-def periodicity_score(
-    distances: NDArray[np.float64],
-    correlations: NDArray[np.float64],
-    *,
-    min_peaks: int = 3,
-    prominence_threshold: float = 0.1,
-) -> float:
-    """
-    Compute periodicity score from distance-correlation profile (graph-based).
-
-    This is a graph-based alternative to grid_score for irregular topologies.
-    Instead of analyzing 2D rotational symmetry, it detects regular spacing
-    in the distance-correlation profile. Grid cells show periodic peaks at
-    multiples of the grid spacing.
-
-    Parameters
-    ----------
-    distances : NDArray[np.float64], shape (n_bins,)
-        Distance bin centers (from spatial_autocorrelation_radial; 1D distance profile).
-    correlations : NDArray[np.float64], shape (n_bins,)
-        Autocorrelation values at each distance.
-    min_peaks : int, optional
-        Minimum number of peaks required to compute periodicity. Default is 3.
-        Grid cells typically show 3+ peaks.
-    prominence_threshold : float, optional
-        Minimum peak prominence (height above surrounding baseline).
-        Default is 0.1. Higher values require more distinct peaks.
-
-    Returns
-    -------
-    score : float
-        Periodicity score in range [0, 1]. Higher values indicate stronger
-        periodic structure. Returns NaN if:
-        - Too few peaks detected (< min_peaks)
-        - Peak spacing has high variance (irregular)
-        - All correlations are NaN
-
-    Notes
-    -----
-    **Algorithm**:
-
-    1. Exclude zero-lag region (distance < distance_bin_width)
-    2. Find peaks in correlation profile using scipy.signal.find_peaks
-    3. Require minimum peak prominence (distinctness)
-    4. Compute inter-peak distances (spacing between consecutive peaks)
-    5. Periodicity score = 1 - (std(spacing) / mean(spacing))
-       - Score ≈ 1: Highly regular spacing (strong grid)
-       - Score ≈ 0: Irregular spacing (no grid)
-
-    **Interpretation**:
-
-    - **score > 0.6**: Likely grid cell with regular spacing
-    - **score 0.3-0.6**: Weak periodicity or noisy grid
-    - **score < 0.3**: No periodic structure (place cell, noise)
-
-    **Comparison to grid_score**:
-
-    - **grid_score**: 2D rotational symmetry, requires regular 2D grid
-    - **periodicity_score**: 1D spacing regularity, works on any graph topology
-    - Use grid_score for open-field recordings (opexebo compatibility)
-    - Use periodicity_score for tracks, irregular environments, or graphs
-
-    **When to use this method**:
-
-    - Irregular environments (non-rectangular, obstacles)
-    - 1D tracks (linear environments)
-    - When FFT-based autocorrelation is not feasible
-    - Exploratory analysis to detect any periodic structure
-
-    Examples
-    --------
-    >>> import numpy as np  # doctest: +SKIP
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.encoding.grid import (  # doctest: +SKIP
-    ...     spatial_autocorrelation,
-    ...     periodicity_score,
-    ... )
-    >>>
-    >>> # Create environment
-    >>> positions = np.random.randn(5000, 2) * 20  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>>
-    >>> # Create grid cell firing pattern
-    >>> firing_rate = np.zeros(env.n_bins)  # doctest: +SKIP
-    >>> # ... populate with grid cell firing ...
-    >>>
-    >>> # Compute graph-based autocorrelation
-    >>> distances, correlations = spatial_autocorrelation(  # doctest: +SKIP
-    ...     env, firing_rate, n_distance_bins=50
-    ... )
-    >>>
-    >>> # Compute periodicity score
-    >>> score = periodicity_score(distances, correlations)  # doctest: +SKIP
-    >>> print(f"Periodicity score: {score:.3f}")  # doctest: +SKIP
-    Periodicity score: 0.845  # doctest: +SKIP
-
-    See Also
-    --------
-    spatial_autocorrelation : Compute distance-correlation profile
-    grid_score : 2D rotational symmetry (FFT-based)
-
-    Notes
-    -----
-    This is an experimental metric not present in opexebo. It provides a
-    graph-compatible alternative to traditional grid score analysis.
-    """
-    # Validate inputs
-    if distances.shape != correlations.shape:
-        raise ValueError(
-            f"distances and correlations must have same shape, "
-            f"got {distances.shape} and {correlations.shape}"
-        )
-
-    if len(distances) == 0:
-        raise ValueError("distances and correlations cannot be empty")
-
-    if min_peaks < 2:
-        raise ValueError(f"min_peaks must be >= 2, got {min_peaks}")
-
-    if not (0 < prominence_threshold < 1):
-        raise ValueError(
-            f"prominence_threshold must be in (0, 1), got {prominence_threshold}"
-        )
-
-    # Handle NaN
-    valid_mask = np.isfinite(correlations) & np.isfinite(distances)
-    if not np.any(valid_mask):
-        return np.nan
-
-    distances_clean = distances[valid_mask]
-    correlations_clean = correlations[valid_mask]
-
-    if len(distances_clean) < min_peaks:
-        return np.nan
-
-    # Exclude zero-lag region (first bin, typically autocorr = 1.0)
-    # Start from second bin to avoid trivial central peak
-    if len(distances_clean) > 1:
-        distances_clean = distances_clean[1:]
-        correlations_clean = correlations_clean[1:]
-
-    if len(distances_clean) < min_peaks:
-        return np.nan
-
-    # Find peaks in correlation profile
-
-    # Compute prominence threshold in absolute units
-    corr_range = np.max(correlations_clean) - np.min(correlations_clean)
-    prominence_abs = prominence_threshold * corr_range
-
-    peaks, _ = find_peaks(
-        correlations_clean,
-        prominence=prominence_abs,
-    )
-
-    if len(peaks) < min_peaks:
-        # Not enough peaks
-        return np.nan
-
-    # Get peak distances (physical distances of peaks)
-    peak_distances = distances_clean[peaks]
-
-    # Compute inter-peak spacing (distance between consecutive peaks)
-    inter_peak_spacing = np.diff(peak_distances)
-
-    if len(inter_peak_spacing) < 2:
-        # Need at least 2 spacings for variance
-        return np.nan
-
-    # Compute regularity of spacing
-    mean_spacing = np.mean(inter_peak_spacing)
-    std_spacing = np.std(inter_peak_spacing)
-
-    if mean_spacing == 0:
-        return np.nan
-
-    # Periodicity score = 1 - coefficient of variation
-    # High score = regular spacing, low score = irregular spacing
-    cv = std_spacing / mean_spacing
-    score = 1.0 - cv
-
-    # Clip to [0, 1]
-    score = np.clip(score, 0.0, 1.0)
-
-    return float(score)
 
 
 def _zero_lag_centered(autocorr_2d: NDArray[np.float64]) -> NDArray[np.float64]:
