@@ -202,7 +202,8 @@ def spatial_information(
     -------
     float | jax.Array
         Spatial information in bits per spike (if base=2.0).
-        Returns 0.0 if mean rate is zero or undefined.
+        NaN for a silent map (mean rate 0), an all-NaN map or zero total
+        occupancy: bits per spike are undefined without spikes.
         Returns float for NumPy input, JAX scalar for JAX input.
 
     Raises
@@ -307,7 +308,8 @@ def batch_spatial_information(
     Returns
     -------
     ndarray | jax.Array, shape (n_neurons,)
-        Spatial information in bits per spike for each neuron.
+        Spatial information in bits per spike for each neuron, NaN for a
+        silent or all-NaN map or zero total occupancy.
         Returns NumPy array for NumPy input, JAX array for JAX input.
 
     Raises
@@ -395,7 +397,7 @@ def sparsity(
     -------
     float | jax.Array
         Sparsity value in range [0, 1]. Lower values indicate sparser firing.
-        Returns 0.0 if denominator is zero or undefined.
+        NaN for a silent map, an all-NaN map or zero total occupancy.
         Returns float for NumPy input, JAX scalar for JAX input.
 
     Raises
@@ -494,7 +496,8 @@ def batch_sparsity(
     Returns
     -------
     ndarray | jax.Array, shape (n_neurons,)
-        Sparsity values in range [0, 1] for each neuron.
+        Sparsity values in range [0, 1] for each neuron, NaN for a silent or
+        all-NaN map or zero total occupancy.
         Returns NumPy array for NumPy input, JAX array for JAX input.
 
     Raises

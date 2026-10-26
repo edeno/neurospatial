@@ -290,14 +290,6 @@ class TestSpatialInformationSingle:
         # Should not produce NaN or inf
         assert np.isfinite(float(result))
 
-    def test_handles_all_zero_firing(self, uniform_occupancy):
-        """Should handle zero firing rate."""
-        from neurospatial.encoding._core_jax import spatial_information_single
-
-        zero_rate = jnp.zeros(100, dtype=jnp.float64)
-        result = spatial_information_single(zero_rate, uniform_occupancy)
-        assert_allclose(float(result), 0.0, atol=1e-10)
-
     def test_base_parameter(self, selective_firing_rate, uniform_occupancy):
         """Should support different logarithm bases."""
         from neurospatial.encoding._core_jax import spatial_information_single
@@ -410,15 +402,6 @@ class TestSparsitySingle:
 
         result = sparsity_single(place_field_firing_rate, occupancy_with_zeros)
         # Should not produce NaN or inf
-        assert np.isfinite(float(result))
-
-    def test_handles_all_zero_firing(self, uniform_occupancy):
-        """Should handle zero firing rate."""
-        from neurospatial.encoding._core_jax import sparsity_single
-
-        zero_rate = jnp.zeros(100, dtype=jnp.float64)
-        result = sparsity_single(zero_rate, uniform_occupancy)
-        # Zero rate should return 0 (undefined but clamped)
         assert np.isfinite(float(result))
 
 
@@ -683,10 +666,12 @@ class TestEdgeCases:
         # Neuron 3: half active
         rates[3, 50:] = 5.0
 
-        result = spatial_information_batch(jnp.array(rates), uniform_occupancy)
-        assert result.shape == (4,)
-        # All results should be finite (except potentially zeros)
-        assert np.all(np.isfinite(np.array(result)) | (np.array(result) == 0.0))
+        result = np.asarray(
+            spatial_information_batch(jnp.array(rates), uniform_occupancy)
+        )
+        # Silent: undefined. Uniform: 0 bits. One bin of 100: log2(100).
+        # Half the arena at a uniform rate: 1 bit.
+        assert_allclose(result, [np.nan, 0.0, np.log2(100), 1.0], atol=1e-6)
 
 
 # =============================================================================

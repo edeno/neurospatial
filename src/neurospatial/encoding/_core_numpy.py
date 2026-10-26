@@ -336,8 +336,9 @@ def spatial_information_single(
 
     NumPy mirror of :func:`neurospatial.encoding._core_jax.spatial_information_single`.
     Both implementations follow the same algorithm: exclude non-finite
-    rate/occupancy pairs, normalize occupancy, return ``0.0`` for degenerate
-    occupancy or non-positive mean rate, clamp to non-negative.
+    rate/occupancy pairs, normalize occupancy, return NaN for zero total
+    occupancy or a non-positive mean rate (undefined bits per spike), clamp to
+    non-negative.
 
     Parameters
     ----------
@@ -352,7 +353,7 @@ def spatial_information_single(
     -------
     NDArray[np.float64] (0-dim)
         Spatial information in bits per spike (if ``base=2.0``).
-        ``0.0`` when occupancy is degenerate or mean rate is non-positive.
+        NaN when total occupancy is zero or the mean rate is non-positive.
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -389,7 +390,7 @@ def spatial_information_single(
         )
 
     information = np.maximum(contribution.sum(), 0.0)
-    return np.where((mean_rate > 0) & (occ_sum > 0), information, 0.0)
+    return np.where((mean_rate > 0) & (occ_sum > 0), information, np.nan)
 
 
 def spatial_information_batch(
@@ -440,7 +441,7 @@ def spatial_information_batch(
         )
 
     info = np.maximum(contributions.sum(axis=1), 0.0)
-    return np.where(valid_neuron, info, 0.0).astype(np.float64, copy=False)
+    return np.where(valid_neuron, info, np.nan).astype(np.float64, copy=False)
 
 
 def sparsity_single(
@@ -450,7 +451,7 @@ def sparsity_single(
     """Compute sparsity for a single neuron.
 
     NumPy mirror of :func:`neurospatial.encoding._core_jax.sparsity_single`.
-    Returns ``0.0`` when the denominator is degenerate; clamps to ``[0, 1]``.
+    Returns NaN for a silent map or zero total occupancy; clamps to ``[0, 1]``.
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -471,7 +472,7 @@ def sparsity_single(
     sparsity_value = np.where(
         denominator > 0,
         numerator / np.where(denominator > 0, denominator, 1.0),
-        0.0,
+        np.nan,
     )
     return np.clip(sparsity_value, 0.0, 1.0)
 
@@ -503,6 +504,6 @@ def sparsity_batch(
     sparsity_values = np.where(
         denominator > 0,
         numerator / np.where(denominator > 0, denominator, 1.0),
-        0.0,
+        np.nan,
     )
     return np.clip(sparsity_values, 0.0, 1.0).astype(np.float64, copy=False)

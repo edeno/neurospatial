@@ -195,13 +195,6 @@ class TestSpatialInformation:
         expected_nats = info_bits * np.log(2)
         assert_allclose(info_nats, expected_nats, rtol=1e-6)
 
-    def test_zero_mean_rate_returns_zero(self):
-        """Should return 0.0 when mean firing rate is zero."""
-        firing_rate = np.zeros(100)
-        occupancy = np.ones(100)
-        info = spatial_information(firing_rate, occupancy)
-        assert info == 0.0
-
     def test_nan_values_handled(self):
         """Should handle NaN values in firing rate."""
         firing_rate = np.array([1.0, 2.0, np.nan, 3.0, 4.0])
@@ -278,13 +271,6 @@ class TestSparsity:
         # denominator = 0.25*0 + 0.25*4 + 0.25*16 + 0.25*4 = 6
         # sparsity = 4/6 = 0.667
         assert_allclose(spars, 0.667, atol=0.01)
-
-    def test_zero_denominator_returns_zero(self):
-        """Should return 0.0 when all firing rates are zero."""
-        firing_rate = np.zeros(100)
-        occupancy = np.ones(100)
-        spars = sparsity(firing_rate, occupancy)
-        assert spars == 0.0
 
     def test_nan_values_handled(self):
         """Should handle NaN values in firing rate."""
@@ -422,17 +408,6 @@ class TestEdgeCases:
 
         assert info == 0.0  # No spatial information with one bin
         assert spars == 1.0  # All firing in "everywhere"
-
-    def test_all_nan_firing_rate(self):
-        """Should handle all-NaN firing rate."""
-        firing_rate = np.array([np.nan, np.nan, np.nan])
-        occupancy = np.array([1.0, 1.0, 1.0])
-
-        info = spatial_information(firing_rate, occupancy)
-        spars = sparsity(firing_rate, occupancy)
-
-        assert info == 0.0
-        assert spars == 0.0
 
     def test_inf_handling(self):
         """Should handle inf values gracefully."""

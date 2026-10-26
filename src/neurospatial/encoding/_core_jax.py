@@ -385,7 +385,8 @@ def spatial_information_single(
     -------
     jax.Array (scalar)
         Spatial information in bits per spike (if base=2.0).
-        Returns 0.0 if mean rate is zero or undefined.
+        NaN for a silent map (mean rate 0), an all-NaN map or zero total
+        occupancy: bits per spike are undefined without spikes.
 
     Notes
     -----
@@ -450,7 +451,7 @@ def _spatial_information_kernel(
         0.0,
     )
     information = jnp.maximum(jnp.sum(contribution), 0.0)
-    return jnp.where((mean_rate > 0) & (occ_sum > 0), information, 0.0)
+    return jnp.where((mean_rate > 0) & (occ_sum > 0), information, jnp.nan)
 
 
 # Cached vmap of the per-neuron information kernel. Building vmap once at
@@ -534,7 +535,7 @@ def sparsity_single(
     -------
     jax.Array (scalar)
         Sparsity value in range [0, 1]. Lower values indicate sparser firing.
-        Returns 0.0 if denominator is zero or undefined.
+        NaN for a silent map, an all-NaN map or zero total occupancy.
 
     Notes
     -----
@@ -590,7 +591,7 @@ def _sparsity_kernel(firing_rate: Array, occupancy: Array) -> Array:
     sparsity_value = jnp.where(
         denominator > 0,
         numerator / jnp.where(denominator > 0, denominator, 1.0),
-        0.0,
+        jnp.nan,
     )
     return jnp.clip(sparsity_value, 0.0, 1.0)
 

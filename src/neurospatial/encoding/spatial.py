@@ -958,9 +958,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         )
 
     def _headline_metrics(self) -> dict[str, float]:
-        """Cheap, NaN-safe metrics for the singular summary."""
-        if not np.any(np.isfinite(_to_numpy(self.firing_rate))):
-            return {"spatial_info": float("nan"), "sparsity": float("nan")}
+        """Cheap metrics for the singular summary (NaN when undefined)."""
         return {
             "spatial_info": float(self.spatial_information()),
             "sparsity": float(self.sparsity()),
@@ -1055,8 +1053,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Returns
         -------
         float | jax.Array
-            Spatial information in bits/spike. Always non-negative.
-            Returns 0.0 for uniform firing.
+            Spatial information in bits/spike. Always non-negative, and 0.0
+            for uniform firing. NaN for a silent cell (no spikes) or a map with
+            no supported bins: bits per spike are undefined without spikes.
+            Bins outside ``spatial_support`` are excluded even when filled.
 
             **Backend-aware**: Returns float for NumPy input,
             JAX scalar for JAX input.
@@ -1115,7 +1115,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Returns
         -------
         float | jax.Array
-            Sparsity value in range [0, 1].
+            Sparsity value in range [0, 1]. NaN for a silent cell or a map
+            with no supported bins. Bins outside ``spatial_support`` are
+            excluded even when filled.
+
             - Low (0.1-0.3): Sparse, selective place field
             - High (~1.0): Uniform firing throughout environment
 
@@ -2115,8 +2118,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         Returns
         -------
         ndarray | jax.Array, shape (n_neurons,)
-            Spatial information in bits/spike for each neuron.
-            Always non-negative. Returns 0.0 for uniform firing.
+            Spatial information in bits/spike for each neuron. Always
+            non-negative, and 0.0 for uniform firing. NaN for a silent neuron
+            or a map with no supported bins. Bins outside the occupancy
+            support are excluded even when filled.
 
             **Backend-aware**: Returns NumPy array for NumPy input,
             JAX array for JAX input.
@@ -2175,7 +2180,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         Returns
         -------
         ndarray | jax.Array, shape (n_neurons,)
-            Sparsity values in range [0, 1] for each neuron.
+            Sparsity values in range [0, 1] for each neuron. NaN for a silent
+            neuron or a map with no supported bins. Bins outside the
+            occupancy support are excluded even when filled.
+
             - Low (0.1-0.3): Sparse, selective place field
             - High (~1.0): Uniform firing throughout environment
 
