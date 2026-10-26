@@ -271,8 +271,9 @@ def _bin_adjacency(G: nx.Graph, *, weight: str | None, operation: str) -> csr_ar
 
     Returns
     -------
-    scipy.sparse.csr_array, shape (n_bins, n_bins)
-        Edge lengths, for ``scipy.sparse.csgraph`` with ``directed=False``.
+    scipy.sparse.csr_array of float64, shape (n_bins, n_bins)
+        Symmetric edge lengths (1.0 per edge when ``weight`` is None), for
+        ``scipy.sparse.csgraph`` with ``directed=False``.
 
     Raises
     ------
@@ -282,13 +283,34 @@ def _bin_adjacency(G: nx.Graph, *, weight: str | None, operation: str) -> csr_ar
     from scipy.sparse import csr_array
 
     n_bins = _require_bin_graph(G, operation)
-    if n_bins == 0:
-        return csr_array((0, 0), dtype=np.float64)
-    _require_edge_weight(G, weight, operation)
-    adjacency: csr_array = nx.to_scipy_sparse_array(
-        G, nodelist=range(n_bins), weight=weight, format="csr"
+    n_edges = G.number_of_edges()
+    if weight is None:
+        pairs = np.fromiter(
+            (node for edge in G.edges for node in edge),
+            dtype=np.intp,
+            count=2 * n_edges,
+        ).reshape(n_edges, 2)
+        lengths = np.ones(n_edges)
+    else:
+        # One pass reads each edge as (u, v, length); a missing length reads
+        # as NaN, told apart from a stored NaN only on that rare path.
+        rows = np.fromiter(
+            (value for edge in G.edges(data=weight, default=np.nan) for value in edge),
+            dtype=np.float64,
+            count=3 * n_edges,
+        ).reshape(n_edges, 3)
+        if np.isnan(rows[:, 2]).any():
+            _require_edge_weight(G, weight, operation)
+        pairs, lengths = rows[:, :2].astype(np.intp), rows[:, 2]
+    u, v = pairs[:, 0], pairs[:, 1]
+    mirror = u != v  # a self-loop is one entry, as in nx.to_scipy_sparse_array
+    return csr_array(
+        (
+            np.concatenate([lengths, lengths[mirror]]),
+            (np.concatenate([u, v[mirror]]), np.concatenate([v, u[mirror]])),
+        ),
+        shape=(n_bins, n_bins),
     )
-    return adjacency
 
 
 def _as_bin_indices(
