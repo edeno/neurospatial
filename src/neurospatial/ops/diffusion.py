@@ -253,14 +253,32 @@ def _raw_heat_operator(
     NDArray[np.float64], shape (n_bins, n_bins)
         Dense raw heat operator ``H``.
     """
-    degree = np.asarray(W.sum(axis=1)).ravel()
-    inv_mass = scipy.sparse.diags(1.0 / volumes)
-    laplacian = inv_mass @ (scipy.sparse.diags(degree) - W)  # M^-1 (D - W)
     t = sigma**2 / 2.0
     # The heat kernel fills in completely, so the dense expm is far cheaper than
     # the sparse one, whose intermediate products become dense anyway.
-    kernel = scipy.linalg.expm(-t * laplacian.toarray())
+    kernel = scipy.linalg.expm(-t * _generator(W, volumes).toarray())
     return np.asarray(kernel, dtype=np.float64)
+
+
+def _generator(
+    W: scipy.sparse.spmatrix, volumes: NDArray[np.float64]
+) -> scipy.sparse.csr_matrix:
+    """Finite-volume diffusion generator ``L = M^-1 (D - W)`` (sparse).
+
+    Parameters
+    ----------
+    W : scipy.sparse matrix, shape (n_bins, n_bins)
+        Symmetric finite-volume weight matrix.
+    volumes : NDArray[np.float64], shape (n_bins,)
+        Per-bin cell volumes ``M`` (strictly positive).
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix, shape (n_bins, n_bins)
+        ``M^-1 (D - W)``, where ``D`` holds the row sums of ``W``.
+    """
+    degree = scipy.sparse.diags(np.asarray(W.sum(axis=1)).ravel())
+    return (scipy.sparse.diags(1.0 / volumes) @ (degree - W)).tocsr()
 
 
 def _warn_dense_kernel(n_bins: int) -> None:

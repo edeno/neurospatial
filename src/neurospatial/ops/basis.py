@@ -702,15 +702,11 @@ def _diffusion_generator(
     scipy.sparse.csr_matrix, shape (n_bins, n_bins)
         ``spacing**2 * M**-1 (Deg - W)``.
     """
-    from scipy import sparse
-
+    from neurospatial.ops.diffusion import _generator
     from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
-    degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
     spacing = _estimate_typical_bin_spacing(tree, bin_centers)
-    return (
-        spacing**2 * sparse.diags(1.0 / geometry.volumes) @ (degree - geometry.W)
-    ).tocsr()
+    return spacing**2 * _generator(geometry.W, geometry.volumes)
 
 
 def heat_kernel_wavelet_basis(
@@ -1034,7 +1030,7 @@ def chebyshev_filter_basis(
 
     from scipy import sparse
 
-    from neurospatial.ops.diffusion import _symmetric_conjugate
+    from neurospatial.ops.diffusion import _generator, _symmetric_conjugate
 
     # Handle centers
     if centers is None:
@@ -1079,8 +1075,7 @@ def chebyshev_filter_basis(
     # L = M^-1 (Deg - W) is not symmetric on unequal volumes; its symmetric
     # conjugate S = M^-1/2 (Deg - W) M^-1/2 has the same eigenvalues.
     symmetric = _symmetric_conjugate(geometry.W, geometry.volumes)
-    degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
-    laplacian = (sparse.diags(1.0 / geometry.volumes) @ (degree - geometry.W)).tocsr()
+    laplacian = _generator(geometry.W, geometry.volumes)
 
     # Estimate largest eigenvalue for rescaling
     lambda_max = _estimate_spectral_radius(symmetric)
