@@ -798,6 +798,5 @@ def neighbors_within(
     if include_center:
         return neighborhoods
     return [
-        neigh[neigh != c]
-        for c, neigh in zip(centers_array, neighborhoods, strict=True)
+        neigh[neigh != c] for c, neigh in zip(centers_array, neighborhoods, strict=True)
     ]
