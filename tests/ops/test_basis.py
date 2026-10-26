@@ -492,6 +492,18 @@ class TestSpatialBasis:
         )
         assert_allclose(basis, expected)
 
+    def test_three_dimensional_scale_is_the_side_length(self):
+        """In a 120 cm cube, medium coverage is 10% of 120 cm, not of 120**1.5."""
+        edges = np.linspace(0.0, 120.0, 7)
+        cube = Environment.from_grid_mask(np.ones((6, 6, 6), bool), (edges,) * 3)
+        assert [hi - lo for lo, hi in cube.dimension_ranges] == [120.0] * 3
+
+        basis = spatial_basis(cube, coverage="medium", n_features=9, rng=0)
+        expected = geodesic_rbf_basis(
+            cube, n_centers=3, sigma=[6.0, 12.0, 24.0], normalize="unit", rng=0
+        )
+        assert_allclose(basis, expected)
+
 
 # =============================================================================
 # TestPlotBasisFunctions - Tests to be added after the plot_basis_functions implementation

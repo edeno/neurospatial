@@ -1168,9 +1168,9 @@ def spatial_basis(
         min_val, max_val = dim_ranges[0]
         extent = max_val - min_val
     else:
-        # Use geometric mean of extents for multi-dimensional environments
+        # Geometric mean of the axis extents: a length in every dimension.
         extents = [max_val - min_val for min_val, max_val in dim_ranges]
-        extent = float(np.sqrt(np.prod(extents)))
+        extent = float(np.prod(extents) ** (1.0 / len(extents)))
 
     # Determine base sigma from coverage setting
     sigma_fraction = {"local": 0.05, "medium": 0.10, "global": 0.20}
