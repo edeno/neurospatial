@@ -1038,9 +1038,6 @@ def identity_nd(*, n_dims: int = 2) -> AffineND:
     return AffineND(np.eye(n_dims + 1))
 
 
-# Convenience aliases
-
-
 # ---------------------------------------------------------------------
 # Quick NumPy helpers that build and apply a 2D AffineND
 # ---------------------------------------------------------------------
@@ -1430,7 +1427,7 @@ def estimate_transform(
 
 
 # ---------------------------------------------------------------------
-# 4.  Simple calibration helper (merged from calibration.py)
+# 4.  Simple calibration helper
 # ---------------------------------------------------------------------
 def simple_scale(
     px_per_cm: float,

@@ -19,7 +19,8 @@ The key functions are:
   (n, m) where m is the number of selected regions and values are booleans.
 
 Both functions accept an optional `transform` that maps pixel-space coordinates to
-the Regions' coordinate space via a SpatialTransform with a `.forward()` method.
+the Regions' coordinate space: any `SpatialTransform`, that is, a callable that
+maps an (n, 2) array of points to an (n, 2) array, such as an `AffineND`.
 
 Examples
 --------
@@ -30,10 +31,10 @@ Example usage (conceptual):
     from pathlib import Path
     import numpy as np
     from neurospatial.regions.io import load_labelme_json
-    from neurospatial.ops.transforms import SpatialTransform
+    from neurospatial.ops.transforms import simple_scale
     from neurospatial.regions.ops import points_in_any_region, regions_containing_points
 
-    transform = SpatialTransform(...)  # pixel→world transform
+    transform = simple_scale(px_per_cm=10.0)  # pixel→world transform
     rois = load_labelme_json(Path("annotations.json"), pixel_to_world=transform)
     pts_pixel = np.random.rand(1000, 2) * 512
     mask = points_in_any_region(pts_pixel, rois, transform=transform)
