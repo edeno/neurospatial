@@ -33,7 +33,6 @@ from neurospatial.geometry import (
     materialize_cells,
     wall_source_frame,
 )
-from neurospatial.ops._linear_allocation import crossing_blocks, ray_grid_pieces
 
 if TYPE_CHECKING:
     from neurospatial.geometry import FramedGrid
@@ -477,9 +476,8 @@ def _polygon_linear_occupancy(
         Observation validity of each interval, independent of geometry.
     return_seconds : bool
         If True, each piece adds its share of the interval's duration. If
-        False, each interval adds one count split by path length. Framed N-D
-        grids normalize that count over the full source grid before inactive
-        cells drop their share, as native N-D linear allocation does.
+        False, each interval adds one count split by path length. Either way
+        the share outside the retained bins is dropped.
     indexes : LookupIndexes, optional
         Keeps the locator's search structures, usually the environment's
         analysis cache. None keeps them for this call only.
@@ -493,35 +491,15 @@ def _polygon_linear_occupancy(
         never renormalized.
     """
     dt = np.diff(times)
-    normalizers = np.ones(len(dt))
-    frame = binning.grid_frame
-    if frame is not None and binning.bins.n_dims != 2 and not return_seconds:
-        _, source_positions = _source_grid(frame, positions)
-        samples = np.flatnonzero(valid_mask)
-        normalizers[samples] = 0.0
-        starts, stops = source_positions[samples], source_positions[samples + 1]
-        for block in crossing_blocks(starts, stops, frame.source.edges):
-            interval, _, fraction = ray_grid_pieces(
-                starts[block],
-                stops[block],
-                frame.source.edges,
-                frame.source.shape,
-                np.ones(block.stop - block.start),
-            )
-            np.add.at(normalizers, samples[block][interval], fraction)
     pieces = retained_linear_intervals(
         binning, arena, times, positions, valid_mask, indexes
     )
     occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
     for piece in pieces:
         weight = dt[piece.sample_index] if return_seconds else 1.0
-        if normalizers[piece.sample_index] <= 0:
-            continue
         occupancy[piece.bin_index] += (
-            (piece.stop_fraction - piece.start_fraction)
-            * weight
-            / normalizers[piece.sample_index]
-        )
+            piece.stop_fraction - piece.start_fraction
+        ) * weight
     return pieces, occupancy
 
 

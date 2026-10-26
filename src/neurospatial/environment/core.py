@@ -1871,8 +1871,10 @@ class Environment(Generic[_C]):
         return_seconds : bool, default=True
             If True, return time in seconds (time-weighted occupancy).
             If False, return sample counts (unweighted, counts number of
-            intervals starting in each bin). Use True for rate calculations
-            (e.g., firing rates), False for presence/absence analyses.
+            intervals starting in each bin; with ``time_allocation='linear'``
+            each interval is one count split like its duration). Use True for
+            rate calculations (e.g., firing rates), False for presence/absence
+            analyses.
 
         Returns
         -------
@@ -1919,11 +1921,15 @@ class Environment(Generic[_C]):
 
         - time_allocation='linear': Splits Δt proportionally across all bins
           traversed by the straight-line path between consecutive samples.
-          Supported for rectangular grids and exact planar polygon cells.
-          Polygon allocation retains entry and re-entry intervals, excludes
-          holes and outside portions without renormalizing their duration,
-          and refuses proper crossings of a known physical wall. Observation
-          validity is independent of whether the starting point is in a bin.
+          Supported for rectangular grids in any dimension and exact planar
+          polygon cells. It retains entry, exit and re-entry intervals and
+          drops the share of the path in holes, inactive cells or outside the
+          environment without renormalizing: an interval half inside adds
+          half its duration in seconds, or half a count with
+          ``return_seconds=False``, whichever way it travels. Planar polygon
+          allocation refuses proper crossings of a known physical wall.
+          Observation validity is independent of whether the starting point
+          is in a bin.
 
         **Mass conservation**: The sum of the returned occupancy array equals
         the total valid time:

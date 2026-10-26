@@ -7,6 +7,7 @@ more accurate occupancy when trajectories cross bin boundaries on regular grids.
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from shapely.geometry import box
 
 from neurospatial import Environment
 
@@ -712,3 +713,108 @@ def test_linear_allocation_without_cell_outlines_points_to_start(build, position
     assert message.splitlines()[-1].startswith("Fix: use time_allocation='start'")
     occupancy = env.occupancy(times, positions, time_allocation="start")
     assert occupancy.sum() == pytest.approx(0.3)
+
+
+# Unit cells covering [0, 10] along every axis.
+_CENTERS_1D = np.arange(0.5, 10)[:, None]
+_CENTERS_2D = np.stack(np.meshgrid(*[np.arange(0.5, 10)] * 2), axis=-1).reshape(-1, 2)
+_CENTERS_3D = np.stack(
+    np.meshgrid(*[np.arange(0.5, 10)] * 3, indexing="ij"), axis=-1
+).reshape(-1, 3)
+
+
+def _square_mesh() -> Environment:
+    from neurospatial.layout import create_layout
+
+    layout = create_layout(
+        "TriangularMesh", boundary_polygon=box(0.0, 0.0, 10.0, 10.0), point_spacing=1.0
+    )
+    return Environment.from_layout(layout)
+
+
+def _rotated_cube() -> Environment:
+    """The 3-D grid turned a quarter turn about z: x becomes y."""
+    from neurospatial.ops.transforms import AffineND
+
+    matrix = np.eye(4)
+    matrix[:2, :2] = [[0.0, -1.0], [1.0, 0.0]]
+    env = Environment.from_samples(_CENTERS_3D, bin_size=1.0)
+    return env.apply_transform(AffineND(matrix))
+
+
+_BOUNDARY_CROSSINGS = {
+    # Each environment ends at x = 10 (y = 10 when rotated); the path runs from
+    # 5 to 15, so exactly half of it lies inside.
+    "1-D grid": (
+        lambda: Environment.from_samples(_CENTERS_1D, bin_size=1.0),
+        [5.0],
+        [15.0],
+    ),
+    "2-D grid": (
+        lambda: Environment.from_samples(_CENTERS_2D, bin_size=1.0),
+        [5.0, 5.5],
+        [15.0, 5.5],
+    ),
+    "polygon": (
+        lambda: Environment.from_polygon(box(0.0, 0.0, 10.0, 10.0), bin_size=1.0),
+        [5.0, 5.5],
+        [15.0, 5.5],
+    ),
+    "mesh": (_square_mesh, [5.0, 5.3], [15.0, 5.3]),
+    "3-D grid": (
+        lambda: Environment.from_samples(_CENTERS_3D, bin_size=1.0),
+        [5.0, 5.5, 5.5],
+        [15.0, 5.5, 5.5],
+    ),
+    "rotated 3-D grid": (_rotated_cube, [-5.5, 5.0, 5.5], [-5.5, 15.0, 5.5]),
+}
+
+
+@pytest.mark.parametrize(
+    ("build", "inside", "outside"),
+    _BOUNDARY_CROSSINGS.values(),
+    ids=_BOUNDARY_CROSSINGS.keys(),
+)
+@pytest.mark.parametrize("direction", ["in to out", "out to in"])
+def test_linear_occupancy_keeps_only_the_inside_share_of_a_boundary_crossing(
+    build, inside, outside, direction
+):
+    """Leaving and entering keep the inside share, in every layout and mode.
+
+    Seconds are the inside fraction of the path times the interval's
+    duration, and counts are the inside fraction of one interval: the share
+    outside is dropped, never moved onto the bins inside, and the direction
+    of travel does not matter.
+    """
+    env = build()
+    times = np.array([0.0, 0.1])  # s
+    path = [inside, outside] if direction == "in to out" else [outside, inside]
+    positions = np.array(path, dtype=float)
+    options = {"time_allocation": "linear", "max_gap": None}
+    seconds = env.occupancy(times, positions, **options)
+    counts = env.occupancy(times, positions, return_seconds=False, **options)
+    assert seconds.sum() == pytest.approx(0.05, rel=1e-12)
+    assert counts.sum() == pytest.approx(0.5, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Environment.from_samples(_CENTERS_1D, bin_size=1.0),
+        lambda: Environment.from_samples(_CENTERS_3D, bin_size=1.0),
+        _rotated_cube,
+    ],
+    ids=["1-D grid", "3-D grid", "rotated 3-D grid"],
+)
+def test_linear_occupancy_of_inside_paths_conserves_time_and_counts(build):
+    """Paths wholly inside keep every second, and one count per interval."""
+    env = build()
+    rng = np.random.default_rng(7)
+    picks = rng.integers(0, env.n_bins, 200)
+    positions = env.bin_centers[picks] + rng.uniform(-0.4, 0.4, (200, env.n_dims))
+    times = np.cumsum(rng.uniform(0.01, 0.05, 200))  # s
+    options = {"time_allocation": "linear", "max_gap": None}
+    seconds = env.occupancy(times, positions, **options)
+    counts = env.occupancy(times, positions, return_seconds=False, **options)
+    assert seconds.sum() == pytest.approx(times[-1] - times[0], rel=1e-12)
+    assert counts.sum() == pytest.approx(len(times) - 1, rel=1e-12)
