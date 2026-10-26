@@ -831,19 +831,28 @@ def field_shift_distance(
         Indices of bins belonging to place field in second session.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric. ``"euclidean"`` is straight-line distance between
-        the rate-weighted centroids. ``"geodesic"`` is the shortest path
-        along the connectivity graph and requires ``env_1`` and ``env_2``
-        to be the same environment or aligned environments with compatible
-        connectivity; geodesic distance respects barriers and boundaries.
+        the rate-weighted centroids, and works across different
+        environments in one coordinate frame. ``"geodesic"`` is the shortest
+        path along the connectivity graph between the bins containing the
+        two centroids; it respects barriers and boundaries and requires
+        ``env_1`` and ``env_2`` to have the same bins and connectivity.
 
     Returns
     -------
     float
-        Distance between field centroids in spatial units (same units as environment).
-        Returns NaN if either field is empty or centroid calculation fails.
+        Distance between field centroids in the environments' spatial units.
+        NaN if either field has no finite, positive-rate bins (no centroid),
+        or, for ``"geodesic"``, if a centroid falls outside every bin (a
+        warning says which). ``inf`` for ``"geodesic"`` when the two
+        centroids lie in parts of the environment with no path between them.
 
     Raises
     ------
+    ValueError
+        If ``metric`` is not ``"euclidean"`` or ``"geodesic"``.
+    IncompatibleEnvironmentError
+        If ``metric="geodesic"`` and ``env_1`` and ``env_2`` differ in their
+        bins or connectivity: there is no single graph to measure a path on.
     CartesianOnlyError
         If ``env_1`` or ``env_2`` is polar: field centroids are Cartesian
         rate-weighted means of bin centers.
@@ -927,6 +936,12 @@ def field_shift_distance(
     .. [2] Colgin et al. (2008). Understanding memory through hippocampal remapping.
            Trends Neurosci 31(9).
     """
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(
+            f"metric must be 'euclidean' or 'geodesic', got {metric!r}.\n"
+            "Fix: pass metric='euclidean' for straight-line distance or "
+            "metric='geodesic' for the path through the environment."
+        )
     for argument, env in (("env_1", env_1), ("env_2", env_2)):
         require_cartesian(
             env.coordinate_system,
@@ -940,6 +955,27 @@ def field_shift_distance(
                 "Environment.from_samples(positions, bin_size=...)"
             ),
         )
+    if metric == "geodesic":
+        from neurospatial._exceptions import IncompatibleEnvironmentError
+        from neurospatial.environment import _environment_differences
+
+        bins, topology = _environment_differences(env_1, env_2)
+        mismatch = bins or topology
+        if mismatch is not None:
+            raise IncompatibleEnvironmentError(
+                "field_shift_distance(metric='geodesic') needs env_1 and env_2 "
+                f"to have the same bins and connectivity; they differ in "
+                f"{mismatch}. A path is measured on one environment's graph, "
+                "and the other session's bins are not on it.",
+                fix=(
+                    "use metric='euclidean' to compare centroids across "
+                    "environments in one coordinate frame, or compute both rate "
+                    "maps on the same environment"
+                ),
+                first=env_1,
+                second=env_2,
+            )
+
     # Compute centroids for both fields
     centroid_1 = rate_map_centroid(env_1, firing_rate_1, field_bins_1)
     centroid_2 = rate_map_centroid(env_2, firing_rate_2, field_bins_2)
@@ -948,57 +984,22 @@ def field_shift_distance(
     if np.any(np.isnan(centroid_1)) or np.any(np.isnan(centroid_2)):
         return np.nan
 
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
+    if metric == "euclidean":
+        return float(np.linalg.norm(centroid_1 - centroid_2))
 
-    if metric == "geodesic":
-        # Geodesic distance using environment connectivity
-        # Validate that centroids fall within environment bounds
-        bin_1 = env_1.bin_at(centroid_1.reshape(1, -1))[0]
-        bin_2 = env_2.bin_at(centroid_2.reshape(1, -1))[0]
-
-        # Check if bins are valid (centroids in bounds)
-        if bin_1 < 0 or bin_2 < 0:
-            warnings.warn(
-                "One or both centroids fall outside environment bounds. "
-                "Cannot compute geodesic distance. Returning NaN.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            return np.nan
-
-        # Check if environments are compatible for geodesic distance
-        if env_1 is not env_2 and env_1.n_bins != env_2.n_bins:
-            # Different environment objects - check if they have same bins
-            warnings.warn(
-                f"Environments have different number of bins ({env_1.n_bins} vs {env_2.n_bins}). "
-                "Geodesic distance requires compatible environments. Falling back to Euclidean distance.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            # Fall back to Euclidean
-            distance = float(np.linalg.norm(centroid_1 - centroid_2))
-            return distance
-
-        try:
-            # Both centroids are measured on env_1's graph; bin_2 indexes env_2.
-            end_bin = env_1.bin_at(centroid_2.reshape(1, -1))[0]
-            if end_bin < 0:
-                return np.inf
-            return float(env_1.distance_between(bins=[bin_1, end_bin]))
-        except Exception as e:
-            warnings.warn(
-                f"Failed to compute geodesic distance: {e}. Falling back to Euclidean distance.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            # Fall back to Euclidean
-            distance = float(np.linalg.norm(centroid_1 - centroid_2))
-            return distance
-    else:
-        # Euclidean distance between centroids
-        distance = float(np.linalg.norm(centroid_1 - centroid_2))
-        return distance
+    # Same bins and connectivity: measure the path on env_1's graph.
+    centroid_bins = env_1.bin_at(np.stack([centroid_1, centroid_2]))
+    if np.any(centroid_bins < 0):
+        warnings.warn(
+            "A field centroid falls outside every bin of the environment (for "
+            "example the centroid of a curved field lies in a wall), so it has "
+            "no geodesic position. Returning NaN; use metric='euclidean' for "
+            "this field.",
+            category=UserWarning,
+            stacklevel=2,
+        )
+        return np.nan
+    return float(env_1.distance_between(bins=centroid_bins))
 
 
 def compute_field_emd(
