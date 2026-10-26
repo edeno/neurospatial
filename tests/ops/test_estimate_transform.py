@@ -102,6 +102,68 @@ class TestEstimateTransform:
             estimate_transform(src, dst, kind="invalid")
 
 
+class TestEstimateTransformRefusesUndeterminedFits:
+    """Landmarks that leave the transform free are refused, not guessed."""
+
+    def test_affine_refuses_collinear_landmarks(self):
+        """Collinear landmarks fix nothing off their line; similarity still fits."""
+        src = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+        dst = 2 * src + 5
+        with pytest.raises(ValueError, match="lie on one line") as error:
+            estimate_transform(src, dst, kind="affine")
+        assert 'kind="similarity"' in str(error.value)
+
+        similarity = estimate_transform(src, dst, kind="similarity")
+        np.testing.assert_allclose(similarity(np.array([[1.0, 0.0]])), [[7.0, 5.0]])
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity", "affine"])
+    def test_refuses_coincident_src_landmarks(self, kind):
+        src = np.zeros((3, 2))
+        dst = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        with pytest.raises(ValueError, match=r"same point|one point"):
+            estimate_transform(src, dst, kind=kind)
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity"])
+    def test_refuses_coincident_dst_landmarks(self, kind):
+        src = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        with pytest.raises(ValueError, match="do not determine"):
+            estimate_transform(src, np.ones((3, 2)), kind=kind)
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity"])
+    def test_refuses_collinear_3d_landmarks(self, kind):
+        """In 3-D, landmarks on a line leave the turn about that line free."""
+        src = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [2.0, 2.0, 2.0]])
+        with pytest.raises(ValueError, match="do not determine a 3-D rotation"):
+            estimate_transform(src, src + 1.0, kind=kind)
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity"])
+    def test_refuses_mirrored_symmetric_landmarks(self, kind):
+        """No rotation beats another for a mirrored square: refuse, do not pick one."""
+        src = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+        with pytest.raises(ValueError, match="mirror image"):
+            estimate_transform(src, src * [1.0, -1.0], kind=kind)
+        reflection = estimate_transform(src, src * [1.0, -1.0], kind="affine")
+        np.testing.assert_allclose(reflection(src), src * [1.0, -1.0], atol=1e-12)
+
+    def test_collinear_2d_landmarks_still_fix_a_rigid_rotation(self):
+        """Two distinct 2-D landmarks determine a rotation."""
+        src = np.array([[0.0, 0.0], [1.0, 0.0]])
+        dst = np.array([[1.0, 1.0], [1.0, 2.0]])
+        transform = estimate_transform(src, dst, kind="rigid")
+        np.testing.assert_allclose(transform(src), dst, atol=1e-12)
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity", "affine"])
+    @pytest.mark.parametrize("argument", ["src", "dst"])
+    def test_refuses_non_finite_landmarks_naming_the_row(self, kind, argument):
+        landmarks = {
+            "src": np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]),
+            "dst": np.array([[0.0, 0.0], [2.0, 0.0], [0.0, 2.0], [2.0, 2.0]]),
+        }
+        landmarks[argument][2, 1] = np.nan
+        with pytest.raises(ValueError, match=rf"{argument} has NaN .* row\(s\) \[2\]"):
+            estimate_transform(landmarks["src"], landmarks["dst"], kind=kind)
+
+
 class TestEstimateTransformKabsch:
     """Rigid/similarity fits must return a proper rotation (det = +1)."""
 

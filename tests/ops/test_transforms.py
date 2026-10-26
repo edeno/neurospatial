@@ -204,8 +204,8 @@ class TestCalibrateFromLandmarks:
         """Similarity (scale + rotation + translation) transform."""
         # Create landmarks with uniform scale
         landmarks_px = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
-        # 2x scale
-        landmarks_cm = np.array([[0, 0], [200, 0], [200, 200], [0, 200]], dtype=float)
+        # 2x scale; image row 0 is the top of the arena, so y points up in cm.
+        landmarks_cm = np.array([[0, 200], [200, 200], [200, 0], [0, 0]], dtype=float)
 
         transform = calibrate_from_landmarks(
             landmarks_px=landmarks_px,
@@ -215,6 +215,14 @@ class TestCalibrateFromLandmarks:
         )
 
         assert isinstance(transform, AffineND)
+        assert_allclose(transform(landmarks_px), landmarks_cm, atol=1e-10)
+
+    def test_mirrored_landmarks_are_refused(self):
+        """Landmarks listed in image orientation are a mirror image after the y flip."""
+        landmarks_px = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
+        landmarks_cm = 2 * landmarks_px
+        with pytest.raises(ValueError, match="mirror image"):
+            calibrate_from_landmarks(landmarks_px, landmarks_cm, (100, 100))
 
     def test_affine_transform(self):
         """Full affine transform from landmarks."""
@@ -286,6 +294,13 @@ class TestCalibrateFromLandmarks:
                 frame_size_px=(640, 480),
                 kind="similarity",
             )
+
+    def test_non_finite_landmark_is_named(self):
+        """A landmark that was not annotated is reported by its row."""
+        corners_px = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], dtype=float)
+        corners_cm = np.array([[0, 0], [50, 0], [50, 50], [np.nan, 50]])
+        with pytest.raises(ValueError, match=r"landmarks_cm has NaN .* row\(s\) \[3\]"):
+            calibrate_from_landmarks(corners_px, corners_cm, (100, 100))
 
     def test_mismatched_landmark_count_raises(self):
         """Different number of px and cm landmarks raises ValueError."""

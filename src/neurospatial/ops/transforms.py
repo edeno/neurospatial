@@ -574,8 +574,9 @@ def calibrate_from_landmarks(
     Raises
     ------
     ValueError
-        If fewer than 3 landmarks provided, or landmark arrays have different
-        lengths, or transform estimation fails.
+        If fewer than 3 landmarks provided, landmark arrays have different
+        lengths, a landmark has a NaN or infinite coordinate, the landmarks
+        are collinear, or transform estimation fails.
 
     Notes
     -----
@@ -636,9 +637,14 @@ def calibrate_from_landmarks(
     if n_px < 3:
         raise ValueError(
             f"WHAT: Need at least 3 landmarks for transform estimation (got {n_px}).\n"
-            f"WHY: Affine transforms have at least 4 degrees of freedom.\n"
+            f"WHY: Each landmark gives 2 equations; rigid (3 degrees of freedom) "
+            f"and similarity (4) fits need 2 landmarks and affine (6) fits need 3, "
+            f"and a third landmark lets the fit residual reveal a misplaced one.\n"
             f"Fix: Provide at least 3 non-collinear landmark pairs."
         )
+
+    _require_finite_landmarks(landmarks_px, "landmarks_px")
+    _require_finite_landmarks(landmarks_cm, "landmarks_cm")
 
     # Apply Y-flip to pixel coordinates before estimation
     # This converts from video coords (origin top-left) to standard coords
@@ -1052,6 +1058,21 @@ def convert_to_pixels(
     return transform(np.asanyarray(data_cm, dtype=float))
 
 
+def _require_finite_landmarks(points: NDArray[np.float64], name: str) -> None:
+    """Refuse landmark rows with NaN or infinite coordinates, naming them."""
+    bad = np.flatnonzero(~np.all(np.isfinite(points), axis=1))
+    if bad.size:
+        raise ValueError(
+            _format_error(
+                f"{name} has NaN or infinite coordinates in row(s) {bad.tolist()}.",
+                why="every landmark enters the fit, so a missing coordinate "
+                "leaves the transform undefined",
+                fix=f"drop row(s) {bad.tolist()} from both landmark arrays, or "
+                "annotate those landmarks",
+            )
+        )
+
+
 # ---------------------------------------------------------------------
 # 3.  Transform estimation from point correspondences
 # ---------------------------------------------------------------------
@@ -1094,9 +1115,12 @@ def estimate_transform(
     Raises
     ------
     ValueError
-        If insufficient points for the requested transformation type,
-        or if points are degenerate (collinear, etc.),
-        or if dimensionality mismatch between src and dst.
+        If there are too few point pairs for the requested kind; if a
+        landmark has a NaN or infinite coordinate (the message names its
+        row); if the landmarks do not determine the transform (coincident
+        landmarks; for rigid and similarity fits, 3-D landmarks on one line;
+        for affine fits, landmarks that do not span every axis); or if src
+        and dst differ in shape.
 
     Examples
     --------
@@ -1133,13 +1157,11 @@ def estimate_transform(
 
     Notes
     -----
-    Uses Procrustes analysis for rigid and similarity transforms, and
-    least-squares for affine transforms. The Procrustes method works for
-    any dimensionality.
-
-    Rigid and similarity fits use the Kabsch/SVD solution with a determinant
-    sign-correction, so the returned rotation is always proper (det = +1) even
-    when the landmark points are coplanar or reflected.
+    Works in any dimensionality.
+    Rigid and similarity fits find the rotation with the Kabsch SVD solution
+    and its determinant sign-correction, so the rotation is always proper
+    (det = +1), even when the landmarks are coplanar or reflected. Affine
+    fits solve the linear least-squares problem directly.
 
     For cross-session alignment, collect 3-4 landmark points (e.g., corners
     of arena) in both sessions and use this function to compute the alignment.
@@ -1163,8 +1185,15 @@ def estimate_transform(
             f"src and dst must be 2D arrays (N points x n_dims), got shape {src.shape}"
         )
 
+    for name, points in (("src", src), ("dst", dst)):
+        _require_finite_landmarks(points, name)
+
     n_points = src.shape[0]
     n_dims = src.shape[1]
+    landmark_fix = (
+        "use landmarks spread across the arena, such as its corners, so they "
+        "span every axis"
+    )
 
     if kind in ("rigid", "similarity"):
         if n_points < 2:
@@ -1177,58 +1206,70 @@ def estimate_transform(
         dst_mean = dst.mean(axis=0)
         src_centered = src - src_mean
         dst_centered = dst - dst_mean
+        if not np.any(src_centered):
+            raise ValueError(
+                _format_error(
+                    f"All {n_points} src landmarks are at the same point.",
+                    why=f"coincident landmarks fix no rotation{' or scale' if kind == 'similarity' else ''}",
+                    fix=landmark_fix,
+                )
+            )
 
-        # Estimate rotation via SVD with the Kabsch determinant correction.
-        # orthogonal_procrustes minimizes ||src_centered @ R - dst_centered||,
-        # but its R may be a reflection (det = -1) for coplanar/reflected point
-        # sets. The standard fix folds d = sign(det(V @ U.T)) into the SVD
-        # factors BEFORE reassembling R, yielding the closest PROPER rotation
-        # (det = +1). Flipping a column of the finished matrix instead would
-        # give a non-optimal (and possibly still improper) result.
-        #
-        # H = src_centered.T @ dst_centered ;  H = U @ S @ Vt
-        # R_fit = V @ diag(1, ..., 1, d) @ U.T   with d = sign(det(V @ U.T))
+        # Kabsch: the rotation R minimizing sum ||R @ src_i - dst_i||^2 over
+        # the centered points comes from the SVD of the cross-covariance
+        # H = src_centered.T @ dst_centered = U @ diag(S) @ Vt, as
+        # R = V @ D @ U.T with D = diag(1, ..., 1, d) and d = sign(det(V @ U.T)).
+        # Folding d into the factors gives the closest proper rotation
+        # (det = +1) when the optimum would otherwise be a reflection.
         H = src_centered.T @ dst_centered
-        U, _S, Vt = np.linalg.svd(H)
+        U, S, Vt = np.linalg.svd(H)
+        # R is unique only when H has rank n_dims - 1 or more: landmarks on a
+        # line in 3-D leave the turn about that line free, and dst landmarks
+        # that coincide leave every rotation equally good.
+        tolerance = S[0] * max(n_points, n_dims) * np.finfo(np.float64).eps
+        if S[0] == 0 or (n_dims > 1 and S[n_dims - 2] <= tolerance):
+            raise ValueError(
+                _format_error(
+                    f"The landmarks do not determine a {n_dims}-D rotation: "
+                    "the src or dst landmarks coincide or lie on one line.",
+                    why="such landmarks leave the rotation free, so any answer "
+                    "would be arbitrary",
+                    fix=landmark_fix,
+                )
+            )
         V = Vt.T
         d = np.sign(np.linalg.det(V @ U.T))
+        # With d = -1 the best proper rotation turns against the smallest
+        # singular direction; if that singular value is repeated, every
+        # direction in its plane serves equally well and R is free.
+        if d < 0 and n_dims > 1 and S[n_dims - 2] - S[n_dims - 1] <= tolerance:
+            raise ValueError(
+                _format_error(
+                    "The dst landmarks are a mirror image of the src landmarks, "
+                    f"so no {n_dims}-D rotation fits them better than any other.",
+                    why="a rigid or similarity transform cannot reflect, and for "
+                    "these landmarks every rotation leaves the same error",
+                    fix="list the landmarks in the same order in src and dst and "
+                    "flip image y to point up (calibrate_from_landmarks does "
+                    'this); to fit a reflection on purpose, use kind="affine"',
+                )
+            )
         D = np.eye(n_dims)
         D[-1, -1] = d
         R = V @ D @ U.T
 
         if kind == "rigid":
-            # Rigid: rotation + translation
-            # T(x) = R @ x + t
-            # Solve for t: dst_mean = R @ src_mean + t
-            t = dst_mean - R @ src_mean
+            scale = 1.0
+        else:
+            # Ratio of RMS distances from the centroids.
+            scale = float(np.sqrt(np.sum(dst_centered**2) / np.sum(src_centered**2)))
 
-            # Build homogeneous matrix
-            A = np.eye(n_dims + 1)
-            A[:n_dims, :n_dims] = R
-            A[:n_dims, n_dims] = t
-
-            return AffineND(A)
-
-        else:  # similarity
-            # Similarity: rotation + uniform scale + translation
-            # Estimate scale: ratio of RMS distances from centroid
-            src_rms = np.sqrt(np.mean(np.sum(src_centered**2, axis=1)))
-            dst_rms = np.sqrt(np.mean(np.sum(dst_centered**2, axis=1)))
-
-            if src_rms < 1e-10:
-                raise ValueError("Source points are degenerate (all at same location)")
-
-            scale = dst_rms / src_rms
-
-            # Build transformation: T(x) = scale * R @ x + t
-            # where t = dst_mean - scale * R @ src_mean
-            t = dst_mean - scale * (R @ src_mean)
-
-            A = np.eye(n_dims + 1)
-            A[:n_dims, :n_dims] = scale * R
-            A[:n_dims, n_dims] = t
-
-            return AffineND(A)
+        # T(x) = scale * R @ x + t, with t mapping the src centroid onto
+        # the dst centroid.
+        A = np.eye(n_dims + 1)
+        A[:n_dims, :n_dims] = scale * R
+        A[:n_dims, n_dims] = dst_mean - scale * (R @ src_mean)
+        return AffineND(A)
 
     elif kind == "affine":
         if n_points < n_dims + 1:
@@ -1237,20 +1278,31 @@ def estimate_transform(
                 f"for {n_dims}D, got {n_points}"
             )
 
-        # Solve affine transform using least squares
-        # For each dimension i: T_i(x) = [a_i1, a_i2, ..., a_in, t_i] @ [x1, x2, ..., xn, 1]^T
-
-        # Build design matrix: [x1, x2, ..., xn, 1] for each point
+        # Least squares for every output coordinate at once: rows of the
+        # design matrix are [x1, ..., xn, 1], so X @ result = dst with result
+        # of shape (n_dims+1, n_dims) holding A[:n_dims, :].T.
         X = np.c_[src, np.ones(n_points)]  # (N, n_dims+1)
-
-        # Solve for all output dimensions at once using vectorized lstsq
-        # X @ A_partial.T = dst, where A_partial is (n_dims, n_dims+1)
-        # lstsq with multiple RHS: X @ result = dst, result shape (n_dims+1, n_dims)
+        result, _, rank, _ = np.linalg.lstsq(X, dst, rcond=None)
+        if rank < n_dims + 1:
+            span = {0: "one point", 1: "one line", 2: "one plane"}.get(
+                rank - 1, f"a {rank - 1}-D subspace"
+            )
+            raise ValueError(
+                _format_error(
+                    f"The src landmarks lie on {span}, so they do not determine "
+                    f"a {n_dims}-D affine transform.",
+                    why="an affine fit needs landmarks that span every axis; "
+                    "away from them the fitted map is arbitrary",
+                    fix=landmark_fix
+                    + (
+                        ', or fit kind="similarity", which such landmarks determine'
+                        if rank == n_dims
+                        else ""
+                    ),
+                )
+            )
         A = np.eye(n_dims + 1)
-        result, _, _, _ = np.linalg.lstsq(X, dst, rcond=None)
-        # result has shape (n_dims+1, n_dims), we need to transpose for A[dim, :]
         A[:n_dims, :] = result.T
-
         return AffineND(A)
 
     else:
