@@ -278,14 +278,8 @@ def _transform_source_bin_centers(
         If rotation matrix or translation vector have invalid shapes.
 
     """
-    transformed = source_centers.copy().astype(float)
-    n_dims = transformed.shape[1]
-
-    # Apply scale
-    if source_scale != 1.0:
-        transformed *= float(source_scale)
-
-    # Apply rotation
+    n_dims = source_centers.shape[1]
+    rotation = np.eye(n_dims)
     if source_rotation_matrix is not None:
         rotation = np.asarray(source_rotation_matrix, dtype=float)
         if rotation.shape != (n_dims, n_dims):
@@ -294,18 +288,16 @@ def _transform_source_bin_centers(
                 f"({n_dims}, {n_dims}) to match source_centers dimensionality, "
                 f"got shape {rotation.shape}."
             )
-        transformed = transformed @ rotation.T
-
-    # Apply translation
+    translation = np.zeros(n_dims)
     if source_translation_vector is not None:
-        vec = np.asarray(source_translation_vector, dtype=float)
-        if vec.ndim != 1 or vec.shape[0] != transformed.shape[1]:
+        translation = np.asarray(source_translation_vector, dtype=float)
+        if translation.shape != (n_dims,):
             raise ValueError(
-                f"source_translation_vector must be 1D of length {transformed.shape[1]}",
+                f"source_translation_vector must be 1D of length {n_dims}",
             )
-        transformed += vec
-
-    return np.asarray(transformed, dtype=np.float64)
+    return apply_similarity_transform(
+        source_centers, rotation, float(source_scale), translation
+    )
 
 
 def _map_inverse_distance_weighted(
