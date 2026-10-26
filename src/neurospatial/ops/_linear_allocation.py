@@ -15,7 +15,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import ragged_arange
-from neurospatial.geometry._regular_lookup import outline_cells
+from neurospatial.geometry._arrays import mask_active_map
+from neurospatial.geometry._regular_lookup import (
+    outline_cells,
+    points_to_regular_grid_bin_ind,
+)
 
 if TYPE_CHECKING:
     from neurospatial.geometry import RectilinearGrid
@@ -58,15 +62,7 @@ def _grid_cells(
     -------
     ndarray of intp, shape (n_points,)
     """
-    flat = np.zeros(len(points), dtype=np.intp)
-    inside = np.ones(len(points), dtype=bool)
-    stride = 1
-    for axis in reversed(range(len(shape))):
-        index = np.searchsorted(edges[axis], points[:, axis], side="right") - 1
-        inside &= (index >= 0) & (index < shape[axis])
-        flat += index * stride
-        stride *= shape[axis]
-    flat[~inside] = -1
+    flat = points_to_regular_grid_bin_ind(points, tuple(edges), shape).astype(np.intp)
     if active_mask is not None:
         active = np.asarray(active_mask).ravel()
         unowned = np.flatnonzero((flat < 0) | ~active[np.maximum(flat, 0)])
@@ -274,9 +270,7 @@ def _linear_grid_occupancy(
     occupancy : ndarray of float64, shape (n_bins,)
         Seconds (or proportional counts) in each active bin.
     """
-    full_to_active = np.full(grid.active_mask.size, -1, dtype=np.intp)
-    active = np.flatnonzero(grid.active_mask.ravel())
-    full_to_active[active] = np.arange(active.size, dtype=np.intp)
+    full_to_active = mask_active_map(grid.active_mask)
 
     occupancy = np.zeros(n_bins, dtype=np.float64)
     retained = np.zeros_like(valid_mask)
