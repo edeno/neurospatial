@@ -174,7 +174,7 @@ class TestPhasePrecession:
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         positions = np.sort(np.random.default_rng(0).uniform(0, 200, 300))
-        phases = (-2 * np.pi * positions / 200) % (2 * np.pi)
+        phases = (-5.0 * positions / 200) % (2 * np.pi)
         raw = compute_phase_precession(positions, phases, n_shuffles=99, rng=0)
         normalized = compute_phase_precession(
             positions, phases, position_range=(0, 200), n_shuffles=99, rng=0
@@ -203,6 +203,7 @@ class TestPhasePrecession:
             in_m.mean_resultant_length, abs=1e-6
         )
 
+    @pytest.mark.filterwarnings("ignore:The best-fitting phase-position slope")
     def test_default_bounds_recover_weakly_coupled_slope(self) -> None:
         """One cycle per 40 cm field is recovered from noisy, sparse spikes.
 
@@ -259,14 +260,14 @@ class TestPhasePrecession:
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         positions = np.linspace(0, 1e8, 30)
-        phases = (-2 * np.pi * positions / 1e8) % (2 * np.pi)
+        phases = (-5.0 * positions / 1e8) % (2 * np.pi)
         with pytest.raises(ValueError, match=r"(?s)20,000.*narrow slope_bounds"):
             compute_phase_precession(
                 positions, phases, slope_bounds=(-1e5, 1e5), n_shuffles=0
             )
         result = compute_phase_precession(positions, phases, n_shuffles=9, rng=0)
         assert result.mean_resultant_length > 0.99
-        assert result.slope == pytest.approx(-2 * np.pi / 1e8, rel=1e-3)
+        assert result.slope == pytest.approx(-5.0 / 1e8, rel=1e-3)
         assert result.p_value == 0.1
 
     def test_correlation_in_valid_range(self) -> None:
@@ -477,9 +478,9 @@ class TestHasPhasePrecession:
 
         stimulus = np.random.default_rng(7)
         positions_mm = stimulus.uniform(0, 2000, 200)
-        phases = (
-            np.pi - 2 * np.pi * positions_mm / 2000 + stimulus.vonmises(0, 4, 200)
-        ) % (2 * np.pi)
+        phases = (np.pi - 5.0 * positions_mm / 2000 + stimulus.vonmises(0, 4, 200)) % (
+            2 * np.pi
+        )
         assert has_phase_precession(positions_mm, phases, rng=0) is True
 
     @pytest.mark.parametrize(
@@ -526,6 +527,7 @@ class TestHasPhasePrecession:
         assert result.p_value < 0.01
         assert has_phase_precession(positions, phases, rng=0) is True
 
+    @pytest.mark.filterwarnings("ignore:The best-fitting phase-position slope")
     def test_false_positive_rate_without_phase_coupling(self) -> None:
         """Untuned spikes screen positive at most at rate alpha.
 
@@ -555,9 +557,9 @@ class TestHasPhasePrecession:
 
         stimulus = np.random.default_rng(42)
         positions = stimulus.uniform(0, 40, 25)
-        phases = (
-            np.pi - 2 * np.pi * positions / 40 + stimulus.vonmises(0, 0.7, 25)
-        ) % (2 * np.pi)
+        phases = (np.pi - 5.0 * positions / 40 + stimulus.vonmises(0, 0.7, 25)) % (
+            2 * np.pi
+        )
         p_value = compute_phase_precession(
             positions, phases, n_shuffles=200, rng=0
         ).p_value
@@ -566,6 +568,87 @@ class TestHasPhasePrecession:
         assert (
             has_phase_precession(positions, phases, alpha=p_value + 1e-9, rng=0) is True
         )
+
+
+def _field_spikes(rng, start, width, n_spikes, kappa):
+    """Spikes in one field whose phase falls 5 rad across it (rad, cm)."""
+    positions = rng.uniform(start, start + width, n_spikes)
+    phases = (
+        5.5 - 5.0 * (positions - start) / width + rng.vonmises(0, kappa, n_spikes)
+    ) % (2 * np.pi)
+    return positions, phases
+
+
+class TestSlopeAtBoundWarning:
+    """A fit whose best slope sits on a slope bound warns and says why."""
+
+    def test_two_pooled_fields_warn(self) -> None:
+        """Two precessing fields fit as one give a bound-pinned, too-shallow slope."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(12)
+        x1, p1 = _field_spikes(stimulus, 36.0, 28.7, 300, 2.0)
+        x2, p2 = _field_spikes(stimulus, 136.0, 28.7, 250, 2.0)
+        with pytest.warns(UserWarning, match="edge of the slope search range"):
+            pooled = compute_phase_precession(
+                np.r_[x1, x2], np.r_[p1, p2], n_shuffles=0
+            )
+        assert abs(pooled.normalized_slope) == pytest.approx(2 * np.pi)
+        # The pinned slope is several times shallower than the true -5/28.7.
+        assert abs(pooled.slope) < 0.5 * 5.0 / 28.7
+
+    def test_spikes_outside_the_field_warn(self) -> None:
+        """Background spikes along the whole track stretch the default range."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(3)
+        x_field, p_field = _field_spikes(stimulus, 86.0, 28.7, 300, 2.0)
+        x_track = stimulus.uniform(0, 200, 60)
+        p_track = stimulus.uniform(0, 2 * np.pi, 60)
+        positions = np.r_[x_field, x_track]
+        phases = np.r_[p_field, p_track]
+        with pytest.warns(UserWarning, match="position_range set to that field"):
+            compute_phase_precession(positions, phases, n_shuffles=0)
+
+    def test_one_field_with_its_range_does_not_warn(self) -> None:
+        """The same spikes restricted to one field fit inside the bounds."""
+        import warnings
+
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(12)
+        positions, phases = _field_spikes(stimulus, 36.0, 28.7, 300, 2.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = compute_phase_precession(
+                positions, phases, position_range=(36.0, 64.7), n_shuffles=0
+            )
+        assert result.slope == pytest.approx(-5.0 / 28.7, abs=0.02)
+
+    def test_screen_warns_only_for_a_significant_fit(self) -> None:
+        """Untuned spikes that fit at a bound do not warn in the screen."""
+        import warnings
+
+        from neurospatial.encoding.phase_precession import (
+            compute_phase_precession,
+            has_phase_precession,
+        )
+
+        stimulus = np.random.default_rng(4)
+        positions = stimulus.uniform(0, 30, 40)
+        phases = stimulus.uniform(0, 2 * np.pi, 40)
+        with pytest.warns(UserWarning, match="edge of the slope search range"):
+            untuned = compute_phase_precession(positions, phases, n_shuffles=99, rng=0)
+        assert untuned.p_value > 0.05
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert has_phase_precession(positions, phases, rng=0) is False
+
+        stimulus = np.random.default_rng(12)
+        x1, p1 = _field_spikes(stimulus, 36.0, 28.7, 300, 2.0)
+        x2, p2 = _field_spikes(stimulus, 136.0, 28.7, 250, 2.0)
+        with pytest.warns(UserWarning, match="edge of the slope search range"):
+            has_phase_precession(np.r_[x1, x2], np.r_[p1, p2], rng=0)
 
 
 class TestPlotPhasePrecession:
@@ -1127,6 +1210,7 @@ class TestPhasePrecessionShufflePvalue:
 class TestHasPhasePrecessionValidation:
     """has_phase_precession input checks and cost."""
 
+    @pytest.mark.filterwarnings("ignore:The best-fitting phase-position slope")
     def test_phases_in_degrees_read_as_radians_warn(self, precessing_spikes) -> None:
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
