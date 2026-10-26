@@ -522,13 +522,15 @@ class TestSparsityProperties:
     def test_sparsity_range_property(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
-        """Property: sparsity is always in [0, 1] for valid inputs."""
+        """Property: sparsity is in [0, 1], or NaN for a silent map."""
         firing_rate, occupancy = data
 
         sp = sparsity(firing_rate, occupancy)
 
-        # Property: 0 <= sparsity <= 1 (strict, guaranteed by implementation)
-        assert 0.0 <= sp <= 1.0, f"Sparsity {sp} outside valid range [0, 1]"
+        if not np.any((firing_rate > 0) & (occupancy > 0)):
+            assert np.isnan(sp), f"Silent map gave sparsity {sp}, expected NaN"
+        else:
+            assert 0.0 <= sp <= 1.0, f"Sparsity {sp} outside valid range [0, 1]"
 
     @given(
         valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
@@ -676,13 +678,15 @@ class TestSkaggsInformationProperties:
     def test_information_non_negative(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
-        """Property: Skaggs information is always non-negative."""
+        """Property: Skaggs information is non-negative, or NaN for a silent map."""
         firing_rate, occupancy = data
 
         info = skaggs_information(firing_rate, occupancy)
 
-        # Property: information >= 0.0 always (strict, guaranteed by implementation)
-        assert info >= 0.0, f"Information {info} should be >= 0.0"
+        if not np.any((firing_rate > 0) & (occupancy > 0)):
+            assert np.isnan(info), f"Silent map gave information {info}, expected NaN"
+        else:
+            assert info >= 0.0, f"Information {info} should be >= 0.0"
 
     @given(
         valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
