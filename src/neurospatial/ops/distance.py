@@ -570,11 +570,11 @@ def distance_field(
         )
 
     if metric == "euclidean":
-        centers = _require_bin_centers(bin_centers, n_nodes)
+        coords = _require_bin_centers(bin_centers, n_nodes)
         # A KD-tree over the sources is O(N log M) time and O(N + M) memory,
         # however many sources there are.
-        tree = cKDTree(centers[sources_array])
-        distances, _ = tree.query(centers, k=1)
+        tree = cKDTree(coords[sources_array])
+        distances, _ = tree.query(coords, k=1)
 
         # Apply cutoff
         if cutoff is not None:
@@ -781,11 +781,11 @@ def neighbors_within(
         return []
 
     if metric == "euclidean":
-        centers = _require_bin_centers(bin_centers, n_nodes)
+        coords = _require_bin_centers(bin_centers, n_nodes)
         neighborhoods = [
             np.asarray(neigh_list, dtype=np.int_)
-            for neigh_list in cKDTree(centers).query_ball_point(
-                centers[centers_array], r=radius
+            for neigh_list in cKDTree(coords).query_ball_point(
+                coords[centers_array], r=radius
             )
         ]
     else:
