@@ -48,13 +48,15 @@ neurospatial.stats.circular : Circular statistics utilities
 from __future__ import annotations
 
 import warnings
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -74,8 +76,10 @@ from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import (
+    BandwidthRule,
     PopulationRateMixin,
     SingleUnitRateMixin,
+    _as_result_array,
     _to_numpy,
 )
 from neurospatial.encoding._significance import (
@@ -164,6 +168,67 @@ def _directional_xarray_attrs(
 ) -> dict[str, Any]:
     """Coordinate and estimator metadata specific to this rate family."""
     return {"units": "radians", "bin_size": result.bin_size}
+
+
+DIRECTIONAL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
+    {"binned": "none", "circular_gaussian": "positive"}
+)
+
+
+def _check_angular_bins(result: DirectionalRateResult | DirectionalRatesResult) -> int:
+    """Refuse bin centers or a bin width that are not one circle of bins.
+
+    Returns
+    -------
+    int
+        The number of angular bins.
+    """
+    kind = type(result).__name__
+    centers = _as_result_array(result.bin_centers)
+    object.__setattr__(result, "bin_centers", centers)
+    fix = "pass the bin_centers and bin_size of the computation, in radians."
+    if np.ndim(centers) != 1 or np.dtype(centers.dtype).kind not in "fiu":
+        raise ValueError(
+            _format_error(
+                f"{kind}: bin_centers must be a 1-D array of angles in radians, "
+                f"got shape {np.shape(centers)} and dtype {centers.dtype}.",
+                why="Why: each angular bin has one center direction.",
+                fix=fix,
+            )
+        )
+    bin_size = result.bin_size
+    if (
+        isinstance(bin_size, bool)
+        or not isinstance(bin_size, int | float | np.number)
+        or not (np.isfinite(bin_size) and 0 < bin_size <= 2 * np.pi)
+    ):
+        raise ValueError(
+            _format_error(
+                f"{kind}: bin_size={bin_size!r} is not an angular bin width.",
+                why="Why: bins are a positive width in radians, at most one turn.",
+                fix=fix,
+            )
+        )
+    return int(np.shape(centers)[0])
+
+
+def _check_spike_counts(result: DirectionalRateResult | DirectionalRatesResult) -> None:
+    """Refuse spike counts that do not match the rates bin for bin."""
+    if result.spike_counts is None:
+        return
+    counts = _as_result_array(result.spike_counts)
+    object.__setattr__(result, "spike_counts", counts)
+    rates_shape = np.shape(result._get_rates())
+    if np.shape(counts) != rates_shape:
+        kind = type(result).__name__
+        raise ValueError(
+            _format_error(
+                f"{kind}: spike_counts has shape {np.shape(counts)}, not the "
+                f"rates' shape {rates_shape}.",
+                why="Why: the counts are the unsmoothed spikes behind each rate.",
+                fix="pass the spike_counts of the same computation, or None.",
+            )
+        )
 
 
 def _directional_preferred_direction(rates: NDArray, centers: NDArray) -> float:
@@ -549,6 +614,8 @@ class DirectionalRateResult(SingleUnitRateMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = DIRECTIONAL_ESTIMATORS
     _unit_ids_generated: bool = field(
         default=False, kw_only=True, repr=False, compare=False
     )
@@ -560,6 +627,12 @@ class DirectionalRateResult(SingleUnitRateMixin):
     def method(self) -> str:
         """Estimator: ``"circular_gaussian"`` when smoothed, else ``"binned"``."""
         return "binned" if self.bandwidth is None else "circular_gaussian"
+
+    def _n_bins(self) -> int:
+        return _check_angular_bins(self)
+
+    def _check_family(self) -> None:
+        _check_spike_counts(self)
 
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
@@ -1428,6 +1501,8 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = DIRECTIONAL_ESTIMATORS
     _unit_ids_generated: bool = field(
         default=False, kw_only=True, repr=False, compare=False
     )
@@ -1439,6 +1514,12 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     def method(self) -> str:
         """Estimator: ``"circular_gaussian"`` when smoothed, else ``"binned"``."""
         return "binned" if self.bandwidth is None else "circular_gaussian"
+
+    def _n_bins(self) -> int:
+        return _check_angular_bins(self)
+
+    def _check_family(self) -> None:
+        _check_spike_counts(self)
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:

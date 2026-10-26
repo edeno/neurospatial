@@ -15,8 +15,9 @@ and JAX arrays, routing to the appropriate implementation based on input type.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from collections.abc import Iterator, Mapping
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -562,18 +563,155 @@ _UnitT = TypeVar("_UnitT", bound="SingleUnitRateMixin")
 _UnitResultT = TypeVar("_UnitResultT", bound="SingleUnitRateMixin")
 
 
+BandwidthRule = Literal["none", "nonnegative", "positive"]
+"""What an estimator requires of ``bandwidth``: ``None``, ``>= 0`` or ``> 0``."""
+
+KERNEL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
+    {"diffusion_kde": "positive", "gaussian_kde": "positive"}
+)
+
+_BANDWIDTH_REQUIREMENT: Mapping[BandwidthRule, str] = MappingProxyType(
+    {
+        "none": "None",
+        "nonnegative": "a finite number >= 0 in the coordinates' units",
+        "positive": "a finite number > 0 in the coordinates' units",
+    }
+)
+
+
+def _as_result_array(value: Any) -> Any:
+    """``value`` as a NumPy array; a JAX array is kept as given."""
+    return value if _is_jax_array(value) else np.asarray(value)
+
+
+def _real_scalar(value: Any) -> float | None:
+    """``value`` as a float if it is one real number (not a bool), else None."""
+    if isinstance(value, bool | np.bool_) or np.ndim(value) != 0:
+        return None
+    try:
+        dtype = np.asarray(value).dtype
+    except (TypeError, ValueError):
+        return None
+    return float(value) if dtype.kind in "fiu" else None
+
+
+def _bandwidth_meets(bandwidth: float | None, rule: BandwidthRule) -> bool:
+    """Whether a (normalized) ``bandwidth`` satisfies an estimator's rule."""
+    if rule == "none" or bandwidth is None:
+        return rule == "none" and bandwidth is None
+    return bool(
+        np.isfinite(bandwidth)
+        and (bandwidth > 0 or (rule == "nonnegative" and bandwidth == 0))
+    )
+
+
 class _RateResultMixin(SpatialResultMixin):
     """Construction shared by every rate result dataclass.
 
-    ``__post_init__`` runs the family's own checks (:meth:`_check_family`),
-    resolves unit identity (:meth:`_resolve_units`) and finally takes
-    read-only ownership of the arrays.
+    ``__post_init__`` checks the rates, occupancy, estimator and recording
+    windows (:meth:`_check_rate_fields`), runs the family's own checks
+    (:meth:`_check_family`), resolves unit identity (:meth:`_resolve_units`)
+    and finally takes read-only ownership of the arrays.
+
+    Subclasses set ``_RATES_FIELD`` / ``_RATES_NDIM`` (single-unit or
+    population) and the family sets ``_ESTIMATORS``, mapping each estimator
+    to what it requires of ``bandwidth``.
     """
 
+    _RATES_FIELD: ClassVar[str]
+    _RATES_NDIM: ClassVar[int]
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]]
+
     def __post_init__(self) -> None:
+        self._check_rate_fields()
         self._check_family()
         self._resolve_units()
         self._own_arrays()
+
+    def _n_bins(self) -> int:
+        """Number of bins the rates must cover (the environment's by default)."""
+        return int(np.shape(self._bin_centers)[0])
+
+    def _check_rate_fields(self) -> None:
+        """Refuse rates, occupancy, estimator or windows that do not agree.
+
+        Arrays are stored as NumPy arrays (JAX arrays are kept as given) so a
+        list cannot bypass read-only ownership.
+        """
+        from neurospatial._exceptions import _format_error
+        from neurospatial._intervals import as_intervals
+
+        kind = type(self).__name__
+        rates = _as_result_array(getattr(self, self._RATES_FIELD))
+        occupancy = _as_result_array(self.occupancy)
+        object.__setattr__(self, self._RATES_FIELD, rates)
+        object.__setattr__(self, "occupancy", occupancy)
+        n_bins = self._n_bins()
+        expected = "(n_bins,)" if self._RATES_NDIM == 1 else "(n_units, n_bins)"
+        why = (
+            "Why: each rate and occupancy value belongs to one bin, so both "
+            "must cover the result's bins in the same order."
+        )
+        fix = (
+            "build the result from the rates, occupancy and bins of one "
+            "computation, or use the family's compute_* function."
+        )
+        for name, array in ((self._RATES_FIELD, rates), ("occupancy", occupancy)):
+            if np.dtype(array.dtype).kind not in "fiu":
+                raise ValueError(
+                    _format_error(
+                        f"{kind}: {name} must hold numbers, got dtype {array.dtype}.",
+                        why=why,
+                        fix=fix,
+                    )
+                )
+        if np.ndim(rates) != self._RATES_NDIM or np.shape(rates)[-1] != n_bins:
+            raise ValueError(
+                _format_error(
+                    f"{kind}: {self._RATES_FIELD} has shape {np.shape(rates)}, "
+                    f"not {expected} over the result's {n_bins} bins.",
+                    why=why,
+                    fix=fix,
+                )
+            )
+        if np.shape(occupancy) != (n_bins,):
+            raise ValueError(
+                _format_error(
+                    f"{kind}: occupancy has shape {np.shape(occupancy)}, not "
+                    f"({n_bins},) to match the {n_bins} bins of the rates.",
+                    why=why,
+                    fix=fix,
+                )
+            )
+        method = self.method
+        if method not in self._ESTIMATORS:
+            raise ValueError(
+                _format_error(
+                    f"{kind}: method={method!r} is not an estimator of this "
+                    "result family.",
+                    why="Why: the estimator decides how the rates, occupancy "
+                    "and bandwidth are read.",
+                    fix=f"pass one of {sorted(self._ESTIMATORS)}.",
+                )
+            )
+        rule = self._ESTIMATORS[method]
+        bandwidth = None if self.bandwidth is None else _real_scalar(self.bandwidth)
+        if not _bandwidth_meets(bandwidth, rule) or (
+            bandwidth is None and self.bandwidth is not None
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{kind}: bandwidth={self.bandwidth!r} is not valid for "
+                    f"method={method!r}.",
+                    why=f"Why: method={method!r} needs a bandwidth of "
+                    f"{_BANDWIDTH_REQUIREMENT[rule]}.",
+                    fix="pass the bandwidth the rates were estimated with.",
+                )
+            )
+        object.__setattr__(self, "bandwidth", bandwidth)
+        object.__setattr__(
+            self, "spike_window", as_intervals(self.spike_window, name="spike_window")
+        )
 
     def _check_family(self) -> None:
         """Family-specific invariants; results override this hook."""
@@ -584,6 +722,9 @@ class _RateResultMixin(SpatialResultMixin):
 
 class SingleUnitRateMixin(_RateResultMixin):
     """A rate result for one unit, labelled by ``unit_id``."""
+
+    _RATES_FIELD: ClassVar[str] = "firing_rate"
+    _RATES_NDIM: ClassVar[int] = 1
 
     unit_id: int | str | None
     _unit_ids_generated: bool
@@ -607,6 +748,9 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
     and iteration give single-unit results that carry each unit's label and
     the population's shared settings.
     """
+
+    _RATES_FIELD: ClassVar[str] = "firing_rates"
+    _RATES_NDIM: ClassVar[int] = 2
 
     unit_ids: Any
     unit_table: pd.DataFrame | None

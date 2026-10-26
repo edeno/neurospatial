@@ -48,7 +48,7 @@ from collections import deque
 from collections.abc import Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -62,6 +62,8 @@ from neurospatial._results import (
     read_only_copy,
 )
 from neurospatial.encoding._base import (
+    KERNEL_ESTIMATORS,
+    BandwidthRule,
     PopulationRateMixin,
     SingleUnitRateMixin,
     _is_jax_array,
@@ -574,52 +576,9 @@ def _check_gam_result_invariant(
             )
 
 
-def _check_rates_match_env(
-    kind: str,
-    rates: ArrayLike,
-    occupancy: ArrayLike,
-    env: Environment,
-    *,
-    rates_ndim: int,
-) -> None:
-    """Refuse firing rates or occupancy whose bins are not ``env``'s bins.
-
-    ``rates`` is ``(n_bins,)`` when ``rates_ndim=1`` (single unit) and
-    ``(n_units, n_bins)`` when ``rates_ndim=2`` (population); ``occupancy``
-    is ``(n_bins,)``.
-    """
-    n_bins = env.n_bins
-    rates_shape, occupancy_shape = np.shape(rates), np.shape(occupancy)
-    why = (
-        "each rate and occupancy value belongs to one bin of the environment "
-        "the rates were estimated on"
-    )
-    fix = (
-        "pass the Environment used to compute these rates, or recompute them "
-        "on this environment"
-    )
-    if len(rates_shape) != rates_ndim:
-        expected = "(n_bins,)" if rates_ndim == 1 else "(n_units, n_bins)"
-        raise ValueError(
-            _format_error(
-                f"{kind}: firing rates have shape {rates_shape}, not {expected} "
-                f"over the env's {n_bins} bins.",
-                why=why,
-                fix=fix,
-            )
-        )
-    if rates_shape[-1] != n_bins or occupancy_shape != (n_bins,):
-        occupancy_bins = (
-            occupancy_shape[0] if len(occupancy_shape) == 1 else occupancy_shape
-        )
-        raise ValueError(
-            _format_error(
-                f"{kind}: firing rates have {rates_shape[-1]} bins and occupancy "
-                f"{occupancy_bins}, but env has {n_bins}.",
-                why=why,
-                fix=fix,
-            )
-        )
+SPATIAL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
+    {**KERNEL_ESTIMATORS, "binned": "nonnegative", "glm": "none"}
+)
 
 
 def _index_per_unit(value: Any, idx: int) -> Any:
@@ -900,6 +859,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         default=None, kw_only=True, compare=False, repr=False
     )
 
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = SPATIAL_ESTIMATORS
+
     def summary_table(
         self,
         include_classification: bool = True,
@@ -994,13 +955,6 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
                 "pooled": self.pooled,
             },
             n_units=None,
-        )
-        _check_rates_match_env(
-            "SpatialRateResult",
-            self.firing_rate,
-            self.occupancy,
-            self.env,
-            rates_ndim=1,
         )
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
@@ -1856,6 +1810,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         default=None, kw_only=True, compare=False, repr=False
     )
 
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = SPATIAL_ESTIMATORS
+
     def _check_family(self) -> None:
         n_units = int(np.asarray(self.firing_rates).shape[0])
         # Enforce the None-iff-glm invariant (GAM diagnostics travel together):
@@ -1879,13 +1835,6 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
                 "pooled": self.pooled,
             },
             n_units=n_units,
-        )
-        _check_rates_match_env(
-            "SpatialRatesResult",
-            self.firing_rates,
-            self.occupancy,
-            self.env,
-            rates_ndim=2,
         )
 
     def __getitem__(self, idx: int) -> SpatialRateResult:

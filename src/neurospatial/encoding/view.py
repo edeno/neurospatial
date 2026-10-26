@@ -69,14 +69,15 @@ neurospatial.ops.visibility : Visibility and gaze computation
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     resolve_time_windows,
     run_time_bounds,
@@ -84,6 +85,8 @@ from neurospatial._intervals import (
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings
 from neurospatial.encoding._base import (
+    KERNEL_ESTIMATORS,
+    BandwidthRule,
     PopulationRateMixin,
     SingleUnitRateMixin,
     _to_numpy,
@@ -132,6 +135,50 @@ def _view_xarray_attrs(result: ViewRateResult | ViewRatesResult) -> dict[str, An
     if source is not None:
         attrs["boundary_source"] = source
     return attrs
+
+
+VIEW_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
+    {**KERNEL_ESTIMATORS, "binned": "nonnegative"}
+)
+
+
+def _check_gaze_fields(result: ViewRateResult | ViewRatesResult) -> None:
+    """Refuse an unknown gaze model or a view distance it does not use."""
+    kind = type(result).__name__
+    gaze_model, view_distance = result.gaze_model, result.view_distance
+    if gaze_model not in ("fixed_distance", "ray_cast"):
+        raise ValueError(
+            _format_error(
+                f"{kind}: gaze_model={gaze_model!r} is not a gaze model.",
+                why="Why: the gaze model decides which bin each view sample lands in.",
+                fix="pass gaze_model='ray_cast' or gaze_model='fixed_distance'.",
+            )
+        )
+    if gaze_model == "ray_cast" and view_distance is not None:
+        raise ValueError(
+            _format_error(
+                f"{kind}: view_distance={view_distance!r} was given with "
+                "gaze_model='ray_cast'.",
+                why="Why: a cast ray stops at the first wall, so it has no fixed "
+                "view distance.",
+                fix="pass view_distance=None, or gaze_model='fixed_distance'.",
+            )
+        )
+    if gaze_model == "fixed_distance" and not (
+        isinstance(view_distance, int | float | np.number)
+        and not isinstance(view_distance, bool)
+        and np.isfinite(view_distance)
+        and view_distance > 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"{kind}: gaze_model='fixed_distance' needs a finite "
+                f"view_distance > 0, got {view_distance!r}.",
+                why="Why: the viewed point lies this far ahead of the animal.",
+                fix="pass the view_distance the rates were computed with, in "
+                "environment units.",
+            )
+        )
 
 
 def _view_classify(
@@ -286,7 +333,7 @@ class ViewRateResult(SingleUnitRateMixin):
     firing_rate: ArrayLike
     occupancy: ArrayLike
     env: Environment
-    gaze_model: str
+    gaze_model: Literal["fixed_distance", "ray_cast"]
     view_distance: float | None
     method: str
     bandwidth: float
@@ -298,12 +345,17 @@ class ViewRateResult(SingleUnitRateMixin):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = VIEW_ESTIMATORS
     _unit_ids_generated: bool = field(
         default=False, kw_only=True, repr=False, compare=False
     )
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _view_xarray_attrs(self)
+
+    def _check_family(self) -> None:
+        _check_gaze_fields(self)
 
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
@@ -664,7 +716,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
     firing_rates: ArrayLike
     occupancy: ArrayLike
     env: Environment
-    gaze_model: str
+    gaze_model: Literal["fixed_distance", "ray_cast"]
     view_distance: float | None
     method: str
     bandwidth: float
@@ -677,12 +729,17 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = VIEW_ESTIMATORS
     _unit_ids_generated: bool = field(
         default=False, kw_only=True, repr=False, compare=False
     )
 
     def _xarray_attrs(self) -> dict[str, Any]:
         return _view_xarray_attrs(self)
+
+    def _check_family(self) -> None:
+        _check_gaze_fields(self)
 
     def __getitem__(self, idx: int) -> ViewRateResult:
         """Get single-neuron result by index.

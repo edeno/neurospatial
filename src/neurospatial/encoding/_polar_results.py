@@ -9,15 +9,22 @@ compute alike; each family keeps its own public methods and documentation.
 from __future__ import annotations
 
 from collections.abc import Hashable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.encoding._base import _to_numpy
+from neurospatial.encoding._base import KERNEL_ESTIMATORS, BandwidthRule, _to_numpy
 
 if TYPE_CHECKING:
     import pandas as pd
+
+
+POLAR_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
+    {**KERNEL_ESTIMATORS, "binned": "none"}
+)
+"""Polar estimators: ``"binned"`` is the raw bin rate and does not smooth."""
 
 
 class _PolarRateMixin:
@@ -31,6 +38,7 @@ class _PolarRateMixin:
 
     env: Any
     direction_frame: str
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = POLAR_ESTIMATORS
 
     @property
     def distance_range(self) -> tuple[float, float]:
