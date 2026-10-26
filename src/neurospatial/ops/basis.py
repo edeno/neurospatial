@@ -231,10 +231,7 @@ def select_basis_centers(
         )
 
     # Handle random state
-    if isinstance(rng, np.random.Generator):
-        generator = rng
-    else:
-        generator = np.random.default_rng(rng)
+    generator = np.random.default_rng(rng)  # a Generator is returned as is
 
     if method == "kmeans":
         require_cartesian(
@@ -715,8 +712,7 @@ def geodesic_rbf_basis(
     # distances: (n_centers, n_bins)
     # bandwidths: (n_bandwidths,)
     # Result: (n_centers, n_bandwidths, n_bins) -> reshape to (n_centers * n_bandwidths, n_bins)
-    bandwidths_arr = np.asarray(bandwidths)
-    two_bandwidth_sq = 2.0 * bandwidths_arr**2  # (n_bandwidths,)
+    two_bandwidth_sq = 2.0 * bandwidths**2  # (n_bandwidths,)
 
     # Broadcast: (n_centers, 1, n_bins) / (1, n_bandwidths, 1) -> (n_centers, n_bandwidths, n_bins)
     basis_3d = np.exp(
@@ -1226,11 +1222,9 @@ def spatial_basis(
         # bounding box of its centerline is flat for a straight track and
         # unrelated to the length for a bent one.
         extent = float(np.sum(env.bin_sizes))
-    elif env.n_dims == 1:
-        min_val, max_val = dim_ranges[0]
-        extent = max_val - min_val
     else:
-        # Geometric mean of the axis extents: a length in every dimension.
+        # Geometric mean of the axis extents: a length in every dimension
+        # (the extent itself in 1-D).
         extents = [max_val - min_val for min_val, max_val in dim_ranges]
         extent = float(np.prod(extents) ** (1.0 / len(extents)))
 
@@ -1333,13 +1327,7 @@ def plot_basis_functions(
     n_cols = min(3, n_plot)
     n_rows = int(np.ceil(n_plot / n_cols))
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
-    if n_plot == 1:
-        axes = np.array([[axes]])
-    elif n_rows == 1:
-        axes = axes.reshape(1, -1)
-    elif n_cols == 1:
-        axes = axes.reshape(-1, 1)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
 
     for i, idx in enumerate(indices):
         row, col = divmod(i, n_cols)
