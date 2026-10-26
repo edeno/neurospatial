@@ -114,15 +114,26 @@ def geometric_normals(
         # Identify stored centroid rows without building the triangle lookup or
         # depending on Qhull's platform-specific simplex ordering. Publication
         # separately validates each representative against locator geometry.
+        # Layout-built centers are these centroids exactly; subset and
+        # inverse-mapped centers take the nearest one.
         source_centers = locator.points[stored].mean(axis=1)
-        ids = cKDTree(source_centers).query(centers)[1]
-        triangles = stored[ids]
+        ids = (
+            np.arange(len(stored))
+            if np.array_equal(centers, source_centers)
+            else cKDTree(source_centers).query(centers)[1]
+        )
+        triangles = np.sort(stored[ids], axis=1)
+        first, second = triangles[pairs[:, 0]], triangles[pairs[:, 1]]
+        # Distinct vertex ids of the first triangle that the second also has,
+        # in ascending order. Exactly two shared vertices form a common edge.
+        distinct = np.ones(first.shape, dtype=bool)
+        distinct[:, 1:] = first[:, 1:] != first[:, :-1]
+        shared = distinct & (first[:, :, None] == second[:, None, :]).any(axis=2)
+        edge = np.sum(shared, axis=1) == 2
+        ends = first[edge][shared[edge]].reshape(-1, 2)
+        tangent = locator.points[ends[:, 1]] - locator.points[ends[:, 0]]
         normals = np.zeros_like(delta)
-        for index, (u, v) in enumerate(pairs):
-            shared = np.intersect1d(triangles[u], triangles[v])
-            if len(shared) == 2:
-                tangent = locator.points[shared[1]] - locator.points[shared[0]]
-                normals[index] = [-tangent[1], tangent[0]]
+        normals[edge] = np.column_stack((-tangent[:, 1], tangent[:, 0]))
     elif isinstance(locator, ClippedLocator):
         ids = locator.locate(centers)
         if np.any(ids < 0):

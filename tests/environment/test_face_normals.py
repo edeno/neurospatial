@@ -14,6 +14,7 @@ from shapely.geometry import box
 from neurospatial import Environment
 from neurospatial.binning import FaceNormals, KnownFaces
 from neurospatial.environment._fields import face_geometry
+from neurospatial.geometry import geometric_normals
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.io import from_dict, to_dict
@@ -64,6 +65,26 @@ def test_planar_normals_are_perpendicular_to_true_shared_edges(built_environment
         tangent = coordinates[-1] - coordinates[0]
         assert abs(tangent @ normals[index]) < 1e-12 * np.linalg.norm(tangent)
         assert (env.bin_centers[v] - env.bin_centers[u]) @ normals[index] > 0
+
+
+@pytest.mark.parametrize("built_environment", ["mesh"], indirect=True)
+def test_mesh_triangles_without_a_common_edge_have_zero_normals(built_environment):
+    env = built_environment
+    locator = env._binning.locator
+    triangles = materialize_cells(env._binning)
+    # Pair the first triangle with one that shares exactly one corner, one that
+    # shares none, and itself; none of these contacts is an edge.
+    corners = [set(map(tuple, np.asarray(t.exterior.coords)[:3])) for t in triangles]
+    common = np.array([len(corners[0] & other) for other in corners])
+    pairs = np.array(
+        [
+            [0, np.flatnonzero(common == 1)[0]],
+            [0, np.flatnonzero(common == 0)[0]],
+            [0, 0],
+        ]
+    )
+    normals = geometric_normals(locator, env.bin_centers, pairs)
+    np.testing.assert_array_equal(normals, 0)
 
 
 @pytest.mark.parametrize(
