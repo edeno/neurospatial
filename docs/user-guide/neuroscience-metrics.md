@@ -365,9 +365,9 @@ as `part.bin_mapping_from(env).pairs` for a subset of the arena.
 
 With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
 then be the same units in the same order in both, and pass
-`spatial_support=rates_1.spatial_support & rates_2.spatial_support`: smoothing
-gives finite rates in bins the animal never visited, and zero-filling reads
-them as 0 Hz, so without it unvisited bins are compared. See
+`spatial_support=rates_1.spatial_support & rates_2.spatial_support`:
+zero-filled maps (`fill_value=0`) read unvisited bins as 0 Hz, so without it
+unvisited bins are compared. See
 [Does the spatial map change between conditions?](population-analysis.md#does-the-spatial-map-change-between-conditions)
 for a worked remapping example.
 

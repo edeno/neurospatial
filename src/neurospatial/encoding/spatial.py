@@ -3216,9 +3216,9 @@ default="diffusion_kde"
 
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles). Uses diffusion
-          kernel computed from environment graph. Bins too far from all
-          occupancy for the smoothing to resolve (typically 4-7 bandwidths
-          away) are NaN; so are such bins for ``binned``.
+          kernel computed from environment graph. Like ``gaussian_kde`` and
+          ``binned``, it leaves every bin the animal never visited NaN: the
+          kernel reaches them, but a rate there would be extrapolated.
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
           on Euclidean distance between bin centers. Ignores boundaries (mass
           can "bleed through" walls).
@@ -5565,9 +5565,9 @@ def is_place_cell(
 
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles). Uses diffusion
-          kernel computed from environment graph. Bins too far from all
-          occupancy for the smoothing to resolve (typically 4-7 bandwidths
-          away) are NaN; so are such bins for ``binned``.
+          kernel computed from environment graph. Like ``gaussian_kde`` and
+          ``binned``, it leaves every bin the animal never visited NaN: the
+          kernel reaches them, but a rate there would be extrapolated.
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
           on Euclidean distance between bin centers. Ignores boundaries (mass
           can "bleed through" walls).

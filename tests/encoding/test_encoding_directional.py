@@ -4183,3 +4183,32 @@ def test_directional_rates_refuse_a_bandwidth_that_cannot_smooth(
                 bandwidth=bandwidth,
                 angle_unit=angle_unit,
             )
+
+
+@pytest.mark.parametrize("population", [False, True], ids=["single", "population"])
+def test_smoothed_tuning_is_missing_at_unvisited_headings(population):
+    """Smoothing reaches unvisited headings, but their rate is not observed.
+
+    The animal only faces East (|heading| < 1 rad); a smoothed rate at
+    West would be extrapolated from headings a bandwidth or more away.
+    """
+    from neurospatial.encoding.directional import (
+        compute_directional_rate,
+        compute_directional_rates,
+    )
+
+    rng = np.random.default_rng(3)
+    times = np.arange(0.0, 300.0, 1 / 30)
+    headings = rng.uniform(-1.0, 1.0, times.size)
+    spike_times = np.sort(np.random.default_rng(4).uniform(0.0, 300.0, 600))
+    if population:
+        result = compute_directional_rates(
+            [spike_times], times, headings, bandwidth=0.3
+        )
+        rate = np.asarray(result.firing_rates)[0]
+    else:
+        result = compute_directional_rate(spike_times, times, headings, bandwidth=0.3)
+        rate = np.asarray(result.firing_rate)
+    visited = np.asarray(result.occupancy) > 0
+    assert not visited.all()
+    np.testing.assert_array_equal(np.isfinite(rate), visited)
