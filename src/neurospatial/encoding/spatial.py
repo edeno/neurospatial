@@ -1283,7 +1283,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         autocorr = spatial_autocorrelation(self.env, firing_rate)
         # The autocorrelogram's square pixel side, a length; ``env.bin_sizes``
         # holds cell areas off a track.
-        return gp_func(autocorr, bin_size=autocorrelation_pixel_size(self.env))
+        return gp_func(autocorr, pixel_size=autocorrelation_pixel_size(self.env))
 
     def border_score(
         self,

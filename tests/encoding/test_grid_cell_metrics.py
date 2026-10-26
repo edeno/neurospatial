@@ -461,19 +461,19 @@ class TestGridScale:
 
         Mathematical reasoning:
         - Peaks are placed at radius=20 pixels from center
-        - With bin_size=2.0, expected scale = 20 * 2.0 = 40.0 units
+        - With pixel_size=2.0, expected scale = 20 * 2.0 = 40.0 units
         """
         from neurospatial.encoding.grid import grid_scale
 
         # Create hexagonal pattern with known radius
         radius_pixels = 20.0
-        bin_size = 2.0
+        pixel_size = 2.0
         autocorr = _create_hexagonal_autocorr(size=100, radius=radius_pixels)
 
-        scale = grid_scale(autocorr, bin_size=bin_size)
+        scale = grid_scale(autocorr, pixel_size=pixel_size)
 
         # Should recover approximately the correct scale
-        expected_scale = radius_pixels * bin_size
+        expected_scale = radius_pixels * pixel_size
         assert abs(scale - expected_scale) < 10.0, (
             f"Expected scale ~{expected_scale}, got {scale}"
         )
@@ -485,7 +485,7 @@ class TestGridScale:
         # Truly flat data (no local maxima possible)
         autocorr = np.ones((50, 50)) * 0.5
 
-        scale = grid_scale(autocorr, bin_size=2.0)
+        scale = grid_scale(autocorr, pixel_size=2.0)
 
         # Should return NaN (no peaks in flat data)
         assert np.isnan(scale)
@@ -497,19 +497,19 @@ class TestGridScale:
         autocorr = np.zeros(100)
 
         with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
-            grid_scale(autocorr, bin_size=2.0)
+            grid_scale(autocorr, pixel_size=2.0)
 
-    def test_grid_scale_raises_on_invalid_bin_size(self):
-        """Test raises ValueError on non-positive bin_size."""
+    def test_grid_scale_raises_on_invalid_pixel_size(self):
+        """Test raises ValueError on non-positive pixel_size."""
         from neurospatial.encoding.grid import grid_scale
 
         autocorr = _create_hexagonal_autocorr()
 
-        with pytest.raises(ValueError, match="bin_size must be positive"):
-            grid_scale(autocorr, bin_size=0.0)
+        with pytest.raises(ValueError, match="pixel_size must be positive"):
+            grid_scale(autocorr, pixel_size=0.0)
 
-        with pytest.raises(ValueError, match="bin_size must be positive"):
-            grid_scale(autocorr, bin_size=-1.0)
+        with pytest.raises(ValueError, match="pixel_size must be positive"):
+            grid_scale(autocorr, pixel_size=-1.0)
 
 
 class TestGridOrientationViaGridProperties:
@@ -524,7 +524,7 @@ class TestGridOrientationViaGridProperties:
         from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
-        props = grid_properties(autocorr, bin_size=1.0)
+        props = grid_properties(autocorr, pixel_size=1.0)
 
         assert props.orientation >= 0.0
         assert props.orientation < np.pi / 3
@@ -553,7 +553,7 @@ class TestGridOrientationViaGridProperties:
             autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
 
         autocorr = autocorr / autocorr.max()
-        props = grid_properties(autocorr, bin_size=1.0)
+        props = grid_properties(autocorr, pixel_size=1.0)
 
         assert np.radians(20.0) < props.orientation < np.radians(40.0), (
             f"Expected orientation ~pi / 6, got {props.orientation}"
@@ -564,7 +564,7 @@ class TestGridOrientationViaGridProperties:
         from neurospatial.encoding.grid import grid_properties
 
         autocorr = np.ones((50, 50)) * 0.5
-        props = grid_properties(autocorr, bin_size=1.0)
+        props = grid_properties(autocorr, pixel_size=1.0)
 
         assert np.isnan(props.orientation)
         assert np.isnan(props.orientation_std)
@@ -574,7 +574,7 @@ class TestGridOrientationViaGridProperties:
         from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
-        props = grid_properties(autocorr, bin_size=1.0)
+        props = grid_properties(autocorr, pixel_size=1.0)
 
         assert 0.0 <= props.orientation < np.pi / 3
 
@@ -588,7 +588,7 @@ class TestGridProperties:
 
         autocorr = _create_hexagonal_autocorr()
 
-        props = grid_properties(autocorr, bin_size=2.0)
+        props = grid_properties(autocorr, pixel_size=2.0)
 
         assert isinstance(props, GridProperties)
         assert hasattr(props, "score")
@@ -603,9 +603,9 @@ class TestGridProperties:
         from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr(size=100, radius=20.0)
-        bin_size = 2.0
+        pixel_size = 2.0
 
-        props = grid_properties(autocorr, bin_size=bin_size)
+        props = grid_properties(autocorr, pixel_size=pixel_size)
 
         # Score should be positive (hexagonal pattern)
         assert props.score > 0.3
@@ -630,7 +630,7 @@ class TestGridProperties:
         from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr(size=101, radius=20.0)
-        props = grid_properties(autocorr, bin_size=2.0)
+        props = grid_properties(autocorr, pixel_size=2.0)
         distances = np.hypot(props.peak_coords[:, 0], props.peak_coords[:, 1])
 
         assert props.n_peaks == len(props.peak_coords) == 6
@@ -649,14 +649,14 @@ class TestGridProperties:
         )
 
         autocorr = _create_hexagonal_autocorr()
-        bin_size = 2.0
+        pixel_size = 2.0
 
         # Get combined properties
-        props = grid_properties(autocorr, bin_size=bin_size)
+        props = grid_properties(autocorr, pixel_size=pixel_size)
 
         # Get individual function outputs
         score_individual = grid_score(autocorr)
-        scale_individual = grid_scale(autocorr, bin_size=bin_size)
+        scale_individual = grid_scale(autocorr, pixel_size=pixel_size)
 
         # Score should match exactly
         assert props.score == score_individual
@@ -670,11 +670,11 @@ class TestGridProperties:
 
         # 1D input
         with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
-            grid_properties(np.zeros(100), bin_size=2.0)
+            grid_properties(np.zeros(100), pixel_size=2.0)
 
-        # Invalid bin_size
-        with pytest.raises(ValueError, match="bin_size must be positive"):
-            grid_properties(np.zeros((50, 50)), bin_size=0.0)
+        # Invalid pixel_size
+        with pytest.raises(ValueError, match="pixel_size must be positive"):
+            grid_properties(np.zeros((50, 50)), pixel_size=0.0)
 
     def test_grid_properties_handles_no_peaks(self):
         """Test handles case with no detectable peaks (flat data)."""
@@ -683,7 +683,7 @@ class TestGridProperties:
         # Truly flat data (no local maxima possible)
         autocorr = np.ones((50, 50)) * 0.5
 
-        props = grid_properties(autocorr, bin_size=2.0)
+        props = grid_properties(autocorr, pixel_size=2.0)
 
         # Score is computed independently (may be non-NaN for flat data)
         # Scale and orientation should be NaN

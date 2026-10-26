@@ -29,7 +29,7 @@ spatial_autocorrelation
     Compute the 2D autocorrelogram of a firing rate map (requires a regular
     2D grid of rectangular cells).
 autocorrelation_pixel_size
-    Physical side of the autocorrelogram's pixels, the ``bin_size`` for
+    Physical side of the autocorrelogram's pixels, the ``pixel_size`` for
     :func:`grid_scale` and :func:`grid_properties`.
 spatial_autocorrelation_radial
     Compute the 1D distance-binned autocorrelation profile via the
@@ -341,7 +341,7 @@ def autocorrelation_pixel_size(env: Environment) -> float:
 
     The autocorrelogram's pixels are square, with the smaller of the grid's
     two cell widths as their side, so a distance in pixels times this size is
-    a distance in the environment's units. Pass it as ``bin_size`` to
+    a distance in the environment's units. Pass it as ``pixel_size`` to
     :func:`grid_scale` and :func:`grid_properties`.
 
     Parameters
@@ -763,19 +763,28 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     **Algorithm**, the expanding-annulus grid score of the Moser group's
     analysis toolbox (BNT ``gridnessScore``) and opexebo:
 
-    1. Central peak: the connected region of lags around zero lag where the
-       correlation exceeds 0.2 of its zero-lag value. Its inner radius is
-       the radius of a disk of the same area, so it grows with the size of
-       the firing fields.
+    1. Central peak: the lags reached from zero lag by steps to neighboring
+       lags whose correlation does not rise and stays above 0.2 of the
+       zero-lag value; a neighboring field rising out of the dip around it
+       is not included. 0.2 is the lowest threshold of the adaptive field
+       search BNT applies to the central peak. Its inner radius is that of
+       a disk of the same area, so it grows with the size of the firing
+       fields.
     2. Rotate the autocorrelogram by 30°, 60°, 90°, 120° and 150° about zero
        lag.
-    3. For each outer radius from just outside the central peak to the edge
+    3. For each outer radius from twice the central-peak radius to the edge
        of the map, in steps of one pixel, take the annulus between the
        central peak and that radius, and compute the Pearson correlation
        between the autocorrelogram and each rotation over the lags defined
        in the map and in all five rotations:
-       ``min(r60, r120) - max(r30, r90, r150)``.
+       ``min(r60, r120) - max(r30, r90, r150)``. A neighboring field lies at
+       least one central-peak diameter from zero lag, so a narrower annulus
+       holds only the shoulder of the central peak; scaNpix likewise keeps
+       its first annulus wider than a multiple of the inner radius.
     4. The score is the largest mean of three consecutive radii.
+
+    The 0.2 threshold and the factor of two are fixed module constants, not
+    parameters.
 
     Sweeping the outer radius makes the score independent of the grid
     spacing and of the arena size, as long as the first ring of peaks lies
@@ -1041,16 +1050,16 @@ def _find_autocorr_peaks(
 
 def _validate_peak_arguments(
     autocorr_2d: NDArray[np.float64],
-    bin_size: float,
+    pixel_size: float,
     n_peaks: int,
     threshold_rel: float,
 ) -> None:
     """Check the arguments shared by :func:`grid_scale` and :func:`grid_properties`."""
     if autocorr_2d.ndim != 2:
         raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
-    if not bin_size > 0:
+    if not pixel_size > 0:
         raise ValueError(
-            f"bin_size must be positive (env units, e.g., cm), got {bin_size}. "
+            f"pixel_size must be positive (env units, e.g., cm), got {pixel_size}. "
             "Pass autocorrelation_pixel_size(env), the side of the "
             "autocorrelogram's pixels."
         )
@@ -1071,7 +1080,7 @@ def _validate_peak_arguments(
 def grid_scale(
     autocorr_2d: NDArray[np.float64],
     *,
-    bin_size: float,
+    pixel_size: float,
     n_peaks: int = 6,
     threshold_rel: float = 0.1,
 ) -> float:
@@ -1087,11 +1096,11 @@ def grid_scale(
     autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D spatial autocorrelogram from :func:`spatial_autocorrelation`, zero
         lag at index ``n // 2`` along each axis.
-    bin_size : float
+    pixel_size : float
         Side of the autocorrelogram's square pixels in the environment's
-        units (e.g., cm). Pass ``autocorrelation_pixel_size(env)``, which
-        differs from the environment's bin size when its two cell widths
-        differ.
+        units (e.g., cm). Pass ``autocorrelation_pixel_size(env)``: the
+        smaller of the environment's two cell widths, which is not the
+        environment's bin size when the widths differ.
     n_peaks : int, default=6
         Number of nearest peaks used: 6 is the first ring of a hexagonal
         lattice. At least 3.
@@ -1102,13 +1111,13 @@ def grid_scale(
     Returns
     -------
     scale : float
-        Grid spacing in the units of ``bin_size``. NaN if fewer than 3 peaks
+        Grid spacing in the units of ``pixel_size``. NaN if fewer than 3 peaks
         are found.
 
     Raises
     ------
     ValueError
-        If ``autocorr_2d`` is not 2D, ``bin_size`` is not positive,
+        If ``autocorr_2d`` is not 2D, ``pixel_size`` is not positive,
         ``n_peaks < 3`` or ``threshold_rel`` is outside [0, 1).
     TypeError
         If ``n_peaks`` is not an integer.
@@ -1123,7 +1132,7 @@ def grid_scale(
        radius are one field. Both lengths follow the field size, so the
        spacing does not depend on the pixel size.
     3. Take the ``n_peaks`` maxima nearest zero lag and return the median of
-       their distances, converted to physical units with ``bin_size``.
+       their distances, converted to physical units with ``pixel_size``.
 
     Examples
     --------
@@ -1144,7 +1153,7 @@ def grid_scale(
     ...     for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
     ... )
     >>> autocorr = spatial_autocorrelation(env, np.exp(rate))
-    >>> scale = grid_scale(autocorr, bin_size=autocorrelation_pixel_size(env))
+    >>> scale = grid_scale(autocorr, pixel_size=autocorrelation_pixel_size(env))
     >>> bool(abs(scale - 40.0) < 2.5)
     True
 
@@ -1159,19 +1168,19 @@ def grid_scale(
         Microstructure of a spatial map in the entorhinal cortex. Nature,
         436(7052), 801-806.
     """
-    _validate_peak_arguments(autocorr_2d, bin_size, n_peaks, threshold_rel)
+    _validate_peak_arguments(autocorr_2d, pixel_size, n_peaks, threshold_rel)
     peak_coords = _find_autocorr_peaks(
         autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
     )
     if len(peak_coords) < 3:
         return np.nan
-    return float(np.median(np.hypot(peak_coords[:, 0], peak_coords[:, 1]))) * bin_size
+    return float(np.median(np.hypot(peak_coords[:, 0], peak_coords[:, 1]))) * pixel_size
 
 
 def grid_properties(
     autocorr_2d: NDArray[np.float64],
     *,
-    bin_size: float,
+    pixel_size: float,
     n_peaks: int = 6,
     threshold_rel: float = 0.1,
 ) -> GridProperties:
@@ -1189,11 +1198,11 @@ def grid_properties(
         Zero lag at index ``n // 2`` along each axis; axis 0 runs along the
         environment's x and axis 1 along y, so orientation is measured in
         the environment's frame.
-    bin_size : float
+    pixel_size : float
         Side of the autocorrelogram's square pixels in the environment's
-        units (e.g., cm). Pass ``autocorrelation_pixel_size(env)``, which
-        differs from the environment's bin size when its two cell widths
-        differ.
+        units (e.g., cm). Pass ``autocorrelation_pixel_size(env)``: the
+        smaller of the environment's two cell widths, which is not the
+        environment's bin size when the widths differ.
     n_peaks : int, default=6
         Number of nearest peaks used for spacing and orientation: 6 is the
         first ring of a hexagonal lattice. At least 3.
@@ -1209,7 +1218,7 @@ def grid_properties(
     Raises
     ------
     ValueError
-        If ``autocorr_2d`` is not 2D, ``bin_size`` is not positive,
+        If ``autocorr_2d`` is not 2D, ``pixel_size`` is not positive,
         ``n_peaks < 3`` or ``threshold_rel`` is outside [0, 1).
     TypeError
         If ``n_peaks`` is not an integer.
@@ -1241,7 +1250,7 @@ def grid_properties(
     ... )
     >>> props = grid_properties(
     ...     spatial_autocorrelation(env, np.exp(rate)),
-    ...     bin_size=autocorrelation_pixel_size(env),
+    ...     pixel_size=autocorrelation_pixel_size(env),
     ... )
     >>> bool(props.score > 0.4), bool(abs(props.scale - 40.0) < 2.5)
     (True, True)
@@ -1259,7 +1268,7 @@ def grid_properties(
     Hafting et al. (2005). Microstructure of a spatial map in the entorhinal
         cortex. Nature, 436(7052), 801-806.
     """
-    _validate_peak_arguments(autocorr_2d, bin_size, n_peaks, threshold_rel)
+    _validate_peak_arguments(autocorr_2d, pixel_size, n_peaks, threshold_rel)
     score = grid_score(autocorr_2d)
     peak_coords = _find_autocorr_peaks(
         autocorr_2d, threshold_rel=threshold_rel, max_peaks=n_peaks
@@ -1270,10 +1279,12 @@ def grid_properties(
             scale=np.nan,
             orientation=np.nan,
             orientation_std=np.nan,
-            peak_coords=peak_coords * bin_size,
+            peak_coords=peak_coords * pixel_size,
         )
 
-    scale = float(np.median(np.hypot(peak_coords[:, 0], peak_coords[:, 1]))) * bin_size
+    scale = (
+        float(np.median(np.hypot(peak_coords[:, 0], peak_coords[:, 1]))) * pixel_size
+    )
 
     # peak_coords is (x, y), so arctan2(y, x) reads column 1 then column 0.
     orientations = np.arctan2(peak_coords[:, 1], peak_coords[:, 0]) % _HEX_PERIOD
@@ -1306,5 +1317,5 @@ def grid_properties(
         scale=scale,
         orientation=orientation,
         orientation_std=orientation_std,
-        peak_coords=peak_coords * bin_size,
+        peak_coords=peak_coords * pixel_size,
     )
