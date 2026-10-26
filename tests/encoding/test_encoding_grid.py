@@ -710,3 +710,94 @@ class TestGridOrientationInEnvironmentFrame:
         assert abs(properties.scale - self.SPACING) < 2 * autocorrelation_pixel_size(
             env
         )
+
+
+def _box(sides, bin_size):
+    """Fully active rectangular arena with square cells of ``bin_size`` cm."""
+    edges = tuple(np.arange(0.0, side + bin_size / 2, bin_size) for side in sides)
+    mask = np.ones(tuple(len(edge) - 1 for edge in edges), dtype=bool)
+    return Environment.from_grid_mask(mask, grid_edges=edges)
+
+
+def _lattice_rate(points, spacing, lattice_deg, phase):
+    """Hexagonal field lattice: three plane waves 30 degrees off the lattice."""
+    wavenumber = 4 * np.pi / (np.sqrt(3) * spacing)
+    total = np.zeros(len(points))
+    for offset in (-30.0, 30.0, 90.0):
+        angle = np.radians(lattice_deg + offset)
+        direction = np.array([np.cos(angle), np.sin(angle)])
+        total += np.cos(wavenumber * (points - phase) @ direction)
+    return np.exp(0.6 * (total + 1.5)) - 1.0
+
+
+def _lattice_properties(
+    sides, bin_size, spacing, lattice_deg, phase, *, transpose=False
+):
+    from neurospatial.encoding.grid import (
+        autocorrelation_pixel_size,
+        grid_properties,
+        spatial_autocorrelation,
+    )
+
+    env = _box(sides[::-1] if transpose else sides, bin_size)
+    # Transposing swaps x and y for both the arena and the lattice.
+    points = env.bin_centers[:, ::-1] if transpose else env.bin_centers
+    rate = _lattice_rate(points, spacing, lattice_deg, phase)
+    return grid_properties(
+        spatial_autocorrelation(env, rate), bin_size=autocorrelation_pixel_size(env)
+    )
+
+
+class TestIdealHexagonalLattices:
+    """Ideal grid cells score as grid cells whatever the arena and spacing."""
+
+    @pytest.mark.parametrize("sides", [(100, 100), (160, 80), (80, 160), (120, 120)])
+    @pytest.mark.parametrize("spacing", [30.0, 40.0, 50.0, 60.0])
+    def test_score_scale_and_orientation(self, sides, spacing) -> None:
+        rng = np.random.default_rng([sides[0], sides[1], int(spacing)])
+        lattice_deg = rng.uniform(0.0, 60.0)
+        phase = rng.uniform(0.0, 60.0, 2)
+        bin_size = 2.5
+
+        properties = _lattice_properties(sides, bin_size, spacing, lattice_deg, phase)
+        transposed = _lattice_properties(
+            sides, bin_size, spacing, lattice_deg, phase, transpose=True
+        )
+
+        assert properties.score > 0.4
+        assert abs(properties.scale - spacing) <= bin_size
+        error = abs(np.degrees(properties.orientation) - lattice_deg) % 60.0
+        assert min(error, 60.0 - error) < 3.0
+        np.testing.assert_allclose(transposed.score, properties.score, atol=1e-6)
+
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 3.0, 4.0, 5.0])
+    def test_scale_does_not_depend_on_the_bin_size(self, bin_size) -> None:
+        spacing = 30.0
+        properties = _lattice_properties((120, 120), bin_size, spacing, 17.0, (5, 9))
+
+        assert properties.score > 0.4
+        assert abs(properties.scale - spacing) <= bin_size
+
+
+class TestPeakArguments:
+    """Invalid peak-search arguments raise instead of returning no peaks."""
+
+    @pytest.mark.parametrize(
+        ("kwargs", "error", "match"),
+        [
+            ({"n_peaks": 2}, ValueError, "n_peaks must be >= 3"),
+            ({"n_peaks": 6.5}, TypeError, "n_peaks must be an integer"),
+            ({"threshold_rel": -1.0}, ValueError, r"threshold_rel must be in \[0, 1\)"),
+            ({"threshold_rel": 1.0}, ValueError, r"threshold_rel must be in \[0, 1\)"),
+            ({"bin_size": 0.0}, ValueError, "autocorrelation_pixel_size"),
+        ],
+    )
+    def test_invalid_arguments_raise(self, kwargs, error, match) -> None:
+        from neurospatial.encoding.grid import grid_properties, grid_scale
+
+        autocorr = _create_hexagonal_autocorr(size=101)
+        arguments = {"bin_size": 2.0, **kwargs}
+        with pytest.raises(error, match=match):
+            grid_scale(autocorr, **arguments)
+        with pytest.raises(error, match=match):
+            grid_properties(autocorr, **arguments)
