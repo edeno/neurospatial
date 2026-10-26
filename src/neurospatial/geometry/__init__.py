@@ -6,6 +6,7 @@ from here, never from its ``_`` modules. Users reach the records through
 """
 
 from neurospatial.geometry._adapters import SnapshotAdapter as SnapshotAdapter
+from neurospatial.geometry._affine import _check_homogeneous as _check_homogeneous
 from neurospatial.geometry._arena import Arena as Arena
 from neurospatial.geometry._arena import EgocentricSurround as EgocentricSurround
 from neurospatial.geometry._arena import MaskArena as MaskArena
@@ -20,6 +21,7 @@ from neurospatial.geometry._arena_fit import apply_walls as apply_walls
 from neurospatial.geometry._arena_fit import fit_walls as fit_walls
 from neurospatial.geometry._arena_fit import infer_arena as infer_arena
 from neurospatial.geometry._arena_fit import validate_arena as validate_arena
+from neurospatial.geometry._arrays import ReadOnlyState as ReadOnlyState
 from neurospatial.geometry._arrays import get_centers as get_centers
 from neurospatial.geometry._arrays import grid_cell_centers as grid_cell_centers
 from neurospatial.geometry._arrays import mask_active_map as mask_active_map

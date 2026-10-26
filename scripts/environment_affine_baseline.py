@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from neurospatial import Environment
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 
 def record() -> dict[str, object]:
@@ -41,7 +41,7 @@ def record() -> dict[str, object]:
     ):
         matrix = np.eye(3)
         matrix[:2, :2] = linear
-        transform = Affine2D(matrix)
+        transform = AffineND(matrix)
         child = env if name == "native" else env.apply_transform(transform)
         values: dict[str, object] = {
             "ids": child.bin_at(transform(env.bin_centers)).tolist(),

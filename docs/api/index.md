@@ -96,16 +96,16 @@ Transform and align spatial representations.
 
 **Key Functions:**
 
-- `map_probabilities()`: Align probability distributions between environments
-- `get_2d_rotation_matrix()`: Create 2D rotation matrices
+- `map_probabilities()`: Move probability mass (posteriors, occupancy) onto another environment's bins
+- `get_2d_rotation_matrix()`: Create a 2D rotation matrix from an angle in radians
 
 ### [neurospatial.ops.transforms](neurospatial/ops/transforms.md)
 
-2D affine transformations.
+Affine transformations and video calibration.
 
 **Key Classes:**
 
-- `Affine2D`: Composable 2D affine transformations
+- `AffineND`: Composable affine transformations in any dimension
 
 ### [neurospatial.encoding](neurospatial/encoding/index.md)
 

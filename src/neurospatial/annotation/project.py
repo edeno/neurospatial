@@ -27,7 +27,7 @@ from neurospatial.annotation._types import (
     MultipleBoundaryStrategy,
     RegionType,
 )
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import VideoCalibration
 from neurospatial.regions.core import (
     _freeze_metadata,
     _require_json_metadata,
@@ -147,39 +147,22 @@ def _restore_shape(
     return AnnotationShape(vertices, **settings)
 
 
-def _copy_calibration(
+def _checked_calibration(
     calibration: VideoCalibration, frame_size: tuple[int, int]
 ) -> VideoCalibration:
+    """Return ``calibration`` after checking it was measured on this frame size.
+
+    VideoCalibration is immutable and validates its transform, so the project
+    can share it instead of copying it.
+    """
     if not isinstance(calibration, VideoCalibration):
         raise ValueError("calibration must be a VideoCalibration or None.")
-    dimensions = calibration.frame_size_px
-    if (
-        len(dimensions) != 2
-        or any(
-            isinstance(n, bool) or not isinstance(n, (int, np.integer))
-            for n in dimensions
-        )
-        or tuple(dimensions) != frame_size
-    ):
+    if calibration.frame_size_px != frame_size:
         raise ValueError(
             "Calibration frame_size_px must match the reference frame "
             f"(width, height) {frame_size}."
         )
-    matrix = np.array(calibration.transform_px_to_cm.A, dtype=np.float64, copy=True)
-    if (
-        matrix.shape != (3, 3)
-        or not np.all(np.isfinite(matrix))
-        or not np.array_equal(matrix[2], [0.0, 0.0, 1.0])
-    ):
-        raise ValueError("Calibration transform must be a finite 3 by 3 affine matrix.")
-    try:
-        inverse = np.linalg.inv(matrix)
-    except np.linalg.LinAlgError as exc:
-        raise ValueError("Calibration transform must be invertible.") from exc
-    if not np.all(np.isfinite(inverse)):
-        raise ValueError("Calibration inverse transform must be finite.")
-    matrix.setflags(write=False)
-    return VideoCalibration(Affine2D(matrix), frame_size)
+    return calibration
 
 
 @dataclass(frozen=True, eq=False, init=False)
@@ -299,7 +282,7 @@ class AnnotationProject:
         owned_calibration = (
             None
             if calibration is None
-            else _copy_calibration(calibration, (frame.shape[1], frame.shape[0]))
+            else _checked_calibration(calibration, (frame.shape[1], frame.shape[0]))
         )
         for name, stored_value in (
             ("frame", frame),
@@ -319,12 +302,8 @@ class AnnotationProject:
 
     @property
     def calibration(self) -> VideoCalibration | None:
-        """Return an independent calibration, preserving the saved transform."""
-        if self._calibration is None:
-            return None
-        return _copy_calibration(
-            self._calibration, (self.frame.shape[1], self.frame.shape[0])
-        )
+        """Return the pixel-to-cm calibration, or None for a pixel-unit project."""
+        return self._calibration
 
     def _replace(self, **changes: Any) -> AnnotationProject:
         """Return a validated project with some settings or shapes changed."""
@@ -485,15 +464,7 @@ class AnnotationProject:
                         _require_keys(
                             calibration, {"transform_px_to_cm", "frame_size_px"}
                         )
-                        # Do not use from_dict: it silently truncates fractional sizes.
-                        calibration = VideoCalibration(
-                            Affine2D(
-                                np.asarray(
-                                    calibration["transform_px_to_cm"], dtype=float
-                                )
-                            ),
-                            tuple(calibration["frame_size_px"]),
-                        )
+                        calibration = VideoCalibration.from_dict(calibration)
                     return cls(
                         archive["frame"],
                         shapes=shapes,

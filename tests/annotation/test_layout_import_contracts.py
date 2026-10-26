@@ -11,7 +11,7 @@ from neurospatial.annotation._track_layout import resolve_track_layout
 from neurospatial.annotation._track_state import TrackBuilderState
 from neurospatial.annotation.converters import env_from_boundary_region
 from neurospatial.annotation.io import regions_from_cvat, regions_from_labelme
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 
 
 def test_manual_order_infers_gaps_from_effective_endpoints() -> None:
@@ -41,7 +41,7 @@ def test_import_units_survive_environment(
     tmp_path: Path, source: str, calibrated: bool
 ) -> None:
     calibration = (
-        VideoCalibration(Affine2D(np.diag([0.5, 0.5, 1.0])), (640, 480))
+        VideoCalibration(AffineND(np.diag([0.5, 0.5, 1.0])), (640, 480))
         if calibrated
         else None
     )

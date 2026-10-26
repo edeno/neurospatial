@@ -10,13 +10,13 @@ import pytest
 from numpy.testing import assert_array_equal
 
 from neurospatial.annotation.project import AnnotationProject, AnnotationShape
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 
 
 def test_roundtrip_is_self_contained_and_preserves_pixel_geometry(tmp_path):
     frame = np.arange(24 * 30 * 3, dtype=np.uint8).reshape(24, 30, 3)
     matrix = np.array([[0.5, 0.1, -2.0], [0.0, -0.5, 12.0], [0.0, 0.0, 1.0]])
-    calibration = VideoCalibration(Affine2D(matrix), (30, 24))
+    calibration = VideoCalibration(AffineND(matrix), (30, 24))
     exterior = AnnotationShape(
         np.array([[1, 2], [20, 2], [20, 22], [1, 22]]),
         identifier="outer",
@@ -55,7 +55,6 @@ def test_roundtrip_is_self_contained_and_preserves_pixel_geometry(tmp_path):
     project.save(path)
     assert path.exists()
     assert not path.with_suffix(".annotation.npz").exists()
-    assert calibration._transform_cm_to_px is None
     loaded = AnnotationProject.load(path)
     assert_array_equal(loaded.frame, frame)
     assert not loaded.frame.flags.writeable
@@ -88,22 +87,20 @@ def test_snapshot_owns_arrays_nested_metadata_and_calibration():
     frame = np.zeros((10, 20, 3), dtype=np.uint8)
     metadata = {"labels": [{"value": "original"}]}
     matrix = np.diag([0.5, -0.5, 1.0])
-    calibration = VideoCalibration(Affine2D(matrix), (20, 10))
+    calibration = VideoCalibration(AffineND(matrix), (20, 10))
     shape = AnnotationShape(vertices, metadata=metadata)
     project = AnnotationProject(frame, shapes=[shape], calibration=calibration)
     vertices[:] = 100
     frame[:] = 100
     metadata["labels"][0]["value"] = "changed"
     matrix[0, 0] = 50
-    calibration.frame_size_px = (1, 1)
+    with pytest.raises(FrozenInstanceError):
+        calibration.frame_size_px = (1, 1)
     assert_array_equal(shape.vertices, [[1, 2], [3, 4]])
     assert project.frame.max() == 0
     assert shape.metadata["labels"][0]["value"] == "original"
     assert project.calibration.frame_size_px == (20, 10)
     assert project.calibration.transform_px_to_cm.A[0, 0] == 0.5
-    exported = project.calibration
-    exported.frame_size_px = (2, 2)
-    assert project.calibration.frame_size_px == (20, 10)
     with pytest.raises(TypeError):
         shape.metadata["labels"][0]["value"] = "changed"
     with pytest.raises(FrozenInstanceError):
@@ -198,7 +195,7 @@ def test_calibration_matches_image_and_invertible_affine(matrix, size, match):
     with pytest.raises(ValueError, match=match):
         AnnotationProject(
             np.zeros((8, 10, 3), dtype=np.uint8),
-            calibration=VideoCalibration(Affine2D(matrix), size),
+            calibration=VideoCalibration(AffineND(matrix), size),
         )
 
 
@@ -306,7 +303,7 @@ def test_copied_project_keeps_owned_immutable_data(clone):
                 np.array([[1, 2], [3, 4]]), metadata={"nested": [{"trial": 3}]}
             )
         ],
-        calibration=VideoCalibration(Affine2D(np.eye(3)), (5, 4)),
+        calibration=VideoCalibration(AffineND(np.eye(3)), (5, 4)),
     )
     copied = clone(original)
     assert copied is not original

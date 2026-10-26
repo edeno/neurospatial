@@ -40,7 +40,7 @@ from neurospatial.animation import (  # noqa: E402
 )
 from neurospatial.arena import OpenArena  # noqa: E402
 from neurospatial.landmarks import Landmark, Landmarks  # noqa: E402
-from neurospatial.ops.transforms import Affine2D, VideoCalibration  # noqa: E402
+from neurospatial.ops.transforms import AffineND, VideoCalibration  # noqa: E402
 
 EDGES = np.arange(0.0, 41.0, 4.0)
 
@@ -1303,7 +1303,7 @@ def video(walk):
     frames = np.zeros((len(t), 20, 40, 3), dtype=np.uint8)
     frames[:, :10, :, 0] = 255
     # x = column, y = 40 - 2 * row: the camera's rows run down the arena.
-    pixels_to_cm = Affine2D(np.array([[1.0, 0, 0], [0, -2.0, 40.0], [0, 0, 1]]))
+    pixels_to_cm = AffineND(np.array([[1.0, 0, 0], [0, -2.0, 40.0], [0, 0, 1]]))
     return frames, VideoCalibration(pixels_to_cm, frame_size_px=(40, 20))
 
 

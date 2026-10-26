@@ -1927,7 +1927,7 @@ def test_ray_cast_view_rates_turn_with_a_rotated_room(boundary_source):
     """
     from neurospatial.encoding._view_counts import _precompute_view_bins
     from neurospatial.encoding.view import compute_view_rate
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     env = _walled_room()
     rng = np.random.default_rng(0)
@@ -1944,7 +1944,7 @@ def test_ray_cast_view_rates_turn_with_a_rotated_room(boundary_source):
             [0.0, 0.0, 1.0],
         ]
     )
-    turned = env.apply_transform(Affine2D(turn))
+    turned = env.apply_transform(AffineND(turn))
     turned_positions = positions @ turn[:2, :2].T + turn[:2, 2]
     turned_headings = headings + angle
 
@@ -1977,7 +1977,7 @@ def test_ray_cast_view_rates_turn_with_a_rotated_room(boundary_source):
 def test_physical_ray_cast_refuses_a_combined_room_with_its_own_frame():
     """Physical wall bins need one source frame; a rotated component has its own."""
     from neurospatial.encoding._view_counts import _precompute_view_bins
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     angle = 0.4
     turn = np.array(
@@ -1987,7 +1987,7 @@ def test_physical_ray_cast_refuses_a_combined_room_with_its_own_frame():
             [0.0, 0.0, 1.0],
         ]
     )
-    turned = _walled_room().apply_transform(Affine2D(turn))
+    turned = _walled_room().apply_transform(AffineND(turn))
     combined = Environment.combine(
         {"a": _walled_room(), "b": turned.with_metadata(frame="arena")},
         auto_bridge=False,

@@ -454,7 +454,7 @@ def test_plot_draws_the_arena_outline_with_its_holes(angle):
     The polygon grid drew only the exterior ring, so an arena with an
     obstacle looked solid, and a rotated arena drew no outline at all.
     """
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     arena = Polygon(
         [(0, 0), (40, 0), (40, 30), (0, 30)], [[(15, 10), (25, 10), (25, 20), (15, 20)]]
@@ -463,7 +463,7 @@ def test_plot_draws_the_arena_outline_with_its_holes(angle):
     if angle:
         c, s = np.cos(angle), np.sin(angle)
         env = env.apply_transform(
-            Affine2D(np.array([[c, -s, 5], [s, c, 1], [0, 0, 1]]))
+            AffineND(np.array([[c, -s, 5], [s, c, 1], [0, 0, 1]]))
         )
     outline = env._binning.outline.geometry
     figure, axes = plt.subplots()

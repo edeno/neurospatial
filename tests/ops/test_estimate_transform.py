@@ -5,7 +5,6 @@ import pytest
 
 from neurospatial import Environment, Regions
 from neurospatial.ops.transforms import (
-    Affine2D,
     AffineND,
     estimate_transform,
     translate,
@@ -101,6 +100,103 @@ class TestEstimateTransform:
 
         with pytest.raises(ValueError, match="Invalid kind"):
             estimate_transform(src, dst, kind="invalid")
+
+
+class TestEstimateTransformRefusesUndeterminedFits:
+    """Landmarks that leave the transform free are refused, not guessed."""
+
+    def test_affine_refuses_collinear_landmarks(self):
+        """Collinear landmarks fix nothing off their line; similarity still fits."""
+        src = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+        dst = 2 * src + 5
+        with pytest.raises(ValueError, match="lie on one line") as error:
+            estimate_transform(src, dst, kind="affine")
+        assert 'kind="similarity"' in str(error.value)
+
+        similarity = estimate_transform(src, dst, kind="similarity")
+        np.testing.assert_allclose(similarity(np.array([[1.0, 0.0]])), [[7.0, 5.0]])
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity", "affine"])
+    def test_refuses_coincident_src_landmarks(self, kind):
+        src = np.zeros((3, 2))
+        dst = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        with pytest.raises(ValueError, match=r"same point|one point"):
+            estimate_transform(src, dst, kind=kind)
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity"])
+    def test_refuses_coincident_dst_landmarks(self, kind):
+        src = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        with pytest.raises(ValueError, match="do not determine"):
+            estimate_transform(src, np.ones((3, 2)), kind=kind)
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity"])
+    def test_refuses_collinear_3d_landmarks(self, kind):
+        """In 3-D, landmarks on a line leave the turn about that line free."""
+        src = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [2.0, 2.0, 2.0]])
+        with pytest.raises(ValueError, match="do not determine a 3-D rotation"):
+            estimate_transform(src, src + 1.0, kind=kind)
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity"])
+    def test_refuses_mirrored_symmetric_landmarks(self, kind):
+        """No rotation beats another for a mirrored square: refuse, do not pick one."""
+        src = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+        with pytest.raises(ValueError, match="mirror image"):
+            estimate_transform(src, src * [1.0, -1.0], kind=kind)
+        reflection = estimate_transform(src, src * [1.0, -1.0], kind="affine")
+        np.testing.assert_allclose(reflection(src), src * [1.0, -1.0], atol=1e-12)
+
+    def test_collinear_2d_landmarks_still_fix_a_rigid_rotation(self):
+        """Two distinct 2-D landmarks determine a rotation."""
+        src = np.array([[0.0, 0.0], [1.0, 0.0]])
+        dst = np.array([[1.0, 1.0], [1.0, 2.0]])
+        transform = estimate_transform(src, dst, kind="rigid")
+        np.testing.assert_allclose(transform(src), dst, atol=1e-12)
+
+    @pytest.mark.parametrize("kind", ["rigid", "similarity", "affine"])
+    @pytest.mark.parametrize("argument", ["src", "dst"])
+    def test_refuses_non_finite_landmarks_naming_the_row(self, kind, argument):
+        landmarks = {
+            "src": np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]),
+            "dst": np.array([[0.0, 0.0], [2.0, 0.0], [0.0, 2.0], [2.0, 2.0]]),
+        }
+        landmarks[argument][2, 1] = np.nan
+        with pytest.raises(ValueError, match=rf"{argument} has NaN .* row\(s\) \[2\]"):
+            estimate_transform(landmarks["src"], landmarks["dst"], kind=kind)
+
+
+def test_similarity_scale_minimizes_squared_landmark_error():
+    """The fitted scale is the least-squares scale for noisy landmarks.
+
+    The ratio of RMS spreads, which the scale used to be, absorbs the noise
+    in dst as extra spread; changing the least-squares scale either way, with
+    the translation refit, can only increase the summed squared error.
+    """
+    rng = np.random.default_rng(3)
+    angle = 0.4
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    src = rng.uniform(0, 600, (6, 2))
+    dst = 0.5 * src @ rotation.T + [10.0, -4.0] + rng.normal(0, 5, (6, 2))
+    transform = estimate_transform(src, dst, kind="similarity")
+    scale = np.sqrt(np.linalg.det(transform.A[:2, :2]))
+    unit = transform.A[:2, :2] / scale
+
+    def squared_error(candidate):
+        shift = dst.mean(axis=0) - candidate * unit @ src.mean(axis=0)
+        return np.sum((src @ (candidate * unit).T + shift - dst) ** 2)
+
+    best = squared_error(scale)
+    assert best < squared_error(scale * 1.001)
+    assert best < squared_error(scale * 0.999)
+    np.testing.assert_allclose(
+        transform(src),
+        src @ (scale * unit).T + (dst.mean(axis=0) - scale * unit @ src.mean(axis=0)),
+    )
+    spread_ratio = np.sqrt(
+        np.sum((dst - dst.mean(axis=0)) ** 2) / np.sum((src - src.mean(axis=0)) ** 2)
+    )
+    assert best < squared_error(spread_ratio)
 
 
 class TestEstimateTransformKabsch:
@@ -217,7 +313,7 @@ class TestApplyTransformToEnvironment:
 
     def test_apply_identity_transform(self, simple_2d_env):
         """Test applying identity transform."""
-        transform = Affine2D(np.eye(3))
+        transform = AffineND(np.eye(3))
         transformed_env = simple_2d_env.apply_transform(transform)
 
         assert np.allclose(transformed_env.bin_centers, simple_2d_env.bin_centers)
@@ -236,8 +332,8 @@ class TestApplyTransformToEnvironment:
         "transform",
         [
             translate(10, 20),
-            Affine2D(np.array([[0.0, -2.0, 10.0], [0.5, 0.0, 20.0], [0, 0, 1]])),
-            Affine2D(np.array([[1.0, 2.0, 0.0], [0.0, -1.0, 0.0], [0, 0, 1]])),
+            AffineND(np.array([[0.0, -2.0, 10.0], [0.5, 0.0, 20.0], [0, 0, 1]])),
+            AffineND(np.array([[1.0, 2.0, 0.0], [0.0, -1.0, 0.0], [0, 0, 1]])),
         ],
         ids=["translation", "rotation_and_scaling", "shear_and_reflection"],
     )
@@ -282,11 +378,6 @@ class TestApplyTransformToEnvironment:
             transformed.bin_at(transform(points)), [0, -1, -1]
         )
 
-    def test_singular_environment_transform_raises(self, simple_2d_env):
-        """Collapsed cells cannot support an inverse containment query."""
-        with pytest.raises(ValueError, match="invertible"):
-            simple_2d_env.apply_transform(Affine2D(np.diag([0.0, 1.0, 1.0])))
-
     def test_transform_preserves_polygon_holes(self):
         """Excluded regions stay excluded under both translation and reflection."""
         from shapely.geometry import Point, Polygon
@@ -304,7 +395,7 @@ class TestApplyTransformToEnvironment:
         region_builder = Regions(env.regions.values())
         region_builder.add("arena", polygon=polygon)
         env = env.with_regions(region_builder)
-        transform = Affine2D(np.array([[-2.0, 0, 10], [0, 3.0, 20], [0, 0, 1]]))
+        transform = AffineND(np.array([[-2.0, 0, 10], [0, 3.0, 20], [0, 0, 1]]))
         transformed = env.apply_transform(transform)
         region = transformed.regions["arena"].data
 
@@ -344,7 +435,7 @@ class TestApplyTransformToEnvironment:
                 [0, 0, 1],
             ]
         )
-        transform = Affine2D(R)
+        transform = AffineND(R)
 
         transformed_env = simple_2d_env.apply_transform(transform)
 

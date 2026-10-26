@@ -44,7 +44,6 @@ from neurospatial.ops._transitions import (
 )
 from neurospatial.ops._types import KernelMode
 from neurospatial.ops.alignment import (
-    ProbabilityMappingParams,
     apply_similarity_transform,
     get_2d_rotation_matrix,
     map_probabilities,
@@ -152,7 +151,6 @@ from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
 
 # Transform operations
 from neurospatial.ops.transforms import (
-    Affine2D,
     AffineND,
     SpatialTransform,
     VideoCalibration,
@@ -191,7 +189,6 @@ from neurospatial.ops.visibility import (
 __all__ = [
     "MRFBasis",
     # Alignment
-    "ProbabilityMappingParams",
     "apply_similarity_transform",
     "get_2d_rotation_matrix",
     "map_probabilities",
@@ -234,7 +231,6 @@ __all__ = [
     "apply_kernel",
     "compute_diffusion_kernels",
     # Transforms - Core classes
-    "Affine2D",
     "AffineND",
     "SpatialTransform",
     "VideoCalibration",

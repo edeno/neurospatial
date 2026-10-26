@@ -19,7 +19,7 @@ from neurospatial.animation.overlays import (
 )
 from neurospatial.decoding._result import _align_true_positions
 from neurospatial.encoding.spatial import SpatialRatesResult
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 
 
 @pytest.fixture
@@ -179,7 +179,7 @@ def test_crop_resize_maps_pixel_centers_back_to_original_calibration(env):
     pytest.importorskip("cv2")
     original = np.eye(3)
     original[0, 0], original[1, 1] = 2.0, -2.0
-    calibration = VideoCalibration(Affine2D(original), (11, 9))
+    calibration = VideoCalibration(AffineND(original), (11, 9))
     frames = np.arange(2 * 9 * 11 * 3, dtype=np.uint8).reshape(2, 9, 11, 3)
     overlay = VideoOverlay(frames, calibration, crop=(2, 1, 7, 7), downsample=2)
     data = overlay.convert_to_data(np.array([0.0, 0.1]), 2, env)
@@ -223,7 +223,7 @@ def test_file_video_processing_uses_actual_resized_dimensions(env, monkeypatch):
             pass
 
     monkeypatch.setattr(_video_io, "_VideoReader", Reader)
-    calibration = VideoCalibration(Affine2D(np.eye(3)), (11, 9))
+    calibration = VideoCalibration(AffineND(np.eye(3)), (11, 9))
     data = VideoOverlay(
         "example.mp4", calibration, crop=(2, 1, 7, 7), downsample=2
     ).convert_to_data(np.array([0.0, 0.1]), 2, env)

@@ -645,13 +645,13 @@ import numpy as np
 from shapely.geometry import box
 from neurospatial import Environment
 from neurospatial.encoding import border_score
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
 field = (env.bin_centers[:, 0] < 1).astype(float)
 score = border_score(env, field, metric="euclidean")
 angle = np.pi / 4
-transform = Affine2D(np.array([
+transform = AffineND(np.array([
     [np.cos(angle), -np.sin(angle), 20.0],
     [np.sin(angle), np.cos(angle), 10.0],
     [0.0, 0.0, 1.0],

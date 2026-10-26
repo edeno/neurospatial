@@ -40,7 +40,7 @@ from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.diffusion import _MRFEigenbasis
 from neurospatial.ops.smoothing import compute_diffusion_kernels
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 
 def _mrf_holder(env):
@@ -673,7 +673,7 @@ def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env)
 )
 def test_unsupported_transform_errors_name_the_operation_and_recovery(call, operation):
     env = _four_connected_grid().apply_transform(
-        Affine2D(np.array([[1.0, 0.25, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+        AffineND(np.array([[1.0, 0.25, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
     )
     with pytest.raises(NotImplementedError) as exc:
         call(env)

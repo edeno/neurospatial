@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial.ops.transforms import Affine2D, simple_scale
+from neurospatial.ops.transforms import AffineND, simple_scale
 
 
 class TestSimpleScale:
@@ -15,8 +15,7 @@ class TestSimpleScale:
         px_per_cm = 10.0  # 10 pixels per cm
         transform = simple_scale(px_per_cm)
 
-        # Test that it's an Affine2D
-        assert isinstance(transform, Affine2D)
+        assert isinstance(transform, AffineND)
 
         # Pixel coordinates
         points_px = np.array([[10.0, 20.0], [30.0, 40.0]])

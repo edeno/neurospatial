@@ -184,7 +184,6 @@ env_3d = env_3d.with_regions(regions)  # ValueError: region dimension differs
 | Polygon regions | ❌ | ✅ | ❌ | 2D only |
 | **Transforms** | | | | |
 | AffineND | ❌ | ✅ | ✅ | N-D transforms |
-| Affine2D | ❌ | ✅ | ❌ | 2D only (legacy) |
 | Rotation matrices | ❌ | ✅ | ✅ | scipy integration |
 | Scaling | ❌ | ✅ | ✅ | scale_3d() |
 | Translation | ❌ | ✅ | ✅ | translate_3d() |

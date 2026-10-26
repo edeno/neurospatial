@@ -17,7 +17,7 @@ from neurospatial.animation.overlays import (
     _realign_prepared_overlays,
 )
 from neurospatial.encoding.spatial import SpatialRatesResult
-from neurospatial.ops.transforms import Affine2D, VideoCalibration
+from neurospatial.ops.transforms import AffineND, VideoCalibration
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ def test_canonical_video_calibration_converts_to_environment_units(units, scale)
         units=units,
     )
     calibration = VideoCalibration(
-        Affine2D(np.array([[10.0, 0, 20.0], [0, 10.0, 30.0], [0, 0, 1.0]])), (2, 2)
+        AffineND(np.array([[10.0, 0, 20.0], [0, 10.0, 30.0], [0, 0, 1.0]])), (2, 2)
     )
     data = VideoOverlay(
         np.zeros((2, 2, 2, 3), dtype=np.uint8),
@@ -78,7 +78,7 @@ def test_canonical_video_calibration_converts_to_environment_units(units, scale)
 def test_calibrated_video_refuses_units_without_cm_conversion(env, units):
     env = env.with_metadata(units=units)
     source = np.zeros((2, 2, 2, 3), dtype=np.uint8)
-    calibration = VideoCalibration(Affine2D(np.eye(3)), (2, 2))
+    calibration = VideoCalibration(AffineND(np.eye(3)), (2, 2))
     with pytest.raises(ValueError, match="conversion from centimeters"):
         VideoOverlay(source, calibration).convert_to_data(np.array([0.0, 0.1]), 2, env)
     with pytest.warns(UserWarning, match="no calibration"):

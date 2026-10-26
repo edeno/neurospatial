@@ -6,7 +6,7 @@ import pytest
 from neurospatial import Environment
 from neurospatial.animation import Animation, AnimationField
 from neurospatial.animation.overlays import VideoData
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 TIMES = np.array([0.0, 0.1])
 
@@ -18,7 +18,7 @@ class CalibratedVideo:
     interp = "nearest"
 
     def __init__(self, matrix, markers):
-        self.transform = Affine2D(np.array(matrix))
+        self.transform = AffineND(np.array(matrix))
         self.frames = np.zeros((2, 100, 120, 3), dtype=np.uint8)
         for index, (column, row) in enumerate(markers):
             self.frames[index, row - 2 : row + 3, column - 2 : column + 3, 0] = 255

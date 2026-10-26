@@ -11,7 +11,7 @@ from shapely.geometry import LineString, Polygon, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.geometry._wall_frame import wall_source_frame
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import AffineND
 
 
 def _publish(child, arena):
@@ -49,13 +49,13 @@ def test_new_walls_validate_current_clipped_support_in_shared_source_frame(
         region = box(0.1, 0.25, 1.9, 0.75)
         wall = LineString([(1, 0.25), (1, 0.75)])
     matrix = _matrix()
-    child = base.apply_transform(Affine2D(matrix)).clip(_mapped(region, matrix))
+    child = base.apply_transform(AffineND(matrix)).clip(_mapped(region, matrix))
     arena = OpenArena(box(0, 0, 2, 1), walls=(wall,)).transformed(matrix)
     if history == "subset":
         child = child.subset(mask=np.ones(child.n_bins, bool))
     elif history == "nested":
         outer = _matrix(5.0)
-        child = child.apply_transform(Affine2D(outer))
+        child = child.apply_transform(AffineND(outer))
         arena = arena.transformed(outer)
     published = _publish(child, arena)
     assert published.n_bins == (1 if case == "removed" else 2)
@@ -72,7 +72,7 @@ def test_source_interior_wall_remains_invalid_when_world_rounding_erases_its_off
         grid_edges=(np.arange(5.0),) * 2,
         arena=OpenArena(box(0, 0, 4, 4), walls=(LineString([(2, 0), (2, 4)]),)),
     )
-    child = base.apply_transform(Affine2D(matrix))
+    child = base.apply_transform(AffineND(matrix))
     if clipped:
         child = child.clip(_mapped(box(0.25, 0.25, 3.75, 3.75), matrix))
     invalid = OpenArena(
@@ -104,7 +104,7 @@ def _rotated_scaled_clipped_grid(wall, angle=0.3, offset=1e6):
         grid_edges=(np.arange(5.0),) * 2,
         arena=OpenArena(box(0, 0, 4, 4)),
     )
-    child = base.apply_transform(Affine2D(matrix)).clip(
+    child = base.apply_transform(AffineND(matrix)).clip(
         _mapped(box(0.25, 0.25, 3.75, 3.75), matrix)
     )
     arena = OpenArena(box(0, 0, 4, 4), walls=(wall,)).transformed(matrix)
@@ -159,7 +159,7 @@ def _touching_clipped_grid(wall):
         grid_edges=(np.arange(5.0),) * 2,
         arena=OpenArena(box(0, 0, 4, 4)),
     ).clip(Polygon([(0, 0), (4, 0), (4, 3), (3, 4), (0, 4)]))
-    child = base.apply_transform(Affine2D(matrix)).clip(
+    child = base.apply_transform(AffineND(matrix)).clip(
         _mapped(box(0.25, 0.25, 3.75, 3.75), matrix)
     )
     arena = OpenArena(box(0, 0, 4, 4), walls=(wall,)).transformed(matrix)
@@ -292,7 +292,7 @@ def test_genuine_source_inset_does_not_snap_to_a_nearby_parent_boundary():
         grid_edges=(np.arange(3.0), np.arange(2.0)),
         arena=OpenArena(box(0, 0, 2, 1)),
     )
-    child = base.apply_transform(Affine2D(matrix)).clip(
+    child = base.apply_transform(AffineND(matrix)).clip(
         _mapped(box(0.1, 0.1, 1 - 1e-12, 0.9), matrix)
     )
     wall = LineString([(1 - 5e-13, 0), (1 - 5e-13, 1)])
@@ -308,7 +308,7 @@ def test_distinct_world_inset_is_not_inherited_even_within_coordinate_ulp_bound(
         grid_edges=(np.array([0.0, 1.0]),) * 2,
         arena=OpenArena(box(0, 0, 1, 1)),
     )
-    child = base.apply_transform(Affine2D(matrix)).clip(
+    child = base.apply_transform(AffineND(matrix)).clip(
         _mapped(box(4 * ulp, 0.1, 0.9, 0.9), matrix)
     )
     wall = LineString([(2 * ulp, 0), (2 * ulp, 1)])
@@ -331,7 +331,7 @@ def _rotated_clipped_grid(wall_x, y_range):
         grid_edges=(np.arange(5.0),) * 2,
         arena=OpenArena(box(0, 0, 4, 4)),
     )
-    child = base.apply_transform(Affine2D(matrix)).clip(
+    child = base.apply_transform(AffineND(matrix)).clip(
         _mapped(box(0, 0.25, 4, 3.75), matrix)
     )
     arena = OpenArena(
@@ -392,7 +392,7 @@ def test_signed_permutation_does_not_certify_a_rounded_diagonal_parent_edge():
         grid_edges=(np.array([0.0, 1.0]),) * 2,
         arena=OpenArena(box(0, 0, 1, 1)),
     ).clip(Polygon([(0.1, 0.1), (0.9, 0.1), (0.5, 0.9)]))
-    child = base.apply_transform(Affine2D(matrix)).clip(
+    child = base.apply_transform(AffineND(matrix)).clip(
         _mapped(box(0.15, 0.2, 0.85, 0.7), matrix)
     )
     wall = LineString(

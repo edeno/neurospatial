@@ -12,7 +12,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.binning import SpatialBins
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.transforms import Affine2D, scale_2d, translate
+from neurospatial.ops.transforms import AffineND, scale_2d, translate
 
 
 def _track(**options):
@@ -231,7 +231,7 @@ def test_blocked_edges_name_walls_of_a_component_next_to_a_track():
     subset = env.subset(mask=np.ones(env.n_bins, dtype=bool))
     assert set(subset.get_blocked_edges()["wall"]) == {"divider"}
     rotated = env.apply_transform(translate(5.0, 0.0)).apply_transform(
-        Affine2D(np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]))
+        AffineND(np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]))
     )
     assert list(rotated.get_blocked_edges()["wall"]) == list(table["wall"])
 

@@ -1,5 +1,7 @@
 """Tests for 3D transform functionality (AffineND)."""
 
+import pickle
+
 import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
@@ -11,6 +13,7 @@ from neurospatial.ops.transforms import (
     from_rotation_matrix,
     identity_nd,
     scale_3d,
+    translate,
     translate_3d,
 )
 
@@ -86,11 +89,54 @@ class TestAffineND:
         expected = [[12, 2, 2]]
         assert np.allclose(result, expected)
 
-    def test_affine_nd_invalid_matrix_shape(self):
-        """Test that non-square matrix raises error."""
-        A = np.ones((3, 4))  # Not square
-        with pytest.raises(ValueError, match="must be square"):
-            AffineND(A)
+    @pytest.mark.parametrize(
+        ("matrix", "problem"),
+        [
+            (np.ones((3, 4)), "square"),
+            (np.ones(3), "square"),
+            (np.array([[1.0, 0, np.nan], [0, 1, 0], [0, 0, 1]]), "NaN or infinite"),
+            (np.array([[1.0, 0, 0], [0, 1, 0], [0.1, 0, 1]]), "last row"),
+            (np.diag([0.0, 1.0, 1.0]), "singular"),
+            (np.array([[1.0, 2, 0], [2, 4, 0], [0, 0, 1]]), "singular"),
+        ],
+    )
+    def test_refuses_matrix_that_is_not_an_invertible_affine_map(self, matrix, problem):
+        """Only finite, homogeneous, invertible matrices are affine transforms."""
+        with pytest.raises(ValueError, match=problem) as error:
+            AffineND(matrix)
+        assert "Fix:" in str(error.value)
+
+    def test_points_with_extra_columns_are_refused_not_scrambled(self):
+        """A 2D transform refuses (x, y, likelihood) rows instead of mixing them.
+
+        Reshaping such rows to pairs would pair one sample's likelihood with the
+        next sample's x coordinate.
+        """
+        transform = translate(10, 20)
+        with pytest.raises(ValueError, match="points have 3 dimensions"):
+            transform(np.array([[1.0, 2.0, 0.9], [4.0, 5.0, 0.8]]))
+        np.testing.assert_array_equal(
+            transform(np.array([[1.0, 2.0], [4.0, 5.0]])), [[11, 22], [14, 25]]
+        )
+
+    def test_matrix_is_a_read_only_copy(self):
+        """Editing the source array cannot move points the transform maps."""
+        matrix = np.eye(3)
+        transform = AffineND(matrix)
+        matrix[0, 2] = 5.0
+        assert transform.A[0, 2] == 0.0
+        assert not transform.A.flags.writeable
+        with pytest.raises(ValueError, match="read-only"):
+            transform.A[0, 2] = 5.0
+
+    def test_equality_compares_matrices(self):
+        """``==`` is a bool comparing matrices, and pickling keeps the matrix."""
+        assert translate(1, 2) == translate(1, 2)
+        assert translate(1, 2) != translate(1, 3)
+        assert translate(1, 2) != translate_3d(1, 2, 0)
+        restored = pickle.loads(pickle.dumps(translate(1, 2)))
+        assert restored == translate(1, 2)
+        assert not restored.A.flags.writeable
 
 
 class Test3DFactoryFunctions:
@@ -178,6 +224,20 @@ class Test3DFactoryFunctions:
         R = np.ones((3, 4))
         with pytest.raises(ValueError, match="must be square"):
             from_rotation_matrix(R)
+
+    @pytest.mark.parametrize(
+        ("matrix", "problem"),
+        [
+            (2 * np.eye(3), "not orthogonal"),
+            (np.array([[1.0, 0.5], [0.0, 1.0]]), "not orthogonal"),
+            (np.diag([1.0, 1.0, -1.0]), "reflection"),
+            (np.array([[0.0, 1.0], [1.0, 0.0]]), "reflection"),
+        ],
+    )
+    def test_from_rotation_matrix_refuses_non_rotations(self, matrix, problem):
+        """Only proper rotations pass; scaling, shear and reflections are refused."""
+        with pytest.raises(ValueError, match=problem):
+            from_rotation_matrix(matrix)
 
     def test_from_rotation_matrix_translation_shape_mismatch(self):
         """Test that translation shape mismatch raises error."""

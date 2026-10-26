@@ -44,14 +44,14 @@ def test_tiny_axis_does_not_turn_diagonal_contacts_into_physical_faces():
 
 
 def test_tiny_native_grid_keeps_faces_and_diffusion_under_uniform_scaling():
-    from neurospatial.ops.transforms import Affine2D
+    from neurospatial.ops.transforms import AffineND
 
     width, scale = 1e-10, 1000.0
     env = Environment.from_grid_mask(
         np.ones((2, 1), dtype=bool),
         grid_edges=(np.arange(3.0) * width, np.arange(2.0) * width),
     )
-    transformed = env.apply_transform(Affine2D(np.diag([scale, scale, 1.0])))
+    transformed = env.apply_transform(AffineND(np.diag([scale, scale, 1.0])))
     faces = face_geometry(transformed._cache, transformed._binning)
     assert faces.A[0] == pytest.approx(width * scale, rel=1e-14, abs=0)
     np.testing.assert_allclose(

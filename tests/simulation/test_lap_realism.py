@@ -13,7 +13,7 @@ from shapely.geometry import LineString, Polygon, box
 from neurospatial import Environment
 from neurospatial.geometry import OpenArena
 from neurospatial.layout import create_layout
-from neurospatial.ops import Affine2D
+from neurospatial.ops import AffineND
 from neurospatial.simulation import (
     linear_track_session,
     simulate_session,
@@ -291,7 +291,7 @@ def _t_maze_track():
             bin_size=10,
             track_width=2,
             units="cm",
-        ).apply_transform(Affine2D(rotation_matrix(0.4, offset=(100.0, 50.0)))),
+        ).apply_transform(AffineND(rotation_matrix(0.4, offset=(100.0, 50.0)))),
     ],
     ids=["zigzag", "t_maze", "rotated"],
 )
@@ -362,12 +362,12 @@ LAYOUTS = {
     "grid_concave_corner": _l_mask_grid,
     "grid_rotated": lambda: Environment.from_polygon(
         L_SHAPE, bin_size=3, units="cm"
-    ).apply_transform(Affine2D(rotation_matrix(0.5, offset=(3.0, -2.0)))),
+    ).apply_transform(AffineND(rotation_matrix(0.5, offset=(3.0, -2.0)))),
     "grid_rotated_corners_only": lambda: _corner_walk_grid().apply_transform(
-        Affine2D(rotation_matrix(0.3))
+        AffineND(rotation_matrix(0.3))
     ),
     "checkerboard_rotated_far": lambda: _checkerboard().apply_transform(
-        Affine2D(rotation_matrix(0.7, offset=(1e4, -3e3)))
+        AffineND(rotation_matrix(0.7, offset=(1e4, -3e3)))
     ),
     "hexagonal": lambda: Environment.from_samples(
         _samples_in(L_SHAPE), bin_size=3, layout="hexagonal", units="cm"

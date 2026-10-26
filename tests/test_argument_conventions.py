@@ -224,7 +224,6 @@ REQUIRED_DATA_NAMES = {
     *("landmarks_px", "landmarks_cm", "p1_px", "p2_px", "known_length_cm"),
     *("data_px", "data_cm", "src", "dst", "frame_size_px", "frame_height_px"),
     *("px_per_cm", "rotation_matrix", "scale", "translation_vector"),
-    "angle_degrees",
 }
 
 # Required arguments that are data in these functions only.
