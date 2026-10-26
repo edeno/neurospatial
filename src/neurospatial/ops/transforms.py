@@ -15,15 +15,15 @@ conversion in one call and return the converted array.
 # ruff: noqa: N806  - uppercase matrix names (A, R, X) follow mathematical convention
 from __future__ import annotations
 
-from dataclasses import dataclass
+import numbers
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry import _check_homogeneous
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry import ReadOnlyState, _check_homogeneous
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
@@ -682,20 +682,29 @@ def calibrate_from_landmarks(
     return result @ flip_y(frame_height)
 
 
-@dataclass
-class VideoCalibration:
-    """Container for video-to-environment coordinate calibration.
+def _is_positive_integer(value: object) -> bool:
+    return (
+        not isinstance(value, (bool, np.bool_))
+        and isinstance(value, (numbers.Integral, np.integer))
+        and int(value) > 0
+    )
 
-    Stores the pixel-to-cm transform along with video metadata for
-    convenient access to both forward and inverse transforms.
+
+@dataclass(frozen=True, eq=False)
+class VideoCalibration:
+    """Video-to-environment coordinate calibration.
+
+    Stores the pixel-to-cm transform, its inverse and the frame size it was
+    measured on. It is immutable, so the inverse always matches the forward
+    transform.
 
     Parameters
     ----------
     transform_px_to_cm : AffineND
-        Transform that converts pixel coordinates to cm coordinates.
+        2D transform that converts pixel coordinates to cm coordinates.
         Should include Y-axis flip (video origin top-left to env bottom-left).
     frame_size_px : tuple[int, int]
-        Video frame size as (width, height) in pixels.
+        Video frame size as (width, height) in pixels; two positive integers.
 
     Attributes
     ----------
@@ -704,13 +713,22 @@ class VideoCalibration:
     frame_size_px : tuple[int, int]
         Video frame dimensions.
     transform_cm_to_px : AffineND
-        Inverse transform from cm to pixels (cached property).
+        Inverse transform from cm to pixels, computed at construction.
     cm_per_px : float
         Approximate scale factor (computed from transform matrix).
 
+    Raises
+    ------
+    TypeError
+        If ``transform_px_to_cm`` is not an ``AffineND``.
+    ValueError
+        If the transform is not 2D, or ``frame_size_px`` is not two positive
+        integers.
+
     Notes
     -----
-    The calibration can be serialized to/from dict for JSON storage.
+    The calibration can be serialized to/from dict for JSON storage. Two
+    calibrations are equal (``==``) when their transforms and frame sizes are.
 
     Examples
     --------
@@ -731,25 +749,56 @@ class VideoCalibration:
 
     transform_px_to_cm: AffineND
     frame_size_px: tuple[int, int]
+    transform_cm_to_px: AffineND = field(init=False, repr=False)
 
-    # Cached inverse transform
-    _transform_cm_to_px: AffineND | None = None
-
-    @property
-    def transform_cm_to_px(self) -> AffineND:
-        """Get the inverse transform (cm to pixels).
-
-        Returns
-        -------
-        AffineND
-            Transform that converts cm coordinates to pixel coordinates.
-        """
-        if self._transform_cm_to_px is None:
-            # Use object.__setattr__ to bypass frozen=True if using frozen dataclass
-            object.__setattr__(
-                self, "_transform_cm_to_px", self.transform_px_to_cm.inverse()
+    def __post_init__(self) -> None:
+        """Validate the transform and frame size and compute the inverse."""
+        transform = self.transform_px_to_cm
+        if not isinstance(transform, AffineND):
+            raise TypeError(
+                _format_error(
+                    "VideoCalibration needs an AffineND transform_px_to_cm, got "
+                    f"{type(transform).__name__}.",
+                    fix="wrap the 3 x 3 homogeneous matrix: AffineND(matrix), or "
+                    "build it with calibrate_from_scale_bar or "
+                    "calibrate_from_landmarks",
+                )
             )
-        return self._transform_cm_to_px  # type: ignore[return-value]
+        if transform.n_dims != 2:
+            raise ValueError(
+                _format_error(
+                    "VideoCalibration needs a 2D transform from (x, y) pixels, "
+                    f"got a {transform.n_dims}D one.",
+                    fix="pass a transform built from a 3 x 3 homogeneous matrix",
+                )
+            )
+        size: tuple[object, ...] = tuple(self.frame_size_px)
+        if len(size) != 2 or not all(_is_positive_integer(n) for n in size):
+            raise ValueError(
+                _format_error(
+                    "frame_size_px must be two positive integers (width, height), "
+                    f"got {self.frame_size_px!r}.",
+                    fix="pass the video frame size in pixels, for example "
+                    "(frame.shape[1], frame.shape[0])",
+                )
+            )
+        object.__setattr__(
+            self,
+            "frame_size_px",
+            (int(size[0]), int(size[1])),  # type: ignore[call-overload]
+        )
+        object.__setattr__(self, "transform_cm_to_px", transform.inverse())
+
+    def __eq__(self, other: object) -> bool:
+        """Whether ``other`` has an equal transform and frame size."""
+        if not isinstance(other, VideoCalibration):
+            return NotImplemented
+        return (
+            self.transform_px_to_cm == other.transform_px_to_cm
+            and self.frame_size_px == other.frame_size_px
+        )
+
+    __hash__ = None  # type: ignore[assignment]
 
     @property
     def cm_per_px(self) -> float:
@@ -794,10 +843,10 @@ class VideoCalibration:
         VideoCalibration
             Restored calibration object.
         """
-        transform = AffineND(np.array(d["transform_px_to_cm"]))
-        frame_size_list = d["frame_size_px"]
-        frame_size = (int(frame_size_list[0]), int(frame_size_list[1]))
-        return cls(transform_px_to_cm=transform, frame_size_px=frame_size)
+        transform = AffineND(np.array(d["transform_px_to_cm"], dtype=np.float64))
+        return cls(
+            transform_px_to_cm=transform, frame_size_px=tuple(d["frame_size_px"])
+        )
 
 
 # --- 3D Transform Factories ------------------------------------------

@@ -55,7 +55,6 @@ def test_roundtrip_is_self_contained_and_preserves_pixel_geometry(tmp_path):
     project.save(path)
     assert path.exists()
     assert not path.with_suffix(".annotation.npz").exists()
-    assert calibration._transform_cm_to_px is None
     loaded = AnnotationProject.load(path)
     assert_array_equal(loaded.frame, frame)
     assert not loaded.frame.flags.writeable
@@ -95,15 +94,13 @@ def test_snapshot_owns_arrays_nested_metadata_and_calibration():
     frame[:] = 100
     metadata["labels"][0]["value"] = "changed"
     matrix[0, 0] = 50
-    calibration.frame_size_px = (1, 1)
+    with pytest.raises(FrozenInstanceError):
+        calibration.frame_size_px = (1, 1)
     assert_array_equal(shape.vertices, [[1, 2], [3, 4]])
     assert project.frame.max() == 0
     assert shape.metadata["labels"][0]["value"] == "original"
     assert project.calibration.frame_size_px == (20, 10)
     assert project.calibration.transform_px_to_cm.A[0, 0] == 0.5
-    exported = project.calibration
-    exported.frame_size_px = (2, 2)
-    assert project.calibration.frame_size_px == (20, 10)
     with pytest.raises(TypeError):
         shape.metadata["labels"][0]["value"] = "changed"
     with pytest.raises(FrozenInstanceError):

@@ -473,6 +473,45 @@ class TestVideoCalibration:
         assert "frame_size_px" in d
         assert d["frame_size_px"] == [640, 480]
 
+    def test_is_immutable_so_the_inverse_cannot_go_stale(self):
+        """The inverse is fixed with the forward transform at construction."""
+        from dataclasses import FrozenInstanceError
+
+        from neurospatial.ops.transforms import VideoCalibration
+
+        calib = VideoCalibration(scale_2d(0.5), (640, 480))
+        with pytest.raises(FrozenInstanceError):
+            calib.transform_px_to_cm = scale_2d(2.0)
+        with pytest.raises(TypeError):
+            VideoCalibration(scale_2d(0.5), (640, 480), scale_2d(2.0))
+        assert_allclose(calib.transform_cm_to_px.A, scale_2d(2.0).A)
+
+    def test_equality_compares_transform_and_frame_size(self):
+        from neurospatial.ops.transforms import VideoCalibration
+
+        calib = VideoCalibration(scale_2d(0.5), (640, 480))
+        assert calib == VideoCalibration(scale_2d(0.5), (640, 480))
+        assert calib != VideoCalibration(scale_2d(0.5), (320, 240))
+        assert calib != VideoCalibration(scale_2d(0.25), (640, 480))
+        assert calib == VideoCalibration.from_dict(calib.to_dict())
+
+    @pytest.mark.parametrize(
+        "frame_size", [(-5, 0), (640,), (640.5, 480), (True, 480), (0, 480)]
+    )
+    def test_refuses_invalid_frame_size(self, frame_size):
+        from neurospatial.ops.transforms import VideoCalibration
+
+        with pytest.raises(ValueError, match="two positive integers"):
+            VideoCalibration(scale_2d(0.5), frame_size)
+
+    def test_refuses_a_transform_that_is_not_2d(self):
+        from neurospatial.ops.transforms import VideoCalibration, scale_3d
+
+        with pytest.raises(ValueError, match="2D transform"):
+            VideoCalibration(scale_3d(0.5), (640, 480))
+        with pytest.raises(TypeError, match="AffineND"):
+            VideoCalibration(np.eye(3), (640, 480))
+
 
 class TestCalibrationEdgeCases:
     """Edge case tests for calibration validation."""
