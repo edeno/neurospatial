@@ -602,7 +602,7 @@ def compute_viewed_location(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    method: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    method: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     env: BinningConsumer | None = None,
@@ -618,12 +618,11 @@ def compute_viewed_location(
     headings : NDArray[np.float64], shape (n_time,)
         Animal heading at each time (allocentric radians: 0 = East,
         +pi/2 = North).
-    method : {"fixed_distance", "ray_cast", "boundary"}, default "fixed_distance"
+    method : {"fixed_distance", "ray_cast"}, default "fixed_distance"
         Method for computing viewed location:
 
         - "fixed_distance": the point ``view_distance`` ahead along the gaze.
         - "ray_cast": the first wall the gaze ray reaches.
-        - "boundary": the same as "ray_cast".
     view_distance : float, default 10.0
         Distance in environment units (e.g. cm) for the fixed_distance method.
     gaze_offsets : NDArray[np.float64], shape (n_time,), optional
@@ -683,13 +682,12 @@ def compute_viewed_location(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    if method not in ("fixed_distance", "ray_cast", "boundary"):
+    if method not in ("fixed_distance", "ray_cast"):
         raise ValueError(
-            f"method must be 'fixed_distance', 'ray_cast', or 'boundary', "
-            f"got '{method}'"
+            f"method must be 'fixed_distance' or 'ray_cast', got {method!r}."
         )
-    if method in ("ray_cast", "boundary") and env is None:
-        raise ValueError(f"env is required when method='{method}'")
+    if method == "ray_cast" and env is None:
+        raise ValueError("env is required when method='ray_cast'")
     _check_samples("compute_viewed_location", positions, headings)
     gaze_direction = headings
     if gaze_offsets is not None:

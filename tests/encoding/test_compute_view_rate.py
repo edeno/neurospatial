@@ -190,13 +190,13 @@ class TestComputeViewRateReturnsResult:
 class TestComputeViewRateGazeModel:
     """Test gaze_model parameter."""
 
-    @pytest.mark.parametrize("gaze_model", ["fixed_distance", "ray_cast", "boundary"])
+    @pytest.mark.parametrize("gaze_model", ["fixed_distance", "ray_cast"])
     def test_accepts_valid_gaze_models(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
-        gaze_model: Literal["fixed_distance", "ray_cast", "boundary"],
+        gaze_model: Literal["fixed_distance", "ray_cast"],
     ) -> None:
         """compute_view_rate should accept all valid gaze models."""
         from neurospatial.encoding.view import compute_view_rate
@@ -1555,7 +1555,7 @@ class TestComputeViewRateGazeOffsets:
         times, positions, headings = trajectory_data
         gaze_offsets = np.full_like(headings, np.pi / 6)
 
-        for gaze_model in ["fixed_distance", "ray_cast", "boundary"]:
+        for gaze_model in ["fixed_distance", "ray_cast"]:
             result = compute_view_rate(
                 simple_env,
                 spike_times,

@@ -741,7 +741,7 @@ for visible bins and 0 for hidden ones. Averaging it over observed frames gives
 the fraction of time each bin was in view.
 
 The source choice is forwarded by the single/population view encoders, shuffle
-tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"` or `"boundary"`,
+tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"`,
 encoding assigns a wall hit to the bin just inside the observer's side. A hit
 outside the retained analysis support makes physical view encoding unavailable
 and raises with guidance when it contributes to the selected recording time.

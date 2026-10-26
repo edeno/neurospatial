@@ -21,7 +21,6 @@ Output shapes:
 Gaze models supported:
 - "fixed_distance": Point at fixed distance in gaze direction (default)
 - "ray_cast": Intersection with environment boundary
-- "boundary": Nearest boundary point in gaze direction
 """
 
 from __future__ import annotations
@@ -105,7 +104,7 @@ def _precompute_view_bins(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     boundary_source: Literal["physical", "analysis"] = "physical",
@@ -124,7 +123,7 @@ def _precompute_view_bins(
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, 0=East).
-    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
         Method for computing viewed location.
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
@@ -153,24 +152,15 @@ def _precompute_view_bins(
     """
     n_samples = len(positions)
 
-    max_distance = 100.0
-    if gaze_model != "fixed_distance":
-        from neurospatial.geometry import boundary_geometry, search_distance
-
-        max_distance = search_distance(
-            boundary_geometry(env.binning, env.arena, boundary_source), positions
-        )
-
     # Compute viewed locations for all timepoints
     viewed_locations = compute_viewed_location(
         positions,
         headings,
         method=gaze_model,
         boundary_source=boundary_source,
-        max_distance=max_distance,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
-        env=env if gaze_model in ("ray_cast", "boundary") else None,
+        env=env if gaze_model == "ray_cast" else None,
     )
 
     # Identify valid viewed locations (finite and inside environment)
@@ -223,7 +213,7 @@ def compute_occupancy(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -249,11 +239,10 @@ def compute_occupancy(
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, 0=East).
-    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
         Method for computing viewed location:
         - "fixed_distance": Point at fixed distance in gaze direction
         - "ray_cast": Intersection with environment boundary
-        - "boundary": Nearest boundary point in gaze direction
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
     gaze_offsets : ndarray, shape (n_samples,), optional
@@ -357,7 +346,7 @@ def compute_occupancy(
     _validate_times(times, context="compute_occupancy")
 
     # Validate gaze_model
-    valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
+    valid_gaze_models = {"fixed_distance", "ray_cast"}
     if gaze_model not in valid_gaze_models:
         raise ValueError(
             f"Invalid gaze_model: '{gaze_model}'. "
@@ -397,7 +386,7 @@ def bin_view_spike_train(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -423,7 +412,7 @@ def bin_view_spike_train(
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, 0=East).
-    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
         Method for computing viewed location.
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
@@ -540,7 +529,7 @@ def prepare_view_binning(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -606,7 +595,7 @@ def bin_view_spike_trains(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
@@ -637,7 +626,7 @@ def bin_view_spike_trains(
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, 0=East).
-    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
         Method for computing viewed location.
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).

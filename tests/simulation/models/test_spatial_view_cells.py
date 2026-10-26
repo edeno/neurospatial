@@ -80,7 +80,7 @@ class TestSpatialViewCellModelCreation:
         assert model.view_distance > 0
 
         # Default gaze model
-        assert model.gaze_model in ("fixed_distance", "ray_cast", "boundary")
+        assert model.gaze_model in ("fixed_distance", "ray_cast")
 
         # Default visibility requirement
         assert isinstance(model.require_visibility, bool)
@@ -236,9 +236,7 @@ class TestParameterValidation:
             SpatialViewCellModel,
         )
 
-        with pytest.raises(
-            ValueError, match=r"gaze_model.*fixed_distance.*ray_cast.*boundary"
-        ):
+        with pytest.raises(ValueError, match=r"gaze_model.*fixed_distance.*ray_cast"):
             SpatialViewCellModel(
                 env=env,
                 preferred_view_location=np.array([50.0, 50.0]),
@@ -925,7 +923,7 @@ class TestEdgeCases:
         assert rate.shape == (1,)
 
 
-@pytest.mark.parametrize("gaze_model", ["fixed_distance", "boundary"])
+@pytest.mark.parametrize("gaze_model", ["fixed_distance", "ray_cast"])
 def test_firing_rate_builds_the_mesh_lookup_once_per_call(gaze_model, monkeypatch):
     """Every timestep's line of sight shares one triangle index."""
     from shapely.geometry import box

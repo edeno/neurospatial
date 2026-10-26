@@ -416,28 +416,6 @@ class TestComputeViewedLocation:
         assert viewed[0, 0] > 50.0  # x should be East of animal
         assert 40 < viewed[0, 1] < 60  # y should be near middle
 
-    def test_boundary_method(self):
-        """Boundary method returns nearest boundary point in gaze direction."""
-        from neurospatial import Environment
-        from neurospatial.ops.visibility import compute_viewed_location
-
-        # Create environment
-        rng = np.random.default_rng(42)
-        positions_samples = rng.uniform(10, 90, (500, 2))
-        env = Environment.from_samples(positions_samples, bin_size=5.0)
-
-        # Animal at center, facing East
-        positions = np.array([[50.0, 50.0]])
-        headings = np.array([0.0])
-
-        viewed = compute_viewed_location(
-            positions, headings, method="boundary", env=env, boundary_source="analysis"
-        )
-
-        assert viewed.shape == (1, 2)
-        # x should be positive (towards East boundary)
-        assert viewed[0, 0] > 50.0
-
     def test_gaze_offsets(self):
         """Gaze offsets adjust the viewing angle relative to heading."""
         from neurospatial.ops.visibility import compute_viewed_location

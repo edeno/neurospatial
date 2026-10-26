@@ -116,12 +116,11 @@ class SpatialViewCellModel:
     view_distance : float, optional
         Distance at which gaze is computed for fixed_distance model (default: 20.0).
         Only used when ``gaze_model='fixed_distance'``.
-    gaze_model : {'fixed_distance', 'ray_cast', 'boundary'}, optional
+    gaze_model : {'fixed_distance', 'ray_cast'}, optional
         Model for computing viewed location (default: 'fixed_distance').
 
         - 'fixed_distance': Point at fixed distance in gaze direction
         - 'ray_cast': Intersection with environment boundary
-        - 'boundary': Nearest boundary point in gaze direction
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls or explicitly selected analysis boundaries for
         ray casting and line of sight. Unknown physical walls refuse.
@@ -216,9 +215,7 @@ class SpatialViewCellModel:
         preferred_view_location: NDArray[np.float64],
         view_field_width: float = 10.0,
         view_distance: float = 20.0,
-        gaze_model: Literal[
-            "fixed_distance", "ray_cast", "boundary"
-        ] = "fixed_distance",
+        gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
         max_rate: float = 20.0,
         baseline_rate: float = 0.01,
         require_visibility: bool = False,
@@ -271,7 +268,7 @@ class SpatialViewCellModel:
             raise ValueError(msg)
 
         # Validate gaze_model
-        valid_gaze_models = ("fixed_distance", "ray_cast", "boundary")
+        valid_gaze_models = ("fixed_distance", "ray_cast")
         if gaze_model not in valid_gaze_models:
             msg = f"gaze_model must be one of {valid_gaze_models}, got '{gaze_model}'"
             raise ValueError(msg)
