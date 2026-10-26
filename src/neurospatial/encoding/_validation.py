@@ -1,19 +1,15 @@
 """Shared input validation helpers for encoding compute functions.
 
-The four public ``compute_*_rate(s)`` entry points
-(``compute_spatial_rate``, ``compute_directional_rate``,
-``compute_egocentric_rate``, ``compute_view_rate`` and their plural
-variants) had drifted on input validation: only ``compute_view_rate`` and
-``compute_egocentric_rate`` length-checked their trajectory inputs, and
-each surfaced length errors with a slightly different message style.
+The public ``compute_*_rate(s)`` entry points and cell predicates share:
 
-This module centralizes:
-
-- ``_validate_times`` — monotonic-non-decreasing + min-length check on a
-  timestamp array (previously duplicated byte-for-byte in
-  ``_view_counts.py`` and ``_egocentric_counts.py``).
-- ``validate_trajectory`` — joint length + dimensionality check on
-  ``(times, positions?, headings?)``.
+- ``_validate_times`` — finite, non-decreasing timestamps with at least two
+  samples.
+- ``validate_trajectory`` — joint length and dimensionality checks on
+  ``(times, positions?, headings?)``, plus a warning for headings that look
+  like degrees.
+- ``warn_if_angles_look_like_degrees`` — the degree check for any angle
+  input read as radians.
+- ``validate_spike_times`` / ``validate_spike_trains`` — spike timestamps.
 
 The smoothing-method validator lives in
 ``neurospatial.encoding._smoothing._validate_smoothing_parameters`` and

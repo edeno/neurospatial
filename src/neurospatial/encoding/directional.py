@@ -2109,20 +2109,10 @@ def compute_directional_rate(
     data. The result is a DirectionalRateResult object containing the firing
     rate map, occupancy, and metadata.
 
-    .. note::
-
-       Directional encoding is the documented exception to the v0.4
-       canonical "env first" argument order for encoding functions
-       (see :ref:`canonical-argument-order` in the project guide).
-       Heading is a circular angular variable, not a position in a
-       spatial environment, so this function operates on circular
-       heading bins (``bin_size``, ``angle_unit``) rather than an
-       :class:`Environment`. There is no ``env`` parameter and no
-       internal Environment shim — keeping the signature
-       heading-domain native is intentional. Sister classifiers
-       :func:`compute_spatial_rate`, :func:`compute_egocentric_rate`,
-       and :func:`compute_view_rate` all take ``env`` first because
-       they operate over a discretized spatial environment.
+    Head direction is a circular variable, not a position, so this function
+    bins headings into angular bins and takes no :class:`Environment`, unlike
+    :func:`compute_spatial_rate`, :func:`compute_egocentric_rate` and
+    :func:`compute_view_rate`.
 
     Parameters
     ----------
@@ -2132,9 +2122,9 @@ def compute_directional_rate(
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
         Head direction at each time point. **Allocentric (world-frame)
-        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
-        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
-        Units determined by ``angle_unit``.
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South.
+        Any finite angle in ``angle_unit`` is accepted (for example
+        [-π, π), [0, 2π) or unwrapped); NaN marks a missing sample.
 
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
@@ -2211,8 +2201,9 @@ def compute_directional_rate(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it is no longer than ``max_gap``, does
+    not cross a declared break, starts at a finite heading and lies inside
+    ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
     The function uses the binning layer (``_directional_counts.py``) to convert
@@ -2380,17 +2371,8 @@ def compute_directional_rates(
     shared quantities (occupancy, bin centers) once and optionally parallelizes
     spike counting with joblib.
 
-    .. note::
-
-       Like :func:`compute_directional_rate`, this function is the documented
-       exception to the v0.4 canonical "env first" argument order for
-       encoding functions (see :ref:`canonical-argument-order` in the
-       project guide). Heading is a circular angular variable, not a
-       position in a spatial environment, so this signature is
-       heading-domain native and intentionally takes no
-       :class:`Environment`. Sister batch encoders
-       (:func:`compute_spatial_rates`, :func:`compute_egocentric_rates`,
-       :func:`compute_view_rates`) keep their env-first signatures.
+    Like :func:`compute_directional_rate`, it takes no :class:`Environment`:
+    head direction is a circular variable, not a position.
 
     Parameters
     ----------
@@ -2409,9 +2391,9 @@ def compute_directional_rates(
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
         Head direction at each time point. **Allocentric (world-frame)
-        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
-        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
-        Units determined by ``angle_unit``.
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South.
+        Any finite angle in ``angle_unit`` is accepted (for example
+        [-π, π), [0, 2π) or unwrapped); NaN marks a missing sample.
 
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
@@ -2507,8 +2489,9 @@ def compute_directional_rates(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it is no longer than ``max_gap``, does
+    not cross a declared break, starts at a finite heading and lies inside
+    ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
     **Efficiency advantages over calling ``compute_directional_rate()`` in a loop**:
@@ -2756,9 +2739,9 @@ def is_head_direction_cell(
 
     headings : ndarray, shape (n_samples,)
         Head direction at each time point. **Allocentric (world-frame)
-        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
-        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
-        Units determined by ``angle_unit``.
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South.
+        Any finite angle in ``angle_unit`` is accepted (for example
+        [-π, π), [0, 2π) or unwrapped); NaN marks a missing sample.
 
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
@@ -3134,9 +3117,9 @@ def head_direction_cell_significance(
 
     headings : ndarray, shape (n_samples,)
         Head direction at each time point. **Allocentric (world-frame)
-        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
-        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
-        Units determined by ``angle_unit``.
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South.
+        Any finite angle in ``angle_unit`` is accepted (for example
+        [-π, π), [0, 2π) or unwrapped); NaN marks a missing sample.
 
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
@@ -3215,21 +3198,16 @@ def head_direction_cell_significance(
     Raises
     ------
     ValueError
-        For invalid inputs/settings, duplicate/conflicting unit labels,
-        insufficient analyzed time, or unsupported method="glm".
+        For invalid inputs/settings, duplicate/conflicting unit labels or
+        insufficient analyzed time.
 
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment
     >>> from neurospatial.encoding import head_direction_cell_significance
     >>> rng = np.random.default_rng(7)
     >>> times = np.arange(0.0, 60.0, 0.1)
-    >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
-    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
-    >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
-    >>> headings = np.sin(times / 5)
-    >>> objects = np.array([[50.0, 50.0]])
+    >>> headings = np.angle(np.exp(1j * 0.3 * times))  # turns through all headings
     >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
     >>> results = head_direction_cell_significance(
     ...     trains, times, headings, n_shuffles=20, rng=0

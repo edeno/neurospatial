@@ -15,10 +15,8 @@ Output shapes:
 - Occupancy: (n_bins,) - always shared across neurons
 - Bin centers: (n_bins,) - angles in radians [-π, π)
 
-The binning layer is intentionally separated from smoothing to allow:
-- Reusing occupancy across multiple neurons
-- Precomputing bin centers for efficiency
-- Future JAX implementations with different parallelization strategies
+The binning layer is separated from smoothing so occupancy and bin centers
+are computed once and shared across neurons.
 
 Notes
 -----
@@ -303,11 +301,11 @@ def bin_directional_spike_train(
 
     Notes
     -----
-    **Spike assignment**: Spikes are assigned to bins using nearest-neighbor
-    lookup (not interpolation) to correctly handle circular discontinuities.
-    Linear interpolation would give wrong results when head direction crosses
-    the 0°/360° boundary (e.g., 350° to 10° would incorrectly interpolate to
-    180°). Spikes outside the recording window are excluded.
+    **Spike assignment**: Each spike takes the heading bin of the most recent
+    sample at or before it (the start of its sampling interval), the same
+    bin that interval's duration is added to in the occupancy. Headings are
+    not interpolated, which would be wrong across the ±π wrap (350° to 10°
+    would interpolate to 180°). Spikes in excluded intervals are not counted.
 
     Examples
     --------
