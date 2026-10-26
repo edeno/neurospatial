@@ -136,6 +136,25 @@ class TestHeadDirectionCellModel:
             < hd_broad.ground_truth["tuning_width"]
         )
 
+    @pytest.mark.parametrize(
+        ("concentration", "half_width_deg"), [(1, 72), (2, 49), (5, 31), (10, 21)]
+    )
+    def test_tuning_width_is_the_half_width_at_half_maximum(
+        self, concentration, half_width_deg
+    ):
+        """The reported tuning width is where the rate above baseline halves."""
+        hd = HeadDirectionCellModel(
+            preferred_direction=0.0,
+            concentration=concentration,
+            max_rate=40.0,
+            baseline_rate=1.0,
+        )
+        width = hd.ground_truth["tuning_width"]
+        np.testing.assert_allclose(
+            hd.firing_rate(np.array([width, -width])), 1.0 + 39.0 / 2, rtol=1e-12
+        )
+        assert round(hd.ground_truth["tuning_width_deg"]) == half_width_deg
+
     def test_ground_truth_properties(self):
         """Test that ground_truth returns correct parameters."""
         hd = HeadDirectionCellModel(

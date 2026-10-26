@@ -22,14 +22,14 @@ class HeadDirectionCellModel:
         Von Mises concentration parameter (κ). Higher values = sharper tuning.
         Default is 2.0.
 
-        Typical values:
+        The half-width at half-maximum of the rate above baseline solves
+        ``exp(κ (cos Δ - 1)) = 1/2``, so ``HWHM = arccos(1 - ln(2)/κ)``
+        (defined for κ ≥ ln(2)/2):
 
-        - κ = 1: Broad tuning (~60° half-width)
-        - κ = 2: Moderate tuning (~40° half-width)
-        - κ = 5: Sharp tuning (~25° half-width)
-        - κ = 10: Very sharp tuning (~18° half-width)
-
-        Relationship to tuning width: HWHM ≈ arccos(1 - ln(2)/κ)
+        - κ = 1: Broad tuning (72° half-width)
+        - κ = 2: Moderate tuning (49° half-width)
+        - κ = 5: Sharp tuning (31° half-width)
+        - κ = 10: Very sharp tuning (21° half-width)
     max_rate : float, optional
         Peak firing rate in Hz (default: 40.0). Typical HD cells fire 20-100 Hz.
     baseline_rate : float, optional
@@ -267,8 +267,9 @@ class HeadDirectionCellModel:
             - 'preferred_direction': float - preferred direction in radians
             - 'preferred_direction_deg': float - preferred direction in degrees
             - 'concentration': float - von Mises concentration (κ)
-            - 'tuning_width': float - approximate HWHM in radians
-            - 'tuning_width_deg': float - approximate HWHM in degrees
+            - 'tuning_width': float - half-width at half-maximum of the rate
+              above baseline, in radians (π when the rate never halves)
+            - 'tuning_width_deg': float - the same half-width in degrees
             - 'max_rate': float - peak firing rate in Hz
             - 'baseline_rate': float - baseline firing rate in Hz
 
@@ -288,7 +289,7 @@ class HeadDirectionCellModel:
         >>> hd.ground_truth["max_rate"]
         50.0
         """
-        # Compute approximate tuning width (HWHM)
+        # Half-width at half-maximum (HWHM) of the rate above baseline
         # From von Mises: at half-max, cos(θ) = 1 - ln(2)/κ
         # So HWHM = arccos(1 - ln(2)/κ)
         cos_half = 1 - np.log(2) / self.concentration
