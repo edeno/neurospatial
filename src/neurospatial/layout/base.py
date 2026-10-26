@@ -219,8 +219,8 @@ def _build_argument_message(
 ) -> str:
     """Explain build arguments that do not fit ``signature``.
 
-    Names the options a call left out, or else lists the options the
-    engine takes, in place of Python's bare binding error.
+    Names the options a call misspelled or left out, or else lists the
+    options the engine takes, in place of Python's bare binding error.
     """
     options = [
         name
@@ -228,6 +228,19 @@ def _build_argument_message(
         if parameter.kind
         not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     ]
+    takes_any = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    unexpected = [] if takes_any else [name for name in kwargs if name not in options]
+    if unexpected:
+        return _format_error(
+            f"{engine}.build() got unexpected option(s): "
+            f"{', '.join(map(repr, unexpected))}.",
+            why=f"Why: {engine}.build() takes only {', '.join(options)}.",
+            fix="check the spelling; neurospatial.layout.get_layout_parameters() "
+            "lists the options of each layout",
+        )
     try:
         given = signature.bind_partial(None, *args, **kwargs).arguments
     except TypeError:
