@@ -29,7 +29,7 @@ Create a simple graph (unit face measure, unit spacing) and compute a kernel:
 ...     graph.edges[u, v]["A"] = 1.0
 >>> volumes = np.ones(5)
 >>> kernel = compute_diffusion_kernels(
-...     graph, volumes=volumes, sigma=1.0, mode="transition"
+...     graph, volumes=volumes, bandwidth=1.0, mode="transition"
 ... )
 >>> kernel.shape
 (5, 5)
@@ -79,16 +79,16 @@ def compute_diffusion_kernels(
     graph: nx.Graph,
     *,
     volumes: NDArray[np.float64],
-    sigma: float,
+    bandwidth: float,
     mode: KernelMode,
 ) -> NDArray[np.float64]:
     """Assemble a finite-volume diffusion kernel from a face-measure graph.
 
     Builds the finite-volume weight matrix ``W[i, j] = A[i, j] / d[i, j]`` from
     the graph's edge attributes and returns the requested normalized view of the
-    heat operator ``H = exp(-t L)``, ``L = M^-1 (D - W)``, ``t = sigma^2 / 2``.
-    ``bandwidth`` is thereby the true physical standard deviation (sigma) of the
-    smoothing on any K-orthogonal layout, independent of bin size.
+    heat operator ``H = exp(-t L)``, ``L = M^-1 (D - W)``, ``t = bandwidth^2 / 2``.
+    ``bandwidth`` is thereby the physical standard deviation of the smoothing on
+    any K-orthogonal layout, independent of bin size.
 
     This is the low-level primitive. Most callers should use
     :meth:`Environment.compute_kernel` / :meth:`Environment.smooth`, which take
@@ -109,9 +109,10 @@ def compute_diffusion_kernels(
     volumes : NDArray[np.float64], shape (n_bins,)
         Per-bin cell volumes ``M``, node-ordered ``0..n-1``. Every entry must be
         finite and strictly positive (the operator divides by ``volumes``).
-    sigma : float
-        Physical smoothing standard deviation. Must be finite and > 0 (it feeds
-        ``sigma**2`` into the matrix exponential).
+    bandwidth : float
+        Physical smoothing standard deviation, in the units of the edge
+        ``"distance"``. Must be finite and > 0 (it feeds ``bandwidth**2`` into
+        the matrix exponential).
     mode : {"transition", "density", "average"}
         Normalized view of the operator:
 
@@ -129,7 +130,7 @@ def compute_diffusion_kernels(
     Raises
     ------
     ValueError
-        If ``sigma`` is non-finite or ``<= 0``; if ``graph`` is directed or a
+        If ``bandwidth`` is non-finite or ``<= 0``; if ``graph`` is directed or a
         multigraph (reciprocal or parallel edges would sum into one doubled
         conductance; collapse them with ``nx.Graph(graph)``); if ``volumes`` has
         the wrong shape or any non-finite / non-positive entry; if node labels
@@ -179,7 +180,7 @@ def compute_diffusion_kernels(
       avoid materializing a full dense posterior.
     """
     geometry = DiffusionGeometry.from_graph(graph, volumes)
-    return heat_kernel_from_W(geometry.W, geometry.volumes, sigma, mode=mode)
+    return heat_kernel_from_W(geometry.W, geometry.volumes, bandwidth, mode=mode)
 
 
 def apply_kernel(

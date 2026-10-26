@@ -213,26 +213,26 @@ class TestSelectBasisCenters:
 class TestGeodesicRBFBasis:
     """Tests for geodesic RBF basis."""
 
-    def test_output_shape_single_sigma(self, simple_2d_env):
-        """Single sigma should give n_centers rows."""
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=5.0)
+    def test_output_shape_single_bandwidth(self, simple_2d_env):
+        """Single bandwidth should give n_centers rows."""
+        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         assert basis.shape == (10, simple_2d_env.n_bins)
 
-    def test_output_shape_multi_sigma(self, simple_2d_env):
-        """Multiple sigmas should multiply the row count."""
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=[5.0, 10.0])
+    def test_output_shape_multi_bandwidth(self, simple_2d_env):
+        """Multiple bandwidths should multiply the row count."""
+        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=[5.0, 10.0])
         assert basis.shape == (20, simple_2d_env.n_bins)
 
     def test_row_ordering_center_major(self, simple_2d_env):
-        """Rows should be ordered (center, sigma): all sigmas for center 0, then center 1."""
+        """Rows should be ordered (center, bandwidth): all bandwidths for center 0, then center 1."""
         centers = np.array([0, 5])
         basis = geodesic_rbf_basis(
-            simple_2d_env, centers=centers, sigma=[5.0, 10.0], normalize="none"
+            simple_2d_env, centers=centers, bandwidth=[5.0, 10.0], normalize="none"
         )
-        # Row 0: center 0, sigma=5
-        # Row 1: center 0, sigma=10
-        # Row 2: center 1, sigma=5
-        # Row 3: center 1, sigma=10
+        # Row 0: center 0, bandwidth=5
+        # Row 1: center 0, bandwidth=10
+        # Row 2: center 1, bandwidth=5
+        # Row 3: center 1, bandwidth=10
         assert np.argmax(basis[0]) == 0  # center 0
         assert np.argmax(basis[1]) == 0  # center 0
         assert np.argmax(basis[2]) == 5  # center 1
@@ -242,7 +242,7 @@ class TestGeodesicRBFBasis:
         """Basis function should peak at its center."""
         centers = np.array([0, 5, 10])
         basis = geodesic_rbf_basis(
-            simple_2d_env, centers=centers, sigma=5.0, normalize="none"
+            simple_2d_env, centers=centers, bandwidth=5.0, normalize="none"
         )
         for i, c in enumerate(centers):
             assert np.argmax(basis[i]) == c
@@ -257,7 +257,7 @@ class TestGeodesicRBFBasis:
         basis = geodesic_rbf_basis(
             maze_env_with_wall,
             centers=np.array([center_bin]),
-            sigma=3.0,
+            bandwidth=3.0,
             normalize="none",
         )
 
@@ -283,18 +283,18 @@ class TestGeodesicRBFBasis:
         """No normalization should give raw RBF values (center = 1)."""
         centers = np.array([0])
         basis = geodesic_rbf_basis(
-            simple_2d_env, centers=centers, sigma=5.0, normalize="none"
+            simple_2d_env, centers=centers, bandwidth=5.0, normalize="none"
         )
         # At center, RBF value is exp(0) = 1
         assert_allclose(basis[0, 0], 1.0)
 
-    def test_raises_if_sigma_non_positive(self, simple_2d_env):
-        """Should raise ValueError for non-positive sigma."""
-        with pytest.raises(ValueError, match="sigma values must be positive"):
-            geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=-1.0)
+    def test_raises_if_bandwidth_non_positive(self, simple_2d_env):
+        """Should raise ValueError for non-positive bandwidth."""
+        with pytest.raises(ValueError, match="bandwidth values must be positive"):
+            geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=-1.0)
 
-        with pytest.raises(ValueError, match="sigma values must be positive"):
-            geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=[5.0, 0.0, 10.0])
+        with pytest.raises(ValueError, match="bandwidth values must be positive"):
+            geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=[5.0, 0.0, 10.0])
 
     def test_raises_if_no_centers_specified(self, simple_2d_env):
         """Should raise ValueError if neither centers nor n_centers given."""
@@ -304,7 +304,7 @@ class TestGeodesicRBFBasis:
     def test_raises_if_disconnected_graph(self, disconnected_env):
         """Should raise error if environment graph is disconnected."""
         with pytest.raises(ValueError, match="unreachable"):
-            geodesic_rbf_basis(disconnected_env, n_centers=5, sigma=5.0)
+            geodesic_rbf_basis(disconnected_env, n_centers=5, bandwidth=5.0)
 
 
 # =============================================================================
@@ -446,14 +446,14 @@ class TestSpatialBasis:
         assert basis.ndim == 2
         assert basis.shape[1] == simple_2d_env.n_bins
 
-    def test_coverage_affects_sigma(self, simple_2d_env):
+    def test_coverage_affects_bandwidth(self, simple_2d_env):
         """Local coverage should give narrower basis than global."""
         basis_local = spatial_basis(simple_2d_env, coverage="local", n_features=30)
         basis_global = spatial_basis(simple_2d_env, coverage="global", n_features=30)
 
         # After unit normalization:
-        # - Local (small sigma): sharper peaks, values more concentrated → higher std
-        # - Global (large sigma): broader bumps, values more uniform → lower std
+        # - Local (small bandwidth): sharper peaks, values more concentrated → higher std
+        # - Global (large bandwidth): broader bumps, values more uniform → lower std
         local_spread = np.mean([np.std(b) for b in basis_local])
         global_spread = np.mean([np.std(b) for b in basis_global])
         assert local_spread > global_spread
@@ -476,7 +476,7 @@ class TestSpatialBasis:
         ids=["straight", "L-shaped"],
     )
     def test_track_scale_is_the_track_length(self, nodes):
-        """On a track, sigma is a fraction of the 200 cm the animal can run.
+        """On a track, bandwidth is a fraction of the 200 cm the animal can run.
 
         The bounding box of a straight track has zero height, and an L-shaped
         track's bounding box (120 x 80 cm) says nothing about its length.
@@ -488,7 +488,7 @@ class TestSpatialBasis:
         )
         basis = spatial_basis(track, coverage="medium", n_features=12, rng=0)
         expected = geodesic_rbf_basis(
-            track, n_centers=4, sigma=[10.0, 20.0, 40.0], normalize="unit", rng=0
+            track, n_centers=4, bandwidth=[10.0, 20.0, 40.0], normalize="unit", rng=0
         )
         assert_allclose(basis, expected)
 
@@ -500,7 +500,7 @@ class TestSpatialBasis:
 
         basis = spatial_basis(cube, coverage="medium", n_features=9, rng=0)
         expected = geodesic_rbf_basis(
-            cube, n_centers=3, sigma=[6.0, 12.0, 24.0], normalize="unit", rng=0
+            cube, n_centers=3, bandwidth=[6.0, 12.0, 24.0], normalize="unit", rng=0
         )
         assert_allclose(basis, expected)
 
@@ -519,7 +519,7 @@ class TestPlotBasisFunctions:
 
         matplotlib.use("Agg")  # Non-interactive backend
 
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=5.0)
+        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         fig = plot_basis_functions(simple_2d_env, basis, n_examples=4)
 
         import matplotlib.pyplot as plt
@@ -533,7 +533,7 @@ class TestPlotBasisFunctions:
 
         matplotlib.use("Agg")
 
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, sigma=5.0)
+        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, bandwidth=5.0)
         fig = plot_basis_functions(simple_2d_env, basis, indices=[0, 1, 2])
 
         import matplotlib.pyplot as plt

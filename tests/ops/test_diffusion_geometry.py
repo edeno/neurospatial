@@ -695,9 +695,11 @@ def test_compute_diffusion_kernels_rejects_graphs_that_sum_edges(graph_type):
     nx.set_edge_attributes(graph, 1.0, "A")
     nx.set_edge_attributes(graph, 1.0, "distance")
     with pytest.raises(ValueError, match=r"undirected simple nx\.Graph.*nx\.Graph\("):
-        compute_diffusion_kernels(graph, volumes=np.ones(4), sigma=1.0, mode="average")
+        compute_diffusion_kernels(
+            graph, volumes=np.ones(4), bandwidth=1.0, mode="average"
+        )
     kernel = compute_diffusion_kernels(
-        nx.Graph(graph), volumes=np.ones(4), sigma=1.0, mode="average"
+        nx.Graph(graph), volumes=np.ones(4), bandwidth=1.0, mode="average"
     )
     np.testing.assert_allclose(kernel.sum(axis=1), 1.0)
 
@@ -708,7 +710,9 @@ def test_dense_kernel_warning_points_at_the_callers_line(monkeypatch, face_env):
     nx.set_edge_attributes(graph, 1.0, "A")
     nx.set_edge_attributes(graph, 1.0, "distance")
     with pytest.warns(UserWarning, match="dense diffusion kernel") as record:
-        compute_diffusion_kernels(graph, volumes=np.ones(3), sigma=1.0, mode="average")
+        compute_diffusion_kernels(
+            graph, volumes=np.ones(3), bandwidth=1.0, mode="average"
+        )
         face_env.compute_kernel(bandwidth=1.0, cache=False, mode="density")
     dense = [w for w in record if "dense diffusion kernel" in str(w.message)]
     assert [w.filename for w in dense] == [__file__, __file__]

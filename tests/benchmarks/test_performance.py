@@ -321,7 +321,7 @@ class TestGraphOperationPerformance:
             compute_diffusion_kernels,
             graph_fv,
             volumes=volumes,
-            sigma=5.0,
+            bandwidth=5.0,
             mode="transition",
         )
 

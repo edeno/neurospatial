@@ -22,7 +22,7 @@ Which Basis Should I Use?
     Good for: Large arenas, online/real-time applications.
     Tradeoff: Less intuitive parameterization (degree vs spatial extent).
 
-**Not sure?** Start with `geodesic_rbf_basis(env, n_centers=50, sigma=10.0)`.
+**Not sure?** Start with `geodesic_rbf_basis(env, n_centers=50, bandwidth=10.0)`.
 You can always switch later—all three work the same way in GLMs.
 
 **Want automatic parameter selection?** Use `spatial_basis()`:
@@ -32,17 +32,17 @@ Scale Parameters Across Bases
 ------------------------------
 The three basis types use different scale parameters:
 
-- geodesic_rbf_basis(sigma=...): RBF bandwidth in environment units (cm)
+- geodesic_rbf_basis(bandwidth=...): RBF bandwidth in environment units (cm)
 - heat_kernel_wavelet_basis(scales=...): Diffusion time in bin-spacing² units;
   standard deviation sqrt(2*scale) bins
 - chebyshev_filter_basis(max_degree=...): How many bins away from center the
   function extends (degree 5 = nonzero within 5 bins of center)
 
 Rough equivalence for spatial extent:
-    sigma ≈ sqrt(2*scale) * bin_size ≈ max_degree * bin_size
+    bandwidth ≈ sqrt(2*scale) * bin_size ≈ max_degree * bin_size
 
 For example, with 2cm bins and 10cm desired spatial extent:
-    sigma=10.0  or  scales=[12.5]  or  max_degree=5
+    bandwidth=10.0  or  scales=[12.5]  or  max_degree=5
 
 Quick Start
 -----------
@@ -50,7 +50,7 @@ Quick Start
 >>> from neurospatial.ops.basis import geodesic_rbf_basis  # doctest: +SKIP
 >>>
 >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
->>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)  # doctest: +SKIP
+>>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=5.0)  # doctest: +SKIP
 >>>
 >>> # Create GLM design matrix
 >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
@@ -64,7 +64,9 @@ Full GLM Workflow
 >>>
 >>> # 1. Create environment and basis
 >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
->>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=[5.0, 10.0])  # doctest: +SKIP
+>>> basis = geodesic_rbf_basis(
+...     env, n_centers=50, bandwidth=[5.0, 10.0]
+... )  # doctest: +SKIP
 >>>
 >>> # 2. Create design matrix from trajectory
 >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
@@ -144,10 +146,10 @@ def select_basis_centers(
     n_centers : int
         Number of centers to select.
 
-        **Rule of thumb**: n_centers ≈ (environment area) / (sigma²)
+        **Rule of thumb**: n_centers ≈ (environment area) / (bandwidth²)
 
-        - For 100cm × 100cm maze with sigma=10cm: n_centers ≈ 100
-        - For 50cm linear track with sigma=5cm: n_centers ≈ 10
+        - For 100cm × 100cm maze with bandwidth=10cm: n_centers ≈ 100
+        - For 50cm linear track with bandwidth=5cm: n_centers ≈ 10
 
         Too few centers: May miss local spatial structure
         Too many centers: Redundant coverage, overfitting risk
@@ -187,7 +189,9 @@ def select_basis_centers(
     >>> centers = select_basis_centers(
     ...     env, n_centers=50, method="kmeans"
     ... )  # doctest: +SKIP
-    >>> basis = geodesic_rbf_basis(env, centers=centers, sigma=5.0)  # doctest: +SKIP
+    >>> basis = geodesic_rbf_basis(
+    ...     env, centers=centers, bandwidth=5.0
+    ... )  # doctest: +SKIP
     """
     # Input validation
     if n_centers < 1:
@@ -377,7 +381,7 @@ def geodesic_rbf_basis(
     env: BasisCentersConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
-    sigma: float | Sequence[float] = 5.0,
+    bandwidth: float | Sequence[float] = 5.0,
     n_centers: int | None = None,
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
@@ -386,8 +390,8 @@ def geodesic_rbf_basis(
     """
     Compute maze-aware RBF basis using geodesic distances.
 
-    For each center c and bandwidth sigma, computes:
-        B(j) = exp(-d_geo(j, c)^2 / (2 * sigma^2))
+    For each center c and bandwidth (physical standard deviation), computes:
+        B(j) = exp(-d_geo(j, c)^2 / (2 * bandwidth^2))
 
     where d_geo is the shortest-path distance respecting walls.
 
@@ -398,14 +402,14 @@ def geodesic_rbf_basis(
     centers : NDArray[np.int_] or None
         Node indices for basis centers. If None, auto-select using
         n_centers and center_method.
-    sigma : float or sequence of float
+    bandwidth : float or sequence of float
         RBF bandwidth in environment units (typically cm).
         Controls spatial spread of each basis function.
 
-        **Rule of thumb**: sigma ≈ (desired coverage diameter) / 2
+        **Rule of thumb**: bandwidth ≈ (desired coverage diameter) / 2
 
-        - sigma=5.0cm: Localized to ~10cm diameter (covers 2*sigma)
-        - sigma=20.0cm: Broad coverage, ~40cm diameter
+        - bandwidth=5.0cm: Localized to ~10cm diameter (covers 2*bandwidth)
+        - bandwidth=20.0cm: Broad coverage, ~40cm diameter
 
         Multiple values create multi-scale basis (recommended):
         Example: [5.0, 10.0, 20.0] for 10cm, 20cm, 40cm coverage.
@@ -430,20 +434,20 @@ def geodesic_rbf_basis(
 
     Returns
     -------
-    basis : NDArray[np.float64], shape (n_centers * n_sigmas, n_bins)
-        Basis matrix with rows ordered by (center, sigma):
+    basis : NDArray[np.float64], shape (n_centers * n_bandwidths, n_bins)
+        Basis matrix with rows ordered by (center, bandwidth):
 
-        - basis[0:n_sigmas] = all scales for center 0
-        - basis[n_sigmas:2*n_sigmas] = all scales for center 1
+        - basis[0:n_bandwidths] = all scales for center 0
+        - basis[n_bandwidths:2*n_bandwidths] = all scales for center 1
         - ...
 
-        Example with n_centers=3, sigma=[5, 10]:
-            Row 0: center 0, sigma=5
-            Row 1: center 0, sigma=10
-            Row 2: center 1, sigma=5
-            Row 3: center 1, sigma=10
-            Row 4: center 2, sigma=5
-            Row 5: center 2, sigma=10
+        Example with n_centers=3, bandwidth=[5, 10]:
+            Row 0: center 0, bandwidth=5
+            Row 1: center 0, bandwidth=10
+            Row 2: center 1, bandwidth=5
+            Row 3: center 1, bandwidth=10
+            Row 4: center 2, bandwidth=5
+            Row 5: center 2, bandwidth=10
 
         To create GLM design matrix from trajectory:
         >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
@@ -452,7 +456,7 @@ def geodesic_rbf_basis(
     Raises
     ------
     ValueError
-        If sigma contains non-positive values.
+        If bandwidth contains non-positive values.
         If centers is None and n_centers is None.
         If environment graph is disconnected and some bins are unreachable.
 
@@ -467,7 +471,7 @@ def geodesic_rbf_basis(
     **Computational complexity**:
 
     - Time: O(n_centers * n_bins * log(n_bins)) using batch shortest paths
-    - Space: O(n_centers * n_sigmas * n_bins) for output basis
+    - Space: O(n_centers * n_bandwidths * n_bins) for output basis
 
     Typical runtimes (2023 MacBook Pro):
 
@@ -488,13 +492,13 @@ def geodesic_rbf_basis(
     >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
     >>>
     >>> # Single scale
-    >>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)  # doctest: +SKIP
+    >>> basis = geodesic_rbf_basis(env, n_centers=50, bandwidth=5.0)  # doctest: +SKIP
     >>> basis.shape  # doctest: +SKIP
     (50, n_bins)
     >>>
     >>> # Multi-scale (recommended)
     >>> basis = geodesic_rbf_basis(
-    ...     env, n_centers=30, sigma=[5.0, 10.0, 20.0]
+    ...     env, n_centers=30, bandwidth=[5.0, 10.0, 20.0]
     ... )  # doctest: +SKIP
     >>> basis.shape  # doctest: +SKIP
     (90, n_bins)  # 30 centers * 3 scales
@@ -529,22 +533,22 @@ def geodesic_rbf_basis(
         )
     centers = np.asarray(centers, dtype=np.int_)
 
-    # Handle sigma and validate
-    sigmas = np.atleast_1d(sigma).astype(np.float64)
-    if np.any(sigmas <= 0):
-        invalid = sigmas[sigmas <= 0]
+    # Handle bandwidth and validate
+    bandwidths = np.atleast_1d(bandwidth).astype(np.float64)
+    if np.any(bandwidths <= 0):
+        invalid = bandwidths[bandwidths <= 0]
         raise ValueError(
-            f"sigma values must be positive, got: {invalid}.\n"
+            f"bandwidth values must be positive, got: {invalid}.\n"
             "\n"
-            "sigma controls spatial spread of basis functions:\n"
-            "  - sigma=5.0: ~10cm diameter coverage\n"
-            "  - sigma=10.0: ~20cm diameter coverage\n"
+            "bandwidth controls spatial spread of basis functions:\n"
+            "  - bandwidth=5.0: ~10cm diameter coverage\n"
+            "  - bandwidth=10.0: ~20cm diameter coverage\n"
             "\n"
-            "Rule of thumb: sigma ≈ (desired coverage diameter) / 2"
+            "Rule of thumb: bandwidth ≈ (desired coverage diameter) / 2"
         )
 
     n_centers_actual = len(centers)
-    n_sigmas = len(sigmas)
+    n_bandwidths = len(bandwidths)
     n_bins = env.n_bins
 
     # Compute distances from all centers at once using scipy's optimized implementation
@@ -578,23 +582,24 @@ def geodesic_rbf_basis(
             "To fix, ensure all bins are reachable when creating the environment."
         )
 
-    # Compute RBF for each (center, sigma) combination
-    # Rows ordered by (center, sigma): all sigmas for center 0, then center 1, etc.
-    # Shape: (n_centers * n_sigmas, n_bins)
+    # Compute RBF for each (center, bandwidth) combination
+    # Rows ordered by (center, bandwidth): all bandwidths for center 0, then center 1, etc.
+    # Shape: (n_centers * n_bandwidths, n_bins)
     #
     # Vectorized computation using broadcasting:
     # distances: (n_centers, n_bins)
-    # sigmas: (n_sigmas,)
-    # Result: (n_centers, n_sigmas, n_bins) -> reshape to (n_centers * n_sigmas, n_bins)
-    sigmas_arr = np.asarray(sigmas)
-    two_sigma_sq = 2.0 * sigmas_arr**2  # (n_sigmas,)
+    # bandwidths: (n_bandwidths,)
+    # Result: (n_centers, n_bandwidths, n_bins) -> reshape to (n_centers * n_bandwidths, n_bins)
+    bandwidths_arr = np.asarray(bandwidths)
+    two_bandwidth_sq = 2.0 * bandwidths_arr**2  # (n_bandwidths,)
 
-    # Broadcast: (n_centers, 1, n_bins) / (1, n_sigmas, 1) -> (n_centers, n_sigmas, n_bins)
+    # Broadcast: (n_centers, 1, n_bins) / (1, n_bandwidths, 1) -> (n_centers, n_bandwidths, n_bins)
     basis_3d = np.exp(
-        -(distances[:, np.newaxis, :] ** 2) / two_sigma_sq[np.newaxis, :, np.newaxis]
+        -(distances[:, np.newaxis, :] ** 2)
+        / two_bandwidth_sq[np.newaxis, :, np.newaxis]
     )
-    # Reshape to (n_centers * n_sigmas, n_bins) with (center, sigma) ordering
-    basis = basis_3d.reshape(n_centers_actual * n_sigmas, n_bins)
+    # Reshape to (n_centers * n_bandwidths, n_bins) with (center, bandwidth) ordering
+    basis = basis_3d.reshape(n_centers_actual * n_bandwidths, n_bins)
 
     # Normalize
     basis = _normalize_basis(basis, normalize)
@@ -663,7 +668,7 @@ def heat_kernel_wavelet_basis(
         deviation on a uniform Cartesian grid is ``sqrt(2 * scale)`` bins,
         independent of ``bin_size``: 0.5 → 1, 1 → 1.41, 2 → 2, 4 → 2.83 bins.
         Larger values give wider spread; walls and boundaries constrain it.
-        For physical bandwidth sigma, scale = sigma² / (2 * spacing²).
+        For a physical bandwidth, scale = bandwidth² / (2 * spacing²).
     n_centers : int or None
         Number of centers for auto-selection.
     center_method : {"kmeans", "farthest_point", "random"}
@@ -1084,7 +1089,7 @@ def spatial_basis(
     Create maze-aware spatial basis with automatic parameter selection.
 
     This is a convenience wrapper around geodesic_rbf_basis() that
-    automatically chooses n_centers and sigma based on your environment
+    automatically chooses n_centers and bandwidth based on your environment
     size and desired coverage scale.
 
     Use this when you want sensible defaults without tuning parameters.
@@ -1099,11 +1104,11 @@ def spatial_basis(
         Environment size is the track length on a linearized track and the
         geometric mean of the axis extents (``dimension_ranges``) otherwise.
 
-        - "local": Fine-grained (sigma ≈ 5% of environment size)
+        - "local": Fine-grained (bandwidth ≈ 5% of environment size)
           Good for: Detailed place fields, small receptive fields
-        - "medium": Moderate (sigma ≈ 10% of environment size)
+        - "medium": Moderate (bandwidth ≈ 10% of environment size)
           Good for: General-purpose spatial modeling (recommended)
-        - "global": Broad (sigma ≈ 20% of environment size)
+        - "global": Broad (bandwidth ≈ 20% of environment size)
           Good for: Compartment-level structure, coarse encoding
     n_features : int, default=100
         Approximate number of basis functions.
@@ -1138,7 +1143,7 @@ def spatial_basis(
     -----
     For more control over parameters, use geodesic_rbf_basis() directly.
 
-    The function creates a multi-scale basis with 3 octave-spaced sigma
+    The function creates a multi-scale basis with 3 octave-spaced bandwidth
     values centered around the coverage-determined scale.
     """
     require_cartesian(
@@ -1146,8 +1151,8 @@ def spatial_basis(
         "spatial_basis()",
         why="Its automatic scale comes from the Cartesian extent of the bins.",
         fix=(
-            "use geodesic_rbf_basis(env, sigma=..., center_method='farthest_point') "
-            "with sigma in distance units"
+            "use geodesic_rbf_basis(env, bandwidth=..., center_method='farthest_point') "
+            "with bandwidth in distance units"
         ),
     )
     # Compute environment extent
@@ -1172,20 +1177,20 @@ def spatial_basis(
         extents = [max_val - min_val for min_val, max_val in dim_ranges]
         extent = float(np.prod(extents) ** (1.0 / len(extents)))
 
-    # Determine base sigma from coverage setting
-    sigma_fraction = {"local": 0.05, "medium": 0.10, "global": 0.20}
-    sigma_base = extent * sigma_fraction[coverage]
+    # Determine base bandwidth from coverage setting
+    bandwidth_fraction = {"local": 0.05, "medium": 0.10, "global": 0.20}
+    bandwidth_base = extent * bandwidth_fraction[coverage]
 
-    # Create multi-scale basis with 3 octave-spaced sigmas
-    sigmas = [sigma_base / 2, sigma_base, sigma_base * 2]
+    # Create multi-scale basis with 3 octave-spaced bandwidths
+    bandwidths = [bandwidth_base / 2, bandwidth_base, bandwidth_base * 2]
 
     # Compute n_centers to achieve approximately n_features total
-    n_centers = max(1, int(np.ceil(n_features / len(sigmas))))
+    n_centers = max(1, int(np.ceil(n_features / len(bandwidths))))
 
     return geodesic_rbf_basis(
         env,
         n_centers=n_centers,
-        sigma=sigmas,
+        bandwidth=bandwidths,
         normalize="unit",
         rng=rng,
     )
@@ -1208,7 +1213,7 @@ def plot_basis_functions(
 
     - Spatial coverage is appropriate
     - Basis functions respect walls
-    - Multi-scale structure is present (if using multiple sigmas/scales)
+    - Multi-scale structure is present (if using multiple bandwidths/scales)
 
     Parameters
     ----------
@@ -1234,7 +1239,7 @@ def plot_basis_functions(
     Examples
     --------
     >>> basis = geodesic_rbf_basis(
-    ...     env, n_centers=50, sigma=[5, 10, 20]
+    ...     env, n_centers=50, bandwidth=[5, 10, 20]
     ... )  # doctest: +SKIP
     >>> fig = plot_basis_functions(env, basis, n_examples=9)  # doctest: +SKIP
     >>> fig.savefig("basis_functions.png")  # doctest: +SKIP
@@ -1244,7 +1249,7 @@ def plot_basis_functions(
     This function is useful for:
 
     - Debugging: Check that basis functions have expected spatial extent
-    - Parameter tuning: Visualize effect of different sigma/scale values
+    - Parameter tuning: Visualize effect of different bandwidth/scale values
     - Presentation: Create figures showing basis function coverage
     """
     import matplotlib.pyplot as plt

@@ -283,7 +283,7 @@ def _warn_dense_kernel(n_bins: int) -> None:
 def heat_kernel_from_W(
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
-    sigma: float,
+    bandwidth: float,
     *,
     mode: KernelMode,
 ) -> NDArray[np.float64]:
@@ -305,7 +305,7 @@ def heat_kernel_from_W(
         Finite-volume weight matrix (see :func:`_raw_heat_operator`).
     volumes : NDArray[np.float64], shape (n_bins,)
         Per-bin cell volumes ``M``.
-    sigma : float
+    bandwidth : float
         Physical smoothing standard deviation.
     mode : {"transition", "density", "average"}
         Which normalized view to return.
@@ -318,8 +318,8 @@ def heat_kernel_from_W(
     Raises
     ------
     ValueError
-        If ``mode`` is not one of the three supported values, or ``sigma`` is
-        not finite and positive.
+        If ``mode`` is not one of the three supported values, or ``bandwidth``
+        is not finite and positive.
 
     Warns
     -----
@@ -341,13 +341,13 @@ def heat_kernel_from_W(
         raise ValueError(
             f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
         )
-    if not (np.isfinite(sigma) and sigma > 0.0):
-        raise ValueError(f"sigma must be finite and > 0, got {sigma}.")
+    if not (np.isfinite(bandwidth) and bandwidth > 0.0):
+        raise ValueError(f"bandwidth must be finite and > 0, got {bandwidth}.")
     _warn_dense_kernel(volumes.shape[0])
 
     # Clip round-off negatives (real cross-block lobes only appear under the
     # truncated env.diffuse apply-path, not on this full-rank dense path).
-    H = np.clip(_raw_heat_operator(W, volumes, sigma), 0.0, None)
+    H = np.clip(_raw_heat_operator(W, volumes, bandwidth), 0.0, None)
 
     kernel: NDArray[np.float64]
     if mode == "average":
@@ -1291,7 +1291,7 @@ def _masked_diffusion_average(
 # ---------------------------------------------------------------------------
 def diffusion_kernel(
     env: DiffusionGeometryConsumer,
-    sigma: float,
+    bandwidth: float,
     *,
     mode: KernelMode = "density",
 ) -> NDArray[np.float64]:
@@ -1305,7 +1305,7 @@ def diffusion_kernel(
     ----------
     env : Environment
         Environment (any supported layout).
-    sigma : float
+    bandwidth : float
         Physical smoothing standard deviation (finite, > 0).
     mode : {"transition", "density", "average"}, default="density"
         Kernel orientation (see :func:`heat_kernel_from_W`). ``"average"`` is
@@ -1321,8 +1321,8 @@ def diffusion_kernel(
     NotImplementedError
         If the environment's layout supplies no diffusion geometry.
     ValueError
-        On invalid ``sigma`` or ``mode``, or on provider geometry that violates
+        On invalid ``bandwidth`` or ``mode``, or on provider geometry that violates
         the diffusion contract.
     """
     geometry = env.get_diffusion_geometry()
-    return heat_kernel_from_W(geometry.W, geometry.volumes, sigma, mode=mode)
+    return heat_kernel_from_W(geometry.W, geometry.volumes, bandwidth, mode=mode)
