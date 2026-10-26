@@ -74,6 +74,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry import CallIndexes, locate, require_cartesian
 
@@ -384,28 +385,9 @@ def compute_egocentric_bearing(
     bearing = np.arctan2(ego[..., 1], ego[..., 0])
 
     # Wrap to (-pi, pi]
-    bearing = _wrap_bearing(bearing)
+    bearing = wrap_angle(bearing)
 
     return bearing
-
-
-def _wrap_bearing(angle: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Wrap angles to (-pi, pi].
-
-    Parameters
-    ----------
-    angle : NDArray
-        Angles in radians.
-
-    Returns
-    -------
-    NDArray
-        Angles wrapped to the half-open interval (-pi, pi] (a target directly
-        behind the animal returns +pi, never -pi).
-    """
-    # x % (-2π) lies in (-2π, 0], so shifting by -π then +π gives (-π, π].
-    wrapped = (angle - np.pi) % (-2 * np.pi) + np.pi
-    return wrapped
 
 
 def compute_egocentric_distance(

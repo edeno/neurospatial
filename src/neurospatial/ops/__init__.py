@@ -110,7 +110,6 @@ from neurospatial.ops.distance import (
 )
 
 # Egocentric operations
-from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 from neurospatial.ops.egocentric import (
     allocentric_to_egocentric,
     compute_egocentric_bearing,

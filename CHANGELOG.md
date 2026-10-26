@@ -6,6 +6,9 @@
 
 Results that change:
 
+- `stats.wrap_angle` returns its documented (-π, π]: a half-turn either way
+  is now +π, not -π. Egocentric bearings use the same function, so the
+  value just above π, which rounded to -π, now also stays at +π.
 - Viewsheds are exact. `compute_viewshed`, `compute_view_field`,
   `compute_viewshed_trajectory` and `visibility_occupancy` sampled each of 360
   rays at 100 points, so bins smaller than the sample spacing were skipped:

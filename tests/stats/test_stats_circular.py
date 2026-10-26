@@ -80,14 +80,23 @@ def test_is_modulated_weak_signal():
 
 
 def test_wrap_angle_basic():
-    """``wrap_angle`` maps integer multiples of pi to the canonical (-pi, pi] range."""
-    angles = np.array([0, np.pi, 2 * np.pi, 3 * np.pi, -np.pi, -2 * np.pi])
+    """``wrap_angle`` maps a half-turn either way to +pi, the closed end of (-pi, pi]."""
+    angles = np.array([0, np.pi, 2 * np.pi, 3 * np.pi, -np.pi, -2 * np.pi, -3 * np.pi])
     wrapped = wrap_angle(angles)
 
-    assert_allclose(wrapped[0], 0.0, atol=1e-10)
-    assert_allclose(np.abs(wrapped[1]), np.pi, atol=1e-10)
-    assert_allclose(wrapped[2], 0.0, atol=1e-10)
-    assert_allclose(np.abs(wrapped[3]), np.pi, atol=1e-10)
+    assert_allclose(wrapped, [0, np.pi, 0, np.pi, np.pi, 0, np.pi], atol=1e-10)
+
+
+def test_wrap_angle_stays_in_range_next_to_a_half_turn():
+    """Rounding next to an odd multiple of pi never lands on the open end -pi."""
+    centers = np.array([np.pi, -np.pi, 3 * np.pi, -3 * np.pi])
+    neighbors = np.concatenate(
+        [np.nextafter(centers, np.inf), np.nextafter(centers, -np.inf), centers]
+    )
+    wrapped = wrap_angle(neighbors)
+
+    assert np.all(wrapped > -np.pi)
+    assert np.all(wrapped <= np.pi)
 
 
 @pytest.mark.parametrize("projection", ["polar", "linear"])

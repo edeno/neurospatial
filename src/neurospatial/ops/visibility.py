@@ -73,6 +73,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
@@ -80,7 +81,7 @@ from neurospatial.geometry import (
     batch_line_of_sight_clear,
     boundary_view,
 )
-from neurospatial.ops.egocentric import _check_pose, _wrap_bearing
+from neurospatial.ops.egocentric import _check_pose
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -356,7 +357,7 @@ class FieldOfView:
         False
         """
         angle = np.asarray(angle)
-        wrapped = _wrap_bearing(angle)
+        wrapped = wrap_angle(angle)
         in_bounds = (wrapped <= self.left_angle) & (wrapped >= self.right_angle)
         # Wrapping sends -pi to +pi; a field whose right edge is -pi still
         # reaches that direction, straight behind.
@@ -399,7 +400,7 @@ class FieldOfView:
             return np.zeros_like(angle, dtype=bool) if np.ndim(angle) > 0 else False
 
         angle = np.asarray(angle)
-        in_binocular = np.abs(_wrap_bearing(angle)) <= self.binocular_half_angle
+        in_binocular = np.abs(wrap_angle(angle)) <= self.binocular_half_angle
         if angle.ndim == 0:
             return bool(in_binocular)
         return in_binocular
@@ -912,7 +913,7 @@ def _in_view(
     in_fov : ndarray of bool, shape (n_targets,)
     """
     offsets = targets - position
-    bearings = _wrap_bearing(np.arctan2(offsets[:, 1], offsets[:, 0]) - heading)
+    bearings = wrap_angle(np.arctan2(offsets[:, 1], offsets[:, 0]) - heading)
     if fov is None:
         return bearings, np.ones(len(targets), dtype=bool)
     in_fov = np.asarray(fov.contains_angle(bearings), dtype=bool)

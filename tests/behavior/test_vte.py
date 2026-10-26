@@ -124,10 +124,9 @@ class TestWrapAngle:
         """Test that pi stays at pi (boundary case)."""
         from neurospatial.stats.circular import wrap_angle
 
-        result = wrap_angle(np.array([np.pi]))
-        # pi should wrap to -pi (or stay at pi depending on convention)
-        # Using (-pi, pi] convention, pi maps to -pi
-        assert_allclose(result, [-np.pi], atol=1e-10)
+        # (-pi, pi] is closed at +pi, so a half-turn either way is +pi.
+        result = wrap_angle(np.array([np.pi, -np.pi]))
+        assert_allclose(result, [np.pi, np.pi], atol=1e-10)
 
     def test_wrap_angle_array(self):
         """Test wrapping an array of angles."""
@@ -135,7 +134,7 @@ class TestWrapAngle:
 
         angles = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2, 2 * np.pi])
         result = wrap_angle(angles)
-        expected = np.array([0, np.pi / 2, -np.pi, -np.pi / 2, 0])
+        expected = np.array([0, np.pi / 2, np.pi, -np.pi / 2, 0])
         assert_allclose(result, expected, atol=1e-10)
 
 

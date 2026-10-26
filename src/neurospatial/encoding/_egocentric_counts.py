@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     interval_valid_mask,
@@ -63,7 +64,6 @@ from neurospatial.encoding._spatial_counts import (
     prepare_frame_binning,
 )
 from neurospatial.encoding._validation import _validate_times
-from neurospatial.ops import _wrap_bearing
 from neurospatial.ops.egocentric import compute_egocentric_bearing
 
 if TYPE_CHECKING:
@@ -349,7 +349,7 @@ def _compute_object_coords(
     # bearings_all: (n_time, n_objects)
     if headings is None:
         delta = targets - positions[:, None, :]
-        bearings_all = _wrap_bearing(np.arctan2(delta[:, :, 1], delta[:, :, 0]))
+        bearings_all = wrap_angle(np.arctan2(delta[:, :, 1], delta[:, :, 0]))
     else:
         bearings_all = compute_egocentric_bearing(positions, headings, object_positions)
 
