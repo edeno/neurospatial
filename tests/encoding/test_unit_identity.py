@@ -363,7 +363,7 @@ def test_all_nan_unit_summary_table_and_peaks_no_crash(trajectory, spike_trains)
     table = dead.summary_table()
     peak_cols = [c for c in table.columns if c.startswith("peak_")]
     # The dead unit's peak coordinates must be NaN, others finite.
-    assert table.iloc[0][[c for c in peak_cols if c != "peak_rate"]].isna().all()
+    assert table.iloc[0][[c for c in peak_cols if c != "peak_firing_rate"]].isna().all()
 
 
 # ---------------------------------------------------------------------------

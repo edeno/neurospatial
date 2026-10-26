@@ -140,7 +140,7 @@ def test_batch_summary_table_is_one_row_per_unit(fixture_name, request):
     assert summary.index.name == "unit_id"
     assert list(summary.index) == list(result.unit_ids)
     # peak_rate is the shared scalar metric on every summary table.
-    assert "peak_rate" in summary.columns
+    assert "peak_firing_rate" in summary.columns
 
 
 @pytest.mark.parametrize("fixture_name", BATCH_FIXTURES)

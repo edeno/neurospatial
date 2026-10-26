@@ -57,11 +57,7 @@ def test_threshold_free_method_classify_agree(
         metric = (
             result.mean_vector_length()
             if f.name == "head_direction"
-            else (
-                result.view_spatial_information()
-                if f.name == "view"
-                else result.spatial_information()
-            )
+            else result.spatial_information()
         )
         threshold = (
             {"min_mvl": metric, "alpha": 1.01}
@@ -71,11 +67,7 @@ def test_threshold_free_method_classify_agree(
         assert getattr(result, method_name)(**method_kw, **threshold)
         assert predicate(*f.args(r, train), **criteria, **threshold, **f.defaults)
     if f.name != "head_direction":
-        metric = (
-            rates.view_spatial_information()
-            if f.name == "view"
-            else rates.spatial_information()
-        )
+        metric = rates.spatial_information()
         np.testing.assert_array_equal(
             rates.classify(min_info=metric[0]), metric >= metric[0]
         )

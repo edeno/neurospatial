@@ -784,7 +784,7 @@ view = compute_view_rate(
     spike_window=(float(times[0]), float(times[-1])),
 )
 view.plot(vmin=0)
-print("View information (bits/spike):", view.view_spatial_information())
+print("View information (bits/spike):", view.spatial_information())
 ```
 
 Bins that were never viewed lack support (NaN). View and position

@@ -676,8 +676,8 @@ def _spatial_summary_frame(
         border = np.full(len(rates), np.nan)
         unavailable["border_score"] = str(exc)
     columns: dict[str, Any] = {
-        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
-        "spatial_info": info,
+        "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
+        "spatial_information": info,
         "sparsity": np.asarray(batch_sparsity(rates, occupancy)),
         "grid_score": grid,
         "border_score": border,
@@ -698,8 +698,8 @@ def _spatial_summary_frame(
     if unavailable:
         df.attrs["unavailable_metrics"] = unavailable
     df.attrs["units"] = {
-        "peak_rate": "Hz",
-        "spatial_info": "bits/spike",
+        "peak_firing_rate": "Hz",
+        "spatial_information": "bits/spike",
         "peak_x": result.env.units or "",
         "peak_y": result.env.units or "",
     }
@@ -935,7 +935,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     def _headline_metrics(self) -> dict[str, float]:
         """Cheap metrics for the singular summary (NaN when undefined)."""
         return {
-            "spatial_info": float(self.spatial_information()),
+            "spatial_information": float(self.spatial_information()),
             "sparsity": float(self.sparsity()),
         }
 
@@ -2586,8 +2586,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
             - peak_x: x-coordinate of peak firing location
             - peak_y: y-coordinate of peak firing location (NaN for 1D)
-            - peak_rate: maximum firing rate (Hz)
-            - spatial_info: spatial information (bits/spike)
+            - peak_firing_rate: maximum firing rate (Hz)
+            - spatial_information: spatial information (bits/spike)
             - sparsity: sparsity measure (0-1)
             - grid_score: grid score (hexagonal periodicity)
             - border_score: border score (boundary proximity tuning)
@@ -2613,8 +2613,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         **Common pandas workflows**:
 
         - Filter: ``df[df["cell_type"] == "place"]``
-        - Sort: ``df.sort_values("spatial_info", ascending=False)``
-        - Top-N: ``df.nlargest(10, "peak_rate")``
+        - Sort: ``df.sort_values("spatial_information", ascending=False)``
+        - Top-N: ``df.nlargest(10, "peak_firing_rate")``
 
         Examples
         --------
@@ -2641,7 +2641,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         >>> place_cells = df[df["cell_type"] == "place"]
 
         >>> # Sort by spatial information
-        >>> top_cells = df.sort_values("spatial_info", ascending=False)
+        >>> top_cells = df.sort_values("spatial_information", ascending=False)
 
         >>> # Custom unit identifiers
         >>> df = result.summary_table(unit_ids=["unit_0", "unit_1", "unit_2"])

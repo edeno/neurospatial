@@ -281,7 +281,7 @@ class TestFFTAutocorrelationNeedsRectangularCells:
 
         # The cell is spatially tuned, but without a grid score it may be a
         # grid cell: it is undetermined, not a place cell.
-        assert table["spatial_info"].iloc[0] >= 0.5
+        assert table["spatial_information"].iloc[0] >= 0.5
         assert np.isnan(table["grid_score"]).all()
         assert "Hexagonal" in table.attrs["unavailable_metrics"]["grid_score"]
         assert table["cell_type"].iloc[0] == "undetermined"

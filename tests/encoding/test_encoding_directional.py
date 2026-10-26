@@ -2128,7 +2128,7 @@ class TestDirectionalRatesResultSummaryTable:
     @pytest.mark.parametrize(
         ("column", "expected"),
         [
-            ("peak_rate", lambda r: r.peak_firing_rate()),
+            ("peak_firing_rate", lambda r: r.peak_firing_rate()),
             ("mean_vector_length", lambda r: r.mean_vector_lengths()),
             ("preferred_direction", lambda r: r.preferred_directions()),
             ("preferred_direction_deg", lambda r: np.degrees(r.preferred_directions())),
@@ -2360,7 +2360,7 @@ class TestDirectionalRatesResultSummaryTable:
 
         df = result.summary_table()
         peaks = result.peak_firing_rate()
-        np.testing.assert_allclose(df["peak_rate"].values, peaks)
+        np.testing.assert_allclose(df["peak_firing_rate"].values, peaks)
 
     def test_summary_table_is_hd_cell_matches_method(
         self,

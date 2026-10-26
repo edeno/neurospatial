@@ -1793,7 +1793,7 @@ class TestObjectVectorRatesResultSummaryTable:
         df = result.summary_table()
         assert df.index.name == "unit_id"
         assert list(df.columns) == [
-            "peak_rate",
+            "peak_firing_rate",
             "preferred_distance",
             "preferred_direction_deg",
             "preferred_direction",
@@ -1938,7 +1938,7 @@ class TestObjectVectorRatesResultSummaryTable:
 
         df = result.summary_table()
         expected = result.peak_firing_rate()
-        np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
+        np.testing.assert_array_almost_equal(df["peak_firing_rate"].values, expected)
 
     def test_summary_table_is_ovc_correctness(
         self,
@@ -1984,7 +1984,7 @@ class TestObjectVectorRatesResultSummaryTable:
         assert "preferred_distance" in df.columns
         assert "preferred_direction" in df.columns
         assert "preferred_direction_deg" in df.columns
-        assert "peak_rate" in df.columns
+        assert "peak_firing_rate" in df.columns
         assert "is_object_vector_cell" in df.columns
 
     def test_summary_table_single_neuron(

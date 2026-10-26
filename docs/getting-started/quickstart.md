@@ -71,10 +71,10 @@ argument; a tracking object cannot replace the timestamp array.
 numbers, then plot the map:
 
 ```python
-# Scalar headline metrics include peak_firing_rate, spatial_info and sparsity.
+# Scalar headline metrics include peak_firing_rate, spatial_information and sparsity.
 print(result.summary())
 # -> a dict of scalars, e.g. ~1378 bins, peak firing rate ~12 Hz,
-#    spatial_info in bits/spike and ~300 s shared occupancy (exact values vary).
+#    spatial_information in bits/spike and ~300 s shared occupancy (exact values vary).
 
 # Where the cell fires most, and how spatially informative it is.
 print("Peak firing location (cm):", result.peak_location())

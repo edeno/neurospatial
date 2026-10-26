@@ -8,8 +8,8 @@ import pytest
 
 FAMILIES = ("spatial", "view", "allocentric", "egocentric", "directional")
 HEADLINES = {
-    "spatial": {"spatial_info": "spatial_information", "sparsity": "sparsity"},
-    "view": {"view_spatial_info": "view_spatial_information"},
+    "spatial": {"spatial_information": "spatial_information", "sparsity": "sparsity"},
+    "view": {"spatial_information": "spatial_information"},
     "allocentric": {
         "preferred_distance": "preferred_distance",
         "preferred_direction": "preferred_direction",
@@ -25,8 +25,8 @@ HEADLINES = {
 }
 TABLE_COLUMNS = {
     "spatial": [
-        "peak_rate",
-        "spatial_info",
+        "peak_firing_rate",
+        "spatial_information",
         "sparsity",
         "grid_score",
         "border_score",
@@ -35,28 +35,28 @@ TABLE_COLUMNS = {
         "cell_type",
     ],
     "view": [
-        "peak_rate",
-        "view_spatial_info",
+        "peak_firing_rate",
+        "spatial_information",
         "peak_x",
         "peak_y",
         "is_spatial_view_cell",
     ],
     "allocentric": [
-        "peak_rate",
+        "peak_firing_rate",
         "preferred_distance",
         "preferred_direction_deg",
         "preferred_direction",
         "is_object_vector_cell",
     ],
     "egocentric": [
-        "peak_rate",
+        "peak_firing_rate",
         "preferred_distance",
         "preferred_direction_deg",
         "preferred_direction",
         "is_object_vector_cell",
     ],
     "directional": [
-        "peak_rate",
+        "peak_firing_rate",
         "mean_vector_length",
         "preferred_direction_deg",
         "tuning_width_deg",
@@ -74,13 +74,13 @@ def test_summary_table_column_order_and_attrs(rate_family_results, family):
     frame = result.summary_table()
     assert frame.columns.tolist() == TABLE_COLUMNS[family]
     assert "method" not in frame.columns
-    assert frame.attrs["units"]["peak_rate"] == "Hz"
+    assert frame.attrs["units"]["peak_firing_rate"] == "Hz"
     if family in ("spatial", "view"):
         assert frame.attrs["method"] == result.method
     if family == "spatial":
-        assert "spatial_info" in frame.to_string(max_cols=6)
+        assert "spatial_information" in frame.to_string(max_cols=6)
         assert "cell_type" in frame.to_string(max_cols=6)
-        assert frame.attrs["units"]["spatial_info"] == "bits/spike"
+        assert frame.attrs["units"]["spatial_information"] == "bits/spike"
     if family in ("allocentric", "egocentric"):
         assert frame.attrs["direction_frame"] == family
         assert frame.attrs["units"]["preferred_direction"] == "rad"

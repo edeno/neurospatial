@@ -463,7 +463,7 @@ def _directional_summary_frame(
         [_directional_tuning_width(row, result.bin_size) for row in rates]
     )
     columns = {
-        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
+        "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
         "mean_vector_length": mvls,
         "preferred_direction_deg": np.degrees(directions),
         "tuning_width_deg": np.degrees(widths),
@@ -476,7 +476,7 @@ def _directional_summary_frame(
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["units"] = {
-        "peak_rate": "Hz",
+        "peak_firing_rate": "Hz",
         "mean_vector_length": "",
         "preferred_direction": "rad",
         "preferred_direction_deg": "deg",
@@ -1934,7 +1934,7 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         pd.DataFrame
             One row per unit, indexed by ``unit_id``, with columns in order:
 
-            - peak_rate: maximum firing rate (Hz)
+            - peak_firing_rate: maximum firing rate (Hz)
             - mean_vector_length: mean vector length [0, 1]
             - preferred_direction_deg: preferred direction in degrees [-180, 180]
             - tuning_width_deg: tuning width (HWHM) in degrees (0, 180]
@@ -1966,7 +1966,7 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
 
         - Filter: ``df[df["is_head_direction_cell"] == True]``
         - Sort: ``df.sort_values("mean_vector_length", ascending=False)``
-        - Top-N: ``df.nlargest(10, "peak_rate")``
+        - Top-N: ``df.nlargest(10, "peak_firing_rate")``
 
         Examples
         --------

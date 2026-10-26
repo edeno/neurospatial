@@ -237,7 +237,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         Returns
         -------
         pandas.DataFrame
-            One row indexed by ``unit_id``: ``peak_rate``,
+            One row indexed by ``unit_id``: ``peak_firing_rate``,
             ``preferred_distance``, ``preferred_direction_deg``,
             ``preferred_direction`` and ``distance_information``. The frame
             and wall source are in ``df.attrs``.
@@ -700,7 +700,7 @@ def compute_boundary_vector_rates(
     ...     env, spikes, times, positions, headings, direction_frame="egocentric"
     ... )
     >>> list(rates.summary_table().columns)
-    ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information']
+    ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information']
     """
     return _boundary_vector_rates(
         env,

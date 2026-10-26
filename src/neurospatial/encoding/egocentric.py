@@ -1195,7 +1195,7 @@ class ObjectVectorRatesResult(
         pd.DataFrame
             One row per unit, indexed by ``unit_id``, with columns:
 
-            - peak_rate: maximum firing rate (Hz)
+            - peak_firing_rate: maximum firing rate (Hz)
             - preferred_distance: preferred distance to the object, in the
               environment's length units (``df.attrs["units"]``)
             - preferred_direction_deg: preferred direction (degrees in
@@ -1228,7 +1228,7 @@ class ObjectVectorRatesResult(
 
         - Filter: ``df[df["is_object_vector_cell"] == True]``
         - Sort: ``df.sort_values("preferred_distance")``
-        - Top-N: ``df.nlargest(10, "peak_rate")``
+        - Top-N: ``df.nlargest(10, "peak_firing_rate")``
 
         Examples
         --------
@@ -1255,7 +1255,7 @@ class ObjectVectorRatesResult(
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'is_object_vector_cell']
+        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'is_object_vector_cell']
         >>> len(df)
         3
         >>> df.index.name

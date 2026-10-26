@@ -202,16 +202,16 @@ def _view_summary_frame(
 
     peaks = np.atleast_2d(result.peak_location())
     columns = {
-        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
-        "view_spatial_info": np.asarray(batch_spatial_information(rates, occupancy)),
+        "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
+        "spatial_information": np.asarray(batch_spatial_information(rates, occupancy)),
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         "is_spatial_view_cell": _view_classify(rates, occupancy, **VIEW_THRESHOLDS),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["units"] = {
-        "peak_rate": "Hz",
-        "view_spatial_info": "bits/spike",
+        "peak_firing_rate": "Hz",
+        "spatial_information": "bits/spike",
         "peak_x": result.env.units or "",
         "peak_y": result.env.units or "",
     }
@@ -401,8 +401,8 @@ class ViewRateResult(SingleUnitRateMixin):
     def _headline_metrics(self) -> dict[str, float]:
         """Cheap, NaN-safe metrics for the singular summary."""
         if not np.any(np.isfinite(_to_numpy(self.firing_rate))):
-            return {"view_spatial_info": float("nan")}
-        return {"view_spatial_info": float(self.view_spatial_information())}
+            return {"spatial_information": float("nan")}
+        return {"spatial_information": float(self.spatial_information())}
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the view field (firing rate by viewed location).
@@ -447,7 +447,7 @@ class ViewRateResult(SingleUnitRateMixin):
         """
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
-    def view_spatial_information(self) -> float:
+    def spatial_information(self) -> float:
         """Skaggs spatial information based on view occupancy (bits per spike).
 
         Quantifies how much information each spike conveys about the *viewed*
@@ -500,7 +500,7 @@ class ViewRateResult(SingleUnitRateMixin):
         >>> headings = rng.uniform(-np.pi, np.pi, 200)
         >>> spike_times = np.sort(rng.uniform(0, 10, 20))
         >>> result = compute_view_rate(env, spike_times, times, trajectory, headings)
-        >>> info = result.view_spatial_information()
+        >>> info = result.spatial_information()
         >>> bool(info >= 0.0)
         True
 
@@ -534,7 +534,7 @@ class ViewRateResult(SingleUnitRateMixin):
         Returns
         -------
         bool
-            True if view_spatial_information() >= min_info, False otherwise.
+            True if spatial_information() >= min_info, False otherwise.
 
         Notes
         -----
@@ -588,7 +588,7 @@ class ViewRateResult(SingleUnitRateMixin):
 
         See Also
         --------
-        view_spatial_information : Compute the spatial information metric
+        spatial_information : Compute the spatial information metric
         peak_location : Get location of peak view response
         """
         min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
@@ -887,7 +887,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         See Also
         --------
         ViewRateResult.peak_location : Single-neuron version
-        view_spatial_information : Quantify spatial selectivity
+        spatial_information : Quantify spatial selectivity
         """
         firing_rates = _to_numpy(self.firing_rates)
         n_neurons = firing_rates.shape[0]
@@ -904,7 +904,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
                 peak_locs[i] = self.env.bin_centers[peak_idx]
         return peak_locs
 
-    def view_spatial_information(self) -> NDArray[np.float64]:
+    def spatial_information(self) -> NDArray[np.float64]:
         """View spatial information for all neurons (bits per spike).
 
         Quantifies how much information each spike conveys about the *viewed*
@@ -942,7 +942,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         >>> headings = rng.uniform(-np.pi, np.pi, 200)
         >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
         >>> result = compute_view_rates(env, spike_times, times, trajectory, headings)
-        >>> info = result.view_spatial_information()
+        >>> info = result.spatial_information()
         >>> info.shape
         (3,)
         >>> bool(np.all(info >= 0.0))
@@ -950,7 +950,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
 
         See Also
         --------
-        ViewRateResult.view_spatial_information : Single-neuron version
+        ViewRateResult.spatial_information : Single-neuron version
         classify : Classify as view cells based on this metric
         """
         from neurospatial.encoding._metrics import batch_spatial_information
@@ -992,7 +992,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         or is_spatial_view_cell(..., criterion="shuffle") with the raw
         arrays; a result does not keep the arrays it was computed from.
 
-        Uses vectorized computation of view_spatial_information() for
+        Uses vectorized computation of spatial_information() for
         efficiency with large populations.
 
         Examples
@@ -1020,7 +1020,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         See Also
         --------
         ViewRateResult.is_spatial_view_cell : Single-neuron classification
-        view_spatial_information : The metric used for classification
+        spatial_information : The metric used for classification
         """
         min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
         return _view_classify(
@@ -1049,8 +1049,8 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         pd.DataFrame
             One row per unit, indexed by ``unit_id``, with columns:
 
-            - peak_rate: maximum firing rate (Hz)
-            - view_spatial_info: view spatial information (bits/spike)
+            - peak_firing_rate: maximum firing rate (Hz)
+            - spatial_information: view spatial information (bits/spike)
             - peak_x: x-coordinate of peak view location
             - peak_y: y-coordinate of peak view location
             - is_spatial_view_cell: whether the default threshold screen
@@ -1073,13 +1073,13 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
-        individual methods (``view_spatial_information()``, ``classify()``, etc.).
+        individual methods (``spatial_information()``, ``classify()``, etc.).
 
         **Common pandas workflows**:
 
         - Filter: ``df[df["is_spatial_view_cell"] == True]``
-        - Sort: ``df.sort_values("view_spatial_info", ascending=False)``
-        - Top-N: ``df.nlargest(10, "peak_rate")``
+        - Sort: ``df.sort_values("spatial_information", ascending=False)``
+        - Top-N: ``df.nlargest(10, "peak_firing_rate")``
 
         Examples
         --------
@@ -1096,7 +1096,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         >>> result = compute_view_rates(env, spike_times, times, trajectory, headings)
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_rate', 'view_spatial_info', 'peak_x', 'peak_y', 'is_spatial_view_cell']
+        ['peak_firing_rate', 'spatial_information', 'peak_x', 'peak_y', 'is_spatial_view_cell']
         >>> df.index.name
         'unit_id'
 
@@ -1110,7 +1110,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         --------
         to_dataframe : Dense per-bin frame (one row per (unit, bin)).
         peak_locations : Get peak view locations for all units
-        view_spatial_information : Get spatial information for all units
+        spatial_information : Get spatial information for all units
         classify : Classify units as view cells
         """
         n_neurons = len(self)
@@ -1550,7 +1550,7 @@ def compute_view_rate(
     >>> peak = result.peak_location()
     >>> peak.shape
     (2,)
-    >>> info = result.view_spatial_information()
+    >>> info = result.spatial_information()
     >>> bool(info >= 0.0)
     True
     >>> isinstance(result.is_spatial_view_cell(), bool)
@@ -2279,7 +2279,7 @@ def is_spatial_view_cell(
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
     The shuffled statistic is the view map's Skaggs information
-    (``view_spatial_information()``), the same value the screen thresholds.
+    (``spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
     Compare p_value < alpha; a significant association alone does not establish
@@ -2400,7 +2400,7 @@ def spatial_view_cell_significance(
     """Test spatial view tuning against circular spike-time shifts.
 
     The statistic is each unit's Skaggs information, in bits per spike, of
-    its view rate map (``ViewRatesResult.view_spatial_information()``).
+    its view rate map (``ViewRatesResult.spatial_information()``).
     Recompute the population map for the supplied arrays and for each shifted
     train, using exactly the observed map's valid intervals. Shuffles preserve
     counts on the compressed analyzed clock and never enter recording gaps.
@@ -2649,7 +2649,7 @@ def spatial_view_cell_significance(
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
         return _compute_view_rates(
             env, shifted, times, positions, headings, **options, view_bins=frame_bins
-        ).view_spatial_information()
+        ).spatial_information()
 
     observed, null = run_shuffle_test(
         statistic,

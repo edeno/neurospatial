@@ -1843,8 +1843,8 @@ class TestSpatialRatesResultSummaryTable:
             (
                 True,
                 [
-                    "peak_rate",
-                    "spatial_info",
+                    "peak_firing_rate",
+                    "spatial_information",
                     "sparsity",
                     "grid_score",
                     "border_score",
@@ -1856,8 +1856,8 @@ class TestSpatialRatesResultSummaryTable:
             (
                 False,
                 [
-                    "peak_rate",
-                    "spatial_info",
+                    "peak_firing_rate",
+                    "spatial_information",
                     "sparsity",
                     "grid_score",
                     "border_score",
@@ -1948,7 +1948,9 @@ class TestSpatialRatesResultSummaryTable:
         )
         df = result.summary_table()
         expected_rates = result.peak_firing_rate()
-        np.testing.assert_array_almost_equal(df["peak_rate"].values, expected_rates)
+        np.testing.assert_array_almost_equal(
+            df["peak_firing_rate"].values, expected_rates
+        )
 
     def test_summary_table_spatial_info_matches_spatial_information(
         self,
@@ -1956,7 +1958,7 @@ class TestSpatialRatesResultSummaryTable:
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """summary_table() spatial_info should match spatial_information() method."""
+        """summary_table() spatial_information should match spatial_information() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -1968,7 +1970,9 @@ class TestSpatialRatesResultSummaryTable:
         )
         df = result.summary_table()
         expected_info = result.spatial_information()
-        np.testing.assert_array_almost_equal(df["spatial_info"].values, expected_info)
+        np.testing.assert_array_almost_equal(
+            df["spatial_information"].values, expected_info
+        )
 
     def test_summary_table_sparsity_matches_sparsity_method(
         self,
@@ -2954,7 +2958,7 @@ class TestMetricsUseSpatialSupport:
             zero_pop.border_scores(boundary_source="analysis").scores,
             nan_pop.border_scores(boundary_source="analysis").scores,
         )
-        columns = ["spatial_info", "sparsity", "border_score"]
+        columns = ["spatial_information", "sparsity", "border_score"]
         np.testing.assert_allclose(
             zero_pop.summary_table(boundary_source="analysis")[columns].to_numpy(),
             nan_pop.summary_table(boundary_source="analysis")[columns].to_numpy(),
@@ -3924,7 +3928,7 @@ class TestComputeSpatialRatesResultMethods:
         assert isinstance(df, pd.DataFrame)
         assert len(df) == len(multiple_place_cell_spikes)
         assert df.index.name == "unit_id"
-        assert "spatial_info" in df.columns
+        assert "spatial_information" in df.columns
 
         # Dense per-bin frame carries unit_id and is one row per (unit, bin)
         dense = result.to_dataframe()

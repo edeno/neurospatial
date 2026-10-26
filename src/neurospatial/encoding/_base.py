@@ -381,7 +381,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         ... )
         >>> s = result.summary()
         >>> sorted(s)
-        ['method', 'n_bins', 'peak_firing_rate', 'sparsity', 'spatial_info', 'spike_window', 'spike_window_assumed', 'total_occupancy']
+        ['method', 'n_bins', 'peak_firing_rate', 'sparsity', 'spatial_information', 'spike_window', 'spike_window_assumed', 'total_occupancy']
         """
         rates = _to_numpy(self._get_rates())
         occupancy = _to_numpy(self.occupancy)
