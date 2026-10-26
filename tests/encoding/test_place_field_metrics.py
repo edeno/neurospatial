@@ -1180,10 +1180,6 @@ class TestFieldShapeMetrics:
         # Circular field should have reasonably low eccentricity
         # Random sampling makes perfect circles unlikely, so use generous threshold
         assert shape["eccentricity"] < 0.8
-        assert "major_axis_length" in shape
-        assert "minor_axis_length" in shape
-        assert "orientation" in shape
-        assert "area" in shape
         # Major and minor axes should be similar for circular fields
         assert shape["major_axis_length"] / shape["minor_axis_length"] < 2.0
 
@@ -1212,6 +1208,69 @@ class TestFieldShapeMetrics:
             # Elongated field should have high eccentricity
             assert shape["eccentricity"] > 0.3
             assert shape["major_axis_length"] > shape["minor_axis_length"]
+
+    @pytest.fixture(scope="class")
+    def grid_env(self):
+        """A 2 cm grid over a 60 x 60 cm arena."""
+        x, y = np.meshgrid(np.arange(0.5, 60.0), np.arange(0.5, 60.0))
+        return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+
+    @staticmethod
+    def _bar(env, angle, length=30.0, width=2.5):
+        """Uniform field on a bar through the arena center at ``angle``."""
+        direction = np.array([np.cos(angle), np.sin(angle)])
+        offset = env.bin_centers - [30.0, 30.0]
+        along = offset @ direction
+        across = offset @ np.array([-direction[1], direction[0]])
+        bins = np.flatnonzero((np.abs(along) <= length / 2) & (np.abs(across) < width))
+        rate = np.zeros(env.n_bins)
+        rate[bins] = 10.0
+        return rate, bins
+
+    @pytest.mark.parametrize(
+        ("angle", "expected"),
+        [
+            (0.0, 0.0),
+            (np.pi / 4, np.pi / 4),
+            (-np.pi / 4, -np.pi / 4),
+            (np.pi / 2, -np.pi / 2),
+            (3 * np.pi / 4, -np.pi / 4),
+        ],
+    )
+    def test_orientation_is_the_axis_angle(self, grid_env, angle, expected):
+        """Orientation is the major-axis angle folded into [-pi/2, pi/2)."""
+        from neurospatial.encoding._field_metrics import field_shape_metrics
+
+        rate, bins = self._bar(grid_env, angle)
+        orientation = field_shape_metrics(grid_env, rate, bins)["orientation"]
+
+        assert -np.pi / 2 <= orientation < np.pi / 2
+        # An axis has no direction: compare angles modulo pi.
+        assert abs(np.angle(np.exp(2j * (orientation - expected)))) / 2 < 0.05
+
+    def test_axis_lengths_are_two_standard_deviations(self, grid_env):
+        """Axis length is 2 * SD of the rate-weighted bin positions."""
+        from neurospatial.encoding._field_metrics import field_shape_metrics
+
+        rate, bins = self._bar(grid_env, 0.0)
+        shape = field_shape_metrics(grid_env, rate, bins)
+
+        centers = grid_env.bin_centers[bins]
+        assert shape["major_axis_length"] == pytest.approx(2 * np.std(centers[:, 0]))
+        assert shape["minor_axis_length"] == pytest.approx(2 * np.std(centers[:, 1]))
+
+    def test_area_is_physical_like_field_size(self, grid_env):
+        """area is in squared position units, the same as field_size."""
+        from neurospatial.encoding._field_metrics import (
+            field_shape_metrics,
+            field_size,
+        )
+
+        rate, bins = self._bar(grid_env, 0.0)
+        shape = field_shape_metrics(grid_env, rate, bins)
+
+        assert shape["area"] == pytest.approx(field_size(grid_env, bins))
+        assert shape["area"] == pytest.approx(4.0 * len(bins))  # 2 cm x 2 cm bins
 
     def test_field_shape_metrics_3d_warning(self):
         """Test that 3D environment raises warning."""

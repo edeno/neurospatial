@@ -626,10 +626,15 @@ def field_shape_metrics(
     dict[str, float]
         Dictionary with shape metrics:
         - 'eccentricity': float in [0, 1], where 0 = circular, 1 = linear
-        - 'major_axis_length': float, extent along major axis (same units as env)
-        - 'minor_axis_length': float, extent along minor axis (same units as env)
-        - 'orientation': float, angle of major axis in radians [-pi/2, pi/2]
-        - 'area': float, spatial extent of field (number of bins)
+        - 'major_axis_length': float, full width of the field along its
+          major axis, ``2 * sqrt(lambda_max)``: two rate-weighted standard
+          deviations of bin position (+/- 1 SD), in environment units
+        - 'minor_axis_length': float, the same along the minor axis
+        - 'orientation': float, angle of the major axis in radians from the
+          first spatial dimension, in ``[-pi/2, pi/2)``. An axis has no
+          direction, so a field along x is 0 and one along y is ``-pi/2``.
+        - 'area': float, physical area of the field bins (e.g. cm^2), the
+          same as :func:`field_size`
 
         Returns dict with NaN values if field is empty or environment is not 2D.
 
@@ -775,16 +780,16 @@ def field_shape_metrics(
     # Eccentricity
     eccentricity = np.sqrt(1 - lambda_min / lambda_max) if lambda_max > 0 else 0.0
 
-    # Axis lengths (2 standard deviations = ~95% of data)
+    # Axis lengths: full width at +/- 1 rate-weighted SD along each axis.
     major_axis = 2 * np.sqrt(lambda_max)
     minor_axis = 2 * np.sqrt(lambda_min)
 
-    # Orientation (angle of major axis)
-    # eigenvectors[:, 0] is the major axis direction
-    orientation = np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])
+    # Orientation of the major axis. The eigenvector's sign is arbitrary, so
+    # fold its angle to an axial angle in [-pi/2, pi/2).
+    direction = np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])
+    orientation = (direction + np.pi / 2) % np.pi - np.pi / 2
 
-    # Area (number of bins)
-    area = float(len(field_bins))
+    area = field_size(env, field_bins)
 
     result.update(
         {
