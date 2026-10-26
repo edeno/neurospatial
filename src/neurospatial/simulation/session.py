@@ -208,9 +208,10 @@ def simulate_session(
         Trajectory generation method (default: 'ou').
     coverage : {'uniform', 'random'}, optional
         Spatial distribution of field centers (default: 'uniform').
-        - 'uniform': Evenly space field centers across environment using
-          env.bin_centers[::step] where step = max(1, n_bins // n_cells).
-          Ensures full coverage without clustering.
+        - 'uniform': Evenly space field centers across the environment. On a
+          track, centers are evenly spaced along the linearized track; in an
+          arena, they form a grid inset 20% from each edge, snapped to the
+          nearest bin.
         - 'random': Randomly sample field centers from env.bin_centers
           using np.random.choice(env.bin_centers, size=n_cells).
           May result in clustering or gaps in coverage.
@@ -508,7 +509,15 @@ def simulate_session(
         # inset target can still be a boundary bin; the inset only reduces, not
         # eliminates, boundary placement.
         ranges = env.dimension_ranges
-        if ranges is None:
+        if env.binning.linearization is not None:
+            # Tracks: space centers evenly along the track, so every arm gets
+            # fields. A bounding-box grid snapped to a thin track would pile
+            # the centers onto the few bins nearest its inset targets.
+            linear = env.to_linear(env.bin_centers)
+            targets = np.linspace(linear.min(), linear.max(), n_cells)
+            nearest = np.abs(linear[None, :] - targets[:, None]).argmin(axis=1)
+            field_centers = env.bin_centers[nearest]
+        elif ranges is None:
             # Layouts without an axis-aligned bounding box (e.g. graph tracks):
             # fall back to evenly striding through the bin centers.
             step = max(1, len(env.bin_centers) // n_cells)

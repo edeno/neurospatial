@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 
 from neurospatial.simulation.examples import (
@@ -284,23 +286,43 @@ class TestTmazeAlternationSession:
         trial_choices = session.metadata["trial_choices"]
         assert len(trial_choices) == n_trials
 
-    def test_tmaze_alternation_session_alternating_choices(self):
-        """tmaze_alternation_session() should have alternating left/right pattern."""
+    def test_tmaze_alternation_session_visits_the_chosen_arms(self):
+        """Each trial runs to the arm its choice names, alternating left/right."""
+        n_trials = 6
         session = tmaze_alternation_session(
-            duration=30.0, n_trials=10, n_place_cells=10, seed=42
+            duration=60.0, n_trials=n_trials, n_place_cells=3, seed=42
         )
-
         trial_choices = session.metadata["trial_choices"]
+        assert all(a != b for a, b in itertools.pairwise(trial_choices))
 
-        # Should have both 'left' and 'right' choices
-        assert "left" in trial_choices
-        assert "right" in trial_choices
+        # The ordered arm-end visits are the trial choices.
+        wells = {
+            side: np.asarray(session.env.regions[f"well_{side}"].data)
+            for side in ("left", "right")
+        }
+        at_well = np.full(len(session.positions), "", dtype=object)
+        for side, well in wells.items():
+            at_well[np.linalg.norm(session.positions - well, axis=1) < 5.0] = side
+        visited = at_well[at_well != ""]
+        changes = np.flatnonzero(visited[1:] != visited[:-1]) + 1
+        visits = [str(v) for v in visited[np.concatenate([[0], changes])]]
+        assert visits == [str(c) for c in trial_choices]
 
-        # Choices should alternate (for perfect alternation)
-        # Note: Depending on implementation, may be ['left', 'right', 'left', 'right', ...]
-        # or start with random first choice
-        unique_choices = set(trial_choices)
-        assert unique_choices == {"left", "right"}
+        # Every bin of both arms is occupied.
+        bins = session.env.bin_at(session.positions)
+        assert set(np.unique(bins)) == set(range(session.env.n_bins))
+
+    def test_tmaze_alternation_session_fields_cover_the_track(self):
+        """Field centers are distinct and spread over the stem and both arms."""
+        session = tmaze_alternation_session(
+            duration=20.0, n_trials=2, n_place_cells=30, seed=0
+        )
+        centers = np.array([truth["center"] for truth in session.ground_truth.values()])
+        assert len(np.unique(centers, axis=0)) == 30
+        linear = np.sort(session.env.to_linear(centers))
+        track = session.env.to_linear(session.env.bin_centers)
+        spacing = (track.max() - track.min()) / 29
+        np.testing.assert_allclose(np.diff(linear), spacing, atol=2.0)  # 2 cm bins
 
     def test_tmaze_alternation_session_correct_number_of_cells(self):
         """tmaze_alternation_session() should create correct number of place cells."""

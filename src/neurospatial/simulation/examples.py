@@ -390,8 +390,8 @@ def tmaze_alternation_session(
     ValueError
         If duration, n_trials, or n_place_cells are non-positive.
     ValueError
-        If duration is non-finite or too short for two samples per traversal
-        and fixed 0.5 s pauses between the ``n_trials`` traversals.
+        If duration is non-finite or too short for two samples per trial
+        and fixed 0.5 s pauses between the ``n_trials`` trials.
 
     Examples
     --------
@@ -447,22 +447,21 @@ def tmaze_alternation_session(
 
     **T-maze Structure**:
 
-    Creates a simplified T-maze graph with:
-    - Central stem (100 cm)
-    - Left arm (50 cm)
-    - Right arm (50 cm)
-    - Corridors 10 cm wide
-    Total track length: approximately 150 cm
+    The track of ``make_t_maze()``: a 100 cm stem from ``start`` to the
+    ``junction`` and two perpendicular 50 cm arms ending at ``well_left`` and
+    ``well_right``, with 10 cm corridors and 2 cm bins (200 cm of track).
+    ``session.env`` carries those regions.
 
     **Trajectory**:
 
-    Uses lap-based trajectory generation. The animal alternates between
-    left and right arms according to a perfect alternation pattern,
-    starting with a random first choice determined by the seed.
+    Each trial runs from the end of the stem to the end of the chosen arm and
+    back. Choices alternate perfectly, starting with a random first choice
+    determined by the seed, so trial ``i`` visits the arm
+    ``trial_choices[i]``.
 
-    Session timing preserves ``n_trials`` one-way traversals and fixed 0.5 s
-    pauses between them. Absolute speeds follow from the requested duration;
-    seeded speed draws determine relative traversal times. Metadata records
+    Session timing preserves ``n_trials`` round trips and fixed 0.5 s pauses
+    between them. Absolute speeds follow from the requested duration;
+    seeded speed draws determine relative trial durations. Metadata records
     duration and the sampling convention; infeasible sample budgets raise.
 
     **Trial Metadata**:
@@ -473,14 +472,13 @@ def tmaze_alternation_session(
 
     **Coverage**:
 
-    Place field centers are uniformly distributed across the T-maze
-    environment to ensure representative spatial sampling across all
-    regions (stem, left arm, right arm).
+    Place field centers are evenly spaced along the track, so the stem and
+    both arms carry fields.
     """
     # Import here to avoid circular dependencies
     import networkx as nx
 
-    from neurospatial.environment import Environment
+    from neurospatial.simulation.mazes import TMazeDims, make_t_maze
     from neurospatial.simulation.session import simulate_session
 
     # Validate parameters
@@ -494,62 +492,39 @@ def tmaze_alternation_session(
         msg = f"n_place_cells must be positive, got {n_place_cells}"
         raise ValueError(msg)
 
-    # Create T-maze graph structure
-    # Nodes: stem_start (0,0), center (0,100), left_end (-50,150), right_end (50,150)
-    tmaze_graph = nx.Graph()
-    tmaze_graph.add_node("stem_start", pos=(0.0, 0.0))
-    tmaze_graph.add_node("center", pos=(0.0, 100.0))
-    tmaze_graph.add_node("left_end", pos=(-50.0, 150.0))
-    tmaze_graph.add_node("right_end", pos=(50.0, 150.0))
-
-    # Add edges with distance attribute
-    # Stem edge
-    pos1 = np.array(tmaze_graph.nodes["stem_start"]["pos"])
-    pos2 = np.array(tmaze_graph.nodes["center"]["pos"])
-    distance = np.linalg.norm(pos2 - pos1)
-    tmaze_graph.add_edge("stem_start", "center", distance=distance)
-
-    # Left arm edge
-    pos1 = np.array(tmaze_graph.nodes["center"]["pos"])
-    pos2 = np.array(tmaze_graph.nodes["left_end"]["pos"])
-    distance = np.linalg.norm(pos2 - pos1)
-    tmaze_graph.add_edge("center", "left_end", distance=distance)
-
-    # Right arm edge
-    pos1 = np.array(tmaze_graph.nodes["center"]["pos"])
-    pos2 = np.array(tmaze_graph.nodes["right_end"]["pos"])
-    distance = np.linalg.norm(pos2 - pos1)
-    tmaze_graph.add_edge("center", "right_end", distance=distance)
-
-    # Define edge order for linearization (stem -> left arm path as primary)
-    edge_order = [("stem_start", "center"), ("center", "left_end")]
-    edge_spacing = 0.0  # No spacing between connected edges
-
-    # Create environment from graph
-    env = Environment.from_graph(
-        graph=tmaze_graph,
-        edge_order=edge_order,
-        edge_spacing=edge_spacing,
-        bin_size=2.0,
-        track_width=10.0,  # 10 cm corridors
+    # The published T-maze track: a 100 cm stem and two 50 cm arms.
+    dims = TMazeDims()
+    env = make_t_maze(dims, bin_size=2.0).env_track
+    assert env is not None
+    half_stem = dims.stem_length / 2.0
+    stem_end, left_end, right_end = env.bin_at(
+        np.array(
+            [
+                [0.0, -half_stem],
+                [-dims.arm_length, half_stem],
+                [dims.arm_length, half_stem],
+            ]
+        )
     )
-    env = env.with_metadata(units="cm")
 
-    # Generate trial choices (perfect alternation pattern)
-    # Use seed to determine first choice, then alternate
+    # Perfect alternation from a seeded first choice.
     rng = np.random.default_rng(seed)
-    first_choice = rng.choice(["left", "right"])
+    first_choice = str(rng.choice(["left", "right"]))
+    second_choice = "right" if first_choice == "left" else "left"
+    trial_choices = [
+        first_choice if i % 2 == 0 else second_choice for i in range(n_trials)
+    ]
 
-    trial_choices = []
-    for i in range(n_trials):
-        if i == 0:
-            trial_choices.append(first_choice)
-        else:
-            # Alternate from previous choice
-            prev = trial_choices[-1]
-            trial_choices.append("right" if prev == "left" else "left")
+    # A trial runs from the stem's end to the chosen arm's end and back. The
+    # lap engine alternates its two paths, so trial i follows trial_choices[i].
+    arm_ends = {"left": int(left_end), "right": int(right_end)}
 
-    # Simulate session with place cells and lap trajectory
+    def round_trip(choice: str) -> list[int]:
+        run: list[int] = nx.shortest_path(
+            env.connectivity, int(stem_end), arm_ends[choice]
+        )
+        return run + run[-2::-1]
+
     session = simulate_session(
         env,
         duration=duration,
@@ -558,6 +533,8 @@ def tmaze_alternation_session(
         trajectory_method="laps",
         coverage="uniform",
         n_laps=n_trials,
+        outbound_path=round_trip(first_choice),
+        inbound_path=round_trip(second_choice),
         seed=seed,
         show_progress=False,  # Disable progress bar for convenience function
     )
