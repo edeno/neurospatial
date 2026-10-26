@@ -643,7 +643,12 @@ def clear_segments(
                 axis=1,
             )
         )
-        contact = shapely.intersection(lines, walls)
+        # Most sight lines touch no wall; build the costly overlay only for
+        # the ones that do.
+        shapely.prepare(walls)
+        touching = shapely.intersects(lines, walls)
+        contact = np.full(len(lines), shapely.GeometryCollection(), dtype=object)
+        contact[touching] = shapely.intersection(lines[touching], walls)
         # Intersection and interpolation can cancel one endpoint coordinate
         # to zero. Allow eight ULPs in the cue's own coordinates and project
         # that rounding box onto the intersected wall's tangent. A coordinate
