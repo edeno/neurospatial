@@ -1283,9 +1283,17 @@ def compute_viewshed_trajectory(
         infinite position or heading is a missing observation: its
         ``visibility_map`` is NaN and its ``visibility_fraction`` is NaN, so
         it is not mistaken for a frame from which nothing was visible.
+
+    Raises
+    ------
+    ValueError
+        If ``positions`` is not ``(n_time, 2)``, ``headings`` is not
+        ``(n_time,)``, ``fov`` is not a valid field of view, or
+        ``cue_positions`` is not finite with shape ``(n_cues, 2)``.
     """
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
+    _check_samples("compute_viewshed_trajectory", positions, headings)
 
     binning, arena = env.binning, env.arena
     indexes = CallIndexes()

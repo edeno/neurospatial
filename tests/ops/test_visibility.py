@@ -852,6 +852,21 @@ class TestComputeViewshedTrajectory:
         assert 0 not in results[0].visible_cues
         assert 0 in results[2].visible_cues
 
+    @pytest.mark.parametrize(
+        ("positions", "headings", "match"),
+        [
+            (np.full((3, 2), 10.0), np.zeros(2), r"one heading per position"),
+            (np.full((2, 2), 10.0), np.zeros(3), r"one heading per position"),
+            (np.full(2, 10.0), np.zeros(1), r"positions of shape \(n_time, 2\)"),
+        ],
+    )
+    def test_misaligned_samples_raise(self, positions, headings, match):
+        """Extra headings are not silently dropped, nor missing ones an IndexError."""
+        from neurospatial.ops.visibility import compute_viewshed_trajectory
+
+        with pytest.raises(ValueError, match=match):
+            compute_viewshed_trajectory(_open_box(20.0, 5.0), positions, headings)
+
 
 class TestVisibilityOccupancy:
     """Tests for visibility_occupancy function."""
