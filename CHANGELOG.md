@@ -62,9 +62,10 @@ Breaking API changes:
   1, labelling pixels as cm). `from_rotation_matrix` refuses matrices that
   are not rotations.
 - `get_2d_rotation_matrix(angle)` takes radians, like every other angle.
-- `map_probabilities` refuses probability that would move farther than one
-  target bin spacing (`max_distance`, default the target's bin spacing;
-  `math.inf` keeps the old nearest-bin assignment), and refuses non-finite
+- `map_probabilities` refuses probability whose source bin center lands
+  outside every target bin and more than one target bin spacing from every
+  target bin center; `max_distance` sets a distance instead, and `math.inf`
+  keeps the old nearest-bin assignment. It also refuses non-finite
   probabilities and `eps <= 0`. `ProbabilityMappingParams` is removed.
 - `compute_diffusion_kernels` and `geodesic_rbf_basis` take `bandwidth=`
   instead of `sigma=`.
