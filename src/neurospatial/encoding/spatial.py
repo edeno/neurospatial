@@ -737,7 +737,6 @@ def _spatial_summary_frame(
     df.attrs["border_field_minimum"] = _border_field_minimum(result.env)
     if unavailable:
         df.attrs["unavailable_metrics"] = unavailable
-    df.attrs["method"] = result.method
     df.attrs["units"] = {
         "peak_rate": "Hz",
         "spatial_info": "bits/spike",
@@ -939,8 +938,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         ``df.attrs["classification_thresholds"]``. For shuffle significance,
         call place_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         Examples
         --------
@@ -2643,8 +2642,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         ``df.attrs["classification_thresholds"]``. For shuffle significance,
         call place_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the

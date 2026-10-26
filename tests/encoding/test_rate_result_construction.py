@@ -140,3 +140,34 @@ def test_supplied_labels_are_not_marked_generated(labelled_population: Any) -> N
     assert labelled_population._unit_ids_generated is False
     assert [unit._unit_ids_generated for unit in labelled_population] == [False] * 3
     assert labelled_population[1].unit_id == "b"
+
+
+# ---------------------------------------------------------------------------
+# Estimator metadata
+# ---------------------------------------------------------------------------
+
+
+def test_every_family_reports_its_estimator(population: Any) -> None:
+    """method and bandwidth are fields on every family and reach every export."""
+    method, bandwidth = population.method, population.bandwidth
+    assert method == population.analysis_settings["method"]
+    assert bandwidth == population.analysis_settings["bandwidth"]
+    assert (population[0].method, population[0].bandwidth) == (method, bandwidth)
+    assert population.summary()["method"] == method
+    assert population[0].summary()["method"] == method
+    table = population.summary_table()
+    assert "method" not in table.columns
+    assert (table.attrs["method"], table.attrs["bandwidth"]) == (method, bandwidth)
+    assert (population.to_dataframe()["method"] == method).all()
+
+
+@pytest.mark.parametrize("family_name", ["object_vector", "boundary_vector"])
+def test_polar_kernel_estimate_records_its_bandwidth(
+    family_name: str, recording: dict[str, Any]
+) -> None:
+    """A smoothed polar map carries the bandwidth it was smoothed with."""
+    binned = FAMILIES[family_name](recording)
+    smoothed = FAMILIES[family_name](recording, method="gaussian_kde", bandwidth=8.0)
+    assert (binned.method, binned.bandwidth) == ("binned", None)
+    assert (smoothed.method, smoothed.bandwidth) == ("gaussian_kde", 8.0)
+    assert smoothed[2].bandwidth == 8.0

@@ -556,6 +556,11 @@ class DirectionalRateResult(SingleUnitRateMixin):
     def _xarray_attrs(self) -> dict[str, Any]:
         return _directional_xarray_attrs(self)
 
+    @property
+    def method(self) -> str:
+        """Estimator: ``"circular_gaussian"`` when smoothed, else ``"binned"``."""
+        return "binned" if self.bandwidth is None else "circular_gaussian"
+
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
 
@@ -570,8 +575,8 @@ class DirectionalRateResult(SingleUnitRateMixin):
         ``df.attrs["classification_thresholds"]``. For shuffle significance,
         call head_direction_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         Examples
         --------
@@ -1431,6 +1436,11 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         return _directional_xarray_attrs(self)
 
     @property
+    def method(self) -> str:
+        """Estimator: ``"circular_gaussian"`` when smoothed, else ``"binned"``."""
+        return "binned" if self.bandwidth is None else "circular_gaussian"
+
+    @property
     def _bin_centers(self) -> NDArray[np.float64]:
         # Override SpatialResultMixin: directional results store bin centers
         # directly on the dataclass (no Environment).
@@ -1853,8 +1863,8 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         ``df.attrs["classification_thresholds"]``. For shuffle significance,
         call head_direction_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the

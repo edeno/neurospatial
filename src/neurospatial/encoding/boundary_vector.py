@@ -175,6 +175,11 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
     boundary_source : {"physical", "analysis"}
         Which walls the rays stopped at.
+    method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
+        Estimator used. ``"binned"`` is the raw rate in each polar bin.
+    bandwidth : float or None, default=None
+        Kernel bandwidth in the environment's length units for the kernel
+        methods; ``None`` for ``"binned"``, which does not smooth.
     unit_id : int or str or None
         Identifier for this unit; set by indexing a population result.
 
@@ -202,6 +207,8 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_id: int | str | None = None
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
@@ -344,6 +351,8 @@ class BoundaryVectorRatesResult(
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
     spike_window: NDArray[np.float64] | None = field(
@@ -370,6 +379,8 @@ class BoundaryVectorRatesResult(
             env=self.env,
             direction_frame=self.direction_frame,
             boundary_source=self.boundary_source,
+            method=self.method,
+            bandwidth=self.bandwidth,
         )
 
     def preferred_distances(self) -> NDArray[np.float64]:
@@ -771,6 +782,8 @@ def compute_boundary_vector_rate(
         env=unit.env,
         direction_frame=unit.direction_frame,
         boundary_source=unit.boundary_source,
+        method=unit.method,
+        bandwidth=unit.bandwidth,
         spike_window=unit.spike_window,
         analysis_settings=unit.analysis_settings,
     )
@@ -917,6 +930,8 @@ def _boundary_vector_rates(
         env=polar_env,
         direction_frame=direction_frame,
         boundary_source=boundary_source,
+        method=method,
+        bandwidth=resolved_bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
         spike_window=resolved_spike_window,
         analysis_settings=settings,

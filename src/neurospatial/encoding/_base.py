@@ -166,6 +166,12 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         @property
         def occupancy(self) -> Any: ...
 
+        @property
+        def method(self) -> str: ...
+
+        @property
+        def bandwidth(self) -> float | None: ...
+
     @property
     def spatial_support(self) -> NDArray[np.bool_]:
         """Observed, sufficiently occupied bins with finite rates.
@@ -179,10 +185,14 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         return spatial_support(self)
 
     def _analysis_attrs(self) -> dict[str, Any]:
-        """Independent metadata for table exports and indexed results."""
+        """Independent estimator metadata for table exports and indexed results."""
         from copy import deepcopy
 
-        return {"analysis_settings": deepcopy(self.analysis_settings)}
+        return {
+            "method": self.method,
+            "bandwidth": self.bandwidth,
+            "analysis_settings": deepcopy(self.analysis_settings),
+        }
 
     @property
     def spike_window_assumed(self) -> bool:
@@ -396,11 +406,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         out["spike_window"] = (
             None if self.spike_window is None else self.spike_window.tolist()
         )
-        # Carry the estimator on result classes that record it (the spatial/view
-        # rate results); egocentric/directional/place-field results have no
-        # `method` field and are left unchanged.
-        if hasattr(self, "method"):
-            out["method"] = self.method
+        out["method"] = self.method
         if hasattr(self, "direction_frame"):
             out["direction_frame"] = self.direction_frame
         return out
@@ -476,10 +482,8 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         # Occupancy is shared across neurons for batch spatial results.
         occ = np.asarray(occupancy).reshape(-1)
         data["occupancy"] = np.tile(occ, n_neurons)
-        # Carry the estimator (spatial/view rate results only); broadcasts to
-        # every row. Absent on results with no `method` field.
-        if hasattr(self, "method"):
-            data["method"] = self.method
+        # The estimator broadcasts to every row.
+        data["method"] = self.method
 
         frame = pd.DataFrame(data)
         coordinate_units = getattr(getattr(self, "env", None), "units", None)

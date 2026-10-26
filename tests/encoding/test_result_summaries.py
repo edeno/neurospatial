@@ -126,9 +126,8 @@ def test_population_summary_names_aggregation(rate_family_results, family):
         "total_occupancy",
         "spike_window_assumed",
         "spike_window",
+        "method",
     }
-    if family in ("spatial", "view"):
-        expected.add("method")
     if family in ("allocentric", "egocentric", "directional"):
         expected.add("direction_frame")
         frame = "allocentric" if family == "directional" else family

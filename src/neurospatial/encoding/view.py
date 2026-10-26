@@ -162,7 +162,6 @@ def _view_summary_frame(
         "is_spatial_view_cell": _view_classify(rates, occupancy, **VIEW_THRESHOLDS),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
-    df.attrs["method"] = result.method
     df.attrs["units"] = {
         "peak_rate": "Hz",
         "view_spatial_info": "bits/spike",
@@ -320,8 +319,8 @@ class ViewRateResult(SingleUnitRateMixin):
         ``df.attrs["classification_thresholds"]``. For shuffle significance,
         call spatial_view_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         Examples
         --------
@@ -1001,8 +1000,8 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         ``df.attrs["classification_thresholds"]``. For shuffle significance,
         call spatial_view_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the

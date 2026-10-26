@@ -192,6 +192,11 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
+    method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
+        Estimator used. ``"binned"`` is the raw rate in each polar bin.
+    bandwidth : float or None, default=None
+        Kernel bandwidth in the environment's length units for the kernel
+        methods; ``None`` for ``"binned"``, which does not smooth.
 
     Attributes
     ----------
@@ -272,6 +277,8 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     occupancy: ArrayLike
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_id: int | str | None = None
 
     spike_window: NDArray[np.float64] | None = field(
@@ -302,8 +309,8 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         The direction frame is in ``df.attrs["direction_frame"]``.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         Examples
         --------
@@ -690,6 +697,11 @@ class ObjectVectorRatesResult(
     direction_frame : {"allocentric", "egocentric"}
         Required reference frame for the direction to the object.
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
+    method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
+        Estimator used. ``"binned"`` is the raw rate in each polar bin.
+    bandwidth : float or None, default=None
+        Kernel bandwidth in the environment's length units for the kernel
+        methods; ``None`` for ``"binned"``, which does not smooth.
 
     Attributes
     ----------
@@ -787,6 +799,8 @@ class ObjectVectorRatesResult(
     occupancy: ArrayLike
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
@@ -848,6 +862,8 @@ class ObjectVectorRatesResult(
             idx,
             env=self.env,
             direction_frame=self.direction_frame,
+            method=self.method,
+            bandwidth=self.bandwidth,
         )
 
     def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
@@ -1190,8 +1206,8 @@ class ObjectVectorRatesResult(
         call object_vector_cell_significance / egocentric_object_vector_cell_significance with the raw arrays.
         See the family predicate's Notes for information/statistic bias.
         The direction frame is in ``df.attrs["direction_frame"]``.
-        Physical units are in ``df.attrs["units"]``; a constant estimator
-        is in ``df.attrs["method"]`` when recorded.
+        Physical units are in ``df.attrs["units"]``; the estimator is in
+        ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
@@ -1319,7 +1335,7 @@ def _egocentric_firing_rate(
     occupancy: NDArray[np.float64],
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
-    bandwidth: float,
+    bandwidth: float | None,
     min_occupancy: float,
     backend: ResolvedBackend,
 ) -> ArrayLike:
@@ -1336,8 +1352,8 @@ def _egocentric_firing_rate(
     method : {"diffusion_kde", "gaussian_kde", "binned"}
         ``"binned"`` returns the raw bin rate (see ``_raw_polar_rate``); the
         kernel methods smooth via ``smooth_rate_map``.
-    bandwidth : float
-        Smoothing bandwidth, in environment units. Unused for ``"binned"``.
+    bandwidth : float or None
+        Smoothing bandwidth, in environment units; ``None`` for ``"binned"``.
     min_occupancy : float
         Bins with occupancy below this value are treated as unvisited.
     backend : {"numpy", "jax"}
@@ -1362,6 +1378,7 @@ def _egocentric_firing_rate(
 
     from neurospatial.encoding._smoothing import smooth_rate_map
 
+    assert bandwidth is not None  # resolved for every kernel method
     return smooth_rate_map(
         polar_env,
         spike_counts,
@@ -1952,7 +1969,7 @@ class _ObjectVectorCounts(NamedTuple):
     spike_counts: NDArray[np.float64]  # (n_units, n_bins), unsmoothed
     occupancy: NDArray[np.float64]  # (n_bins,) seconds
     polar_env: PolarEnvironment  # polar geometry (distance in env units, angle in rad)
-    bandwidth: float  # resolved smoothing bandwidth
+    bandwidth: float | None  # resolved kernel bandwidth; None for "binned"
     analysis_settings: dict[str, Any]
 
 
@@ -2022,8 +2039,8 @@ def _count_object_vectors(
         Seconds spent in each polar bin.
     polar_env : PolarEnvironment
         Polar geometry carrying the environment's length units.
-    bandwidth : float
-        Resolved smoothing bandwidth.
+    bandwidth : float or None
+        Resolved kernel bandwidth; ``None`` for ``"binned"``.
     analysis_settings : dict
         Provenance settings for the result.
     """
@@ -2054,14 +2071,12 @@ def _count_object_vectors(
     # Polar graph distances are physical lengths; angles remain radians.
     polar_env = polar_env.with_metadata(units=env.units if env is not None else None)
     bandwidth = (
-        resolve_spatial_bandwidth(polar_env, bandwidth)
-        if method != "binned"
-        else (1.0 if bandwidth is None else bandwidth)
+        None if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth)
     )
     settings = rate_analysis_settings(
         prepared.support,
         method=method,
-        bandwidth=bandwidth if method != "binned" else None,
+        bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=backend,
         direction_frame="allocentric" if headings is None else "egocentric",
@@ -2197,6 +2212,8 @@ def _object_vector_rate(
         firing_rate=firing_rate,
         occupancy=occupancy_out,
         env=counts.polar_env,
+        method=method,
+        bandwidth=counts.bandwidth,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
     )
@@ -2930,6 +2947,7 @@ def _object_vector_rates(
 
             firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
     else:
+        assert counts.bandwidth is not None  # resolved for every kernel method
         # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
         firing_rates = smooth_rate_maps_batch(
             counts.polar_env,
@@ -2956,6 +2974,8 @@ def _object_vector_rates(
         firing_rates=firing_rates,
         occupancy=occupancy_out,
         env=counts.polar_env,
+        method=method,
+        bandwidth=counts.bandwidth,
         unit_ids=resolved_unit_ids if labels_supplied else None,
         spike_window=resolved_spike_window,
         analysis_settings=counts.analysis_settings,
