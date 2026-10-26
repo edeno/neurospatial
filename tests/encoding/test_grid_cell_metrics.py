@@ -882,6 +882,33 @@ class TestSpacingNeedsOneHexagon:
         assert np.isnan(props.scale)
         assert np.isnan(props.orientation)
 
+    @pytest.mark.parametrize(("spacing", "expected"), [(60.0, 60.0), (85.0, np.nan)])
+    def test_a_ring_beyond_the_defined_lags_gives_no_spacing(self, spacing, expected):
+        """Maxima on the edge of the defined lags are not peaks.
+
+        The first ring of an 85 cm grid in a 1 m box lies where less than a
+        quarter of the map overlaps; the correlation still rising toward it
+        made maxima on the edge of the defined lags, and the spacing read
+        71 cm. A 60 cm ring lies inside and keeps its spacing.
+        """
+        from neurospatial.encoding.grid import grid_scale, spatial_autocorrelation
+
+        edges = np.arange(0.0, 101.25, 2.5)
+        env = Environment.from_grid_mask(
+            np.ones((40, 40), dtype=bool), grid_edges=(edges, edges)
+        )
+        wavenumber = 4 * np.pi / (np.sqrt(3) * spacing)
+        rate = np.exp(
+            sum(
+                np.cos(wavenumber * (env.bin_centers - 20.0) @ [np.cos(a), np.sin(a)])
+                for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
+            )
+        )
+
+        scale = grid_scale(spatial_autocorrelation(env, rate), pixel_size=2.5)
+
+        np.testing.assert_allclose(scale, expected, atol=1.5)
+
     def test_smooth_random_maps_rarely_get_a_spacing(self):
         """Without a hexagonal ring, most maps get no spacing (96% did before)."""
         from scipy.ndimage import gaussian_filter

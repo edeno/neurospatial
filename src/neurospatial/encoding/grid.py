@@ -1063,10 +1063,10 @@ def _find_autocorr_peaks(
 
     A peak is a local maximum outside the central peak (see
     :func:`grid_score`) whose correlation is at least ``threshold_rel`` times
-    the zero-lag correlation. Peaks closer together than the central peak's
-    radius are one field, of which the higher is kept. Both lengths come from
-    the field size in the map, so the search does not depend on the pixel
-    size.
+    the zero-lag correlation and whose eight neighbors are all defined lags.
+    Peaks closer together than the central peak's radius are one field, of
+    which the higher is kept. Both lengths come from the field size in the
+    map, so the search does not depend on the pixel size.
 
     Parameters
     ----------
@@ -1102,6 +1102,12 @@ def _find_autocorr_peaks(
         threshold_abs=threshold_rel * centered[tuple(center)],
         exclude_border=False,
     )
+    # A maximum on the edge of the defined lags is not confirmed: the
+    # correlation may keep rising into the lags beyond it.
+    interior = ndimage.binary_erosion(
+        valid, structure=np.ones((3, 3), dtype=bool), border_value=0
+    )
+    peaks = peaks[interior[peaks[:, 0], peaks[:, 1]]]
     offsets = peaks.astype(np.float64) - center
     distances = np.hypot(offsets[:, 0], offsets[:, 1])
     outside = distances > central_radius
@@ -1194,7 +1200,11 @@ def grid_scale(
     2. Find local maxima outside it with correlation at least
        ``threshold_rel``; maxima closer together than the central peak's
        radius are one field. Both lengths follow the field size, so the
-       spacing does not depend on the pixel size.
+       spacing does not depend on the pixel size. A maximum next to an
+       undefined lag is left out: the correlation may keep rising past the
+       lags :func:`spatial_autocorrelation` defines, so a ring beyond them
+       (spacings above about 0.6 of a square arena's side, 0.55 of a
+       circular arena's diameter) gives no spacing rather than a short one.
     3. Take the ``n_peaks`` maxima nearest zero lag and keep those less than
        1.5 times as far as the nearest: the first ring. The next lattice
        point in a ring peak's direction lies at twice the spacing, so 1.5 is
@@ -1212,9 +1222,11 @@ def grid_scale(
     the ring is a hexagon (sparse, irregular fields), and a map without a
     lattice still has local maxima: on smoothed random maps the median
     distance to the six nearest maxima gave a spacing for 96 of 100 maps,
-    these checks for 23. On simulated grid cells the share whose spacing is
-    within 10% of the truth did not change (94%), and the largest
-    orientation error fell from 21 to 12 degrees.
+    these checks for 23, and for 19% of circularly time-shifted shuffles of
+    simulated grid cells instead of all of them. Of the simulated grid cells
+    (30-90 cm spacings in 1-1.5 m arenas, 10 minutes) 91% got a spacing
+    within 10% of the truth (94% before), 3% a wrong one (6% before), and
+    the largest orientation error fell from 21 to 13 degrees.
 
     Examples
     --------
