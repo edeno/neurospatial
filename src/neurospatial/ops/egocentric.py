@@ -100,7 +100,8 @@ def allocentric_to_egocentric(
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
     headings : NDArray, shape (n_time,)
-        Animal heading at each time (radians).
+        Animal heading at each time, in allocentric radians (0 = East,
+        +π/2 = North).
     points : NDArray, shape (n_points, 2) or (n_time, n_points, 2)
         Points to transform. If 2D, same points transformed at each time.
 
@@ -252,7 +253,8 @@ def egocentric_to_allocentric(
     positions : NDArray, shape (n_time, 2)
         Animal position at each time in allocentric coordinates.
     headings : NDArray, shape (n_time,)
-        Animal heading at each time (radians).
+        Animal heading at each time, in allocentric radians (0 = East,
+        +π/2 = North).
     ego_points : NDArray, shape (n_time, n_points, 2)
         Points in egocentric coordinates.
 
@@ -359,7 +361,8 @@ def compute_egocentric_bearing(
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
     headings : NDArray, shape (n_time,)
-        Animal heading at each time (radians).
+        Animal heading at each time, in allocentric radians (0 = East,
+        +π/2 = North).
     targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
         Target positions in allocentric coordinates.
 
@@ -421,8 +424,7 @@ def _wrap_bearing(angle: NDArray[np.float64]) -> NDArray[np.float64]:
         Angles wrapped to the half-open interval (-pi, pi] (a target directly
         behind the animal returns +pi, never -pi).
     """
-    # ((angle - pi) % (2*pi)) - (-pi)  shifts so the open end is at -pi and the
-    # closed end at +pi, giving the documented (-pi, pi] half-open interval.
+    # x % (-2π) lies in (-2π, 0], so shifting by -π then +π gives (-π, π].
     wrapped = (angle - np.pi) % (-2 * np.pi) + np.pi
     return wrapped
 
@@ -437,8 +439,8 @@ def compute_egocentric_distance(
 ) -> NDArray[np.float64]:
     """Compute distance to targets from animal position.
 
-    Distance is symmetric (does not depend on heading), but headings parameter
-    is included as a positional parameter to maintain API consistency with other
+    Distance does not depend on heading, but headings parameter is included
+    as a positional parameter to maintain API consistency with other
     egocentric functions like compute_egocentric_bearing().
 
     Parameters
@@ -446,7 +448,8 @@ def compute_egocentric_distance(
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
     headings : NDArray, shape (n_time,), optional
-        Animal heading at each time (radians). Not used for distance
+        Animal heading at each time, in allocentric radians (0 = East,
+        +π/2 = North), or None. Not used for distance
         calculation but included for API consistency with canonical argument
         order (positions, headings, targets).
     targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
