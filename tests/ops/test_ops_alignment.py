@@ -452,6 +452,25 @@ class TestMapProbabilitiesMaxDistance:
         with pytest.raises(ValueError, match=r"max_distance=50"):
             map_probabilities(src_env, tgt_env, np.array([0.5, 0.5]), max_distance=50.0)
 
+    def test_a_negligible_share_beyond_the_limit_is_mapped(self):
+        """A posterior's far tail is not refused; it goes to its nearest bin.
+
+        Decoded posteriors are positive on every bin, so a tail of 1e-9 beyond
+        the target would otherwise refuse every cross-session map.
+        """
+        src_env = MockEnvironment(np.array([[0.0, 0.0], [100.0, 0.0]]), 2)
+        tgt_env = MockEnvironment(np.array([[0.0, 0.0], [1.0, 0.0]]), 2)
+        tail = 1e-9
+        mapped = map_probabilities(
+            src_env, tgt_env, np.array([1.0 - tail, tail]), max_distance=50.0
+        )
+        np.testing.assert_allclose(mapped, [1.0 - tail, tail], rtol=0, atol=1e-15)
+
+        with pytest.raises(ValueError, match=r"0\.001% of the source probability"):
+            map_probabilities(
+                src_env, tgt_env, np.array([1.0 - 1e-5, 1e-5]), max_distance=50.0
+            )
+
     @pytest.mark.parametrize(
         ("max_distance", "error"),
         [

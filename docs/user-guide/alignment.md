@@ -286,10 +286,13 @@ The source bin centers are first scaled, rotated and translated into the
 target's coordinates, as `x' = R @ (source_scale * x) + t`. Scale and rotation
 act about the coordinate origin, so to undo a turn `R` about the arena center
 `c`, pass `source_translation_vector = c - source_scale * R @ c`. Source bins
-that hold probability but end up farther than one target bin spacing from
-every target bin are refused, with the share of the mass they hold, instead of
-being piled onto the target's edge bins. Pass `max_distance=` to change that
-limit, or `max_distance=math.inf` to accept any distance.
+that hold probability but land outside every target bin, and farther than one
+target bin spacing from every target bin center, would be piled onto the
+target's edge bins; when they hold more than 1e-6 of the probability the
+mapping is refused and reports their share. A smaller share, such as the far
+tail of a decoded posterior, goes to its nearest target bin. Pass
+`max_distance=` to set a distance limit instead, or `max_distance=math.inf` to
+accept any distance.
 
 Here the second session recorded the same square arena turned 30 degrees about
 its center, and a posterior decoded in session 2 is mapped onto session 1's

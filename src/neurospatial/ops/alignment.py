@@ -382,13 +382,23 @@ def _check_max_distance(max_distance: object) -> None:
         raise ValueError(f"max_distance must be zero or more, got {max_distance!r}.")
 
 
+# Share of the probability that may lie beyond the limit and still be mapped to
+# its nearest target bin. Decoded posteriors are positive on every bin, so their
+# far tail always reaches past a smaller target; at 1e-6 of the total it adds
+# nothing visible to the edge bins that receive it.
+_NEGLIGIBLE_STRANDED_SHARE = 1e-6
+
+
 def _require_mass_within(
     source_probs: NDArray[np.float64],
     nearest_distance: NDArray[np.float64],
     beyond: NDArray[np.bool_],
     limit: str,
 ) -> None:
-    """Refuse to move probability mass that ``beyond`` marks as too far.
+    """Refuse to move more than a negligible share of mass ``beyond`` the limit.
+
+    A share up to ``_NEGLIGIBLE_STRANDED_SHARE`` of the total goes to its
+    nearest target bin, like the rest.
 
     Parameters
     ----------
@@ -406,6 +416,8 @@ def _require_mass_within(
         return
     total = float(source_probs.sum())
     stranded = float(source_probs[beyond].sum())
+    if stranded <= _NEGLIGIBLE_STRANDED_SHARE * total:
+        return
     raise ValueError(
         _format_error(
             f"{100 * stranded / total:.3g}% of the source probability "
@@ -483,7 +495,9 @@ def map_probabilities(
         median distance between neighboring bin centers) of a target center,
         so a small unvisited hole in the target does not refuse the map.
         ``math.inf`` sends every source bin to its nearest target bin however
-        far away.
+        far away. A share of at most 1e-6 of the probability beyond the limit,
+        such as a posterior's far tail, is mapped to its nearest bin rather
+        than refused.
 
     Returns
     -------
@@ -497,10 +511,10 @@ def map_probabilities(
     ValueError
         If `source_probs` has incorrect shape or NaN, infinite or negative
         values; if dims mismatch; if `mode` is unknown; if `n_neighbors`,
-        `eps` or `max_distance` is invalid; or if source bins holding
-        probability lie beyond `max_distance` (by default, outside every
+        `eps` or `max_distance` is invalid; or if more than 1e-6 of the
+        probability lies beyond `max_distance` (by default, outside every
         target bin and farther than one bin spacing from its centers; the
-        message reports how much mass).
+        message reports how much).
     TypeError
         If `max_distance` is not a number or None.
     CartesianOnlyError
@@ -561,11 +575,13 @@ def map_probabilities(
     >>> bool(np.linalg.norm(target_env.bin_centers[mapped.argmax()] - [20, 70]) < 5)
     True
 
-    Rotating about the origin instead moves most of the arena off the target
-    bins, which is refused rather than piled onto the edge bins:
+    Rotating about the origin instead moves part of the arena off the target
+    bins. Probability spread over the whole arena, such as occupancy, would
+    then pile onto the target's edge bins, so it is refused:
 
+    >>> occupancy = np.full(source_env.n_bins, 1.0 / source_env.n_bins)
     >>> map_probabilities(
-    ...     source_env, target_env, posterior, source_rotation_matrix=back
+    ...     source_env, target_env, occupancy, source_rotation_matrix=back
     ... )  # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ...
