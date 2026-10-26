@@ -333,22 +333,6 @@ class TestSpatialRatesResultIteration:
 # ==============================================================================
 
 
-class TestSpatialModuleExports:
-    """Tests that the spatial module exports all expected items."""
-
-    def test_spatial_rate_result_exported(self) -> None:
-        """SpatialRateResult should be exported from encoding.spatial."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        assert SpatialRateResult is not None
-
-    def test_spatial_rates_result_exported(self) -> None:
-        """SpatialRatesResult should be exported from encoding.spatial."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        assert SpatialRatesResult is not None
-
-
 # ==============================================================================
 # Test SpatialRateResult convenience methods
 # ==============================================================================
@@ -356,25 +340,6 @@ class TestSpatialModuleExports:
 
 class TestSpatialRateResultPlot:
     """Tests for SpatialRateResult.plot() method."""
-
-    def test_has_plot_method(
-        self,
-        simple_env: Environment,
-        firing_rate_single: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRateResult should have a plot() method."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=firing_rate_single,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "plot")
-        assert callable(result.plot)
 
     def test_plot_returns_axes(
         self,
@@ -434,25 +399,6 @@ class TestSpatialRateResultPlot:
 class TestSpatialRateResultPeakLocation:
     """Tests for SpatialRateResult.peak_location() alias method."""
 
-    def test_has_peak_location_method(
-        self,
-        simple_env: Environment,
-        firing_rate_single: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRateResult should have a peak_location() method."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=firing_rate_single,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "peak_location")
-        assert callable(result.peak_location)
-
     def test_peak_location_returns_correct_shape(
         self,
         simple_env: Environment,
@@ -476,44 +422,6 @@ class TestSpatialRateResultPeakLocation:
 
 class TestSpatialRateResultSpatialInformation:
     """Tests for SpatialRateResult.spatial_information() method."""
-
-    def test_has_spatial_information_method(
-        self,
-        simple_env: Environment,
-        firing_rate_single: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRateResult should have a spatial_information() method."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=firing_rate_single,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "spatial_information")
-        assert callable(result.spatial_information)
-
-    def test_spatial_information_returns_float(
-        self,
-        simple_env: Environment,
-        firing_rate_single: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """spatial_information() should return a float."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=firing_rate_single,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        info = result.spatial_information()
-        assert isinstance(info, float)
 
     def test_spatial_information_delegates_to_metrics(
         self, simple_env: Environment, occupancy: NDArray[np.float64]
@@ -580,44 +488,6 @@ class TestSpatialRateResultSpatialInformation:
 
 class TestSpatialRateResultSparsity:
     """Tests for SpatialRateResult.sparsity() method."""
-
-    def test_has_sparsity_method(
-        self,
-        simple_env: Environment,
-        firing_rate_single: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRateResult should have a sparsity() method."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=firing_rate_single,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "sparsity")
-        assert callable(result.sparsity)
-
-    def test_sparsity_returns_float(
-        self,
-        simple_env: Environment,
-        firing_rate_single: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """sparsity() should return a float."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=firing_rate_single,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        spars = result.sparsity()
-        assert isinstance(spars, float)
 
     def test_sparsity_delegates_to_metrics(
         self, simple_env: Environment, occupancy: NDArray[np.float64]
@@ -767,46 +637,6 @@ def border_cell_firing_rate(simple_env: Environment) -> NDArray[np.float64]:
 class TestSpatialRateResultGridScore:
     """Tests for SpatialRateResult.grid_score() method."""
 
-    def test_has_grid_score_method(
-        self,
-        regular_grid_env: Environment,
-        grid_cell_firing_rate: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRateResult should have a grid_score() method."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        # Need occupancy matching the regular grid environment
-        occ = np.ones(regular_grid_env.n_bins, dtype=np.float64)
-        result = SpatialRateResult(
-            firing_rate=grid_cell_firing_rate,
-            occupancy=occ,
-            env=regular_grid_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "grid_score")
-        assert callable(result.grid_score)
-
-    def test_grid_score_returns_float(
-        self,
-        regular_grid_env: Environment,
-        grid_cell_firing_rate: NDArray[np.float64],
-    ) -> None:
-        """grid_score() should return a float."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        occ = np.ones(regular_grid_env.n_bins, dtype=np.float64)
-        result = SpatialRateResult(
-            firing_rate=grid_cell_firing_rate,
-            occupancy=occ,
-            env=regular_grid_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        score = result.grid_score()
-        assert isinstance(score, float)
-
     def test_grid_score_delegates_to_grid_module(
         self,
         regular_grid_env: Environment,
@@ -857,69 +687,6 @@ class TestSpatialRateResultGridScore:
 class TestSpatialRateResultGridProperties:
     """Tests for SpatialRateResult.grid_properties() method."""
 
-    def test_has_grid_properties_method(
-        self,
-        regular_grid_env: Environment,
-        grid_cell_firing_rate: NDArray[np.float64],
-    ) -> None:
-        """SpatialRateResult should have a grid_properties() method."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        occ = np.ones(regular_grid_env.n_bins, dtype=np.float64)
-        result = SpatialRateResult(
-            firing_rate=grid_cell_firing_rate,
-            occupancy=occ,
-            env=regular_grid_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "grid_properties")
-        assert callable(result.grid_properties)
-
-    def test_grid_properties_returns_grid_properties_dataclass(
-        self,
-        regular_grid_env: Environment,
-        grid_cell_firing_rate: NDArray[np.float64],
-    ) -> None:
-        """grid_properties() should return a GridProperties dataclass."""
-        from neurospatial.encoding.grid import GridProperties
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        occ = np.ones(regular_grid_env.n_bins, dtype=np.float64)
-        result = SpatialRateResult(
-            firing_rate=grid_cell_firing_rate,
-            occupancy=occ,
-            env=regular_grid_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        props = result.grid_properties()
-        assert isinstance(props, GridProperties)
-
-    def test_grid_properties_has_expected_fields(
-        self,
-        regular_grid_env: Environment,
-        grid_cell_firing_rate: NDArray[np.float64],
-    ) -> None:
-        """grid_properties() result should have all expected fields."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        occ = np.ones(regular_grid_env.n_bins, dtype=np.float64)
-        result = SpatialRateResult(
-            firing_rate=grid_cell_firing_rate,
-            occupancy=occ,
-            env=regular_grid_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        props = result.grid_properties()
-        assert hasattr(props, "score")
-        assert hasattr(props, "scale")
-        assert hasattr(props, "orientation")
-        assert hasattr(props, "orientation_std")
-        assert hasattr(props, "peak_coords")
-        assert hasattr(props, "n_peaks")
-
     def test_grid_properties_delegates_to_grid_module(
         self,
         regular_grid_env: Environment,
@@ -950,44 +717,6 @@ class TestSpatialRateResultGridProperties:
 
 class TestSpatialRateResultBorderScore:
     """Tests for SpatialRateResult.border_score() method."""
-
-    def test_has_border_score_method(
-        self,
-        simple_env: Environment,
-        border_cell_firing_rate: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRateResult should have a border_score() method."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=border_cell_firing_rate,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "border_score")
-        assert callable(result.border_score)
-
-    def test_border_score_returns_float(
-        self,
-        simple_env: Environment,
-        border_cell_firing_rate: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """border_score() should return a float."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=border_cell_firing_rate,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        score = result.border_score(boundary_source="analysis")
-        assert isinstance(score, float) or np.isnan(score)
 
     def test_border_score_accepts_threshold_parameter(
         self,
@@ -1147,48 +876,6 @@ class TestSpatialRateResultRegionCoverage:
         simple_env = simple_env.with_regions(region_builder)
         return simple_env
 
-    def test_has_region_coverage_method(
-        self,
-        simple_env: Environment,
-        firing_rate_single: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRateResult should have a region_coverage() method."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        result = SpatialRateResult(
-            firing_rate=firing_rate_single,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "region_coverage")
-        assert callable(result.region_coverage)
-
-    def test_region_coverage_returns_dict(
-        self,
-        env_with_regions: Environment,
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """region_coverage() should return a dict."""
-        from neurospatial.encoding.spatial import SpatialRateResult
-
-        # Create firing rate for this env
-        n_bins = env_with_regions.n_bins
-        firing_rate = np.random.rand(n_bins) * 10.0
-        occ = np.ones(n_bins, dtype=np.float64)
-
-        result = SpatialRateResult(
-            firing_rate=firing_rate,
-            occupancy=occ,
-            env=env_with_regions,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        coverage = result.region_coverage()
-        assert isinstance(coverage, dict)
-
     def test_region_coverage_accepts_threshold_parameter(
         self,
         env_with_regions: Environment,
@@ -1320,25 +1007,6 @@ class TestSpatialRateResultRegionCoverage:
 class TestSpatialRatesResultPlot:
     """Tests for SpatialRatesResult.plot() method."""
 
-    def test_has_plot_method(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRatesResult should have a plot() method."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "plot")
-        assert callable(result.plot)
-
     def test_plot_requires_idx_argument(
         self,
         simple_env: Environment,
@@ -1450,44 +1118,6 @@ class TestSpatialRatesResultPlot:
 class TestSpatialRatesResultSpatialInformation:
     """Tests for SpatialRatesResult.spatial_information() method."""
 
-    def test_has_spatial_information_method(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRatesResult should have a spatial_information() method."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "spatial_information")
-        assert callable(result.spatial_information)
-
-    def test_spatial_information_returns_array(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """spatial_information() should return an ndarray for batch."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        info = result.spatial_information()
-        assert isinstance(info, np.ndarray)
-
     def test_spatial_information_correct_shape(
         self,
         simple_env: Environment,
@@ -1572,44 +1202,6 @@ class TestSpatialRatesResultSpatialInformation:
 
 class TestSpatialRatesResultSparsity:
     """Tests for SpatialRatesResult.sparsity() method."""
-
-    def test_has_sparsity_method(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRatesResult should have a sparsity() method."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "sparsity")
-        assert callable(result.sparsity)
-
-    def test_sparsity_returns_array(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """sparsity() should return an ndarray for batch."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        spars = result.sparsity()
-        assert isinstance(spars, np.ndarray)
 
     def test_sparsity_correct_shape(
         self,
@@ -1724,47 +1316,6 @@ class TestSpatialRatesResultSparsity:
 class TestSpatialRatesResultGridScores:
     """Tests for SpatialRatesResult.grid_scores() method."""
 
-    def test_has_grid_scores_method(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRatesResult should have a grid_scores() method."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "grid_scores")
-        assert callable(result.grid_scores)
-
-    def test_grid_scores_returns_array(
-        self,
-        regular_grid_env: Environment,
-    ) -> None:
-        """grid_scores() should return an ndarray for batch."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        n_neurons = 3
-        n_bins = regular_grid_env.n_bins
-        firing_rates = np.random.rand(n_neurons, n_bins) * 10.0
-        occupancy = np.ones(n_bins, dtype=np.float64)
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates,
-            occupancy=occupancy,
-            env=regular_grid_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        scores = result.grid_scores()
-        assert isinstance(scores, BatchScoresResult)
-
     def test_grid_scores_correct_shape(
         self,
         regular_grid_env: Environment,
@@ -1847,44 +1398,6 @@ class TestSpatialRatesResultGridScores:
 
 class TestSpatialRatesResultBorderScores:
     """Tests for SpatialRatesResult.border_scores() method."""
-
-    def test_has_border_scores_method(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRatesResult should have a border_scores() method."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "border_scores")
-        assert callable(result.border_scores)
-
-    def test_border_scores_returns_array(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """border_scores() should return an ndarray for batch."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        scores = result.border_scores(boundary_source="analysis")
-        assert isinstance(scores, BatchScoresResult)
 
     def test_border_scores_correct_shape(
         self,
@@ -2026,25 +1539,6 @@ class TestSpatialRatesResultBorderScores:
 
 class TestSpatialRatesResultClassify:
     """Tests for SpatialRatesResult.classify() and label_cell_types()."""
-
-    def test_has_classify_method(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRatesResult should have a classify() method."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "classify")
-        assert callable(result.classify)
 
     def test_spatialrates_label_cell_types_multiclass(
         self,
@@ -2300,46 +1794,6 @@ class TestSpatialRatesResultClassify:
 class TestSpatialRatesResultSummaryTable:
     """Tests for SpatialRatesResult.summary_table() method."""
 
-    def test_has_summary_table_method(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """SpatialRatesResult should have a summary_table() method."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        assert hasattr(result, "summary_table")
-        assert callable(result.summary_table)
-
-    def test_summary_table_returns_dataframe(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table() should return a pandas DataFrame."""
-        import pandas as pd
-
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        df = result.summary_table()
-        assert isinstance(df, pd.DataFrame)
-
     def test_summary_table_has_correct_row_count(
         self,
         simple_env: Environment,
@@ -2378,13 +1832,45 @@ class TestSpatialRatesResultSummaryTable:
         df = result.summary_table()
         assert df.index.name == "unit_id"
 
-    def test_summary_table_has_peak_x_column(
+    @pytest.mark.parametrize(
+        ("include_classification", "expected"),
+        [
+            (
+                True,
+                [
+                    "peak_rate",
+                    "spatial_info",
+                    "sparsity",
+                    "grid_score",
+                    "border_score",
+                    "peak_x",
+                    "peak_y",
+                    "cell_type",
+                ],
+            ),
+            (
+                False,
+                [
+                    "peak_rate",
+                    "spatial_info",
+                    "sparsity",
+                    "grid_score",
+                    "border_score",
+                    "peak_x",
+                    "peak_y",
+                ],
+            ),
+        ],
+    )
+    def test_summary_table_columns(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
+        include_classification: bool,
+        expected: list[str],
     ) -> None:
-        """summary_table() should have a peak_x column."""
+        """Primary metrics first, peak coordinates, then the label."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2394,160 +1880,10 @@ class TestSpatialRatesResultSummaryTable:
             method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.summary_table()
-        assert "peak_x" in df.columns
-
-    def test_summary_table_has_peak_y_column(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table() should have a peak_y column."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
+        df = result.summary_table(
+            include_classification=include_classification, boundary_source="analysis"
         )
-        df = result.summary_table()
-        assert "peak_y" in df.columns
-
-    def test_summary_table_has_peak_rate_column(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table() should have a peak_rate column."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        df = result.summary_table()
-        assert "peak_rate" in df.columns
-
-    def test_summary_table_has_spatial_info_column(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table() should have a spatial_info column."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        df = result.summary_table()
-        assert "spatial_info" in df.columns
-
-    def test_summary_table_has_sparsity_column(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table() should have a sparsity column."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        df = result.summary_table()
-        assert "sparsity" in df.columns
-
-    def test_summary_table_has_grid_score_column(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table() should have a grid_score column."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        df = result.summary_table()
-        assert "grid_score" in df.columns
-
-    def test_summary_table_has_border_score_column(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table() should have a border_score column."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        df = result.summary_table()
-        assert "border_score" in df.columns
-
-    def test_summary_table_has_cell_type_column_by_default(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table() should include cell_type column by default."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        df = result.summary_table()
-        assert "cell_type" in df.columns
-
-    def test_summary_table_excludes_cell_type_when_disabled(
-        self,
-        simple_env: Environment,
-        firing_rates_batch: NDArray[np.float64],
-        occupancy: NDArray[np.float64],
-    ) -> None:
-        """summary_table(include_classification=False) should exclude cell_type."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-
-        result = SpatialRatesResult(
-            firing_rates=firing_rates_batch,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-        df = result.summary_table(include_classification=False)
-        assert "cell_type" not in df.columns
+        assert list(df.columns) == expected
 
     def test_summary_table_uses_integer_unit_ids_by_default(
         self,
@@ -2667,11 +2003,8 @@ class TestSpatialRatesResultSummaryTable:
         )
         df = result.summary_table()
         expected_scores = result.grid_scores()
-        # Use allclose with nan handling
-        assert np.allclose(
-            df["grid_score"].values, expected_scores, equal_nan=True
-        ) or np.array_equal(
-            np.isnan(df["grid_score"].values), np.isnan(expected_scores)
+        np.testing.assert_allclose(
+            df["grid_score"].to_numpy(), np.asarray(expected_scores), equal_nan=True
         )
 
     def test_summary_table_border_score_matches_border_scores_method(
@@ -2692,11 +2025,8 @@ class TestSpatialRatesResultSummaryTable:
         )
         df = result.summary_table(boundary_source="analysis")
         expected_scores = result.border_scores(boundary_source="analysis")
-        # Use allclose with nan handling
-        assert np.allclose(
-            df["border_score"].values, expected_scores, equal_nan=True
-        ) or np.array_equal(
-            np.isnan(df["border_score"].values), np.isnan(expected_scores)
+        np.testing.assert_allclose(
+            df["border_score"].to_numpy(), np.asarray(expected_scores), equal_nan=True
         )
 
     def test_summary_table_cell_type_matches_label_cell_types_method(
@@ -3116,39 +2446,6 @@ def place_cell_spikes(
 class TestComputeSpatialRateFunction:
     """Tests for compute_spatial_rate() function."""
 
-    def test_function_is_importable(self) -> None:
-        """compute_spatial_rate should be importable from encoding.spatial."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
-
-        assert compute_spatial_rate is not None
-
-    def test_function_is_callable(self) -> None:
-        """compute_spatial_rate should be callable."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
-
-        assert callable(compute_spatial_rate)
-
-    def test_returns_spatial_rate_result(
-        self,
-        trajectory_env: Environment,
-        place_cell_spikes: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_spatial_rate should return a SpatialRateResult."""
-        from neurospatial.encoding.spatial import (
-            SpatialRateResult,
-            compute_spatial_rate,
-        )
-
-        result = compute_spatial_rate(
-            trajectory_env,
-            place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-        )
-        assert isinstance(result, SpatialRateResult)
-
     def test_result_has_correct_firing_rate_shape(
         self,
         trajectory_env: Environment,
@@ -3460,26 +2757,6 @@ class TestComputeSpatialRateSmoothingMethods:
 class TestComputeSpatialRateMinOccupancy:
     """Tests for compute_spatial_rate min_occupancy parameter."""
 
-    def test_min_occupancy_parameter_exists(
-        self,
-        trajectory_env: Environment,
-        place_cell_spikes: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """min_occupancy parameter should be accepted."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
-
-        # Should not raise
-        result = compute_spatial_rate(
-            trajectory_env,
-            place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-            min_occupancy=0.1,
-        )
-        assert result is not None
-
     def test_min_occupancy_masks_low_occupancy_bins(
         self,
         trajectory_env: Environment,
@@ -3684,26 +2961,6 @@ class TestMetricsUseSpatialSupport:
 class TestComputeSpatialRateBackendParameter:
     """Tests for compute_spatial_rate backend parameter."""
 
-    def test_backend_parameter_exists(
-        self,
-        trajectory_env: Environment,
-        place_cell_spikes: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """backend parameter should be accepted."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
-
-        # Should not raise
-        result = compute_spatial_rate(
-            trajectory_env,
-            place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-            backend="numpy",
-        )
-        assert result is not None
-
     def test_default_backend_is_numpy(
         self,
         trajectory_env: Environment,
@@ -3747,25 +3004,6 @@ class TestComputeSpatialRateBackendParameter:
 class TestComputeSpatialRateResultMethods:
     """Tests that result from compute_spatial_rate has all expected methods."""
 
-    def test_result_has_plot_method(
-        self,
-        trajectory_env: Environment,
-        place_cell_spikes: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """Result should have plot() method."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
-
-        result = compute_spatial_rate(
-            trajectory_env,
-            place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-        )
-        assert hasattr(result, "plot")
-        assert callable(result.plot)
-
     def test_result_has_peak_location_method(
         self,
         trajectory_env: Environment,
@@ -3786,50 +3024,17 @@ class TestComputeSpatialRateResultMethods:
         peak = result.peak_location()
         assert peak.shape == (2,)  # 2D environment
 
-    def test_result_has_spatial_information_method(
-        self,
-        trajectory_env: Environment,
-        place_cell_spikes: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
+    def test_result_peak_location_recovers_planted_field(
+        self, ou_env, ou_10min, allocentric_field_spikes
     ) -> None:
-        """Result should have spatial_information() method."""
+        """A 10 Hz field planted at (70, 50) cm peaks within one 5 cm bin of it."""
         from neurospatial.encoding.spatial import compute_spatial_rate
 
+        times, positions, _ = ou_10min
         result = compute_spatial_rate(
-            trajectory_env,
-            place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
+            ou_env, allocentric_field_spikes, times, positions, bandwidth=5.0
         )
-        assert hasattr(result, "spatial_information")
-        info = result.spatial_information()
-        assert isinstance(info, float)
-        assert info >= 0
-
-    def test_result_peak_location_near_expected(
-        self,
-        trajectory_env: Environment,
-        place_cell_spikes: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """Peak location should be near the place field center."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
-
-        result = compute_spatial_rate(
-            trajectory_env,
-            place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-        )
-        peak = result.peak_location()
-        # Place field was centered at (60, 60) in the fixture
-        expected_center = np.array([60.0, 60.0])
-        # Peak should be within reasonable distance (depends on sampling)
-        distance = np.linalg.norm(peak - expected_center)
-        # Allow 30 cm tolerance due to random trajectory sampling and discrete binning
-        assert distance < 30.0, f"Peak at {peak}, expected near {expected_center}"
+        assert np.linalg.norm(result.peak_location() - [70.0, 50.0]) <= 5.0
 
 
 # ==============================================================================
@@ -3874,39 +3079,6 @@ def multiple_place_cell_spikes(
 
 class TestComputeSpatialRatesFunction:
     """Tests for compute_spatial_rates() function."""
-
-    def test_function_is_importable(self) -> None:
-        """compute_spatial_rates should be importable from encoding.spatial."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        assert compute_spatial_rates is not None
-
-    def test_function_is_callable(self) -> None:
-        """compute_spatial_rates should be callable."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        assert callable(compute_spatial_rates)
-
-    def test_returns_spatial_rates_result(
-        self,
-        trajectory_env: Environment,
-        multiple_place_cell_spikes: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_spatial_rates should return a SpatialRatesResult."""
-        from neurospatial.encoding.spatial import (
-            SpatialRatesResult,
-            compute_spatial_rates,
-        )
-
-        result = compute_spatial_rates(
-            trajectory_env,
-            multiple_place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-        )
-        assert isinstance(result, SpatialRatesResult)
 
     def test_result_has_correct_firing_rates_shape(
         self,
@@ -4187,26 +3359,6 @@ class TestComputeSpatialRatesInputFormats:
 class TestComputeSpatialRatesNJobs:
     """Tests for compute_spatial_rates n_jobs parameter."""
 
-    def test_n_jobs_parameter_exists(
-        self,
-        trajectory_env: Environment,
-        multiple_place_cell_spikes: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """n_jobs parameter should be accepted."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        # Should not raise
-        result = compute_spatial_rates(
-            trajectory_env,
-            multiple_place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-            n_jobs=1,
-        )
-        assert result is not None
-
     def test_n_jobs_equals_2(
         self,
         trajectory_env: Environment,
@@ -4327,26 +3479,6 @@ class TestComputeSpatialRatesSmoothingMethods:
 class TestComputeSpatialRatesMinOccupancy:
     """Tests for compute_spatial_rates min_occupancy parameter."""
 
-    def test_min_occupancy_parameter_exists(
-        self,
-        trajectory_env: Environment,
-        multiple_place_cell_spikes: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """min_occupancy parameter should be accepted."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        # Should not raise
-        result = compute_spatial_rates(
-            trajectory_env,
-            multiple_place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-            min_occupancy=0.1,
-        )
-        assert result is not None
-
     def test_min_occupancy_masks_low_occupancy_bins(
         self,
         trajectory_env: Environment,
@@ -4375,26 +3507,6 @@ class TestComputeSpatialRatesMinOccupancy:
 
 class TestComputeSpatialRatesBackendParameter:
     """Tests for compute_spatial_rates backend parameter."""
-
-    def test_backend_parameter_exists(
-        self,
-        trajectory_env: Environment,
-        multiple_place_cell_spikes: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """backend parameter should be accepted."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        # Should not raise
-        result = compute_spatial_rates(
-            trajectory_env,
-            multiple_place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-            backend="numpy",
-        )
-        assert result is not None
 
     def test_default_backend_is_numpy(
         self,
