@@ -240,7 +240,7 @@ class TestPhasePrecessionFunctionality:
             slope_units="rad/cm",
             offset=1.0,
             correlation=0.5,
-            pval=0.01,
+            p_value=0.01,
             mean_resultant_length=0.8,
         )
 
@@ -256,7 +256,7 @@ class TestPhasePrecessionFunctionality:
             slope_units="rad/cm",
             offset=1.0,
             correlation=0.5,
-            pval=0.01,
+            p_value=0.01,
             mean_resultant_length=0.8,
         )
 
@@ -278,7 +278,7 @@ class TestPhasePrecessionShufflePvalue:
         true_fit = compute_phase_precession(
             d["positions"], d["phases"], n_shuffles=n_shuffles, rng=0
         )
-        assert true_fit.pval < 0.05
+        assert true_fit.p_value < 0.05
         assert true_fit.slope < 0
 
         # Pin the SHUFFLE mechanics: a permutation p-value with +1 smoothing
@@ -287,13 +287,13 @@ class TestPhasePrecessionShufflePvalue:
         # 0.0 on this strong fixture, violating this floor — so reverting pval
         # to that analytic value would fail here.
         smoothing_floor = 1.0 / (n_shuffles + 1)
-        assert true_fit.pval >= smoothing_floor
+        assert true_fit.p_value >= smoothing_floor
 
         # Shuffled phases against the same positions destroy the relationship.
         shuffled = compute_phase_precession(
             d["positions"], d["phase_shuffled"], n_shuffles=n_shuffles, rng=0
         )
-        assert shuffled.pval > 0.5
+        assert shuffled.p_value > 0.5
 
     def test_phase_precession_pval_deterministic(self, precessing_spikes) -> None:
         from neurospatial.encoding.phase_precession import compute_phase_precession
@@ -301,7 +301,7 @@ class TestPhasePrecessionShufflePvalue:
         d = precessing_spikes
         a = compute_phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
         b = compute_phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
-        assert a.pval == b.pval
+        assert a.p_value == b.p_value
 
     def test_phase_precession_correlation_is_descriptive(
         self, precessing_spikes

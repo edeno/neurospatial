@@ -110,7 +110,7 @@ class TestThetaPhase:
 
         # Consumed without error and returns the standard result type.
         assert isinstance(result.slope, float)
-        assert 0.0 <= result.pval <= 1.0
+        assert 0.0 <= result.p_value <= 1.0
 
     def test_rejects_invalid_inputs(self) -> None:
         """Bad shape / sampling_rate / band raise clear ValueErrors."""

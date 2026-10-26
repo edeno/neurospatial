@@ -214,10 +214,12 @@ def theta_phase(
     return phase
 
 
-@dataclass(repr=False)
+@dataclass(frozen=True, repr=False)
 class PhasePrecessionResult(ResultMixin):
     """
     Results from phase precession analysis.
+
+    The result is immutable: its fields cannot be reassigned.
 
     Attributes
     ----------
@@ -230,8 +232,8 @@ class PhasePrecessionResult(ResultMixin):
     correlation : float
         Circular-linear correlation coefficient in [0, 1]. A descriptive,
         slope-independent effect size (Mardia & Jupp); it does not determine
-        ``pval``.
-    pval : float
+        ``p_value``.
+    p_value : float
         Shuffle p-value at the fitted slope. Computed by permuting the
         phase-position pairing, re-fitting the slope on each shuffle, and
         comparing the mean resultant length of residuals to the observed fit.
@@ -244,7 +246,7 @@ class PhasePrecessionResult(ResultMixin):
     slope_units: str
     offset: float
     correlation: float
-    pval: float
+    p_value: float
     mean_resultant_length: float
 
     def summary(self) -> dict[str, Any]:
@@ -254,7 +256,7 @@ class PhasePrecessionResult(ResultMixin):
             "slope_units": self.slope_units,
             "offset": self.offset,
             "correlation": self.correlation,
-            "pval": self.pval,
+            "p_value": self.p_value,
             "mean_resultant_length": self.mean_resultant_length,
         }
 
@@ -271,10 +273,14 @@ class PhasePrecessionResult(ResultMixin):
         bool
             True if p-value is below alpha.
         """
-        return self.pval < alpha
+        return self.p_value < alpha
 
     def interpretation(self) -> str:
         """Generate human-readable interpretation of results.
+
+        Precession or recession is named only when the fit is significant at
+        ``alpha=0.05``; otherwise the fitted slope is reported as not
+        significant.
 
         Returns
         -------
@@ -282,26 +288,26 @@ class PhasePrecessionResult(ResultMixin):
             Multi-line interpretation of the phase precession analysis.
         """
         lines = []
+        slope_text = f"slope={self.slope:.3f} {self.slope_units}"
 
-        # Significance
         if self.is_significant():
-            lines.append(f"SIGNIFICANT phase-position relationship (p={self.pval:.4f})")
+            lines.append(
+                f"SIGNIFICANT phase-position relationship (p={self.p_value:.4f})"
+            )
+            if self.slope < 0:
+                lines.append(f"Phase PRECESSION ({slope_text})")
+            elif self.slope > 0:
+                lines.append(f"Phase RECESSION ({slope_text})")
+            else:
+                lines.append("No phase shift with position")
         else:
             lines.append(
-                f"No significant phase-position relationship (p={self.pval:.4f})"
+                f"No significant phase-position relationship (p={self.p_value:.4f})"
             )
-
-        # Direction
-        if self.slope < 0:
             lines.append(
-                f"Phase PRECESSION detected (slope={self.slope:.3f} {self.slope_units})"
+                f"Fitted {slope_text} is not significant; no precession or "
+                "recession is claimed"
             )
-        elif self.slope > 0:
-            lines.append(
-                f"Phase RECESSION detected (slope={self.slope:.3f} {self.slope_units})"
-            )
-        else:
-            lines.append("No phase shift with position")
 
         # Correlation strength
         if self.correlation > 0.5:
@@ -526,13 +532,13 @@ def compute_phase_precession(
         p-value resolution at higher cost.
     rng : int, numpy.random.Generator, or None, optional
         Seed or generator for the permutation shuffles. Pass a fixed value
-        for a deterministic ``pval``.
+        for a deterministic ``p_value``.
 
     Returns
     -------
     PhasePrecessionResult
         Dataclass with slope, offset, correlation, p-value, and fit quality.
-        ``pval`` is a **shuffle p-value at the fitted slope** (see Notes);
+        ``p_value`` is a **shuffle p-value at the fitted slope** (see Notes);
         ``correlation`` is a slope-independent descriptive circular-linear
         effect size.
 
@@ -554,13 +560,13 @@ def compute_phase_precession(
     through a place field. This manifests as a negative slope in the
     phase-position relationship.
 
-    **P-value.** ``pval`` is a permutation p-value whose statistic is the
+    **P-value.** ``p_value`` is a permutation p-value whose statistic is the
     mean resultant length (MRL) of phase residuals at the fitted slope — the
     same quantity the fit maximizes. The null is built by permuting the
     phase-position pairing and **re-fitting the slope on each shuffle**, so
     the test asks whether the fitted precession is stronger than chance,
     rather than testing a slope-free circular-linear association. A +1
-    smoothing is applied (Phipson & Smyth, 2010) so ``pval`` is never exactly
+    smoothing is applied (Phipson & Smyth, 2010) so ``p_value`` is never exactly
     zero.
 
     **Performance.** Observed and shuffled test statistics use the same
@@ -572,7 +578,7 @@ def compute_phase_precession(
 
     ``correlation`` is the circular-linear correlation (Mardia & Jupp),
     reported as a descriptive, slope-independent effect size — it does not
-    determine ``pval``.
+    determine ``p_value``.
 
     Examples
     --------
@@ -655,7 +661,7 @@ def compute_phase_precession(
     # Count numerical ties too: BLAS may sum vector and batched products in a
     # different order, but equivalent permutations must never become significant.
     tied = np.isclose(null_mrls, observed_mrl, rtol=1e-12, atol=1e-12)
-    pval = float(
+    p_value = float(
         (np.sum((null_mrls >= observed_mrl) | tied) + 1) / (n_shuffles_eff + 1)
     )
 
@@ -668,7 +674,7 @@ def compute_phase_precession(
         slope_units=slope_units,
         offset=offset,
         correlation=correlation,
-        pval=pval,
+        p_value=p_value,
         mean_resultant_length=float(mean_resultant_length),
     )
 
@@ -752,7 +758,7 @@ def has_phase_precession(
         # Too few spikes after NaN-dropping -> cannot assess precession.
         return False
     return (
-        result.pval < alpha
+        result.p_value < alpha
         and result.correlation >= min_correlation
         and result.slope < 0
     )

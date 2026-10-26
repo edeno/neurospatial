@@ -18,7 +18,7 @@ class TestPhasePrecessionResult:
             slope_units="rad/cm",
             offset=1.0,
             correlation=0.5,
-            pval=0.01,
+            p_value=0.01,
             mean_resultant_length=0.8,
         )
         assert result.is_significant(alpha=0.05) is True
@@ -32,7 +32,7 @@ class TestPhasePrecessionResult:
             slope_units="rad/cm",
             offset=1.0,
             correlation=0.2,
-            pval=0.10,
+            p_value=0.10,
             mean_resultant_length=0.5,
         )
         assert result.is_significant(alpha=0.05) is False
@@ -46,7 +46,7 @@ class TestPhasePrecessionResult:
             slope_units="rad/cm",
             offset=1.0,
             correlation=0.5,
-            pval=0.01,
+            p_value=0.01,
             mean_resultant_length=0.8,
         )
         interp = result.interpretation()
@@ -62,11 +62,44 @@ class TestPhasePrecessionResult:
             slope_units="rad/cm",
             offset=1.0,
             correlation=0.5,
-            pval=0.01,
+            p_value=0.01,
             mean_resultant_length=0.8,
         )
         interp = result.interpretation()
         assert "RECESSION" in interp
+
+    def test_interpretation_claims_precession_only_when_significant(self) -> None:
+        """A negative but non-significant fit is not reported as precession."""
+        from neurospatial.encoding.phase_precession import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=-0.1,
+            slope_units="rad/cm",
+            offset=1.0,
+            correlation=0.05,
+            p_value=0.4,
+            mean_resultant_length=0.2,
+        )
+        interp = result.interpretation()
+        assert "PRECESSION" not in interp
+        assert "not significant" in interp
+
+    def test_result_is_immutable(self) -> None:
+        """Fields of a computed result cannot be reassigned."""
+        from dataclasses import FrozenInstanceError
+
+        from neurospatial.encoding.phase_precession import PhasePrecessionResult
+
+        result = PhasePrecessionResult(
+            slope=-0.1,
+            slope_units="rad/cm",
+            offset=1.0,
+            correlation=0.5,
+            p_value=0.01,
+            mean_resultant_length=0.8,
+        )
+        with pytest.raises(FrozenInstanceError):
+            result.slope = 0.3  # type: ignore[misc]
 
     def test_str_returns_interpretation(self) -> None:
         """str() should return interpretation."""
@@ -77,7 +110,7 @@ class TestPhasePrecessionResult:
             slope_units="rad/cm",
             offset=1.0,
             correlation=0.5,
-            pval=0.01,
+            p_value=0.01,
             mean_resultant_length=0.8,
         )
         assert str(result) == result.interpretation()
@@ -146,7 +179,7 @@ class TestPhasePrecession:
             positions, phases, position_range=(0, 200), n_shuffles=99, rng=0
         )
         assert raw.mean_resultant_length > 0.99
-        assert raw.pval == normalized.pval == 0.01
+        assert raw.p_value == normalized.p_value == 0.01
 
     def test_shuffle_test_preserves_physical_unit_conversion(self) -> None:
         """Changing position units and slope bounds preserves the tested hypothesis."""
@@ -165,7 +198,7 @@ class TestPhasePrecession:
             n_shuffles=99,
             rng=5,
         )
-        assert result.pval == converted.pval
+        assert result.p_value == converted.p_value
         assert converted.slope == pytest.approx(result.slope * 100, abs=1e-3)
         assert result.mean_resultant_length == pytest.approx(
             converted.mean_resultant_length, abs=1e-6
@@ -179,7 +212,7 @@ class TestPhasePrecession:
         phases = np.random.default_rng(8).uniform(0, 2 * np.pi, len(positions))
         with pytest.warns(RuntimeWarning, match="no variation"):
             result = compute_phase_precession(positions, phases, n_shuffles=99, rng=1)
-        assert result.pval == 1.0
+        assert result.p_value == 1.0
 
     def test_excessive_slope_search_explains_normalization(self) -> None:
         """An unresolvable search fails before allocating a huge grid of slopes."""
@@ -193,7 +226,7 @@ class TestPhasePrecession:
             positions, phases, position_range=(0, 1e8), n_shuffles=9, rng=0
         )
         assert normalized.mean_resultant_length > 0.99
-        assert normalized.pval == 0.1
+        assert normalized.p_value == 0.1
 
     def test_correlation_in_valid_range(self) -> None:
         """Correlation should be in [0, 1]."""
@@ -217,7 +250,7 @@ class TestPhasePrecession:
 
         result = compute_phase_precession(positions, phases)
 
-        assert 0 <= result.pval <= 1
+        assert 0 <= result.p_value <= 1
 
     def test_offset_in_valid_range(self) -> None:
         """Offset should be in [0, 2pi]."""
