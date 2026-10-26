@@ -659,6 +659,8 @@ def compute_phase_precession(
     """
     from scipy.stats import circmean
 
+    from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
+
     if angle_unit not in ("rad", "deg"):
         raise ValueError(
             f"angle_unit must be 'rad' or 'deg', got {angle_unit!r}.\n"
@@ -667,6 +669,13 @@ def compute_phase_precession(
     # Convert to arrays and radians if needed
     positions = np.asarray(positions, dtype=np.float64)
     phases = np.asarray(phases, dtype=np.float64)
+    if angle_unit == "rad":
+        warn_if_angles_look_like_degrees(
+            phases,
+            name="phases",
+            context="compute_phase_precession",
+            angle_unit_keyword=True,
+        )
     phases = _to_radians(phases, angle_unit)
     n_shuffles_eff = int(n_shuffles)
     if n_shuffles_eff < 0:

@@ -1090,6 +1090,32 @@ class TestPhasePrecessionShufflePvalue:
 class TestHasPhasePrecessionValidation:
     """has_phase_precession input checks and cost."""
 
+    def test_phases_in_degrees_read_as_radians_warn(self, precessing_spikes) -> None:
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        d = precessing_spikes
+        with pytest.warns(UserWarning, match='angle_unit="deg"'):
+            compute_phase_precession(
+                d["positions"], np.degrees(d["phases"]), n_shuffles=0
+            )
+
+    def test_phases_in_degrees_with_angle_unit_do_not_warn(
+        self, precessing_spikes
+    ) -> None:
+        import warnings
+
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        d = precessing_spikes
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compute_phase_precession(
+                d["positions"],
+                np.degrees(d["phases"]),
+                angle_unit="deg",
+                n_shuffles=0,
+            )
+
     def test_has_phase_precession_raises_on_length_mismatch(self) -> None:
         from neurospatial.encoding.phase_precession import has_phase_precession
 
