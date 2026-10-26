@@ -1,12 +1,17 @@
 """Physical walls, rather than analysis crops, define physical border scores."""
 
+from functools import partial
+
 import numpy as np
 import pytest
 from shapely.geometry import LineString, Point, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.encoding import border_score
+from neurospatial.encoding import border_score as _border_score
+
+# These rooms are a few unitless cells across, so keep every field.
+border_score = partial(_border_score, min_area=0.0)
 
 
 def physical(*, wall=False):
@@ -25,16 +30,26 @@ def test_unknown_walls_require_explicit_analysis_mode():
     )
     with pytest.raises(NotImplementedError, match=r"physical|footprint"):
         border_score(env, np.ones(env.n_bins))
-    assert border_score(env, np.ones(env.n_bins), boundary_source="analysis") > 0.5
+    # The full grid's outline is the box itself, so the analysis score equals
+    # the physical score of the same box with its walls declared.
+    measured = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(np.arange(6.0),) * 2,
+        arena=OpenArena(box(0, 0, 5, 5)),
+    )
+    np.testing.assert_allclose(
+        border_score(env, np.ones(env.n_bins), boundary_source="analysis"),
+        border_score(measured, np.ones(env.n_bins)),
+    )
 
 
 def test_physical_score_matches_independent_wall_length_and_distance_oracle():
     env = physical()
-    # A one-cell-wide strip on the west wall. It covers length 10 on the west
-    # and length 1 on each adjacent wall: 12/40. Every center is 0.5 from a wall.
+    # A one-cell-wide strip covers the whole west wall. Every center is 0.5
+    # from a wall, and the largest inscribed circle has radius 5.
     field = (env.bin_centers[:, 0] < 1).astype(float)
-    coverage = 12 / 40
-    distance = 0.5 / np.sqrt(200)
+    coverage = 1.0
+    distance = 0.5 / 5
     expected = (coverage - distance) / (coverage + distance)
     for metric in ("euclidean", "geodesic"):
         np.testing.assert_allclose(border_score(env, field, metric=metric), expected)
@@ -47,7 +62,11 @@ def test_analysis_crop_does_not_create_walls_or_supply_missing_wall_rates():
     cropped = env.subset(mask=keep)
     with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
         border_score(cropped, field[keep], metric="euclidean")
-    assert border_score(cropped, field[keep], boundary_source="analysis") == 1.0
+    # The crop's east edge is a wall of the analysis outline: the field covers
+    # it fully, half a cell from it, in a 4-wide crop (inscribed radius 2).
+    assert border_score(cropped, field[keep], boundary_source="analysis") == (
+        pytest.approx((1 - 0.25) / (1 + 0.25))
+    )
     assert border_score(env, field, metric="euclidean") < 0
 
 
@@ -94,9 +113,10 @@ def test_asserted_mask_holes_remain_walls_after_storage_and_crop():
 def test_result_summary_explains_unavailable_walls_and_explicit_mode_propagates():
     from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
 
+    # Meters, so the default 200 cm² field minimum is defined and met.
     env = Environment.from_grid_mask(
         np.ones((5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 2
-    )
+    ).with_metadata(units="m")
     single = SpatialRateResult(
         np.ones(env.n_bins), np.ones(env.n_bins), env, method="binned", bandwidth=0.0
     )
@@ -238,19 +258,19 @@ def test_rebuilt_rotated_arena_owns_its_whole_wall():
     their wall pieces belong to the neighboring bins, so a field over the whole
     arena covers the whole wall instead of reporting partial coverage."""
     from shapely.affinity import rotate
+    from shapely.ops import unary_union
 
-    from neurospatial.encoding._physical_border import physical_border_geometry
-    from neurospatial.geometry import boundary_geometry
+    from neurospatial.encoding._physical_border import border_geometry
 
     env = Environment.from_polygon(
         rotate(box(0, 0, 10, 10), 45, origin=(5, 5)), bin_size=0.2
     )
-    walls = boundary_geometry(env.binning, env.arena, "physical")
-    geometry = physical_border_geometry(env, walls)
-    owned = [piece for pieces in geometry.contact for piece in pieces]
-    from shapely.ops import unary_union
-
-    assert unary_union(owned).length == pytest.approx(walls.length, rel=1e-9)
+    geometry = border_geometry(env, "physical")
+    assert len(geometry.wall_lengths) == 4
+    for (_owners, pieces), length in zip(
+        geometry.contact, geometry.wall_lengths, strict=True
+    ):
+        assert unary_union(pieces).length == pytest.approx(length, rel=1e-9)
     assert np.isfinite(border_score(env, np.ones(env.n_bins)))
 
 
@@ -310,8 +330,11 @@ def test_observed_internal_wall_side_does_not_supply_the_other_sides_missing_rat
 
 
 def _wall_cell_with_unobserved_wall():
-    """A west-wall field in a room whose east-wall cells were never observed."""
-    env = physical()
+    """A west-wall field in a room whose east-wall cells were never observed.
+
+    Meters, so the default 200 cm² field minimum is defined and met.
+    """
+    env = physical().with_metadata(units="m")
     rates = np.where(env.bin_centers[:, 0] < 1, 10.0, 0.1)
     rates[env.bin_centers[:, 0] > 9] = np.nan
     return env, rates
@@ -368,7 +391,11 @@ def test_combined_component_without_walls_is_not_scored_against_other_walls(metr
     assert "'unknown'" in message
     assert "'known'" not in message
     assert "boundary_source='analysis'" in message
-    assert border_score(env, field, boundary_source="analysis", metric=metric) == 1.0
+    # The analysis outline's west edge of that room is fully covered, half a
+    # cell away, in a 5-wide room (inscribed radius 2.5).
+    assert border_score(
+        env, field, boundary_source="analysis", metric=metric
+    ) == pytest.approx((1 - 0.2) / (1 + 0.2))
 
     walled = Environment.combine(
         {
@@ -385,7 +412,7 @@ def test_combined_component_without_walls_is_not_scored_against_other_walls(metr
 
 
 def _room_with_internal_wall(*, footprint_known):
-    """A 10x10 room with one declared internal wall at x=5."""
+    """A 10 m x 10 m room with one declared internal wall at x=5."""
     return Environment.from_grid_mask(
         np.ones((10, 10), dtype=bool),
         grid_edges=(np.arange(11.0),) * 2,
@@ -394,7 +421,7 @@ def _room_with_internal_wall(*, footprint_known):
             walls=(LineString([(5, 2), (5, 8)]),),
             physical_footprint_known=footprint_known,
         ),
-    )
+    ).with_metadata(units="m")
 
 
 @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])

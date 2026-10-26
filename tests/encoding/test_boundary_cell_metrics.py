@@ -11,396 +11,243 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import shapely
 
 from neurospatial import Environment, Regions
 
 
-class TestBorderScore:
-    """Test border_score function."""
+def _solstad_reference(rates, width, height, bin_size, threshold=0.3):
+    """Solstad et al. (2008) border score on a rectangular box of square bins.
 
-    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
-    def test_uniform_map_control_has_geometry_dependent_positive_baseline(self, metric):
-        """Pin the generalized formula without treating a positive score as tuning."""
+    Written from the paper's definition, independently of the package's wall
+    geometry: rows and columns of a ``(n_y, n_x)`` rate image, one field, the
+    best of four walls, rate-weighted center-to-wall distance and half the
+    shorter side.
+    """
+    field = rates >= threshold * rates.max()
+    coverage = max(
+        field[:, 0].mean(), field[:, -1].mean(), field[0].mean(), field[-1].mean()
+    )
+    n_y, n_x = rates.shape
+    x = (np.arange(n_x) + 0.5) * bin_size
+    y = (np.arange(n_y) + 0.5) * bin_size
+    to_wall = np.minimum(
+        np.minimum(x, width - x)[None, :], np.minimum(y, height - y)[:, None]
+    )
+    weights = np.where(field, rates, 0.0)
+    distance = np.sum(weights * to_wall) / np.sum(weights) / (min(width, height) / 2)
+    return (coverage - distance) / (coverage + distance)
+
+
+def _box(width, height, bin_size=2.5):
+    return Environment.from_polygon(
+        shapely.box(0, 0, width, height), bin_size=bin_size, units="cm"
+    )
+
+
+def _rate_image(env, rates, bin_size=2.5):
+    """Rates as a ``(n_y, n_x)`` image indexed by bin row and column."""
+    columns = np.floor(env.bin_centers[:, 0] / bin_size).astype(int)
+    rows = np.floor(env.bin_centers[:, 1] / bin_size).astype(int)
+    image = np.full((rows.max() + 1, columns.max() + 1), np.nan)
+    image[rows, columns] = rates
+    assert np.isfinite(image).all()
+    return image
+
+
+def _maps(env, width, height):
+    x, y = env.bin_centers.T
+
+    def bump(x0, y0, sigma):
+        return 0.2 + 10.0 * np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / (2 * sigma**2))
+
+    return {
+        "west strip": np.where(x < 7.5, 10.0, 0.2),
+        "field on west wall": bump(5.0, height / 2, 10.0),
+        "corner field": bump(5.0, 5.0, 12.0),
+        "central field": bump(width / 2, height / 2, 10.0),
+        "broad central field": bump(width / 2, height / 2, 35.0),
+        "uniform with noise": 5.0 + np.random.default_rng(0).normal(0, 1, env.n_bins),
+    }
+
+
+MAP_NAMES = list(_maps(_box(20, 20), 20, 20))
+
+
+class TestBorderScore:
+    """border_score is the Solstad et al. (2008) score on rectangular boxes."""
+
+    @pytest.mark.parametrize("size", [(100.0, 100.0), (150.0, 60.0)])
+    @pytest.mark.parametrize("name", MAP_NAMES)
+    def test_rectangles_match_independent_solstad_reference(self, size, name):
         from neurospatial.encoding import border_score
 
-        env = Environment.from_grid_mask(
-            np.ones((5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 2
-        )
-        # Sixteen outer bins have distance 0, eight inner bins have distance 1,
-        # and the center has distance 2. Mean distance is 10/25 and the
-        # bin-center bounding-box diagonal is 4*sqrt(2). Coverage is 1.
-        normalized_distance = (10 / 25) / (4 * np.sqrt(2))
-        expected_uniform = (1 - normalized_distance) / (1 + normalized_distance)
-        uniform = np.full(env.n_bins, 2.0)
-        uniform_score = border_score(
-            env, uniform, metric=metric, boundary_source="analysis"
-        )
-        np.testing.assert_allclose(uniform_score, expected_uniform)
-        assert uniform_score > 0.5  # The usual screen also passes this untuned control.
-        np.testing.assert_allclose(
-            border_score(env, uniform * 7, metric=metric, boundary_source="analysis"),
-            uniform_score,
-        )
-
-        boundary_only = np.zeros(env.n_bins)
-        boundary_only[env.boundary_bins] = 2.0
-        center_only = np.zeros(env.n_bins)
-        center_only[12] = 2.0
-        np.testing.assert_allclose(
-            border_score(env, boundary_only, metric=metric, boundary_source="analysis"),
-            1.0,
-        )
-        np.testing.assert_allclose(
-            border_score(env, center_only, metric=metric, boundary_source="analysis"),
-            -1.0,
-        )
-
-    def test_border_score_anchor_boundary_only_field(self) -> None:
-        """Anchor test: Field active ONLY on boundary bins should have score ≈ 1.0.
-
-        This is a hand-derived expectation: when the field is exactly the
-        boundary bins, the mean distance from field to boundary is 0,
-        and coverage is maximal, giving a score near 1.0.
-
-        Mathematical reasoning:
-        - dM (mean distance from field centroid to nearest boundary) ≈ 0
-        - cM (coverage of boundary by field) = 1.0 (full coverage)
-        - border_score = cM - dM = 1.0 - 0 = 1.0
-        """
-        from neurospatial.encoding.border import border_score
-
-        # Create a 4x4 grid (16 bins total, 12 boundary bins)
-        x = np.linspace(0, 30, 300)
-        y = np.linspace(0, 30, 300)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=10.0)
-
-        # Create field that is exactly the boundary bins
-        firing_rate = np.zeros(env.n_bins)
-        firing_rate[env.boundary_bins] = 5.0
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Boundary-only field should have score very close to 1.0
-        assert score > 0.9, f"Expected score > 0.9 for boundary-only field, got {score}"
-
-    def test_border_score_anchor_single_center_bin(self) -> None:
-        """Anchor test: Field active ONLY in center bin should have negative score.
-
-        This is a hand-derived expectation: a single central bin has
-        maximum distance from boundaries and zero boundary coverage.
-
-        Mathematical reasoning:
-        - Field centroid is far from any boundary
-        - dM (normalized mean distance) will be high
-        - cM (boundary coverage) = 0 (no boundary bins in field)
-        - border_score = cM - dM = 0 - dM < 0
-        """
-        from neurospatial.encoding.border import border_score
-
-        # Create a 5x5 grid (25 bins) - center bin is index 12
-        x = np.linspace(0, 50, 500)
-        y = np.linspace(0, 50, 500)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=10.0)
-
-        # Find the most central bin
-        center_point = np.array([25.0, 25.0])
-        distances = np.linalg.norm(env.bin_centers - center_point, axis=1)
-        center_bin = np.argmin(distances)
-
-        # Create field active only in center bin
-        firing_rate = np.zeros(env.n_bins)
-        firing_rate[center_bin] = 5.0
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Central-only field should have negative score (far from boundary)
-        assert score < 0.0, f"Expected score < 0 for central-only field, got {score}"
-
-    def test_border_score_perfect_border_cell(
-        self, dense_rectangular_grid_env: Environment
-    ) -> None:
-        """Test border score for perfect border cell (field along one wall)."""
-        env = dense_rectangular_grid_env
-
-        # Create firing rate map with activity only along left wall (x < 10)
-        firing_rate = np.zeros(env.n_bins)
-        for i in range(env.n_bins):
-            center = env.bin_centers[i]
-            if center[0] < 10:  # Left wall
-                firing_rate[i] = 5.0
-            else:
-                firing_rate[i] = 0.0
-
-        from neurospatial.encoding.border import border_score
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Perfect border cell should have high positive score (close to 1)
-        assert score > 0.5, f"Expected border score > 0.5 for border cell, got {score}"
-
-    def test_border_score_central_field(
-        self, dense_50x50_bin5_env: Environment
-    ) -> None:
-        """Test border score for central field (non-border cell)."""
-        env = dense_50x50_bin5_env
-
-        # Create firing rate map with activity only in center
-        firing_rate = np.zeros(env.n_bins)
-        for i in range(env.n_bins):
-            center = env.bin_centers[i]
-            # Gaussian centered at (25, 25) with small width
-            distance = np.sqrt((center[0] - 25) ** 2 + (center[1] - 25) ** 2)
-            firing_rate[i] = 5.0 * np.exp(-(distance**2) / (2 * 5.0**2))
-
-        from neurospatial.encoding.border import border_score
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Central field should have low or negative score
-        assert score < 0.3, (
-            f"Expected border score < 0.3 for central field, got {score}"
-        )
-
-    def test_border_score_corner_field(self, dense_40x40_grid_env: Environment) -> None:
-        """Test border score for field in corner (touches two walls)."""
-        env = dense_40x40_grid_env
-
-        # Create firing rate in corner (x < 10 AND y < 10)
-        firing_rate = np.zeros(env.n_bins)
-        for i in range(env.n_bins):
-            center = env.bin_centers[i]
-            if center[0] < 10 and center[1] < 10:
-                firing_rate[i] = 5.0
-
-        from neurospatial.encoding.border import border_score
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Corner field should have high score (touches boundaries)
-        assert score > 0.4, f"Expected border score > 0.4 for corner field, got {score}"
-
-    def test_border_score_uniform_firing(
-        self, dense_rectangular_grid_env: Environment
-    ) -> None:
-        """Test border score with uniform firing everywhere."""
-        env = dense_rectangular_grid_env
-
-        # Uniform firing everywhere
-        firing_rate = np.ones(env.n_bins) * 2.0
-
-        from neurospatial.encoding.border import border_score
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Uniform firing covers all boundaries with perfect coverage (cM=1.0)
-        # Mean distance to boundary is relatively low (many bins ARE boundaries)
-        # So score should be positive (boundary coverage > distance)
-        assert 0.5 < score <= 1.0, (
-            f"Expected positive score for uniform firing covering boundaries, got {score}"
-        )
-
-    def test_border_score_threshold_parameter(
-        self, dense_rectangular_grid_env: Environment
-    ) -> None:
-        """Test that threshold parameter affects field segmentation."""
-        env = dense_rectangular_grid_env
-
-        # Create gradient firing rate (higher near edge)
-        # For dense_rectangular_grid_env (0-50 extent), center is at (25, 25)
-        center_point = np.array([25.0, 25.0])
-        distances = np.linalg.norm(env.bin_centers - center_point, axis=1)
-        firing_rate = distances / 25.0  # Normalize
-
-        from neurospatial.encoding.border import border_score
-
-        # Lower threshold includes more bins
-        score_low = border_score(
-            env, firing_rate, threshold=0.1, boundary_source="analysis"
-        )
-
-        # Higher threshold includes fewer bins
-        score_high = border_score(
-            env, firing_rate, threshold=0.5, boundary_source="analysis"
-        )
-
-        # Both should be valid scores
-        assert -1.0 <= score_low <= 1.0
-        assert -1.0 <= score_high <= 1.0
-
-    def test_border_score_all_nan(self, small_2d_env: Environment) -> None:
-        """Test border score with all NaN firing rates."""
-        env = small_2d_env
-
-        # All NaN
-        firing_rate = np.full(env.n_bins, np.nan)
-
-        from neurospatial.encoding.border import border_score
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Should return NaN for all-NaN input
-        assert np.isnan(score), f"Expected NaN for all-NaN input, got {score}"
-
-    def test_border_score_all_zeros(self, small_2d_env: Environment) -> None:
-        """Test border score with zero firing everywhere."""
-        env = small_2d_env
-
-        # All zeros
-        firing_rate = np.zeros(env.n_bins)
-
-        from neurospatial.encoding.border import border_score
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Should return NaN (no field detected)
-        assert np.isnan(score), f"Expected NaN for zero firing, got {score}"
-
-    def test_border_score_shape_validation(self, small_2d_env: Environment) -> None:
-        """Test input validation for firing_rate shape."""
-        env = small_2d_env
-
-        # Wrong shape
-        firing_rate = np.ones((env.n_bins, 2))  # 2D instead of 1D
-
-        from neurospatial.encoding.border import border_score
-
-        with pytest.raises(ValueError, match=r"firing_rate\.shape"):
-            border_score(env, firing_rate, boundary_source="analysis")
-
-    def test_border_score_threshold_validation(self, small_2d_env: Environment) -> None:
-        """Test validation of threshold parameter."""
-        env = small_2d_env
-        firing_rate = np.ones(env.n_bins)
-
-        from neurospatial.encoding.border import border_score
-
-        # Threshold must be in (0, 1)
-        with pytest.raises(ValueError, match="threshold must be in"):
-            border_score(env, firing_rate, threshold=0.0, boundary_source="analysis")
-
-        with pytest.raises(ValueError, match="threshold must be in"):
-            border_score(env, firing_rate, threshold=1.5, boundary_source="analysis")
-
-    def test_border_score_min_area_validation(self, small_2d_env: Environment) -> None:
-        """Test validation of min_area parameter."""
-        env = small_2d_env
-        firing_rate = np.ones(env.n_bins)
-
-        from neurospatial.encoding.border import border_score
-
-        # min_area must be non-negative
-        with pytest.raises(ValueError, match="min_area must be non-negative"):
-            border_score(env, firing_rate, min_area=-10.0, boundary_source="analysis")
-
-    def test_border_score_range(self, dense_rectangular_grid_env: Environment) -> None:
-        """Test that border score is always in [-1, 1]."""
-        env = dense_rectangular_grid_env
-        rng = np.random.default_rng(42)
-
-        from neurospatial.encoding.border import border_score
-
-        # Test multiple random firing rates on same environment
-        for _ in range(5):
-            # Random firing rate
-            firing_rate = rng.random(env.n_bins) * 5.0
-
-            score = border_score(env, firing_rate, boundary_source="analysis")
-
-            # Score should be in valid range or NaN
-            if not np.isnan(score):
-                assert -1.0 <= score <= 1.0, (
-                    f"Border score {score} out of range [-1, 1]"
+        width, height = size
+        env = _box(width, height)
+        rates = _maps(env, width, height)[name]
+        expected = _solstad_reference(_rate_image(env, rates), width, height, 2.5)
+        for metric in ("euclidean", "geodesic"):
+            for source in ("physical", "analysis"):
+                np.testing.assert_allclose(
+                    border_score(env, rates, metric=metric, boundary_source=source),
+                    expected,
+                    rtol=1e-9,
+                    err_msg=f"{name}, {metric}, {source}",
                 )
 
-    def test_border_score_metric_euclidean(
-        self, dense_rectangular_grid_env: Environment
-    ) -> None:
-        """Test border score with euclidean distance metric."""
-        env = dense_rectangular_grid_env
+    def test_one_wall_cell_scores_well_above_a_uniform_map(self):
+        """A uniform map's one field covers every wall, so it scores 0.5 on a
+        square: the spatial-information gate, not the score, rejects it."""
+        from neurospatial.encoding import border_score
 
-        # Create border cell
-        firing_rate = np.zeros(env.n_bins)
-        boundary = env.boundary_bins
-        firing_rate[boundary] = 5.0
+        env = _box(100, 100)
+        maps = _maps(env, 100, 100)
+        uniform = border_score(env, maps["uniform with noise"])
+        wall = border_score(env, maps["west strip"])
+        assert uniform == pytest.approx(0.5, abs=0.01)
+        assert wall - uniform > 0.3
+        assert border_score(env, maps["central field"]) == -1.0
 
-        from neurospatial.encoding.border import border_score
+    def test_fields_smaller_than_min_area_are_ignored(self):
+        """Solstad's 200 cm^2 field minimum: a single bright bin in the middle
+        of the box is not a field, so the wall field alone is scored."""
+        from neurospatial.encoding import border_score
 
-        score = border_score(
-            env, firing_rate, metric="euclidean", boundary_source="analysis"
+        env = _box(100, 100)
+        wall = _maps(env, 100, 100)["west strip"]
+        with_speck = wall.copy()
+        with_speck[np.argmin(np.hypot(*(env.bin_centers - 50.0).T))] = 10.0
+        np.testing.assert_allclose(
+            border_score(env, with_speck), border_score(env, wall)
+        )
+        assert border_score(env, with_speck, min_area=0) < border_score(env, wall)
+        assert np.isnan(border_score(env, wall, min_area=10_000.0))
+
+    def test_default_min_area_follows_units_and_needs_a_known_length(self):
+        from neurospatial.encoding import border_score
+
+        env = _box(100, 100)
+        rates = _maps(env, 100, 100)["corner field"]
+        meters = Environment.from_polygon(
+            shapely.box(0, 0, 1.0, 1.0), bin_size=0.025, units="m"
+        )
+        np.testing.assert_allclose(
+            border_score(meters, rates), border_score(env, rates)
+        )
+        unitless = Environment.from_polygon(shapely.box(0, 0, 100, 100), bin_size=2.5)
+        with pytest.raises(ValueError, match=r"(?s)needs min_area.*units='cm'"):
+            border_score(unitless, rates)
+        np.testing.assert_allclose(
+            border_score(unitless, rates, min_area=200.0), border_score(env, rates)
         )
 
-        # Should return valid score
-        assert -1.0 <= score <= 1.0, f"Expected score in [-1, 1], got {score}"
+    def test_wall_strip_coverage_and_distance_by_hand(self):
+        """A one-bin strip along the west wall of a 10 x 10 box covers that
+        whole wall; every center is half a bin from the wall."""
+        from neurospatial.encoding import border_score
 
-    def test_border_score_metrics_differ(
-        self, dense_50x50_bin5_env: Environment
-    ) -> None:
-        """Test that geodesic and euclidean give different results."""
-        env = dense_50x50_bin5_env
+        env = _box(10, 10, bin_size=1.0)
+        strip = (env.bin_centers[:, 0] < 1).astype(float)
+        distance = 0.5 / 5.0
+        expected = (1 - distance) / (1 + distance)
+        np.testing.assert_allclose(border_score(env, strip, min_area=0), expected)
 
-        # Create central field that requires path around obstacles
-        firing_rate = np.zeros(env.n_bins)
-        for i in range(env.n_bins):
-            center = env.bin_centers[i]
-            distance = np.sqrt((center[0] - 25) ** 2 + (center[1] - 25) ** 2)
-            if distance < 8:  # Central field
-                firing_rate[i] = 5.0
+    def test_unvisited_or_silent_maps_are_nan(self):
+        from neurospatial.encoding import border_score
 
-        from neurospatial.encoding.border import border_score
-
-        score_geodesic = border_score(
-            env, firing_rate, metric="geodesic", boundary_source="analysis"
+        env = _box(20, 20)
+        assert np.isnan(
+            border_score(env, np.zeros(env.n_bins), boundary_source="analysis")
         )
-        score_euclidean = border_score(
-            env, firing_rate, metric="euclidean", boundary_source="analysis"
+        assert np.isnan(
+            border_score(env, np.full(env.n_bins, np.nan), boundary_source="analysis")
         )
 
-        # Both should be valid
-        assert -1.0 <= score_geodesic <= 1.0
-        assert -1.0 <= score_euclidean <= 1.0
+    def test_argument_validation(self):
+        from neurospatial.encoding import border_score
 
-        # For regular grids, they might be similar, but we test they're computed
-        # (exact equality would depend on environment structure)
+        env = _box(20, 20)
+        rates = np.ones(env.n_bins)
+        with pytest.raises(ValueError, match=r"firing_rate\.shape"):
+            border_score(env, np.ones((env.n_bins, 2)))
+        for threshold in (0.0, 1.5):
+            with pytest.raises(ValueError, match="threshold must be in"):
+                border_score(env, rates, threshold=threshold)
+        with pytest.raises(ValueError, match="min_area must be non-negative"):
+            border_score(env, rates, min_area=-10.0)
+        with pytest.raises(ValueError, match="metric must be"):
+            border_score(env, rates, metric="invalid")
 
-    def test_border_score_metric_validation(self, small_2d_env: Environment) -> None:
-        """Test validation of metric parameter."""
-        env = small_2d_env
-        firing_rate = np.ones(env.n_bins)
 
-        from neurospatial.encoding.border import border_score
+class TestBorderWalls:
+    """How outlines split into the walls that coverage is measured on."""
 
-        # Invalid distance metric
-        with pytest.raises(
-            ValueError, match=r"metric must be 'geodesic' or 'euclidean'"
-        ):
-            border_score(env, firing_rate, metric="invalid", boundary_source="analysis")
+    @pytest.mark.parametrize(
+        ("polygon", "n_walls"),
+        [
+            (shapely.box(0, 0, 100, 60), 4),
+            (shapely.Polygon([(0, 0), (100, 0), (50, 80)]), 3),
+            (
+                shapely.Polygon(
+                    [
+                        (50 + 50 * np.cos(a), 50 + 50 * np.sin(a))
+                        for a in np.arange(6) * np.pi / 3
+                    ]
+                ),
+                6,
+            ),
+            (shapely.Point(50, 50).buffer(50, quad_segs=2), 1),
+            (shapely.Point(50, 50).buffer(50, quad_segs=32), 1),
+        ],
+        ids=["rectangle", "triangle", "hexagon", "octagon", "circle"],
+    )
+    def test_corners_split_outlines_into_walls(self, polygon, n_walls):
+        from neurospatial.encoding._physical_border import border_geometry
 
-    def test_border_score_euclidean_central_field(
-        self, dense_50x50_bin5_env: Environment
-    ) -> None:
-        """Test euclidean distance for central field (should have low score)."""
-        env = dense_50x50_bin5_env
+        env = Environment.from_polygon(polygon, bin_size=2.5, units="cm")
+        assert len(border_geometry(env, "physical").wall_lengths) == n_walls
 
-        # Create central field
-        firing_rate = np.zeros(env.n_bins)
-        for i in range(env.n_bins):
-            center = env.bin_centers[i]
-            distance = np.sqrt((center[0] - 25) ** 2 + (center[1] - 25) ** 2)
-            firing_rate[i] = 5.0 * np.exp(-(distance**2) / (2 * 5.0**2))
+    def test_pixel_staircase_of_a_circle_is_one_analysis_wall(self):
+        from neurospatial.encoding._physical_border import border_geometry
 
-        from neurospatial.encoding.border import border_score
-
-        score = border_score(
-            env, firing_rate, metric="euclidean", boundary_source="analysis"
+        rng = np.random.default_rng(1)
+        angle, radius = (
+            rng.uniform(0, 2 * np.pi, 20_000),
+            50 * np.sqrt(rng.uniform(0, 1, 20_000)),
         )
+        positions = np.column_stack([radius * np.cos(angle), radius * np.sin(angle)])
+        env = Environment.from_samples(positions, bin_size=2.5, units="cm")
+        assert len(border_geometry(env, "analysis").wall_lengths) == 1
 
-        # Central field should have low score with euclidean distance
-        assert score < 0.3, (
-            f"Expected euclidean border score < 0.3 for central field, got {score}"
+    def test_named_internal_walls_are_separate_walls(self):
+        from neurospatial.arena import OpenArena
+        from neurospatial.encoding import border_score
+        from neurospatial.encoding._physical_border import border_geometry
+
+        outline = shapely.box(0, 0, 100, 100)
+        divider = shapely.LineString([(50, 20), (50, 80)])
+        env = Environment.from_polygon(
+            outline,
+            bin_size=2.5,
+            units="cm",
+            arena=OpenArena(outline, walls={"divider": divider}),
+        )
+        x, y = env.bin_centers.T
+        # One column against the divider's west face covers that whole wall,
+        # with every center half a bin from it.
+        along = (x > 47.5) & (x < 50) & (y > 20) & (y < 80)
+        rates = np.where(along, 10.0, 0.2)
+        radius = border_geometry(env, "physical").radius
+        # The largest circle clear of every wall, by brute force on a grid.
+        grid = np.stack(np.meshgrid(*[np.linspace(0, 100, 401)] * 2), -1).reshape(-1, 2)
+        clearance = shapely.distance(
+            shapely.points(grid), shapely.union_all([outline.boundary, divider])
+        )
+        assert radius == pytest.approx(clearance.max(), abs=0.25)
+        distance = 1.25 / radius
+        np.testing.assert_allclose(
+            border_score(env, rates, min_area=0, metric="euclidean"),
+            (1 - distance) / (1 + distance),
         )
 
 

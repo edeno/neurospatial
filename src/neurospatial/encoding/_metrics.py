@@ -636,7 +636,7 @@ def batch_grid_scores(
     >>> x = np.linspace(-50, 50, 51)
     >>> xx, yy = np.meshgrid(x, x)
     >>> positions = np.column_stack([xx.ravel(), yy.ravel()])
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     >>> # Random firing patterns (5 neurons)
     >>> rng = np.random.default_rng(42)
@@ -750,15 +750,15 @@ def batch_border_scores(
     firing_rates: NDArray[np.float64],
     *,
     threshold: float = 0.3,
-    min_area: float = 0.0,
+    min_area: float | None = None,
     metric: str = "geodesic",
     boundary_source: BoundarySource = "physical",
 ) -> BatchScoresResult:
     """Compute border scores for multiple neurons.
 
-    Computes border score (boundary proximity tuning) for each neuron's firing
-    rate map. Border score quantifies how much a cell's firing field is aligned
-    with environmental boundaries.
+    Computes the border score of Solstad et al. (2008) for each neuron's
+    firing rate map; see :func:`~neurospatial.encoding.border.border_score`
+    for the definition.
 
     Parameters
     ----------
@@ -769,21 +769,20 @@ def batch_border_scores(
     threshold : float, default=0.3
         Fraction of peak firing rate used to segment the field.
         Follows Solstad et al. (2008). Must be in (0, 1).
-    min_area : float, default=0.0
-        Minimum field area (in physical units) to compute border score.
-        Fields smaller than this return NaN. For rat hippocampal data,
-        Solstad et al. (2008) used 200 cm². Adjust based on bin size
-        and environment scale.
+    min_area : float, optional
+        Smallest area of one field, in squared position units (for example
+        cm²). Smaller fields are ignored. The default, None, is the 200 cm² of
+        Solstad et al. (2008) in the environment's units; environments without
+        metric length units need an explicit value.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric for computing distance from field bins to boundary bins.
-        - "geodesic": Graph shortest path distance. Respects environment
-          connectivity, appropriate for irregular environments or those with obstacles.
-        - "euclidean": Straight-line distance in physical space. Generally faster
-          for large environments.
+        Distance from field bins to the nearest wall.
+        - "geodesic": center-to-wall length at the wall plus the shortest path
+          through the connectivity graph. Respects obstacles.
+        - "euclidean": straight-line distance to the nearest wall.
 
     boundary_source : {'physical', 'analysis'}, default='physical'
-        Declared walls, or the explicitly requested legacy boundary-bin
-        approximation. Missing physical geometry, retained wall cells or finite
+        The measured arena walls, or the explicitly requested outline of the
+        retained bins. Missing physical geometry, retained wall cells or finite
         wall firing rates raise NotImplementedError rather than being converted
         to per-unit computation failures.
 
@@ -793,8 +792,8 @@ def batch_border_scores(
         Container with two parallel arrays of length ``n_neurons``:
 
         - ``scores``: border scores in range [-1, 1]. NaN where border
-          score cannot be computed (zero firing, invalid field, no
-          field bins, or a caught exception).
+          score cannot be computed (no positive peak, no field of at least
+          ``min_area``, or a caught exception).
         - ``failures``: boolean mask, ``True`` for neurons whose
           ``border_score`` call raised ``ValueError`` or
           ``RuntimeError`` and was caught. A ``UserWarning`` is also
@@ -803,8 +802,9 @@ def batch_border_scores(
     Raises
     ------
     ValueError
-        If firing_rates is not 2D.
-        If firing_rates.shape[1] != env.n_bins.
+        If firing_rates is not 2D, if firing_rates.shape[1] != env.n_bins,
+        if an argument is invalid, or if ``min_area`` is None and the
+        environment's units are not a metric length.
     NotImplementedError
         If physical wall coverage or observations are unavailable for any unit.
 
@@ -813,11 +813,9 @@ def batch_border_scores(
     For each neuron, this function delegates to
     :func:`~neurospatial.encoding.border.border_score`.
 
-    **Interpretation**:
-
-    - **score > 0.5**: Strong border cell (field aligned with boundary)
-    - **score ≈ 0**: No boundary preference (uniform or mixed)
-    - **score < 0**: Anti-border (field in center, far from boundaries)
+    A field along one whole wall scores near 1 and a central field -1. A
+    uniform map also scores about 0.5 on a square (its one field covers every
+    wall), so combine the score with spatial information or a shuffle test.
 
     References
     ----------
@@ -835,7 +833,7 @@ def batch_border_scores(
     >>> x = np.linspace(-50, 50, 51)
     >>> xx, yy = np.meshgrid(x, x)
     >>> positions = np.column_stack([xx.ravel(), yy.ravel()])
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     >>> # Random firing patterns (5 neurons)
     >>> rng = np.random.default_rng(42)
@@ -848,7 +846,15 @@ def batch_border_scores(
     --------
     neurospatial.encoding.border.border_score : Single-neuron border score
     """
-    from neurospatial.encoding.border import border_score
+    from neurospatial.encoding._physical_border import (
+        _require_wall_rates,
+        border_geometry,
+    )
+    from neurospatial.encoding.border import (
+        _resolve_min_area,
+        _validate_border_arguments,
+        border_score,
+    )
 
     firing_rates = np.asarray(firing_rates)
 
@@ -864,27 +870,15 @@ def batch_border_scores(
             f"env has {env.n_bins} bins"
         )
 
-    # API-level validation: invalid global parameters are programmer
-    # errors, not per-neuron failures. Raise once before the loop so the
-    # ValueError reaches the caller rather than being swallowed into
-    # ``failures=True`` for every neuron. Mirrors the validation
-    # ``border_score`` does internally.
-    if not (0 < threshold < 1):
-        raise ValueError(
-            f"threshold must be in (0, 1), got {threshold}. "
-            "Typically 0.3 (30% of peak)."
-        )
-    if min_area < 0:
-        raise ValueError(f"min_area must be non-negative, got {min_area}")
-    if metric not in ("geodesic", "euclidean"):
-        raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
-
-    from neurospatial.geometry import boundary_geometry
-
-    if boundary_source not in ("physical", "analysis"):
-        raise ValueError("boundary_source must be 'physical' or 'analysis'.")
+    # Invalid arguments, unavailable walls and an unresolvable default field
+    # area concern every neuron, so raise them once here instead of recording
+    # a per-neuron failure.
+    _validate_border_arguments(threshold, min_area, metric, boundary_source)
+    geometry = border_geometry(env, boundary_source)
     if boundary_source == "physical":
-        boundary_geometry(env.binning, env.arena, "physical")
+        for firing_rate in firing_rates:
+            _require_wall_rates(geometry, firing_rate)
+    resolved_min_area = _resolve_min_area(env, min_area)
 
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
@@ -898,7 +892,7 @@ def batch_border_scores(
                 env,
                 firing_rate,
                 threshold=threshold,
-                min_area=min_area,
+                min_area=resolved_min_area,
                 metric=metric,  # type: ignore[arg-type]
                 boundary_source=boundary_source,
             )

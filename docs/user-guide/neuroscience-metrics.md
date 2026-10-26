@@ -370,7 +370,12 @@ for a worked remapping example.
 
 ### Border Score
 
-The border score quantifies how strongly a cell's firing field is aligned with environmental boundaries (walls). Implements the algorithm from Solstad et al. (2008), adapted for arbitrary graph-based environments.
+Border cells of the medial entorhinal cortex fire along one or more walls of
+the arena (Solstad et al., 2008). The border score compares how much of one
+wall a firing field covers with how far the cell's firing lies from the walls.
+On a rectangular box it is the score of Solstad et al. (2008), as computed by
+BNT and opexebo; the same definition applies to polygonal and circular arenas,
+arenas with internal walls and combined rooms.
 
 Which boundary counts as a wall is a scientific choice. By default
 (`boundary_source="physical"`), the score uses measured walls: the arena's
@@ -401,43 +406,43 @@ score = border_score(
 # Returns: score in [-1, 1], or NaN when no field reaches min_area
 ```
 
-**Algorithm with `boundary_source="analysis"` (adapted for irregular graphs):**
+**Algorithm:**
 
-1. Segment field at threshold: bins where `firing_rate >= threshold × peak_rate`
-2. Compute boundary coverage (cM): fraction of boundary bins in field
-3. Compute normalized mean distance (d): mean distance from field bins to nearest boundary,
-   divided by the bin-center bounding-box diagonal
-4. Border score: `(cM - d) / (cM + d)`
+1. *Fields*: groups of neighboring bins at or above `threshold × peak_rate`
+   (default 0.3), each with an area of at least `min_area` (default 200 cm²,
+   converted to the environment's units; environments without metric units
+   need an explicit `min_area`).
+2. *Walls*: each outline is split into walls at its corners, where it turns by
+   more than 50° within two bin widths. A rectangle has four walls; a circle,
+   or any gently curving outline, is one wall. Each named internal wall is one
+   more wall.
+3. *Coverage* `cM`: the largest fraction of one wall covered by one field.
+4. *Distance* `dm`: the firing-rate-weighted mean distance from the bins of all
+   fields to the nearest wall, divided by the radius of the largest circle that
+   fits in the arena (half the shorter side of a rectangle).
+5. Border score: `(cM - dm) / (cM + dm)`, in [-1, 1].
 
 **Interpretation:**
-- **+1**: Field covers boundary bins with zero mean boundary distance
-- **0**: Boundary coverage equals normalized boundary distance
-- **-1**: No boundary coverage with positive boundary distance
-- **>0.5**: A possible candidate-screen cutoff; its calibration does not
-  automatically transfer from a rectangular arena to this graph adaptation
 
-A uniform positive map also covers every boundary and can score well above 0.5;
-zero is not its untuned baseline. For a complete 5 × 5 unit grid, mean boundary
-distance is `(8*1 + 1*2)/25`, the bin-center diagonal is `4*sqrt(2)`, and this
-formula gives approximately 0.868 for a flat map. Compare with untuned controls
-and spatial information before interpreting a boundary-selectivity claim;
-this cutoff alone is insufficient.
+- **Near +1**: a thin field along the whole of one wall.
+- **-1**: firing only away from the walls.
+- **0.5 on a square for a uniform map**: one field covers every wall and its
+  mean distance is a third of the half side. The usual 0.5 cutoff therefore
+  does not reject untuned cells by itself; `label_cell_types` also requires
+  spatial information, and a shuffle test gives a verdict.
 
-**Key differences from original algorithm:**
+The 0.5 cutoff was chosen for rectangular boxes. On other shapes the same field
+scores differently: a circular arena is one wall, so a field along a quarter
+of it covers 0.25 of its wall and scores lower than along one side of a square.
+Calibrate a cutoff for other shapes, for example against shuffled spike trains.
 
-The original Solstad et al. (2008) paper used rectangular arenas with 4 discrete walls. This implementation generalizes to arbitrary graph-based environments:
-
-- **Boundary definition**: Analysis mode uses `env.boundary_bins` (graph-based boundary detection) instead of discrete walls; physical mode uses the declared wall geometry
-- **Distance metric**: Uses graph geodesic distances instead of Euclidean distances
-- **Coverage**: Computed over all boundary bins (not per-wall)
-- **Normalization**: Distance normalized by environment extent (bounding box diagonal)
-
-This adaptation is appropriate for irregular layouts, mazes, and complex environments where the concept of "walls" doesn't apply cleanly.
-
-**Parameters:**
-
-- `threshold`: Fraction of peak for field segmentation (default 0.3 = 30%, following Solstad et al.)
-- `min_area`: Minimum field area to compute score (default 0.0, Solstad et al. used 200 cm² for rats)
+**Differences from BNT and opexebo** on rectangular boxes: distances run from
+each bin center to the wall (a bin against the wall is half a bin away, where
+they count it as one bin away, so their scores are slightly lower at coarse
+bins); fields follow Solstad et al. (2008) rather than their place-field
+detection (0.2 of the peak, at least 9 bins, peak at least 1 Hz); and an
+unvisited bin along a measured wall makes the physical score unavailable
+instead of being skipped.
 
 **Example: Checking a synthetic boundary field**
 
@@ -455,7 +460,7 @@ boundary_bins = env.boundary_bins
 firing_rate[boundary_bins] = 5.0  # High firing at boundaries
 
 score = border_score(env, firing_rate, boundary_source="analysis")
-print(f"Border score: {score:.3f}")  # Should be > 0.5
+print(f"Border score: {score:.3f}")  # near 1: thin fields along the walls
 
 # Visualize
 import matplotlib.pyplot as plt
@@ -786,9 +791,9 @@ accuracy on a new recording.
 When comparing with opexebo, neurocode or buzcode, match bin geometry,
 occupancy windows, smoothing, NaN handling and thresholds, and record package
 versions and numerical differences. This guide does not provide an executable
-cross-package benchmark. The border score intentionally uses a graph
-adaptation and should not be treated as numerically interchangeable with the
-original per-wall calculation.
+cross-package benchmark. On rectangular boxes the border score is the
+per-wall calculation of Solstad et al. (2008); see the border score section for
+the remaining differences from BNT and opexebo.
 
 ## Information bias and cell verdicts
 

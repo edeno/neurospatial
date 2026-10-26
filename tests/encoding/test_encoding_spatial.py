@@ -35,7 +35,7 @@ def simple_env() -> Environment:
     y = np.linspace(0, 40, 5)
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(positions, bin_size=10.0)
+    return Environment.from_samples(positions, bin_size=10.0, units="cm")
 
 
 @pytest.fixture
@@ -4616,7 +4616,7 @@ class TestComputeSpatialRatesResultMethods:
             trajectory_times,
             trajectory_positions,
         )
-        scores = result.border_scores(boundary_source="analysis")
+        scores = result.border_scores(min_area=200.0, boundary_source="analysis")
         assert scores.shape == (len(multiple_place_cell_spikes),)
 
     def test_result_has_label_cell_types_method(
@@ -4630,7 +4630,7 @@ class TestComputeSpatialRatesResultMethods:
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         result = compute_spatial_rates(
-            trajectory_env,
+            trajectory_env.with_metadata(units="cm"),
             multiple_place_cell_spikes,
             trajectory_times,
             trajectory_positions,

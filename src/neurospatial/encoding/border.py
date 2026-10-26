@@ -1,7 +1,8 @@
 """
 Boundary cell metrics for spatial analysis.
 
-Implements border score (Solstad et al., 2008) and related boundary cell analyses.
+Implements the border score of Solstad et al. (2008) for arenas of any planar
+shape, and per-region field coverage.
 
 References
 ----------
@@ -14,16 +15,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+from scipy.sparse import coo_array
+from scipy.sparse.csgraph import connected_components
 
-from neurospatial._exceptions import RegionNotFoundError
+from neurospatial._exceptions import RegionNotFoundError, _format_error
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry._boundaries import BoundarySource
     from neurospatial.ops._types import DistanceMetric
+
+# Solstad et al. (2008): a field is at least 200 cm^2 of neighboring bins at
+# or above 30% of the peak rate.
+BORDER_FIELD_MIN_AREA_CM2 = 200.0
 
 
 def border_score(
@@ -31,371 +37,259 @@ def border_score(
     firing_rate: NDArray[np.float64],
     *,
     threshold: float = 0.3,
-    min_area: float = 0.0,
+    min_area: float | None = None,
     metric: DistanceMetric = "geodesic",
     boundary_source: BoundarySource = "physical",
 ) -> float:
     """
-    Compute border score for a spatial firing rate map.
+    Border score of a firing rate map (Solstad et al., 2008).
 
-    The border score quantifies how much a cell's firing field is aligned with
-    environmental boundaries (walls). It ranges from -1 (no boundary coverage
-    with positive wall distance) to +1 (zero mean wall distance). Physical mode
-    uses declared walls; analysis mode keeps the legacy boundary-bin formula.
-    Adapts the algorithm from Solstad et al. (2008) to general graphs.
+    Border cells of the medial entorhinal cortex fire along one or more walls
+    of the arena. The border score compares how much of one wall a firing
+    field covers with how far the cell's firing lies from the walls::
+
+        b = (cM - dm) / (cM + dm)
+
+    It ranges from -1 (firing away from every wall) to +1 (a thin field along
+    the whole of a wall). On a rectangular arena it is the score of Solstad
+    et al. (2008); the same definition applies to any planar arena.
 
     Parameters
     ----------
     env : Environment
-        Spatial environment containing bin centers and connectivity.
+        Planar environment whose bins are exact cells (grid, hexagonal,
+        triangular mesh or polygon cells).
     firing_rate : NDArray[np.float64], shape (n_bins,)
-        Spatial firing rate map (Hz or spikes/second).
-    threshold : float, optional
-        Fraction of peak firing rate used to segment the field. Default is 0.3
-        (30% of peak), following Solstad et al. (2008).
+        Spatial firing rate map (Hz). NaN marks unvisited bins.
+    threshold : float, default=0.3
+        Fraction of the peak firing rate that defines field bins, following
+        Solstad et al. (2008). Must be in (0, 1).
     min_area : float, optional
-        Minimum field area (in physical units) to compute border score. Fields
-        smaller than this return NaN. Default is 0.0 (no filtering). For rat
-        hippocampal data, Solstad et al. (2008) used 200 cm². Adjust based on
-        your bin size and environment scale.
-    metric : {'geodesic', 'euclidean'}, optional
-        Distance metric for computing distance from field bins to boundary bins.
-        - 'geodesic': Graph shortest path distance (default). Respects environment
-          connectivity, appropriate for irregular environments or those with obstacles.
-        - 'euclidean': Straight-line distance in physical space. Generally faster
-          for large environments (no graph traversal). Appropriate for simple,
-          open environments without obstacles.
-        Default is 'geodesic' to match the original implementation and ensure
-        compatibility with irregular graph structures.
+        Smallest area of one field, in squared position units (for example
+        cm² when ``env.units`` is ``"cm"``). Smaller fields are ignored. The
+        default, None, is the 200 cm² of Solstad et al. (2008), converted to
+        the environment's units; environments without metric length units
+        (``env.units`` unset, pixels or custom units) need an explicit value.
+        Pass 0 to keep every field.
+    metric : {'geodesic', 'euclidean'}, default='geodesic'
+        Distance from field bins to the nearest wall.
 
+        - 'geodesic': straight-line distance from a wall-touching bin's center
+          to its wall, plus the shortest path through the environment's
+          connectivity graph. Respects obstacles and internal walls.
+        - 'euclidean': straight-line distance from each bin center to the
+          nearest wall.
+
+        The two agree on an open rectangular arena.
     boundary_source : {'physical', 'analysis'}, default='physical'
-        Physical mode requires an asserted planar footprint; its rings and any
-        explicit internal walls are the walls. Internal walls alone do not
-        locate the outer walls. Coverage is the fraction of their total length covered
-        by field cells; distance is mean center-to-wall distance normalized by
-        the wall diameter (maximum point separation). Geodesic mode adds center-to-wall seed
-        lengths to paths on the retained graph; unavailable routes return NaN.
-        Every measured wall segment must be owned by a retained bin with a
-        finite firing rate: the bin whose cell touches it, or, where a curved or
-        diagonal wall runs through a grid cell that was not kept (a sliver),
-        the neighboring bin that owns positions there. Missing cells or
-        observations make physical scoring unavailable; adding arena geometry
-        alone does not supply them. The wall geometry is prepared once per
-        environment and reused for every rate map.
-        Analysis mode explicitly retains the legacy boundary-bin formula below.
-        It treats analysis edges as an approximation, not measured walls.
+        Which walls to score against.
+
+        - 'physical': the measured arena: the rings of its asserted footprint
+          (for example ``Environment.from_polygon(outline, ...)``) and any
+          declared internal walls. Every piece of wall must be owned by a
+          retained bin with a finite firing rate: the bin whose cell touches
+          it or, where a curved or diagonal wall runs through a grid cell
+          that was not kept, the neighboring bin that owns positions there.
+        - 'analysis': the outline of the retained bins (within the arena's
+          domain, when known), plus declared internal walls. An approximation
+          for arenas whose walls were not measured.
 
     Returns
     -------
     float
-        Border score in range [-1, 1]. After validating required physical-wall
-        observations, returns NaN if:
-        - All firing rates are zero or NaN
-        - Peak firing rate is zero or NaN
-        - Field area is below min_area
-        - No field bins after thresholding
+        Border score in [-1, 1]. NaN when the map has no positive finite peak,
+        when no field reaches ``min_area``, or, with ``metric='geodesic'``,
+        when a field bin has no path to a wall.
 
     Raises
     ------
+    ValueError
+        If an argument is invalid, or if ``min_area`` is None and the
+        environment's units are not a metric length.
     NotImplementedError
-        If physical wall geometry is unavailable, the arena or a combined
-        component has no measured footprint (internal walls alone are not
-        enough), or any measured wall segment is owned by no retained bin with
-        a finite firing rate. Missing observations are
-        not evidence for zero firing; explicitly select the analysis-boundary
-        approximation when that is the intended measurement.
+        If the walls are unavailable: with ``boundary_source='physical'``, when
+        the arena's footprint was not measured (or a combined component has
+        none), or a wall is owned by no retained bin with a finite firing
+        rate; with either source, when the bins are not exact planar cells.
+        Missing observations are not evidence of zero firing; choose
+        ``boundary_source='analysis'`` explicitly when the retained bins'
+        outline is the intended measurement.
 
     Notes
     -----
-    **Analysis-mode algorithm** (adapted for irregular graphs):
+    **Algorithm.**
 
-    1. Segment field at threshold: bins where `firing_rate >= threshold * peak`
-    2. Compute boundary coverage (cM): fraction of boundary bins in field
-    3. Compute normalized mean distance (d): mean distance from field bins to
-       nearest boundary bin, normalized by the bin-center bounding-box diagonal
-    4. Border score: `(cM - d) / (cM + d)`
+    1. *Fields*: groups of neighboring bins (in the environment's
+       connectivity graph) whose rate is at least ``threshold`` times the
+       peak rate, each covering at least ``min_area``.
+    2. *Walls*: each closed outline (an arena ring, or the retained bins'
+       outline) is split into separate walls at its corners, where it turns
+       by more than 50° within two bin widths. A rectangle has four walls; a
+       circle, or any outline that only curves gently, is one wall. Each named
+       internal wall (segments sharing a name) is one more wall.
+    3. *Coverage* ``cM``: the largest fraction of one wall's length touched by
+       the bins of one field, over all fields and walls.
+    4. *Distance* ``dm``: the firing-rate-weighted mean distance from the bins
+       of all fields to the nearest wall, divided by the radius of the
+       largest circle that fits in the arena without crossing a wall (half
+       the shorter side of a rectangle).
 
-    **Physical-mode algorithm**: replace boundary-bin coverage with the
-    fraction of declared wall length owned by the field's bins (their cells'
-    wall contact, plus the wall pieces in neighboring slivers).
-    Measure mean distance from field centers to actual walls, rather than to
-    boundary-bin centers. Normalize by the wall diameter (maximum point separation). Geodesic
-    distances use wall-adjacent seeds with their nonzero wall distances and
-    paths on the retained graph. If any field bin lacks a represented route,
-    return NaN; do not silently discard that bin. This remains a generalized
-    border screen, not the original rectangular-arena estimator or a calibrated
-    significance test. A crop can limit represented geodesic routes; Euclidean
-    distance remains independent of the active navigation graph.
+    **Interpretation.** A field covering one whole wall with all its firing
+    against that wall scores near 1; a field in the middle of the arena
+    scores -1. A cell that fires everywhere also scores high: on a square its
+    single field covers every wall and its mean distance is a third of the
+    half side, so ``b = 0.5``. The border score alone therefore does not
+    identify a border cell; ``SpatialRatesResult.label_cell_types`` also
+    requires spatial information, and a shuffle test is needed for a verdict.
 
-    **Interpretation of the analysis-mode formula**:
+    The usual cutoff of 0.5 was chosen for rectangular boxes. On other shapes
+    the same field gives a different score: a circular arena is one wall, so
+    a field along a quarter of it covers only 0.25 of its wall and scores
+    lower than the same field along one side of a square. Calibrate a cutoff
+    for non-rectangular arenas, for example against shuffled spike trains.
 
-    - **+1**: Field covers boundary bins with zero mean boundary distance
-    - **0**: Boundary coverage equals the normalized mean boundary distance
-    - **-1**: No boundary coverage with positive boundary distance
-
-    A uniform positive map covers every boundary and can score well above 0.5
-    under this generalized definition; zero is not the untuned baseline. A
-    positive score or fixed cutoff alone does not establish boundary-selective
-    firing. Compare with appropriate untuned controls and spatial information,
-    and calibrate any classification threshold for the geometry and estimator.
-
-    **Differences from opexebo and Solstad et al. (2008)**:
-
-    This implementation differs from opexebo's border_score in several ways:
-
-    1. **Coverage**: Overall boundary coverage (not per-wall). This implementation
-       computes a single coverage metric across all boundary bins, whereas opexebo
-       computes coverage for each wall (N/S/E/W) separately and uses the maximum.
-
-    2. **Distance**: Geodesic or Euclidean (not Manhattan). Opexebo uses Manhattan
-       (taxicab) distance from arena edges. This implementation supports both
-       geodesic (graph shortest path) and Euclidean (straight-line) distances.
-
-    3. **Boundaries**: Automatic graph-based detection (not wall specification).
-       Opexebo requires explicit arena shape ("square", "rect", "circle"). This
-       implementation automatically detects boundaries via ``env.boundary_bins``.
-
-    4. **Environment**: Works on any graph (not rectangular arenas only). This
-       implementation generalizes to irregular environments with obstacles.
-
-    **Computing per-wall coverage** (for rectangular arenas):
-
-    If you need per-wall coverage analysis like opexebo, use
-    `compute_region_coverage()` with wall regions:
-
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.border import border_score, compute_region_coverage
-    >>> from shapely.geometry import box
-    >>>
-    >>> # Create rectangular environment
-    >>> positions = np.random.randn(5000, 2) * 20
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>>
-    >>> # Define wall regions (for a 40x40 arena centered at origin)
-    >>> wall_width = 5.0  # Width of wall region in cm
-    >>> from neurospatial.regions import Regions
-    >>> regions = Regions(env.regions.values())
-    >>> _ = regions.add("north_wall", polygon=box(-20, 15, 20, 20))
-    >>> _ = regions.add("south_wall", polygon=box(-20, -20, 20, -15))
-    >>> _ = regions.add("east_wall", polygon=box(15, -20, 20, 20))
-    >>> _ = regions.add("west_wall", polygon=box(-20, -20, -15, 20))
-    >>> env = env.with_regions(regions)
-    >>>
-    >>> # Compute coverage for each wall
-    >>> field_bins = np.where(firing_rate >= 0.3 * np.nanmax(firing_rate))[
-    ...     0
-    ... ]  # doctest: +SKIP
-    >>> coverage = compute_region_coverage(env, field_bins)  # doctest: +SKIP
-    >>> for wall_name in [
-    ...     "north_wall",
-    ...     "south_wall",
-    ...     "east_wall",
-    ...     "west_wall",
-    ... ]:  # doctest: +SKIP
-    ...     print(f"{wall_name}: {coverage[wall_name]:.2%}")  # doctest: +SKIP
-
-    **When to use opexebo vs. neurospatial**:
-
-    - Use **opexebo** for rectangular arenas requiring exact reproduction of
-      Solstad et al. (2008) or comparison with Moser lab publications
-    - Use **neurospatial** for irregular environments, graphs with obstacles,
-      or when you need flexible distance metrics
+    **Comparison with BNT and opexebo.** On a rectangular arena this is the
+    border score of the BNT (Moser lab) and opexebo implementations, with
+    three differences. (1) Distances run from each bin's center to the wall,
+    so a bin against the wall is half a bin away; BNT and opexebo count whole
+    bins from the edge, so that bin is one bin away and their scores are
+    lower by an amount that shrinks with bin size. (2) Fields follow Solstad
+    et al. (2008) (``threshold=0.3``, ``min_area`` 200 cm²); BNT and opexebo
+    take fields from their place-field detection (by default 0.2 of the
+    peak, at least 9 bins and a peak of at least 1 Hz). (3) BNT and opexebo
+    look past unvisited bins along a wall for the first visited bin; here an
+    unvisited wall bin makes the physical score unavailable. This
+    implementation also scores polygonal, circular and multi-room arenas and
+    internal walls, which they do not.
 
     References
     ----------
-    Solstad et al. (2008). Representation of geometric borders in the entorhinal
-        cortex. Science, 322(5909), 1865-1868.
+    Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I.
+        (2008). Representation of geometric borders in the entorhinal cortex.
+        Science, 322(5909), 1865-1868.
 
     Examples
     --------
+    A cell firing along the west wall of a 100 cm box:
+
     >>> import numpy as np
+    >>> import shapely
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding.border import border_score
-    >>>
-    >>> # Create environment
-    >>> positions = np.random.randn(5000, 2) * 20
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
-    >>>
-    >>> # Create border cell (high firing along boundary)
-    >>> firing_rate = np.zeros(env.n_bins)
-    >>> boundary_bins = env.boundary_bins
-    >>> firing_rate[boundary_bins] = 5.0
-    >>>
-    >>> score = border_score(env, firing_rate, boundary_source="analysis")
-    >>> print(f"Border score: {score:.3f}")  # doctest: +SKIP
-    Border score: 0.850
+    >>> env = Environment.from_polygon(
+    ...     shapely.box(0, 0, 100, 100), bin_size=2.5, units="cm"
+    ... )
+    >>> x = env.bin_centers[:, 0]
+    >>> wall_cell = np.where(x < 7.5, 10.0, 0.2)
+    >>> round(border_score(env, wall_cell), 2)
+    0.87
+    >>> center_cell = 0.2 + 10.0 * np.exp(
+    ...     -np.sum((env.bin_centers - 50.0) ** 2, axis=1) / (2 * 10.0**2)
+    ... )
+    >>> round(border_score(env, center_cell), 2)
+    -1.0
 
     See Also
     --------
-    neurospatial.encoding.detect_place_fields : Detect place fields
-    Environment.boundary_bins : Get boundary bin indices
+    compute_region_coverage : Field coverage of named regions
+    neurospatial.encoding.SpatialRatesResult.label_cell_types : Cell-type labels
     """
-    # Validate inputs
     if firing_rate.shape != (env.n_bins,):
         raise ValueError(
             f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
         )
+    _validate_border_arguments(threshold, min_area, metric, boundary_source)
 
+    from neurospatial.encoding._physical_border import (
+        _border_score,
+        _require_wall_rates,
+        border_geometry,
+    )
+
+    geometry = border_geometry(env, boundary_source)
+    if boundary_source == "physical":
+        _require_wall_rates(geometry, firing_rate)
+    min_area = _resolve_min_area(env, min_area)
+
+    fields = _border_fields(env, firing_rate, threshold, min_area)
+    if not fields:
+        return np.nan
+    return _border_score(fields, firing_rate, metric, geometry)
+
+
+def _validate_border_arguments(
+    threshold: float,
+    min_area: float | None,
+    metric: str,
+    boundary_source: str,
+) -> None:
+    """Refuse invalid border-score arguments before any computation."""
     if not (0 < threshold < 1):
         raise ValueError(
             f"threshold must be in (0, 1), got {threshold}. "
             "Typically 0.3 (30% of peak)."
         )
-
-    if min_area < 0:
-        raise ValueError(f"min_area must be non-negative, got {min_area}")
-
+    if min_area is not None and not (np.isfinite(min_area) and min_area >= 0):
+        raise ValueError(f"min_area must be non-negative and finite, got {min_area}")
     if metric not in ("geodesic", "euclidean"):
         raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
-
-    from neurospatial.geometry import boundary_geometry
-
     if boundary_source not in ("physical", "analysis"):
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")
-    walls = (
-        boundary_geometry(env.binning, env.arena, "physical")
-        if boundary_source == "physical"
-        else None
-    )
-    physical_contact = None
-    if walls is not None:
-        from neurospatial.encoding._physical_border import (
-            _require_wall_rates,
-            physical_border_geometry,
-        )
 
-        physical_contact = physical_border_geometry(env, walls)
-        _require_wall_rates(physical_contact, firing_rate)
 
-    # Handle all-NaN or all-zero
-    if np.all(np.isnan(firing_rate)) or np.all(firing_rate == 0):
-        return np.nan
+def _resolve_min_area(env: Environment, min_area: float | None) -> float:
+    """``min_area``, or Solstad's 200 cm² in the environment's units."""
+    if min_area is not None:
+        return float(min_area)
+    from neurospatial._units import units_per_centimeter
 
-    # Find peak firing rate (ignore NaN)
-    peak_rate = np.nanmax(firing_rate)
-    if peak_rate == 0 or np.isnan(peak_rate):
-        return np.nan
-
-    # Segment field at threshold
-    field_mask = firing_rate >= (threshold * peak_rate)
-    field_bins = np.where(field_mask)[0]
-
-    if len(field_bins) == 0:
-        return np.nan
-
-    # Check field area (sum of bin areas)
-    from neurospatial.encoding._field_metrics import field_size
-
-    area = field_size(env, field_bins)
-    if area < min_area:
-        return np.nan
-
-    if walls is not None and physical_contact is not None:
-        from neurospatial.encoding._physical_border import _physical_border_score
-
-        return _physical_border_score(field_bins, metric, physical_contact)
-
-    # Explicit legacy approximation: analysis-boundary bins.
-    boundary_bins = env.boundary_bins
-
-    if len(boundary_bins) == 0:
-        # No boundaries detected (shouldn't happen in normal environments)
-        return np.nan
-
-    # Compute boundary coverage (cM)
-    # Fraction of boundary bins that are in the field
-    boundary_in_field = np.isin(boundary_bins, field_bins)
-    coverage = np.sum(boundary_in_field) / len(boundary_bins)
-
-    # Compute mean distance from field bins to nearest boundary bin
-    if metric == "geodesic":
-        # Use multi-source Dijkstra for efficiency (single pass for all boundary bins)
-        try:
-            # Compute shortest distances from ALL boundary bins to all reachable nodes
-            distances_from_boundary = nx.multi_source_dijkstra_path_length(
-                env.connectivity,
-                sources=boundary_bins.tolist(),
-                weight="distance",
+    per_cm = units_per_centimeter(env.units)
+    if per_cm is None:
+        raise ValueError(
+            _format_error(
+                "border_score needs min_area: the environment's units "
+                f"({env.units!r}) are not a known length, so the 200 cm² minimum "
+                "field area of Solstad et al. (2008) cannot be expressed in them.",
+                why="Why: min_area is an area in squared position units.",
+                fix="declare the units with env.with_metadata(units='cm'), or pass "
+                "min_area=<smallest field area in squared position units> (0 keeps "
+                "every field); for label_cell_types, pass border_scores computed "
+                "that way",
             )
-        except Exception as exc:
-            # Multi-source Dijkstra is the only failure mode reachable
-            # here (NetworkXError on a graph with missing 'distance'
-            # weights, negative weights, or similar). Re-raise as
-            # RuntimeError rather than swallowing-to-NaN: the batch
-            # wrapper (batch_border_scores) catches RuntimeError /
-            # ValueError to populate its `failures` mask, and a
-            # silent-NaN here would be invisible to that mask. Direct
-            # callers who want lenient behavior can wrap in their own
-            # try/except.
-            raise RuntimeError(
-                f"border_score: geodesic distance computation failed "
-                f"({type(exc).__name__}: {exc}). Pass "
-                "`metric='euclidean'` to use straight-line "
-                "distance instead, or check that the environment's "
-                "connectivity graph has finite 'distance' edge weights."
-            ) from exc
+        )
+    return BORDER_FIELD_MIN_AREA_CM2 * per_cm**2
 
-        # For each field bin, get distance to nearest boundary (vectorized lookup)
-        # Convert dict to array for fast indexing
-        max_bin = max(distances_from_boundary.keys())
-        dist_array = np.full(max_bin + 1, np.nan)
-        for k, v in distances_from_boundary.items():
-            dist_array[k] = v
 
-        # Vectorized lookup for all field bins at once
-        field_bins_int = field_bins.astype(int)
-        valid_mask = field_bins_int <= max_bin
-        distances_to_boundary = dist_array[field_bins_int[valid_mask]]
-        distances_to_boundary = distances_to_boundary[
-            np.isfinite(distances_to_boundary)
-        ]
+def _border_fields(
+    env: Environment,
+    firing_rate: NDArray[np.float64],
+    threshold: float,
+    min_area: float,
+) -> list[NDArray[np.intp]]:
+    """Connected groups of bins at or above ``threshold`` of the peak rate.
 
-        if len(distances_to_boundary) == 0:
-            return np.nan
-
-        mean_distance = float(np.mean(distances_to_boundary))
-
-    else:  # metric == "euclidean"
-        # Compute Euclidean distances in physical space (vectorized)
-        boundary_positions = env.bin_centers[boundary_bins]
-        field_positions = env.bin_centers[field_bins]
-
-        # Vectorized computation using broadcasting
-        # Shape: (n_field_bins, n_boundary_bins, n_dims)
-        diff = field_positions[:, np.newaxis, :] - boundary_positions[np.newaxis, :, :]
-        # Shape: (n_field_bins, n_boundary_bins)
-        distances_matrix = np.linalg.norm(diff, axis=2)
-        # Shape: (n_field_bins,) - minimum distance to any boundary bin
-        distances_to_boundary = np.min(distances_matrix, axis=1)
-
-        if len(distances_to_boundary) == 0:
-            return np.nan
-
-        mean_distance = float(np.mean(distances_to_boundary))
-
-    # Normalize distance by environment extent (maximum spatial extent)
-    # Compute extent as the diagonal of the bounding box
-    mins = np.min(env.bin_centers, axis=0)
-    maxs = np.max(env.bin_centers, axis=0)
-    extent = np.linalg.norm(maxs - mins)
-
-    if extent == 0:
-        return np.nan
-
-    normalized_distance = mean_distance / extent
-
-    # Compute border score: (cM - d) / (cM + d)
-    denominator = coverage + normalized_distance
-    if denominator == 0:
-        return np.nan
-
-    score = (coverage - normalized_distance) / denominator
-
-    # Ensure score is in [-1, 1] (should be by construction, but numerical precision)
-    score = np.clip(score, -1.0, 1.0)
-
-    return float(score)
+    Groups smaller than ``min_area`` are dropped. Empty when the map has no
+    positive finite peak.
+    """
+    finite = np.isfinite(firing_rate)
+    if not finite.any():
+        return []
+    peak = np.max(firing_rate[finite])
+    if not peak > 0:
+        return []
+    above = np.zeros(env.n_bins, dtype=bool)
+    above[finite] = firing_rate[finite] >= threshold * peak
+    pairs = env.binning.connections.pairs
+    linked = pairs[above[pairs[:, 0]] & above[pairs[:, 1]]]
+    graph = coo_array(
+        (np.ones(len(linked)), (linked[:, 0], linked[:, 1])),
+        shape=(env.n_bins, env.n_bins),
+    )
+    _, labels = connected_components(graph, directed=False)
+    bins = np.flatnonzero(above)
+    groups, group = np.unique(labels[bins], return_inverse=True)
+    areas = np.bincount(group, weights=env.bin_sizes[bins], minlength=len(groups))
+    return [bins[group == index] for index in np.flatnonzero(areas >= min_area)]
 
 
 def compute_region_coverage(

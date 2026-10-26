@@ -118,11 +118,10 @@ def test_transformed_grid_keeps_every_in_arena_position(
 
 def test_rotated_grid_owns_its_whole_physical_wall(round_arena):
     """Wall pieces in outline slivers keep an owner after a rotation."""
-    from neurospatial.encoding._physical_border import physical_border_geometry
-    from neurospatial.geometry import physical_walls
+    from neurospatial.encoding._physical_border import border_geometry
     from neurospatial.ops import AffineND
 
     moved = round_arena.apply_transform(AffineND(_rotation(0.3, (1.5, -2.0))))
-    original = physical_border_geometry(round_arena, physical_walls(round_arena.arena))
-    rotated = physical_border_geometry(moved, physical_walls(moved.arena))
+    original = border_geometry(round_arena, "physical")
+    rotated = border_geometry(moved, "physical")
     np.testing.assert_array_equal(rotated.wall_bins, original.wall_bins)
