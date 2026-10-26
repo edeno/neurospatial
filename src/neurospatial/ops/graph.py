@@ -173,9 +173,6 @@ def neighbor_reduce(
                 f"weights are only supported for 'sum' and 'mean' operations, got '{op}'"
             )
 
-    # Initialize result array
-    result = np.full(env.n_bins, np.nan, dtype=np.float64)
-
     # ``sum`` and ``mean`` are linear over the neighborhood and can be expressed
     # as a sparse matrix-vector product against the (binary) adjacency matrix.
     # ``max``/``min``/``std`` are not linear, so they keep the loop fallback.
@@ -184,6 +181,7 @@ def neighbor_reduce(
             env, field, op=op, weights=weights, include_self=include_self
         )
 
+    result = np.full(env.n_bins, np.nan, dtype=np.float64)
     # Loop fallback for non-linear reductions (max, min, std).
     for bin_id in range(env.n_bins):
         # Get neighbors from connectivity graph
@@ -264,33 +262,19 @@ def _neighbor_reduce_linear(
     if include_self:
         adjacency = adjacency + sp.eye(n_bins, format="csr", dtype=np.float64)
 
-    # Number of contributing neighbors per bin (row sums of the adjacency).
-    neighbor_counts = np.asarray(adjacency.sum(axis=1)).ravel()
-    empty = neighbor_counts == 0
-
+    # Unweighted is weighted by ones: ``adjacency @ ones`` is the neighbor
+    # count, so ``weight_sum > 0`` marks exactly the non-empty neighborhoods.
     if weights is None:
-        numerator = adjacency @ field
-        if op == "sum":
-            result = numerator
-            result[empty] = np.nan
-            return np.asarray(result, dtype=np.float64)
-        # mean: divide neighbor sum by neighbor count
-        result = np.full(n_bins, np.nan, dtype=np.float64)
-        valid = ~empty
-        result[valid] = numerator[valid] / neighbor_counts[valid]
-        return result
-
-    # Weighted operations.
-    weighted_numerator = adjacency @ (field * weights)
+        weights = np.ones(n_bins, dtype=np.float64)
+    numerator = np.asarray(adjacency @ (field * weights), dtype=np.float64)
     if op == "sum":
-        result = np.asarray(weighted_numerator, dtype=np.float64)
-        result[empty] = np.nan
-        return result
-    # Weighted mean: sum(w * v) / sum(w) over neighbors.
+        numerator[np.asarray(adjacency.sum(axis=1)).ravel() == 0] = np.nan
+        return numerator
+    # Mean: sum(w * v) / sum(w) over neighbors.
     weight_sum = adjacency @ weights
     result = np.full(n_bins, np.nan, dtype=np.float64)
     valid = weight_sum > 0
-    result[valid] = weighted_numerator[valid] / weight_sum[valid]
+    result[valid] = numerator[valid] / weight_sum[valid]
     return result
 
 
