@@ -1050,11 +1050,12 @@ class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
         pd.DataFrame
             One row per unit, indexed by ``unit_id``, with columns:
 
-            - peak_x: x-coordinate of peak view location
-            - peak_y: y-coordinate of peak view location
             - peak_rate: maximum firing rate (Hz)
             - view_spatial_info: view spatial information (bits/spike)
-            - is_spatial_view_cell: whether classified as view cell (using default threshold)
+            - peak_x: x-coordinate of peak view location
+            - peak_y: y-coordinate of peak view location
+            - is_spatial_view_cell: whether the default threshold screen
+              passes
 
         Raises
         ------
@@ -1380,7 +1381,7 @@ def compute_view_rate(
 ) -> ViewRateResult:
     """Compute view field for one neuron.
 
-    This function computes a smoothed firing rate map indexed by *viewed*
+    This function computes a firing rate map indexed by *viewed*
     location (where the animal was looking), not the animal's position.
     This is the key metric for identifying spatial view cells.
 
@@ -2207,9 +2208,7 @@ def is_spatial_view_cell(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use:
 
@@ -2277,6 +2276,8 @@ def is_spatial_view_cell(
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
+    The shuffled statistic is the view map's Skaggs information
+    (``view_spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
     Compare p_value < alpha; a significant association alone does not establish
@@ -2396,6 +2397,8 @@ def spatial_view_cell_significance(
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test spatial view tuning against circular spike-time shifts.
 
+    The statistic is each unit's Skaggs information, in bits per spike, of
+    its view rate map (``ViewRatesResult.view_spatial_information()``).
     Recompute the population map for the supplied arrays and for each shifted
     train, using exactly the observed map's valid intervals. Shuffles preserve
     counts on the compressed analyzed clock and never enter recording gaps.
@@ -2471,9 +2474,7 @@ def spatial_view_cell_significance(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_view_rate()`` for details.
     bandwidth : float or None, default=None

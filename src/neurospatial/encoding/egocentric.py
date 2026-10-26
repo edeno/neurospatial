@@ -501,11 +501,10 @@ class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         :math:`r_i` is firing rate in that bin, and :math:`\\bar{r}` is mean
         firing rate.
 
-        **Interpretation**:
-
-        - Object-vector cells typically have 0.5-2.0+ bits/spike
-        - Higher values indicate more selective tuning to distance/direction
-        - Zero means uniform firing (no distance/direction selectivity)
+        **Interpretation**: higher values mean more selective tuning to
+        distance and direction; zero means the same rate in every bin.
+        Plug-in information is biased upward for few spikes, so compare it
+        with a circular-shift test before calling a cell tuned.
 
         This metric uses polar occupancy in the recorded frame (time spent
         at each distance/direction combination), which differs from standard spatial
@@ -1251,11 +1250,14 @@ class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelection
         pd.DataFrame
             One row per unit, indexed by ``unit_id``, with columns:
 
-            - preferred_distance: preferred distance to object (cm)
-            - preferred_direction: preferred direction to object (radians in result.direction_frame)
-            - preferred_direction_deg: preferred direction (degrees in the same frame)
             - peak_rate: maximum firing rate (Hz)
-            - is_object_vector_cell: whether classified as OVC (using default threshold)
+            - preferred_distance: preferred distance to the object, in the
+              environment's length units (``df.attrs["units"]``)
+            - preferred_direction_deg: preferred direction (degrees in
+              ``result.direction_frame``)
+            - preferred_direction: preferred direction (radians, same frame)
+            - is_object_vector_cell: whether the default threshold screen
+              passes
 
         Raises
         ------
@@ -1476,7 +1478,7 @@ def compute_egocentric_rate(
 ) -> ObjectVectorRateResult:
     """Compute egocentric firing rate for one neuron.
 
-    This function computes a smoothed firing rate map in egocentric polar
+    This function computes a firing rate map in egocentric polar
     coordinates (distance and direction to nearest object). This is the key
     metric for identifying object-vector cells (OVCs).
 
@@ -1556,11 +1558,14 @@ def compute_egocentric_rate(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for egocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
@@ -1606,14 +1611,9 @@ def compute_egocentric_rate(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
-
-    The function uses the egocentric binning layer (``_egocentric_counts.py``)
-    to convert spike times to spike counts based on distance and direction to
-    the nearest object, then the smoothing layer (``_smoothing.py``) to compute
-    the smoothed firing rate.
 
     **Algorithm**:
 
@@ -1621,7 +1621,8 @@ def compute_egocentric_rate(
        at each behavioral frame
     2. Bin spikes by egocentric coordinates at spike time
     3. Compute egocentric occupancy (time spent at each distance/direction)
-    4. Apply smoothing (method-dependent, see ``_smoothing.py``)
+    4. Divide spike counts by occupancy in each bin; the kernel methods
+       smooth counts and occupancy first
 
     **Coordinate convention**: Direction uses egocentric (animal-centered)
     coordinates where 0=ahead, +π/2=left, -π/2=right.
@@ -1726,7 +1727,7 @@ def compute_object_vector_rate(
 ) -> ObjectVectorRateResult:
     """Compute allocentric firing rate for one neuron.
 
-    This function computes a smoothed firing rate map in allocentric polar
+    This function computes a firing rate map in allocentric polar
     coordinates (distance and direction to nearest object). This is the key
     metric for identifying object-vector cells (OVCs).
 
@@ -1800,11 +1801,14 @@ def compute_object_vector_rate(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for allocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
@@ -1850,14 +1854,9 @@ def compute_object_vector_rate(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
-
-    The function uses the allocentric binning layer (``_egocentric_counts.py``)
-    to convert spike times to spike counts based on distance and direction to
-    the nearest object, then the smoothing layer (``_smoothing.py``) to compute
-    the smoothed firing rate.
 
     **Algorithm**:
 
@@ -1865,7 +1864,8 @@ def compute_object_vector_rate(
        at each behavioral frame
     2. Bin spikes by allocentric coordinates at spike time
     3. Compute allocentric occupancy (time spent at each distance/direction)
-    4. Apply smoothing (method-dependent, see ``_smoothing.py``)
+    4. Divide spike counts by occupancy in each bin; the kernel methods
+       smooth counts and occupancy first
 
     **Coordinate convention**: Direction uses allocentric (world-centered)
     coordinates where 0=East, +π/2=North, -π/2=South.
@@ -2309,7 +2309,7 @@ def compute_egocentric_rates(
 ) -> ObjectVectorRatesResult:
     """Compute egocentric firing rates for multiple neurons.
 
-    This is the batch version of ``compute_egocentric_rate(None)`` that efficiently
+    This is the batch version of ``compute_egocentric_rate`` that efficiently
     processes multiple neurons with shared trajectory data. It precomputes
     shared quantities (egocentric coordinates, occupancy) once and optionally
     parallelizes spike counting with joblib.
@@ -2399,11 +2399,14 @@ def compute_egocentric_rates(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for egocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
@@ -2471,11 +2474,11 @@ def compute_egocentric_rates(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    **Efficiency advantages over calling ``compute_egocentric_rate(None)`` in a loop**:
+    **Efficiency advantages over calling ``compute_egocentric_rate`` in a loop**:
 
     1. Egocentric coordinates (distance, bearing to nearest object) are
        computed once and shared across all neurons
@@ -2715,11 +2718,14 @@ def compute_object_vector_rates(
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for allocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
@@ -2787,8 +2793,8 @@ def compute_object_vector_rates(
 
     Notes
     -----
-    An interval is analyzed only if it passes the gap, speed and bounds
-    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    An interval is analyzed only if it passes the gap and bounds checks
+    and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
     **Efficiency advantages over calling ``compute_object_vector_rate(None)`` in a loop**:
@@ -3294,17 +3300,18 @@ def is_object_vector_cell(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for allocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
@@ -3360,6 +3367,8 @@ def is_object_vector_cell(
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
+    The shuffled statistic is the polar map's Skaggs information in this
+    frame (``spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
     Compare p_value < alpha; a significant association alone does not establish
@@ -3550,17 +3559,18 @@ def is_egocentric_object_vector_cell(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for egocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
 
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
@@ -3616,6 +3626,8 @@ def is_egocentric_object_vector_cell(
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
+    The shuffled statistic is the polar map's Skaggs information in this
+    frame (``spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
     Compare p_value < alpha; a significant association alone does not establish
@@ -4040,6 +4052,8 @@ def object_vector_cell_significance(
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test object vector tuning against circular spike-time shifts.
 
+    The statistic is each unit's Skaggs information, in bits per spike, of
+    its polar rate map (``ObjectVectorRatesResult.spatial_information()``).
     Recompute the population map for the supplied arrays and for each shifted
     train, using exactly the observed map's valid intervals. Shuffles preserve
     counts on the compressed analyzed clock and never enter recording gaps.
@@ -4116,17 +4130,18 @@ def object_vector_cell_significance(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for allocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
@@ -4169,8 +4184,8 @@ def object_vector_cell_significance(
     Raises
     ------
     ValueError
-        For invalid inputs/settings, duplicate/conflicting unit labels,
-        insufficient analyzed time, or unsupported method="glm".
+        For invalid inputs/settings, duplicate/conflicting unit labels, or
+        insufficient analyzed time.
 
     Examples
     --------
@@ -4252,6 +4267,8 @@ def egocentric_object_vector_cell_significance(
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test egocentric object vector tuning against circular spike-time shifts.
 
+    The statistic is each unit's Skaggs information, in bits per spike, of
+    its polar rate map (``ObjectVectorRatesResult.spatial_information()``).
     Recompute the population map for the supplied arrays and for each shifted
     train, using exactly the observed map's valid intervals. Shuffles preserve
     counts on the compressed analyzed clock and never enter recording gaps.
@@ -4334,17 +4351,18 @@ def egocentric_object_vector_cell_significance(
         excluded from occupancy (and their spikes are not counted). ``None``
         (default) assumes spikes were recorded whenever position was; this is an
         assumption, not something the function checks. Pass it when tracking
-        started before, or continued after, the spike recording. The result
-        records the window applied (``result.spike_window``) and whether it was
-        assumed (``result.spike_window_assumed``).
+        started before, or continued after, the spike recording.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
-        - **binned** (default): Raw rate computation without smoothing.
-          Appropriate for egocentric polar grids where boundary-aware
-          smoothing may not apply.
-        - **diffusion_kde**: Graph-based boundary-aware KDE.
-        - **gaussian_kde**: Standard Euclidean KDE.
+        - **binned** (default): spikes divided by occupancy in each bin,
+          with no smoothing.
+        - **diffusion_kde**: diffusion over the polar bin graph.
+        - **gaussian_kde**: Gaussian kernel over the polar bin graph.
+
+        The kernel methods smooth across neighboring distance rings as well
+        as directions, which blurs the distance tuning an object-vector map
+        is meant to show; the default leaves each bin's rate unsmoothed.
     bandwidth : float or None, default=None
         Kernel width in the positions' length units. None uses 5 cm
         converted to ``env.units``; with no env, or units that are not a
@@ -4387,8 +4405,8 @@ def egocentric_object_vector_cell_significance(
     Raises
     ------
     ValueError
-        For invalid inputs/settings, duplicate/conflicting unit labels,
-        insufficient analyzed time, or unsupported method="glm".
+        For invalid inputs/settings, duplicate/conflicting unit labels, or
+        insufficient analyzed time.
 
     Examples
     --------
