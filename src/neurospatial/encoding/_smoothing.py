@@ -76,6 +76,7 @@ from neurospatial.ops import (
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.ops._types import ResolvedBackend
 
 __all__ = [
     "smooth_rate_map",
@@ -142,7 +143,7 @@ def smooth_rate_map(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax"] = "numpy",
+    backend: ResolvedBackend = "numpy",
 ) -> ArrayLike:
     """Compute smoothed firing rate map from spike counts and occupancy.
 
@@ -325,7 +326,7 @@ def smooth_rate_maps_batch(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax"] = "numpy",
+    backend: ResolvedBackend = "numpy",
     dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> ArrayLike:
     """Compute smoothed firing rate maps for multiple neurons.

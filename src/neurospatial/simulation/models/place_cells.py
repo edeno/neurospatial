@@ -1,7 +1,7 @@
 """Place cell models for simulating spatial firing patterns."""
 
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -10,6 +10,7 @@ from scipy.spatial import cKDTree
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops import _typical_bin_spacing
+from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
 from neurospatial.simulation.models.base import geodesic_lookup_bins
 
@@ -186,7 +187,7 @@ class PlaceCellModel:
         width: float | NDArray[np.float64] | None = None,
         max_rate: float = 20.0,
         baseline_rate: float = 0.01,
-        metric: Literal["euclidean", "geodesic"] = "euclidean",
+        metric: DistanceMetric = "euclidean",
         condition: Callable[
             [NDArray[np.float64], NDArray[np.float64] | None], NDArray[np.bool_]
         ]

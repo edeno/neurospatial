@@ -47,7 +47,7 @@ with other encoding modules.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -69,6 +69,7 @@ from neurospatial.ops.egocentric import compute_egocentric_bearing
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry import EgocentricPolarSystem
+    from neurospatial.ops._types import DistanceMetric
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
 
@@ -191,7 +192,7 @@ def resolve_object_positions(
     *,
     env: Environment | None,
     positions: NDArray[np.float64],
-    metric: Literal["euclidean", "geodesic"],
+    metric: DistanceMetric,
 ) -> tuple[NDArray[np.float64], list[str] | None]:
     """Object coordinates for the egocentric encoders, and their landmark names.
 
@@ -270,7 +271,7 @@ def _compute_object_coords(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Compute polar coordinates to the nearest object in the selected frame.
@@ -490,7 +491,7 @@ def compute_egocentric_occupancy(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
@@ -669,7 +670,7 @@ def bin_egocentric_spike_train(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
@@ -828,7 +829,7 @@ def prepare_egocentric_binning(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
@@ -916,7 +917,7 @@ def bin_egocentric_spike_trains(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,

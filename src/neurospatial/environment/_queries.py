@@ -20,6 +20,7 @@ from neurospatial.geometry import (
     TrackLinearization,
     require_cartesian,
 )
+from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
 
 _BUILD_A_TRACK = (
@@ -115,7 +116,7 @@ def _path_between(graph: nx.Graph, source_idx: int, target_idx: int) -> list[int
 def _distance_to(
     targets: NDArray[np.intp],
     *,
-    metric: Literal["euclidean", "geodesic"],
+    metric: DistanceMetric,
     bin_centers: NDArray[np.float64],
     graph: nx.Graph,
     coordinates: CartesianSystem | EgocentricPolarSystem,

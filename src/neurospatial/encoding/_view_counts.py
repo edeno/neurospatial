@@ -46,6 +46,7 @@ from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.geometry._boundaries import BoundarySource
 
 __all__ = [
     "bin_view_spike_train",
@@ -107,7 +108,7 @@ def _precompute_view_bins(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
     interval_mask: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.intp]:
     """Precompute view bin indices for all trajectory samples.
@@ -219,7 +220,7 @@ def compute_occupancy(
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> NDArray[np.float64]:
     """Compute view occupancy (time spent viewing each bin).
 
@@ -392,7 +393,7 @@ def bin_view_spike_train(
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> NDArray[np.float64]:
     """Bin spike train by viewed location.
 
@@ -536,7 +537,7 @@ def prepare_view_binning(
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     view_bins: NDArray[np.intp] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
     break_before: NDArray[np.bool_] | None = None,
 ) -> FrameBinning:
     """Prepare geometry and exact temporal support before counting spikes.
@@ -603,7 +604,7 @@ def bin_view_spike_trains(
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
     view_bins: NDArray[np.intp] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains by viewed location.
 

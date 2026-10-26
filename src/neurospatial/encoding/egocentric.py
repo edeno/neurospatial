@@ -79,6 +79,7 @@ if TYPE_CHECKING:
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.environment import Environment
     from neurospatial.geometry import EgocentricPolarSystem
+    from neurospatial.ops._types import BackendType, DistanceMetric, ResolvedBackend
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -1344,7 +1345,7 @@ def _egocentric_firing_rate(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     bandwidth: float,
     min_occupancy: float,
-    backend: Literal["numpy", "jax"],
+    backend: ResolvedBackend,
 ) -> ArrayLike:
     """Egocentric polar firing rate: raw for ``binned``, smoothed otherwise.
 
@@ -1407,7 +1408,7 @@ def compute_egocentric_rate(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -1415,7 +1416,7 @@ def compute_egocentric_rate(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
 ) -> ObjectVectorRateResult:
     """Compute egocentric firing rate for one neuron.
 
@@ -1651,7 +1652,7 @@ def compute_object_vector_rate(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -1659,7 +1660,7 @@ def compute_object_vector_rate(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
 ) -> ObjectVectorRateResult:
     """Compute allocentric firing rate for one neuron.
 
@@ -1933,7 +1934,7 @@ def _count_object_vectors(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-    metric: Literal["euclidean", "geodesic"],
+    metric: DistanceMetric,
     max_gap: float | None,
     epochs: Any,
     spike_window: Any,
@@ -2050,7 +2051,7 @@ def _object_vector_rate(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2058,7 +2059,7 @@ def _object_vector_rate(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     context: str,
 ) -> ObjectVectorRateResult:
     """Compute either frame through the shared binning and smoothing path."""
@@ -2178,7 +2179,7 @@ def compute_egocentric_rates(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2187,7 +2188,7 @@ def compute_egocentric_rates(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> ObjectVectorRatesResult:
     """Compute egocentric firing rates for multiple neurons.
@@ -2488,7 +2489,7 @@ def compute_object_vector_rates(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2497,7 +2498,7 @@ def compute_object_vector_rates(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> ObjectVectorRatesResult:
     """Compute allocentric firing rates for multiple neurons.
@@ -2735,7 +2736,7 @@ def _object_vector_rates(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2744,7 +2745,7 @@ def _object_vector_rates(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     context: str,
     frame_bins: NDArray[np.int64] | None = None,
@@ -3052,7 +3053,7 @@ def is_object_vector_cell(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3060,7 +3061,7 @@ def is_object_vector_cell(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
 ) -> bool:
     """Classify one neuron by the object_vector_cell screen or circular-shift test.
 
@@ -3295,7 +3296,7 @@ def is_egocentric_object_vector_cell(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3303,7 +3304,7 @@ def is_egocentric_object_vector_cell(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
 ) -> bool:
     """Classify one neuron by the egocentric_object_vector_cell screen or circular-shift test.
 
@@ -3657,7 +3658,7 @@ def _object_vector_significance(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-    metric: Literal["euclidean", "geodesic"],
+    metric: DistanceMetric,
     max_gap: float | None,
     epochs: Any,
     break_before: ArrayLike | None,
@@ -3666,7 +3667,7 @@ def _object_vector_significance(
     bandwidth: float | None,
     min_occupancy: float,
     n_jobs: int,
-    backend: Literal["numpy", "jax", "auto"],
+    backend: BackendType,
     unit_ids: NDArray[Any] | Sequence[Any] | None,
     n_shuffles: int,
     min_shift: float,
@@ -3829,7 +3830,7 @@ def object_vector_cell_significance(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3838,7 +3839,7 @@ def object_vector_cell_significance(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     n_shuffles: int = 1000,
     min_shift: float = 20.0,
@@ -4034,7 +4035,7 @@ def egocentric_object_vector_cell_significance(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -4043,7 +4044,7 @@ def egocentric_object_vector_cell_significance(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     n_shuffles: int = 1000,
     min_shift: float = 20.0,

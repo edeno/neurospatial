@@ -94,6 +94,7 @@ from neurospatial.ops.visibility import FieldOfView, compute_viewed_location
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.geometry._boundaries import BoundarySource
 
 __all__ = ["SpatialViewCellModel"]
 
@@ -220,7 +221,7 @@ class SpatialViewCellModel:
         baseline_rate: float = 0.01,
         require_visibility: bool = False,
         fov: FieldOfView | None = None,
-        boundary_source: Literal["physical", "analysis"] = "physical",
+        boundary_source: BoundarySource = "physical",
     ) -> None:
         require_cartesian(
             env.coordinate_system,

@@ -41,7 +41,7 @@ import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, get_args
 
 import numpy as np
 import scipy.linalg
@@ -52,12 +52,13 @@ from numpy.typing import NDArray
 
 from neurospatial import _constants
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.ops._types import KernelMode
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from neurospatial.ops._protocols import DiffusionGeometryConsumer
-    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops._types import ResolvedBackend
 
 # Module exports. The eigenbasis/apply-path functions below are internal:
 # ``_diffusion_apply`` serves ``Environment.diffuse`` (environment/_fields.py),
@@ -342,7 +343,7 @@ def heat_kernel_from_W(
     """
     # Validate before the high-bin warning and the dense matrix exponential so a
     # bad argument fails fast rather than after paying the O(n^3) expm cost.
-    if mode not in ("transition", "density", "average"):
+    if mode not in get_args(KernelMode):
         raise ValueError(
             f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
         )
@@ -1094,7 +1095,7 @@ def _diffusion_apply(
     sigma: float,
     mode: KernelMode,
     *,
-    backend: Literal["numpy", "jax"] = "numpy",
+    backend: ResolvedBackend = "numpy",
 ) -> Any:
     """Matrix-free application of the mode operator to a 2-D field batch.
 

@@ -169,6 +169,7 @@ if TYPE_CHECKING:
     from neurospatial.layout import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops import KernelMode
+    from neurospatial.ops._types import DistanceMetric, ResolvedBackend
     from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.ops.transforms import AffineND
 
@@ -4707,7 +4708,7 @@ class Environment(Generic[_C]):
         bins: int | Sequence[int] | NDArray[np.integer] | None = None,
         points: ArrayLike | None = None,
         region: str | None = None,
-        metric: Literal["euclidean", "geodesic"] = "geodesic",
+        metric: DistanceMetric = "geodesic",
     ) -> NDArray[np.float64]:
         """Distance from every bin to the nearest target.
 
@@ -6886,7 +6887,7 @@ class Environment(Generic[_C]):
         *,
         bandwidth: float,
         mode: KernelMode,
-        backend: Literal["numpy", "jax"] = "numpy",
+        backend: ResolvedBackend = "numpy",
     ) -> NDArray[np.float64]:
         """Matrix-free finite-volume diffusion smoothing (no ``(n, n)`` kernel).
 

@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     from matplotlib.projections.polar import PolarAxes
 
     from neurospatial._typing import SpikeTrainsLike
+    from neurospatial.ops._types import BackendType
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 from neurospatial._intervals import (
@@ -1971,7 +1972,7 @@ def compute_directional_rate(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
 ) -> DirectionalRateResult:
     """Compute directional firing rate for one neuron.
 
@@ -2234,7 +2235,7 @@ def compute_directional_rates(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> DirectionalRatesResult:
     """Compute directional firing rates for multiple neurons.
@@ -2601,7 +2602,7 @@ def is_head_direction_cell(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
 ) -> bool:
     """Classify one neuron by the head_direction_cell screen or circular-shift test.
 
@@ -2958,7 +2959,7 @@ def head_direction_cell_significance(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     n_shuffles: int = 1000,
     min_shift: float = 20.0,

@@ -96,6 +96,7 @@ from neurospatial.simulation.models.base import geodesic_lookup_bins
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.ops._types import DistanceMetric
 
 __all__ = ["ObjectVectorCellModel"]
 
@@ -239,7 +240,7 @@ class ObjectVectorCellModel:
         baseline_rate: float = 0.01,
         object_selectivity: Literal["any", "nearest", "specific"] = "nearest",
         specific_object_index: int | None = None,
-        metric: Literal["euclidean", "geodesic"] = "euclidean",
+        metric: DistanceMetric = "euclidean",
     ) -> None:
         require_cartesian(
             env.coordinate_system,

@@ -107,6 +107,8 @@ if TYPE_CHECKING:
 
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.environment import Environment
+    from neurospatial.geometry._boundaries import BoundarySource
+    from neurospatial.ops._types import BackendType
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 
@@ -1270,7 +1272,7 @@ def _count_views(
     bandwidth: float | None,
     min_occupancy: float,
     backend: str,
-    boundary_source: Literal["physical", "analysis"],
+    boundary_source: BoundarySource,
     view_bins: NDArray[np.intp] | None = None,
     n_jobs: int = 1,
     break_before: NDArray[np.bool_] | None = None,
@@ -1363,8 +1365,8 @@ def compute_view_rate(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    backend: BackendType = "numpy",
+    boundary_source: BoundarySource = "physical",
 ) -> ViewRateResult:
     """Compute view field for one neuron.
 
@@ -1676,9 +1678,9 @@ def compute_view_rates(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> ViewRatesResult:
     """Compute view fields for multiple neurons.
 
@@ -1962,10 +1964,10 @@ def _compute_view_rates(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     view_bins: NDArray[np.intp] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> ViewRatesResult:
     """Body of :func:`compute_view_rates`; ``view_bins`` reuses gaze geometry."""
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -2123,8 +2125,8 @@ def is_spatial_view_cell(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    backend: BackendType = "numpy",
+    boundary_source: BoundarySource = "physical",
 ) -> bool:
     """Classify one neuron by the spatial_view_cell screen or circular-shift test.
 
@@ -2363,12 +2365,12 @@ def spatial_view_cell_significance(
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
-    backend: Literal["numpy", "jax", "auto"] = "numpy",
+    backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     n_shuffles: int = 1000,
     min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> dict[Hashable, ShuffleTestResult]:
     """Test spatial view tuning against circular spike-time shifts.
 

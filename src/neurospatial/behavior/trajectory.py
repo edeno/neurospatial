@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -48,6 +48,7 @@ from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.ops._types import DistanceMetric
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -1310,7 +1311,7 @@ def compute_movement_angular_velocity(
 def compute_step_lengths(
     positions: NDArray[np.float64],
     *,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
 ) -> NDArray[np.float64]:
     """
@@ -1815,7 +1816,7 @@ def mean_square_displacement(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_tau: float | None = None,
     epochs: Any = None,

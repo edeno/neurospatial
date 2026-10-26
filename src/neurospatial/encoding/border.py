@@ -12,7 +12,7 @@ Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I. (2008).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
@@ -22,6 +22,8 @@ from neurospatial._exceptions import RegionNotFoundError
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.geometry._boundaries import BoundarySource
+    from neurospatial.ops._types import DistanceMetric
 
 
 def border_score(
@@ -30,8 +32,8 @@ def border_score(
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    metric: DistanceMetric = "geodesic",
+    boundary_source: BoundarySource = "physical",
 ) -> float:
     """
     Compute border score for a spatial firing rate map.

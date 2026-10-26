@@ -724,7 +724,7 @@ def boundary_view(
     positions: NDArray[np.float64],
     gaze_direction: NDArray[np.float64],
     max_distance: float,
-    boundary_source: Literal["physical", "analysis"],
+    boundary_source: BoundarySource,
     indexes: LookupIndexes,
 ) -> NDArray[np.float64]:
     """First wall each gaze ray reaches, shape (n_time, 2); NaN for none.
@@ -777,7 +777,7 @@ def line_of_sight_clear(
     observer: NDArray[np.float64],
     target: NDArray[np.float64],
     *,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
     indexes: LookupIndexes | None = None,
 ) -> bool:
     """Check if line of sight between observer and target is clear.
@@ -836,7 +836,7 @@ def batch_line_of_sight_clear(
     observer: NDArray[np.float64],
     targets: NDArray[np.float64],
     *,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
     indexes: LookupIndexes | None = None,
 ) -> NDArray[np.bool_]:
     """Check line of sight between observer and multiple targets (vectorized).

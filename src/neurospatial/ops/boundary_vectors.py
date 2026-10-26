@@ -47,6 +47,7 @@ from neurospatial.geometry import (
 )
 
 if TYPE_CHECKING:
+    from neurospatial.geometry._boundaries import BoundarySource
     from neurospatial.ops._protocols import BinningConsumer
 
 __all__ = ["boundary_directions", "compute_boundary_distances", "nearest_boundary"]
@@ -92,7 +93,7 @@ def compute_boundary_distances(
     direction_frame: Literal["allocentric", "egocentric"],
     n_directions: int = 36,
     max_distance: float | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Distance to the first wall along rays in evenly spaced directions.
 
@@ -200,7 +201,7 @@ def nearest_boundary(
     env: BinningConsumer,
     positions: NDArray[np.float64],
     *,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Distance and allocentric direction from each sample to the closest wall.
 

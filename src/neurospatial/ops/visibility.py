@@ -85,6 +85,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from neurospatial.geometry import Arena, Binning, LookupIndexes
+    from neurospatial.geometry._boundaries import BoundarySource
     from neurospatial.ops._protocols import BinningConsumer, BinsConsumer
 
 __all__ = [
@@ -593,7 +594,7 @@ def compute_viewed_location(
     gaze_offsets: NDArray[np.float64] | None = None,
     env: BinningConsumer | None = None,
     max_distance: float | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> NDArray[np.float64]:
     """Compute the location being viewed by the animal.
 
@@ -744,7 +745,7 @@ def compute_viewshed(
     *,
     fov: FieldOfView | float | None = None,
     cue_positions: NDArray[np.float64] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> ViewshedResult:
     """Compute visible bins from an observer position.
 
@@ -888,7 +889,7 @@ def _cue_array(
 def _sight_lines(
     binning: Binning,
     arena: Arena,
-    boundary_source: Literal["physical", "analysis"],
+    boundary_source: BoundarySource,
     indexes: LookupIndexes,
 ) -> Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]]:
     """Line-of-sight test from one observer to many targets, walls built once.
@@ -946,7 +947,7 @@ def _viewshed(
     *,
     fov: FieldOfView | None,
     cue_positions: NDArray[np.float64],
-    boundary_source: Literal["physical", "analysis"],
+    boundary_source: BoundarySource,
     clear: Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]],
     indexes: LookupIndexes,
 ) -> ViewshedResult:
@@ -1034,7 +1035,7 @@ def compute_view_field(
     heading: float,
     *,
     fov: FieldOfView | float | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> NDArray[np.bool_]:
     """Compute binary visibility mask from observer position.
 
@@ -1097,7 +1098,7 @@ def visible_cues(
     cue_positions: NDArray[np.float64],
     *,
     fov: FieldOfView | float | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> tuple[NDArray[np.bool_], NDArray[np.float64], NDArray[np.float64]]:
     """Check visibility of cue positions.
 
@@ -1197,7 +1198,7 @@ def compute_viewshed_trajectory(
     *,
     fov: FieldOfView | float | None = None,
     cue_positions: NDArray[np.float64] | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
 ) -> list[ViewshedResult]:
     """Compute viewshed at each point along a trajectory.
 
@@ -1270,7 +1271,7 @@ def visibility_occupancy(
     headings: NDArray[np.float64],
     *,
     fov: FieldOfView | float | None = None,
-    boundary_source: Literal["physical", "analysis"] = "physical",
+    boundary_source: BoundarySource = "physical",
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
