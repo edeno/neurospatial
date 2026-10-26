@@ -223,7 +223,8 @@ class TestEnvironmentProperties:
         # Every triple at once: via[i, j, k] = d(i, j) + d(j, k).
         via = distances[:, :, None] + distances[None, :, :]
         assert np.all(distances[:, None, :] <= via + 1e-10)
-        np.testing.assert_array_equal(distances, distances.T)
+        # Path lengths summed in opposite directions can differ in the last bit.
+        np.testing.assert_allclose(distances, distances.T, rtol=1e-12)
         np.testing.assert_array_equal(np.diag(distances), 0.0)
 
         source, target = (int(b) for b in rng.choice(env.n_bins, 2, replace=False))
