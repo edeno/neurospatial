@@ -3,8 +3,8 @@ import networkx as nx
 import numpy as np
 import pytest
 
+from neurospatial.layout._plotting import _generic_graph_plot
 from neurospatial.layout.helpers.utils import (
-    _generic_graph_plot,
     _infer_dimension_ranges_from_samples,
     get_centers,
     get_n_bins,
@@ -143,16 +143,10 @@ def test_no_finite_position_says_nan_or_infinite(missing):
     assert "all 10 rows" in str(caught.value)
 
 
-def test_get_n_bins_counts_a_reversed_range_like_the_grid_does():
-    """A (max, min) pair is ordered, as the grid builder orders it."""
-    forward = get_n_bins(
-        np.zeros((2, 2)), bin_size=2.0, dimension_range=[(0, 10), (0, 6)]
-    )
-    reversed_ = get_n_bins(
-        np.zeros((2, 2)), bin_size=2.0, dimension_range=[(10, 0), (0, 6)]
-    )
-    np.testing.assert_array_equal(reversed_, forward)
-    np.testing.assert_array_equal(forward, [5, 3])
+def test_get_n_bins_refuses_a_reversed_range_like_the_grid_does():
+    """A (max, min) pair is refused, as every layout with ranges refuses it."""
+    with pytest.raises(ValueError, match=r"dimension_range\[0\] is \(10, 0\)"):
+        get_n_bins(np.zeros((2, 2)), bin_size=2.0, dimension_range=[(10, 0), (0, 6)])
 
 
 def test_get_n_bins_ignores_rows_that_are_not_finite():

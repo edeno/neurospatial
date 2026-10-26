@@ -195,9 +195,13 @@
   used 1.0 per pixel, so positions in cm were binned as if each pixel were
   1 cm wide, and `layout_parameters["pixel_size"]` recorded None instead of
   the size used.
-- `get_n_bins` counts a reversed `(max, min)` range like the grid builder
-  does; it returned a negative count. It ignores positions rows with a NaN or
-  infinite coordinate, and refuses a range that is not finite.
+- A reversed `(max, min)` dimension range is refused, with the pair and
+  axis named, by `create_layout`, every layout engine that takes ranges and
+  `get_n_bins`, as `Environment.from_samples` already refused it. The
+  layouts silently reordered it, so a swapped pair (often the wrong column
+  or sign) built a grid without a word, and `get_n_bins` returned a negative
+  count. `get_n_bins` also ignores positions rows with a NaN or infinite
+  coordinate, and refuses a range that is not finite.
 - The large-grid memory warning points at your own call, not at a line inside
   neurospatial, and no longer suggests `infer_active_bins=True`, which cannot
   shrink the full grid the estimate counts.
@@ -215,6 +219,54 @@
 - A track `edge_order` entry whose two nodes no edge of the graph joins is
   refused with a message naming it; the build failed later with a bare
   `KeyError`.
+- A misspelled layout option, passed to `create_layout` or directly to an
+  engine's `build()`, is named in one message pointing to
+  `get_layout_parameters()`. Before, `create_layout` named it, while a direct
+  `build()` reported a missing required option instead of the misspelling.
+- `HexagonalLayout` refuses a non-finite `dimension_ranges` end with the
+  same message as the grid layouts; it raised "cannot convert float NaN to
+  integer".
+- Building an environment from a triangular mesh is about twice as fast:
+  face normals are computed for all neighbor pairs at once (0.40 s to
+  0.02 s for a 64k-triangle disk, computed twice per build), with identical
+  results. Hexagonal `plot_field` draws one collection instead of a patch
+  per hexagon (about 5x faster at 13k hexagons; the collection is now a
+  `PolyCollection`), and connections are drawn from the neighbor pairs.
+- `plot_field(nan_color=None)` leaves NaN bins undrawn on grids and meshes
+  too, as documented, instead of using a custom colormap's bad color; a
+  `nan_color` with its own alpha keeps it there as on hexagons and polygons.
+- `ImageMaskLayout` cell centers use the edge-midpoint rule of the other grid
+  engines, which can move them by a few ULPs.
+- A track edge between two nodes at the same position is refused by name
+  (`Track edge 1-2 joins coincident nodes: ...`) in `Environment.maze`,
+  `linear_track`, `from_graph` and `GraphLayout`. Only an all-coincident track
+  was refused clearly; one repeated position failed later with
+  "segments must have positive representable lengths" or "TrackLinearization
+  edges[0] must be finite and strictly increasing", and a maze first warned
+  about an invalid divide.
+- A negative, infinite, NaN, boolean or text `edge_spacing` is refused by the
+  track layout before binning, with the gap count it needs. It was refused
+  after binning by `TrackLinearization`, which the caller never named; a
+  string raised a bare `IndexError` and an infinite gap warned first.
+- `Environment.plot` draws the arena outline with its holes, so an arena
+  with an obstacle no longer looks solid, and draws it for every layout that
+  has one: a rotated or clipped polygon environment drew no outline.
+- One check of grid edges, by the regular, polygon and masked grids. A grid
+  far from the origin is refused only when float rounding actually makes its
+  cell widths differ by more than 1 part in 10^4, with a fix to subtract an
+  origin offset. Exact edges, such as unit cells at 1e12, are accepted by
+  `from_grid_mask` and `rebin(bin_size=...)`, which refused them. Cells of
+  0.3 at 1e12, whose widths are up to 4e-4 uneven, are refused by
+  `create_layout` and `from_samples` as by `from_grid_mask`; they were built
+  with wrong cell volumes.
+- Hexagonal environments recorded away from the origin keep their cells
+  after `apply_transform` moves them, for example to center the arena at
+  (0, 0). The cells (used by `plot_field`, boundary bins, physical-border
+  scores, clipping and combining) were refused with "Canonical hexagon
+  centers disagree with published bin centers": a second center check
+  scaled its rounding allowance by the new, small coordinates. The
+  publication check, which carries rounding through each transform, is the
+  only one now.
 
 ### Spatial geometry review
 

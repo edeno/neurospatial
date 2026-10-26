@@ -380,6 +380,38 @@ def test_materialized_wrapped_hex_cells_keep_shared_transformed_vertices(
         assert actual[u].boundary.intersection(actual[v].boundary).length > 0
 
 
+@pytest.mark.parametrize("origin", [0.0, 1e3, 1e5])
+@pytest.mark.parametrize("angle", [0.0, 0.3, 2.8])
+def test_recentred_hexagon_cells_are_the_bins(origin, angle):
+    """Hexagons recorded far from the origin keep their cells when recentred.
+
+    Moving tracker coordinates so the arena center is at (0, 0) carries the
+    original coordinates' rounding into the small new ones; the cells refused
+    with "Canonical hexagon centers disagree with published bin centers".
+    """
+    from neurospatial.layout import create_layout
+    from neurospatial.ops.transforms import Affine2D
+
+    env = Environment.from_layout(
+        create_layout(
+            "Hexagonal",
+            hexagon_width=1.0,
+            dimension_ranges=[(origin, origin + 30), (origin, origin + 30)],
+        )
+    )
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    shift = -rotation @ np.full(2, origin + 15.0)
+    moved = env.apply_transform(
+        Affine2D(np.block([[rotation, shift[:, None]], [0, 0, 1]]))
+    )
+    cells = materialize_cells(moved._binning)
+    centroids = np.array([cell.centroid.coords[0] for cell in cells])
+    np.testing.assert_allclose(centroids, moved.bin_centers, rtol=0, atol=1e-9)
+    np.testing.assert_allclose([cell.area for cell in cells], moved.bin_sizes)
+
+
 def test_centroid_centers_do_not_depend_on_clip_history():
     parent = _grid((1, 1))
     first, _ = clip_binning(parent, box(0, 0, 0.4, 1))

@@ -1,26 +1,24 @@
 """Helpers shared by the layout engines.
 
-Bin counts and ranges for regular grids, the grid of active-bin data, the
-graph plot used by hexagonal layouts, and the grid memory check.
+Bin counts and ranges for regular grids, the grid of active-bin data and the
+grid memory check.
 """
 
 from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import get_centers as get_centers
-from neurospatial.layout.validation import validate_cell_size
-
-if TYPE_CHECKING:
-    import matplotlib.axes
+from neurospatial.layout.validation import (
+    validate_cell_size,
+    validate_dimension_ranges,
+)
 
 
 def get_n_bins(
@@ -32,7 +30,7 @@ def get_n_bins(
     """Calculate the number of bins needed for each dimension of a dataset.
 
     Each dimension gets ``ceil(extent / bin_size)`` bins, where the extent is
-    the span of `dimension_range` (in either order) or, without one, of the
+    the span of `dimension_range` or, without one, of the
     finite rows of `positions`.
 
     Parameters
@@ -59,12 +57,13 @@ def get_n_bins(
     Raises
     ------
     TypeError
-        If `bin_size` is not numeric.
+        If `bin_size` is not numeric, or a `dimension_range` pair is not two
+        numbers.
     ValueError
         If `bin_size` is not positive and finite, or has the wrong number of
-        entries; if `dimension_range` does not have two finite values per
-        dimension; if `positions` has no finite row; or if a bin count would
-        exceed the int64 limit.
+        entries; if a `dimension_range` pair is not finite or has its minimum
+        above its maximum; if `positions` has no finite row; or if a bin count
+        would exceed the int64 limit.
 
     Examples
     --------
@@ -77,21 +76,8 @@ def get_n_bins(
     array([10,  5])
     """
     if dimension_range is not None:
-        pr = np.asarray(dimension_range, dtype=float)
-        if pr.ndim != 2 or pr.shape[1] != 2:
-            raise ValueError("dimension_range must be sequence of (min, max) pairs.")
-        # A (max, min) pair is ordered, as the grid builder orders it.
-        extent = np.abs(np.diff(pr, axis=1).squeeze(axis=1))
-        if not np.all(np.isfinite(extent)):
-            raise ValueError(
-                _format_error(
-                    f"dimension_range {dimension_range!r} is not finite.",
-                    why="Why: the bin count is the extent divided by bin_size, "
-                    "so both ends of every range must be finite numbers.",
-                    fix="pass finite (min, max) pairs in the units of the "
-                    "positions, e.g. dimension_range=[(0, 100), (0, 100)]",
-                )
-            )
+        ranges = validate_dimension_ranges(dimension_range, name="dimension_range")
+        extent = np.array([hi - lo for lo, hi in ranges])
     else:
         samples = np.asarray(positions, dtype=float)
         samples = samples[np.all(np.isfinite(samples), axis=1)]
@@ -205,65 +191,6 @@ def _infer_dimension_ranges_from_samples(
         inferred_ranges.append((d_min, d_max))
 
     return tuple(inferred_ranges)
-
-
-def _generic_graph_plot(
-    graph: nx.Graph,
-    name: str,
-    ax: matplotlib.axes.Axes | None = None,
-    **kwargs,
-) -> matplotlib.axes.Axes:
-    """Draw a graph whose nodes have 2-D ``pos`` coordinates.
-
-    Parameters
-    ----------
-    graph : nx.Graph
-        The graph to plot. Nodes must have a 2-D ``pos`` attribute.
-    name : str
-        A name for the graph, used in the plot title.
-    ax : matplotlib.axes.Axes, optional
-        Axes to plot on. If None (default), a new figure and axes are created.
-    **kwargs : Any
-        - ``figsize`` (tuple of float): Size of the figure if created.
-        - ``node_kwargs`` (dict): Keyword arguments for ``nx.draw_networkx_nodes``.
-        - ``edge_kwargs`` (dict): Keyword arguments for ``nx.draw_networkx_edges``.
-
-    Returns
-    -------
-    matplotlib.axes.Axes
-        The Axes on which the graph was plotted.
-
-    Raises
-    ------
-    ValueError
-        If `graph` is empty or None, or its nodes have no ``pos``.
-
-    """
-    import matplotlib.pyplot as plt
-
-    if graph is None or graph.number_of_nodes() == 0:
-        raise ValueError("Graph is empty or None. Cannot plot an empty graph.")
-
-    node_positions = nx.get_node_attributes(graph, "pos")
-    if not node_positions:  # No 'pos' attributes
-        raise ValueError("Nodes in graph are missing 'pos' attribute for plotting.")
-
-    if ax is None:
-        _, ax = plt.subplots(figsize=kwargs.get("figsize", (7, 7)))
-    node_kwargs = {"node_size": 20, "ax": ax, **kwargs.get("node_kwargs", {})}
-    nx.draw_networkx_nodes(graph, pos=node_positions, **node_kwargs)
-    edge_kwargs = {
-        "alpha": 0.5,
-        "edge_color": "gray",
-        **kwargs.get("edge_kwargs", {}),
-        "ax": ax,
-    }
-    nx.draw_networkx_edges(graph, pos=node_positions, **edge_kwargs)
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_title(f"{name} Graph")
-    ax.set_xlabel("Dim 0")
-    ax.set_ylabel("Dim 1")
-    return ax
 
 
 def map_active_data_to_grid(

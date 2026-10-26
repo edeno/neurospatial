@@ -11,7 +11,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
 import pytest
 from environment_helpers import native_layout
@@ -202,9 +201,7 @@ def _assert_mesh_artists(env, figure, operation):
     axes = figure.axes[0]
     shapes = env._binning.shapes
     collection = axes.collections[0]
-    assert type(collection).__name__ == (
-        "PatchCollection" if operation == "plot" else "PolyCollection"
-    )
+    assert type(collection).__name__ == "PolyCollection"
     paths = collection.get_paths()
     assert len(paths) == env.n_bins
     for path, triangle in zip(paths, shapes.points[shapes.triangles], strict=True):
@@ -270,7 +267,7 @@ def test_plot_field_renderer_by_component(built_environment, request, monkeypatc
         "pixels": "QuadMesh",
         "polar": "QuadMesh",
         "polar_open": "QuadMesh",
-        "hex": "PatchCollection",
+        "hex": "PolyCollection",
         "mesh": "PolyCollection",
         "mesh_boundary": "PolyCollection",
         "track": "FillBetweenPolyCollection",
@@ -347,7 +344,7 @@ def test_plot_field_does_not_read_private_layout_geometry(
     """A drawing can use the snapshot after layout-only geometry is unavailable."""
     attrs = {
         "grid8": ("grid_edges", "grid_shape", "active_mask"),
-        "hex": ("hex_radius_", "hex_orientation_"),
+        "hex": ("hex_radius_",),
         "mesh": ("_full_delaunay_tri", "_active_original_simplex_indices"),
     }
     case = request.node.callspec.params["built_environment"]
@@ -378,11 +375,11 @@ def test_three_dimensional_grid_keeps_plot_field_refusal():
         plt.close(figure)
 
 
-@pytest.mark.parametrize("drawing", ["triangles", "polygon_grid"])
+@pytest.mark.parametrize("drawing", ["triangles", "outline"])
 def test_plot_helpers_draw_every_multipolygon_component(drawing):
     """An outline with separated arenas draws each exterior and one legend label."""
     from neurospatial.geometry._components import Outline, TriangleShapes
-    from neurospatial.layout._plotting import plot_polygon_grid, plot_triangles
+    from neurospatial.layout._plotting import _draw_outline, plot_triangles
 
     points = np.array(
         [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0], [4.0, 0.0], [6.0, 0.0], [4.0, 2.0]]
@@ -398,7 +395,7 @@ def test_plot_helpers_draw_every_multipolygon_component(drawing):
                 title="Separated arenas",
                 shapes=TriangleShapes(points, triangles),
                 outline=outline,
-                connectivity=nx.empty_graph(2),
+                pairs=np.empty((0, 2), dtype=np.intp),
                 dimension_ranges=[(0.0, 6.0), (0.0, 2.0)],
                 bin_centers=points[triangles].mean(axis=1),
                 show_connectivity=False,
@@ -411,24 +408,12 @@ def test_plot_helpers_draw_every_multipolygon_component(drawing):
                 )
             assert axes.get_legend_handles_labels()[1] == ["Boundary"]
         else:
-            env = Environment.from_grid_mask(
-                np.ones((6, 2), dtype=bool), grid_edges=(np.arange(7.0), np.arange(3.0))
-            )
-            plot_polygon_grid(
-                axes,
-                title="Separated arenas",
-                bin_centers=env.bin_centers,
-                connectivity=env.connectivity,
-                dimension_ranges=env.dimension_ranges,
-                rectilinear=env._binning.rectilinear,
-                outline=outline,
-                show_connectivity=False,
-            )
+            _draw_outline(axes, outline)
             assert len(axes.patches) == 2
             for patch, polygon in zip(axes.patches, polygons, strict=True):
-                np.testing.assert_array_equal(
-                    patch.get_xy(), np.asarray(polygon.exterior.coords)
-                )
+                assert {tuple(p) for p in patch.get_path().vertices} == {
+                    tuple(p) for p in polygon.exterior.coords
+                }
     finally:
         plt.close(figure)
 
@@ -451,5 +436,41 @@ def test_drawn_hexagons_are_the_environment_cells():
         assert len(paths) == env.n_bins
         for path, cell in zip(paths, cells, strict=True):
             assert ShapelyPolygon(path.vertices).equals(cell)
+    finally:
+        plt.close(figure)
+
+
+def _drawn_vertices(axes) -> set[tuple[float, float]]:
+    """Every vertex of the patches and lines on ``axes``, rounded."""
+    paths = [patch.get_path().vertices for patch in axes.patches]
+    paths += [line.get_xydata() for line in axes.lines]
+    return {tuple(np.round(point, 9)) for path in paths for point in path}
+
+
+@pytest.mark.parametrize("angle", [0.0, 0.4])
+def test_plot_draws_the_arena_outline_with_its_holes(angle):
+    """A polygon arena's outline is drawn with its holes, also once rotated.
+
+    The polygon grid drew only the exterior ring, so an arena with an
+    obstacle looked solid, and a rotated arena drew no outline at all.
+    """
+    from neurospatial.ops.transforms import Affine2D
+
+    arena = Polygon(
+        [(0, 0), (40, 0), (40, 30), (0, 30)], [[(15, 10), (25, 10), (25, 20), (15, 20)]]
+    )
+    env = Environment.from_polygon(arena, bin_size=2.0)
+    if angle:
+        c, s = np.cos(angle), np.sin(angle)
+        env = env.apply_transform(
+            Affine2D(np.array([[c, -s, 5], [s, c, 1], [0, 0, 1]]))
+        )
+    outline = env._binning.outline.geometry
+    figure, axes = plt.subplots()
+    try:
+        env.plot(ax=axes)
+        drawn = _drawn_vertices(axes)
+        for ring in (outline.exterior, *outline.interiors):
+            assert {tuple(np.round(p, 9)) for p in ring.coords} <= drawn
     finally:
         plt.close(figure)

@@ -585,7 +585,7 @@ def test_located_bin_dtype_is_intp():
     )
     assert grid.binning().locator.locate(points)[-1] == -1
 
-    # GraphLayout is the _KDTreeMixin path (the historical int32 source).
+    # GraphLayout is the nearest-bin path (the historical int32 source).
     track = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
     assert track._binning.locator.locate(np.array([[10.0, 0.0]])).dtype == np.intp
 
@@ -816,6 +816,8 @@ def test_a_failed_rebuild_leaves_the_engine_unbuilt():
         )
     with pytest.raises(LayoutNotBuiltError):
         layout.binning()
+    with pytest.raises(LayoutNotBuiltError):
+        layout.locator()
 
 
 @pytest.mark.parametrize("layout_kind", list_available_layouts())
@@ -931,3 +933,24 @@ def test_a_missing_build_option_is_named_with_a_fix(build, missing):
     ) as error:
         build()
     assert "Why:" in str(error.value) and "Fix:" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("layout_kind", "options"),
+    [
+        ("RegularGrid", {"bin_size": 2.0}),
+        ("Hexagonal", {"hexagon_width": 2.0}),
+    ],
+)
+def test_a_reversed_dimension_range_is_refused(layout_kind, options):
+    """A (max, min) pair is refused, as Environment.from_samples refuses it.
+
+    The layouts silently reordered it, so a swapped pair (often a wrong
+    column or sign) built the grid without a word.
+    """
+    with pytest.raises(ValueError, match="minimum is above its maximum") as excinfo:
+        create_layout(layout_kind, dimension_ranges=[(0, 20), (20, 0)], **options)
+    message = str(excinfo.value)
+    assert "dimension_ranges[1]" in message
+    assert "\nWhy: " in message
+    assert "\nFix: " in message

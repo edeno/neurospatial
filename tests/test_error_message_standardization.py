@@ -282,22 +282,6 @@ class TestMixinsErrorMessages:
         assert "_GridMixin.locator" in error_msg
         assert "build()" in error_msg
 
-    def test_points_for_tree_not_2d_shows_actual_shape(self):
-        """Test that _build_kdtree with wrong shape shows actual shape."""
-        from neurospatial.layout.mixins import _KDTreeMixin
-
-        mixin = _KDTreeMixin()
-        bad_points = np.array([1, 2, 3])  # 1D instead of 2D
-
-        with pytest.raises(ValueError) as exc_info:
-            mixin._build_kdtree(bad_points)
-
-        error_msg = str(exc_info.value)
-        # Should mention 2D requirement
-        assert "2d" in error_msg.lower() or "2-d" in error_msg.lower()
-        # Should mention shape
-        assert "shape" in error_msg.lower()
-
 
 class TestErrorMessageFormat:
     """Test that error messages follow consistent format patterns."""

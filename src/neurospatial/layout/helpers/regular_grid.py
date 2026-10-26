@@ -31,6 +31,8 @@ from neurospatial.layout.helpers.utils import get_n_bins
 from neurospatial.layout.validation import (
     validate_cell_size,
     validate_count_threshold,
+    validate_dimension_ranges,
+    validate_uniform_edges,
 )
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
@@ -186,21 +188,10 @@ def _infer_active_bins_from_regular_grid(
             active_mask = ndimage.binary_dilation(active_mask, structure=structure)
 
     if boundary_exists:
-        if active_mask.ndim == 1 or (
-            active_mask.ndim == 2 and active_mask.shape[1] == 1
-        ):
-            if active_mask.size > 0:
-                active_mask[0] = False
-            if active_mask.size > 1:
-                active_mask[-1] = False
-        elif active_mask.ndim > 1 and active_mask.size > 0:
-            for axis_n in range(active_mask.ndim):
-                slicer_first: list[slice | int] = [slice(None)] * active_mask.ndim
-                slicer_first[axis_n] = 0
-                active_mask[tuple(slicer_first)] = False
-                slicer_last: list[slice | int] = [slice(None)] * active_mask.ndim
-                slicer_last[axis_n] = -1
-                active_mask[tuple(slicer_last)] = False
+        # Clear the outermost cell at both ends of every axis.
+        interior = np.zeros_like(active_mask, dtype=bool)
+        interior[(slice(1, -1),) * active_mask.ndim] = True
+        active_mask = active_mask & interior
 
     return active_mask.astype(bool)
 
@@ -224,7 +215,8 @@ def _validate_and_prepare_inputs(
     Returns
     -------
     samples : NDArray[np.float64] or None
-        Cleaned positions array (NaNs removed) or None if positions not provided.
+        The finite rows of positions when they set the ranges (no
+        dimension_range), else None.
     n_dims : int
         Number of dimensions.
     bin_sizes : NDArray[np.float64], shape (n_dims,)
@@ -238,37 +230,35 @@ def _validate_and_prepare_inputs(
         If inputs have incorrect types.
 
     """
-    if positions is None and dimension_range is None:
-        raise ValueError("Either `positions` or `dimension_range` must be provided.")
+    if positions is None:
+        if dimension_range is None:
+            raise ValueError(
+                "Either `positions` or `dimension_range` must be provided."
+            )
+        n_dims = len(dimension_range)
+        return None, n_dims, validate_cell_size(bin_size, n_dims=n_dims)
 
-    if positions is not None:
-        # Validate and convert positions with helpful error messages
-        try:
-            samples = np.asarray(positions, dtype=float)
-        except (TypeError, ValueError) as e:
-            actual_type = type(positions).__name__
-            raise TypeError(
-                f"positions must be a numeric array-like object (e.g., numpy array, "
-                f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
-            ) from e
+    # Validate and convert positions with helpful error messages
+    try:
+        samples = np.asarray(positions, dtype=float)
+    except (TypeError, ValueError) as e:
+        actual_type = type(positions).__name__
+        raise TypeError(
+            f"positions must be a numeric array-like object (e.g., numpy array, "
+            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
+        ) from e
 
-        if samples.ndim != 2:
-            raise ValueError(f"`positions` must be 2D, got shape {samples.shape}.")
-        n_dims = samples.shape[1]
-        samples = samples[np.isfinite(samples).all(axis=1)]
-        if samples.size == 0 and dimension_range is None:
+    if samples.ndim != 2:
+        raise ValueError(f"`positions` must be 2D, got shape {samples.shape}.")
+    n_dims = samples.shape[1]
+    finite = None
+    if dimension_range is None:
+        finite = samples[np.isfinite(samples).all(axis=1)]
+        if finite.size == 0:
             raise ValueError(
                 "`positions` has no valid points and no `dimension_range` given.",
             )
-    else:
-        samples = None
-        if dimension_range is None:
-            raise ValueError("dimension_range must be provided when positions is None")
-        n_dims = len(dimension_range)
-
-    bin_sizes = validate_cell_size(bin_size, n_dims=n_dims)
-
-    return samples, n_dims, bin_sizes
+    return finite, n_dims, validate_cell_size(bin_size, n_dims=n_dims)
 
 
 def _compute_dimension_ranges(
@@ -296,39 +286,14 @@ def _compute_dimension_ranges(
     Raises
     ------
     ValueError
-        If dimension_range length doesn't match n_dims, or if ranges cannot be inferred.
+        If dimension_range length doesn't match n_dims, a range is not finite
+        or has its minimum above its maximum, or ranges cannot be inferred.
     TypeError
         If dimension_range contains non-numeric values.
 
     """
     if dimension_range is not None:
-        if len(dimension_range) != n_dims:
-            raise ValueError(
-                f"`dimension_range` length ({len(dimension_range)}) must match n_dims ({n_dims}).",
-            )
-        ranges = []
-        for i, (lo, hi) in enumerate(dimension_range):
-            try:
-                # Sort after converting: min and max drop a NaN silently.
-                lo_f, hi_f = sorted((float(lo), float(hi)))
-            except (TypeError, ValueError) as e:
-                raise TypeError(
-                    f"dimension_range must contain numeric tuples of (min, max). "
-                    f"Error at dimension {i}: got ({lo!r}, {hi!r})"
-                ) from e
-            if not (np.isfinite(lo_f) and np.isfinite(hi_f)):
-                raise ValueError(
-                    _format_error(
-                        f"dimension_range[{i}] is ({lo!r}, {hi!r}), which is not "
-                        "finite.",
-                        why="Why: cells of bin_size are laid across each range, "
-                        "so both ends must be finite numbers.",
-                        fix="pass finite (min, max) pairs in the units of "
-                        "positions, e.g. dimension_ranges=[(0, 100), (0, 100)]",
-                    )
-                )
-            # A zero-span range becomes one cell when widened to whole cells.
-            ranges.append((lo_f, hi_f))
+        ranges = validate_dimension_ranges(dimension_range, n_dims=n_dims)
     else:
         # Infer from `samples`
         if samples is None:
@@ -387,7 +352,6 @@ def _whole_cell_ranges(
 
 
 def _build_grid_structure(
-    samples: NDArray[np.float64] | None,
     n_dims: int,
     bin_sizes: NDArray[np.float64],
     ranges: list[tuple[float, float]],
@@ -401,8 +365,6 @@ def _build_grid_structure(
 
     Parameters
     ----------
-    samples : NDArray[np.float64] or None
-        Cleaned data samples (rows that are not finite removed).
     n_dims : int
         Number of dimensions.
     bin_sizes : NDArray[np.float64], shape (n_dims,)
@@ -422,9 +384,10 @@ def _build_grid_structure(
         Number of bins along each dimension.
 
     """
-    data_for_bins = samples if samples is not None else np.zeros((1, n_dims))
-    bin_sizes_list: list[float] = bin_sizes.tolist()
-    n_bins = get_n_bins(data_for_bins, bin_size=bin_sizes_list, dimension_range=ranges)
+    # With ranges given, get_n_bins reads no positions.
+    n_bins = get_n_bins(
+        np.zeros((1, n_dims)), bin_size=bin_sizes.tolist(), dimension_range=ranges
+    )
 
     # Preflight the full grid size before allocating anything. get_n_bins
     # checks each axis against the int64 limit, but the bin centers are the
@@ -469,7 +432,9 @@ def _build_grid_structure(
             )
         final_edges.append(edges_dim.astype(float))
 
-    edges_tuple = tuple(final_edges)
+    # The same check as given edges: cell measures use each axis's first
+    # width, which rounding far from the origin can make wrong.
+    edges_tuple = validate_uniform_edges(final_edges, label="axis {axis} of the grid")
     centers_shape = tuple(len(edges) - 1 for edges in final_edges)
     return edges_tuple, grid_cell_centers(edges_tuple), centers_shape
 
@@ -534,4 +499,4 @@ def _create_regular_grid(
     ranges = _whole_cell_ranges(ranges, bin_sizes.tolist())
 
     # Build the grid structure (edges, centers, shape)
-    return _build_grid_structure(samples, n_dims, bin_sizes, ranges, add_boundary_bins)
+    return _build_grid_structure(n_dims, bin_sizes, ranges, add_boundary_bins)

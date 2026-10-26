@@ -200,23 +200,5 @@ def create_layout(kind: LayoutType | str, **kwargs: Any) -> _BuiltinLayout:
     """
     engine_cls = _engine_class(kind, "create_layout()")
     engine = engine_cls()
-
-    accepted = list(inspect.signature(engine.build).parameters)
-    unexpected = [name for name in kwargs if name not in accepted]
-    if unexpected:
-        raise TypeError(
-            _format_error(
-                f"create_layout() got unexpected build options for "
-                f"{engine_cls.layout_type}: {', '.join(map(repr, unexpected))}.",
-                why=(
-                    f"Why: {engine_cls.__name__}.build() takes only "
-                    f"{', '.join(accepted)}."
-                ),
-                fix=(
-                    "check the spelling, or list the options with "
-                    f"get_layout_parameters({engine_cls.layout_type!r})"
-                ),
-            )
-        )
     engine.build(**kwargs)
     return engine

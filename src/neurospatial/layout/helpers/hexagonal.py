@@ -25,6 +25,7 @@ from neurospatial.geometry import (
     points_to_hex_bin_ind,
 )
 from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
+from neurospatial.layout.helpers.regular_grid import _compute_dimension_ranges
 from neurospatial.layout.validation import (
     validate_cell_size,
     validate_count_threshold,
@@ -76,8 +77,8 @@ def _create_hex_grid(
         - If `hexagon_width <= 0`.
         - If `dimension_range` is None and `positions` is None or has no
           row without NaN.
-        - If `dimension_range` is provided but not length 2 (a reversed
-          ``(max, min)`` pair is accepted and sorted).
+        - If `dimension_range` is provided but not two finite
+          ``(min, max)`` pairs, minimum first.
         - If `positions` is not a 2D array of shape (n_samples, 2).
 
     """
@@ -89,24 +90,21 @@ def _create_hex_grid(
         ds_arr = np.asarray(positions, dtype=float)
         if ds_arr.ndim != 2 or ds_arr.shape[1] != 2:
             raise ValueError("`positions` must be shape (n_samples, 2).")
-        # Remove any rows containing NaNs
-        ds_arr = ds_arr[np.isfinite(ds_arr).all(axis=1)]
-    else:
-        ds_arr = np.empty((0, 2), dtype=float)
 
     if dimension_range is not None:
-        if len(dimension_range) != 2:
-            raise ValueError(
-                f"`dimension_range` must be ((min_x,max_x),(min_y,max_y)), got length {len(dimension_range)}."
-            )
-        (ux0, ux1), (uy0, uy1) = dimension_range
-        min_x, max_x = sorted((float(ux0), float(ux1)))
-        min_y, max_y = sorted((float(uy0), float(uy1)))
+        (min_x, max_x), (min_y, max_y) = _compute_dimension_ranges(
+            None, dimension_range, 2
+        )
     else:
-        if ds_arr.shape[0] == 0:
+        finite = (
+            np.empty((0, 2))
+            if positions is None
+            else ds_arr[np.isfinite(ds_arr).all(axis=1)]
+        )
+        if finite.shape[0] == 0:
             raise ValueError("`positions` is empty; cannot infer bounding box.")
-        min_vals = np.min(ds_arr, axis=0)
-        max_vals = np.max(ds_arr, axis=0)
+        min_vals = np.min(finite, axis=0)
+        max_vals = np.max(finite, axis=0)
         min_x, max_x = float(min_vals[0]), float(max_vals[0])
         min_y, max_y = float(min_vals[1]), float(max_vals[1])
 
@@ -185,16 +183,10 @@ def _infer_active_bins_from_hex_grid(
         hex_radius=hex_radius,
         centers_shape=centers_shape,
     )
-    # Filter out invalid bin indices
-    bin_ind = bin_ind[bin_ind >= 0]
-
-    # Count occurrences of each unique bin ind
-    bin_ind, bin_count = np.unique(bin_ind, return_counts=True)
-
-    # Filter bins based on the count threshold
-    bin_ind = bin_ind[bin_count >= bin_count_threshold]
-
-    return bin_ind.astype(int)
+    counts = np.bincount(
+        bin_ind[bin_ind >= 0], minlength=centers_shape[0] * centers_shape[1]
+    )
+    return np.flatnonzero((counts > 0) & (counts >= bin_count_threshold))
 
 
 def hex_grid_pairs(active_mask: NDArray[np.bool_]) -> NDArray[np.intp]:

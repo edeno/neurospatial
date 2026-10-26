@@ -7,8 +7,8 @@ from typing import ClassVar
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry import Binning
-from neurospatial.layout._assembly import assemble_binning
+from neurospatial._exceptions import LayoutNotBuiltError
+from neurospatial.geometry import Binning, mask_active_map
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
@@ -81,11 +81,11 @@ class _PolarGridLayout(MaskedGridLayout):
         distances = _polar_pair_lengths(self.bin_centers, grid_pairs)
         n_distance, n_angle = active_mask.shape
         if circular_angle and n_angle > 1:
-            assert self.grid_edges is not None
+            assert self.grid_edges is not None and self.active_mask is not None
             distance_edges, angle_edges = self.grid_edges
             distance_centers = 0.5 * (distance_edges[:-1] + distance_edges[1:])
             seams, seam_lengths = _circular_seam_pairs(
-                self.locator().flat_to_active,
+                mask_active_map(self.active_mask),
                 n_distance,
                 n_angle,
                 distance_centers,
@@ -130,23 +130,14 @@ class _PolarGridLayout(MaskedGridLayout):
         LayoutNotBuiltError
             If the layout has not been built.
         """
-        pairs, distances = self._neighbor_pairs()
-        assert self.grid_shape is not None
-        return assemble_binning(
-            pairs,
-            distances,
-            kind=self.layout_type,
-            centers=self.bin_centers,
-            sizes=self.bin_sizes(),
-            measure_dim=self.bin_centers.shape[1],
-            locator=self.locator(),
+        if self.grid_shape is None:
+            raise LayoutNotBuiltError(type(self).__name__, "binning")
+        return self._grid_binning(
             faces="polar",
-            face_arrays=(self._axis_widths(),),
             n_angle=self.grid_shape[1],
             circular=self.circular_angle,
             face_normals=False,
-            rectilinear=self.rectilinear_grid(),
-            dimension_ranges=self.dimension_ranges,
+            grid_spec=None,
         )
 
 

@@ -5910,7 +5910,7 @@ class Environment(Generic[_C]):
 
         - **1D native grids**: Line plot over physical bin coordinates
         - **2D grid layouts**: Uses ``pcolormesh`` for crisp rectangular bins
-        - **Hexagonal**: Colored hexagon patches via ``PatchCollection``
+        - **Hexagonal**: Colored hexagons in one ``PolyCollection``
         - **Triangular mesh**: Colored triangle faces via ``tripcolor``
         - **1D tracks**: Line plot over physical linearized coordinates, with
           breaks at missing values and artificial gaps between track segments

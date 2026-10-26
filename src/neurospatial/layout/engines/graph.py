@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry import (
     Binning,
+    NearestBinLocator,
     TrackLinearization,
     component_extent,
     mask_active_map,
@@ -24,14 +25,14 @@ from neurospatial.layout.helpers.graph import (
     set_straight_distances,
     track_pairs,
 )
-from neurospatial.layout.mixins import _KDTreeMixin, _NeighborPairsMixin
+from neurospatial.layout.mixins import _NeighborPairsMixin
 from neurospatial.layout.validation import validate_cell_size
 
 if TYPE_CHECKING:
     import matplotlib.axes
 
 
-class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
+class GraphLayout(_NeighborPairsMixin):
     """Layout defined by a user-provided graph, typically for 1D tracks.
 
     The graph's nodes (with 'pos' attributes) and a specified edge order
@@ -109,7 +110,8 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         ValueError
             If `edge_order` is empty, `bin_size` is not positive, a node of
             `edge_order` is not in the graph, an entry of `edge_order` is not
-            an edge of the graph, a node lacks 'pos',
+            an edge of the graph, a node lacks 'pos', an edge joins two nodes
+            at the same position,
             `edge_spacing` has the wrong length, or an edge's 'distance' is
             not the distance between its nodes.
 
@@ -162,7 +164,7 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         self._own_arrays(
             "bin_centers", "linear_bin_centers_", "active_mask", "grid_edges"
         )
-        self._build_kdtree(points_for_tree=self.bin_centers)
+        self._locator = NearestBinLocator(self.bin_centers)
         self._linearization = TrackLinearization(
             track_graph, edge_order, edge_spacing, self.grid_edges, self.active_mask
         )

@@ -194,3 +194,34 @@ def test_accepts_uniform_anisotropic_edges():
     edges = (np.linspace(0.0, 1.0, 11), np.linspace(0.0, 30.0, 11))
     env = Environment.from_grid_mask(np.ones((10, 10), dtype=bool), grid_edges=edges)
     np.testing.assert_allclose(env.bin_sizes, 0.3, rtol=1e-12)
+
+
+def test_a_transposed_mask_is_refused():
+    """A mask whose shape is not the grid's, such as its transpose, is refused."""
+    with pytest.raises(ValueError, match=r"active_mask shape \(2, 3\) must match"):
+        MaskedGridLayout().build(
+            active_mask=np.ones((2, 3), dtype=bool),
+            grid_edges=(np.arange(4.0), np.arange(3.0)),
+        )
+
+
+def test_accepts_exact_unit_edges_far_from_the_origin():
+    """Integer edges at 1e12 are exact, so their widths are exactly uniform."""
+    edges = 1e12 + np.arange(5.0)
+    layout = MaskedGridLayout()
+    layout.build(active_mask=np.ones(4, dtype=bool), grid_edges=(edges,))
+    np.testing.assert_array_equal(layout.bin_sizes(), np.ones(4))
+
+
+def test_regular_grid_refuses_widths_float_cannot_resolve():
+    """At 1e12, cells of 0.3 come out up to 4e-4 of a cell uneven, as from edges.
+
+    The regular grid built them silently, with wrong cell volumes, while the
+    masked grid refused the same edges.
+    """
+    from neurospatial.layout import create_layout
+
+    with pytest.raises(ValueError, match="origin offset"):
+        create_layout(
+            "RegularGrid", bin_size=0.3, dimension_ranges=[(1e12, 1e12 + 2.4)] * 2
+        )

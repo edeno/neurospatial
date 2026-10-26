@@ -794,7 +794,7 @@ class TrackArena(_CappedContainment, ReadOnlyState):
             # Separate capsule components can leave a narrower meaningful gap.
             for index, segment in enumerate(self.segments):
                 for other in self.segments[index + 1 :]:
-                    gap = _segment_distance(segment, other) - self.width
+                    gap = segment_distance(segment, other) - self.width
                     if gap > 0:
                         feature = min(feature, gap)
             return np.full(self.n_dims, feature / (4 * np.sqrt(self.n_dims)))
@@ -1126,8 +1126,11 @@ def _feature_cap(arena: Arena) -> NDArray[np.float64]:
     return np.zeros(arena.n_dims) if cap is None else cap
 
 
-def _segment_distance(first: NDArray[np.float64], second: NDArray[np.float64]) -> float:
-    """Distance between finite Cartesian segments in any coordinate dimension."""
+def segment_distance(first: NDArray[np.float64], second: NDArray[np.float64]) -> float:
+    """Distance between finite Cartesian segments in any coordinate dimension.
+
+    Each segment is its two endpoints, shape (2, n_dims).
+    """
     u, v = first[1] - first[0], second[1] - second[0]
     lu, lv = float(np.hypot.reduce(u)), float(np.hypot.reduce(v))
     u, v = u / lu, v / lv

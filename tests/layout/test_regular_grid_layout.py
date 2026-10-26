@@ -3,10 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial.layout.engines.regular_grid import (
-    RegularGridLayout,
-    regular_grid_from_cells,
-)
+from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 
 class TestNoActiveBinsError:
@@ -365,45 +362,3 @@ def test_boundary_bins_without_inference_stay_inside_dimension_ranges():
     assert np.all((layout.bin_centers > low) & (layout.bin_centers < high))
     np.testing.assert_array_equal(layout.bin_centers.min(axis=0), [-1.0, -1.0])
     np.testing.assert_array_equal(layout.bin_centers.max(axis=0), [11.0, 7.0])
-
-
-class TestRegularGridFromCells:
-    """regular_grid_from_cells refuses cells that do not match its edges."""
-
-    edges = (np.arange(4.0), np.arange(3.0))  # a 3 x 2 grid
-
-    @staticmethod
-    def _centers(shape):
-        return np.zeros((int(np.prod(shape)), len(shape)))
-
-    def test_matching_cells_build_the_grid(self):
-        mask = np.ones((3, 2), dtype=bool)
-        layout = regular_grid_from_cells(
-            self.edges,
-            mask,
-            self._centers((3, 2)),
-            connect_diagonal_neighbors=False,
-        )
-        assert layout.grid_shape == (3, 2)
-
-    def test_transposed_mask_is_refused(self):
-        with pytest.raises(
-            ValueError, match=r"active_mask has shape \(2, 3\)"
-        ) as error:
-            regular_grid_from_cells(
-                self.edges,
-                np.ones((2, 3), dtype=bool),
-                self._centers((3, 2)),
-                connect_diagonal_neighbors=False,
-            )
-        assert "Fix:" in str(error.value)
-
-    def test_centers_for_active_cells_only_are_refused(self):
-        mask = np.array([[True, False], [True, True], [False, True]])
-        with pytest.raises(ValueError, match="grid has 6 cells in 2 dimensions"):
-            regular_grid_from_cells(
-                self.edges,
-                mask,
-                np.zeros((int(mask.sum()), 2)),
-                connect_diagonal_neighbors=False,
-            )

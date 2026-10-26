@@ -23,7 +23,9 @@ if TYPE_CHECKING:
     )
 
 
-def _draw_connections(ax: Axes, connectivity: nx.Graph, **style: Any) -> None:
+def _draw_connections(
+    ax: Axes, centers: NDArray[np.float64], pairs: NDArray[np.intp], **style: Any
+) -> None:
     """Draw every connection between bin centers as one line collection.
 
     One collection draws in about the time of one line; a line per connection
@@ -33,21 +35,47 @@ def _draw_connections(ax: Axes, connectivity: nx.Graph, **style: Any) -> None:
     ----------
     ax : matplotlib.axes.Axes
         Axes to draw on.
-    connectivity : networkx.Graph
-        Bin graph whose nodes carry two-dimensional ``pos``.
+    centers : ndarray of float64, shape (n_bins, 2)
+        Bin centers.
+    pairs : ndarray of intp, shape (n_pairs, 2)
+        Bin indices of each connected pair.
     **style
         Passed to :class:`matplotlib.collections.LineCollection`.
     """
     from matplotlib.collections import LineCollection
 
-    positions = nx.get_node_attributes(connectivity, "pos")
-    segments = np.array(
-        [(positions[u], positions[v]) for u, v in connectivity.edges],
-        dtype=np.float64,
-    ).reshape(-1, 2, 2)
     # An (n, 2, 2) array is a sequence of segments; the stubs ask for a list.
-    lines = LineCollection(cast("Sequence[NDArray[np.float64]]", segments), **style)
-    ax.add_collection(lines, autolim=False)
+    segments = cast("Sequence[NDArray[np.float64]]", centers[pairs])
+    ax.add_collection(LineCollection(segments, **style), autolim=False)
+
+
+def _polygon_corners(polygons: Sequence[Polygon]) -> NDArray[np.float64]:
+    """Corners of hole-free polygons that all have the same number of corners.
+
+    One array of corners draws as a single ``PolyCollection``, much faster
+    than a patch per polygon.
+
+    Parameters
+    ----------
+    polygons : sequence of shapely.Polygon
+        Polygons without interior rings, each with ``n_corners`` corners.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_polygons, n_corners, 2)
+        Each exterior ring counterclockwise, without its closing repeat: the
+        vertices :func:`_polygon_patches` draws.
+    """
+    import shapely
+
+    rings = shapely.get_coordinates(
+        shapely.get_exterior_ring(np.asarray(polygons, dtype=object))
+    ).reshape(len(polygons), -1, 2)
+    x, y = rings[..., 0], rings[..., 1]
+    clockwise = np.sum(x[:, :-1] * y[:, 1:] - x[:, 1:] * y[:, :-1], axis=1) < 0
+    rings[clockwise] = rings[clockwise, ::-1]
+    corners: NDArray[np.float64] = rings[:, :-1]
+    return corners
 
 
 def _polygon_patches(polygons: Sequence[Polygon]) -> list[Any]:
@@ -142,6 +170,7 @@ def plot_grid(
     *,
     title: str,
     bin_centers: NDArray[np.float64],
+    pairs: NDArray[np.intp],
     connectivity: nx.Graph,
     dimension_ranges: Sequence[tuple[float, float]] | None,
     rectilinear: RectilinearGrid,
@@ -221,51 +250,83 @@ def plot_grid(
             node_size=node_size,
             node_color=node_color,
         )
-        _draw_connections(ax, connectivity, colors="black", zorder=-1)
+        _draw_connections(ax, bin_centers, pairs, colors="black", zorder=-1)
     return ax
 
 
-def plot_polygon_grid(
+def _draw_outline(ax: Axes, outline: Outline) -> None:
+    """Draw every ring of the arena outline, holes included, as black lines.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to draw on.
+    outline : Outline
+        Polygon or multipolygon arena boundary.
+    """
+    geometry = outline.geometry
+    parts = geometry.geoms if hasattr(geometry, "geoms") else (geometry,)
+    for patch in _polygon_patches(parts):
+        patch.set(facecolor="none", edgecolor="black", linewidth=1.5)
+        ax.add_patch(patch)
+
+
+def _generic_graph_plot(
+    graph: nx.Graph,
+    name: str,
     ax: Axes | None = None,
-    *,
-    title: str,
-    bin_centers: NDArray[np.float64],
-    connectivity: nx.Graph,
-    dimension_ranges: Sequence[tuple[float, float]] | None,
-    rectilinear: RectilinearGrid,
-    outline: Outline,
-    figsize: tuple[float, float] = (7, 7),
-    cmap: str = "bone_r",
-    alpha: float = 0.7,
-    show_connectivity: bool = True,
-    node_size: float = 20,
-    node_color: str = "blue",
+    **kwargs: Any,
 ) -> Axes:
-    """Draw a masked rectangular grid and the outline of its defining polygon."""
-    ax = plot_grid(
-        ax,
-        title=title,
-        bin_centers=bin_centers,
-        connectivity=connectivity,
-        dimension_ranges=dimension_ranges,
-        rectilinear=rectilinear,
-        figsize=figsize,
-        cmap=cmap,
-        alpha=alpha,
-        show_connectivity=show_connectivity,
-        node_size=node_size,
-        node_color=node_color,
-    )
-    polygon = outline.geometry
-    poly_patch_kwargs = {"fc": "none", "ec": "black", "lw": 1.5}
-    if hasattr(polygon, "geoms"):
-        for geom in polygon.geoms:
-            if hasattr(geom, "exterior"):
-                x, y = geom.exterior.xy
-                ax.fill(x, y, **poly_patch_kwargs)
-    elif hasattr(polygon, "exterior"):
-        x, y = polygon.exterior.xy
-        ax.fill(x, y, **poly_patch_kwargs)
+    """Draw a graph whose nodes have 2-D ``pos`` coordinates.
+
+    Parameters
+    ----------
+    graph : nx.Graph
+        The graph to plot. Nodes must have a 2-D ``pos`` attribute.
+    name : str
+        A name for the graph, used in the plot title.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None (default), a new figure and axes are created.
+    **kwargs : Any
+        - ``figsize`` (tuple of float): Size of the figure if created.
+        - ``node_kwargs`` (dict): Keyword arguments for ``nx.draw_networkx_nodes``.
+        - ``edge_kwargs`` (dict): Keyword arguments for ``nx.draw_networkx_edges``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The Axes on which the graph was plotted.
+
+    Raises
+    ------
+    ValueError
+        If `graph` is empty, or its nodes have no ``pos``.
+
+    """
+    import matplotlib.pyplot as plt
+
+    if graph.number_of_nodes() == 0:
+        raise ValueError("Graph is empty or None. Cannot plot an empty graph.")
+
+    node_positions = nx.get_node_attributes(graph, "pos")
+    if not node_positions:  # No 'pos' attributes
+        raise ValueError("Nodes in graph are missing 'pos' attribute for plotting.")
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=kwargs.get("figsize", (7, 7)))
+    node_kwargs = {"node_size": 20, "ax": ax, **kwargs.get("node_kwargs", {})}
+    nx.draw_networkx_nodes(graph, pos=node_positions, **node_kwargs)
+    edge_kwargs = {
+        "alpha": 0.5,
+        "edge_color": "gray",
+        **kwargs.get("edge_kwargs", {}),
+        "ax": ax,
+    }
+    nx.draw_networkx_edges(graph, pos=node_positions, **edge_kwargs)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_title(f"{name} Graph")
+    ax.set_xlabel("Dim 0")
+    ax.set_ylabel("Dim 1")
     return ax
 
 
@@ -273,24 +334,22 @@ def plot_hexagons(
     ax: Axes | None = None,
     *,
     title: str,
-    centers: NDArray[np.float64] | None,
-    cells: Sequence[Polygon] | None,
-    connectivity: nx.Graph | None,
+    centers: NDArray[np.float64],
+    cells: NDArray[np.float64],
+    connectivity: nx.Graph,
     dimension_ranges: Sequence[tuple[float, float]] | None,
     **kwargs: Any,
 ) -> Axes:
     """Draw hexagonal cells and the graph of active bin centers.
 
-    ``cells`` are the bins' own polygons (``geometry.cell_polygons``), so the
-    drawing shows the cells the analyses use.
+    ``cells``, shape ``(n_bins, 6, 2)``, are the corners of the bins' own
+    polygons (``geometry.cell_polygons``), so the drawing shows the cells the
+    analyses use.
     """
-    from matplotlib.collections import PatchCollection
-
-    from neurospatial.layout.helpers.utils import _generic_graph_plot
+    from matplotlib.collections import PolyCollection
 
     ax = _generic_graph_plot(ax=ax, graph=connectivity, name=title, **kwargs)
-    if kwargs.get("show_hexagons", True) and cells is not None and len(cells):
-        assert centers is not None
+    if kwargs.get("show_hexagons", True):
         hex_kws = kwargs.get(
             "hexagon_kwargs",
             {
@@ -301,7 +360,8 @@ def plot_hexagons(
             },
         )
         ax.scatter(centers[:, 0], centers[:, 1], s=1, label="hexagonal grid")
-        ax.add_collection(PatchCollection(_polygon_patches(cells), **hex_kws))
+        corners = cast("Sequence[NDArray[np.float64]]", cells)
+        ax.add_collection(PolyCollection(corners, **hex_kws))
         ax.plot(
             centers[:, 0],
             centers[:, 1],
@@ -326,7 +386,7 @@ def plot_triangles(
     title: str,
     shapes: TriangleShapes,
     outline: Outline | None,
-    connectivity: nx.Graph,
+    pairs: NDArray[np.intp],
     dimension_ranges: Sequence[tuple[float, float]],
     bin_centers: NDArray[np.float64],
     show_triangles: bool = True,
@@ -340,12 +400,11 @@ def plot_triangles(
 ) -> Axes:
     """Draw active mesh triangles, boundary rings, centroids and graph edges."""
     import matplotlib.pyplot as plt
-    from matplotlib.collections import PatchCollection
-    from matplotlib.patches import Polygon as MplPolygon
+    from matplotlib.collections import PolyCollection
 
     if ax is None:
         _, ax = plt.subplots(figsize=(7, 7))
-    _triangle_kwargs = {
+    _triangle_kwargs: dict[str, Any] = {
         "alpha": 0.4,
         "facecolor": "lightblue",
         "edgecolor": "gray",
@@ -385,13 +444,8 @@ def plot_triangles(
                 xbi, ybi = interior.xy
                 plot_func(xbi, ybi, **_boundary_kwargs)
     if show_triangles:
-        patches = [
-            MplPolygon(vertices, closed=True)
-            for vertices in shapes.points[shapes.triangles]
-        ]
-        pc_constructor = cast("Any", PatchCollection)
-        pc = pc_constructor(patches, **_triangle_kwargs)
-        ax.add_collection(pc)
+        corners = cast("Sequence[NDArray[np.float64]]", shapes.points[shapes.triangles])
+        ax.add_collection(PolyCollection(corners, **_triangle_kwargs))
     if show_centroids and len(bin_centers):
         scatter_func = cast("Any", ax.scatter)
         scatter_func(bin_centers[:, 0], bin_centers[:, 1], **_centroid_kwargs)
@@ -400,7 +454,7 @@ def plot_triangles(
         line_style["colors"] = line_style.pop("color", "black")
         if "linewidth" in line_style:
             line_style["linewidths"] = line_style.pop("linewidth")
-        _draw_connections(ax, connectivity, **line_style)
+        _draw_connections(ax, bin_centers, pairs, **line_style)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlim(dimension_ranges[0])
     ax.set_ylim(dimension_ranges[1])
@@ -418,6 +472,7 @@ def plot_track(
     title: str,
     linearization: TrackLinearization,
     bin_centers: NDArray[np.float64],
+    pairs: NDArray[np.intp],
     connectivity: nx.Graph,
     grid_edges: tuple[NDArray[np.float64], ...] | None,
     figsize: tuple[float, float] = (7, 7),
@@ -445,7 +500,7 @@ def plot_track(
     nx.draw_networkx_nodes(
         connectivity, bin_node_pos, ax=ax, node_size=30, node_color="black"
     )
-    _draw_connections(ax, connectivity, colors="black", zorder=-1)
+    _draw_connections(ax, bin_centers, pairs, colors="black", zorder=-1)
     if grid_edges is not None:
         edge_points = linearization.linear_to_nd(grid_edges[0])
         ax.plot(
