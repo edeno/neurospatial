@@ -598,7 +598,8 @@ not say where the outer walls are, so an arena declared with
 `OpenArena(..., physical_footprint_known=False)` refuses physical scoring even
 when it has internal walls. A crop or a missing position sample does not create a
 wall. If only tracking-derived support or an analysis mask is available, request
-`boundary_source="analysis"` to use the legacy boundary-bin approximation.
+`boundary_source="analysis"` to score against the outline of the retained bins
+instead.
 Physical mode is the default. It requires measured wall geometry and retained
 cells with finite firing rates along every measured wall segment. Missing wall
 observations cannot establish that firing was zero near the wall. Supplying
@@ -616,23 +617,29 @@ from neurospatial.arena import OpenArena
 from neurospatial.encoding import border_score
 
 env = Environment.from_grid_mask(
-    np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2,
-    arena=OpenArena(box(0, 0, 10, 10)), units="cm",
+    np.ones((10, 10), dtype=bool), grid_edges=(np.arange(0.0, 101.0, 10.0),) * 2,
+    arena=OpenArena(box(0, 0, 100, 100)), units="cm",
 )
-field = (env.bin_centers[:, 0] < 1).astype(float)
+field = (env.bin_centers[:, 0] < 10).astype(float)  # one column on the west wall
 score = border_score(env, field, metric="euclidean")
-assert 0 < score < 1
+# The field covers the whole west wall; its centers are 5 cm from it, a tenth
+# of the 50 cm radius of the largest circle that fits in the box.
+np.testing.assert_allclose(score, (1 - 0.1) / (1 + 0.1))
+# The full grid's outline is the box, so the analysis outline agrees here.
 approximation = border_score(env, field, boundary_source="analysis")
-assert approximation == 1.0
+np.testing.assert_allclose(approximation, score)
 ```
 
-Physical coverage is the fraction of declared wall length covered by field
-cells. Distance is mean field-center distance to actual walls, normalized by
-the wall diameter (maximum point separation). Geodesic mode includes center-to-wall lengths
-and paths through retained graph bins. An unavailable route makes the score
-NaN; crops can restrict represented routes. Euclidean mode avoids that graph
-restriction. This is a generalized screening metric; existing fixed thresholds
-are not a calibrated significance test for this geometry.
+This is the border score of Solstad et al. (2008). Coverage is the largest
+fraction of one wall that one field covers. Each footprint ring is split into
+walls at its corners (a rectangle has four walls, a circle one), and each named
+internal wall is one more wall. Distance is the firing-rate-weighted mean
+distance from field bin centers to the nearest wall, divided by the radius of
+the largest circle that fits in the arena without crossing a wall. Geodesic
+mode includes center-to-wall lengths and paths through retained graph bins. An
+unavailable route makes the score NaN; crops can restrict represented routes.
+Euclidean mode avoids that graph restriction. The usual 0.5 cutoff was chosen
+for rectangular boxes; calibrate it for other arena shapes.
 
 For a rotated rectangular arena, construct bins in coordinates aligned with the
 measured rectangle, then transform the bins and arena together. Transform the
@@ -647,8 +654,8 @@ from neurospatial import Environment
 from neurospatial.encoding import border_score
 from neurospatial.ops.transforms import AffineND
 
-env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
-field = (env.bin_centers[:, 0] < 1).astype(float)
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
+field = (env.bin_centers[:, 0] < 10).astype(float)
 score = border_score(env, field, metric="euclidean")
 angle = np.pi / 4
 transform = AffineND(np.array([
@@ -658,7 +665,7 @@ transform = AffineND(np.array([
 ]))
 rotated = env.apply_transform(transform)
 np.testing.assert_allclose(border_score(rotated, field, metric="euclidean"), score)
-recorded_positions = np.array([[0.5, 0.5], [0.5, 1.5]])
+recorded_positions = np.array([[5.0, 5.0], [5.0, 15.0]])
 rotated_positions = transform(recorded_positions)
 assert np.all(rotated.bin_at(rotated_positions) >= 0)
 ```

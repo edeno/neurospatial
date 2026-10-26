@@ -47,21 +47,24 @@ def test_border_cell_in_a_circular_arena_is_scored(round_arena, metric):
 def test_a_ring_field_covers_the_whole_wall(round_arena):
     """Wall pieces in slivers count toward coverage: a ring along the whole
     wall covers its whole length."""
-    from neurospatial.encoding._physical_border import _prepare_physical_border
-    from neurospatial.geometry import boundary_geometry
+    from neurospatial.encoding._physical_border import _prepare_border
 
-    walls = boundary_geometry(round_arena.binning, round_arena.arena, "physical")
-    geometry = _prepare_physical_border(round_arena, walls)
+    geometry = _prepare_border(round_arena, "physical")
+    # The circle is one wall.
+    ((owners, pieces),) = geometry.contact
     ring = np.flatnonzero(_wall_field(round_arena) > 1)
-    contact = shapely.union_all([p for b in ring for p in geometry.contact[b]])
-    assert contact.length == pytest.approx(walls.length, rel=1e-9)
+    contact = shapely.union_all(
+        [piece for owner, piece in zip(owners, pieces, strict=True) if owner in ring]
+    )
+    assert contact.length == pytest.approx(geometry.walls.length, rel=1e-9)
+    assert contact.length == pytest.approx(geometry.wall_lengths[0], rel=1e-9)
 
 
 def test_rotated_square_scores_like_its_arena_aligned_build():
     square = box(0, 0, 40, 40)
     tilted = rotate(square, 30, origin=(20, 20))
-    axis_aligned = Environment.from_polygon(tilted, bin_size=1.0)
-    aligned = Environment.from_polygon(square, bin_size=1.0)
+    axis_aligned = Environment.from_polygon(tilted, bin_size=1.0, units="cm")
+    aligned = Environment.from_polygon(square, bin_size=1.0, units="cm")
 
     def wall_strip(env, polygon):
         boundary = polygon.exterior

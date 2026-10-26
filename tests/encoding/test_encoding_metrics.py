@@ -990,7 +990,7 @@ class TestBatchScoresFailuresMask:
         x = np.linspace(-20, 20, 21)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
-        return Environment.from_samples(positions, bin_size=2.0)
+        return Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     def test_batch_grid_scores_returns_result_class(self, env_2d_grid):
         """batch_grid_scores returns BatchScoresResult, not a bare ndarray."""
@@ -1096,7 +1096,7 @@ class TestBatchBorderScores:
         x = np.linspace(-50, 50, 51)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = Environment.from_samples(positions, bin_size=2.0, units="cm")
         return env
 
     @pytest.fixture
@@ -1362,12 +1362,10 @@ class TestBatchBorderScores:
 
 
 class TestBorderScoreRaisesOnDijkstraFailure:
-    """Regression: border_score's Dijkstra failure
-    must propagate so batch_border_scores can flag the neuron in its
-    failures mask. Previously the single-neuron path swallowed the
-    exception and returned NaN with a RuntimeWarning, which the batch
-    wrapper couldn't see -- the failures mask read False even though
-    the score was NaN-due-to-failure.
+    """A failed wall-distance computation raises instead of returning NaN.
+
+    The wall distances belong to the environment, not to one rate map, so a
+    population raises once rather than flagging every neuron as failed.
     """
 
     def test_border_score_raises_on_invalid_graph(self, monkeypatch):
@@ -1385,7 +1383,7 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         x = np.linspace(-20, 20, 21)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 
         # Inject an invalid test-only snapshot; published geometry is read-only.
         graph = env.connectivity.copy()
@@ -1396,22 +1394,20 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         firing_rate = np.zeros(env.n_bins)
         firing_rate[0] = 10.0
 
-        with pytest.raises(RuntimeError, match=r"geodesic distance"):
+        with pytest.raises(RuntimeError, match=r"geodesic wall distance"):
             border_score(
                 env, firing_rate, metric="geodesic", boundary_source="analysis"
             )
 
-    def test_batch_border_scores_failures_mask_catches_dijkstra_failure(
-        self, monkeypatch
-    ):
-        """The batch wrapper now sees the border_score RuntimeError and flags it."""
+    def test_batch_border_scores_raises_dijkstra_failure_once(self, monkeypatch):
+        """An environment-level failure is not hidden in the failures mask."""
         from neurospatial import Environment
         from neurospatial.encoding._metrics import batch_border_scores
 
         x = np.linspace(-20, 20, 21)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=2.0)
+        env = Environment.from_samples(positions, bin_size=2.0, units="cm")
         graph = env.connectivity.copy()
         for _, _, data in graph.edges(data=True):
             data["distance"] = -1.0
@@ -1421,8 +1417,5 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         firing_rates[0, 0] = 10.0
         firing_rates[1, 5] = 10.0
 
-        with pytest.warns(UserWarning, match=r"raised an exception for 2 of 2"):
-            result = batch_border_scores(env, firing_rates, boundary_source="analysis")
-        assert result.n_failures == 2
-        assert bool(result.failures.all())
-        assert np.isnan(result.scores).all()
+        with pytest.raises(RuntimeError, match=r"geodesic wall distance"):
+            batch_border_scores(env, firing_rates, boundary_source="analysis")

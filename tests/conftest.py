@@ -541,61 +541,6 @@ def tmaze_env(tmaze_graph: nx.Graph) -> Environment:
 
 
 # =============================================================================
-# Dense Grid Fixtures for Metrics/Boundary Tests
-# =============================================================================
-# These fixtures replace inefficient nested-loop grid generation patterns.
-# Session-scoped for performance since environments are read-only in tests.
-
-
-@pytest.fixture(scope="session")
-def dense_rectangular_grid_env() -> Environment:
-    """Dense 50x50 rectangular grid for boundary/place field tests.
-
-    Uses vectorized meshgrid instead of nested loops for 100x faster creation.
-    Creates a grid with ~156 active bins at bin_size=4.0.
-
-    Use for: border_score tests, place field tests, region coverage tests.
-    """
-    x = np.linspace(0, 50, 500)
-    y = np.linspace(0, 50, 500)
-    xx, yy = np.meshgrid(x, y)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(positions, bin_size=4.0)
-
-
-@pytest.fixture(scope="session")
-def dense_40x40_grid_env() -> Environment:
-    """Dense 40x40 rectangular grid for corner/edge tests.
-
-    Similar to dense_rectangular_grid_env but smaller extent.
-    Creates a grid with ~100 active bins at bin_size=4.0.
-
-    Use for: Corner field tests, edge case validation.
-    """
-    x = np.linspace(0, 40, 400)
-    y = np.linspace(0, 40, 400)
-    xx, yy = np.meshgrid(x, y)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(positions, bin_size=4.0)
-
-
-@pytest.fixture(scope="session")
-def dense_50x50_bin5_env() -> Environment:
-    """Dense 50x50 rectangular grid with bin_size=5.0.
-
-    Same extent as dense_rectangular_grid_env but larger bins.
-    Creates a grid with ~100 active bins at bin_size=5.0.
-
-    Use for: Central field tests, euclidean distance tests.
-    """
-    x = np.linspace(0, 50, 500)
-    y = np.linspace(0, 50, 500)
-    xx, yy = np.meshgrid(x, y)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(positions, bin_size=5.0)
-
-
-# =============================================================================
 # Spike Field Test Fixtures
 # =============================================================================
 # These fixtures replace the 39 identical Environment.from_samples() calls

@@ -101,14 +101,14 @@ def obj():
 def ou_env(ou_10min):
     from neurospatial import Environment
 
-    return Environment.from_samples(ou_10min[1], bin_size=5.0)
+    return Environment.from_samples(ou_10min[1], bin_size=5.0, units="cm")
 
 
 @pytest.fixture(scope="session")
 def ou_2min_env(ou_2min):
     from neurospatial import Environment
 
-    return Environment.from_samples(ou_2min[1], bin_size=5.0)
+    return Environment.from_samples(ou_2min[1], bin_size=5.0, units="cm")
 
 
 @pytest.fixture(scope="session")

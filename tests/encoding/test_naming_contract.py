@@ -21,7 +21,7 @@ def trajectory() -> tuple[
     """A small environment plus times/positions/headings and population spikes."""
     rng = np.random.default_rng(0)
     positions = rng.uniform(10, 90, (800, 2))
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     times = np.linspace(0, 80, 800)
     headings = rng.uniform(-np.pi, np.pi, 800)
     spike_times = [np.sort(rng.uniform(0, 80, n)) for n in (60, 80, 40)]

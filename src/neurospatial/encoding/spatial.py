@@ -649,6 +649,7 @@ def _spatial_summary_frame(
         batch_sparsity,
         batch_spatial_information,
     )
+    from neurospatial.encoding.border import _border_field_minimum
 
     rates = np.atleast_2d(_to_numpy(result._get_rates()))
     occupancy = _to_numpy(result.occupancy)
@@ -682,6 +683,7 @@ def _spatial_summary_frame(
         columns["cell_type"] = labels
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["border_boundary_source"] = boundary_source
+    df.attrs["border_field_minimum"] = _border_field_minimum(result.env)
     if border_unavailable is not None:
         df.attrs["unavailable_metrics"] = {"border_score": border_unavailable}
     df.attrs["method"] = result.method
@@ -1266,54 +1268,49 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     def border_score(
         self,
         threshold: float = 0.3,
-        min_area: float = 0.0,
+        min_area: float | None = None,
         metric: DistanceMetric = "geodesic",
         *,
         boundary_source: BoundarySource = "physical",
     ) -> float:
-        """Border score (boundary proximity tuning).
+        """Border score of Solstad et al. (2008).
 
-        Quantifies how much the cell's firing field is aligned with
-        environmental boundaries (walls). Higher values indicate stronger
-        border cell properties.
+        Compares the largest fraction of one wall covered by one firing field
+        with the firing-rate-weighted mean distance of the fields from the
+        walls. Higher values indicate firing along a wall.
 
         Parameters
         ----------
         threshold : float, default 0.3
-            Fraction of peak firing rate used to segment the field.
-            Bins with firing rate >= threshold * peak are included in field.
-        min_area : float, default 0.0
-            Minimum field area in physical units (e.g., cm²). Fields smaller
-            than this return NaN. Default 0.0 (no filtering). For rat
-            hippocampal data, Solstad et al. (2008) used 200 cm².
+            Fraction of peak firing rate used to segment fields.
+            Bins with firing rate >= threshold * peak are field bins.
+        min_area : float, optional
+            Smallest area of one field, in squared position units (for
+            example cm²). Smaller fields are ignored. The default, None, is
+            the 200 cm² of Solstad et al. (2008) in the environment's units,
+            or at least 9 bins (the BNT/opexebo default) when the units are
+            not a metric length.
         metric : {'geodesic', 'euclidean'}, default 'geodesic'
-            Distance metric for computing distance from field to boundaries.
-            - 'geodesic': Graph shortest path distance (respects obstacles)
-            - 'euclidean': Straight-line distance in physical space
+            Distance from field bins to the nearest wall.
+            - 'geodesic': path through the environment (respects obstacles)
+            - 'euclidean': straight-line distance
 
         boundary_source : {'physical', 'analysis'}, default='physical'
-            Use declared walls, or explicitly request the legacy boundary-bin
-            approximation. Physical mode requires supported wall geometry.
+            The measured arena walls, or explicitly the outline of the
+            retained bins. Physical mode requires measured wall geometry.
 
         Returns
         -------
         float
-            Border score in range [-1, 1].
-            - +1: Perfect border cell (field on boundary)
-            - 0: No boundary preference
-            - -1: Anti-border (field in center)
-            Returns NaN if border score cannot be computed.
+            Border score in range [-1, 1]: near +1 for a thin field along a
+            whole wall, -1 for firing away from every wall. A uniform map
+            scores about 0.5 on a square. NaN if no field reaches the
+            minimum size.
 
         Notes
         -----
-        Uses the Solstad et al. (2008) algorithm:
-
-        1. Segment field at threshold * peak
-        2. Compute boundary coverage (fraction of boundary in field)
-        3. Compute normalized distance from field to boundary
-        4. Border score = (coverage - distance) / (coverage + distance)
-
-        Delegates to ``neurospatial.encoding.border.border_score()``.
+        Delegates to ``neurospatial.encoding.border.border_score()``, which
+        describes the walls, fields and normalization.
 
         References
         ----------
@@ -1332,7 +1329,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> from neurospatial.encoding.spatial import compute_spatial_rate
         >>> rng = np.random.default_rng(0)
         >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
         >>> times = np.linspace(0, 50, 500)
         >>> spike_times = np.sort(rng.uniform(0, 50, 30))
         >>> result = compute_spatial_rate(
@@ -2223,46 +2220,49 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
     def border_scores(
         self,
         threshold: float = 0.3,
-        min_area: float = 0.0,
+        min_area: float | None = None,
         metric: DistanceMetric = "geodesic",
         *,
         boundary_source: BoundarySource = "physical",
     ) -> BatchScoresResult:
-        """Border scores (boundary proximity tuning) for all neurons.
+        """Border scores of Solstad et al. (2008) for all neurons.
 
-        Quantifies how much each neuron's firing field is aligned with
-        environmental boundaries (walls). Higher values indicate stronger
-        border cell properties.
+        Compares the largest fraction of one wall covered by one firing field
+        with the firing-rate-weighted mean distance of the fields from the
+        walls. Higher values indicate firing along a wall.
 
         Parameters
         ----------
         threshold : float, default 0.3
-            Fraction of peak firing rate used to segment the field.
-            Bins with firing rate >= threshold * peak are included in field.
-        min_area : float, default 0.0
-            Minimum field area in physical units (e.g., cm²). Fields smaller
-            than this return NaN. Default 0.0 (no filtering).
+            Fraction of peak firing rate used to segment fields.
+            Bins with firing rate >= threshold * peak are field bins.
+        min_area : float, optional
+            Smallest area of one field, in squared position units (for
+            example cm²). Smaller fields are ignored. The default, None, is
+            the 200 cm² of Solstad et al. (2008) in the environment's units,
+            or at least 9 bins (the BNT/opexebo default) when the units are
+            not a metric length.
         metric : {'geodesic', 'euclidean'}, default 'geodesic'
-            Distance metric for computing distance from field to boundaries.
-            - 'geodesic': Graph shortest path distance (respects obstacles)
-            - 'euclidean': Straight-line distance in physical space
+            Distance from field bins to the nearest wall.
+            - 'geodesic': path through the environment (respects obstacles)
+            - 'euclidean': straight-line distance
 
         boundary_source : {'physical', 'analysis'}, default='physical'
-            Use declared walls, or explicitly request the legacy boundary-bin
-            approximation. Physical mode requires supported wall geometry.
+            The measured arena walls, or explicitly the outline of the
+            retained bins. Physical mode requires measured wall geometry.
 
         Returns
         -------
-        ndarray, shape (n_neurons,)
-            Border scores in range [-1, 1] for each neuron.
-            - +1: Perfect border cell (field on boundary)
-            - 0: No boundary preference
-            - -1: Anti-border (field in center)
-            Returns NaN for neurons where border score cannot be computed.
+        BatchScoresResult
+            Border scores in range [-1, 1] for each neuron (``.scores``):
+            near +1 for a thin field along a whole wall, -1 for firing away
+            from every wall. A uniform map scores about 0.5 on a square. NaN
+            where no field reaches the minimum size.
 
         Notes
         -----
-        Uses the Solstad et al. (2008) algorithm for each neuron.
+        Uses :func:`neurospatial.encoding.border.border_score` for each
+        neuron.
 
         Delegates to ``neurospatial.encoding._metrics.batch_border_scores()``.
 
@@ -2328,8 +2328,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
             Minimum grid score to be classified as a grid cell. Standard
             threshold from Sargolini et al. (2006).
         min_border_score : float or None, default=None
-            Minimum border score to be classified as a border cell. Standard
-            threshold from Solstad et al. (2008).
+            Minimum border score to be classified as a border cell. The
+            default of 0.5 suits rectangular boxes, where a uniform map
+            scores about 0.5; on other shapes the same field scores
+            differently (a circular arena is one wall), so calibrate it there.
         grid_scores : ndarray of shape (n_neurons,), optional
             Precomputed grid scores, one per neuron. When provided, these are
             used directly instead of recomputing via :meth:`grid_scores`. Must
@@ -2383,7 +2385,9 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
 
         - Spatial information: 0.5-1.0 bits/spike (varies by study)
         - Grid score: 0.4-0.5 (Sargolini et al., 2006)
-        - Border score: 0.5-0.6 (Solstad et al., 2008)
+        - Border score: 0.5 on rectangular boxes, where it sits at the score
+          of a uniform map, so the spatial-information gate is what excludes
+          untuned cells. Calibrate it for other arena shapes.
 
         References
         ----------
@@ -2407,7 +2411,7 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         >>> from neurospatial.encoding.spatial import compute_spatial_rates
         >>> rng = np.random.default_rng(0)
         >>> positions = rng.uniform(0, 50, (500, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
         >>> times = np.linspace(0, 50, 500)
         >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
         >>> result = compute_spatial_rates(
