@@ -7,10 +7,11 @@ Tests cover:
 - Nearest-neighbor resampling
 - Diffuse method with smoothing
 - Same vs different resolutions
-- Mass conservation properties
+- Value preservation and bins outside the source
 - Input validation
 """
 
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -502,3 +503,15 @@ class TestResampleFieldOutsideSource:
         result = resample_field(field, src, dst, method="nearest")
 
         np.testing.assert_array_equal(result, field)
+
+    def test_track_without_width_is_refused(self):
+        """A centerline does not say which destination bins lie on the track."""
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0, 0.0))
+        graph.add_node(1, pos=(100.0, 0.0))
+        graph.add_edge(0, 1)
+        src = Environment.from_graph(graph, [(0, 1)], bin_size=5.0)
+        dst = Environment.from_graph(graph, [(0, 1)], bin_size=2.0)
+
+        with pytest.raises(NotImplementedError, match="without track_width"):
+            resample_field(np.ones(src.n_bins), src, dst)
