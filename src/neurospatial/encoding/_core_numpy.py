@@ -319,6 +319,10 @@ def sparsity_single(
         np.zeros_like(occupancy_clean),
     )
 
+    # Sparsity is unchanged by rescaling rates; dividing by the peak keeps
+    # the squared moments from underflowing or overflowing.
+    peak = np.abs(firing_rate_clean).max(initial=0.0)
+    firing_rate_clean = firing_rate_clean / (peak if peak > 0 else 1.0)
     numerator = (occupancy_prob * firing_rate_clean).sum() ** 2
     denominator = (occupancy_prob * firing_rate_clean**2).sum()
     sparsity_value = np.where(
@@ -351,6 +355,10 @@ def sparsity_batch(
     occ_sum = occupancy_clean.sum(axis=1, keepdims=True)
     occ_prob = occupancy_clean / np.where(occ_sum > 0, occ_sum, 1.0)
 
+    # Sparsity is unchanged by rescaling rates; dividing by each neuron's
+    # peak keeps the squared moments from underflowing or overflowing.
+    peak = np.abs(firing_rates_clean).max(axis=1, keepdims=True, initial=0.0)
+    firing_rates_clean = firing_rates_clean / np.where(peak > 0, peak, 1.0)
     numerator = (occ_prob * firing_rates_clean).sum(axis=1) ** 2
     denominator = (occ_prob * firing_rates_clean**2).sum(axis=1)
     sparsity_values = np.where(

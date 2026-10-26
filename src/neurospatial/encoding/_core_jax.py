@@ -440,6 +440,10 @@ def _sparsity_kernel(firing_rate: Array, occupancy: Array) -> Array:
         jnp.zeros_like(occupancy_clean),
     )
 
+    # Sparsity is unchanged by rescaling rates; dividing by the peak keeps
+    # the squared moments from underflowing or overflowing.
+    peak = jnp.max(jnp.abs(firing_rate_clean), initial=0.0)
+    firing_rate_clean = firing_rate_clean / jnp.where(peak > 0, peak, 1.0)
     numerator = jnp.sum(occupancy_prob * firing_rate_clean) ** 2
     denominator = jnp.sum(occupancy_prob * firing_rate_clean**2)
     sparsity_value = jnp.where(

@@ -163,3 +163,15 @@ def test_mutual_information_rejects_rate_map_with_migration_guidance():
         mutual_information([0.0, 100.0], [0.5, 0.5])
     with pytest.raises(ValueError, match="joint position-response histogram"):
         mutual_information([0.0, 100.0])
+
+
+@pytest.mark.parametrize("scale", [1e-200, 1e200])
+def test_sparsity_does_not_depend_on_rate_scale(xp, scale):
+    """Sparsity is a ratio of rate moments, so rescaling rates leaves it unchanged."""
+    rates = np.array([[1.0, 1.0, 1.0, 1.0], [0.0, 1.0, 3.0, 4.0]])
+    occupancy = xp.asarray([1.0, 2.0, 3.0, 4.0])
+    expected = np.asarray(batch_sparsity(xp.asarray(rates), occupancy))
+    scaled = xp.asarray(rates * scale)
+    assert_allclose(batch_sparsity(scaled, occupancy), expected, rtol=1e-12)
+    for row, value in zip(scaled, expected, strict=True):
+        assert_allclose(sparsity(row, occupancy), value, rtol=1e-12)
