@@ -388,6 +388,32 @@ class TestMapProbabilitiesMaxDistance:
         mapped = map_probabilities(fine, coarse, probs)
         assert mapped.sum() == pytest.approx(1.0)
 
+    def test_elongated_coarser_bins_of_the_same_arena_are_accepted(self):
+        """A 10x1 bin holds points 4.5 from its center though centers are 1 apart.
+
+        Each source center lies inside a target bin, so the mapping is valid
+        and every target bin collects its ten source bins.
+        """
+        from neurospatial import Environment
+
+        y_edges = np.arange(0.0, 11.0)
+        fine = Environment.from_grid_mask(
+            np.ones((20, 10), dtype=bool), grid_edges=(np.arange(0.0, 21.0), y_edges)
+        )
+        elongated = Environment.from_grid_mask(
+            np.ones((2, 10), dtype=bool),
+            grid_edges=(np.array([0.0, 10.0, 20.0]), y_edges),
+        )
+        probs = np.full(fine.n_bins, 1.0 / fine.n_bins)
+
+        mapped = map_probabilities(fine, elongated, probs)
+
+        np.testing.assert_allclose(mapped, 10 / fine.n_bins)
+        owner = elongated.bin_at(fine.bin_centers)
+        np.testing.assert_allclose(
+            mapped, np.bincount(owner, probs, minlength=elongated.n_bins)
+        )
+
     def test_misaligned_mass_is_refused_with_the_amount(self, square):
         """Rotating about the origin moves the arena off the target bins.
 

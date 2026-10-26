@@ -210,8 +210,12 @@ class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Prot
 class ProbabilityTargetConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol):
     """Cartesian bins that receive probabilities from their nearest centers.
 
-    ``map_probabilities`` reads ``bin_center_tree`` once, at its boundary.
+    ``map_probabilities`` reads ``bin_center_tree`` once, at its boundary, and
+    ``bin_at`` for source centers farther than one bin spacing from every
+    target center, to tell whether they still lie inside a target bin.
     """
+
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
 
 class ResampleSourceConsumer(CartesianBinsConsumer, CenterTreeConsumer, Protocol):

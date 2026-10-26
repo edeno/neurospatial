@@ -385,10 +385,10 @@ def _check_max_distance(max_distance: object) -> None:
 def _require_mass_within(
     source_probs: NDArray[np.float64],
     nearest_distance: NDArray[np.float64],
-    max_distance: float,
-    default: bool,
+    beyond: NDArray[np.bool_],
+    limit: str,
 ) -> None:
-    """Refuse to move probability mass farther than ``max_distance``.
+    """Refuse to move probability mass that ``beyond`` marks as too far.
 
     Parameters
     ----------
@@ -396,26 +396,22 @@ def _require_mass_within(
     nearest_distance : NDArray[np.float64], shape (n_source_bins,)
         Distance from each transformed source bin center to the nearest
         target bin center.
-    max_distance : float
-    default : bool
-        Whether ``max_distance`` is the default (the target bin spacing).
+    beyond : NDArray[np.bool_], shape (n_source_bins,)
+        Source bins whose transformed center no target bin may receive.
+    limit : str
+        The rule ``beyond`` applied, completing "lies ...".
     """
-    beyond = (nearest_distance > max_distance) & (source_probs > 0)
+    beyond = beyond & (source_probs > 0)
     if not np.any(beyond):
         return
     total = float(source_probs.sum())
     stranded = float(source_probs[beyond].sum())
-    limit = (
-        f"one target bin spacing ({max_distance:.4g})"
-        if default
-        else f"max_distance={max_distance:.4g}"
-    )
     raise ValueError(
         _format_error(
-            f"{stranded / total:.1%} of the source probability "
-            f"({int(beyond.sum())} source bins) lies farther than {limit} from "
-            "every target bin center; the farthest is "
-            f"{float(nearest_distance[beyond].max()):.4g} away.",
+            f"{100 * stranded / total:.3g}% of the source probability "
+            f"({int(beyond.sum())} source bins) lies {limit}; the farthest is "
+            f"{float(nearest_distance[beyond].max()):.4g} from a target bin "
+            "center.",
             why="nearest-bin mapping would pile that mass onto the target's "
             "edge bins, which it never belonged to",
             fix="check the alignment: scale and rotation act about the "
@@ -481,12 +477,13 @@ def map_probabilities(
     max_distance : float or None, default=None
         Farthest a transformed source bin center may be from every target bin
         center while it holds probability, in the target's length units.
-        None uses the target's typical bin spacing (the median distance
-        between neighboring bin centers): inside a regular grid every point is
-        within half a bin diagonal of a center (0.71 spacing in 2D, 0.87 in
-        3D), so a source bin farther than one spacing lies outside the
-        target's bins. ``math.inf`` sends every source bin to its nearest
-        target bin however far away.
+        None accepts a center that lies inside a target bin (``bin_at``), so
+        coarser or elongated target bins of the same arena receive all their
+        mass, or that lies within the target's typical bin spacing (the
+        median distance between neighboring bin centers) of a target center,
+        so a small unvisited hole in the target does not refuse the map.
+        ``math.inf`` sends every source bin to its nearest target bin however
+        far away.
 
     Returns
     -------
@@ -501,8 +498,9 @@ def map_probabilities(
         If `source_probs` has incorrect shape or NaN, infinite or negative
         values; if dims mismatch; if `mode` is unknown; if `n_neighbors`,
         `eps` or `max_distance` is invalid; or if source bins holding
-        probability lie farther than `max_distance` from every target bin
-        center (the message reports how much mass).
+        probability lie beyond `max_distance` (by default, outside every
+        target bin and farther than one bin spacing from its centers; the
+        message reports how much mass).
     TypeError
         If `max_distance` is not a number or None.
     CartesianOnlyError
@@ -571,7 +569,7 @@ def map_probabilities(
     ... )  # doctest: +ELLIPSIS
     Traceback (most recent call last):
     ...
-    ValueError: ...% of the source probability ... lies farther than one target bin spacing (5) from every target bin center; ...
+    ValueError: ...% of the source probability ... lies outside every target bin and farther than one target bin spacing (5) from every target bin center; ...
 
     """
     source_probs = _validated_probabilities(
@@ -620,12 +618,24 @@ def map_probabilities(
     # silent all-zero map.
     nearest_distance, nearest = tree.query(src_centers, k=1)
     if max_distance is None:
-        limit = _estimate_typical_bin_spacing(tree, target_env.bin_centers)
+        spacing = _estimate_typical_bin_spacing(tree, target_env.bin_centers)
+        beyond = nearest_distance > spacing
+        # A center inside a target bin belongs to it however elongated the
+        # bin; only the rest needs the target's containment test.
+        check = beyond & (source_probs > 0)
+        if np.any(check):
+            beyond[check] = target_env.bin_at(src_centers[check]) < 0
+        limit = (
+            "outside every target bin and farther than one target bin "
+            f"spacing ({spacing:.4g}) from every target bin center"
+        )
     else:
-        limit = float(max_distance)
-    _require_mass_within(
-        source_probs, nearest_distance, limit, default=max_distance is None
-    )
+        beyond = nearest_distance > float(max_distance)
+        limit = (
+            f"farther than max_distance={float(max_distance):.4g} from every "
+            "target bin center"
+        )
+    _require_mass_within(source_probs, nearest_distance, beyond, limit)
 
     # Perform the requested mapping
     if mode == "nearest":
