@@ -687,38 +687,28 @@ class TestComputeViewRateResultMethods:
 class TestComputeViewRateMinOccupancy:
     """Test min_occupancy parameter."""
 
-    def test_min_occupancy_sets_low_occupancy_to_nan(
+    @pytest.mark.parametrize("method", ["binned", "diffusion_kde", "gaussian_kde"])
+    def test_nan_exactly_where_view_occupancy_is_below_min_occupancy(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
+        method: str,
     ) -> None:
-        """Bins with occupancy below min_occupancy should have NaN firing rate."""
+        """min_occupancy is seconds of viewing per bin: below it, unmeasured."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
-        result_high = compute_view_rate(
-            simple_env,
-            spike_times,
-            times,
-            positions,
-            headings,
-            min_occupancy=1.0,
-            boundary_source="analysis",  # High threshold
+        args = (simple_env, spike_times, times, positions, headings)
+        settings = {"method": method, "boundary_source": "analysis"}
+        occupancy = np.asarray(compute_view_rate(*args, **settings).occupancy)
+        threshold = float(np.median(occupancy[occupancy > 0]))
+        result = compute_view_rate(*args, min_occupancy=threshold, **settings)
+        unsupported = (occupancy == 0) | (occupancy < threshold)
+        assert unsupported.any() and not unsupported.all()
+        np.testing.assert_array_equal(
+            np.isnan(np.asarray(result.firing_rate)), unsupported
         )
-        result_low = compute_view_rate(
-            simple_env,
-            spike_times,
-            times,
-            positions,
-            headings,
-            min_occupancy=0.0,
-            boundary_source="analysis",  # No threshold
-        )
-        # High threshold should have more NaNs
-        high_nan_count = np.sum(np.isnan(np.asarray(result_high.firing_rate)))
-        low_nan_count = np.sum(np.isnan(np.asarray(result_low.firing_rate)))
-        assert high_nan_count >= low_nan_count
 
     def test_default_min_occupancy_is_zero(
         self,
@@ -1848,60 +1838,31 @@ class TestComputeViewRatesGazeOffsets:
 
 
 class TestComputeViewRateNaNHandling:
-    """NaN positions/headings are treated as missing data, not errors.
-
-    Per the compute_view_rate docstring contract, NaN samples (tracking
-    dropouts) are excluded rather than raising or corrupting the map.
-    """
-
-    @pytest.fixture(scope="class")
-    def session(self):
-        from neurospatial.behavior import heading_from_velocity
-        from neurospatial.simulation import (
-            generate_poisson_spikes,
-            simulate_trajectory_ou,
-        )
-
-        samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
-        env = Environment.from_samples(samples, bin_size=2.0)
-        env = env.with_metadata(units="cm")
-        positions, times = simulate_trajectory_ou(
-            env, duration=400.0, speed_units="cm", seed=42
-        )
-        headings = heading_from_velocity(times, positions, min_speed=2.0)
-        rng = np.random.default_rng(3)
-        rates = 5.0 + 5.0 * rng.random(len(times))
-        spike_times = generate_poisson_spikes(rates, times, seed=7)
-        return env, spike_times, times, positions, headings
+    """NaN positions/headings are missing samples: dropped, not errors."""
 
     @pytest.mark.parametrize("nan_field", ["positions", "headings"])
-    def test_nan_inputs_excluded_not_raised(self, session, nan_field):
+    def test_nan_samples_drop_exactly_their_intervals(
+        self, ou_2min, ou_2min_env, noise_trains, nan_field
+    ):
         from neurospatial.encoding.view import compute_view_rate
 
-        env, spike_times, times, positions, headings = session
-        rng = np.random.default_rng(5)
-        drop_idx = rng.choice(len(times), size=len(times) // 10, replace=False)
-        positions_in = positions.copy()
-        headings_in = headings.copy()
-        if nan_field == "positions":
-            positions_in[drop_idx] = np.nan
-        else:
-            headings_in[drop_idx] = np.nan
-
+        times, positions, headings = ou_2min
+        drop = np.random.default_rng(5).choice(len(times), len(times) // 10, False)
+        data = {"positions": positions.copy(), "headings": headings.copy()}
+        data[nan_field][drop] = np.nan
+        # Every observed gaze ends on the edge of the binned area.
         result = compute_view_rate(
-            env,
-            spike_times,
+            ou_2min_env,
+            noise_trains(120)[0],
             times,
-            positions_in,
-            headings_in,
-            view_distance=10.0,
-            gaze_model="fixed_distance",
+            data["positions"],
+            data["headings"],
             method="binned",
             boundary_source="analysis",
         )
-
-        # Did not raise; produced a usable (not all-NaN) map with a finite peak.
-        assert not np.isnan(result.firing_rate).all()
+        kept = np.ones(len(times) - 1, dtype=bool)
+        kept[drop[drop < len(times) - 1]] = False
+        assert np.sum(result.occupancy) == pytest.approx(np.diff(times)[kept].sum())
         assert np.isfinite(np.nanmax(result.firing_rate))
 
 

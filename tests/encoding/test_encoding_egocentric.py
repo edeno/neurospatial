@@ -1774,13 +1774,13 @@ class TestObjectVectorRatesResultSummaryTable:
         df = result.summary_table()
         assert len(df) == 5  # batch_firing_rates has 5 neurons
 
-    def test_summary_table_has_unit_id_column(
+    def test_summary_table_columns_in_order(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() should be indexed by unit_id."""
+        """Peak, preferred vector, then classification last."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -1792,101 +1792,13 @@ class TestObjectVectorRatesResultSummaryTable:
 
         df = result.summary_table()
         assert df.index.name == "unit_id"
-
-    def test_summary_table_has_preferred_distance_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have preferred_distance column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-        )
-
-        df = result.summary_table()
-        assert "preferred_distance" in df.columns
-
-    def test_summary_table_has_preferred_direction_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have preferred_direction column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-        )
-
-        df = result.summary_table()
-        assert "preferred_direction" in df.columns
-
-    def test_summary_table_has_preferred_direction_deg_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have preferred_direction_deg column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-        )
-
-        df = result.summary_table()
-        assert "preferred_direction_deg" in df.columns
-
-    def test_summary_table_has_peak_rate_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have peak_rate column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-        )
-
-        df = result.summary_table()
-        assert "peak_rate" in df.columns
-
-    def test_summary_table_has_is_ovc_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have is_object_vector_cell column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-        )
-
-        df = result.summary_table()
-        assert "is_object_vector_cell" in df.columns
+        assert list(df.columns) == [
+            "peak_rate",
+            "preferred_distance",
+            "preferred_direction_deg",
+            "preferred_direction",
+            "is_object_vector_cell",
+        ]
 
     def test_summary_table_default_unit_ids(
         self,

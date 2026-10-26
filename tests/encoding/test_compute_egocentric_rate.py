@@ -976,44 +976,28 @@ class TestComputeObjectVectorRateResultMethods:
 class TestComputeEgocentricRateMinOccupancy:
     """Test min_occupancy parameter."""
 
-    def test_min_occupancy_threshold(
+    @pytest.mark.parametrize("method", ["binned", "diffusion_kde", "gaussian_kde"])
+    def test_nan_exactly_where_occupancy_is_below_min_occupancy(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
+        method: str,
     ) -> None:
-        """Higher min_occupancy should produce more NaN bins."""
+        """min_occupancy is seconds per bin: below it the rate is unmeasured."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
-
-        # Compute with high min_occupancy threshold
-        result_high = compute_egocentric_rate(
-            None,
-            spike_times,
-            times,
-            positions,
-            headings,
-            object_positions,
-            min_occupancy=5.0,  # High threshold,
-            distance_range=(0.0, 50.0),
+        settings = {"distance_range": (0.0, 50.0), "method": method, "bandwidth": 5.0}
+        args = (None, spike_times, times, positions, headings, object_positions)
+        occupancy = np.asarray(compute_egocentric_rate(*args, **settings).occupancy)
+        threshold = float(np.median(occupancy[occupancy > 0]))
+        result = compute_egocentric_rate(*args, min_occupancy=threshold, **settings)
+        unsupported = (occupancy == 0) | (occupancy < threshold)
+        assert unsupported.any() and not unsupported.all()
+        np.testing.assert_array_equal(
+            np.isnan(np.asarray(result.firing_rate)), unsupported
         )
-        # Compute with no threshold
-        result_low = compute_egocentric_rate(
-            None,
-            spike_times,
-            times,
-            positions,
-            headings,
-            object_positions,
-            min_occupancy=0.0,  # No threshold,
-            distance_range=(0.0, 50.0),
-        )
-
-        # High threshold should have more NaNs (or equal)
-        high_nan_count = np.sum(np.isnan(np.asarray(result_high.firing_rate)))
-        low_nan_count = np.sum(np.isnan(np.asarray(result_low.firing_rate)))
-        assert high_nan_count >= low_nan_count
 
     def test_default_min_occupancy_zero(
         self,
@@ -1258,79 +1242,66 @@ class TestEgocentricRateConvention:
 
 
 class TestEgocentricRateNaNHandling:
-    """NaN positions/headings are treated as missing data, not errors.
-
-    Per the compute_egocentric_rate docstring contract, NaN samples (tracking
-    dropouts) are excluded rather than raising or corrupting the map.
-    """
-
-    @pytest.fixture(scope="class")
-    def session(self):
-        from neurospatial import Environment
-        from neurospatial.behavior import heading_from_velocity
-        from neurospatial.simulation import (
-            generate_poisson_spikes,
-            simulate_trajectory_ou,
-        )
-        from neurospatial.simulation.models.object_vector_cells import (
-            ObjectVectorCellModel,
-        )
-
-        samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
-        env = Environment.from_samples(samples, bin_size=2.0)
-        env = env.with_metadata(units="cm")
-        positions, times = simulate_trajectory_ou(
-            env, duration=400.0, speed_units="cm", seed=42
-        )
-        # The cell fires on the movement direction at every sample; the
-        # analysis sees a heading only where the animal moves at >= 2 cm/s.
-        movement = heading_from_velocity(times, positions)
-        headings = heading_from_velocity(times, positions, min_speed=2.0)
-        object_positions = np.array([[20.0, 20.0]])
-        model = ObjectVectorCellModel(
-            direction_frame="egocentric",
-            env=env,
-            object_positions=object_positions,
-            preferred_distance=10.0,
-            distance_width=4.0,
-            preferred_direction=0.0,
-            direction_kappa=4.0,
-            max_rate=25.0,
-            baseline_rate=0.1,
-            metric="euclidean",
-        )
-        spike_times = generate_poisson_spikes(
-            model.firing_rate(positions, headings=movement), times, seed=7
-        )
-        return env, spike_times, times, positions, headings, object_positions
+    """NaN positions/headings are missing samples: dropped, not errors."""
 
     @pytest.mark.parametrize("nan_field", ["positions", "headings"])
-    def test_nan_inputs_excluded_not_raised(self, session, nan_field):
+    def test_nan_samples_drop_exactly_their_intervals(
+        self, ou_2min, ou_2min_env, noise_trains, nan_field
+    ):
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
-        env, spike_times, times, positions, headings, object_positions = session
-        rng = np.random.default_rng(5)
-        drop_idx = rng.choice(len(times), size=len(times) // 10, replace=False)
-        positions_in = positions.copy()
-        headings_in = headings.copy()
-        if nan_field == "positions":
-            positions_in[drop_idx] = np.nan
-        else:
-            headings_in[drop_idx] = np.nan
-
+        times, positions, headings = ou_2min
+        # Every sample of the 100 cm box is within 80 cm of its center.
+        settings = {"distance_range": (0.0, 80.0), "metric": "euclidean"}
+        obj = np.array([[50.0, 50.0]])
+        drop = np.random.default_rng(5).choice(len(times), len(times) // 10, False)
+        data = {"positions": positions.copy(), "headings": headings.copy()}
+        data[nan_field][drop] = np.nan
+        spikes = noise_trains(120)[0]
         result = compute_egocentric_rate(
-            env,
-            spike_times,
+            ou_2min_env,
+            spikes,
             times,
-            positions_in,
-            headings_in,
-            object_positions,
-            metric="euclidean",
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            data["positions"],
+            data["headings"],
+            obj,
+            **settings,
         )
-
-        # Did not raise; produced a usable (not all-NaN) map with a finite peak.
-        assert not np.isnan(result.firing_rate).all()
+        kept = np.ones(len(times) - 1, dtype=bool)
+        kept[drop[drop < len(times) - 1]] = False
+        assert np.sum(result.occupancy) == pytest.approx(np.diff(times)[kept].sum())
         assert np.isfinite(np.nanmax(result.firing_rate))
+
+
+@pytest.mark.parametrize(
+    ("side", "bearing"), [("left", np.pi / 2), ("right", -np.pi / 2)]
+)
+def test_an_object_on_the_left_is_at_plus_pi_over_2(side, bearing):
+    """Egocentric bearing: 0 ahead, +pi/2 left, -pi/2 right.
+
+    The expected bearing is computed here from first principles, the
+    direction to the object minus the heading, independently of
+    ``compute_egocentric_bearing`` and the simulation models.
+    """
+    from neurospatial.encoding.egocentric import compute_egocentric_rate
+    from neurospatial.simulation import generate_poisson_spikes
+
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 300, 1 / 30)
+    positions = rng.uniform(0, 100, (len(times), 2))
+    headings = rng.uniform(-np.pi, np.pi, len(times))
+    obj = np.array([[50.0, 50.0]])
+    delta = obj - positions
+    to_object = np.arctan2(delta[:, 1], delta[:, 0]) - headings
+    distance = np.hypot(delta[:, 0], delta[:, 1])
+    rate = 0.2 + 20 * np.exp(2 * (np.cos(to_object - bearing) - 1)) * np.exp(
+        -0.5 * ((distance - 20) / 5) ** 2
+    )
+    spikes = generate_poisson_spikes(rate, times, seed=1)
+
+    result = compute_egocentric_rate(
+        None, spikes, times, positions, headings, obj, distance_range=(0.0, 50.0)
+    )
+    error = np.angle(np.exp(1j * (result.preferred_direction() - bearing)))
+    assert abs(error) <= np.pi / 12 + 1e-12, side  # within one 30 degree bin
+    assert 15.0 <= result.preferred_distance() <= 25.0
