@@ -89,8 +89,8 @@ def geodesic_distance_matrix(
     Raises
     ------
     ValueError
-        If the nodes of ``G`` are not exactly ``0 .. n_bins - 1``, or an edge
-        lacks the ``weight`` attribute.
+        If ``G`` is directed or a multigraph, its nodes are not exactly
+        ``0 .. n_bins - 1``, or an edge lacks the ``weight`` attribute.
 
     Notes
     -----
@@ -201,15 +201,29 @@ def _raise_missing_nodes(missing: list[int], operation: str) -> NoReturn:
 
 
 def _require_bin_graph(G: nx.Graph, operation: str) -> int:
-    """Refuse a graph whose nodes are not exactly the bins ``0 .. n - 1``.
+    """Refuse a graph that is not an undirected simple graph of bins ``0 .. n - 1``.
 
-    Distance arrays are indexed by bin, so row ``i`` must be node ``i``.
+    Distance arrays are indexed by bin, so row ``i`` must be node ``i``; each
+    edge is one connection between two bins, with one length.
 
     Returns
     -------
     int
         The number of bins, ``G.number_of_nodes()``.
     """
+    if G.is_directed() or G.is_multigraph():
+        raise ValueError(
+            _format_error(
+                f"{operation}: the graph must be an undirected simple nx.Graph, "
+                f"got {type(G).__name__}.",
+                why="bin distances are undirected and each pair of bins has one "
+                "connection length, so reciprocal or parallel edges would be "
+                "counted twice or read inconsistently.",
+                fix="pass env.connectivity, or collapse the graph with "
+                "nx.Graph(G) after keeping one edge (the shortest) per pair of "
+                "bins",
+            )
+        )
     n_bins: int = G.number_of_nodes()
     if all(node in G for node in range(n_bins)):
         return n_bins
@@ -278,7 +292,8 @@ def _bin_adjacency(G: nx.Graph, *, weight: str | None, operation: str) -> csr_ar
     Raises
     ------
     ValueError
-        If the nodes are not ``0 .. n_bins - 1`` or an edge lacks ``weight``.
+        If ``G`` is directed or a multigraph, its nodes are not
+        ``0 .. n_bins - 1``, or an edge lacks ``weight``.
     """
     from scipy.sparse import csr_array
 
@@ -503,8 +518,9 @@ def distance_field(
         If bin_centers shape doesn't match number of graph nodes. Ensure
         bin_centers.shape[0] == G.number_of_nodes().
     ValueError
-        If the nodes of ``G`` are not the bins ``0 .. n_bins - 1``, or
-        (geodesic) an edge lacks the ``weight`` attribute.
+        If ``G`` is directed or a multigraph, its nodes are not the bins
+        ``0 .. n_bins - 1``, or (geodesic) an edge lacks the ``weight``
+        attribute.
     TypeError
         If ``sources`` are not integers.
     networkx.NodeNotFound
@@ -624,8 +640,8 @@ def pairwise_distances(
     Raises
     ------
     ValueError
-        If the nodes of ``G`` are not the bins ``0 .. n_bins - 1``, or an
-        edge lacks the ``weight`` attribute.
+        If ``G`` is directed or a multigraph, its nodes are not the bins
+        ``0 .. n_bins - 1``, or an edge lacks the ``weight`` attribute.
     TypeError
         If ``nodes`` are not integers.
     networkx.NodeNotFound
@@ -729,8 +745,9 @@ def neighbors_within(
         If bin_centers shape doesn't match number of graph nodes. Ensure
         bin_centers.shape[0] == G.number_of_nodes().
     ValueError
-        If the nodes of ``G`` are not the bins ``0 .. n_bins - 1``, or
-        (geodesic) an edge lacks the ``weight`` attribute.
+        If ``G`` is directed or a multigraph, its nodes are not the bins
+        ``0 .. n_bins - 1``, or (geodesic) an edge lacks the ``weight``
+        attribute.
     TypeError
         If ``centers`` are not integers.
     networkx.NodeNotFound
