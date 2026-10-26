@@ -245,9 +245,15 @@ def apply_similarity_transform(
      [ 8. 22.]]
 
     """
-    n_dims = points.shape[1]
+    points = np.asarray(points)
+    rotation_matrix = np.asarray(rotation_matrix)
+    translation_vector = np.asarray(translation_vector)
     if points.ndim != 2:
-        raise ValueError(f"Points must be a 2D array, got shape {points.shape}")
+        raise ValueError(
+            f"Points must be a 2D array of shape (n_points, n_dims), got shape "
+            f"{points.shape}"
+        )
+    n_dims = points.shape[1]
 
     if points.shape[0] == 0:
         return np.zeros((0, n_dims), dtype=points.dtype)

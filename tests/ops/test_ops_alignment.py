@@ -103,6 +103,12 @@ class TestApplySimilarityTransform:
         with pytest.raises(ValueError):
             apply_similarity_transform(points, R, s, t)
 
+    @pytest.mark.parametrize("points", [np.array([1.0, 2.0]), np.array(3.0)])
+    def test_points_must_be_two_dimensional(self, points):
+        """A single point given as a 1-D array raises the documented ValueError."""
+        with pytest.raises(ValueError, match="Points must be a 2D array"):
+            apply_similarity_transform(points, np.eye(2), 1.0, np.zeros(2))
+
     def test_scale_only(self):
         """Test scaling only."""
         points = np.array([[1, 2], [3, 4]])
