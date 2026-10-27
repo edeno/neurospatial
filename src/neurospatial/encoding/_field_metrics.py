@@ -96,6 +96,17 @@ def field_size(
     return float(total_size)
 
 
+def _relative_measures(measures: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Bin measures as fractions of the largest, shape like ``measures``.
+
+    A measure-weighted statistic depends only on the ratios of the measures.
+    Dividing by the largest makes equal bins weigh exactly 1, so on a regular
+    grid the weighted statistic is the unweighted one, bit for bit.
+    """
+    relative: NDArray[np.float64] = measures / np.max(measures, initial=0.0)
+    return relative
+
+
 def rate_map_centroid(
     env: Environment,
     firing_rate: NDArray[np.float64],
@@ -136,22 +147,29 @@ def rate_map_centroid(
 
     Notes
     -----
-    For ``method="euclidean"``, centroid is computed as the firing-rate-weighted
-    mean position:
+    Each field bin is weighted by the firing it holds, its rate times its
+    measure (``env.bin_sizes``: area, length or volume), so the centroid is
+    that of the continuous rate field and does not depend on how finely a
+    region is binned. On a regular grid every bin has the same measure and
+    the weight is the rate alone.
+
+    For ``method="euclidean"``, the centroid is the weighted mean position:
 
     .. math::
 
-        \\mathbf{c} = \\frac{\\sum_i r_i \\mathbf{p}_i}{\\sum_i r_i}
+        \\mathbf{c} = \\frac{\\sum_i r_i \\mu_i \\mathbf{p}_i}{\\sum_i r_i \\mu_i}
 
-    where :math:`r_i` is firing rate and :math:`\\mathbf{p}_i` is position
-    of bin :math:`i`.
+    where :math:`r_i` is the firing rate, :math:`\\mu_i` the measure and
+    :math:`\\mathbf{p}_i` the center of bin :math:`i`. A field with no firing
+    returns its geometric centroid, :math:`\\sum_i \\mu_i \\mathbf{p}_i /
+    \\sum_i \\mu_i`.
 
-    For ``method="geodesic"``, the centroid is the bin that minimizes the
+    For ``method="geodesic"``, the centroid is the field bin that minimizes the
     weighted sum of graph distances:
 
     .. math::
 
-        c = \\arg\\min_j \\sum_i r_i \\cdot d_G(i, j)
+        c = \\arg\\min_j \\sum_i r_i \\mu_i \\, d_G(i, j)
 
     where :math:`d_G(i, j)` is the shortest path distance in the environment
     graph between bins :math:`i` and :math:`j`. This approach is preferred
@@ -191,26 +209,29 @@ def rate_map_centroid(
             ),
         )
 
-    # Get positions and rates for field bins
+    # Each field bin holds rate x measure of firing: a bin twice as large
+    # counts twice, so splitting a bin does not move the centroid.
     field_positions = env.bin_centers[field_bins]
-    field_rates = firing_rate[field_bins]
+    measures = _relative_measures(env.bin_sizes[field_bins])
+    field_mass = firing_rate[field_bins] * measures
 
     centroid: NDArray[np.float64]
 
     if method == "euclidean":
-        # Compute weighted centroid in Euclidean space
-        total_rate = np.sum(field_rates)
-        if total_rate == 0:
-            # Unweighted centroid if no firing
-            centroid = field_positions.mean(axis=0)
+        total_mass = np.sum(field_mass)
+        if total_mass == 0:
+            # No firing: the geometric centroid of the field.
+            centroid = np.sum(field_positions * measures[:, None], axis=0) / np.sum(
+                measures
+            )
         else:
             centroid = (
-                np.sum(field_positions * field_rates[:, None], axis=0) / total_rate
+                np.sum(field_positions * field_mass[:, None], axis=0) / total_mass
             )
 
     elif method == "geodesic":
-        # Compute weighted medoid using graph distances
-        # Find bin that minimizes sum of (rate * graph_distance) to all other bins
+        # Weighted medoid: the field bin that minimizes the sum of
+        # (rate x measure x graph distance) to all field bins.
 
         from neurospatial.ops.distance import pairwise_distances
 
@@ -220,7 +241,7 @@ def rate_map_centroid(
         with np.errstate(invalid="ignore"):
             # A zero-rate bin with no path adds 0 * inf = NaN; a NaN cost, like
             # an infinite one, never wins.
-            costs = field_rates @ distances
+            costs = field_mass @ distances
         finite = costs < np.inf
         best = int(np.argmin(np.where(finite, costs, np.inf))) if finite.any() else 0
         centroid = field_positions[best]
