@@ -83,7 +83,7 @@ In simulations, every untuned unit firing at 1 Hz or more had a "field" at
 every recording length from 1 to 20 minutes, and so did interneuron-like units
 with a high, broadly modulated rate, whose field covered the whole track. Field
 count and `has_place_field` do not establish a place cell; use
-`place_cell_significance` for a verdict. Keep cell-type tests and
+`is_place_cell(..., criterion="shuffle")` for a verdict. Keep cell-type tests and
 quality selection separate from map segmentation. To recover the previous
 10 Hz map-mean exclusion, pass `max_mean_rate=10.0` explicitly and inspect
 `fields.excluded_reason`; it remains `"mean_rate_above_threshold"` when the
@@ -1024,8 +1024,10 @@ Every information screen subtracts this bias before it applies its cutoff:
 `is_spatial_view_cell()`. `spatial_information()` itself still returns the
 plug-in value. The expansion behind the bias needs at least as many spikes as
 independent bins. A unit with fewer spikes gets a NaN bias and fails the
-screen with a warning. Record longer, use coarser bins or a larger bandwidth,
-or run the shuffle test for such units.
+screen with a warning. Record longer, or use coarser bins or a larger
+bandwidth. The shuffle tests (`*_significance`) still give such a unit a
+p-value, but the shuffle verdicts apply the same bias-corrected cutoff, so
+they refuse it too.
 
 Measured on 20 independent untuned 0.5 Hz Poisson units with a 30 Hz OU
 trajectory in a 100 x 100 cm arena (trajectory seed 0, spikes seed 1):
@@ -1051,7 +1053,8 @@ refused at 2 minutes (about 18 spikes, fewer than the 46 independent bins).
 Object-vector cells with a 2 Hz peak fired about 70 spikes in 10 minutes,
 fewer than the 150-170 occupied polar bins: the default grid covers the
 whole arena (348 bins in a 1 m box), so a narrower `distance_range` or wider
-bins lower the floor. The shuffle test has no such floor.
+bins lower the floor. The shuffle test's p-value has no such floor; the shuffle
+verdicts, which also need the corrected information, do.
 
 HD's screen combines the rate-weighted mean vector length
 with an occupancy-corrected test of one preferred direction (a score test with
@@ -1062,7 +1065,13 @@ cells under uneven heading sampling, including bursting cells.
 `has_place_field()` preserves field detection. `is_place_cell()` requires
 `criterion="threshold"` (screen) or `"shuffle"` (circular-shift verdict).
 The other four cell predicates default to `criterion="threshold"` and allow
-opt-in `"shuffle"`. Result methods and batch `classify()` offer threshold
+opt-in `"shuffle"`. For place, view and object-vector cells the shuffle
+verdict needs both a significant information test and bias-corrected
+information at or above the screen's cutoff (`min_info=`, the same keyword and
+default in both modes). In 2-minute recordings untuned 0.5 Hz units passed the
+place information test by chance (p = 0.02 and 0.04 against 99 shifts) with
+0.04 bits/spike beyond their bias; the cutoff refuses them, as it refuses them
+a `"place"` label below. Result methods and batch `classify()` offer threshold
 screens; results keep no raw input arrays. Threshold comparisons are inclusive;
 shuffle and tuning-test p-values must be strictly below `alpha`.
 

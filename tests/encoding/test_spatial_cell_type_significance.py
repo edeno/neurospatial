@@ -9,7 +9,6 @@ import pytest
 from neurospatial import Environment
 from neurospatial.encoding import (
     CellTypeSignificanceResult,
-    compute_spatial_rates,
     place_cell_significance,
     spatial_cell_type_significance,
 )
@@ -312,7 +311,14 @@ def test_untuned_p_values_are_uniform_for_every_statistic(box_session):
 
 @pytest.mark.slow
 def test_radial_arm_place_cells_are_not_border_cells():
-    """Narrow arms put every field near a wall; the border test is not fooled."""
+    """Narrow arms put every field near a wall; the border test is not fooled.
+
+    On arms a few bins wide, the maps of circularly shifted spike trains
+    already reach border scores above the screen's fixed cutoff, so a cutoff
+    cannot tell an arm place cell from a border cell. The shuffle compares
+    each unit with that elevated null instead.
+    """
+    from neurospatial.encoding.spatial import PLACE_GRID_BORDER_THRESHOLDS
     from neurospatial.simulation import (
         PlaceCellModel,
         generate_poisson_spikes,
@@ -347,10 +353,6 @@ def test_radial_arm_place_cells_are_not_border_cells():
         )
         for i, center in enumerate(centers)
     ]
-    screen = compute_spatial_rates(env, trains, times, positions).label_cell_types(
-        boundary_source="analysis"
-    )
-    assert np.sum(screen == "border") >= 3
     result = spatial_cell_type_significance(
         env,
         trains,
@@ -360,6 +362,12 @@ def test_radial_arm_place_cells_are_not_border_cells():
         rng=0,
         boundary_source="analysis",
     )
+    null_percentile = result.summary_table()["border_score_null_percentile"]
+    scored = null_percentile.notna()
+    assert scored.sum() >= 10
+    assert (
+        null_percentile[scored] > PLACE_GRID_BORDER_THRESHOLDS["min_border_score"]
+    ).all()
     labels = result.label_cell_types()
     assert not np.any(np.char.find(labels.astype(str), "border") >= 0), labels
     assert np.sum(labels == "place") >= 10

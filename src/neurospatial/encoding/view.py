@@ -81,6 +81,7 @@ neurospatial.ops.visibility : Visibility and gaze computation
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -2335,7 +2336,8 @@ def is_spatial_view_cell(
     criterion : {"threshold", "shuffle"}, default="threshold"
         Screen the observed statistic or test circular-shift significance.
     min_info : float or None, default=None
-        Inclusive screen cutoff; None resolves to the family threshold constant.
+        Inclusive cutoff on bias-corrected information (bits/spike), for both
+        criteria; None resolves to the family threshold constant.
     alpha : float or None, default=None
         P-value level for ``criterion="shuffle"``; None resolves to 0.05.
     n_shuffles : int or None, default=None
@@ -2389,10 +2391,14 @@ def is_spatial_view_cell(
     (``spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
-    Compare p_value < alpha; a significant association alone does not establish
-    cell identity. Results keep no raw arrays or recompute closures.
-    Threshold keywords belong only to the screen; shuffle keywords belong
-    only to the shuffle. Passing a keyword for the other mode raises.
+    ``criterion="shuffle"`` is True when that test has ``p_value < alpha``
+    and the bias-corrected information also reaches ``min_info``: about
+    alpha of untuned units pass the test by chance, with almost no
+    information beyond what an untuned cell shows on the same map. A significant unit with fewer spikes than the map has independent
+    bins has an unknown bias and is not a spatial view cell, with a warning.
+    Results keep no raw arrays or recompute closures. Shuffle keywords
+    belong only to the shuffle; passing one with ``criterion="threshold"``
+    raises.
 
     See Also
     --------
@@ -2417,7 +2423,7 @@ def is_spatial_view_cell(
     check_criterion(criterion, ("threshold", "shuffle"), call="is_spatial_view_cell")
     check_mode_keywords(
         criterion,
-        threshold={"min_info": min_info},
+        threshold={},
         shuffle={
             "n_shuffles": n_shuffles,
             "min_shift": min_shift,
@@ -2455,27 +2461,36 @@ def is_spatial_view_cell(
             backend=backend,
             boundary_source=boundary_source,
         )[label]
-        return shuffle_result.p_value < level
+        if not shuffle_result.p_value < level:
+            return False
     min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-    result = compute_view_rate(
-        env,
-        spike_times,
-        times,
-        positions,
-        headings,
-        gaze_model=gaze_model,
-        view_distance=view_distance,
-        gaze_offsets=gaze_offsets,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=breaks,
-        spike_window=spike_window,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=backend,
-        boundary_source=boundary_source,
-    )
+    with warnings.catch_warnings():
+        if criterion == "shuffle":
+            # The shuffle's observed map is this map; its warnings were shown.
+            warnings.simplefilter("ignore")
+        result = compute_view_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_model=gaze_model,
+            view_distance=view_distance,
+            gaze_offsets=gaze_offsets,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=breaks,
+            spike_window=spike_window,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
+            boundary_source=boundary_source,
+        )
+    if criterion == "shuffle":
+        from neurospatial.encoding._metrics import _beyond_bias
+
+        return _beyond_bias(result, min_info, kind="spatial view")
     return result.is_spatial_view_cell(min_info=min_info)
 
 
@@ -2513,6 +2528,12 @@ def spatial_view_cell_significance(
     counts on the compressed analyzed clock and never enter recording gaps.
     This costs about n_shuffles population-map recomputes. The result's
     is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    A significant test is not a spatial view verdict on its own: a spatial view
+    cell also needs bias-corrected information
+    (``spatial_information() - spatial_information_bias()`` of the rate
+    map with the same settings) at or above the screen's cutoff.
+    ``is_spatial_view_cell(..., criterion="shuffle")`` applies both.
 
     Parameters
     ----------

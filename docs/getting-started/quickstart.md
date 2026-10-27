@@ -99,9 +99,9 @@ the map is a smooth bump over the arena. That is the core loop: **environment +
 spikes + trajectory → firing-rate map you can measure and plot.**
 
 Cell classification requires choosing a criterion: `"threshold"` compares
-spatial information with a cutoff, a fast screen biased upward at low spike
-counts; `"shuffle"` compares information with
-circularly shifted spike trains. Call
+spatial information, minus what an untuned cell shows by chance, with a
+cutoff, a fast screen; `"shuffle"` also requires the information to be
+significant against circularly shifted spike trains. Call
 `is_place_cell(env, spike_times, times, positions, criterion="shuffle", rng=0)`
 for that verdict using the raw arrays. It costs about 1000 map recomputes by
 default. Results offer screens and field detection; they keep no raw arrays.
