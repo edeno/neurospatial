@@ -536,9 +536,10 @@ read-only and survives saving and loading.
 Clipping preserves the name, units, frame, arena and named regions. It does
 not transfer counts, occupancy, rates or fitted decoders. Reassign raw positions
 and events to the new bins and fit again. A parent mapping alone cannot say
-how activity was distributed between split pieces. Splitting bins also changes
-the default equal-per-bin decoding prior; supply an area-weighted prior if the
-scientific assumption is uniform physical density.
+how activity was distributed between split pieces. Unequal piece areas do not
+bias decoding: the default decoding prior is uniform over space (mass
+proportional to `env.bin_sizes`), and the MAP bin and credible region rank
+bins by density, probability per unit area.
 
 Containment and plotting retain the exact cell boundaries and holes. Numerical
 operations such as smoothing, diffusion and spatial derivatives additionally
@@ -661,9 +662,11 @@ Physical mode is the default. It requires measured wall geometry and a
 retained bin at every piece of measured wall; it refuses, saying where, when
 bins stop short of a wall. Supplying `OpenArena` establishes wall locations; it
 does not add bins. Unvisited bins along a wall are missing, not evidence of
-zero firing: coverage is measured on the observed part of each wall, and
-`observed_wall_fraction(env, firing_rate)` reports how much of the walls a rate
-map observes. A valid zero rate near the wall still contributes to a negative
+zero firing, and they are not evidence that a field reaches the wall either:
+as in Solstad et al. (2008), coverage is the fraction of the whole wall, and
+unvisited wall counts as not covered, so missing data can lower a border score
+but never raise it. `observed_wall_fraction(env, firing_rate)` reports how
+much of the walls a rate map observes. A valid zero rate near the wall still contributes to a negative
 score for a field away from the wall.
 
 <!-- docs-test: run -->

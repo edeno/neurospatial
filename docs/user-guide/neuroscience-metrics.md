@@ -242,7 +242,7 @@ ax = plot_population_coverage(env, result, show_field_count=True)
 
 The `PopulationCoverageResult` object contains:
 
-- `coverage_fraction`: Fraction of observed bins covered (0.0-1.0)
+- `coverage_fraction`: Fraction of the observed area covered (0.0-1.0)
 - `uncovered_bins`: Indices of gaps (observed bins outside every field)
 - `uncovered_positions`: Coordinates of gaps
 - `field_count`: Number of place fields per bin
@@ -258,9 +258,9 @@ default `fill_value=None` so these bins stay NaN.
 
 - `place_cell_fraction`: n_place_cells / n_neurons (typical CA1: 0.3-0.5)
 - `fields_per_place_cell`: n_fields / n_place_cells (typical: 1.0-2.0)
-- `mean_redundancy`: Average fields per covered bin (Wilson & McNaughton 1993)
+- `mean_redundancy`: Average number of fields over the covered area (Wilson & McNaughton 1993)
 
-Coverage is the fraction of observed bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
+Coverage is the fraction of the observed area (length on a track) inside at least one place field. Each bin counts by its size, so the answer does not depend on how the environment was binned; on a regular grid it is the fraction of observed bins. High coverage (>0.8) indicates the population represents most of the environment.
 
 ### Field Density Map
 
@@ -283,15 +283,18 @@ Measure the spatial overlap between two fields using the Jaccard index:
 from neurospatial.encoding import field_overlap
 
 # Compare fields from two cells
-overlap = field_overlap(field_bins_cell1, field_bins_cell2)
+overlap = field_overlap(env, field_bins_cell1, field_bins_cell2)
 # Returns: Jaccard coefficient in [0, 1]
 ```
 
 **Formula:**
 
 $$
-J(A, B) = \frac{|A \cap B|}{|A \cup B|}
+J(A, B) = \frac{\text{area}(A \cap B)}{\text{area}(A \cup B)}
 $$
+
+Each bin counts by its size (`env.bin_sizes`), so on a regular grid this is
+the ratio of bin counts.
 
 **Interpretation:**
 - **0**: No overlap (fields completely disjoint)
@@ -441,12 +444,16 @@ score = border_score(
    one wall that offers each field any half of it, following Høydal et al.
    (2018). Each named wall (`OpenArena(walls={name: line})`) is one wall; one
    that lies on the outline replaces that piece of it.
-3. *Coverage* `cM`: the largest fraction of one wall's observed length covered
-   by one field. Unvisited wall bins are missing, not uncovered;
-   `observed_wall_fraction` reports how much of the walls was observed.
-4. *Distance* `dm`: the firing-rate-weighted mean distance from the bins of all
-   fields to the nearest wall, divided by the radius of the largest circle that
-   fits in the arena (half the shorter side of a rectangle).
+3. *Coverage* `cM`: the largest fraction of one wall's length covered by one
+   field. As in Solstad et al. (2008), the fraction is of the whole wall, and
+   wall whose bins were never visited counts as not covered, so missing data
+   can lower coverage but never raise it. `observed_wall_fraction` reports how
+   much of the walls was observed.
+4. *Distance* `dm`: the mean distance from the bins of all fields to the
+   nearest wall, each bin weighted by its firing rate times its area (so bins
+   clipped at the outline count for their area), divided by the radius of the
+   largest circle that fits in the arena (half the shorter side of a
+   rectangle).
 5. Border score: `(cM - dm) / (cM + dm)`, in [-1, 1].
 
 **Interpretation:**
@@ -455,9 +462,10 @@ score = border_score(
 - **-1**: firing only away from the walls.
 - **0.5 on a square for a uniform map**: one field covers every wall and its
   mean distance is a third of the half side. The usual 0.5 cutoff therefore
-  does not reject untuned cells: in a simulated 20-minute session in a 100 cm
-  box, 46% of untuned units reached it, and on a radial-arm maze 6 of 12 arm
-  place cells did.
+  does not reject untuned cells: in four simulated 20- to 40-minute sessions
+  in a 100 cm box, 8-53% of untuned units reached it (fewer when more of the
+  walls went unvisited), and on a radial-arm maze 6 of 12 arm place cells
+  did.
 
 The 0.5 cutoff is a convention from rectangular boxes. The score of a map that
 fires everywhere depends on the arena: 0.5 in convex arenas, higher in corridor
@@ -474,8 +482,9 @@ each bin center to the wall (a bin against the wall is half a bin away, where
 they count it as one bin away, so their scores are lower: about 0.07 for a
 round field on one wall of a 100 cm box with 2.5 cm bins); fields follow Solstad et al. (2008) rather than their place-field
 detection (0.2 of the peak, at least 9 bins, peak at least 1 Hz); and where
-they look up to 8 bins inward past unvisited wall bins, unvisited pieces of
-wall are left out of the wall's length here.
+a wall bin was never visited, they look up to 8 bins inward for the first
+visited bin and count the wall as covered when that bin is in the field, while
+here unvisited wall is not covered.
 
 **Example: Checking a synthetic boundary field**
 

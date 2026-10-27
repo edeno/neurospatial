@@ -10,10 +10,10 @@ from neurospatial.animation._tracks import (
     _checked_track,
     _project,
     _projection,
-    track_extents,
     track_position,
     track_segments,
 )
+from neurospatial.environment._queries import track_extents
 
 
 def test_projection_preserves_mass_and_missing_support():

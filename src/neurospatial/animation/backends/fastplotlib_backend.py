@@ -32,7 +32,7 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _head_direction_color, _rate_opacity
-from neurospatial.animation._tracks import track_extents, track_segments
+from neurospatial.animation._tracks import track_segments
 from neurospatial.environment._fastplotlib import (
     COLORBAR_WIDTH,
     ColorScale,
@@ -63,6 +63,7 @@ from neurospatial.environment._fastplotlib_compat import (
     update_graphic,
 )
 from neurospatial.environment._fastplotlib_volume import resolve_field_rendering
+from neurospatial.environment._queries import track_extents
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap

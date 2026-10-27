@@ -390,12 +390,20 @@ shape (n_units, n_bins)
             for name, (_, values) in coords.items()
         }
 
-    def _common_means(self, values: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Mean of ``values`` over each unit's common bins; NaN without any."""
-        counts = self.n_common_bins
-        total = np.where(self.common_support, values, 0.0).sum(axis=1)
+    def _mean_rates(
+        self, rates: NDArray[np.float64], occupancy: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
+        """Occupancy-weighted mean rate over each unit's common bins, in Hz.
+
+        ``sum(rate * occupancy) / sum(occupancy)``: the unit's rate over the
+        time spent in its common bins (spikes per second for an unsmoothed
+        binned map), whatever the bins' sizes. NaN without common bins.
+        """
+        support = self.common_support
+        firing = np.where(support, rates * occupancy, 0.0).sum(axis=1)
+        time = support @ occupancy
         with np.errstate(invalid="ignore", divide="ignore"):
-            return np.where(counts > 0, total / np.maximum(counts, 1), np.nan)
+            return np.where(time > 0, firing / time, np.nan)
 
     def summary_table(self) -> pd.DataFrame:
         """One row per unit: the score and what it was computed from.
@@ -407,9 +415,14 @@ shape (n_units, n_bins)
             columns ``correlation``, ``n_common_bins``, ``mean_rate_a``,
             ``mean_rate_b``, ``mean_rate_difference`` (B - A),
             ``common_occupancy_a``, ``common_occupancy_b`` and ``status``.
-            Means are over each unit's common bins, in Hz, and NaN when the
-            unit has none. Occupancies are summed over the common bins, in
-            seconds. ``attrs`` holds ``method``, ``units`` and a copy of
+            ``mean_rate_a`` and ``mean_rate_b`` are each condition's
+            occupancy-weighted mean rate over the unit's common bins,
+            ``sum(rate * occupancy) / sum(occupancy)`` in Hz: the cell's rate
+            during the time that condition spent in those bins (spikes per
+            second for an unsmoothed binned map), independent of bin sizes.
+            ``mean_rate_difference`` is ``mean_rate_b - mean_rate_a``. All
+            three are NaN when the unit has no common bins. Occupancies are
+            summed over the common bins, in seconds. ``attrs`` holds ``method``, ``units`` and a copy of
             ``analysis_settings``; CSV does not preserve them.
 
         Examples
@@ -446,15 +459,15 @@ shape (n_units, n_bins)
         import pandas as pd
 
         support = self.common_support
+        mean_rate_a = self._mean_rates(self.firing_rates_a_on_bins, self.occupancy_a)
+        mean_rate_b = self._mean_rates(self.firing_rates_b_on_bins, self.occupancy_b)
         table = pd.DataFrame(
             {
                 "correlation": self.correlation,
                 "n_common_bins": self.n_common_bins,
-                "mean_rate_a": self._common_means(self.firing_rates_a_on_bins),
-                "mean_rate_b": self._common_means(self.firing_rates_b_on_bins),
-                "mean_rate_difference": self._common_means(
-                    np.where(support, self.rate_difference, 0.0)
-                ),
+                "mean_rate_a": mean_rate_a,
+                "mean_rate_b": mean_rate_b,
+                "mean_rate_difference": mean_rate_b - mean_rate_a,
                 "common_occupancy_a": support @ self.occupancy_a,
                 "common_occupancy_b": support @ self.occupancy_b,
                 "status": self.status,

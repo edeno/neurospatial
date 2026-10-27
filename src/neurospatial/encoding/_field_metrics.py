@@ -96,6 +96,17 @@ def field_size(
     return float(total_size)
 
 
+def _relative_measures(measures: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Bin measures as fractions of the largest, shape like ``measures``.
+
+    A measure-weighted statistic depends only on the ratios of the measures.
+    Dividing by the largest makes equal bins weigh exactly 1, so on a regular
+    grid the weighted statistic is the unweighted one, bit for bit.
+    """
+    relative: NDArray[np.float64] = measures / np.max(measures, initial=0.0)
+    return relative
+
+
 def rate_map_centroid(
     env: Environment,
     firing_rate: NDArray[np.float64],
@@ -136,22 +147,29 @@ def rate_map_centroid(
 
     Notes
     -----
-    For ``method="euclidean"``, centroid is computed as the firing-rate-weighted
-    mean position:
+    Each field bin is weighted by the firing it holds, its rate times its
+    measure (``env.bin_sizes``: area, length or volume), so the centroid is
+    that of the continuous rate field and does not depend on how finely a
+    region is binned. On a regular grid every bin has the same measure and
+    the weight is the rate alone.
+
+    For ``method="euclidean"``, the centroid is the weighted mean position:
 
     .. math::
 
-        \\mathbf{c} = \\frac{\\sum_i r_i \\mathbf{p}_i}{\\sum_i r_i}
+        \\mathbf{c} = \\frac{\\sum_i r_i \\mu_i \\mathbf{p}_i}{\\sum_i r_i \\mu_i}
 
-    where :math:`r_i` is firing rate and :math:`\\mathbf{p}_i` is position
-    of bin :math:`i`.
+    where :math:`r_i` is the firing rate, :math:`\\mu_i` the measure and
+    :math:`\\mathbf{p}_i` the center of bin :math:`i`. A field with no firing
+    returns its geometric centroid, :math:`\\sum_i \\mu_i \\mathbf{p}_i /
+    \\sum_i \\mu_i`.
 
-    For ``method="geodesic"``, the centroid is the bin that minimizes the
+    For ``method="geodesic"``, the centroid is the field bin that minimizes the
     weighted sum of graph distances:
 
     .. math::
 
-        c = \\arg\\min_j \\sum_i r_i \\cdot d_G(i, j)
+        c = \\arg\\min_j \\sum_i r_i \\mu_i \\, d_G(i, j)
 
     where :math:`d_G(i, j)` is the shortest path distance in the environment
     graph between bins :math:`i` and :math:`j`. This approach is preferred
@@ -191,26 +209,29 @@ def rate_map_centroid(
             ),
         )
 
-    # Get positions and rates for field bins
+    # Each field bin holds rate x measure of firing: a bin twice as large
+    # counts twice, so splitting a bin does not move the centroid.
     field_positions = env.bin_centers[field_bins]
-    field_rates = firing_rate[field_bins]
+    measures = _relative_measures(env.bin_sizes[field_bins])
+    field_mass = firing_rate[field_bins] * measures
 
     centroid: NDArray[np.float64]
 
     if method == "euclidean":
-        # Compute weighted centroid in Euclidean space
-        total_rate = np.sum(field_rates)
-        if total_rate == 0:
-            # Unweighted centroid if no firing
-            centroid = field_positions.mean(axis=0)
+        total_mass = np.sum(field_mass)
+        if total_mass == 0:
+            # No firing: the geometric centroid of the field.
+            centroid = np.sum(field_positions * measures[:, None], axis=0) / np.sum(
+                measures
+            )
         else:
             centroid = (
-                np.sum(field_positions * field_rates[:, None], axis=0) / total_rate
+                np.sum(field_positions * field_mass[:, None], axis=0) / total_mass
             )
 
     elif method == "geodesic":
-        # Compute weighted medoid using graph distances
-        # Find bin that minimizes sum of (rate * graph_distance) to all other bins
+        # Weighted medoid: the field bin that minimizes the sum of
+        # (rate x measure x graph distance) to all field bins.
 
         from neurospatial.ops.distance import pairwise_distances
 
@@ -220,7 +241,7 @@ def rate_map_centroid(
         with np.errstate(invalid="ignore"):
             # A zero-rate bin with no path adds 0 * inf = NaN; a NaN cost, like
             # an infinite one, never wins.
-            costs = field_rates @ distances
+            costs = field_mass @ distances
         finite = costs < np.inf
         best = int(np.argmin(np.where(finite, costs, np.inf))) if finite.any() else 0
         centroid = field_positions[best]
@@ -309,6 +330,10 @@ def field_stability(
 
     **Pearson vs Spearman**: Pearson measures linear correlation of firing
     rates. Spearman measures rank correlation and is robust to outliers.
+
+    **Bin weights**: every bin counts once, the per-pixel convention of
+    rate-map correlations. On environments with unequal bins (clipped grids,
+    meshes) small bins therefore weigh as much as large ones.
 
     Examples
     --------
@@ -407,6 +432,9 @@ def rate_map_coherence(
     grid, the neighborhood of a grid built with diagonal connectivity (the
     ``Environment.from_samples`` default). Bins with an unsampled (NaN)
     neighbor are left out rather than treating the missing rate as zero.
+    Every bin enters the correlation once, as each pixel does in Muller &
+    Kubie (1989); on environments with unequal bins small bins therefore
+    weigh as much as large ones.
 
     References
     ----------
@@ -492,6 +520,7 @@ def rate_map_coherence(
 
 
 def in_out_field_ratio(
+    env: Environment,
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
 ) -> float:
@@ -503,6 +532,9 @@ def in_out_field_ratio(
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment of the rate map. Its bin measures
+        (``env.bin_sizes``) weight each bin by the space it covers.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate map (Hz or spikes/second).
     field_bins : NDArray[np.int64], shape (n_field_bins,)
@@ -516,16 +548,26 @@ def in_out_field_ratio(
         - NaN if out-of-field rate is zero and in-field rate is also zero
         - inf if out-of-field rate is zero but in-field rate is positive
 
+    Raises
+    ------
+    ValueError
+        If ``firing_rate`` does not have one rate per bin of ``env``.
+
     Notes
     -----
     **Formula**:
 
     .. math::
 
-        R = \\frac{\\bar{r}_{\\text{in}}}{\\bar{r}_{\\text{out}}}
+        R = \\frac{\\bar{r}_{\\text{in}}}{\\bar{r}_{\\text{out}}}, \\qquad
+        \\bar{r} = \\frac{\\sum_i r_i \\mu_i}{\\sum_i \\mu_i}
 
     where :math:`\\bar{r}_{\\text{in}}` is the mean firing rate inside the
-    field and :math:`\\bar{r}_{\\text{out}}` is the mean rate outside.
+    field and :math:`\\bar{r}_{\\text{out}}` is the mean rate outside. Each
+    mean is over space: bin :math:`i` is weighted by its measure
+    :math:`\\mu_i` (``env.bin_sizes``: area, length or volume), so it does
+    not depend on how finely a region is binned. On a regular grid every bin
+    has the same measure and the means are plain bin averages.
 
     **Interpretation**:
 
@@ -539,14 +581,17 @@ def in_out_field_ratio(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.encoding._field_metrics import in_out_field_ratio
     >>>
+    >>> # A 100 cm track in 1 cm bins
+    >>> env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=1.0)
     >>> # Strong place field (10x ratio)
-    >>> firing_rate = np.ones(100) * 1.0
+    >>> firing_rate = np.ones(env.n_bins)
     >>> firing_rate[40:50] = 10.0  # Field bins have 10 Hz
     >>> field_bins = np.arange(40, 50)
-    >>> ratio = in_out_field_ratio(firing_rate, field_bins)
-    >>> print(f"Ratio: {ratio:.1f}")  # doctest: +SKIP
+    >>> ratio = in_out_field_ratio(env, firing_rate, field_bins)
+    >>> print(f"Ratio: {ratio:.1f}")
     Ratio: 10.0
 
     See Also
@@ -558,6 +603,15 @@ def in_out_field_ratio(
     .. [1] Jung et al. (1994). Comparison of spatial firing characteristics of
            units in dorsal and ventral hippocampus of the rat. J Neurosci 14(12).
     """
+    firing_rate = np.asarray(firing_rate, dtype=np.float64)
+    if firing_rate.shape != (env.n_bins,):
+        raise ValueError(
+            f"firing_rate has shape {firing_rate.shape}, but env has "
+            f"{env.n_bins} bins.\nWhy: each rate is weighted by its bin's "
+            "measure, so the map must be estimated on env.\nFix: pass the "
+            "environment the rate map was computed on (rates.env)."
+        )
+
     # Validate field_bins
     if len(field_bins) == 0:
         return np.nan
@@ -581,9 +635,11 @@ def in_out_field_ratio(
     if not np.any(in_valid) or not np.any(out_valid):
         return np.nan
 
-    # Compute mean rates
-    in_field_rate = np.mean(firing_rate[in_valid])
-    out_field_rate = np.mean(firing_rate[out_valid])
+    # Mean rates over space: each bin weighs its measure, so a large bin
+    # counts as much as the small bins that would tile it.
+    measures = _relative_measures(env.bin_sizes)
+    in_field_rate = np.average(firing_rate[in_valid], weights=measures[in_valid])
+    out_field_rate = np.average(firing_rate[out_valid], weights=measures[out_valid])
 
     # Handle division by zero
     if out_field_rate == 0:
@@ -642,6 +698,10 @@ def field_shape_metrics(
 
     Notes
     -----
+    **Weights**: each field bin is weighted by its rate times its measure
+    (``env.bin_sizes``), the firing it holds, so a large bin counts more than
+    a small one. On a regular grid the weight is the rate alone.
+
     **Eccentricity**: Computed from eigenvalues of the spatial covariance matrix
     of rate-weighted bin positions:
 
@@ -748,10 +808,10 @@ def field_shape_metrics(
         return result
 
     positions_valid = positions[valid_mask]
-    rates_valid = rates[valid_mask]
-
-    # Normalize rates to use as weights
-    rate_weights = rates_valid / np.sum(rates_valid)
+    # Weight each bin by the firing it holds, rate x measure, so the moments
+    # are those of the continuous field rather than of the bin count.
+    mass = rates[valid_mask] * _relative_measures(env.bin_sizes[field_bins][valid_mask])
+    rate_weights = mass / np.sum(mass)
 
     # Compute rate-weighted centroid
     centroid = np.sum(rate_weights[:, np.newaxis] * positions_valid, axis=0)
@@ -1038,9 +1098,10 @@ def compute_field_emd(
         - "euclidean": Straight-line distance between bin centers
         - "geodesic": Shortest path distance through connectivity graph
     normalize : bool, default=True
-        If True, normalize each distribution to sum to 1.0 over the bins
-        finite in both maps before computing EMD. If False, use raw firing
-        rates (their sums over those bins must already be equal).
+        If True, normalize each map's mass (rate x bin measure) to sum to 1.0
+        over the bins finite in both maps before computing EMD. If False,
+        move the mass itself, rate x ``env.bin_sizes`` (e.g. Hz x cm^2);
+        the two maps' totals over those bins must already be equal.
 
     Returns
     -------
@@ -1050,7 +1111,8 @@ def compute_field_emd(
         - With ``normalize=True``: the mean distance the firing-rate mass
           moves, in the environment's distance units (e.g. cm). Moving a
           whole field 10 cm gives 10.0.
-        - With ``normalize=False``: cost in units of (rate x distance).
+        - With ``normalize=False``: cost in units of (rate x bin measure x
+          distance), e.g. Hz x cm^2 x cm in a 2-D environment.
         - NaN if either distribution has zero total mass (with a warning).
         - ``inf`` with ``metric="geodesic"`` when the maps put different
           mass in parts of the environment with no path between them, so
@@ -1080,6 +1142,12 @@ def compute_field_emd(
     Notes
     -----
     The Earth Mover's Distance is computed by solving the optimal transport problem.
+
+    **Mass.** Bin :math:`i` holds :math:`r_i \\mu_i` of the firing, its rate
+    times its measure (``env.bin_sizes``: area, length or volume), so the
+    distance is that between the continuous rate fields and does not depend
+    on how finely a region is binned. On a regular grid every bin has the
+    same measure, and the normalized mass is the normalized rate.
 
     **Missing bins.** Only bins finite in both maps are compared: an
     unsampled (NaN) bin in either map is left out of both, and with
@@ -1175,8 +1243,15 @@ def compute_field_emd(
     common_bins = np.flatnonzero(
         np.isfinite(firing_rate_1) & np.isfinite(firing_rate_2)
     )
-    firing_rate_1 = firing_rate_1[common_bins]
-    firing_rate_2 = firing_rate_2[common_bins]
+    # The mass in each bin is the firing it holds, rate x measure, so a large
+    # bin carries more than a small one at the same rate. Normalized masses
+    # depend only on measure ratios; relative measures keep equal bins'
+    # masses exactly the rates.
+    measures = env.bin_sizes[common_bins]
+    if normalize:
+        measures = _relative_measures(measures)
+    firing_rate_1 = firing_rate_1[common_bins] * measures
+    firing_rate_2 = firing_rate_2[common_bins] * measures
 
     # Normalize distributions if requested
     if normalize:
@@ -1200,9 +1275,9 @@ def compute_field_emd(
         sum2 = np.sum(firing_rate_2)
         if not np.isclose(sum1, sum2, rtol=1e-6):
             raise ValueError(
-                f"Unnormalized distributions must have equal total mass on the "
-                f"bins finite in both maps. Got {sum1:.6f} and {sum2:.6f}. Set "
-                f"normalize=True to auto-normalize."
+                f"Unnormalized distributions must have equal total mass (rate x "
+                f"bin measure) on the bins finite in both maps. Got {sum1:.6f} "
+                f"and {sum2:.6f}. Set normalize=True to auto-normalize."
             )
 
     # Filter to bins with non-zero mass in either distribution

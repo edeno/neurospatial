@@ -54,17 +54,18 @@ class SpatialRatesLike(Protocol):
 def _validate_encoding_environment(
     env: Environment, encoding_models: Any, *, context: str
 ) -> None:
-    """Check a rate result's spatial meaning before extracting its arrays."""
-    source = getattr(encoding_models, "env", None)
-    if source is None or source is env:
-        return
-
+    """Check ``env`` and a rate result's spatial meaning before using either."""
     from neurospatial.encoding import _validate_env_argument
-    from neurospatial.environment import _environment_differences
 
     _validate_env_argument(
         env, context=context, arguments="spike_counts, encoding_models, dt=dt"
     )
+    source = getattr(encoding_models, "env", None)
+    if source is None or source is env:
+        return
+
+    from neurospatial.environment import _environment_differences
+
     bins, topology = _environment_differences(source, env)
     mismatch = bins or topology
     if mismatch is not None:
@@ -200,7 +201,7 @@ def _normalize_block(
     axis: int,
     handle_degenerate: Literal["uniform", "nan", "raise"],
     out: NDArray[np.float64],
-    prior_support: NDArray[np.bool_] | None = None,
+    fill: NDArray[np.float64] | NDArray[np.bool_] | None = None,
 ) -> None:
     """Normalize one time-block of log-likelihood in place into ``out``.
 
@@ -212,10 +213,11 @@ def _normalize_block(
 
     Degenerate-row handling matches the full-array path exactly: rows whose
     per-row max is non-finite (all ``-inf`` zero-rate rows, or rows containing
-    ``NaN``) are filled per ``handle_degenerate``. With ``"uniform"``, a
-    ``prior_support`` mask (bins with positive prior, shape ``(n_bins,)`` or
-    matching ``ll_block``) restricts the uniform fill to supported bins; a row
-    with no supported bins becomes NaN.
+    ``NaN``) are filled per ``handle_degenerate``. With ``"uniform"``, ``fill``
+    (shape ``(n_bins,)`` or matching ``ll_block``) holds non-negative weights
+    normalized into each degenerate row: the positive-prior mask for
+    :func:`normalize_to_posterior`, the prior itself for the decoders. A row
+    whose weights are all zero becomes NaN; ``None`` fills ``1 / n_bins``.
     """
     ll_max = ll_block.max(axis=axis, keepdims=True)
 
@@ -253,18 +255,16 @@ def _normalize_block(
                 )
             )
         elif handle_degenerate == "uniform":
-            if prior_support is None:
+            if fill is None:
                 out[degenerate_mask] = 1.0 / ll_block.shape[axis]
             else:
-                supported = np.broadcast_to(prior_support, ll_block.shape)[
-                    degenerate_mask
-                ]
-                n_supported = supported.sum(axis=-1, keepdims=True)
+                weights = np.broadcast_to(fill, ll_block.shape)[degenerate_mask]
+                total = weights.sum(axis=-1, keepdims=True)
                 out[degenerate_mask] = np.divide(
-                    supported,
-                    n_supported,
-                    out=np.full(supported.shape, np.nan, dtype=out.dtype),
-                    where=n_supported > 0,
+                    weights,
+                    total,
+                    out=np.full(weights.shape, np.nan, dtype=out.dtype),
+                    where=total > 0,
                 )
         elif handle_degenerate == "nan":
             out[degenerate_mask] = np.nan
@@ -292,7 +292,9 @@ def normalize_to_posterior(
     log_likelihood : NDArray[np.float64], shape (n_time_bins, n_bins)
         Log-likelihood from `log_poisson_likelihood` or similar.
     prior : NDArray[np.float64] | None, default=None
-        Prior probability over positions. If None, uses uniform prior.
+        Prior probability mass per bin. If None, every bin gets equal mass
+        (this function has no environment and does not know bin sizes; the
+        decoders default to a prior uniform over space).
         Shape (n_bins,) for stationary prior, (n_time_bins, n_bins) for
         time-varying prior.
 
@@ -399,6 +401,34 @@ def normalize_to_posterior(
     log_poisson_likelihood : Compute log-likelihood for Poisson model
     decode_position : Main entry point combining likelihood and posterior
     """
+    return _normalize_to_posterior(
+        log_likelihood,
+        prior=prior,
+        axis=axis,
+        handle_degenerate=handle_degenerate,
+        dtype=dtype,
+        time_chunk=time_chunk,
+        fill_with_prior=False,
+    )
+
+
+def _normalize_to_posterior(
+    log_likelihood: NDArray[np.float64],
+    *,
+    prior: NDArray[np.float64] | None,
+    axis: int = -1,
+    handle_degenerate: Literal["uniform", "nan", "raise"] = "uniform",
+    dtype: Any = np.float64,
+    time_chunk: int | None = None,
+    fill_with_prior: bool,
+) -> NDArray[np.float64]:
+    """Run :func:`normalize_to_posterior`, choosing the degenerate-row fill.
+
+    ``fill_with_prior=True`` fills a degenerate row with the normalized prior
+    instead of a uniform mass over its positive bins. The decoders use it: a
+    row whose likelihood carries no usable information keeps the prior, which
+    by default is uniform over space rather than uniform per bin.
+    """
     # Validate handle_degenerate parameter
     if handle_degenerate not in ("uniform", "nan", "raise"):
         raise ValueError(
@@ -423,7 +453,7 @@ def normalize_to_posterior(
             f"only supports normalization along the last axis."
         )
     ll = log_likelihood.copy()
-    prior_support = None
+    fill: NDArray[np.float64] | NDArray[np.bool_] | None = None
 
     # Apply prior if provided
     if prior is not None:
@@ -464,9 +494,9 @@ def normalize_to_posterior(
 
         # Keep exact zeros as -inf in log space. Flooring them would let a
         # large enough likelihood select a bin the prior excludes.
-        prior_support = prior_arr > 0
         with np.errstate(divide="ignore"):
             log_prior = np.log(prior_arr)
+        fill = prior_arr if fill_with_prior else prior_arr > 0
 
         # Add log-prior to log-likelihood
         ll = ll + log_prior
@@ -498,7 +528,7 @@ def normalize_to_posterior(
             axis=axis,
             handle_degenerate=handle_degenerate,
             out=out,
-            prior_support=prior_support,
+            fill=fill,
         )
     else:
         for start in range(0, n_time, time_chunk):
@@ -508,10 +538,8 @@ def normalize_to_posterior(
                 axis=axis,
                 handle_degenerate=handle_degenerate,
                 out=out[start:stop],
-                prior_support=(
-                    prior_support[start:stop]
-                    if prior_support is not None and prior_support.ndim == 2
-                    else prior_support
+                fill=(
+                    fill[start:stop] if fill is not None and fill.ndim == 2 else fill
                 ),
             )
 
@@ -557,7 +585,7 @@ def decode_position(
         bin coordinates, coordinate type, units and frame; equivalent copies
         are accepted.
         When passing raw arrays, provide a prior that excludes unsupported bins,
-        such as ``prior=rates.spatial_support.astype(float)``.
+        such as ``prior=rates.spatial_support * env.bin_sizes``.
         A result's environment must match the decoding environment's ordered
         bin coordinates, measures, coordinate system, units, frame and weighted
         connectivity. Equivalent copies are accepted, including with
@@ -593,9 +621,21 @@ def decode_position(
         Time bin width in seconds. Typical values: 0.001-0.1s.
         Note: For typical firing rates, lambda*dt should be in [0, 5].
     prior : NDArray[np.float64] | None, default=None
-        Prior probability over positions. If None, uses uniform prior.
-        Shape (n_bins,) for stationary prior, (n_time_bins, n_bins) for
-        time-varying prior. Normalized internally to sum to 1.0.
+        Prior probability **mass** per bin, normalized internally to sum to
+        1.0. Shape (n_bins,) for stationary prior, (n_time_bins, n_bins) for
+        time-varying prior. Exact zeros exclude bins.
+
+        If None, the prior is uniform over space: each bin's mass is
+        proportional to its length, area or volume (``env.bin_sizes``), so
+        bins of unequal size do not bias the decode toward small bins. On
+        equal bins this is the flat prior. A prior that is uniform over space
+        on a subset of bins is ``mask * env.bin_sizes``. An environment that
+        mixes bins measured by length and by area has no uniform-over-space
+        prior and raises ``ValueError``.
+
+        A time bin whose likelihood is zero in every bin the prior allows
+        (e.g. a spike from a neuron with zero rate everywhere) keeps the
+        prior as its posterior.
     method : {"poisson"}, default="poisson"
         Likelihood model. Currently only Poisson supported.
         Future: "gaussian", "clusterless".
@@ -731,12 +771,14 @@ def decode_position(
     dt = validate_dt(dt)
     time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
 
-    from neurospatial.decoding._support import models_on_support, supported_prior
+    from neurospatial.decoding._support import models_on_support, resolve_prior
 
     _validate_encoding_environment(env, encoding_models, context="decode_position")
     support = getattr(encoding_models, "spatial_support", None)
+    prior = resolve_prior(
+        env, prior, support, len(spike_counts), context="decode_position"
+    )
     if support is not None:
-        prior = supported_prior(prior, support, env.n_bins, len(spike_counts))
         encoding_models = models_on_support(
             cast("SpatialRatesLike", encoding_models).firing_rates, support
         )
@@ -759,8 +801,8 @@ def decode_position(
         log_ll = _poisson_log_likelihood(
             spike_counts, encoding_models, nonfinite_mask, dt
         )
-        posterior = normalize_to_posterior(
-            log_ll, prior=prior, dtype=dtype, time_chunk=None
+        posterior = _normalize_to_posterior(
+            log_ll, prior=prior, dtype=dtype, time_chunk=None, fill_with_prior=True
         )
 
         # Validate output if requested
@@ -940,8 +982,8 @@ def _decode_blockwise(
         log_ll_block = _poisson_log_likelihood(
             spike_counts[start:stop], encoding_models, nonfinite_mask, dt
         )
-        post_block = normalize_to_posterior(
-            log_ll_block, prior=block_prior, dtype=dtype
+        post_block = _normalize_to_posterior(
+            log_ll_block, prior=block_prior, dtype=dtype, fill_with_prior=True
         )
         if validate:
             _validate_output(post_block)
@@ -1203,6 +1245,7 @@ def _poisson_log_likelihood(
 def _reduce_posterior_block(
     posterior_block: NDArray[np.float64],
     bin_centers: NDArray[np.float64],
+    measures: NDArray[np.float64] | None = None,
 ) -> tuple[
     NDArray[np.int64],
     NDArray[np.float64],
@@ -1222,11 +1265,14 @@ def _reduce_posterior_block(
         Posterior probabilities for a block of time bins (rows sum to 1).
     bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
         Environment bin-center coordinates.
+    measures : NDArray[np.float64] or None, shape (n_bins,)
+        Bin measures relative to the largest bin, or ``None`` for equal bins.
 
     Returns
     -------
     map_bin : NDArray[np.int64], shape (n_block,)
-        MAP bin index per time bin (``argmax`` along bins).
+        MAP bin index per time bin: the bin of highest posterior density,
+        ``argmax(posterior / measures)``.
     mean_position : NDArray[np.float64], shape (n_block, n_dims)
         Posterior-mean position per time bin (``posterior @ bin_centers``).
     entropy : NDArray[np.float64], shape (n_block,)
@@ -1245,7 +1291,9 @@ def _reduce_posterior_block(
     # other for now; a future change that fixes one should align both.
     pb = np.asarray(posterior_block, dtype=np.float64)
 
-    map_bin = np.argmax(pb, axis=1).astype(np.int64)
+    from neurospatial.decoding.estimates import _density_mode
+
+    map_bin = _density_mode(pb, measures)
     mean_position = pb @ bin_centers
     peak_prob = pb.max(axis=1)
 
@@ -1275,6 +1323,7 @@ def _decode_and_reduce_block(
     validate: bool,
     dtype: Any,
     mean_basis: NDArray[np.float64] | None = None,
+    measures: NDArray[np.float64] | None = None,
 ) -> tuple[
     NDArray[np.int64],
     NDArray[np.float64],
@@ -1314,6 +1363,9 @@ def _decode_and_reduce_block(
     mean_basis : NDArray[np.float64] or None, shape (n_bins, n_dims)
         Coordinates averaged for the posterior mean; defaults to
         ``bin_centers``. Polar callers pass egocentric-plane coordinates.
+    measures : NDArray[np.float64] or None, shape (n_bins,)
+        Bin measures relative to the largest bin, used for the MAP bin;
+        ``None`` for equal bins.
 
     Returns
     -------
@@ -1331,15 +1383,16 @@ def _decode_and_reduce_block(
     log_ll_block = _poisson_log_likelihood(
         counts_block, encoding_models, nonfinite_mask, dt
     )
-    post_block = normalize_to_posterior(
+    post_block = _normalize_to_posterior(
         log_ll_block,
         prior=prior_block,
         dtype=dtype,
+        fill_with_prior=True,
     )
     if validate:
         _validate_output(post_block)
     block_map_bin, block_mean, block_entropy, block_peak = _reduce_posterior_block(
-        post_block, bin_centers if mean_basis is None else mean_basis
+        post_block, bin_centers if mean_basis is None else mean_basis, measures
     )
     block_map_position = bin_centers[block_map_bin]
     # post_block goes out of scope and is reclaimed before the next block.
@@ -1466,14 +1519,16 @@ def decode_position_summary(
     # raw TypeError (dt="0.1") or silently accepting dt=True as 1.
     dt = validate_dt(dt)
 
-    from neurospatial.decoding._support import models_on_support, supported_prior
+    from neurospatial.decoding._support import models_on_support, resolve_prior
 
     _validate_encoding_environment(
         env, encoding_models, context="decode_position_summary"
     )
     support = getattr(encoding_models, "spatial_support", None)
+    prior = resolve_prior(
+        env, prior, support, len(spike_counts), context="decode_position_summary"
+    )
     if support is not None:
-        prior = supported_prior(prior, support, env.n_bins, len(spike_counts))
         encoding_models = models_on_support(
             cast("SpatialRatesLike", encoding_models).firing_rates, support
         )
@@ -1513,6 +1568,7 @@ def decode_position_summary(
             n_bins=encoding_models.shape[1],
         )
 
+    from neurospatial.decoding._support import relative_bin_measures
     from neurospatial.decoding.estimates import (
         _finish_posterior_mean,
         _posterior_mean_basis,
@@ -1520,6 +1576,7 @@ def decode_position_summary(
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
     mean_basis = _posterior_mean_basis(env)
+    measures = relative_bin_measures(env, context="decode_position_summary")
     n_dims = bin_centers.shape[1]
 
     map_bin = np.empty(n_time, dtype=np.int64)
@@ -1562,6 +1619,7 @@ def decode_position_summary(
             validate=validate,
             dtype=dtype,
             mean_basis=mean_basis,
+            measures=measures,
         )
         map_bin[start:stop] = block_map_bin
         map_position[start:stop] = block_map_position

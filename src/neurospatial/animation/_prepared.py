@@ -25,10 +25,10 @@ from neurospatial.animation._style import _heading_displacement
 from neurospatial.animation._tracks import (
     _project,
     _projection,
-    track_extents,
     track_position,
     track_segments,
 )
+from neurospatial.environment._queries import track_extents
 
 if TYPE_CHECKING:
     from neurospatial.animation.scene import Animation, AnimationField

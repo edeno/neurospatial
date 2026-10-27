@@ -325,7 +325,7 @@ def decode_session(
     An explicit ``prior`` is intersected with this support. Internal finite
     placeholders in excluded bins do not represent measured zero activity.
     For precomputed maps use ``BayesianDecoder.from_rates(rates)``; an explicit
-    array call must carry ``prior=rates.spatial_support.astype(float)``.
+    array call must carry ``prior=rates.spatial_support * env.bin_sizes``.
 
     **Time grid**:
     Each valid run is tiled separately with half-open decode bins. The spike
@@ -389,7 +389,7 @@ def decode_session(
     ...     rates.firing_rates,
     ...     dt=0.1,
     ...     times=centers,
-    ...     prior=rates.spatial_support.astype(float),
+    ...     prior=rates.spatial_support * env.bin_sizes,
     ... )
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
@@ -791,10 +791,10 @@ def _decode_with_models(
         dtype=dtype,
         context=context,
     )
-    from neurospatial.decoding._support import models_on_support, supported_prior
+    from neurospatial.decoding._support import models_on_support, resolve_prior
 
-    decode_kwargs["prior"] = supported_prior(
-        decode_kwargs.get("prior"), spatial_support, env.n_bins, len(bin_left)
+    decode_kwargs["prior"] = resolve_prior(
+        env, decode_kwargs.get("prior"), spatial_support, len(bin_left), context=context
     )
     firing_rates = models_on_support(firing_rates, spatial_support)
     counts = _count_spikes_in_time_bins(trains, bin_left, bin_right)
@@ -1063,9 +1063,13 @@ def _decode_with_models_summary(
         context=context,
     )
 
-    from neurospatial.decoding._support import models_on_support, supported_prior
+    from neurospatial.decoding._support import (
+        models_on_support,
+        relative_bin_measures,
+        resolve_prior,
+    )
 
-    prior = supported_prior(prior, spatial_support, env.n_bins, len(bin_left))
+    prior = resolve_prior(env, prior, spatial_support, len(bin_left), context=context)
     firing_rates = models_on_support(firing_rates, spatial_support)
     n_time = bin_left.size
     bin_centers_time = bin_left + dt / 2.0
@@ -1122,6 +1126,7 @@ def _decode_with_models_summary(
             )
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    measures = relative_bin_measures(env, context=context)
     n_dims = bin_centers.shape[1]
 
     map_bin = np.empty(n_time, dtype=np.int64)
@@ -1161,6 +1166,7 @@ def _decode_with_models_summary(
             nonfinite_mask=nonfinite_mask,
             validate=validate,
             dtype=dtype,
+            measures=measures,
         )
         map_bin[start:stop] = block_map_bin
         map_position[start:stop] = block_map_position

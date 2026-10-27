@@ -67,23 +67,63 @@ class TestTrajectorySimilarity:
         assert 0.4 < similarity < 0.5
 
     def test_trajectory_similarity_correlation(self):
-        """Test correlation-based similarity metric."""
-        # Create 2D environment with deterministic grid
-        x = np.linspace(0, 100, 15)
-        xx, yy = np.meshgrid(x, x)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        # Create two similar trajectories (same sequence, slight variation)
-        trajectory1 = np.array([0, 1, 2, 3, 4, 5], dtype=np.int64)
-        trajectory2 = np.array([0, 1, 2, 3, 4, 5], dtype=np.int64)
+        """Identical runs along a 1-D track correlate perfectly."""
+        env = Environment.from_samples(np.linspace(0, 100, 50)[:, None], bin_size=5.0)
+        trajectory = np.array([0, 1, 2, 3, 4, 5], dtype=np.int64)
 
         similarity = trajectory_similarity(
-            trajectory1, trajectory2, env, method="correlation"
+            trajectory, trajectory, env, method="correlation"
         )
 
-        # Identical sequences should have high correlation
-        assert similarity > 0.9
+        assert similarity == pytest.approx(1.0)
+
+    def test_correlation_refuses_an_open_arena(self):
+        """A 2-D path has no single coordinate to correlate."""
+        x = np.linspace(0, 100, 15)
+        xx, yy = np.meshgrid(x, x)
+        env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+        trajectory = np.array([0, 1, 2, 3, 4, 5], dtype=np.int64)
+
+        with pytest.raises(ValueError, match="method='dtw'"):
+            trajectory_similarity(trajectory, trajectory, env, method="correlation")
+
+    def test_correlation_and_jaccard_ignore_bin_numbering(self):
+        """Renumbering the bins of a track leaves both scores unchanged."""
+        from environment_helpers import renumbered, strips_1d
+
+        env = strips_1d(np.arange(0.0, 101.0, 5.0))
+        order = np.random.default_rng(3).permutation(env.n_bins)
+        new_index = np.argsort(order)  # old bin k is new bin new_index[k]
+        shuffled_env = renumbered(env, order)
+        outbound = np.arange(20)
+        shifted = np.r_[np.arange(10, 20), np.arange(10)]
+        partial = np.arange(5, 12)
+
+        for first, second in ((outbound, shifted), (outbound, partial)):
+            for method in ("correlation", "jaccard"):
+                original = trajectory_similarity(first, second, env, method=method)
+                renumbered_score = trajectory_similarity(
+                    new_index[first], new_index[second], shuffled_env, method=method
+                )
+                assert renumbered_score == pytest.approx(original)
+
+    def test_jaccard_is_the_shared_area(self):
+        """Jaccard weighs bins by length, so splitting a bin does not change it."""
+        from environment_helpers import strips_1d
+
+        coarse = strips_1d([0.0, 2.0, 4.0, 12.0])
+        fine = strips_1d([0.0, 2.0, 4.0, 8.0, 12.0])
+
+        # Both runs cover the 8 cm bin; one also the first, one the second.
+        on_coarse = trajectory_similarity(
+            np.array([0, 2]), np.array([1, 2]), coarse, method="jaccard"
+        )
+        on_fine = trajectory_similarity(
+            np.array([0, 2, 3]), np.array([1, 2, 3]), fine, method="jaccard"
+        )
+
+        assert on_coarse == pytest.approx(8.0 / 12.0)
+        assert on_fine == pytest.approx(on_coarse)
 
     def test_trajectory_similarity_hausdorff(self):
         """Test Hausdorff distance-based similarity."""
@@ -124,7 +164,8 @@ class TestTrajectorySimilarity:
         trajectory1 = np.array([0, 5, 10, 15, 20], dtype=np.int64)
         trajectory2 = np.array([2, 7, 12, 17, 22], dtype=np.int64)
 
-        methods = ["jaccard", "correlation", "hausdorff", "dtw"]
+        # Correlation needs a track; it is checked on one above.
+        methods = ["jaccard", "hausdorff", "dtw"]
 
         for method in methods:
             similarity = trajectory_similarity(

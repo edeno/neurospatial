@@ -147,8 +147,9 @@ Bayesian decoding of position from spike counts.
   (MAP / mean / entropy / peak) without materializing the full
   `(n_time, n_bins)` posterior — for long sessions / thousands of units
 - `decoding_error()`, `median_decoding_error()`: Accuracy metrics
-- `fit_isotonic_trajectory()`, `fit_linear_trajectory()`: Detect
-  trajectory structure in posteriors
+- `fit_isotonic_trajectory()`, `fit_linear_trajectory()`,
+  `detect_trajectory_radon()`: Fit replay trajectories along a track; slopes
+  are in environment units per second
 
 **Key Classes:**
 

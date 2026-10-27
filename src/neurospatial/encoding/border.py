@@ -149,19 +149,25 @@ def border_score(
        coarser), and a rounded or traced corner is a stretch that turns
        faster than the arena's largest inscribed circle by more than that
        resolution can explain.
-    3. *Coverage* ``cM``: the largest fraction of one wall's observed length
-       touched by the bins of one field, over all fields and walls. A piece
-       of wall is observed when a bin that owns it has a finite rate:
-       unvisited wall bins are missing, not uncovered, so they leave the
-       fraction to the observed part of the wall (see
-       :func:`observed_wall_fraction`). The wall a ring offers is any half of
-       it, following Høydal et al. (2018), whose border cells in a circular
-       arena cover about half of it: a field along half of a circular arena
-       covers its whole wall.
-    4. *Distance* ``dm``: the firing-rate-weighted mean distance from the bins
-       of all fields to the nearest wall, divided by the radius of the
-       largest circle that fits in the arena without crossing a wall (half
-       the shorter side of a rectangle).
+    3. *Coverage* ``cM``: the largest fraction of one wall's length touched
+       by the bins of one field, over all fields and walls. As in Solstad et
+       al. (2008), the fraction is of the wall's whole length, and a piece of
+       wall whose bins were never visited counts as not covered: the map has
+       no evidence that the field reaches it. Unvisited wall can therefore
+       lower coverage but never raise it, and the usual 0.5 cutoff keeps its
+       meaning; :func:`observed_wall_fraction` reports how much of the walls
+       a map observes. The wall a ring offers is any half of it, following
+       Høydal et al. (2018), whose border cells in a circular arena cover
+       about half of it: a field along half of a circular arena covers its
+       whole wall.
+    4. *Distance* ``dm``: the mean distance from the bins of all fields to
+       the nearest wall, each bin weighted by its firing rate times its area
+       (``env.bin_sizes``), divided by the radius of the largest circle that
+       fits in the arena without crossing a wall (half the shorter side of a
+       rectangle). With equal bins this is the firing-rate-weighted mean of
+       Solstad et al. (2008); weighting by area keeps it independent of how
+       a field is cut into bins where bins differ in size (bins clipped at an
+       outline, a mesh or polygon cells).
 
     **Interpretation.** A field covering one whole wall with all its firing
     against that wall scores near 1; a field in the middle of the arena
@@ -190,10 +196,12 @@ def border_score(
     artifact of indexing pixels. (2) Fields follow Solstad et al. (2008)
     (``threshold=0.3``, 200 cm²); BNT and opexebo take fields from their
     place-field detection (by default 0.2 of the peak, at least 9 bins and
-    a peak of at least 1 Hz). (3) BNT and opexebo
-    look up to 8 bins inward past unvisited bins along a wall for the first
-    visited bin; here unvisited wall pieces are left out of the wall's
-    length instead. (4) For circular arenas BNT's ``borderScoreCircular``
+    a peak of at least 1 Hz). (3) Where a wall bin
+    was never visited, BNT and opexebo look up to 8 bins inward for the first
+    visited bin and count the wall as covered when that bin is in the field;
+    here an unvisited piece of wall is not covered, so a field whose own
+    stretch of wall was partly unvisited scores lower than in BNT. Both
+    divide by the wall's whole length. (4) For circular arenas BNT's ``borderScoreCircular``
     keeps the whole ring (or user-given angular walls) and scales the
     distance term by a sigmoid of coverage; here the ring's wall is its best
     half, as in Høydal et al. (2018). This implementation also scores
@@ -266,7 +274,7 @@ def border_score(
     fields = _border_fields(env, firing_rate, threshold, min_area)
     if not fields:
         return np.nan
-    return _border_score(fields, firing_rate, metric, geometry)
+    return _border_score(fields, firing_rate, env.bin_sizes, metric, geometry)
 
 
 def observed_wall_fraction(
@@ -279,9 +287,9 @@ def observed_wall_fraction(
     Fraction of the walls' length along which a rate map is observed.
 
     A piece of wall is observed when a bin that owns it (touches it) has a
-    finite firing rate. :func:`border_score` measures how much of a wall a
-    field covers on the observed part of that wall only, because a bin that
-    was never visited is missing, not silent.
+    finite firing rate. :func:`border_score` counts unobserved wall as not
+    covered by any field, so when this fraction is low a border score can
+    understate a field that runs on along wall the animal never visited.
 
     Parameters
     ----------
@@ -295,8 +303,8 @@ def observed_wall_fraction(
     Returns
     -------
     float
-        Observed wall length over total wall length, in [0, 1]. Border
-        scores rest on fewer observations as it drops; at 0 they are NaN.
+        Observed wall length over total wall length, in [0, 1]. At 0,
+        border scores are NaN.
 
     Raises
     ------
@@ -347,8 +355,9 @@ def untuned_border_score(
     A uniform map is one field that covers every wall, so it scores well above
     0 although it carries no spatial information: 0.5 in a convex arena, more
     in a maze of corridors (every bin is near a wall), less on a narrow linear
-    track. It is the baseline a border score should be compared with in this
-    environment.
+    track. Walls without observed bins are not covered, so the score drops
+    when ``support`` leaves parts of the walls out. It is the baseline a
+    border score should be compared with in this environment.
 
     Parameters
     ----------
@@ -538,9 +547,10 @@ def compute_region_coverage(
     Returns
     -------
     coverage : dict[str, float]
-        Dictionary mapping region name to coverage fraction [0, 1]:
-        (number of region bins in field) / (total number of region bins).
-        NaN for a region that contains no bins.
+        Dictionary mapping region name to coverage fraction [0, 1]: the
+        area of the region's bins in the field over the area of all the
+        region's bins (lengths on a track, volumes in 3-D). NaN for a region
+        that contains no bins.
 
     Examples
     --------
@@ -588,9 +598,12 @@ def compute_region_coverage(
     - **Task-relevant regions**: Check if fields overlap with reward zones, start boxes, etc.
     - **Multi-zone analysis**: Quantify field distribution across spatial zones
 
-    Coverage is the fraction of the region's bins that lie in the field,
-    ``|region ∩ field| / |region|``. It is not symmetric: a field larger than
-    the region can still cover it completely.
+    Coverage is the fraction of the region's area that lies in the field,
+    ``area(region ∩ field) / area(region)``, summing each bin's measure
+    (``env.bin_sizes``), so it does not depend on how finely the region is
+    binned. On a regular grid it is the fraction of the region's bins. It is
+    not symmetric: a field larger than the region can still cover it
+    completely.
     """
     # Get region names to analyze
     if regions is None:
@@ -606,7 +619,12 @@ def compute_region_coverage(
                 in_list=True,
             )
 
-    # Compute coverage for each region
+    # Compute coverage for each region, weighting bins by their measures
+    from neurospatial.encoding._field_metrics import _relative_measures
+
+    measures = _relative_measures(env.bin_sizes)
+    in_field = np.zeros(env.n_bins, dtype=bool)
+    in_field[field_bins] = True
     coverage = {}
     for region_name in regions:
         # Get bins in this region
@@ -617,9 +635,9 @@ def compute_region_coverage(
             # No bins to cover: the fraction is undefined, not zero.
             coverage[region_name] = np.nan
         else:
-            # Compute fraction of region bins that are in field
+            region_measures = measures[region_bins]
             coverage[region_name] = float(
-                np.sum(np.isin(region_bins, field_bins)) / len(region_bins)
+                np.sum(region_measures[in_field[region_bins]]) / np.sum(region_measures)
             )
 
     return coverage

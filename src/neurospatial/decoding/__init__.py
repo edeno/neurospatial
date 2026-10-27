@@ -140,7 +140,7 @@ Explicit two-step form (build batch encoding models, then decode)::
 Pass the rate result itself to preserve training support. Extracting
 ``rates.firing_rates`` after zero filling loses the distinction between
 unobserved space and measured silence; a bare array needs an explicit prior
-such as ``prior=rates.spatial_support.astype(float)``.
+such as ``prior=rates.spatial_support * env.bin_sizes``.
 
 See Also
 --------

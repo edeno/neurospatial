@@ -294,6 +294,7 @@ CASES = [
             "place_fields": [[np.array([0])]],
             "is_observed": np.array([True, True]),
             "bin_centers": np.array([[0.0, 0.0], [5.0, 0.0]]),
+            "bin_sizes": np.array([1.0, 1.0]),
         },
     ),
 ]
@@ -376,6 +377,7 @@ def test_place_field_bins_are_owned_and_read_only(how):
         place_fields=[result],
         is_observed=np.ones(3, dtype=bool),
         bin_centers=np.zeros((3, 2)),
+        bin_sizes=np.ones(3),
     )
     if how == "pickle":
         result, coverage = pickle.loads(pickle.dumps((result, coverage)))

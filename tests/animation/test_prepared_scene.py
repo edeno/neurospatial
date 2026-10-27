@@ -23,8 +23,8 @@ from neurospatial.animation._capabilities import require_scene_view
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._sampling import sample_at_times
 from neurospatial.animation._scene_rendering import SceneRenderer
-from neurospatial.animation._tracks import track_extents
 from neurospatial.animation.overlays import VideoData
+from neurospatial.environment._queries import track_extents
 
 
 @pytest.fixture
