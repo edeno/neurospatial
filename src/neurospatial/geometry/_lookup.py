@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely.geometry import Polygon
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arena import EgocentricSurround
@@ -131,42 +132,13 @@ def _snap_outline_slivers(
     rows, cells, source = rows[in_grid], cells[in_grid], source[in_grid]
     if rows.size == 0:
         return
-
-    def centers_of(grid_cells: NDArray[np.intp]) -> NDArray[np.float64]:
-        """Grid-frame coordinates of grid cell centers, shape (..., n_dims)."""
-        return np.stack(
-            [
-                0.5 * (edge[grid_cells[..., axis]] + edge[grid_cells[..., axis] + 1])
-                for axis, edge in enumerate(edges)
-            ],
-            axis=-1,
-        )
-
-    domain = arena.polygonal_domain() if len(edges) == 2 else None
-
-    def in_arena(grid_centers: NDArray[np.float64]) -> NDArray[np.bool_]:
-        # The rule that kept the grid's bins: a cell whose center lies on the
-        # outline was not kept, so it is a sliver too, not a missing bin.
-        flat = to_world(grid_centers.reshape(-1, len(edges)))
-        inside = (
-            shapely.contains_xy(domain, flat[:, 0], flat[:, 1])
-            if domain is not None
-            else arena.contains(flat)
-        )
-        return np.asarray(inside).reshape(grid_centers.shape[:-1])
-
-    sliver = ~in_arena(centers_of(cells))
+    in_arena = _kept_center_test(arena, edges, to_world)
+    sliver = ~in_arena(_cell_centers(edges, cells))
     rows, cells, source = rows[sliver], cells[sliver], source[sliver]
     if rows.size == 0:
         return
-    # Every neighboring cell, (n_rows, n_offsets, n_dims).
-    offsets = np.array(list(np.ndindex(*(3,) * len(shape)))) - 1
-    offsets = offsets[np.any(offsets != 0, axis=1)]
-    neighbors = cells[:, None, :] + offsets[None, :, :]
-    valid = np.all((neighbors >= 0) & (neighbors < shape), axis=2)
-    neighbors = np.clip(neighbors, 0, shape - 1)
-    centers = centers_of(neighbors)
-    valid &= in_arena(centers)
+    neighbors, valid = _sliver_owners(cells, edges, in_arena)
+    centers = _cell_centers(edges, neighbors)
     # Distances in the grid's own frame break ties between equidistant
     # neighbors the same way before and after a rotation or reflection.
     distance = np.linalg.norm(centers - source[:, None, :], axis=2)
@@ -176,6 +148,163 @@ def _snap_outline_slivers(
     owner = neighbors[np.arange(len(rows)), best][found]
     flat = np.ravel_multi_index(tuple(owner.T), cells_locator.shape)
     indices[rows[found]] = cells_locator._active_index(flat)
+
+
+def outline_sliver_regions(binning: Binning, arena: Arena) -> list[tuple[int, Polygon]]:
+    """The arena inside planar grid cells dropped at the outline, by owning bin.
+
+    :func:`locate` gives a position in such a sliver the nearest neighboring
+    bin whose cell center is strictly inside (see
+    :func:`_snap_outline_slivers`). These are the same assignments as
+    polygons: each dropped cell is cut along the perpendicular bisectors
+    between its owners' centers, in the grid's own frame, and each part is
+    kept to the arena. Exact polygon cells that take these parts cover every
+    position the grid's lookup gives a bin.
+
+    Returns
+    -------
+    list of (int, Polygon)
+        Active-bin index and one part, in world coordinates. Empty when the
+        bins are not planar grid cells or the arena has no polygonal domain.
+    """
+    grid = _sliver_grid(binning)
+    domain = arena.polygonal_domain()
+    if grid is None or domain is None or len(grid[0].edges) != 2:
+        return []
+    cells_locator, _, to_world = grid
+    edges = cells_locator.edges
+    shape = np.asarray(cells_locator.shape)
+    in_arena = _kept_center_test(arena, edges, to_world)
+    # Only a cell next to a bin can have an owner.
+    bins = np.argwhere(cells_locator.active_mask)
+    near = (bins[:, None, :] + _neighbor_offsets(2)[None]).reshape(-1, 2)
+    near = np.unique(near[np.all((near >= 0) & (near < shape), axis=1)], axis=0)
+    # A bin whose center rounds onto the outline holds its own cell.
+    dropped = (
+        ~in_arena(_cell_centers(edges, near))
+        & ~cells_locator.active_mask[near[:, 0], near[:, 1]]
+    )
+    slivers = near[dropped]
+    if slivers.size == 0:
+        return []
+    neighbors, valid = _sliver_owners(slivers, edges, in_arena)
+    owner_bins = cells_locator._active_index(
+        np.ravel_multi_index((neighbors[..., 0], neighbors[..., 1]), tuple(shape))
+    )
+    owner_centers = _cell_centers(edges, neighbors)
+    parts: list[tuple[int, Polygon]] = []
+    for cell, owned, owner_bin, centers in zip(
+        slivers, valid, owner_bins, owner_centers, strict=True
+    ):
+        (x0, x1), (y0, y1) = (
+            edge[i : i + 2] for edge, i in zip(edges, cell, strict=True)
+        )
+        rect = shapely.box(x0, y0, x1, y1)
+        reach = 4.0 * float(np.hypot(x1 - x0, y1 - y0))
+        owners = np.flatnonzero(owned)
+        # Each part is cut from what earlier owners left, so the parts share
+        # their computed boundaries: no rounding overlap or gap between them.
+        remaining = rect
+        for position, j in enumerate(owners):
+            nearest = remaining
+            if position < len(owners) - 1:
+                for k in owners[owners != j]:
+                    nearest = nearest.intersection(
+                        _closer_half_plane(centers[j], centers[k], reach)
+                    )
+                remaining = remaining.difference(nearest)
+            if owner_bin[j] < 0 or nearest.is_empty:
+                continue
+            world = shapely.transform(nearest, to_world).intersection(domain)
+            parts.extend(
+                (int(owner_bin[j]), piece)
+                for piece in shapely.get_parts(world)
+                if isinstance(piece, Polygon) and piece.area > 0
+            )
+    return parts
+
+
+def _closer_half_plane(
+    center: NDArray[np.float64], other: NDArray[np.float64], reach: float
+) -> Polygon:
+    """The points within ``reach`` of the bisector that are nearer ``center``."""
+    toward = (other - center) / np.hypot(*(other - center))
+    along = np.array([-toward[1], toward[0]])
+    middle = 0.5 * (center + other)
+    return Polygon(
+        [
+            middle + reach * along,
+            middle - reach * along,
+            middle - reach * (along + toward),
+            middle + reach * (along - toward),
+        ]
+    )
+
+
+def _neighbor_offsets(n_dims: int) -> NDArray[np.intp]:
+    """Offsets to every neighboring grid cell, shape (3**n_dims - 1, n_dims)."""
+    offsets = np.array(list(np.ndindex(*(3,) * n_dims))) - 1
+    return offsets[np.any(offsets != 0, axis=1)]
+
+
+def _cell_centers(
+    edges: tuple[NDArray[np.float64], ...], grid_cells: NDArray[np.intp]
+) -> NDArray[np.float64]:
+    """Grid-frame coordinates of grid cell centers, shape (..., n_dims)."""
+    return np.stack(
+        [
+            0.5 * (edge[grid_cells[..., axis]] + edge[grid_cells[..., axis] + 1])
+            for axis, edge in enumerate(edges)
+        ],
+        axis=-1,
+    )
+
+
+def _kept_center_test(
+    arena: Arena,
+    edges: tuple[NDArray[np.float64], ...],
+    to_world: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+) -> Callable[[NDArray[np.float64]], NDArray[np.bool_]]:
+    """Whether grid-frame cell centers lie strictly inside the arena.
+
+    The rule that kept the grid's bins: a cell whose center lies on the
+    outline was not kept, so it is a sliver too, not a missing bin.
+    """
+    domain = arena.polygonal_domain() if len(edges) == 2 else None
+
+    def in_arena(grid_centers: NDArray[np.float64]) -> NDArray[np.bool_]:
+        flat = to_world(grid_centers.reshape(-1, len(edges)))
+        inside = (
+            shapely.contains_xy(domain, flat[:, 0], flat[:, 1])
+            if domain is not None
+            else arena.contains(flat)
+        )
+        return np.asarray(inside).reshape(grid_centers.shape[:-1])
+
+    return in_arena
+
+
+def _sliver_owners(
+    grid_cells: NDArray[np.intp],
+    edges: tuple[NDArray[np.float64], ...],
+    in_arena: Callable[[NDArray[np.float64]], NDArray[np.bool_]],
+) -> tuple[NDArray[np.intp], NDArray[np.bool_]]:
+    """The neighbors that may own positions in each dropped grid cell.
+
+    Returns
+    -------
+    neighbors : ndarray of intp, shape (n_cells, 3**n_dims - 1, n_dims)
+        Every neighboring cell, clipped to the grid.
+    valid : ndarray of bool, shape (n_cells, 3**n_dims - 1)
+        Whether the neighbor lies in the grid and its center is strictly
+        inside the arena. A valid neighbor removed by ``subset`` is no bin.
+    """
+    shape = np.array([len(edge) - 1 for edge in edges])
+    neighbors = grid_cells[:, None, :] + _neighbor_offsets(len(edges))[None, :, :]
+    valid = np.all((neighbors >= 0) & (neighbors < shape), axis=2)
+    neighbors = np.clip(neighbors, 0, shape - 1)
+    valid &= in_arena(_cell_centers(edges, neighbors))
+    return neighbors, valid
 
 
 def _identity(points: NDArray[np.float64]) -> NDArray[np.float64]:

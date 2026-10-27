@@ -428,6 +428,7 @@ def split_binning(
     walls: Sequence[shapely.Geometry],
     *,
     domain: Polygon | MultiPolygon | None = None,
+    slivers: Sequence[tuple[int, Polygon]] = (),
 ) -> tuple[Binning, ClipMapping]:
     """Split every cell a wall divides into the pieces on each side of it.
 
@@ -437,6 +438,10 @@ def split_binning(
     by :func:`apply_walls`, which closes the paths they block. With
     ``domain``, each cell not inside it is first clipped to it, as
     :func:`clip_binning` does, so that every polygon cell lies in the arena.
+    Each ``(bin, part)`` of ``slivers`` (from
+    :func:`~neurospatial.geometry._lookup.outline_sliver_regions`) joins that
+    bin's cell before the walls cut it, so the pieces still cover the arena
+    a grid dropped at its outline.
 
     Returns
     -------
@@ -456,6 +461,14 @@ def split_binning(
             for cell in source
         )
     )
+    if slivers:
+        owned: dict[int, list[Polygon]] = defaultdict(list)
+        for bin_index, part in slivers:
+            owned[bin_index].append(part)
+        regions = tuple(
+            unary_union([region, *owned[index]]) if index in owned else region
+            for index, region in enumerate(regions)
+        )
     records = [
         (parent, shapely.normalize(piece))
         for parent, region in enumerate(regions)

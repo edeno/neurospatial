@@ -21,6 +21,8 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.binning import KnownFaces
 from neurospatial.geometry._arena_fit import _wall_sides, clip_wall
+from neurospatial.geometry._polygon_cells import clip_mapping_of
+from neurospatial.ops.transforms import rotate_2d
 
 SLANTED = Polygon([(0, 0), (20, 3), (17, 20), (-2, 16)])
 ROUND = Point(10, 10).buffer(9.3, quad_segs=32)
@@ -163,13 +165,59 @@ def test_split_fits_a_wall_in_a_slanted_arena():
     cells = np.asarray(split.binning.shapes.polygons, dtype=object)
     assert np.all(shapely.area(shapely.difference(cells, SLANTED)) < 1e-12)
     # 1 cm squares inside the outline, away from the wall.
-    whole = np.isclose(shapely.area(cells), 1.0) & ~shapely.intersects(cells, wall)
+    whole = (
+        np.isclose(shapely.area(cells), 1.0)
+        & np.isclose(shapely.area(shapely.envelope(cells)), 1.0)
+        & ~shapely.intersects(cells, wall)
+    )
     assert np.count_nonzero(whole) > 250
     plain_index = plain.bin_at(split.bin_centers[whole])
     assert np.all(plain_index >= 0)
     np.testing.assert_allclose(
         split.bin_centers[whole], plain.bin_centers[plain_index], atol=1e-12
     )
+
+
+@pytest.mark.parametrize("outline", [SLANTED, ROUND], ids=["slanted", "round"])
+@pytest.mark.parametrize(
+    "wall",
+    [LineString([(3.3, 6.4), (11.7, 9.6)]), LineString([(-5, 8.3), (25, 9.6)])],
+    ids=["inside", "across"],
+)
+def test_split_bins_cover_the_arena_the_grid_covers(outline, wall):
+    # A grid drops the cells whose centers lie outside a slanted or curved
+    # outline; a position in the arena part of such a cell belongs to the
+    # nearest neighboring bin. The split cells take that arena too, so every
+    # position keeps a bin, in a piece of the bin the grid gives it, and the
+    # cells' areas add up to the arena's.
+    (wall,) = clip_wall(wall, outline)
+    grid = Environment.from_polygon(outline, bin_size=1.0)
+    split = _build(outline, wall, wall_fit="split")
+    points = np.random.default_rng(0).uniform(-2, 21, (40_000, 2))
+    points = points[shapely.contains_xy(outline, *points.T)]
+    grid_bins = grid.bin_at(points)
+    split_bins = split.bin_at(points)
+    assert np.all(grid_bins >= 0)
+    assert np.all(split_bins >= 0)
+    parents = clip_mapping_of(split.binning.locator).parent_bin_indices
+    np.testing.assert_array_equal(parents[split_bins], grid_bins)
+    cells = np.asarray(split.binning.shapes.polygons, dtype=object)
+    assert np.sum(shapely.area(cells)) == pytest.approx(outline.area, rel=1e-12)
+    assert np.unique(parents).size == grid.n_bins
+
+
+def test_split_cells_cover_slivers_after_a_rotation():
+    # The cells keep the arena of dropped grid cells when the environment
+    # moves, as the grid's own lookup does.
+    wall = LineString([(3.3, 6.4), (11.7, 9.6)])
+    split = _build(SLANTED, wall, wall_fit="split")
+    rotated = split.apply_transform(rotate_2d(0.6))
+    points = np.random.default_rng(1).uniform(-2, 21, (20_000, 2))
+    points = points[shapely.contains_xy(SLANTED, *points.T)]
+    np.testing.assert_array_equal(
+        rotated.bin_at(rotate_2d(0.6)(points)), split.bin_at(points)
+    )
+    assert np.all(split.bin_at(points) >= 0)
 
 
 @pytest.mark.parametrize("outline", [SLANTED, ROUND], ids=["slanted", "round"])

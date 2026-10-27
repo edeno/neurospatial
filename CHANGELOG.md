@@ -547,6 +547,15 @@ Results that change:
   removed (van Wijngaarden et al., 2020). Inferred domains (`from_samples`,
   masks) have no physical outline, and wall-based analyses still refuse them
   with a message naming `outline="drop"`.
+- `wall_fit="split"` keeps a bin for every position in the arena. A grid
+  drops the cells whose centers lie outside a slanted or curved outline and
+  gives a position in the arena part of such a cell to the nearest
+  neighboring bin; the split cells left that arena out, so those positions
+  had no bin (1.8% of the area of a non-convex arena with slanted edges on
+  3 cm bins, about 2,500 of 140,000 uniform points). The split cells now
+  take that arena, so every position falls in a piece of the bin the grid
+  gives it and the cells' areas add up to the arena's. Bins along such an
+  outline grow and their centers move toward the outline.
 
 Breaking API changes:
 

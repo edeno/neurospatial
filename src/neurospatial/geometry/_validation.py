@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 import numpy as np
 import shapely
+import shapely.affinity
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 from shapely.geometry import MultiPolygon, Polygon
@@ -367,6 +368,7 @@ def _primitive_geometry(
         polygons = locator.cells.polygons
         parent_clearances = [polygon.minimum_clearance for polygon in source]
         clearances = [polygon.minimum_clearance for polygon in polygons]
+        unbinned: shapely.Geometry | None = None
         for index, polygon in enumerate(polygons):
             parent_index = locator.mapping.parent_bin_indices[index]
             parent_cell = source[parent_index]
@@ -374,9 +376,22 @@ def _primitive_geometry(
                 polygon,
                 reference_clearance=parent_clearances[parent_index],
             )
-            if polygon.difference(parent_cell).area > allowance:
+            beyond = polygon.difference(parent_cell)
+            if beyond.area <= allowance:
+                continue
+            # Splitting at walls gives a cell the arena of the dropped grid
+            # cells next to it (outline_sliver_regions): space no source
+            # cell holds, within one cell of its own.
+            if unbinned is None:
+                unbinned = shapely.unary_union(source)
+            reach = shapely.affinity.scale(parent_cell.envelope, 3.0, 3.0)
+            if (
+                beyond.intersection(unbinned).area > allowance
+                or beyond.difference(reach).area > allowance
+            ):
                 raise ValueError(
-                    f"polygon cell {index} extends outside its source parent."
+                    f"polygon cell {index} extends outside its source parent "
+                    "and the unbinned space next to it."
                 )
         centers = np.array([_representative(polygon) for polygon in polygons])
         areas = np.array([polygon.area for polygon in polygons])
