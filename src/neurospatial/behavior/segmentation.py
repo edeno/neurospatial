@@ -2403,8 +2403,10 @@ def trajectory_similarity(
         Spatial environment containing bin information.
     method : {'jaccard', 'correlation', 'hausdorff', 'dtw'}, optional
         Similarity metric to use:
-        - 'jaccard': Spatial overlap (set intersection / union). Range [0, 1].
-        - 'correlation': Pearson correlation of bin sequences. Range [0, 1].
+        - 'jaccard': Area (or length, or volume) of the visited bins that
+          both trajectories share, over the area either visits. Range [0, 1].
+        - 'correlation': Pearson correlation of the positions along the
+          track. Needs a 1-D environment or a linearized track. Range [0, 1].
         - 'hausdorff': Hausdorff distance between paths, normalized. Range [0, 1].
         - 'dtw': Dynamic time warping distance, normalized. Range [0, 1].
         Default is 'jaccard'.
@@ -2423,6 +2425,9 @@ def trajectory_similarity(
         If a bin index is not ``-1`` or an active bin of ``env``.
     ValueError
         If method is not one of the supported options.
+    ValueError
+        If ``method`` is ``"correlation"`` and ``env`` is neither 1-D nor a
+        linearized track.
     CartesianOnlyError
         If ``method`` is ``"hausdorff"`` or ``"dtw"`` and ``env`` is polar:
         both measure Cartesian distances between bin centers.
@@ -2439,11 +2444,18 @@ def trajectory_similarity(
 
         J(A, B) = \\frac{|A \\cap B|}{|A \\cup B|}
 
-    where A and B are sets of visited bins. Useful for comparing spatial
-    coverage independent of temporal order.
+    where A and B are the regions covered by the visited bins and
+    :math:`|\\cdot|` is their area (``env.bin_sizes``: length in 1-D,
+    volume in 3-D), so the score does not change when a bin is split into
+    pieces. Useful for comparing spatial coverage independent of temporal
+    order.
 
-    **Correlation** measures sequential similarity by computing Pearson
-    correlation between bin index sequences. Sensitive to order and timing.
+    **Correlation** measures sequential similarity by computing the Pearson
+    correlation between the two sequences of positions along the track: the
+    linear position of each visited bin on a linearized track, or its
+    coordinate in a 1-D environment. Sensitive to order and timing. A 2-D
+    or 3-D path has no single coordinate to correlate; use ``'dtw'`` or
+    ``'hausdorff'`` there.
 
     **Hausdorff distance** measures maximum deviation between trajectories:
 
@@ -2478,11 +2490,21 @@ def trajectory_similarity(
     >>> print(f"Jaccard similarity: {similarity:.3f}")  # doctest: +SKIP
     Jaccard similarity: 0.429
 
-    Compare using correlation (sensitive to sequence order):
+    Compare two runs along a linear track using correlation (sensitive to
+    sequence order):
 
-    >>> sim_corr = trajectory_similarity(traj1, traj2, env, method="correlation")
-    >>> print(f"Correlation similarity: {sim_corr:.3f}")  # doctest: +SKIP
-    Correlation similarity: 0.975
+    >>> track = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [100.0, 0.0]],
+    ...     bin_size=5.0,
+    ...     track_width=10.0,
+    ...     units="cm",
+    ... )
+    >>> outbound = track.bin_at(np.c_[np.linspace(0, 99, 20), np.zeros(20)])
+    >>> inbound = outbound[::-1]
+    >>> same = trajectory_similarity(outbound, outbound, track, method="correlation")
+    >>> reverse = trajectory_similarity(outbound, inbound, track, method="correlation")
+    >>> print(f"same run: {same:.2f}, reverse run: {reverse:.2f}")
+    same run: 1.00, reverse run: 0.00
 
     References
     ----------
@@ -2499,6 +2521,16 @@ def trajectory_similarity(
     valid_methods = ["jaccard", "correlation", "hausdorff", "dtw"]
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
+    if method == "correlation":
+        from neurospatial.environment._queries import require_track_extents
+
+        starts, stops = require_track_extents(
+            env,
+            "trajectory_similarity(method='correlation')",
+            alternative="for a 2-D or 3-D path use method='dtw' or "
+            "method='hausdorff', which compare positions in space",
+        )
+        track_position = (starts + stops) / 2
     if method in ("hausdorff", "dtw"):
         require_cartesian(
             env.coordinate_system,
@@ -2543,14 +2575,12 @@ def trajectory_similarity(
         position_bins2 = position_bins2[position_bins2 >= 0]
 
     if method == "jaccard":
-        # Spatial overlap (set-based)
-        set1 = set(position_bins1)
-        set2 = set(position_bins2)
-        intersection = set1 & set2
-        union = set1 | set2
-        if len(union) == 0:
-            return 0.0
-        return len(intersection) / len(union)
+        # Spatial overlap: the area of the shared bins over the area of all
+        # visited bins (both sets hold at least one bin, checked above).
+        sizes = env.bin_sizes
+        shared = np.intersect1d(position_bins1, position_bins2)
+        either = np.union1d(position_bins1, position_bins2)
+        return float(sizes[shared].sum() / sizes[either].sum())
 
     elif method == "correlation":
         # Sequential correlation
@@ -2573,12 +2603,14 @@ def trajectory_similarity(
         if len(shorter) < 2:
             return 1.0 if np.array_equal(shorter, longer_sampled) else 0.0
 
-        # Compute correlation
-        if len(set(shorter)) == 1 or len(set(longer_sampled)) == 1:
+        # Correlate positions along the track, not bin numbers.
+        first = track_position[shorter]
+        second = track_position[longer_sampled]
+        if np.ptp(first) == 0 or np.ptp(second) == 0:
             # Constant sequence - return 1 if identical, 0 otherwise
-            return 1.0 if np.array_equal(shorter, longer_sampled) else 0.0
+            return 1.0 if np.array_equal(first, second) else 0.0
 
-        corr, _ = pearsonr(shorter, longer_sampled)
+        corr, _ = pearsonr(first, second)
         # Map [-1, 1] to [0, 1], clamp negative correlations to 0
         return float(max(0.0, corr))
 
