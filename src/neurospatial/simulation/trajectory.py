@@ -12,6 +12,7 @@ from neurospatial._units import default_speed
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.simulation._lap_routes import LapRouter
+from neurospatial.simulation._walls import Walls
 
 
 def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
@@ -306,7 +307,9 @@ def simulate_trajectory_ou(
                 2 * dt / ((n_dims - 1) * rotational_velocity_coherence_time)
             )
 
-    walls = _Walls.of(env) if n_dims == 2 and boundary_mode != "periodic" else None
+    walls = (
+        Walls.enclosing(env) if n_dims == 2 and boundary_mode != "periodic" else None
+    )
 
     positions = np.zeros((n_steps, n_dims), dtype=np.float64)
     positions[0] = position
@@ -406,110 +409,6 @@ def _move_within_bins(
     if env.contains(proposed[None, :])[0]:
         return proposed, unit
     return position, unit
-
-
-class _Walls:
-    """Wall segments of a 2-D environment, for stepping without crossing them.
-
-    Parameters
-    ----------
-    starts, ends : ndarray of float64, shape (n_segments, 2)
-        Endpoints of every straight wall segment.
-    """
-
-    def __init__(self, starts: NDArray[np.float64], ends: NDArray[np.float64]) -> None:
-        self.starts = starts
-        self.vectors = ends - starts
-        lengths = np.linalg.norm(self.vectors, axis=1)
-        self.normals = np.column_stack([-self.vectors[:, 1], self.vectors[:, 0]])
-        self.normals /= lengths[:, None]
-        self.squared_lengths = lengths**2
-        # Distance the animal can travel before it could reach a wall.
-        self.clearance = 0.0
-
-    @classmethod
-    def of(cls, env: Environment) -> "_Walls | None":
-        """The outline and internal walls of ``env``, or None without geometry."""
-        import shapely
-        from shapely.ops import unary_union
-
-        from neurospatial.geometry import materialize_cells
-
-        arena = env.arena
-        domain = arena.polygonal_domain() if arena.domain_known else None
-        if domain is None:
-            try:
-                domain = unary_union(list(materialize_cells(env.binning)))
-            except ValueError:
-                return None
-        lines = shapely.get_parts(
-            shapely.line_merge(unary_union([domain.boundary, *arena.walls]))
-        )
-        coords = [shapely.get_coordinates(line) for line in lines]
-        starts = np.concatenate([c[:-1] for c in coords])
-        ends = np.concatenate([c[1:] for c in coords])
-        keep = np.any(starts != ends, axis=1)
-        return cls(starts[keep], ends[keep])
-
-    def _distance(self, point: NDArray[np.float64]) -> float:
-        """Distance from ``point`` to the nearest wall."""
-        offset = point - self.starts
-        along = np.clip(
-            np.einsum("ij,ij->i", offset, self.vectors) / self.squared_lengths, 0, 1
-        )
-        nearest = self.starts + along[:, None] * self.vectors
-        return float(np.min(np.linalg.norm(point - nearest, axis=1)))
-
-    def _first_hit(
-        self, position: NDArray[np.float64], step: NDArray[np.float64]
-    ) -> int | None:
-        """The first wall segment the step reaches, or None."""
-        denominator = step[0] * self.vectors[:, 1] - step[1] * self.vectors[:, 0]
-        offset = self.starts - position
-        with np.errstate(divide="ignore", invalid="ignore"):
-            along_step = (
-                offset[:, 0] * self.vectors[:, 1] - offset[:, 1] * self.vectors[:, 0]
-            ) / denominator
-            along_wall = (offset[:, 0] * step[1] - offset[:, 1] * step[0]) / denominator
-        hit = (
-            (denominator != 0)
-            & (along_step > 0)
-            & (along_step <= 1)
-            & (along_wall >= 0)
-            & (along_wall <= 1)
-        )
-        if not np.any(hit):
-            return None
-        candidates = np.flatnonzero(hit)
-        return int(candidates[np.argmin(along_step[candidates])])
-
-    def move(
-        self,
-        position: NDArray[np.float64],
-        step: NDArray[np.float64],
-        unit: NDArray[np.float64],
-        boundary_mode: str,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Take one step without crossing a wall; return position and heading."""
-        length = float(np.linalg.norm(step))
-        if length < self.clearance:
-            self.clearance -= length
-            return position + step, unit
-        for _bounce in range(3):
-            wall = self._first_hit(position, step)
-            if wall is None:
-                moved = position + step
-                self.clearance = self._distance(moved)
-                return moved, unit
-            if boundary_mode == "stop":
-                break
-            # Mirror about the wall: keep the component along it, reverse the
-            # component into it.
-            normal = self.normals[wall]
-            step = step - 2 * (step @ normal) * normal
-            unit = unit - 2 * (unit @ normal) * normal
-        self.clearance = self._distance(position)
-        return position, unit
 
 
 def simulate_trajectory_sinusoidal(
