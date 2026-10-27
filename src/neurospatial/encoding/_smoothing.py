@@ -884,6 +884,53 @@ def _binned_gate(
     return result
 
 
+def _binned_gate_jax(env: Environment, raw_rate: Any, bandwidth: float) -> Any:
+    """JAX version of :func:`_binned_gate` (traceable under ``jit``).
+
+    The masked diffusion average of
+    :func:`~neurospatial.ops._masked_diffusion_average`: ``A(rate * valid) /
+    A(valid)`` with the average-mode operator, NaN where a bin's component has
+    no valid bin or its smoothed weight is at most the resolution floor of the
+    component's largest.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    from neurospatial.ops.diffusion import _DIFFUSE_DENOM_EPS
+
+    geometry = env.get_diffusion_geometry()
+    labels = jnp.asarray(geometry.labels)
+    n_components = geometry.n_components
+    rates = jnp.atleast_2d(raw_rate)  # (n_neurons, n_bins)
+    n_fields = rates.shape[0]
+    valid = ~jnp.isnan(rates.T)  # (n_bins, n_neurons)
+    smoothed = jnp.asarray(
+        env.diffuse(
+            jnp.concatenate(
+                [jnp.where(valid, rates.T, 0.0), valid.astype(rates.dtype)], axis=1
+            ),
+            bandwidth=bandwidth,
+            mode="average",
+            backend="jax",
+        )
+    )
+    numerator, weights = smoothed[:, :n_fields], smoothed[:, n_fields:]
+    has_valid = jax.ops.segment_max(
+        valid.astype(jnp.int32), labels, num_segments=n_components
+    )
+    # The NumPy gate's component maxima start at zero, so match that floor.
+    component_max = jnp.maximum(
+        jax.ops.segment_max(weights, labels, num_segments=n_components), 0.0
+    )
+    support = (has_valid[labels] > 0) & (
+        weights > _resolution_floor(env, bandwidth) * component_max[labels]
+    )
+    averaged = jnp.where(
+        support, numerator / jnp.maximum(weights, _DIFFUSE_DENOM_EPS), jnp.nan
+    ).T
+    return averaged[0] if raw_rate.ndim == 1 else averaged
+
+
 def _diffusion_kde_batch(
     env: Environment,
     spike_counts: NDArray[np.float64],
@@ -1055,7 +1102,7 @@ def _smooth_rate_maps_batch_jax(
     The core matmul/division runs in float64; only the returned array is cast to
     ``dtype``. When JAX x64 is disabled the float64 request is naturally narrowed
     by JAX; the final defensive cast in ``compute_spatial_rates`` guarantees the
-    requested dtype regardless. ``binned`` keeps the documented NumPy round-trip.
+    requested dtype regardless. Every method is traceable under ``jax.jit``.
     """
     import jax.numpy as jnp
 
@@ -1069,18 +1116,15 @@ def _smooth_rate_maps_batch_jax(
     occupancy_j = jnp.asarray(occupancy, dtype=jnp.float64)
 
     if method == "binned":
-        # Binned: compute rate first, then masked-average (NumPy round-trip; the
-        # W-component support gate is in _binned_gate, handled in one batched pass).
+        # Binned: compute the raw rate first, then masked-average it.
         firing_rates = compute_firing_rates_batch(
             spike_counts_j, occupancy_j, min_occupancy=min_occupancy
         )
         if bandwidth <= 0:
             return jnp.asarray(firing_rates, dtype=jnp_dtype)
-        gated = np.clip(
-            _binned_gate(env, np.asarray(firing_rates), bandwidth), 0.0, None
-        )
+        gated = jnp.clip(_binned_gate_jax(env, firing_rates, bandwidth), 0.0, None)
         # Re-apply the raw-occupancy mask (consistent with the NumPy binned path).
-        masked = _mask_outside_support(gated, np.asarray(occupancy), min_occupancy)
+        masked = _mask_outside_support_jax(gated, occupancy_j, min_occupancy)
         return jnp.asarray(masked, dtype=jnp_dtype)
 
     # For diffusion_kde and gaussian_kde: smooth then normalize.

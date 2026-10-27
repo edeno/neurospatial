@@ -853,11 +853,17 @@ class TestRatesOutsideOccupancySupport:
     bins keep the dense-kernel estimate.
     """
 
-    def test_traced_min_occupancy_still_compiles(self, half_visited_arena):
-        """A threshold traced under jax.jit is not validated, only concrete ones."""
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+    def test_every_method_compiles_with_a_traced_threshold(
+        self, half_visited_arena, method
+    ):
+        """jax.jit traces counts, occupancy and min_occupancy for every method."""
         jax = pytest.importorskip("jax")
+        from neurospatial.encoding._backend import _enable_jax_float64
+
+        _enable_jax_float64()
         env, spike_counts, occupancy = half_visited_arena
-        kwargs = {"method": "gaussian_kde", "bandwidth": 5.0, "backend": "jax"}
+        kwargs = {"method": method, "bandwidth": 5.0, "backend": "jax"}
 
         compiled = jax.jit(
             lambda counts, occ, threshold: smooth_rate_maps_batch(
@@ -868,7 +874,9 @@ class TestRatesOutsideOccupancySupport:
         eager = smooth_rate_maps_batch(
             env, spike_counts[None, :], occupancy, min_occupancy=0.5, **kwargs
         )
-        np.testing.assert_array_equal(np.asarray(traced), np.asarray(eager))
+        np.testing.assert_allclose(
+            np.asarray(traced), np.asarray(eager), rtol=1e-12, atol=0, equal_nan=True
+        )
 
     @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
     @pytest.mark.parametrize("backend", ["numpy", "jax"])
