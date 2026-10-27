@@ -334,3 +334,49 @@ def test_single_cell_coverage_on_equal_bins_counts_bins(grid) -> None:
     assert spatial_coverage_single_cell(grid, rates, threshold=0.3) == np.mean(
         observed > 0.3
     )
+
+
+def _population_coverage(env, rates):
+    from neurospatial.encoding import population_coverage
+
+    return population_coverage(env, np.atleast_2d(rates), bandwidth=0.0)
+
+
+def _coverage_of(env, place_fields):
+    from neurospatial.encoding import PopulationCoverageResult
+
+    return PopulationCoverageResult(
+        place_fields=place_fields,
+        is_observed=np.ones(env.n_bins, dtype=bool),
+        bin_centers=env.bin_centers,
+        bin_sizes=env.bin_sizes,
+    )
+
+
+def test_population_coverage_is_a_fraction_of_area(square, square_split) -> None:
+    # One cell has a field on the 80 cm^2 strip, another on it and the 10 cm^2
+    # strip next to it.
+    result = _coverage_of(square, [[np.array([2])], [np.array([1, 2])]])
+    split = _coverage_of(square_split, [[np.array([2, 3])], [np.array([1, 2, 3])]])
+    for coverage in (result, split):
+        assert coverage.coverage_fraction == pytest.approx(0.9, abs=1e-12)
+        # Two fields over 80 cm^2 and one over 10 cm^2 of the 90 covered.
+        assert coverage.mean_redundancy == pytest.approx(170.0 / 90.0, abs=1e-12)
+
+
+def test_population_coverage_uses_the_environment_bin_sizes(square) -> None:
+    result = _population_coverage(square, [[0.0, 5.0, 5.0]])
+    np.testing.assert_array_equal(result.bin_sizes, square.bin_sizes)
+
+
+def test_population_coverage_on_equal_bins_counts_bins(grid) -> None:
+    rng = np.random.default_rng(9)
+    rates = rng.uniform(0, 0.5, (3, grid.n_bins))
+    for cell, center in enumerate([[5.0, 5.0], [8.0, 6.0], [15.0, 15.0]]):
+        distance = np.linalg.norm(grid.bin_centers - center, axis=1)
+        rates[cell] += 10.0 * np.exp(-(distance**2) / 8.0)
+    rates[:, ::9] = np.nan
+    result = _population_coverage(grid, rates)
+    covered = result.covered_bins
+    assert result.coverage_fraction == covered.size / result.is_observed.sum()
+    assert result.mean_redundancy == result.field_count[covered].mean()

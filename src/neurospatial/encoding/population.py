@@ -43,6 +43,7 @@ from neurospatial.encoding._comparison_inputs import (
     _check_choice,
     _match_units,
 )
+from neurospatial.encoding._field_metrics import _relative_measures
 from neurospatial.encoding._provenance import occupancy_support
 from neurospatial.encoding.spatial import (
     PlaceFieldsResult,
@@ -78,6 +79,9 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         neither covered nor gaps.
     bin_centers : NDArray[np.floating], shape (n_bins, n_dims)
         Bin coordinates, used to locate gaps.
+    bin_sizes : NDArray[np.float64], shape (n_bins,)
+        Measure of each bin (``env.bin_sizes``: area, length or volume), so
+        coverage is a fraction of space rather than of bins.
 
     Attributes
     ----------
@@ -98,19 +102,20 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
     uncovered_positions : NDArray[np.floating], shape (n_uncovered, n_dims)
         Coordinates of the gaps.
     coverage_fraction : float
-        Covered bins divided by observed bins (0-1); NaN when no bin was
-        observed.
+        Covered fraction of the observed area, length or volume (0-1); NaN
+        when no bin was observed.
     place_cell_fraction : float
         n_place_cells / n_neurons, a descriptive segmentation fraction.
     fields_per_place_cell : float
         n_fields / n_place_cells.
     mean_redundancy : float
-        Average field_count over covered bins.
+        Average field_count over the covered area, length or volume.
     """
 
     place_fields: Sequence[PlaceFieldsResult]
     is_observed: NDArray[np.bool_]
     bin_centers: NDArray[np.floating]
+    bin_sizes: NDArray[np.float64]
 
     def __post_init__(self) -> None:
         """Validate, own the arrays and prevent replacing per-unit fields."""
@@ -122,22 +127,27 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         )
         is_observed = np.asarray(self.is_observed, dtype=bool)
         bin_centers = np.asarray(self.bin_centers)
-        if is_observed.ndim != 1 or bin_centers.ndim != 2:
+        bin_sizes = np.asarray(self.bin_sizes, dtype=np.float64)
+        if is_observed.ndim != 1 or bin_centers.ndim != 2 or bin_sizes.ndim != 1:
             raise ValueError(
                 _format_error(
-                    f"is_observed must be (n_bins,) and bin_centers (n_bins, n_dims); "
-                    f"got {is_observed.shape} and {bin_centers.shape}.",
+                    "is_observed and bin_sizes must be (n_bins,) and bin_centers "
+                    f"(n_bins, n_dims); got {is_observed.shape}, "
+                    f"{bin_sizes.shape} and {bin_centers.shape}.",
                     why="Why: coverage is counted per bin",
                     fix="use population_coverage(env, firing_rates, bandwidth=rates.bandwidth) to build the result",
                 )
             )
-        if len(bin_centers) != len(is_observed):
+        if not len(bin_centers) == len(bin_sizes) == len(is_observed):
             raise ValueError(
                 _format_error(
                     f"is_observed has {len(is_observed)} bins but bin_centers has "
-                    f"{len(bin_centers)}.",
-                    why="Why: both describe the same environment bins",
-                    fix="pass env.bin_centers for the environment of the rate maps",
+                    f"{len(bin_centers)} and bin_sizes {len(bin_sizes)}.",
+                    why="Why: all three describe the same environment bins",
+                    fix=(
+                        "pass env.bin_centers and env.bin_sizes for the "
+                        "environment of the rate maps"
+                    ),
                 )
             )
         n_bins = len(is_observed)
@@ -155,6 +165,7 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         object.__setattr__(self, "place_fields", place_fields)
         object.__setattr__(self, "is_observed", is_observed)
         object.__setattr__(self, "bin_centers", bin_centers)
+        object.__setattr__(self, "bin_sizes", bin_sizes)
         self._own_arrays()
 
     @property
@@ -203,11 +214,17 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
 
     @property
     def coverage_fraction(self) -> float:
-        """Covered bins as a fraction of observed bins; NaN if none observed."""
-        n_observed = int(self.is_observed.sum())
-        if n_observed == 0:
+        """Covered fraction of the observed space; NaN if none observed.
+
+        Each bin counts by its measure (``bin_sizes``), so splitting a bin
+        does not change the fraction. On a regular grid it is the fraction of
+        observed bins that are covered.
+        """
+        if not self.is_observed.any():
             return np.nan
-        return float((self.is_covered & self.is_observed).sum() / n_observed)
+        measures = _relative_measures(self.bin_sizes)
+        covered = self.is_covered & self.is_observed
+        return float(np.sum(measures[covered]) / np.sum(measures[self.is_observed]))
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -257,21 +274,28 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
 
     @property
     def mean_redundancy(self) -> float:
-        """Average number of place fields per covered bin.
+        """Average number of place fields over the covered space.
 
         Measures the degree of overlapping representation. Higher values
         indicate more robust population coding with multiple cells
-        representing each location. NaN when no bin is covered.
+        representing each location. Each covered bin counts by its measure
+        (``bin_sizes``); on a regular grid this is the mean field count per
+        covered bin. NaN when no bin is covered.
 
         References
         ----------
         .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the
                hippocampal ensemble code for space. Science, 261(5124), 1055-1058.
         """
-        n_covered = len(self.covered_bins)
-        if n_covered == 0:
+        covered = self.covered_bins
+        if covered.size == 0:
             return np.nan
-        return float(self.field_count[self.covered_bins].mean())
+        return float(
+            np.average(
+                self.field_count[covered],
+                weights=_relative_measures(self.bin_sizes)[covered],
+            )
+        )
 
     def __str__(self) -> str:
         """Return human-readable summary for notebook inspection."""
@@ -347,7 +371,7 @@ def population_coverage(
     -------
     PopulationCoverageResult
         Coverage statistics, including ``coverage_fraction`` (covered
-        fraction of observed bins), ``uncovered_bins`` and
+        fraction of the observed area, length or volume), ``uncovered_bins`` and
         ``uncovered_positions`` (gaps) and ``place_fields`` (detected fields
         per neuron). Bins that are NaN for every neuron were not observed:
         they are neither covered nor gaps. Compute the rates with
@@ -474,6 +498,7 @@ def population_coverage(
         place_fields=all_fields,
         is_observed=np.isfinite(firing_rates).any(axis=0),
         bin_centers=env.bin_centers,
+        bin_sizes=env.bin_sizes,
     )
 
 

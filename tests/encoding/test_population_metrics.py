@@ -28,7 +28,10 @@ def _coverage_result(place_fields, is_observed):
         [np.arange(len(is_observed), dtype=float), np.zeros(len(is_observed))]
     )
     return PopulationCoverageResult(
-        place_fields=place_fields, is_observed=is_observed, bin_centers=bin_centers
+        place_fields=place_fields,
+        is_observed=is_observed,
+        bin_centers=bin_centers,
+        bin_sizes=np.ones(len(is_observed)),
     )
 
 
