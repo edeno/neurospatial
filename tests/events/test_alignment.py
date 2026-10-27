@@ -808,7 +808,7 @@ class TestPopulationPeriEventHistogram:
         event_times = np.array([10.0])
         window = (-0.5, 0.5)
 
-        with pytest.raises(ValueError, match="spike_trains"):
+        with pytest.raises(ValueError, match="spike_times is empty"):
             population_peri_event_histogram(spike_trains, event_times, window)
 
     # --- Output properties ---

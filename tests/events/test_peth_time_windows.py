@@ -133,18 +133,18 @@ def test_peth_bins_are_half_open(population, window, bin_size, spikes, expected)
 
 
 @pytest.mark.parametrize("population", [False, True])
-def test_no_whole_peth_bin_preserves_empty_result(population):
+@pytest.mark.parametrize("bin_size", [0.25, np.nan, np.inf])
+def test_no_whole_peth_bin_is_refused(population, bin_size):
+    """A bin wider than the window, or not finite, used to return an empty PSTH."""
     function = population_peri_event_histogram if population else peri_event_histogram
     spikes = np.array([0.1])
-    result = function(
-        [spikes] if population else spikes,
-        np.array([0.0, 0.0]),
-        (0, 0.1),
-        bin_size=0.25,
-    )
-    counts = result.histograms[0] if population else result.histogram
-    assert counts.shape == (0,)
-    assert result.bin_centers.shape == (0,)
+    with pytest.raises(ValueError, match=r"no complete bin|positive and finite"):
+        function(
+            [spikes] if population else spikes,
+            np.array([0.0, 0.0]),
+            (0, 0.1),
+            bin_size=bin_size,
+        )
 
 
 @pytest.mark.parametrize("population", [False, True])

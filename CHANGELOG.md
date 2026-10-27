@@ -13,8 +13,30 @@ Breaking:
   start[k+1]`: a missed exit plus an extra one kept the counts equal and
   silently paired every later event with the wrong partner, returning
   overlapping intervals. Pair by an id column with `match_by=` instead.
+- `PeriEventResult` and `PopulationPeriEventResult` derive `bin_centers`,
+  `firing_rate(s)`, `mean_firing_rate`, `n_units` and `mean_histogram`
+  instead of taking or caching them, so they can no longer disagree with
+  `window`, `bin_size` and `histograms` (a hand-built result with `n_units=7`
+  and 3 rows reported 7 units). Drop those arguments when building a result
+  by hand. Construction now checks every array's shape against the bins
+  `window` and `bin_size` give, a finite positive `bin_size`, and integer
+  event counts with `n_events >= 1`.
+- `PopulationPeriEventResult` takes `mean_sem`, the standard error across
+  events of the population-mean histogram, and `plot()` draws it as the
+  band. The band was the mean of the per-unit SEMs, which is not the
+  uncertainty of the plotted curve: two units firing on alternate events
+  have an exactly flat population mean, and got a +/-0.17 count band.
+- `peri_event_histogram` and `population_peri_event_histogram` refuse a NaN
+  or infinite `bin_size` and one longer than the window, which returned an
+  empty histogram and all-NaN summaries, and 2-D `event_times`, which were
+  flattened into extra events.
 
 Results that change:
+
+- The PSTH `baseline_rate` (in `summary()` and `summary_table()`) averages
+  only bins that end at or before the event. A bin whose center was negative
+  but which straddled the event counted as baseline: spikes only at +10 ms
+  and +20 ms gave a 5 Hz baseline instead of 0.
 
 - `event_count_in_window` and `event_indicator` count each event at exactly
   one sample when bin-centred windows tile time. Window edges computed twice
@@ -27,8 +49,18 @@ Results that change:
   and two ids above 2**53 could merge into one; the index was reset to
   0..n-1. An event in several windows repeats its label.
 
+Added:
+
+- `PeriEventResult.summary_table()`, with the same columns as the
+  population result's. PSTH `summary_table()` and `to_dataframe()` record
+  `window`, `bin_size`, `n_events` and `n_events_dropped` in `df.attrs`, and
+  `to_dataframe()` has a `firing_rate_sem` column in Hz next to the
+  count-unit `sem`. `PeriEventResult.firing_rate_sem` gives the same array.
+
 Fixed:
 
+- `peri_event_histogram` and `population_peri_event_histogram` warn once,
+  not once per unit plus once more, for a window longer than 60 s.
 - `align_events` refuses a NaN or infinite event or reference time, which it
   dropped without a word, and a non-DataFrame input with a `TypeError`.
 - `filter_by_intervals` refuses NaN event times (with `include=False` they

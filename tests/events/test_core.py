@@ -43,15 +43,11 @@ def valid_spatial_events_df():
 
 @pytest.fixture
 def sample_peri_event_result():
-    """Sample PeriEventResult for testing."""
-    n_bins = 100
-    bin_centers = np.linspace(-0.5, 1.0, n_bins)
-    histogram = np.random.poisson(5, n_bins).astype(float)
-    sem = np.sqrt(histogram) / 10
+    """Sample PeriEventResult for testing: 100 bins of 15 ms."""
+    histogram = np.random.default_rng(0).poisson(5, 100).astype(float)
     return PeriEventResult(
-        bin_centers=bin_centers,
         histogram=histogram,
-        sem=sem,
+        sem=np.sqrt(histogram) / 10,
         n_events=50,
         window=(-0.5, 1.0),
         bin_size=0.015,
@@ -60,20 +56,14 @@ def sample_peri_event_result():
 
 @pytest.fixture
 def sample_population_result():
-    """Sample PopulationPeriEventResult for testing."""
-    n_units = 5
-    n_bins = 100
-    bin_centers = np.linspace(-0.5, 1.0, n_bins)
-    histograms = np.random.poisson(5, (n_units, n_bins)).astype(float)
+    """Sample PopulationPeriEventResult for testing: 5 units, 100 bins."""
+    histograms = np.random.default_rng(0).poisson(5, (5, 100)).astype(float)
     sem = np.sqrt(histograms) / 10
-    mean_histogram = histograms.mean(axis=0)
     return PopulationPeriEventResult(
-        bin_centers=bin_centers,
         histograms=histograms,
         sem=sem,
-        mean_histogram=mean_histogram,
+        mean_sem=sem.mean(axis=0),
         n_events=50,
-        n_units=n_units,
         window=(-0.5, 1.0),
         bin_size=0.015,
     )
@@ -100,6 +90,47 @@ class TestPeriEventResult:
         with pytest.raises(AttributeError):
             result.n_events = 100  # type: ignore[misc]
 
+    def test_bin_centers_follow_window_and_bin_size(self, sample_peri_event_result):
+        result = sample_peri_event_result
+        assert result.bin_centers.shape == (100,)
+        assert_allclose(result.bin_centers, -0.5 + 0.015 * (np.arange(100) + 0.5))
+
+    @pytest.mark.parametrize(
+        ("changes", "match"),
+        [
+            ({"histogram": np.ones(99)}, "needs shape"),
+            ({"sem": np.ones((100, 1))}, "needs shape"),
+            ({"sem": -np.ones(100)}, "negative"),
+            ({"bin_size": 0.0}, "bin_size must be positive"),
+            ({"bin_size": np.nan}, "bin_size must be positive"),
+            ({"bin_size": 2.0}, "no complete bin"),
+            ({"window": (1.0, -0.5)}, "before its stop"),
+            ({"n_events": 0}, "at least 1"),
+            ({"n_events_dropped": -2}, "at least 0"),
+            ({"n_events": 2.5}, "integer"),
+        ],
+    )
+    def test_inconsistent_fields_are_refused(
+        self, sample_peri_event_result, changes, match
+    ):
+        result = sample_peri_event_result
+        fields = {
+            "histogram": result.histogram,
+            "sem": result.sem,
+            "n_events": result.n_events,
+            "window": result.window,
+            "bin_size": result.bin_size,
+        }
+        with pytest.raises(ValueError, match=match):
+            PeriEventResult(**(fields | changes))
+
+    def test_list_window_is_stored_as_a_tuple(self):
+        result = PeriEventResult(
+            histogram=[1.0], sem=[0.0], n_events=1, window=[-0.5, 0.5], bin_size=1.0
+        )
+        assert result.window == (-0.5, 0.5)
+        assert isinstance(result.histogram, np.ndarray)
+
 
 class TestPopulationPeriEventResult:
     """Tests for PopulationPeriEventResult dataclass."""
@@ -124,6 +155,38 @@ class TestPopulationPeriEventResult:
         result = sample_population_result
         with pytest.raises(AttributeError):
             result.n_units = 10  # type: ignore[misc]
+
+    def test_unit_count_and_mean_are_derived(self, sample_population_result):
+        """n_units and mean_histogram cannot disagree with histograms."""
+        result = sample_population_result
+        assert result.n_units == len(result) == 5
+        assert result.summary()["n_units"] == 5
+        assert_allclose(result.mean_histogram, result.histograms.mean(axis=0))
+
+    @pytest.mark.parametrize(
+        ("changes", "match"),
+        [
+            ({"sem": np.ones((5, 99))}, "needs shape"),
+            ({"sem": np.ones((4, 100))}, "needs shape"),
+            ({"mean_sem": np.ones(4)}, "needs shape"),
+            ({"histograms": np.ones(100)}, "n_units, n_bins"),
+            ({"histograms": np.ones((0, 100)), "sem": np.ones((0, 100))}, "one unit"),
+        ],
+    )
+    def test_inconsistent_fields_are_refused(
+        self, sample_population_result, changes, match
+    ):
+        result = sample_population_result
+        fields = {
+            "histograms": result.histograms,
+            "sem": result.sem,
+            "mean_sem": result.mean_sem,
+            "n_events": result.n_events,
+            "window": result.window,
+            "bin_size": result.bin_size,
+        }
+        with pytest.raises(ValueError, match=match):
+            PopulationPeriEventResult(**(fields | changes))
 
 
 # =============================================================================
@@ -286,7 +349,6 @@ class TestEdgeCases:
     def test_peri_event_result_with_single_bin(self):
         """PeriEventResult with single bin should work."""
         result = PeriEventResult(
-            bin_centers=np.array([0.0]),
             histogram=np.array([5.0]),
             sem=np.array([0.5]),
             n_events=10,

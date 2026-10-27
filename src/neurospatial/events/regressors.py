@@ -15,30 +15,10 @@ are in :mod:`neurospatial.behavior`.
 from __future__ import annotations
 
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 
 from neurospatial._time_bins import _time_bin_rounding
-from neurospatial.events._core import _validate_window
-
-
-def _as_times(values: ArrayLike, name: str) -> NDArray[np.float64]:
-    """Return ``values`` as a 1-D float64 array of finite seconds."""
-    times = np.asarray(values, dtype=np.float64)
-    if times.ndim != 1:
-        raise ValueError(
-            f"{name} must be a 1-D array of times in seconds, got shape "
-            f"{times.shape}.\n"
-            "  WHY: Each entry is one time on the recording clock.\n"
-            "  Fix: Pass one time per sample or event."
-        )
-    for is_bad, what in ((np.isnan, "NaN"), (np.isinf, "inf")):
-        if is_bad(times).any():
-            raise ValueError(
-                f"{name} contains {what} values.\n"
-                "  WHY: Times must be finite seconds.\n"
-                f"  Fix: Remove {what} values before calling."
-            )
-    return times
+from neurospatial.events._core import _finite_times, _validate_window
 
 
 def _share_coincident_edges(
@@ -153,8 +133,8 @@ def time_to_nearest_event(
     >>> time_to_nearest_event(sample_times, event_times, max_time=1.0)
     array([-1., -1.,  0.,  1.,  1.])
     """
-    sample_times = _as_times(sample_times, "sample_times")
-    event_times = _as_times(event_times, "event_times")
+    sample_times = _finite_times(sample_times, "sample_times")
+    event_times = _finite_times(event_times, "event_times")
 
     if max_time is not None and not max_time >= 0:
         raise ValueError(
@@ -296,8 +276,8 @@ def event_count_in_window(
     >>> event_count_in_window(sample_times, reward_times, window=(-1.5, 1.5))
     array([1, 1, 1, 0])
     """
-    sample_times = _as_times(sample_times, "sample_times")
-    event_times = _as_times(event_times, "event_times")
+    sample_times = _finite_times(sample_times, "sample_times")
+    event_times = _finite_times(event_times, "event_times")
     window_start, window_end = _validate_window(
         window, context="event_count_in_window", warn_wide=False
     )
