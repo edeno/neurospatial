@@ -793,7 +793,7 @@ def _validate_events_dataframe(
     if not isinstance(df, pd.DataFrame):
         raise TypeError(
             f"Expected pd.DataFrame, got {type(df).__name__}.\n"
-            "  WHY: Events must be a pandas DataFrame for NWB compatibility.\n"
+            "  WHY: Event tables are pandas DataFrames with one row per event.\n"
             "  Fix: Convert using pd.DataFrame({'timestamp': times})"
         )
 

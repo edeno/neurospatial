@@ -17,7 +17,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._intervals import intervals_contain, resolve_time_windows
+from neurospatial._intervals import (
+    intervals_contain,
+    ragged_arange,
+    resolve_time_windows,
+)
 from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._time_bins import (
     _count_spikes_in_time_bins,
@@ -27,6 +31,7 @@ from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
     _make_bin_edges,
+    _validate_events_dataframe,
     _validate_window,
 )
 
@@ -648,16 +653,23 @@ def align_events(
     -------
     pd.DataFrame
         Events with added columns:
-        - 'relative_time': Time relative to reference event (event - reference)
-        - 'reference_index': Index of the reference event (0-indexed)
+        - 'relative_time': Time relative to reference event (event - reference),
+          in seconds
+        - 'reference_index': Position (0-based) of the reference event in
+          ``reference_events``, not its index label
 
-        All original columns from events are preserved. If an event falls
-        within multiple reference windows, it appears multiple times.
+        All original columns and dtypes from events are preserved, and the
+        index holds each row's label in ``events``. An event inside several
+        reference windows appears once per window, repeating its label. Rows
+        are ordered by reference event, then by time.
 
     Raises
     ------
+    TypeError
+        If events or reference_events is not a DataFrame.
     ValueError
-        If window is inverted or required columns are missing.
+        If the window is invalid, a time column is missing or not numeric, or
+        a time is NaN or infinite.
 
     See Also
     --------
@@ -682,76 +694,41 @@ def align_events(
     1       10.2            0.2                0
     2       20.1            0.1                1
     """
-    import pandas as pd
-
-    # Validate window
     _validate_window(window, context="align_events")
-
-    # Validate event_column exists
-    if event_column not in events.columns:
-        raise ValueError(
-            f"Events DataFrame missing '{event_column}' column.\n"
-            "  WHY: Need timestamps to compute relative times.\n"
-            f"  Fix: Ensure events has '{event_column}' column.\n"
-            f"  Available columns: {list(events.columns)}"
+    for frame, column, name in (
+        (events, event_column, "events"),
+        (reference_events, reference_column, "reference_events"),
+    ):
+        _validate_events_dataframe(
+            frame, timestamp_column=column, context=f"align_events {name}"
         )
+    event_times = events[event_column].to_numpy(dtype=np.float64)
+    ref_times = reference_events[reference_column].to_numpy(dtype=np.float64)
+    for times, name, column in (
+        (event_times, "events", event_column),
+        (ref_times, "reference_events", reference_column),
+    ):
+        bad = np.flatnonzero(~np.isfinite(times))
+        if bad.size:
+            raise ValueError(
+                f"align_events: {name}[{column!r}] has {bad.size} NaN or inf "
+                f"time(s), first at row {int(bad[0])}.\n"
+                "  WHY: an event without a time cannot be placed in any window, "
+                "and dropping it silently would hide it from the result.\n"
+                f"  Fix: drop or repair those rows first, e.g. "
+                f"{name}.dropna(subset=[{column!r}])."
+            )
 
-    # Validate reference_column exists
-    if reference_column not in reference_events.columns:
-        raise ValueError(
-            f"Reference DataFrame missing '{reference_column}' column.\n"
-            "  WHY: Need reference timestamps to align events to.\n"
-            f"  Fix: Ensure reference_events has '{reference_column}' column.\n"
-            f"  Available columns: {list(reference_events.columns)}"
-        )
-
-    # Handle empty cases
-    if len(events) == 0 or len(reference_events) == 0:
-        result = events.iloc[0:0].copy()
-        result["relative_time"] = pd.Series([], dtype=np.float64)
-        result["reference_index"] = pd.Series([], dtype=np.int64)
-        return result
-
-    # Get timestamps as arrays
-    event_times = events[event_column].values
-    ref_times = reference_events[reference_column].values
-
-    # Sort event times for efficient searching
-    sorted_idx = np.argsort(event_times)
-    sorted_event_times = event_times[sorted_idx]
-
-    # Collect aligned events
-    aligned_rows = []
-
-    for ref_idx, ref_t in enumerate(ref_times):
-        # Compute window bounds
-        t_start = ref_t + window[0]
-        t_end = ref_t + window[1]
-
-        # Find events within window using binary search
-        idx_start = np.searchsorted(sorted_event_times, t_start, side="left")
-        idx_end = np.searchsorted(sorted_event_times, t_end, side="left")
-
-        # Get original indices of events in window
-        event_indices = sorted_idx[idx_start:idx_end]
-
-        for orig_idx in event_indices:
-            event_t = event_times[orig_idx]
-            relative_time = event_t - ref_t
-
-            # Copy event row with new columns
-            row_data = events.iloc[orig_idx].to_dict()
-            row_data["relative_time"] = relative_time
-            row_data["reference_index"] = ref_idx
-            aligned_rows.append(row_data)
-
-    # Create result DataFrame
-    if aligned_rows:
-        result = pd.DataFrame(aligned_rows)
-    else:
-        # Empty result with correct columns
-        result = events.iloc[0:0].copy()
-        result["relative_time"] = pd.Series([], dtype=np.float64)
-        result["reference_index"] = pd.Series([], dtype=np.int64)
-
-    return result
+    # Events in each reference's half-open window, grouped by reference and
+    # ordered by time within each group.
+    order = np.argsort(event_times, kind="stable")
+    sorted_times = event_times[order]
+    first = np.searchsorted(sorted_times, ref_times + window[0], side="left")
+    stop = np.searchsorted(sorted_times, ref_times + window[1], side="left")
+    n_per_reference = stop - first
+    reference_index = np.repeat(np.arange(ref_times.size), n_per_reference)
+    rows = order[np.repeat(first, n_per_reference) + ragged_arange(n_per_reference)]
+    return events.iloc[rows].assign(
+        relative_time=event_times[rows] - ref_times[reference_index],
+        reference_index=reference_index.astype(np.int64),
+    )

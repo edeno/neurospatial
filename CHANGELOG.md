@@ -12,8 +12,15 @@ Results that change:
   and overlaps: 11,999 events on a 20 Hz camera clock gave 12,462 counts in
   10 Hz bins, and events exactly at sample midpoints were lost about half the
   time. Edges that agree up to rounding are now one instant.
+- `align_events` keeps column dtypes and the row labels of `events`. It
+  copied each row through a float Series, so integer ids came back as floats
+  and two ids above 2**53 could merge into one; the index was reset to
+  0..n-1. An event in several windows repeats its label.
 
 Fixed:
+
+- `align_events` refuses a NaN or infinite event or reference time, which it
+  dropped without a word, and a non-DataFrame input with a `TypeError`.
 
 - `event_count_in_window` and `event_indicator` refuse a NaN or infinite
   window bound (a NaN start gave negative counts) and 2-D time arrays.
