@@ -3529,6 +3529,9 @@ def _approach_rate(
         to_goal = env.distance_to(points=goal.reshape(1, -1), metric="geodesic")
         distances = to_goal[position_bins]
         distances[position_bins == -1] = np.nan
+        # A position outside the environment has no geodesic distance: it is
+        # missing for the rate, so its gap is gated like a deleted row's.
+        support = support.restricted(times, np.isfinite(distances))
 
     from neurospatial.behavior._kinematics import interval_velocity
 

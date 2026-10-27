@@ -13,6 +13,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.behavior.navigation import (
+    approach_rate,
     compute_goal_directed_metrics,
     goal_bias,
     heading_direction_labels,
@@ -306,3 +307,55 @@ def test_goal_dimension_error_names_the_call(name):
     assert "goal has 3 coordinates but positions have 2" in message
     assert "Why:" in message
     assert "Fix: pass goal with shape (2,)" in message
+
+
+class TestGeodesicApproachOutsideTheEnvironment:
+    """A finite position with no geodesic distance is a missing sample."""
+
+    @pytest.fixture(scope="class")
+    def arena(self):
+        xx, yy = np.meshgrid(np.linspace(0, 100, 101), np.linspace(0, 100, 101))
+        env = Environment.from_samples(
+            np.c_[xx.ravel(), yy.ravel()], bin_size=5.0, units="cm"
+        )
+        times = np.arange(200) / 10
+        positions = np.column_stack([np.linspace(10, 90, 200), np.full(200, 50.0)])
+        return env, times, positions, np.array([95.0, 50.0])
+
+    @pytest.mark.parametrize(
+        ("leave", "back", "break_at"),
+        [
+            (5.0, 15.0, None),  # 10 s outside: longer than max_gap
+            (5.0, 15.0, 10.0),  # ... with a break declared inside
+            (5.0, 5.5, 5.2),  # 0.5 s outside, bridged except for the break
+            (5.0, 5.5, None),  # 0.5 s outside, bridged
+        ],
+    )
+    def test_rates_equal_the_recording_with_those_rows_missing(
+        self, arena, leave, back, break_at
+    ):
+        env, times, positions, goal = arena
+        outside = (times >= leave - 1e-9) & (times < back - 1e-9)
+        away = positions.copy()
+        away[outside, 1] = 500.0  # finite, but beyond the arena
+        missing = positions.copy()
+        missing[outside] = np.nan
+        breaks = None
+        if break_at is not None:
+            breaks = np.zeros(times.size, dtype=bool)
+            breaks[np.flatnonzero(times >= break_at - 1e-9)[0]] = True
+        np.testing.assert_array_equal(
+            approach_rate(
+                times, away, goal, metric="geodesic", env=env, break_before=breaks
+            ),
+            approach_rate(
+                times, missing, goal, metric="geodesic", env=env, break_before=breaks
+            ),
+        )
+        away_mean, missing_mean = (
+            compute_goal_directed_metrics(
+                env, times, rows, goal, metric="geodesic", break_before=breaks
+            ).mean_approach_rate
+            for rows in (away, missing)
+        )
+        assert away_mean == pytest.approx(missing_mean, rel=1e-12)

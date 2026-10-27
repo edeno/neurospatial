@@ -67,6 +67,12 @@ class ObservationSupport(ReadOnlyArraysMixin):
         are valid samples, and missing samples between them are bridged.
     run_time_bounds : ndarray of float64, shape (n_runs, 2)
         ``times`` at those indices, in seconds.
+    max_gap : float or None
+        The gap gate the support was resolved with.
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        Normalized epoch windows the support was resolved with.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Validated declared breaks the support was resolved with.
     """
 
     sample_valid: NDArray[np.bool_]
@@ -75,9 +81,71 @@ class ObservationSupport(ReadOnlyArraysMixin):
     run_ids: NDArray[np.intp]
     run_sample_bounds: NDArray[np.intp]
     run_time_bounds: NDArray[np.float64]
+    max_gap: float | None
+    epochs: NDArray[np.float64] | None
+    break_before: NDArray[np.bool_] | None
 
     def __post_init__(self) -> None:
         self._own_arrays()
+
+    def restricted(
+        self, times: NDArray[np.float64], defined: NDArray[np.bool_]
+    ) -> ObservationSupport:
+        """The support of a quantity that is also missing where ``defined`` is False.
+
+        A quantity derived from the positions can be undefined at a finite
+        position, such as the geodesic distance of a position outside the
+        environment. Such a sample is missing for that quantity, and like a
+        deleted row its gap is gated again by the same ``max_gap``,
+        ``epochs`` and ``break_before``, so the quantity is never bridged
+        across a long gap or a declared break hidden in it. No warning is
+        repeated.
+
+        Parameters
+        ----------
+        times : ndarray, shape (n_samples,)
+            The times this support was resolved from, in seconds.
+        defined : ndarray of bool, shape (n_samples,)
+            False where the derived quantity is undefined.
+
+        Returns
+        -------
+        ObservationSupport
+            Support with ``sample_valid & defined`` as the valid samples.
+
+        Examples
+        --------
+        A sample with no derived value inside a 0.2 s gap, at ``max_gap=0.15``:
+
+        >>> import numpy as np
+        >>> times = np.arange(5) * 0.1
+        >>> support = resolve_sample_support(
+        ...     times,
+        ...     np.ones(5, dtype=bool),
+        ...     max_gap=0.15,
+        ...     epochs=None,
+        ...     break_before=None,
+        ...     result="the result is empty",
+        ... )
+        >>> support.restricted(
+        ...     times, np.array([1, 1, 0, 1, 1], dtype=bool)
+        ... ).interval_mask
+        array([ True, False, False,  True])
+        """
+        raw_gates = interval_valid_mask(
+            times,
+            max_gap=self.max_gap,
+            epochs=self.epochs,
+            break_before=self.break_before,
+        )
+        return _support_from_gates(
+            times,
+            self.sample_valid & np.asarray(defined, dtype=bool),
+            raw_gates,
+            max_gap=self.max_gap,
+            epochs=self.epochs,
+            break_before=self.break_before,
+        )
 
     @property
     def isolated(self) -> NDArray[np.bool_]:
@@ -158,6 +226,9 @@ def _support_from_gates(
         run_ids=run_ids,
         run_sample_bounds=bounds,
         run_time_bounds=times[bounds],
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
     )
 
 
