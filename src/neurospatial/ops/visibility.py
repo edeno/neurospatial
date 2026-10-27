@@ -591,8 +591,8 @@ def compute_viewed_location(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    method: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
-    view_distance: float = 10.0,
+    method: Literal["fixed_distance", "ray_cast"] = "ray_cast",
+    view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
     env: BinningConsumer | None = None,
     max_distance: float | None = None,
@@ -607,15 +607,18 @@ def compute_viewed_location(
     headings : NDArray[np.float64], shape (n_time,)
         Animal heading at each time (allocentric radians: 0 = East,
         +pi/2 = North).
-    method : {"fixed_distance", "ray_cast"}, default "fixed_distance"
+    method : {"ray_cast", "fixed_distance"}, default "ray_cast"
         Method for computing viewed location:
 
+        - "ray_cast": the first wall the gaze ray reaches. Needs ``env``.
         - "fixed_distance": the point ``view_distance`` ahead along the gaze,
           or the first wall when one is nearer. Without ``env`` the walls are
           unknown and the point is not stopped.
-        - "ray_cast": the first wall the gaze ray reaches.
-    view_distance : float, default 10.0
-        Distance in environment units (e.g. cm) for the fixed_distance method.
+    view_distance : float or None, default None
+        Distance along the gaze to the viewed point, in environment units
+        (e.g. cm). Required with ``method="fixed_distance"`` and refused
+        with ``"ray_cast"``: how far ahead an animal looks depends on the
+        species, task and arena, so there is no default.
     gaze_offsets : NDArray[np.float64], shape (n_time,), optional
         Gaze direction relative to the heading, in egocentric radians
         (0 = ahead, + = left, - = right), e.g. from eye tracking. If None,
@@ -642,9 +645,11 @@ def compute_viewed_location(
     Raises
     ------
     ValueError
-        If method is invalid, ray_cast has no environment, the shapes of
-        ``positions``, ``headings`` and ``gaze_offsets`` disagree, or
-        ``max_distance`` is not finite and positive.
+        If method is invalid, ray_cast has no environment, ``view_distance``
+        is missing with fixed_distance, given with ray_cast or not a
+        positive finite distance, the shapes of ``positions``, ``headings``
+        and ``gaze_offsets`` disagree, or ``max_distance`` is not finite and
+        positive.
 
     Examples
     --------
@@ -695,6 +700,67 @@ def compute_viewed_location(
     return viewed
 
 
+def _resolve_gaze_distance(
+    method: str,
+    view_distance: float | None,
+    *,
+    units: str | None,
+    context: str,
+    argument: str,
+) -> float | None:
+    """The fixed gaze distance in environment units, or None for ray casting.
+
+    Parameters
+    ----------
+    method : {"ray_cast", "fixed_distance"}
+        The gaze model.
+    view_distance : float or None
+        The caller's distance along the gaze.
+    units : str or None
+        Length units of the positions, for the message.
+    context : str
+        Public call for error messages.
+    argument : str
+        Name of the caller's gaze-model argument (``"method"`` or
+        ``"gaze_model"``).
+
+    Raises
+    ------
+    ValueError
+        If ``view_distance`` is given with ``ray_cast``, is missing with
+        ``fixed_distance``, or is not a positive finite number.
+    """
+    if method == "ray_cast":
+        if view_distance is not None:
+            raise ValueError(
+                _format_error(
+                    f"{context}: view_distance={view_distance!r} has no meaning "
+                    f"with {argument}='ray_cast'.",
+                    why="Why: ray casting takes the first wall along the gaze, at "
+                    "whatever distance it lies",
+                    fix=f"drop view_distance, or pass {argument}='fixed_distance'",
+                )
+            )
+        return None
+    if view_distance is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: {argument}='fixed_distance' needs view_distance.",
+                why="Why: how far ahead an animal looks depends on the species, "
+                "task and arena, and no published value applies by default",
+                fix="pass view_distance, the distance along the gaze to the "
+                f"viewed point in the units of positions (env.units={units!r}), "
+                f"or use {argument}='ray_cast' to take the first wall",
+            )
+        )
+    if not (np.isfinite(view_distance) and view_distance > 0):
+        raise ValueError(
+            f"{context}: view_distance must be a positive finite distance, "
+            f"got {view_distance!r}."
+        )
+    return float(view_distance)
+
+
 def gaze_points(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -726,7 +792,15 @@ def gaze_points(
             f"method must be 'fixed_distance' or 'ray_cast', got {method!r}."
         )
     if method == "ray_cast" and env is None:
-        raise ValueError("env is required when method='ray_cast'")
+        raise ValueError(
+            _format_error(
+                "compute_viewed_location(): method='ray_cast' needs env.",
+                why="Why: ray casting stops the gaze at the first wall, and the "
+                "walls come from the environment",
+                fix="pass the env the positions were recorded in, or "
+                "method='fixed_distance' with a view_distance",
+            )
+        )
     _check_pose(
         "compute_viewed_location()",
         positions,
@@ -745,10 +819,16 @@ def gaze_points(
                 )
             )
         gaze_direction = headings + gaze_offsets
+    view_distance = _resolve_gaze_distance(
+        method,
+        view_distance,
+        units=getattr(env, "units", None),
+        context="compute_viewed_location()",
+        argument="method",
+    )
 
     if method == "fixed_distance":
-        if view_distance is None:
-            raise ValueError("view_distance is required when method='fixed_distance'")
+        assert view_distance is not None  # resolved above
         fixed = positions + view_distance * np.column_stack(
             (np.cos(gaze_direction), np.sin(gaze_direction))
         )

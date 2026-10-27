@@ -53,6 +53,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
 
@@ -74,10 +75,11 @@ from neurospatial.encoding._base import (
     _to_numpy,
 )
 from neurospatial.encoding._polar_results import (
+    DEFAULT_DIRECTION_BIN_SIZE,
     _PolarRateMixin,
-    _unknown_units,
     polar_summary_frame,
     require_known_bandwidth,
+    resolve_polar_grid,
 )
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
@@ -128,18 +130,6 @@ __all__ = [
 
 OBJECT_VECTOR_THRESHOLDS = MappingProxyType({"min_info": 0.3})
 
-# Default polar grid. Calibrated on simulated object-vector cells (Gaussian
-# distance tuning, sd 6 cm, at 20/40/60 cm; von Mises direction tuning,
-# kappa 4; 15 Hz peak over 0.2 Hz; 5- and 15-minute sessions in a 150 cm box)
-# among ring widths of 2.5, 5 and 10 cm and direction bins of 15, 30 and 45
-# degrees with the unsmoothed ("binned") estimator. In 15-minute sessions 5 cm
-# by 30 degrees kept both 90th-percentile errors small (distance 2.5 cm,
-# direction 19 degrees); 10 cm rings trade a 5 cm distance error for a 15-17
-# degree direction error, and finer bins hold too few spikes without smoothing
-# (2.5 cm by 15 degrees: direction error 62 degrees).
-_DEFAULT_RING_WIDTH_CM = 5.0
-_DEFAULT_DIRECTION_BIN_SIZE = np.pi / 6
-
 
 def _check_direction_frame(direction_frame: str, *, context: str) -> None:
     """Reject a direction frame that downstream code would misread."""
@@ -157,12 +147,15 @@ def _check_direction_frame(direction_frame: str, *, context: str) -> None:
 
 
 def _object_vector_classify(
-    result: ObjectVectorRateResult | ObjectVectorRatesResult, *, min_info: float
+    result: ObjectVectorRateResult | ObjectVectorRatesResult,
+    *,
+    min_info: float,
+    bias: NDArray[np.float64] | None = None,
 ) -> NDArray[np.bool_]:
     """The shared rule: bias-corrected information at or above ``min_info``."""
     from neurospatial.encoding._metrics import _debiased_information
 
-    return _debiased_information(result) >= min_info
+    return _debiased_information(result, bias) >= min_info
 
 
 def _object_vector_summary_frame(
@@ -170,17 +163,32 @@ def _object_vector_summary_frame(
     *,
     index: Sequence[Hashable],
 ) -> pd.DataFrame:
-    """Build identical metric columns for single and population results."""
+    """Build identical metric columns for single and population results.
+
+    ``spatial_information`` and ``spatial_information_bias`` are the two
+    terms of the information screen behind ``is_object_vector_cell``.
+    """
+    from neurospatial.encoding._metrics import _information_bias
+
+    bias = _information_bias(result)
     return polar_summary_frame(
         result,
         index=index,
-        extra={},
+        extra={
+            "spatial_information": np.atleast_1d(
+                np.asarray(_to_numpy(result.spatial_information()), dtype=np.float64)
+            ),
+            "spatial_information_bias": bias,
+        },
         classification={
             "is_object_vector_cell": _object_vector_classify(
-                result, **OBJECT_VECTOR_THRESHOLDS
+                result, **OBJECT_VECTOR_THRESHOLDS, bias=bias
             )
         },
-        extra_units={},
+        extra_units={
+            "spatial_information": "bits/spike",
+            "spatial_information_bias": "bits/spike",
+        },
         thresholds=OBJECT_VECTOR_THRESHOLDS,
     )
 
@@ -647,14 +655,16 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
         ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-        polar bins, and units with fewer spikes than K fail, with a warning:
-        about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
-        units per spike count in a 100 x 100 cm box (10-minute sessions,
+        polar bins, and units with fewer spikes than K fail, with a warning.
+        The default grid covers the arena, so K grows with it: with the object
+        at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
+        rings x 12 directions) were occupied in 10 minutes. In 40 untuned
+        Poisson units per spike count in that box (10-minute sessions,
         allocentric and egocentric), uncorrected information passed 0.3
         bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
         at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
-        fired about 80 spikes in those 10 minutes, too few for the screen; use
-        fewer bins or the shuffle test.
+        fired about 70 spikes in those 10 minutes, too few for the screen; pass
+        a narrower distance_range or wider bins, or use the shuffle test.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
@@ -1222,14 +1232,16 @@ class ObjectVectorRatesResult(
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
         ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-        polar bins, and units with fewer spikes than K fail, with a warning:
-        about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
-        units per spike count in a 100 x 100 cm box (10-minute sessions,
+        polar bins, and units with fewer spikes than K fail, with a warning.
+        The default grid covers the arena, so K grows with it: with the object
+        at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
+        rings x 12 directions) were occupied in 10 minutes. In 40 untuned
+        Poisson units per spike count in that box (10-minute sessions,
         allocentric and egocentric), uncorrected information passed 0.3
         bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
         at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
-        fired about 80 spikes in those 10 minutes, too few for the screen; use
-        fewer bins or the shuffle test.
+        fired about 70 spikes in those 10 minutes, too few for the screen; pass
+        a narrower distance_range or wider bins, or use the shuffle test.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
@@ -1309,6 +1321,13 @@ class ObjectVectorRatesResult(
             - preferred_direction_deg: preferred direction (degrees in
               ``result.direction_frame``)
             - preferred_direction: preferred direction (radians, same frame)
+            - spatial_information: Skaggs information of the polar map
+              (bits/spike)
+            - spatial_information_bias: the information an untuned cell
+              would show (bits/spike); the screen compares
+              ``spatial_information - spatial_information_bias`` with its
+              cutoff, and a NaN bias (too few spikes) fails it
+            - n_spikes_outside_intervals: spikes outside the analyzed time
             - is_object_vector_cell: whether the default threshold screen
               passes
 
@@ -1364,7 +1383,7 @@ class ObjectVectorRatesResult(
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'n_spikes_outside_intervals', 'is_object_vector_cell']
+        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'spatial_information', 'spatial_information_bias', 'n_spikes_outside_intervals', 'is_object_vector_cell']
         >>> len(df)
         3
         >>> df.index.name
@@ -1520,7 +1539,7 @@ def compute_egocentric_rate(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -1781,7 +1800,7 @@ def compute_object_vector_rate(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -2153,22 +2172,17 @@ def _object_vector_grid(
     direction_bin_size: float,
     context: str,
 ) -> tuple[tuple[float, float], int, int]:
-    """Resolve the polar grid: ``(distance_range, n_distance_bins, n_direction_bins)``.
+    """Resolve the object-vector polar grid; see :func:`resolve_polar_grid`.
 
-    Ring and direction bins have physical widths. A default range starts at
-    0 and covers every distance inside ``env`` in whole rings; an explicit
-    range is kept and divided into the whole number of rings nearest
-    ``distance_bin_size``, as ``n = round(2 pi / direction_bin_size)``
-    direction bins span the circle.
+    The default range covers every distance to the nearest object inside
+    ``env`` (:func:`_largest_object_distance`).
 
     Raises
     ------
     ValueError
-        If a default needs ``env`` or known length units that are missing,
-        or a width or range is not a positive finite span.
+        If the default range has no ``env`` to measure, or the widths or
+        range are invalid.
     """
-    from neurospatial._units import units_per_centimeter
-
     if distance_range is None and env is None:
         raise ValueError(
             _format_error(
@@ -2179,50 +2193,18 @@ def _object_vector_grid(
                 "of positions, or the env the positions were recorded in",
             )
         )
-    units = env.units if env is not None else None
-    if distance_bin_size is None:
-        per_cm = units_per_centimeter(units)
-        if per_cm is None:
-            raise ValueError(
-                _format_error(
-                    f"{context}: distance_bin_size is required because "
-                    f"{_unknown_units(units)}.",
-                    why=f"Why: the default {_DEFAULT_RING_WIDTH_CM:g} cm ring "
-                    "width cannot be converted to coordinates of unknown scale",
-                    fix="pass distance_bin_size in the units of positions, or "
-                    "an env with units='cm' (or 'mm', 'm')",
-                )
-            )
-        distance_bin_size = _DEFAULT_RING_WIDTH_CM * per_cm
-    width = float(distance_bin_size)
-    if not (np.isfinite(width) and width > 0):
-        raise ValueError(
-            f"{context}: distance_bin_size must be a positive finite length, "
-            f"got {distance_bin_size!r}."
-        )
-    angle = float(direction_bin_size)
-    if not (np.isfinite(angle) and 0 < angle <= 2 * np.pi):
-        raise ValueError(
-            _format_error(
-                f"{context}: direction_bin_size={direction_bin_size!r} is not an "
-                "angular bin width.",
-                fix="pass a width in radians in (0, 2*pi], e.g. np.deg2rad(30)",
-            )
-        )
-    n_direction_bins = max(1, round(2 * np.pi / angle))
-    if distance_range is None:
-        assert env is not None  # refused above
-        n_rings = int(
-            np.floor(_largest_object_distance(env, object_positions, metric) / width)
-        )
-        return (0.0, (n_rings + 1) * width), n_rings + 1, n_direction_bins
-    low, high = (float(value) for value in distance_range)
-    if not (np.isfinite(low) and np.isfinite(high) and 0 <= low < high):
-        raise ValueError(
-            f"{context}: distance_range must be (min, max) with "
-            f"0 <= min < max, got {distance_range!r}."
-        )
-    return (low, high), max(1, round((high - low) / width)), n_direction_bins
+    return resolve_polar_grid(
+        env.units if env is not None else None,
+        distance_range=distance_range,
+        largest_distance=(
+            None
+            if env is None
+            else partial(_largest_object_distance, env, object_positions, metric)
+        ),
+        distance_bin_size=distance_bin_size,
+        direction_bin_size=direction_bin_size,
+        context=context,
+    )
 
 
 def _warn_if_directions_unsampled(
@@ -2486,7 +2468,7 @@ def _object_vector_rate(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -2647,7 +2629,7 @@ def compute_egocentric_rates(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -2985,7 +2967,7 @@ def compute_object_vector_rates(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -3257,7 +3239,7 @@ def _object_vector_rates(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -3631,7 +3613,7 @@ def is_object_vector_cell(
     unit_id: Hashable | None = None,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -3779,14 +3761,16 @@ def is_object_vector_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
     ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-    polar bins, and units with fewer spikes than K fail, with a warning:
-    about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
-    units per spike count in a 100 x 100 cm box (10-minute sessions,
+    polar bins, and units with fewer spikes than K fail, with a warning.
+    The default grid covers the arena, so K grows with it: with the object
+    at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
+    rings x 12 directions) were occupied in 10 minutes. In 40 untuned
+    Poisson units per spike count in that box (10-minute sessions,
     allocentric and egocentric), uncorrected information passed 0.3
     bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
     at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
-    fired about 80 spikes in those 10 minutes, too few for the screen; use
-    fewer bins or the shuffle test.
+    fired about 70 spikes in those 10 minutes, too few for the screen; pass
+    a narrower distance_range or wider bins, or use the shuffle test.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
@@ -3907,7 +3891,7 @@ def is_egocentric_object_vector_cell(
     unit_id: Hashable | None = None,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -4061,14 +4045,16 @@ def is_egocentric_object_vector_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
     ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-    polar bins, and units with fewer spikes than K fail, with a warning:
-    about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
-    units per spike count in a 100 x 100 cm box (10-minute sessions,
+    polar bins, and units with fewer spikes than K fail, with a warning.
+    The default grid covers the arena, so K grows with it: with the object
+    at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
+    rings x 12 directions) were occupied in 10 minutes. In 40 untuned
+    Poisson units per spike count in that box (10-minute sessions,
     allocentric and egocentric), uncorrected information passed 0.3
     bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
     at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
-    fired about 80 spikes in those 10 minutes, too few for the screen; use
-    fewer bins or the shuffle test.
+    fired about 70 spikes in those 10 minutes, too few for the screen; pass
+    a narrower distance_range or wider bins, or use the shuffle test.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
@@ -4506,7 +4492,7 @@ def object_vector_cell_significance(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -4732,7 +4718,7 @@ def egocentric_object_vector_cell_significance(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,

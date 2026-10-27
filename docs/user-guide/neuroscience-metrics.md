@@ -520,6 +520,15 @@ egocentric boundary cells. The walls are the arena's declared walls
 (`boundary_source="physical"`), so build the environment from the measured
 outline; an unvisited corner is then not a wall.
 
+The map covers walls 0-50 cm away by default, the range Hinman et al. (2019)
+used, in 5 cm rings and 30° direction bins. It does not reach the far side of
+the arena on purpose: in a box, a cell firing 15 cm from the East wall is
+also firing 85 cm from the West wall, and a map out to the far walls lets the
+peak jump there. `analysis_settings["fraction_of_time_in_distance_range"]`
+records the share of ray time the map covers. A field may continue beyond the
+range: for a cell whose preferred distance is in the last ring, widen
+`distance_range=` and check that the peak stays on the near wall.
+
 This example simulates an egocentric boundary cell that fires when a wall is
 about 15 cm to the animal's left:
 
@@ -549,7 +558,7 @@ spike_times = generate_poisson_spikes(rate, times, seed=1)
 
 result = compute_boundary_vector_rate(
     env, spike_times, times, positions, headings,
-    direction_frame="egocentric", n_direction_bins=18,
+    direction_frame="egocentric", direction_bin_size=np.deg2rad(20),
 )
 print(f"Preferred direction: {np.degrees(result.preferred_direction()):.0f} deg")
 print(f"Preferred distance: {result.preferred_distance():.1f} cm")
@@ -1016,25 +1025,28 @@ or run the shuffle test for such units.
 Measured on 20 independent untuned 0.5 Hz Poisson units with a 30 Hz OU
 trajectory in a 100 x 100 cm arena (trajectory seed 0, spikes seed 1):
 place/view maps used 5 cm bins and diffusion KDE with bandwidth 5;
-egocentric maps used the default binned 10 x 12 polar grid. Entries are
+egocentric maps used the default binned polar grid (5 cm rings and 30°
+directions out to the arena's diagonal). Entries are
 counts flagged by the screen, not cells with ground-truth tuning. "Raw" is the
 uncorrected plug-in information against the same cutoff.
 
 | Minutes (approximate spikes) | Egocentric information median / raw flags / screen flags (0.3) | Place information median / raw flags / screen flags (0.5) | Detected fields | View raw / screen flags (0.5) | HD flags |
 | --- | --- | --- | --- | --- | --- |
-| 1 (29) | 2.09 / 20/20 / 0/20 | 0.86 / 19/20 / 0/20 | 11/20 | 20/20 / 0/20 | 0/20 |
-| 2 (59) | 1.37 / 20/20 / 0/20 | 0.54 / 14/20 / 0/20 | 11/20 | 20/20 / 0/20 | 0/20 |
-| 5 (148) | 0.72 / 20/20 / 0/20 | 0.22 / 0/20 / 0/20 | 20/20 | 0/20 / 0/20 | 0/20 |
-| 10 (298) | 0.42 / 20/20 / 0/20 | 0.11 / 0/20 / 0/20 | 20/20 | 0/20 / 0/20 | 0/20 |
-| 20 (598) | 0.21 / 0/20 / 0/20 | 0.05 / 0/20 / 0/20 | 16/20 | 0/20 / 0/20 | 0/20 |
+| 1 (29) | 2.05 / 20/20 / 0/20 | 0.86 / 19/20 / 0/20 | 20/20 | 20/20 / 0/20 | 0/20 |
+| 2 (59) | 1.42 / 20/20 / 0/20 | 0.54 / 14/20 / 0/20 | 20/20 | 20/20 / 0/20 | 0/20 |
+| 5 (148) | 0.76 / 20/20 / 0/20 | 0.22 / 0/20 / 0/20 | 20/20 | 0/20 / 0/20 | 0/20 |
+| 10 (298) | 0.44 / 20/20 / 0/20 | 0.11 / 0/20 / 0/20 | 20/20 | 0/20 / 0/20 | 0/20 |
+| 20 (598) | 0.22 / 0/20 / 0/20 | 0.05 / 0/20 / 0/20 | 16/20 | 0/20 / 0/20 | 0/20 |
 
 The allocentric object-vector screen behaves like the egocentric one: raw
 information flagged 20/20 up to 10 minutes, the corrected screen none. The
 correction costs power at low counts. Place cells with a 2 Hz peak in this
 arena passed the corrected screen at 10 minutes (about 110 spikes) but were
 refused at 2 minutes (about 18 spikes, fewer than the 46 independent bins).
-Object-vector cells with a 2 Hz peak fired about 80 spikes in 10 minutes,
-fewer than the 120 polar bins. The shuffle test has no such floor.
+Object-vector cells with a 2 Hz peak fired about 70 spikes in 10 minutes,
+fewer than the 150-170 occupied polar bins: the default grid covers the
+whole arena (348 bins in a 1 m box), so a narrower `distance_range` or wider
+bins lower the floor. The shuffle test has no such floor.
 
 HD's screen combines the rate-weighted mean vector length
 with an occupancy-corrected test of one preferred direction (a score test with

@@ -1846,6 +1846,7 @@ class TestSpatialRatesResultSummaryTable:
                 [
                     "peak_firing_rate",
                     "spatial_information",
+                    "spatial_information_bias",
                     "sparsity",
                     "grid_score",
                     "border_score",
@@ -1863,6 +1864,7 @@ class TestSpatialRatesResultSummaryTable:
                 [
                     "peak_firing_rate",
                     "spatial_information",
+                    "spatial_information_bias",
                     "sparsity",
                     "grid_score",
                     "border_score",

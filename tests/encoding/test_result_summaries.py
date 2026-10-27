@@ -27,6 +27,7 @@ TABLE_COLUMNS = {
     "spatial": [
         "peak_firing_rate",
         "spatial_information",
+        "spatial_information_bias",
         "sparsity",
         "grid_score",
         "border_score",
@@ -41,6 +42,7 @@ TABLE_COLUMNS = {
     "view": [
         "peak_firing_rate",
         "spatial_information",
+        "spatial_information_bias",
         "peak_x",
         "peak_y",
         "n_spikes_outside_intervals",
@@ -51,6 +53,8 @@ TABLE_COLUMNS = {
         "preferred_distance",
         "preferred_direction_deg",
         "preferred_direction",
+        "spatial_information",
+        "spatial_information_bias",
         "n_spikes_outside_intervals",
         "is_object_vector_cell",
     ],
@@ -59,6 +63,8 @@ TABLE_COLUMNS = {
         "preferred_distance",
         "preferred_direction_deg",
         "preferred_direction",
+        "spatial_information",
+        "spatial_information_bias",
         "n_spikes_outside_intervals",
         "is_object_vector_cell",
     ],
@@ -198,6 +204,31 @@ def test_singular_verdict_matches_table_and_classify(rate_family_results, family
         assert result.classify()[i] == expected
         assert result[i].summary_table()[predicate].iloc[0] == expected
         assert batch[predicate].iloc[i] == expected
+
+
+@pytest.mark.parametrize("family", ("spatial", "view", "allocentric", "egocentric"))
+def test_summary_table_shows_both_terms_of_the_information_screen(
+    rate_family_results, family
+):
+    """The screen column is information minus its bias against the cutoff."""
+    result = rate_family_results[family]
+    frame = result.summary_table()
+    screen, cutoff = {
+        "spatial": ("passes_spatial_information", 0.5),
+        "view": ("is_spatial_view_cell", 0.5),
+        "allocentric": ("is_object_vector_cell", 0.3),
+        "egocentric": ("is_object_vector_cell", 0.3),
+    }[family]
+
+    bias = frame["spatial_information_bias"].to_numpy()
+    np.testing.assert_allclose(bias, result.spatial_information_bias())
+    assert np.isfinite(bias).any()
+    assert frame.attrs["units"]["spatial_information_bias"] == "bits/spike"
+    corrected = frame["spatial_information"].to_numpy() - bias
+    np.testing.assert_array_equal(
+        frame[screen].to_numpy(dtype=float) == 1.0,
+        np.isfinite(corrected) & (corrected >= cutoff),
+    )
 
 
 @pytest.mark.parametrize("pooled", [True, False])

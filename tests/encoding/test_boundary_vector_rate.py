@@ -71,8 +71,7 @@ def test_a_boundary_vector_cell_is_recovered(env, session, wall, angle):
         times,
         positions,
         direction_frame="allocentric",
-        n_direction_bins=24,
-        n_distance_bins=10,
+        direction_bin_size=np.pi / 12,
     )
 
     sector = np.pi / 24  # half a direction bin
@@ -94,7 +93,7 @@ def test_an_egocentric_boundary_cell_is_recovered(env, session):
         positions,
         headings,
         direction_frame="egocentric",
-        n_direction_bins=24,
+        direction_bin_size=np.pi / 12,
     )
 
     assert abs(result.preferred_direction() - np.pi / 2) <= np.pi / 24 + 1e-12
@@ -106,7 +105,7 @@ def test_an_egocentric_boundary_cell_is_recovered(env, session):
         times,
         positions,
         direction_frame="allocentric",
-        n_direction_bins=24,
+        direction_bin_size=np.pi / 12,
     )
     assert allocentric.distance_information() < result.distance_information()
 
@@ -125,7 +124,7 @@ def test_every_ray_reaching_a_wall_adds_the_sample_time(env, session):
         headings,
         direction_frame="egocentric",
         distance_range=(0.0, 150.0),
-        n_direction_bins=n_directions,
+        direction_bin_size=2 * np.pi / n_directions,
     )
     counts = np.asarray(result.firing_rate) * np.asarray(result.occupancy)
 
@@ -139,14 +138,14 @@ def test_vectorized_counts_equal_the_ray_by_ray_counts(env, session):
     positions = positions.copy()
     positions[100:130] = np.nan  # a tracking dropout
     spikes = np.sort(np.random.default_rng(2).uniform(times[0], times[-1], 800))
-    options = {
-        "distance_range": (0.0, 40.0),
-        "n_distance_bins": 8,
-        "n_direction_bins": 12,
-    }
-
     result = compute_boundary_vector_rate(
-        env, spikes, times, positions, headings, direction_frame="egocentric", **options
+        env,
+        spikes,
+        times,
+        positions,
+        headings,
+        direction_frame="egocentric",
+        distance_range=(0.0, 40.0),
     )
 
     frame_bins, observed = _boundary_frame_bins(
@@ -155,7 +154,9 @@ def test_vectorized_counts_equal_the_ray_by_ray_counts(env, session):
         headings,
         direction_frame="egocentric",
         boundary_source="physical",
-        **options,
+        distance_range=(0.0, 40.0),
+        n_distance_bins=8,
+        n_direction_bins=12,
     )
     mask = observed[:-1] & (np.diff(times) <= 0.5)
     n_bins = result.env.n_bins
@@ -216,7 +217,11 @@ def test_an_unvisited_corner_is_not_a_wall_unless_asked():
         positions, bin_size=5.0, arena=OpenArena(box(0, 0, SIDE, SIDE))
     )
     spikes = np.sort(rng.uniform(0, 300, 300))
-    kwargs = {"direction_frame": "allocentric", "distance_range": (0.0, 100.0)}
+    kwargs = {
+        "direction_frame": "allocentric",
+        "distance_range": (0.0, 100.0),
+        "distance_bin_size": 5.0,
+    }
 
     physical = compute_boundary_vector_rate(env, spikes, times, positions, **kwargs)
     analysis = compute_boundary_vector_rate(
@@ -264,7 +269,7 @@ def test_an_environment_without_known_walls_is_refused(session):
 
 @pytest.mark.parametrize(("units", "scale"), [("cm", 1.0), ("m", 0.01)])
 def test_length_defaults_are_converted_from_cm(units, scale):
-    """The 0-50 cm range and 5 cm kernel follow the environment's units."""
+    """The 5 cm rings and 5 cm kernel follow the environment's units."""
     env = Environment.from_polygon(
         box(0, 0, SIDE * scale, SIDE * scale), bin_size=5.0 * scale, units=units
     )
@@ -279,7 +284,9 @@ def test_length_defaults_are_converted_from_cm(units, scale):
         direction_frame="allocentric",
         method="diffusion_kde",
     )
-    assert result.distance_range == pytest.approx((0.0, 50.0 * scale))
+    assert result.distance_range[1] / result.n_distance_bins == pytest.approx(
+        5.0 * scale
+    )
     assert result.analysis_settings["bandwidth"] == pytest.approx(5.0 * scale)
 
 
@@ -290,6 +297,15 @@ def test_unknown_units_need_explicit_lengths(session):
         compute_boundary_vector_rate(
             env, [], times, positions, direction_frame="allocentric"
         )
+    with pytest.raises(ValueError, match="distance_bin_size is required"):
+        compute_boundary_vector_rate(
+            env,
+            [],
+            times,
+            positions,
+            direction_frame="allocentric",
+            distance_range=(0.0, 50.0),
+        )
     with pytest.raises(ValueError, match="needs a bandwidth"):
         compute_boundary_vector_rate(
             env,
@@ -298,6 +314,7 @@ def test_unknown_units_need_explicit_lengths(session):
             positions,
             direction_frame="allocentric",
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
             method="gaussian_kde",
         )
 
@@ -330,3 +347,63 @@ def test_distance_information_is_skaggs_information_along_the_preferred_ray(
     assert result.summary_table()["distance_information"].iloc[0] == pytest.approx(
         expected
     )
+
+
+def test_a_near_wall_cell_is_not_read_as_tuned_to_the_opposite_wall(env, session):
+    """The default range keeps the peak on the near wall.
+
+    In a 100 cm box, firing 15 cm from the East wall is firing 85 cm from the
+    West wall. A grid out to the far walls lets the peak jump there; the
+    default 0-50 cm range of near walls does not.
+    """
+    times, positions, _ = session
+    east = _wall_distance(positions, np.zeros(len(positions)))
+    spikes = _tuned_spikes(times, east)
+
+    result = compute_boundary_vector_rate(
+        env, spikes, times, positions, direction_frame="allocentric"
+    )
+
+    assert result.distance_range == pytest.approx((0.0, 50.0))
+    assert (result.n_distance_bins, result.n_direction_bins) == (10, 12)
+    assert abs(result.preferred_direction()) <= np.pi / 12 + 1e-12
+    assert 10.0 <= result.preferred_distance() <= 20.0
+
+
+def test_the_range_records_the_ray_time_beyond_it(env, session):
+    """A range that ends inside a field reports how much ray time it left out."""
+    times, positions, _ = session
+    east = _wall_distance(positions, np.zeros(len(positions)))
+    spikes = _tuned_spikes(times, east, preferred=30.0, width=6.0)
+
+    result = compute_boundary_vector_rate(
+        env,
+        spikes,
+        times,
+        positions,
+        direction_frame="allocentric",
+        distance_range=(0.0, 25.0),
+    )
+
+    # Every ray from inside the box meets a wall, within the range or beyond.
+    duration = times[-1] - times[0]
+    in_range = np.asarray(result.occupancy).sum()
+    beyond = result.analysis_settings["time_beyond_distance_range"]
+    assert beyond > 0.0
+    assert in_range + beyond == pytest.approx(result.n_direction_bins * duration)
+    assert result.analysis_settings["fraction_of_time_in_distance_range"] == (
+        pytest.approx(in_range / (in_range + beyond))
+    )
+
+
+def test_direction_bins_have_a_physical_width(env, session):
+    times, positions, _ = session
+    result = compute_boundary_vector_rate(
+        env,
+        [],
+        times[:300],
+        positions[:300],
+        direction_frame="allocentric",
+        direction_bin_size=np.deg2rad(15),
+    )
+    assert result.n_direction_bins == 24

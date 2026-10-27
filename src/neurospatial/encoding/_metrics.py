@@ -582,18 +582,22 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
     return np.where(spiking & ~too_few, bias, np.nan)
 
 
-def _debiased_information(result: Any) -> NDArray[np.float64]:
+def _debiased_information(
+    result: Any, bias: NDArray[np.float64] | None = None
+) -> NDArray[np.float64]:
     """Skaggs information minus the untuned-cell bias, per unit (bits/spike).
 
     The value every information screen compares with its threshold. NaN for
     silent units and units with too few spikes (see :func:`_information_bias`).
+    ``bias`` is :func:`_information_bias` of ``result`` when the caller
+    already has it, so its warning is not repeated.
     """
     from neurospatial.encoding._base import _to_numpy
 
     information = np.atleast_1d(
         np.asarray(_to_numpy(result.spatial_information()), dtype=np.float64)
     )
-    return information - _information_bias(result)
+    return information - (_information_bias(result) if bias is None else bias)
 
 
 def sparsity(

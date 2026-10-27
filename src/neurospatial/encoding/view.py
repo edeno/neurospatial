@@ -189,12 +189,15 @@ def _check_gaze_fields(result: ViewRateResult | ViewRatesResult) -> None:
 
 
 def _view_classify(
-    result: ViewRateResult | ViewRatesResult, *, min_info: float
+    result: ViewRateResult | ViewRatesResult,
+    *,
+    min_info: float,
+    bias: NDArray[np.float64] | None = None,
 ) -> NDArray[np.bool_]:
     """The shared rule: bias-corrected information at or above ``min_info``."""
     from neurospatial.encoding._metrics import _debiased_information
 
-    return _debiased_information(result) >= min_info
+    return _debiased_information(result, bias) >= min_info
 
 
 def _view_summary_frame(
@@ -205,21 +208,27 @@ def _view_summary_frame(
 
     rates = np.atleast_2d(_to_numpy(result._get_rates()))
     occupancy = _to_numpy(result.occupancy)
-    from neurospatial.encoding._metrics import batch_spatial_information
+    from neurospatial.encoding._metrics import (
+        _information_bias,
+        batch_spatial_information,
+    )
 
     peaks = np.atleast_2d(result.peak_location())
+    bias = _information_bias(result)
     columns = {
         "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
         "spatial_information": np.asarray(batch_spatial_information(rates, occupancy)),
+        "spatial_information_bias": bias,
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **result._accounting_columns(),
-        "is_spatial_view_cell": _view_classify(result, **VIEW_THRESHOLDS),
+        "is_spatial_view_cell": _view_classify(result, **VIEW_THRESHOLDS, bias=bias),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["units"] = {
         "peak_firing_rate": "Hz",
         "spatial_information": "bits/spike",
+        "spatial_information_bias": "bits/spike",
         "peak_x": result.env.units or "",
         "peak_y": result.env.units or "",
     }
@@ -588,10 +597,11 @@ class ViewRateResult(SingleUnitRateMixin):
         Units with fewer spikes than the view map has effectively independent
         bins fail, with a warning. In 40 untuned Poisson units per spike count
         in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
-        bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
-        5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
-        none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
-        2 minutes (about 24 spikes) and all 20 in 10 minutes.
+        bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
+        passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,
+        60, 120 and 600 spikes; corrected, at most 1 of 40 (at about 20
+        spikes). Of 20 spatial view cells with a 2 Hz peak, 13 passed in 2
+        minutes (about 27 spikes) and all 20 in 10 minutes.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
@@ -1069,10 +1079,11 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         Units with fewer spikes than the view map has effectively independent
         bins fail, with a warning. In 40 untuned Poisson units per spike count
         in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
-        bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
-        5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
-        none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
-        2 minutes (about 24 spikes) and all 20 in 10 minutes.
+        bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
+        passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,
+        60, 120 and 600 spikes; corrected, at most 1 of 40 (at about 20
+        spikes). Of 20 spatial view cells with a 2 Hz peak, 13 passed in 2
+        minutes (about 27 spikes) and all 20 in 10 minutes.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
@@ -1136,6 +1147,10 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
 
             - peak_firing_rate: maximum firing rate (Hz)
             - spatial_information: view spatial information (bits/spike)
+            - spatial_information_bias: the information an untuned cell
+              would show (bits/spike); the screen compares
+              ``spatial_information - spatial_information_bias`` with its
+              cutoff, and a NaN bias (too few spikes) fails it
             - peak_x: x-coordinate of peak view location
             - peak_y: y-coordinate of peak view location
             - is_spatial_view_cell: whether the default threshold screen
@@ -1181,7 +1196,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         >>> result = compute_view_rates(env, spike_times, times, trajectory, headings)
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_firing_rate', 'spatial_information', 'peak_x', 'peak_y', 'n_spikes_outside_intervals', 'is_spatial_view_cell']
+        ['peak_firing_rate', 'spatial_information', 'spatial_information_bias', 'peak_x', 'peak_y', 'n_spikes_outside_intervals', 'is_spatial_view_cell']
         >>> df.index.name
         'unit_id'
 
@@ -1271,37 +1286,15 @@ def _resolve_view_distance(
         If ``view_distance`` is given with ``ray_cast``, is missing with
         ``fixed_distance``, or is not a positive finite number.
     """
-    from neurospatial._exceptions import _format_error
+    from neurospatial.ops.visibility import _resolve_gaze_distance
 
-    if gaze_model == "ray_cast":
-        if view_distance is not None:
-            raise ValueError(
-                _format_error(
-                    f"{context}: view_distance={view_distance!r} has no meaning "
-                    "with gaze_model='ray_cast'.",
-                    why="Why: ray casting takes the first wall along the gaze, at "
-                    "whatever distance it lies",
-                    fix="drop view_distance, or pass gaze_model='fixed_distance'",
-                )
-            )
-        return None
-    if view_distance is None:
-        raise ValueError(
-            _format_error(
-                f"{context}: gaze_model='fixed_distance' needs view_distance.",
-                why="Why: how far ahead an animal looks depends on the species, "
-                "task and arena, and no published value applies by default",
-                fix="pass view_distance, the distance along the gaze to the "
-                f"viewed point in the units of positions (env.units={env.units!r}), "
-                "or use gaze_model='ray_cast' to take the first wall",
-            )
-        )
-    if not (np.isfinite(view_distance) and view_distance > 0):
-        raise ValueError(
-            f"{context}: view_distance must be a positive finite distance, "
-            f"got {view_distance!r}."
-        )
-    return float(view_distance)
+    return _resolve_gaze_distance(
+        gaze_model,
+        view_distance,
+        units=env.units,
+        context=context,
+        argument="gaze_model",
+    )
 
 
 def _as_gaze_offsets(
@@ -2008,7 +2001,7 @@ def compute_view_rates(
     >>> # Per-unit scalar summary (one row per unit)
     >>> summary = result.summary_table()
     >>> summary.shape
-    (3, 6)
+    (3, 7)
     >>> # Dense per-bin frame (one row per (unit, bin))
     >>> df = result.to_dataframe()
     >>> len(df) == 3 * env.n_bins
@@ -2370,10 +2363,11 @@ def is_spatial_view_cell(
     Units with fewer spikes than the view map has effectively independent
     bins fail, with a warning. In 40 untuned Poisson units per spike count
     in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
-    bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
-    5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
-    none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
-    2 minutes (about 24 spikes) and all 20 in 10 minutes.
+    bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
+    passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,
+    60, 120 and 600 spikes; corrected, at most 1 of 40 (at about 20
+    spikes). Of 20 spatial view cells with a 2 Hz peak, 13 passed in 2
+    minutes (about 27 spikes) and all 20 in 10 minutes.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.

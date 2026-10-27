@@ -1781,7 +1781,7 @@ class TestObjectVectorRatesResultSummaryTable:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Peak, preferred vector, then classification last."""
+        """Peak, preferred vector, the screen's two terms, classification last."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -1798,6 +1798,8 @@ class TestObjectVectorRatesResultSummaryTable:
             "preferred_distance",
             "preferred_direction_deg",
             "preferred_direction",
+            "spatial_information",
+            "spatial_information_bias",
             "n_spikes_outside_intervals",
             "is_object_vector_cell",
         ]
