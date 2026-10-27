@@ -36,6 +36,15 @@ Results that change:
 - `object_vector_score` refuses a map with negative or infinite rates, for
   example a baseline-subtracted or z-scored map. Random noise scored 1.0, and
   an infinite bin silently dropped its ring. NaN bins are still unvisited.
+- The JAX backend turns on JAX float64 when it is chosen, not when one of
+  its modules is first imported. The first JAX analysis in a process could
+  run in float32 (directional rates and binned object-vector maps came back
+  float32, with JAX truncation warnings); every JAX call now computes in
+  float64. Choosing `backend="jax"` (or `"auto"` with JAX installed) sets
+  `jax_enable_x64` for the process, as the first JAX computation did before.
+- Binned smoothing on the JAX backend stays in JAX instead of round-tripping
+  through NumPy, so its rates can differ from before at float rounding (up to
+  2e-14 relative).
 - `ViewRatesResult.peak_locations()` uses the occupancy support and returns
   NaN for a silent unit, matching `peak_location()` and `summary_table()`. It
   could report a rate in a never-viewed bin and returned the first bin for
@@ -109,7 +118,10 @@ Messages that change:
   error.
 - `smooth_rate_maps_batch` refuses a negative, NaN or infinite
   `min_occupancy` on the JAX backend too, so the view and object-vector
-  shuffle tests refuse it before shuffling.
+  shuffle tests refuse it before shuffling. Every smoothing method compiles
+  under `jax.jit` with traced counts, occupancy and threshold; tracing with
+  JAX float64 off raises an error that says to enable `jax_enable_x64` first,
+  instead of failing with a buffer-size mismatch.
 - Single-unit `gaussian_kde` rate maps on the JAX backend can differ from
   before at float rounding (about 1e-15 relative).
 
