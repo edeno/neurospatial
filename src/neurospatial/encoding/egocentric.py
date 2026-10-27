@@ -4400,7 +4400,13 @@ def _object_vector_significance(
         {"bandwidth": bandwidth, "min_occupancy": min_occupancy, "max_gap": max_gap}
     )
     _check_object_vector_env(env, headings, context=context)
-    validate_trajectory(times, positions=positions, headings=headings, context=context)
+    validate_trajectory(
+        times,
+        positions=positions,
+        headings=headings,
+        context=context,
+        n_dims=env.n_dims if env is not None else None,
+    )
     validate_spike_trains(trains, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
     _validate_object_vector_metric(env, metric, context=context)

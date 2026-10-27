@@ -39,3 +39,29 @@ def test_occupancy_reports_the_shared_clause(env, trajectory):
     assert CLAUSE in str(error.value)
     with pytest.raises(ValueError, match="positions with shape"):
         env.occupancy(times, positions)
+
+
+@pytest.mark.parametrize(
+    "significance",
+    [
+        "object_vector_cell_significance",
+        "egocentric_object_vector_cell_significance",
+        "spatial_view_cell_significance",
+    ],
+)
+def test_significance_reports_the_shared_clause(env, trajectory, significance):
+    import neurospatial.encoding as encoding
+
+    times, positions = trajectory
+    headings = np.zeros(len(times))
+    objects = np.array([[25.0, 25.0]])
+    args = {
+        "object_vector_cell_significance": (positions, objects),
+        "egocentric_object_vector_cell_significance": (positions, headings, objects),
+        "spatial_view_cell_significance": (positions, headings),
+    }[significance]
+    with pytest.raises(ValueError) as error:
+        getattr(encoding, significance)(
+            env, [np.array([1.0, 2.0])], times, *args, n_shuffles=2, rng=0
+        )
+    assert CLAUSE in str(error.value)
