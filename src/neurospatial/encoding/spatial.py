@@ -116,7 +116,6 @@ __all__ = [
 PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
     {
         "threshold": 0.2,
-        "min_size": None,
         "min_peak_rate": 1.0,
         "min_secondary_peak_fraction": 0.6,
         "max_mean_rate": np.inf,
@@ -1469,7 +1468,6 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         self,
         *,
         threshold: float = 0.2,
-        min_size: int | None = None,
         min_peak_rate: float = 1.0,
         min_secondary_peak_fraction: float = 0.6,
         max_mean_rate: float = np.inf,
@@ -1489,9 +1487,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         ----------
         threshold : float, default=0.2
             Fraction of each field's own peak rate that defines its boundary
-            (0-1).
-        min_size : int, optional
-            Minimum number of bins for a valid field. If None, defaults to 9.
+            (0-1). A field must be larger than one noisy bin smoothed with
+            this map's ``bandwidth`` (see :func:`detect_place_fields`); for
+            ``method="glm"``, which has no kernel bandwidth, larger than one
+            bin.
         min_peak_rate : float, default=1.0
             Smallest peak rate (Hz) that can start a field.
         min_secondary_peak_fraction : float, default=0.6
@@ -1537,8 +1536,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         fields = detect_place_fields(
             self.env,
             firing_rate,
+            bandwidth=0.0 if self.bandwidth is None else self.bandwidth,
             threshold=threshold,
-            min_size=min_size,
             min_peak_rate=min_peak_rate,
             min_secondary_peak_fraction=min_secondary_peak_fraction,
             max_mean_rate=max_mean_rate,
@@ -5028,8 +5027,8 @@ def detect_place_fields(
     env: Environment,
     firing_rate: NDArray[np.float64],
     *,
+    bandwidth: float,
     threshold: float = 0.2,
-    min_size: int | None = None,
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.6,
     max_mean_rate: float = np.inf,
@@ -5053,12 +5052,14 @@ def detect_place_fields(
         Firing rate map (Hz) from neuron. NaN bins (unvisited or below the
         occupancy threshold) never belong to a field and do not connect
         fields.
+    bandwidth : float
+        Smoothing bandwidth (standard deviation, environment units) the map
+        was estimated with: ``result.bandwidth`` of a kernel rate map, 0 for
+        an unsmoothed map. It sets the smallest field, the region one noisy
+        bin fills after smoothing (see Notes). Must be finite and >= 0.
     threshold : float, default=0.2
         Fraction of each field's own peak rate that defines its boundary
         (0-1). 0.2 is the neurocode ``MapStats`` default [1]_.
-    min_size : int, optional
-        Minimum number of bins for a valid field. If None, defaults to 9 bins
-        (3 x 3 bins in 2-D).
     min_peak_rate : float, default=1.0
         Smallest peak rate (Hz) that can start a field. 1 Hz is the minimum
         peak in neurocode's ``MapStats`` and its place-cell pipeline [1]_
@@ -5072,7 +5073,7 @@ def detect_place_fields(
         rates (Hz). The default disables exclusion. This is not the
         recording-time mean firing rate and does not identify cell type.
     detect_subfields : bool, default=True
-        If True, try to split each field larger than ``2 * min_size`` bins
+        If True, try to split each field more than twice the smallest field
         into separate fields at 0.5 and then 0.7 of its peak. This separates
         two neighboring fields that merge at the ``threshold`` level.
 
@@ -5103,16 +5104,16 @@ def detect_place_fields(
     3. **Field**: the bins connected to the peak through ``env.connectivity``
        whose rate is at least ``threshold`` times this peak.
     4. **Keep or discard**: mark those bins as assigned. Keep the field only
-       if it has at least ``min_size`` bins and its peak bin is a local
-       maximum of the full map (no neighbor has a higher rate). A candidate
+       if it is larger than the smallest field (below) and its peak bin is a
+       local maximum of the full map (no neighbor has a higher rate). A candidate
        that rises toward a neighbor is the flank of a field already assigned,
        left behind when that field was cut at its own threshold. This is the
        n-D form of neurocode's 1-D check that the rate dips below threshold
        between two fields, and of the ``localmax`` option of ``MapStats``.
-    5. **Subfields**: if ``detect_subfields`` is True and the field has more
-       than ``2 * min_size`` bins, threshold it at 0.5 and then 0.7 of its
-       peak. The first level that leaves two or more connected parts of at
-       least ``min_size`` bins replaces the field by those parts. This is one
+    5. **Subfields**: if ``detect_subfields`` is True and the field is more
+       than twice the smallest field, threshold it at 0.5 and then 0.7 of its
+       peak. The first level that leaves two or more connected parts larger
+       than the smallest field replaces the field by those parts. This is one
        pass over two levels, not a recursion; bins of the field outside
        every part are assigned to no field.
     6. Repeat from step 2 until a peak fails the floor or every finite bin
@@ -5121,6 +5122,23 @@ def detect_place_fields(
     The floor in step 2 stops the search on noise. Without it, each
     successive threshold is a fraction of a smaller peak, so small bumps far
     below the main field would be reported as fields.
+
+    **Smallest field.** A field must be larger than what one noisy bin
+    becomes after smoothing; anything smaller cannot be told apart from a
+    single bin's excess rate. One bin's excess smoothed by a Gaussian kernel
+    of standard deviation ``σ = bandwidth`` stays above ``threshold`` times
+    its own peak within ``r = σ·sqrt(2·ln(1/threshold))`` of the bin (1.79σ
+    at the default 0.2): a segment of length ``2r`` on a track (18 cm at
+    σ = 5 cm) or a disk of area ``πr²`` in an open field (253 cm² at
+    σ = 5 cm). A real field of width ``s`` smoothed the same way is
+    ``sqrt(s² + σ²)/σ`` times wider, so it is always larger. The detector
+    measures this region on the environment: it diffuses one unit at the
+    candidate's peak bin (``env.diffuse``), keeps the connected bins with a
+    finite rate above ``threshold`` times the result's maximum, and sums their
+    measures (``env.binning.bins.sizes``). Walls, track ends and arena edges
+    shrink it as they shrink a field there. For an unsmoothed map
+    (``bandwidth=0``) it is the peak bin. Field and region are compared by
+    measure, so the rule does not depend on bin size.
 
     **Segmentation is not cell classification.** An unmodulated or high-rate
     map can contain detected regions. An explicit finite ``max_mean_rate``
@@ -5138,7 +5156,7 @@ def detect_place_fields(
     >>> # An 8 Hz Gaussian place field (3 cm width) at the center
     >>> distance = np.linalg.norm(env.bin_centers, axis=1)
     >>> firing_rate = 8.0 * np.exp(-(distance**2) / (2 * 3.0**2))
-    >>> fields = detect_place_fields(env, firing_rate)
+    >>> fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
     >>> len(fields)
     1
 
@@ -5180,8 +5198,16 @@ def detect_place_fields(
             )
         )
 
-    if min_size is None:
-        min_size = 9  # 3 x 3 bins in 2-D
+    if not (np.isfinite(bandwidth) and bandwidth >= 0):
+        raise ValueError(
+            _format_error(
+                f"bandwidth must be a finite length >= 0, got {bandwidth}.",
+                why="Why: it is the smoothing the map was estimated with, which "
+                "sets the smallest field",
+                fix="pass result.bandwidth of the rate map, or 0.0 for an "
+                "unsmoothed map",
+            )
+        )
 
     finite = np.isfinite(firing_rate)
     if not np.any(finite):
@@ -5207,6 +5233,7 @@ def detect_place_fields(
     min_peak = max(
         min_peak_rate, min_secondary_peak_fraction * float(np.max(firing_rate[finite]))
     )
+    measures = np.asarray(env.binning.bins.sizes, dtype=np.float64)
     # Unassigned bins keep their rate; assigned and missing bins are NaN.
     remaining = np.where(finite, firing_rate, np.nan)
     fields: list[NDArray[np.int64]] = []
@@ -5220,15 +5247,23 @@ def detect_place_fields(
         above_threshold = remaining >= peak_rate * threshold
         field_bins = _extract_connected_component(peak_idx, above_threshold, env)
         remaining[field_bins] = np.nan
-        if len(field_bins) < min_size or _rises_toward_a_neighbor(
-            peak_idx, peak_rate, firing_rate, env
-        ):
+        if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
+            continue
+        smallest = _smoothed_bin_measure(
+            env, peak_idx, bandwidth, threshold, finite, measures
+        )
+        if measures[field_bins].sum() <= smallest:
             continue
 
-        if detect_subfields and len(field_bins) > min_size * 2:
+        if detect_subfields and measures[field_bins].sum() > 2 * smallest:
             fields.extend(
                 _detect_subfields(
-                    firing_rate[field_bins], field_bins, peak_rate, env, min_size
+                    firing_rate[field_bins],
+                    field_bins,
+                    peak_rate,
+                    env,
+                    measures,
+                    smallest,
                 )
             )
         else:
@@ -5250,7 +5285,6 @@ def has_place_field(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     threshold: float = 0.2,
-    min_size: int | None = None,
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.6,
     max_mean_rate: float = np.inf,
@@ -5318,8 +5352,9 @@ def has_place_field(
         started before, or continued after, the spike recording.
     threshold : float, default=0.2
         Fraction of each field's own peak rate that defines its boundary (0-1).
-    min_size : int, optional
-        Minimum number of bins for a valid field. If None, defaults to 9.
+        A field must be larger than one noisy bin smoothed with ``bandwidth``
+        (see :func:`detect_place_fields`); for ``method="glm"``, larger than
+        one bin.
     min_peak_rate : float, default=1.0
         Smallest peak rate (Hz) that can start a field.
     min_secondary_peak_fraction : float, default=0.6
@@ -5484,7 +5519,6 @@ def has_place_field(
     )
     return result.has_place_field(
         threshold=threshold,
-        min_size=min_size,
         min_peak_rate=min_peak_rate,
         min_secondary_peak_fraction=min_secondary_peak_fraction,
         max_mean_rate=max_mean_rate,
@@ -5847,6 +5881,30 @@ def _rises_toward_a_neighbor(
     return bool(np.any(firing_rate[neighbors] > peak_rate))
 
 
+def _smoothed_bin_measure(
+    env: Environment,
+    peak_idx: int,
+    bandwidth: float,
+    threshold: float,
+    observed: NDArray[np.bool_],
+    measures: NDArray[np.float64],
+) -> float:
+    """Measure of the field one noisy bin at ``peak_idx`` makes after smoothing.
+
+    The connected observed bins where one unit diffused from ``peak_idx``
+    stays at or above ``threshold`` times its maximum; the peak bin alone for
+    an unsmoothed map. See :func:`detect_place_fields`, Notes.
+    """
+    if bandwidth == 0:
+        return float(measures[peak_idx])
+    impulse = np.zeros(env.n_bins)
+    impulse[peak_idx] = 1.0
+    spread = np.asarray(env.diffuse(impulse, bandwidth=bandwidth, mode="density"))
+    above = observed & (spread >= threshold * spread.max())
+    region = _extract_connected_component(peak_idx, above, env)
+    return float(measures[region].sum())
+
+
 def _extract_connected_component_graph(
     seed_idx: int,
     mask: NDArray[np.bool_],
@@ -5906,7 +5964,8 @@ def _detect_subfields(
     field_bins: NDArray[np.int64],
     peak_rate: float,
     env: Environment,
-    min_size: int,
+    measures: NDArray[np.float64],
+    smallest: float,
 ) -> list[NDArray[np.int64]]:
     """Recursively detect subfields using higher thresholds.
 
@@ -5920,8 +5979,10 @@ def _detect_subfields(
         Peak firing rate in field.
     env : Environment
         Spatial environment.
-    min_size : int
-        Minimum field size.
+    measures : array, shape (n_bins,)
+        Measure (length, area or volume) of each bin.
+    smallest : float
+        Measure a part must exceed to be a field.
 
     Returns
     -------
@@ -5954,7 +6015,7 @@ def _detect_subfields(
                 seed_global_idx, global_mask, env
             )
 
-            if len(component_global) >= min_size:
+            if measures[component_global].sum() > smallest:
                 subfields.append(component_global)
 
             # Remove from remaining mask

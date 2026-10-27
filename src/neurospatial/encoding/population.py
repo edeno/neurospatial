@@ -128,7 +128,7 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
                     f"is_observed must be (n_bins,) and bin_centers (n_bins, n_dims); "
                     f"got {is_observed.shape} and {bin_centers.shape}.",
                     why="Why: coverage is counted per bin",
-                    fix="use population_coverage(env, firing_rates) to build the result",
+                    fix="use population_coverage(env, firing_rates, bandwidth=rates.bandwidth) to build the result",
                 )
             )
         if len(bin_centers) != len(is_observed):
@@ -291,8 +291,8 @@ def population_coverage(
     env: Environment,
     firing_rates: NDArray[np.floating],
     *,
+    bandwidth: float,
     threshold: float = 0.2,
-    min_size: int | None = None,
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.6,
     max_mean_rate: float = np.inf,
@@ -311,13 +311,14 @@ def population_coverage(
         Environment defining the spatial bins.
     firing_rates : NDArray[np.floating], shape (n_neurons, n_bins)
         Firing rate maps for each neuron.
+    bandwidth : float
+        Smoothing bandwidth the maps were estimated with (``rates.bandwidth``;
+        0 for unsmoothed maps). It sets the smallest field. Passed to
+        `detect_place_fields()`.
     threshold : float, default=0.2
         Place field boundary threshold as fraction of peak firing rate (0-1).
         Lower values (0.1-0.2) detect larger fields, higher values (0.3-0.5)
         detect only core field regions. Passed to `detect_place_fields()`.
-    min_size : int, optional
-        Minimum number of bins for a valid field. Default is 9.
-        Passed to `detect_place_fields()`.
     min_peak_rate : float, default=1.0
         Smallest peak rate (Hz) that can start a field. Passed to
         `detect_place_fields()`.
@@ -387,7 +388,7 @@ def population_coverage(
     ... ).firing_rates  # Shape: (n_neurons, n_bins)
     >>>
     >>> # 3. Analyze coverage
-    >>> result = population_coverage(env, firing_rates)  # doctest: +SKIP
+    >>> result = population_coverage(env, firing_rates, bandwidth=5.0)  # doctest: +SKIP
     >>> print(f"Coverage: {result.coverage_fraction:.1%}")  # doctest: +SKIP
     >>> print(
     ...     f"Maps with fields: {result.n_place_cells}/{result.n_neurons}"
@@ -441,8 +442,8 @@ def population_coverage(
             fields = detect_place_fields(
                 env,
                 firing_rates[neuron_idx],
+                bandwidth=bandwidth,
                 threshold=threshold,
-                min_size=min_size,
                 min_peak_rate=min_peak_rate,
                 min_secondary_peak_fraction=min_secondary_peak_fraction,
                 max_mean_rate=max_mean_rate,
@@ -458,8 +459,8 @@ def population_coverage(
                 delayed(detect_place_fields)(
                     env,
                     firing_rates[neuron_idx],
+                    bandwidth=bandwidth,
                     threshold=threshold,
-                    min_size=min_size,
                     min_peak_rate=min_peak_rate,
                     min_secondary_peak_fraction=min_secondary_peak_fraction,
                     max_mean_rate=max_mean_rate,

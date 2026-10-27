@@ -51,7 +51,7 @@ def test_place_field_workflow_integration():
     from neurospatial.encoding.spatial import detect_place_fields
 
     # Detect fields
-    fields = detect_place_fields(env, firing_rate)
+    fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
     assert len(fields) > 0
 
     # Measure first field
@@ -133,7 +133,7 @@ class TestDetectPlaceFields:
         from neurospatial.encoding.spatial import detect_place_fields
 
         # Detect fields
-        fields = detect_place_fields(env, firing_rate)
+        fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
 
         # Should detect exactly one field
         assert len(fields) == 1
@@ -143,13 +143,71 @@ class TestDetectPlaceFields:
         mean_center = field_centers.mean(axis=0)
         assert_allclose(mean_center, [10.0, 10.0], atol=2.0)
 
+    def test_smallest_field_is_one_noisy_bin_after_smoothing(self, track_arena):
+        """One bin's excess, smoothed, is no field; a real field smoothed is."""
+        env, bump = track_arena
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        bandwidth = 5.0
+        peak_bin = int(np.argmin(np.linalg.norm(env.bin_centers - [40, 20], axis=1)))
+        impulse = np.zeros(env.n_bins)
+        impulse[peak_bin] = 1.0
+        one_bin = env.diffuse(impulse, bandwidth=bandwidth, mode="density")
+        one_bin = 10.0 * one_bin / one_bin.max()
+        assert len(detect_place_fields(env, one_bin, bandwidth=bandwidth)) == 0
+        # The same map read as unsmoothed is many bins wide: a field.
+        assert len(detect_place_fields(env, one_bin, bandwidth=0.0)) == 1
+
+        # A 3 cm-wide field smoothed with the same kernel is wider than that.
+        field = env.diffuse(bump(40, 20, 1.0, 3.0), bandwidth=bandwidth, mode="density")
+        field = 10.0 * field / field.max()
+        assert len(detect_place_fields(env, field, bandwidth=bandwidth)) == 1
+
+    @pytest.mark.parametrize("bin_size", [2.0, 5.0])
+    def test_track_field_detected_at_any_bin_size(self, bin_size):
+        """A realistic track field (0.2-contour 29 cm) is found with 2 or 5 cm bins.
+
+        The smallest field is set by the smoothing, not a bin count, so
+        coarser bins do not reject it (a 9-bin minimum is 45 cm at 5 cm).
+        """
+        from neurospatial.encoding.spatial import (
+            compute_spatial_rates,
+            detect_place_fields,
+        )
+        from neurospatial.simulation import (
+            generate_poisson_spikes,
+            simulate_trajectory_laps,
+        )
+
+        env = Environment.from_samples(
+            np.linspace(0, 200, 401)[:, None], bin_size=bin_size
+        ).with_metadata(units="cm")
+        runs = []
+        for seed in range(3):
+            positions, times = simulate_trajectory_laps(
+                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, seed=seed
+            )
+            rate = 15 * np.exp(-((positions[:, 0] - 100) ** 2) / (2 * 8.0**2)) + 0.1
+            trains = [generate_poisson_spikes(rate, times, seed=100 + seed)]
+            runs.append(compute_spatial_rates(env, trains, times, positions)[0])
+        for rates in runs:
+            assert rates.bandwidth == 5.0
+            assert rates.has_place_field()
+            rate_map = np.asarray(rates.firing_rate)
+            fields = list(detect_place_fields(env, rate_map, bandwidth=rates.bandwidth))
+            assert len(fields) == 1
+            peak = env.bin_centers[fields[0][np.argmax(rate_map[fields[0]])], 0]
+            assert abs(peak - 100) <= bin_size
+
     def test_coalescent_fields_split_at_true_centers(self, track_arena):
         """Two fields 16 cm apart (sigma 5 cm) merge at 0.2 x peak; subfields split them."""
         env, bump = track_arena
         firing_rate = bump(32, 20, 10.0, 5.0) + bump(48, 20, 10.0, 5.0)
         from neurospatial.encoding.spatial import detect_place_fields
 
-        fields = detect_place_fields(env, firing_rate, detect_subfields=True)
+        fields = detect_place_fields(
+            env, firing_rate, bandwidth=0.0, detect_subfields=True
+        )
         assert len(fields) == 2
         centroids = sorted(
             [
@@ -162,7 +220,9 @@ class TestDetectPlaceFields:
         assert_allclose(centroids[0], [32.0, 20.0], atol=bin_size)
         assert_allclose(centroids[1], [48.0, 20.0], atol=bin_size)
 
-        merged = detect_place_fields(env, firing_rate, detect_subfields=False)
+        merged = detect_place_fields(
+            env, firing_rate, bandwidth=0.0, detect_subfields=False
+        )
         assert len(merged) == 1
 
     def test_peak_floor_stops_cascade_into_noise(self, track_arena):
@@ -179,13 +239,15 @@ class TestDetectPlaceFields:
         firing_rate[isolated] = 5.0
         from neurospatial.encoding.spatial import detect_place_fields
 
-        fields = detect_place_fields(env, firing_rate)
+        fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
         assert len(fields) == 1
         assert np.max(firing_rate[fields[0]]) == pytest.approx(20.0, rel=0.05)
 
         # Without the secondary-peak fraction, the 1 Hz floor still applies:
         # the 3 Hz bump is a field and nothing below 1 Hz is.
-        fields = detect_place_fields(env, firing_rate, min_secondary_peak_fraction=0.0)
+        fields = detect_place_fields(
+            env, firing_rate, bandwidth=0.0, min_secondary_peak_fraction=0.0
+        )
         peaks = [float(np.max(firing_rate[f])) for f in fields]
         assert len(fields) == 2
         assert min(peaks) >= 1.0
@@ -196,8 +258,11 @@ class TestDetectPlaceFields:
         firing_rate = bump(40, 20, 0.8, 5.0)
         from neurospatial.encoding.spatial import detect_place_fields
 
-        assert len(detect_place_fields(env, firing_rate)) == 0
-        assert len(detect_place_fields(env, firing_rate, min_peak_rate=0.5)) == 1
+        assert len(detect_place_fields(env, firing_rate, bandwidth=0.0)) == 0
+        assert (
+            len(detect_place_fields(env, firing_rate, bandwidth=0.0, min_peak_rate=0.5))
+            == 1
+        )
 
     @pytest.mark.parametrize(
         ("kwargs", "match"),
@@ -212,7 +277,7 @@ class TestDetectPlaceFields:
         from neurospatial.encoding.spatial import detect_place_fields
 
         with pytest.raises(ValueError, match=match):
-            detect_place_fields(env, bump(40, 20, 10.0, 5.0), **kwargs)
+            detect_place_fields(env, bump(40, 20, 10.0, 5.0), bandwidth=0.0, **kwargs)
 
     def test_detect_place_fields_explicit_map_mean_exclusion(self):
         """A requested map-mean cutoff warns when it excludes a map."""
@@ -227,7 +292,9 @@ class TestDetectPlaceFields:
 
         # Explicit filtering should exclude the map and warn.
         with pytest.warns(UserWarning, match=r"spatial-map-mean filter.*15\.00 Hz"):
-            fields = detect_place_fields(env, firing_rate, max_mean_rate=10.0)
+            fields = detect_place_fields(
+                env, firing_rate, bandwidth=0.0, max_mean_rate=10.0
+            )
 
         assert len(fields) == 0
 
@@ -247,7 +314,7 @@ class TestDetectPlaceFields:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")  # turn any warning into a failure
-            detect_place_fields(env, firing_rate, max_mean_rate=10.0)
+            detect_place_fields(env, firing_rate, bandwidth=0.0, max_mean_rate=10.0)
 
     def test_detect_place_fields_uniform_rate(self):
         """Test detection with uniform firing rate.
@@ -265,13 +332,12 @@ class TestDetectPlaceFields:
 
         from neurospatial.encoding.spatial import detect_place_fields
 
-        fields = detect_place_fields(env, firing_rate)
+        fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
 
-        # Uniform firing creates one large field (all bins above threshold)
-        # This is correct behavior: uniform rate has no spatial selectivity
-        assert len(fields) == 1
-        # The field should contain most/all bins (entire environment)
+        # Uniform firing makes each connected part of the environment one
+        # field (every bin is above threshold): segmentation, not selectivity.
         assert len(fields[0]) > env.n_bins * 0.9
+        assert sum(len(field) for field in fields) <= env.n_bins
 
     def test_detect_place_fields_parameter_order(self):
         """Test that firing_rate comes before env (matches project convention)."""
@@ -287,7 +353,7 @@ class TestDetectPlaceFields:
 
         # This should work (firing_rate first). Returns PlaceFieldsResult
         # (was a bare list[NDArray] before).
-        fields = detect_place_fields(env, firing_rate)
+        fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
         assert isinstance(fields, PlaceFieldsResult)
 
 
@@ -1880,7 +1946,7 @@ class TestDetectPlaceFieldsValidation:
         with pytest.raises(
             ValueError, match=r"firing_rate shape.*does not match.*n_bins"
         ):
-            detect_place_fields(env, wrong_firing_rate)
+            detect_place_fields(env, wrong_firing_rate, bandwidth=0.0)
 
     def test_threshold_out_of_range_raises_error(self):
         """Test that ValueError is raised when threshold is not in (0, 1)."""
@@ -1892,16 +1958,16 @@ class TestDetectPlaceFieldsValidation:
         from neurospatial.encoding.spatial import detect_place_fields
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
-            detect_place_fields(env, firing_rate, threshold=0.0)
+            detect_place_fields(env, firing_rate, bandwidth=0.0, threshold=0.0)
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
-            detect_place_fields(env, firing_rate, threshold=1.0)
+            detect_place_fields(env, firing_rate, bandwidth=0.0, threshold=1.0)
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
-            detect_place_fields(env, firing_rate, threshold=-0.1)
+            detect_place_fields(env, firing_rate, bandwidth=0.0, threshold=-0.1)
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
-            detect_place_fields(env, firing_rate, threshold=1.5)
+            detect_place_fields(env, firing_rate, bandwidth=0.0, threshold=1.5)
 
     def test_all_nan_firing_rate_returns_empty(self):
         """Test that all-NaN firing rate returns empty field list."""
@@ -1913,7 +1979,7 @@ class TestDetectPlaceFieldsValidation:
 
         firing_rate = np.full(env.n_bins, np.nan)
 
-        fields = detect_place_fields(env, firing_rate)
+        fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
 
         # PlaceFieldsResult is sized + iterable; len() == 0 means no
         # fields were detected (and excluded_reason is None because
@@ -1921,22 +1987,16 @@ class TestDetectPlaceFieldsValidation:
         assert len(fields) == 0
         assert fields.excluded_reason is None
 
-    def test_explicit_min_size_parameter(self):
-        """Test that min_size parameter is respected."""
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((1000, 2)) * 10
-        env = Environment.from_samples(positions, bin_size=2.0)
-
+    @pytest.mark.parametrize("bandwidth", [-1.0, np.nan, np.inf])
+    def test_bandwidth_must_be_a_finite_length(self, bandwidth):
+        """The smoothing bandwidth sets the smallest field, so it is validated."""
+        env = Environment.from_samples(
+            np.random.default_rng(42).standard_normal((1000, 2)) * 10, bin_size=2.0
+        )
         from neurospatial.encoding.spatial import detect_place_fields
 
-        firing_rate = np.zeros(env.n_bins)
-        peak_idx = env.n_bins // 2
-        firing_rate[peak_idx] = 5.0
-        for neighbor in env.neighbors(bins=peak_idx):
-            firing_rate[neighbor] = 3.0
-
-        fields = detect_place_fields(env, firing_rate, min_size=20)
-        assert len(fields) == 0 or all(len(f) >= 20 for f in fields)
+        with pytest.raises(ValueError, match="bandwidth"):
+            detect_place_fields(env, np.ones(env.n_bins), bandwidth=bandwidth)
 
 
 class TestFieldCentroidEdgeCases:
@@ -2434,7 +2494,7 @@ class TestPlaceFieldsResult:
         )
 
         env, firing_rate = self._build_env_and_rates()
-        result = detect_place_fields(env, firing_rate)
+        result = detect_place_fields(env, firing_rate, bandwidth=0.0)
         assert isinstance(result, PlaceFieldsResult)
         assert result.excluded_reason is None
         assert result.n_excluded == 0
@@ -2446,8 +2506,12 @@ class TestPlaceFieldsResult:
         from neurospatial.encoding import detect_place_fields
 
         env, rates = self._build_env_and_rates()
-        original = detect_place_fields(env, rates, detect_subfields=False)
-        high_rate = detect_place_fields(env, rates * 1000, detect_subfields=False)
+        original = detect_place_fields(
+            env, rates, bandwidth=0.0, detect_subfields=False
+        )
+        high_rate = detect_place_fields(
+            env, rates * 1000, bandwidth=0.0, detect_subfields=False
+        )
         assert len(original) > 0
         assert len(high_rate) == len(original)
         assert high_rate.excluded_reason is None
@@ -2478,7 +2542,9 @@ class TestPlaceFieldsResult:
         # Push the spatial-map mean above the explicit 10 Hz cutoff.
         firing_rate = np.full(env.n_bins, 20.0)
         with pytest.warns(UserWarning, match=r"spatial-map-mean filter"):
-            result = detect_place_fields(env, firing_rate, max_mean_rate=10.0)
+            result = detect_place_fields(
+                env, firing_rate, bandwidth=0.0, max_mean_rate=10.0
+            )
         assert isinstance(result, PlaceFieldsResult)
         assert result.excluded_reason == "mean_rate_above_threshold"
         assert result.n_excluded == 1
@@ -2489,7 +2555,7 @@ class TestPlaceFieldsResult:
         from neurospatial.encoding.spatial import detect_place_fields
 
         env, firing_rate = self._build_env_and_rates()
-        result = detect_place_fields(env, firing_rate)
+        result = detect_place_fields(env, firing_rate, bandwidth=0.0)
         # Length, indexing, iteration, truthiness all delegate to
         # the underlying fields list.
         n_fields = 0

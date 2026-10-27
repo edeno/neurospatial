@@ -30,14 +30,14 @@ from neurospatial.encoding import compute_spatial_rate, detect_place_fields
 
 # Create environment and compute firing rate map
 env = Environment.from_samples(positions, bin_size=2.5)
-firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
+rates = compute_spatial_rate(env, spike_times, times, positions)
 
 # Detect place fields
-fields = detect_place_fields(env, firing_rate,
-    threshold=0.2,          # 20% of peak rate
-    min_size=None,          # Default: at least 9 bins
-    max_mean_rate=np.inf,   # Default: no rate-based exclusion
-    detect_subfields=True   # Discriminate coalescent fields
+fields = detect_place_fields(env, rates.firing_rate,
+    bandwidth=rates.bandwidth,  # smoothing of the map: sets the smallest field
+    threshold=0.2,              # 20% of each field's peak rate
+    max_mean_rate=np.inf,       # Default: no rate-based exclusion
+    detect_subfields=True       # Discriminate coalescent fields
 )
 
 # Result: iterable PlaceFieldsResult with bin arrays and optional exclusion metadata
@@ -55,7 +55,11 @@ fields = detect_place_fields(env, firing_rate,
 **Key parameters:**
 
 - `threshold`: Fraction of peak rate (default 0.2 = 20%, following Muller & Kubie, 1989)
-- `min_size`: Minimum field size in bins (defaults to 9; choose for your bin size)
+- `bandwidth`: The smoothing bandwidth the map was estimated with
+  (`rates.bandwidth`; 0 for an unsmoothed map). A field must be larger than
+  what one noisy bin becomes after that smoothing: with a 5 cm bandwidth and
+  the 0.2 threshold, 18 cm on a track and 253 cm² in an open field, whatever
+  the bin size. `has_place_field` passes it for you.
 - `max_mean_rate`: Optional upper bound on the unweighted mean of non-NaN spatial-bin rates
   (default `np.inf`, disabled). This is not spike count divided by recording time,
   and does not identify interneurons or another cell type.
@@ -198,8 +202,9 @@ import numpy as np
 # Stack firing rate maps from all neurons: shape (n_neurons, n_bins)
 firing_rates = np.array([rate_map_cell1, rate_map_cell2, rate_map_cell3])
 
-# Compute coverage (runs detect_place_fields internally)
-result = population_coverage(env, firing_rates)
+# Compute coverage (runs detect_place_fields internally); pass the bandwidth
+# the maps were smoothed with, e.g. rates.bandwidth from compute_spatial_rates
+result = population_coverage(env, firing_rates, bandwidth=5.0)
 
 # Access results
 print(f"Coverage: {result.coverage_fraction:.1%}")
@@ -889,12 +894,13 @@ from neurospatial.encoding import compute_spatial_rate
 
 # 1. Create environment and compute firing rate
 env = Environment.from_samples(positions, bin_size=2.5)
-firing_rate = compute_spatial_rate(
-    env, spike_times, times, positions, min_occupancy=0.5
-).firing_rate
+rates = compute_spatial_rate(env, spike_times, times, positions, min_occupancy=0.5)
+firing_rate = rates.firing_rate
 
 # 2. Detect place fields
-fields = detect_place_fields(env, firing_rate, detect_subfields=True)
+fields = detect_place_fields(
+    env, firing_rate, bandwidth=rates.bandwidth, detect_subfields=True
+)
 print(f"Detected {len(fields)} place fields")
 
 # 3. Compute field properties
@@ -930,10 +936,10 @@ import numpy as np
 
 # Batch-encode firing rate maps for all cells: shape (n_neurons, n_bins)
 # all_spike_trains is a list of per-cell spike-time arrays.
-firing_rates = compute_spatial_rates(env, all_spike_trains, times, positions).firing_rates
+rates = compute_spatial_rates(env, all_spike_trains, times, positions)
 
 # Analyze population coverage (runs detect_place_fields internally)
-result = population_coverage(env, firing_rates)
+result = population_coverage(env, rates.firing_rates, bandwidth=rates.bandwidth)
 
 print(f"Population coverage: {result.coverage_fraction:.1%}")
 print(f"Place cells: {result.n_place_cells}/{result.n_neurons}")

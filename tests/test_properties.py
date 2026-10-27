@@ -1110,7 +1110,7 @@ class TestPlaceFieldDetectionProperties:
 
         # Detect fields
         try:
-            fields = detect_place_fields(env, firing_rate)
+            fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
 
             # Property: all field bin indices should be valid
             for field in fields:
@@ -1155,6 +1155,7 @@ class TestPlaceFieldDetectionProperties:
             fields = detect_place_fields(
                 env,
                 firing_rate,
+                bandwidth=0.0,
                 threshold=0.5,  # Threshold for field detection
             )
 

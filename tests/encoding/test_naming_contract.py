@@ -79,7 +79,9 @@ def test_has_place_field_method_agrees_with_detect_place_fields(trajectory) -> N
     env, times, positions, _headings, spike_times = trajectory
     for spikes in spike_times:
         result = compute_spatial_rate(env, spikes, times, positions, bandwidth=10.0)
-        fields = detect_place_fields(env, np.asarray(result.firing_rate))
+        fields = detect_place_fields(
+            env, np.asarray(result.firing_rate), bandwidth=result.bandwidth
+        )
         assert result.has_place_field() == (len(fields) > 0)
 
 
@@ -95,7 +97,9 @@ def test_has_place_field_free_function_agrees_with_detect_place_fields(
     env, times, positions, _headings, spike_times = trajectory
     for spikes in spike_times:
         result = compute_spatial_rate(env, spikes, times, positions, bandwidth=10.0)
-        fields = detect_place_fields(env, np.asarray(result.firing_rate))
+        fields = detect_place_fields(
+            env, np.asarray(result.firing_rate), bandwidth=result.bandwidth
+        )
         assert has_place_field(env, spikes, times, positions, bandwidth=10.0) == (
             len(fields) > 0
         )
