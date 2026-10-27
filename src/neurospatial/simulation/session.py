@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.simulation.models import NeuralModel
@@ -176,7 +178,7 @@ def simulate_session(
     *,
     duration: float,
     n_cells: int = 50,
-    cell_type: Literal["place", "boundary", "grid", "mixed"] = "place",
+    cell_type: Literal["place", "border", "grid", "mixed"] = "place",
     trajectory_method: Literal["ou", "sinusoidal", "laps"] = "ou",
     coverage: Literal["uniform", "random"] = "uniform",
     show_progress: bool = True,
@@ -198,19 +200,21 @@ def simulate_session(
         sample is within one sample period of ``duration``.
     n_cells : int, optional
         Number of neurons to simulate (default: 50).
-    cell_type : {'place', 'boundary', 'grid', 'mixed'}, optional
+    cell_type : {'place', 'border', 'grid', 'mixed'}, optional
         Type of neurons to create (default: 'place').
         - 'place': All place cells
-        - 'boundary': All boundary cells
+        - 'border': All border cells (``BorderCellModel``; needs
+          ``border_width`` and an environment with declared walls)
         - 'grid': All grid cells (requires 2D environment)
-        - 'mixed': 60% place, 20% boundary, 20% grid
+        - 'mixed': 60% place, 20% border, 20% grid
     trajectory_method : {'ou', 'sinusoidal', 'laps'}, optional
         Trajectory generation method (default: 'ou').
     coverage : {'uniform', 'random'}, optional
         Spatial distribution of field centers (default: 'uniform').
-        - 'uniform': Evenly space field centers across environment using
-          env.bin_centers[::step] where step = max(1, n_bins // n_cells).
-          Ensures full coverage without clustering.
+        - 'uniform': Evenly space field centers across the environment. On a
+          track, centers are evenly spaced along the linearized track; in an
+          arena, they form a grid inset 20% from each edge, snapped to the
+          nearest bin.
         - 'random': Randomly sample field centers from env.bin_centers
           using np.random.choice(env.bin_centers, size=n_cells).
           May result in clustering or gaps in coverage.
@@ -255,16 +259,14 @@ def simulate_session(
         - metric : {'euclidean', 'geodesic'} - Distance computation method
         - condition : Callable - Optional conditional firing function
 
-        **Boundary cell parameters** (cell_type='boundary' or 'mixed'):
+        **Border cell parameters** (cell_type='border' or 'mixed'):
 
-        - distance : float - Preferred distance from boundary (maps to preferred_distance)
-        - boundary_width : float - Distance tolerance (maps to distance_tolerance, recommended)
-        - width : float - Distance tolerance (maps to distance_tolerance, only for cell_type='boundary')
-          Note: 'width' is NOT remapped for mixed cell types to avoid conflicts with PlaceCellModel.
-          Use 'boundary_width' for unambiguous parameter passing in mixed mode.
+        - border_width : float - Required. Standard deviation of the distance
+          tuning in environment units (``distance_tolerance``)
+        - distance : float - Preferred distance from the nearest wall
+          (``preferred_distance``, default 0: firing along the walls)
         - max_rate : float - Peak firing rate in Hz (default: 15.0)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
-        - metric : {'euclidean', 'geodesic'} - Distance computation method
 
         **Grid cell parameters** (cell_type='grid' or 'mixed'):
 
@@ -289,7 +291,7 @@ def simulate_session(
     Raises
     ------
     ValueError
-        If cell_type is not one of: 'place', 'boundary', 'grid', 'mixed'.
+        If cell_type is not one of: 'place', 'border', 'grid', 'mixed'.
     ValueError
         If trajectory_method is not one of: 'ou', 'sinusoidal', 'laps'.
     ValueError
@@ -302,12 +304,11 @@ def simulate_session(
 
     Examples
     --------
-    >>> # Quick place cell session
+    >>> # Quick place cell session in a walled 1 m box
     >>> import numpy as np
+    >>> from shapely.geometry import box
     >>> from neurospatial import Environment
-    >>> arena_data = np.random.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(arena_data, bin_size=2.0)
-    >>> env = env.with_metadata(units="cm")
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
     >>> session = simulate_session(env, duration=2.0, n_cells=3, show_progress=False)
     >>> positions = session.positions  # Typed access
     >>> spike_times = session.spike_times  # IDE autocomplete
@@ -319,6 +320,7 @@ def simulate_session(
     ...     duration=2.0,
     ...     n_cells=10,
     ...     cell_type="mixed",
+    ...     border_width=5.0,  # border cells' distance tuning, cm
     ...     trajectory_method="ou",
     ...     speed_mean=0.1,
     ...     coherence_time=0.8,
@@ -350,7 +352,7 @@ def simulate_session(
     """
     # Import functions here to avoid circular imports
     from neurospatial.simulation.models import (
-        BoundaryCellModel,
+        BorderCellModel,
         GridCellModel,
         PlaceCellModel,
     )
@@ -362,7 +364,7 @@ def simulate_session(
     )
 
     # Validate parameters
-    valid_cell_types = {"place", "boundary", "grid", "mixed"}
+    valid_cell_types = {"place", "border", "grid", "mixed"}
     if cell_type not in valid_cell_types:
         raise ValueError(
             f"cell_type must be one of {valid_cell_types}, got '{cell_type}'"
@@ -398,26 +400,24 @@ def simulate_session(
     # accepted by more than one cell type, so they must be *read* (not consumed)
     # by every applicable model type before being removed from ``kwargs``. The
     # earlier implementation popped them into ``place_cell_params`` first, which
-    # silently starved the boundary/grid loops of any caller-supplied rate in
+    # silently starved the border/grid loops of any caller-supplied rate in
     # mixed mode. We peek the shared params, distribute them per cell type
     # (respecting which constructor accepts which), then pop them once at the
     # end so they don't leak into the trajectory kwargs or session metadata.
     #
-    # Note: ``metric`` is accepted by PlaceCellModel and BoundaryCellModel but
-    # NOT GridCellModel, so it is routed only to the former two.
+    # Note: ``metric`` is accepted only by PlaceCellModel.
     place_cell_params: dict[str, Any] = {}
-    boundary_cell_params: dict[str, Any] = {}
+    border_cell_params: dict[str, Any] = {}
     grid_cell_params: dict[str, Any] = {}
 
     # Shared rate parameters (read without consuming; popped below).
     for param in ["max_rate", "baseline_rate"]:
         if param in kwargs:
             place_cell_params[param] = kwargs[param]
-            boundary_cell_params[param] = kwargs[param]
+            border_cell_params[param] = kwargs[param]
             grid_cell_params[param] = kwargs[param]
     if "metric" in kwargs:
         place_cell_params["metric"] = kwargs["metric"]
-        boundary_cell_params["metric"] = kwargs["metric"]
 
     # Remove shared params now that all applicable cell types have read them.
     for param in ["max_rate", "baseline_rate", "metric"]:
@@ -428,17 +428,21 @@ def simulate_session(
         if param in kwargs:
             place_cell_params[param] = kwargs.pop(param)
 
-    # BoundaryCellModel-only parameters - remap convenience names to actual names.
-    # Remapped parameters: distance -> preferred_distance
+    # BorderCellModel-only parameters - remap convenience names to actual names.
     if "distance" in kwargs:
-        boundary_cell_params["preferred_distance"] = kwargs.pop("distance")
-    # For distance_tolerance: prefer explicit "boundary_width", fallback to "width" only for pure boundary mode
-    # Note: "width" is used by PlaceCellModel, so only map to distance_tolerance for pure boundary cells
-    if "boundary_width" in kwargs:
-        boundary_cell_params["distance_tolerance"] = kwargs.pop("boundary_width")
-    elif "width" in kwargs and cell_type == "boundary":
-        # Only remap 'width' to distance_tolerance for pure boundary cell mode to avoid conflicts with PlaceCellModel
-        boundary_cell_params["distance_tolerance"] = kwargs.pop("width")
+        border_cell_params["preferred_distance"] = kwargs.pop("distance")
+    if "border_width" in kwargs:
+        border_cell_params["distance_tolerance"] = kwargs.pop("border_width")
+    elif cell_type in ("border", "mixed"):
+        raise ValueError(
+            _format_error(
+                f"simulate_session(cell_type={cell_type!r}) needs border_width.",
+                why="Why: a border cell's tuning width has no default; it sets "
+                "how far from the walls the cell fires.",
+                fix="pass border_width in environment units, e.g. border_width=5.0 "
+                "for 5 cm",
+            )
+        )
 
     # GridCellModel-only parameters - remap convenience names to actual names.
     # Remapped parameters: spacing -> grid_spacing, orientation -> grid_orientation
@@ -508,7 +512,15 @@ def simulate_session(
         # inset target can still be a boundary bin; the inset only reduces, not
         # eliminates, boundary placement.
         ranges = env.dimension_ranges
-        if ranges is None:
+        if env.binning.linearization is not None:
+            # Tracks: space centers evenly along the track, so every arm gets
+            # fields. A bounding-box grid snapped to a thin track would pile
+            # the centers onto the few bins nearest its inset targets.
+            linear = env.to_linear(env.bin_centers)
+            targets = np.linspace(linear.min(), linear.max(), n_cells)
+            nearest = np.abs(linear[None, :] - targets[:, None]).argmin(axis=1)
+            field_centers = env.bin_centers[nearest]
+        elif ranges is None:
             # Layouts without an axis-aligned bounding box (e.g. graph tracks):
             # fall back to evenly striding through the bin centers.
             step = max(1, len(env.bin_centers) // n_cells)
@@ -558,26 +570,26 @@ def simulate_session(
     if cell_type == "place":
         for center in field_centers:
             models.append(PlaceCellModel(env, center=center, **place_cell_params))
-    elif cell_type == "boundary":
+    elif cell_type == "border":
         for _ in range(n_cells):
-            models.append(BoundaryCellModel(env, **boundary_cell_params))
+            models.append(BorderCellModel(env, **border_cell_params))
     elif cell_type == "grid":
         for center in field_centers:
             # Use center for phase offset
             models.append(GridCellModel(env, phase_offset=center, **grid_cell_params))
     elif cell_type == "mixed":
-        # 60% place, 20% boundary, 20% grid
+        # 60% place, 20% border, 20% grid
         n_place = int(0.6 * n_cells)
-        n_boundary = int(0.2 * n_cells)
-        n_grid = n_cells - n_place - n_boundary  # Remainder goes to grid
+        n_border = int(0.2 * n_cells)
+        n_grid = n_cells - n_place - n_border  # Remainder goes to grid
 
         # Create place cells
         for center in field_centers[:n_place]:
             models.append(PlaceCellModel(env, center=center, **place_cell_params))
 
-        # Create boundary cells
-        for _ in range(n_boundary):
-            models.append(BoundaryCellModel(env, **boundary_cell_params))
+        # Create border cells
+        for _ in range(n_border):
+            models.append(BorderCellModel(env, **border_cell_params))
 
         # Create grid cells
         for center in field_centers[n_place : n_place + n_grid]:

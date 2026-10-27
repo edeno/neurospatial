@@ -158,7 +158,7 @@ class PlaceCellModel:
 
     See Also
     --------
-    BoundaryCellModel : Boundary-distance tuned cells
+    BorderCellModel : Wall-distance tuned cells
     GridCellModel : Hexagonal grid patterns
     simulate_trajectory_ou : Generate realistic trajectories
     generate_poisson_spikes : Convert rates to spike times

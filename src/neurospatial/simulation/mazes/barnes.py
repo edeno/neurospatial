@@ -49,7 +49,7 @@ from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
-from neurospatial.simulation.mazes._geometry import make_circular_arena
+from neurospatial.simulation.mazes._geometry import elevated_arena, make_circular_arena
 
 
 @dataclass(frozen=True)
@@ -220,6 +220,7 @@ def make_barnes_maze(
     env_2d = Environment.from_polygon(
         polygon=platform_polygon,
         bin_size=bin_size,
+        arena=elevated_arena(platform_polygon),
         name="barnes_maze",
         connect_diagonal_neighbors=True,
     )

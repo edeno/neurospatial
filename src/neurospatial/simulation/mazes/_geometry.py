@@ -19,11 +19,15 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
+
+if TYPE_CHECKING:
+    from neurospatial.geometry import OpenArena
 
 
 def make_corridor_polygon(
@@ -187,6 +191,36 @@ def make_circular_arena(
     """
     point = Point(center)
     return point.buffer(radius, quad_segs=quad_segs)
+
+
+def elevated_arena(floor: Polygon) -> OpenArena:
+    """The arena of an elevated maze: a known floor whose edges are not walls.
+
+    The animal stays on ``floor``, but its edges are drops it can see past,
+    not walls. The arena keeps the floor for bin lookup and declares no
+    physical walls, so wall-based analyses (border scores, ray-cast gaze,
+    boundary-vector distances, ``BorderCellModel``) refuse it instead of
+    treating the track's edges as walls.
+
+    Parameters
+    ----------
+    floor : Polygon
+        The maze's walkable surface.
+
+    Returns
+    -------
+    OpenArena
+        ``OpenArena(floor, physical_footprint_known=False)``.
+
+    Examples
+    --------
+    >>> from shapely.geometry import box
+    >>> elevated_arena(box(0, 0, 100, 6)).physical_footprint_known
+    False
+    """
+    from neurospatial.geometry import OpenArena
+
+    return OpenArena(floor, physical_footprint_known=False)
 
 
 def union_polygons(

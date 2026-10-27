@@ -20,10 +20,19 @@ from neurospatial.simulation.mazes._base import MazeDims
 from neurospatial.simulation.mazes.hex_small import (
     SmallHexDims,
     _hex_centroids,
+    _hex_lattice,
     _maze_graph,
     _platform,
     make_small_hex_maze,
 )
+
+
+def _platform_corners_cm(side):
+    """Corners of the platform outline in cm, centred like the built maze."""
+    lattice, to_cm = _hex_lattice(side)
+    platform = shapely.affinity.affine_transform(_platform(lattice, to_cm), to_cm)
+    return np.asarray(platform.exterior.coords)[:-1]
+
 
 SPACING = np.sqrt(3) * 7.0  # distance between adjacent hex centres, cm
 _PORT_HEXES = {"port_A": 1, "port_B": 2, "port_C": 3}
@@ -166,7 +175,7 @@ class TestHexLattice:
         assert ports[1, 0] < 0 < ports[2, 0]
 
     def test_platform_sides_are_about_130_cm(self, centroids):
-        xy = np.asarray(_platform(centroids, 7.0).exterior.coords)[:-1]
+        xy = _platform_corners_cm(7.0)
         sides = np.sort(np.linalg.norm(xy - np.roll(xy, 1, axis=0), axis=1))
         # Three long walls about 1.30 m, three corners cut at a hex side.
         np.testing.assert_allclose(sides[:3], 7.0)
@@ -198,7 +207,7 @@ class TestPorts:
 
     def test_each_port_is_in_the_middle_of_a_cut_off_corner(self, maze, centroids):
         # The platform's three short walls cut off the triangle's vertices.
-        xy = np.asarray(_platform(centroids, 7.0).exterior.coords)[:-1]
+        xy = _platform_corners_cm(7.0)
         ends = np.roll(xy, -1, axis=0)
         short = np.isclose(np.linalg.norm(ends - xy, axis=1), 7.0)
         wall_middles = ((xy + ends) / 2)[short]
@@ -279,6 +288,19 @@ class TestFloor:
             [centroids[h] for h in _maze_graph(SmallHexDims().barriers).nodes]
         )
         assert maze.env_2d.contains(open_centres).all()
+
+    def test_wall_hexes_meet_without_slits_of_floor(self, maze):
+        """Neighbouring wall hexes share sides: no zero-width floor between them.
+
+        A slit would be a wall with floor on neither side, owned by no bin.
+        """
+        from neurospatial.encoding._physical_border import border_geometry
+
+        floor = maze.env_2d.arena.polygon
+        assert floor.boundary.length == pytest.approx(
+            floor.buffer(1e-6).buffer(-1e-6).boundary.length, rel=1e-6
+        )
+        border_geometry(maze.env_2d, "physical")
 
     def test_finer_bins_give_more_bins(self):
         fine = make_small_hex_maze(bin_size=1.0, include_track=False)

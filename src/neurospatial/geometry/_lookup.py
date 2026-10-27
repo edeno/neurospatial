@@ -91,16 +91,19 @@ def _snap_outline_slivers(
 ) -> None:
     """Give in-arena positions in a grid cell dropped at the outline a bin.
 
-    A grid keeps the cells whose centers lie inside the arena's outline, so
-    slivers of a curved or diagonal wall are inside the arena but in no bin.
-    A position inside such a cell (one of the grid's cells, whose center is not
-    strictly inside the arena) belongs to the nearest neighboring cell whose center
-    lies inside, less than one cell away, when that cell is a bin. A cell
-    removed on purpose (by ``subset``) keeps its sliver positions outside, as
-    do positions beyond the grid. A rotated, reflected or sheared grid
-    applies the rule to its source cells (``binning.grid_frame``), measuring
-    distance there, so a transform moves positions and their bins together.
-    Updates ``indices`` in place.
+    A grid keeps the cells whose centers lie strictly inside the arena's
+    outline, so slivers of a curved or diagonal wall, and the cells whose
+    centers lie exactly on a wall, are inside the arena but in no bin. A
+    position inside such a cell (one of the grid's cells whose center is not
+    strictly inside) belongs to the nearest neighboring cell whose center is
+    strictly inside, less than one cell away, when that cell is a bin. The
+    same strict test as bin retention decides both, so a grid whose cell
+    centers fall on an outline wall (a 10 cm corridor on 2 cm bins) gives
+    those positions a bin. A cell removed on purpose (by ``subset``) keeps its
+    sliver positions outside, as do positions beyond the grid. A rotated,
+    reflected or sheared grid applies the rule to its source cells
+    (``binning.grid_frame``), measuring distance there, so a transform moves
+    positions and their bins together. Updates ``indices`` in place.
     """
     orphan = inside & (indices < 0)
     if not np.any(orphan):

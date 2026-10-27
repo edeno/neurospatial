@@ -25,7 +25,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.geometry._lookup import locate
+from neurospatial.geometry._lookup import locate, locate_outline_points
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import (
     ClippedLocator,
@@ -282,7 +282,7 @@ def wall_hit_bins(
             walls = physical_walls(arena)
         else:
             walls = _analysis_boundary(binning, arena)
-        return _resolve_wall_contacts(
+        resolved = _resolve_wall_contacts(
             locator,
             arena,
             materialize_cells(binning),
@@ -292,6 +292,7 @@ def wall_hit_bins(
             bins,
             indexes,
         )
+        return _sliver_owners(binning, arena, hits, origins, resolved)
     cells, _walls, _centers, _inverse, frames, _errors = frame
     query = np.vstack((hits, origins))
     error = None
@@ -307,7 +308,7 @@ def wall_hit_bins(
     bins = locator.locate(inside, indexes)
     if base.domain_known:
         bins[~base.contains(inside)] = -1
-    return _resolve_wall_contacts(
+    resolved = _resolve_wall_contacts(
         locator,
         base,
         cells,
@@ -317,6 +318,31 @@ def wall_hit_bins(
         bins,
         indexes,
     )
+    return _sliver_owners(binning, arena, hits, origins, resolved)
+
+
+def _sliver_owners(
+    binning: Binning,
+    arena: Arena,
+    hits: NDArray[np.float64],
+    origins: NDArray[np.float64],
+    bins: NDArray[np.intp],
+) -> NDArray[np.intp]:
+    """Give hits in an outline sliver the bin that owns positions there.
+
+    A grid keeps the cells whose centers lie strictly inside the outline, so
+    a slanted or curved wall, or a wall through a row of cell centers, runs
+    through grid cells that are not bins. No retained cell touches a hit
+    there; like a wall piece in a border score, the hit belongs to the bin
+    that owns positions in that sliver (see :func:`locate_outline_points`).
+    ``hits``, ``origins`` have shape ``(n_hits, 2)``; ``bins`` is updated for
+    the hits still without a bin and returned.
+    """
+    missing = np.flatnonzero((bins < 0) & np.all(np.isfinite(hits), axis=1))
+    if len(missing) and arena.domain_known:
+        near = np.nextafter(hits[missing], origins[missing])
+        bins[missing] = locate_outline_points(binning, arena, near)
+    return bins
 
 
 def _physical_footprints(arena: Arena) -> list[shapely.Geometry]:
@@ -378,8 +404,10 @@ def physical_walls(arena: Arena) -> shapely.Geometry:
     ]
     if not parts:
         raise NotImplementedError(
-            "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. "
-            "Supply measured geometry with Environment.from_polygon(...) or an asserted OpenArena or "
+            "Physical walls are unknown: this environment declares no physical walls. Its outline is "
+            "not a measured wall: an elevated track or platform, whose edges are drops the animal can see "
+            "past, or bins inferred from positions or masks. For a walled arena, supply measured geometry "
+            "with Environment.from_polygon(...) or an asserted OpenArena or "
             "MaskArena(physical_footprint_known=True). Wall-based rate maps also need bin support at the "
             "measured walls; attaching an arena does not extend bins or supply missing observations. "
             "Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation."

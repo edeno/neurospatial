@@ -8,7 +8,9 @@ and memory by encoding "what is being viewed".
 Key Features
 ------------
 - **View-centered tuning**: Gaussian tuning around preferred viewed location
-- **Gaze models**: Fixed distance, ray casting, or boundary-based viewing
+- **Gaze models**: the first wall along the gaze (ray casting), or a point a
+  fixed distance ahead that stops at a nearer wall; the same gaze the view
+  analysis (``compute_view_rate``) uses
 - **Field of view**: Optional FOV constraints matching species-specific vision
 - **Visibility**: Optional line-of-sight requirements
 
@@ -30,27 +32,28 @@ Create a simple spatial view cell:
 >>> from neurospatial import Environment
 >>> from neurospatial.simulation.models.spatial_view_cells import SpatialViewCellModel
 >>>
->>> # Create environment
->>> samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
->>> env = Environment.from_samples(samples, bin_size=2.0)
+>>> from shapely.geometry import box
 >>>
->>> # Create SVC that fires when looking at (50, 50)
+>>> # A walled 100 x 100 cm box
+>>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+>>>
+>>> # Create SVC that fires when the gaze reaches the east wall at (100, 50)
 >>> svc = SpatialViewCellModel(
 ...     env=env,
-...     preferred_view_location=np.array([50.0, 50.0]),
+...     preferred_view_location=np.array([100.0, 50.0]),
 ...     view_field_width=10.0,  # Gaussian tuning width
-...     view_distance=20.0,  # Fixed viewing distance
 ... )
+>>> svc.firing_rate(np.array([[50.0, 50.0]]), headings=np.array([0.0])).round(1)
+array([20.])
 
 Create a spatial view cell with visibility requirements:
 
 >>> from neurospatial.ops.visibility import FieldOfView
 >>> svc_visible = SpatialViewCellModel(
 ...     env=env,
-...     preferred_view_location=np.array([50.0, 50.0]),
+...     preferred_view_location=np.array([100.0, 50.0]),
 ...     view_field_width=10.0,
 ...     require_visibility=True,
-...     boundary_source="analysis",
 ...     fov=FieldOfView.primate(),  # ~180 degree forward FOV
 ... )
 
@@ -86,11 +89,10 @@ from numpy.typing import NDArray
 
 from neurospatial.geometry import (
     CallIndexes,
-    boundary_view,
     line_of_sight_clear,
     require_cartesian,
 )
-from neurospatial.ops.visibility import FieldOfView, compute_viewed_location
+from neurospatial.ops.visibility import FieldOfView, gaze_points
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -114,17 +116,25 @@ class SpatialViewCellModel:
     view_field_width : float, optional
         Width of Gaussian tuning around preferred location (default: 10.0).
         Larger values produce broader spatial tuning.
-    view_distance : float, optional
-        Distance at which gaze is computed for fixed_distance model (default: 20.0).
-        Only used when ``gaze_model='fixed_distance'``.
-    gaze_model : {'fixed_distance', 'ray_cast'}, optional
-        Model for computing viewed location (default: 'fixed_distance').
+    view_distance : float or None, optional
+        Gaze distance for ``gaze_model='fixed_distance'``, in environment
+        units. None (the default) uses 10 cm, as ``compute_view_rate`` does,
+        and needs ``env.units`` to be a length unit. Must be None with
+        ``ray_cast``.
+    gaze_model : {'ray_cast', 'fixed_distance'}, optional
+        How the viewed location is found (default: 'ray_cast', as in
+        ``compute_view_rate``):
 
-        - 'fixed_distance': Point at fixed distance in gaze direction
-        - 'ray_cast': Intersection with environment boundary
+        - 'ray_cast': the first wall along the gaze.
+        - 'fixed_distance': the point ``view_distance`` ahead, or the first
+          wall when one is nearer.
+
+        Both stop at the environment's walls, so the gaze never passes
+        through one; :func:`neurospatial.ops.visibility.compute_viewed_location`
+        computes the same points.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls or explicitly selected analysis boundaries for
-        ray casting and line of sight. Unknown physical walls refuse.
+        the gaze and line of sight. Unknown physical walls refuse.
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
@@ -142,8 +152,9 @@ class SpatialViewCellModel:
         Preferred viewed location (2,).
     view_field_width : float
         Gaussian tuning width.
-    view_distance : float
-        View distance for fixed_distance model.
+    view_distance : float or None
+        Gaze distance of the fixed_distance model in environment units; None
+        for ray casting.
     gaze_model : str
         Gaze computation model.
     max_rate : float
@@ -163,14 +174,14 @@ class SpatialViewCellModel:
     ...     SpatialViewCellModel,
     ... )
     >>>
-    >>> # Create environment
-    >>> samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-    >>> env = Environment.from_samples(samples, bin_size=2.0)
+    >>> from shapely.geometry import box
     >>>
-    >>> # Create SVC
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+    >>>
+    >>> # A cell for the middle of the north wall
     >>> svc = SpatialViewCellModel(
     ...     env=env,
-    ...     preferred_view_location=np.array([50.0, 50.0]),
+    ...     preferred_view_location=np.array([50.0, 100.0]),
     ... )
     >>>
     >>> # Compute firing rates along a trajectory
@@ -194,13 +205,17 @@ class SpatialViewCellModel:
     :math:`v_{pref}` is the preferred view location, and :math:`\\sigma` is the
     view field width.
 
-    **Gaze Models**:
+    **Gaze Models**: the viewed location comes from
+    :func:`neurospatial.ops.visibility.compute_viewed_location` with this
+    model's environment, so it is the location the view analysis assigns the
+    sample to:
 
-    - ``fixed_distance``: Viewed location is at a fixed distance from the
-      animal in the gaze direction. Simplest model.
-    - ``ray_cast``: Ray is cast from animal position in gaze direction until
-      it exits the environment.
-    - ``boundary``: Similar to ray_cast, returns nearest boundary point.
+    - ``ray_cast``: the first wall the gaze reaches.
+    - ``fixed_distance``: the point ``view_distance`` ahead, or the first
+      wall when one is nearer.
+
+    Where the observer is outside the walls the viewed location is undefined
+    and the cell fires at its baseline rate.
 
     See Also
     --------
@@ -215,8 +230,8 @@ class SpatialViewCellModel:
         *,
         preferred_view_location: NDArray[np.float64],
         view_field_width: float = 10.0,
-        view_distance: float = 20.0,
-        gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
+        view_distance: float | None = None,
+        gaze_model: Literal["ray_cast", "fixed_distance"] = "ray_cast",
         max_rate: float = 20.0,
         baseline_rate: float = 0.01,
         require_visibility: bool = False,
@@ -246,11 +261,6 @@ class SpatialViewCellModel:
             msg = f"view_field_width must be positive, got {view_field_width}"
             raise ValueError(msg)
 
-        # Validate view_distance
-        if view_distance <= 0:
-            msg = f"view_distance must be positive, got {view_distance}"
-            raise ValueError(msg)
-
         # Validate max_rate
         if max_rate <= 0:
             msg = f"max_rate must be positive, got {max_rate}"
@@ -273,6 +283,12 @@ class SpatialViewCellModel:
         if gaze_model not in valid_gaze_models:
             msg = f"gaze_model must be one of {valid_gaze_models}, got '{gaze_model}'"
             raise ValueError(msg)
+        # The view analysis's own rule for the gaze distance and its default.
+        from neurospatial.encoding.view import _resolve_view_distance
+
+        view_distance = _resolve_view_distance(
+            env, gaze_model, view_distance, context="SpatialViewCellModel()"
+        )
 
         # Check if preferred_view_location is outside environment bounds
         if not env.contains(preferred_view_location[None, :])[0]:
@@ -345,34 +361,22 @@ class SpatialViewCellModel:
 
         headings = np.asarray(headings, dtype=np.float64)
 
-        # One binning copy and one store of its lookup structures for the
-        # whole call, so the viewed locations and every timestep's line of
-        # sight build each structure once.
-        if self.gaze_model != "fixed_distance" or self.require_visibility:
+        # The gaze the view analysis uses: it stops at the first wall.
+        viewed_locations, _at_wall = gaze_points(
+            positions,
+            headings,
+            method=self.gaze_model,
+            view_distance=self.view_distance,
+            gaze_offsets=None,
+            env=self.env,
+            max_distance=None,
+            boundary_source=self.boundary_source,
+        )
+        if self.require_visibility:
+            # One binning copy and one store of its lookup structures for
+            # every timestep's line of sight.
             binning, arena = self.env.binning, self.env.arena
             indexes = CallIndexes()
-        if self.gaze_model == "fixed_distance":
-            viewed_locations = compute_viewed_location(
-                positions,
-                headings,
-                method="fixed_distance",
-                view_distance=self.view_distance,
-            )
-        else:
-            from neurospatial.geometry import boundary_geometry, search_distance
-
-            max_distance = search_distance(
-                boundary_geometry(binning, arena, self.boundary_source), positions
-            )
-            viewed_locations = boundary_view(
-                binning,
-                arena,
-                positions,
-                headings,
-                max_distance,
-                self.boundary_source,
-                indexes,
-            )
 
         # Compute distance from viewed location to preferred
         # Shape: (n_time,)
@@ -455,7 +459,8 @@ class SpatialViewCellModel:
 
             - 'preferred_view_location': NDArray - preferred viewed location
             - 'view_field_width': float - Gaussian tuning width
-            - 'view_distance': float - view distance for fixed_distance model
+            - 'view_distance': float or None - gaze distance of the
+              fixed_distance model, None for ray casting
             - 'gaze_model': str - gaze computation model
             - 'max_rate': float - peak firing rate in Hz
             - 'baseline_rate': float - baseline firing rate in Hz
@@ -469,11 +474,11 @@ class SpatialViewCellModel:
         >>> from neurospatial.simulation.models.spatial_view_cells import (
         ...     SpatialViewCellModel,
         ... )
-        >>> samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        >>> env = Environment.from_samples(samples, bin_size=2.0)
+        >>> from shapely.geometry import box
+        >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0)
         >>> svc = SpatialViewCellModel(
         ...     env=env,
-        ...     preferred_view_location=np.array([50.0, 50.0]),
+        ...     preferred_view_location=np.array([50.0, 100.0]),
         ...     view_field_width=15.0,
         ... )
         >>> svc.ground_truth["view_field_width"]

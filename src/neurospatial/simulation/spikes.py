@@ -239,7 +239,7 @@ def generate_population_spikes(
     Parameters
     ----------
     models : list[NeuralModel]
-        List of neural models (PlaceCellModel, BoundaryCellModel, GridCellModel, etc.).
+        List of neural models (PlaceCellModel, BorderCellModel, GridCellModel, etc.).
         Each model must implement the NeuralModel protocol.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds (must be uniformly spaced).
@@ -369,7 +369,7 @@ def generate_population_spikes(
     --------
     generate_poisson_spikes : Generate spikes for single neuron
     PlaceCellModel : Place cell firing rate model
-    BoundaryCellModel : Boundary cell firing rate model
+    BorderCellModel : Border cell firing rate model
     GridCellModel : Grid cell firing rate model
 
     Notes

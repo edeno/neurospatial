@@ -35,6 +35,7 @@ from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
+    elevated_arena,
     make_corridor_polygon,
 )
 
@@ -160,6 +161,7 @@ def make_linear_track(
     env_2d = Environment.from_polygon(
         polygon=polygon,
         bin_size=bin_size,
+        arena=elevated_arena(polygon),
         name="linear_track",
         connect_diagonal_neighbors=True,
     )

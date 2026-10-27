@@ -98,6 +98,12 @@ class MazeEnvironments:
     and its real size, for visits and occupancy. The track carries the same
     landmarks as the 2-D maze.
 
+    A walled maze declares its outline as physical walls. An elevated maze
+    (an open track or platform, whose edges are drops the animal can see
+    past) declares none: ``env_2d.arena.physical_footprint_known`` is False,
+    so wall-based analyses such as border scores and ray-cast gaze refuse it
+    rather than treat the track's edges as walls.
+
     Examples
     --------
     >>> import numpy as np

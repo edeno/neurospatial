@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from neurospatial import Environment
 from neurospatial.simulation.models import NeuralModel, PlaceCellModel
 from neurospatial.simulation.trajectory import simulate_trajectory_ou
 
@@ -364,271 +365,196 @@ class TestPlaceCellModel:
         assert abs(rate[0] - pc.baseline_rate) < 0.001
 
 
-class TestBoundaryCellModel:
-    """Tests for BoundaryCellModel."""
+@pytest.fixture(scope="module")
+def walled_box():
+    """A walled 100 x 100 cm box with 2 cm bins."""
+    from shapely.geometry import box
 
-    def test_basic_initialization(self, simple_2d_env):
-        """Test basic boundary cell initialization."""
-        from neurospatial.simulation.models import BoundaryCellModel
+    return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
-        bc = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=5.0,
-            distance_tolerance=3.0,
-            max_rate=15.0,
-            baseline_rate=0.1,
+
+class TestBorderCellModel:
+    """Firing from the exact distance to the nearest wall."""
+
+    def test_rate_follows_the_exact_distance_to_the_wall(self, walled_box):
+        """No half-bin offset: the distance is measured to the wall itself."""
+        from neurospatial.simulation.models import BorderCellModel
+
+        cell = BorderCellModel(
+            walled_box, distance_tolerance=3.0, max_rate=20.0, baseline_rate=0.5
         )
+        x = np.array([0.25, 0.75, 1.0, 3.0, 7.0])
+        positions = np.column_stack([x, np.full_like(x, 50.0)])
+        expected = 0.5 + 19.5 * np.exp(-0.5 * (x / 3.0) ** 2)
+        np.testing.assert_allclose(cell.firing_rate(positions), expected, rtol=1e-12)
 
-        assert bc.preferred_distance == 5.0
-        assert bc.distance_tolerance == 3.0
-        assert bc.max_rate == 15.0
-        assert bc.baseline_rate == 0.1
-        assert bc.preferred_direction is None  # Default: omnidirectional
+    def test_preferred_distance_shifts_the_peak(self, walled_box):
+        from neurospatial.simulation.models import BorderCellModel
 
-    def test_directional_initialization(self, simple_2d_env):
-        """Test boundary cell with directional preference."""
-        from neurospatial.simulation.models import BoundaryCellModel
-
-        bc = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=10.0,
-            preferred_direction=-np.pi / 2,  # South
-            direction_tolerance=np.pi / 6,
-        )
-
-        assert bc.preferred_direction == -np.pi / 2
-        assert bc.direction_tolerance == np.pi / 6
-
-    def test_peak_firing_at_preferred_distance(self, simple_2d_env):
-        """Test that firing rate peaks at preferred distance from boundary."""
-        from neurospatial.simulation.models import BoundaryCellModel
-
-        bc = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=5.0,
-            distance_tolerance=3.0,
-            max_rate=20.0,
-            baseline_rate=0.0,
-        )
-
-        # Generate trajectory
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=10.0, seed=42, speed_units="cm"
-        )
-        rates = bc.firing_rate(positions, times)
-
-        # Should have some firing (non-zero rates)
-        assert np.any(rates > 0.1)
-        assert np.all(rates >= 0)  # All rates non-negative
-
-    def test_omnidirectional_tuning(self, simple_2d_env):
-        """Test omnidirectional boundary cell (no directional preference)."""
-        from neurospatial.simulation.models import BoundaryCellModel
-
-        bc = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=5.0,
-            distance_tolerance=3.0,
-            preferred_direction=None,  # Omnidirectional
-        )
-
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
-        )
-        rates = bc.firing_rate(positions, times)
-
-        # Should fire near all boundaries
-        assert len(rates) == len(positions)
-        assert np.all(rates >= 0)
-
-    def test_directional_tuning(self, simple_2d_env):
-        """Test directional boundary cell (prefers specific direction)."""
-        from neurospatial.simulation.models import BoundaryCellModel
-
-        # Boundary vector cell preferring south wall
-        bc_south = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=10.0,
-            preferred_direction=-np.pi / 2,  # South (negative y)
-            direction_tolerance=np.pi / 6,
-        )
-
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
-        )
-        rates = bc_south.firing_rate(positions, times)
-
-        # Should have some firing
-        assert len(rates) == len(positions)
-        assert np.all(rates >= 0)
-
-    def test_gaussian_distance_tuning(self, simple_2d_env):
-        """Test Gaussian tuning around preferred distance."""
-        from neurospatial.simulation.models import BoundaryCellModel
-
-        bc = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=5.0,
+        cell = BorderCellModel(
+            walled_box,
             distance_tolerance=2.0,
-            max_rate=20.0,
+            preferred_distance=10.0,
             baseline_rate=0.0,
         )
+        x = np.linspace(0.0, 30.0, 301)
+        rates = cell.firing_rate(np.column_stack([x, np.full_like(x, 50.0)]))
+        assert x[np.argmax(rates)] == pytest.approx(10.0)
+        assert rates.max() == pytest.approx(cell.max_rate)
 
-        # Test that firing falls off with distance from preferred_distance
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+    def test_true_map_is_a_border_map(self, walled_box):
+        from neurospatial.encoding import border_score
+        from neurospatial.simulation.models import BorderCellModel
+
+        cell = BorderCellModel(walled_box, distance_tolerance=3.0, baseline_rate=0.0)
+        assert border_score(walled_box, cell.firing_rate(walled_box.bin_centers)) > 0.5
+
+    def test_refuses_an_environment_without_walls(self, simple_2d_env):
+        """Bins inferred from positions declare no physical wall."""
+        from neurospatial.simulation.models import BorderCellModel
+
+        with pytest.raises(NotImplementedError, match="Physical walls are unknown"):
+            BorderCellModel(simple_2d_env, distance_tolerance=3.0)
+
+    def test_rate_is_nan_outside_the_walls(self, walled_box):
+        from neurospatial.simulation.models import BorderCellModel
+
+        cell = BorderCellModel(walled_box, distance_tolerance=3.0)
+        assert np.isnan(cell.firing_rate(np.array([[150.0, 50.0]]))[0])
+
+    def test_ground_truth_and_protocol(self, walled_box):
+        from neurospatial.simulation.models import BorderCellModel
+
+        cell = BorderCellModel(
+            walled_box,
+            distance_tolerance=3.0,
+            preferred_distance=1.0,
+            max_rate=12.0,
+            baseline_rate=0.2,
         )
-        rates = bc.firing_rate(positions, times)
+        assert isinstance(cell, NeuralModel)
+        assert cell.ground_truth == {
+            "preferred_distance": 1.0,
+            "distance_tolerance": 3.0,
+            "max_rate": 12.0,
+            "baseline_rate": 0.2,
+        }
 
-        # Rates should be bounded
-        assert np.all(rates >= 0)
-        assert np.all(rates <= bc.max_rate + 0.1)  # Allow small tolerance
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"distance_tolerance": 0.0},
+            {"distance_tolerance": 3.0, "preferred_distance": -1.0},
+            {"distance_tolerance": 3.0, "baseline_rate": 20.0},
+        ],
+    )
+    def test_invalid_parameters_raise(self, walled_box, kwargs):
+        from neurospatial.simulation.models import BorderCellModel
 
-    def test_ground_truth_property(self, simple_2d_env):
-        """Test ground_truth property returns correct parameters."""
-        from neurospatial.simulation.models import BoundaryCellModel
+        with pytest.raises(ValueError):
+            BorderCellModel(walled_box, **kwargs)
 
-        preferred_distance = 5.0
-        distance_tolerance = 3.0
-        preferred_direction = -np.pi / 2
-        direction_tolerance = np.pi / 4
-        max_rate = 15.0
-        baseline_rate = 0.5
 
-        bc = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=preferred_distance,
-            distance_tolerance=distance_tolerance,
-            preferred_direction=preferred_direction,
-            direction_tolerance=direction_tolerance,
-            max_rate=max_rate,
-            baseline_rate=baseline_rate,
+class TestBoundaryVectorCellModel:
+    """Every visible wall adds firing by its distance and direction."""
+
+    @staticmethod
+    def _west_cell(env, **kwargs):
+        from neurospatial.simulation.models import BoundaryVectorCellModel
+
+        params = {
+            "preferred_distance": 10.0,
+            "preferred_direction": np.pi,  # West
+            "distance_tolerance": 4.0,
+            "direction_tolerance": np.pi / 6,
+            "max_rate": 15.0,
+            "baseline_rate": 0.0,
+        }
+        params.update(kwargs)
+        return BoundaryVectorCellModel(env, **params)
+
+    def test_straight_wall_at_the_preferred_vector_gives_max_rate(self, walled_box):
+        cell = self._west_cell(walled_box)
+        rate = cell.firing_rate(np.array([[10.0, 50.0]]))[0]
+        assert rate == pytest.approx(15.0, rel=1e-3)
+
+    def test_field_lies_at_the_preferred_distance_from_that_wall(self, walled_box):
+        cell = self._west_cell(walled_box)
+        rates = cell.firing_rate(walled_box.bin_centers)
+        middle = np.abs(walled_box.bin_centers[:, 1] - 50.0) < 20.0
+        peak = walled_box.bin_centers[middle][np.argmax(rates[middle])]
+        assert abs(peak[0] - 10.0) <= 1.0  # half a 2 cm bin
+        # Away from the north and south walls, the east side has no wall near
+        # the preferred vector: the cell is silent there.
+        east = middle & (walled_box.bin_centers[:, 0] > 80.0)
+        assert rates[east].max() < 1e-3 * 15.0
+
+    def test_wall_touching_bins_fire_for_a_zero_distance_cell(self, walled_box):
+        """The direction to the wall is defined even on the wall's own bins."""
+        cell = self._west_cell(walled_box, preferred_distance=0.0)
+        assert cell.firing_rate(np.array([[0.5, 50.0]]))[0] > 0.9 * 15.0
+
+    def test_true_map_of_a_wall_hugging_cell_is_a_border_map(self, walled_box):
+        from neurospatial.encoding import border_score
+
+        cell = self._west_cell(walled_box, preferred_distance=0.0)
+        rates = cell.firing_rate(walled_box.bin_centers)
+        assert border_score(walled_box, rates) > 0.5
+
+    def test_a_barrier_adds_a_second_field_beside_it(self, walled_box):
+        from shapely.geometry import LineString, box
+
+        from neurospatial.geometry import OpenArena
+
+        arena = box(0, 0, 100, 100)
+        barrier = LineString([(50, 20), (50, 80)])  # on a 2 cm bin edge
+        env = Environment.from_polygon(
+            arena,
+            bin_size=2.0,
+            units="cm",
+            arena=OpenArena(arena, walls={"barrier": barrier}),
         )
-
-        gt = bc.ground_truth
-
-        assert "preferred_distance" in gt
-        assert "distance_tolerance" in gt
-        assert "preferred_direction" in gt
-        assert "direction_tolerance" in gt
-        assert "max_rate" in gt
-        assert "baseline_rate" in gt
-
-        assert gt["preferred_distance"] == preferred_distance
-        assert gt["distance_tolerance"] == distance_tolerance
-        assert gt["preferred_direction"] == preferred_direction
-        assert gt["direction_tolerance"] == direction_tolerance
-        assert gt["max_rate"] == max_rate
-        assert gt["baseline_rate"] == baseline_rate
-
-    def test_directional_tuning_hwhm_matches_direction_tolerance(self, simple_2d_env):
-        """The directional von Mises HWHM must equal ``direction_tolerance``.
-
-        ``direction_tolerance`` is documented as the directional tuning width
-        (half-width at half-maximum). With baseline 0 and the animal exactly at
-        the preferred distance, the firing rate equals
-        ``max_rate * exp(kappa * (cos(angle_diff) - 1))``. At
-        ``angle_diff == direction_tolerance`` this should be ``max_rate / 2``.
-
-        The old ``kappa = 1 / direction_tolerance`` mapping treats the tolerance
-        as a linear std and yields an HWHM roughly 40% too wide, so the rate at
-        the offset would be well above half-max.
-        """
-        from neurospatial.simulation.models import BoundaryCellModel
-
-        # Animal near the south wall (low y), away from corners.
-        position = np.array([[50.0, 2.0]])
-
-        # Compute the actual allocentric direction to (and distance from) the
-        # nearest boundary bin, exactly as BoundaryCellModel does internally
-        # (euclidean metric). Using the empirical direction makes the test
-        # robust to boundary discretization.
-        boundary_centers = simple_2d_env.bin_centers[simple_2d_env.boundary_bins]
-        dists = np.linalg.norm(boundary_centers - position[0], axis=1)
-        nearest = int(np.argmin(dists))
-        actual_distance = float(dists[nearest])
-        direction_vector = boundary_centers[nearest] - position[0]
-        boundary_direction = float(np.arctan2(direction_vector[1], direction_vector[0]))
-
-        tol = np.pi / 6  # 30 degrees
-        max_rate = 20.0
-
-        # Peak: preferred_direction aligned with boundary direction.
-        bc_peak = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=actual_distance,
-            distance_tolerance=1000.0,  # effectively flat distance tuning
-            preferred_direction=boundary_direction,
-            direction_tolerance=tol,
-            max_rate=max_rate,
-            baseline_rate=0.0,
-            metric="euclidean",
+        beside = np.array([[60.0, 50.0]])  # 10 cm east of the barrier
+        assert self._west_cell(env).firing_rate(beside)[0] == pytest.approx(
+            15.0, rel=0.05
         )
-        peak_rate = float(bc_peak.firing_rate(position)[0])
+        assert self._west_cell(walled_box).firing_rate(beside)[0] < 0.01
 
-        # Offset by exactly the tolerance (the claimed HWHM).
-        bc_hwhm = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=actual_distance,
-            distance_tolerance=1000.0,
-            preferred_direction=boundary_direction + tol,
-            direction_tolerance=tol,
-            max_rate=max_rate,
-            baseline_rate=0.0,
-            metric="euclidean",
-        )
-        hwhm_rate = float(bc_hwhm.firing_rate(position)[0])
+    def test_direction_selects_the_wall(self, walled_box):
+        west = self._west_cell(walled_box)
+        east = self._west_cell(walled_box, preferred_direction=0.0)
+        position = np.array([[10.0, 50.0]])
+        assert west.firing_rate(position)[0] > 100 * east.firing_rate(position)[0]
 
-        # At the HWHM offset, response should be half the peak response.
-        assert peak_rate > 0
-        ratio = hwhm_rate / peak_rate
-        assert abs(ratio - 0.5) < 0.05, (
-            f"response at angle_diff=direction_tolerance was {ratio:.3f} of peak, "
-            f"expected ~0.5 (half-maximum)"
-        )
+    def test_rate_is_nan_outside_the_walls(self, walled_box):
+        cell = self._west_cell(walled_box)
+        assert np.isnan(cell.firing_rate(np.array([[-5.0, 50.0]]))[0])
 
-    def test_implements_neural_model_protocol(self, simple_2d_env):
-        """Test that BoundaryCellModel implements NeuralModel protocol."""
-        from neurospatial.simulation.models import BoundaryCellModel
+    def test_ground_truth_and_protocol(self, walled_box):
+        cell = self._west_cell(walled_box, baseline_rate=0.1)
+        assert isinstance(cell, NeuralModel)
+        assert cell.ground_truth == {
+            "preferred_distance": 10.0,
+            "preferred_direction": pytest.approx(np.pi),
+            "distance_tolerance": 4.0,
+            "direction_tolerance": pytest.approx(np.pi / 6),
+            "max_rate": 15.0,
+            "baseline_rate": 0.1,
+        }
 
-        bc = BoundaryCellModel(simple_2d_env, preferred_distance=5.0)
-        assert isinstance(bc, NeuralModel)
-
-    def test_euclidean_metric(self, simple_2d_env):
-        """Test euclidean distance metric."""
-        from neurospatial.simulation.models import BoundaryCellModel
-
-        bc = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=5.0,
-            metric="euclidean",
-        )
-
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=2.0, seed=42, speed_units="cm"
-        )
-        rates = bc.firing_rate(positions, times)
-
-        assert len(rates) == len(positions)
-        assert np.all(rates >= 0)
-
-    def test_geodesic_metric(self, simple_2d_env):
-        """Test geodesic distance metric (default)."""
-        from neurospatial.simulation.models import BoundaryCellModel
-
-        bc = BoundaryCellModel(
-            simple_2d_env,
-            preferred_distance=5.0,
-            metric="geodesic",
-        )
-
-        positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=2.0, seed=42, speed_units="cm"
-        )
-        rates = bc.firing_rate(positions, times)
-
-        assert len(rates) == len(positions)
-        assert np.all(rates >= 0)
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"distance_tolerance": 0.0},
+            {"direction_tolerance": 0.0},
+            {"direction_tolerance": 4.0},
+            {"preferred_direction": np.nan},
+            {"preferred_distance": -1.0},
+        ],
+    )
+    def test_invalid_parameters_raise(self, walled_box, kwargs):
+        with pytest.raises(ValueError):
+            self._west_cell(walled_box, **kwargs)
 
 
 class TestGridCellModel:

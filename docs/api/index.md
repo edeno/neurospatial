@@ -323,7 +323,7 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 **Key Modules:**
 
 - `simulation.trajectory`: Trajectory generation (OU process, structured laps)
-- `simulation.models`: Neural models (place cells, boundary cells, grid cells)
+- `simulation.models`: Neural models (place, border, boundary-vector and grid cells)
 - `simulation.spikes`: Spike generation (Poisson process, refractory periods)
 - `simulation.session`: High-level session simulation API
 - `simulation.validation`: Automated validation against ground truth
@@ -332,7 +332,9 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 **Key Classes:**
 
 - `PlaceCellModel`: Gaussian place field model with ground truth
-- `BoundaryCellModel`: Distance-tuned boundary/border cell model
+- `BorderCellModel`: Firing from the distance to the nearest wall
+- `BoundaryVectorCellModel`: Boundary vector cell (walls at a preferred
+  distance and direction)
 - `GridCellModel`: Hexagonal grid cell model (2D only)
 - `SimulationSession`: Complete simulation session dataclass
 

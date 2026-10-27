@@ -44,12 +44,21 @@ class NeuralModel(Protocol):
         - ``'max_rate'``: float - peak firing rate in Hz
         - ``'baseline_rate'``: float - baseline firing rate in Hz
 
-    **BoundaryCell**
+    **BorderCell**
 
-        - ``'preferred_distance'``: float - preferred distance from boundary
+        - ``'preferred_distance'``: float - preferred distance from the nearest wall
         - ``'distance_tolerance'``: float - tuning width
-        - ``'preferred_direction'``: float | None - direction (radians, or None for omnidirectional)
         - ``'max_rate'``: float - peak firing rate in Hz
+        - ``'baseline_rate'``: float - baseline firing rate in Hz
+
+    **BoundaryVectorCell**
+
+        - ``'preferred_distance'``: float - preferred distance to a wall
+        - ``'preferred_direction'``: float - allocentric direction (radians)
+        - ``'distance_tolerance'``: float - distance tuning width
+        - ``'direction_tolerance'``: float - angular half-width (radians)
+        - ``'max_rate'``: float - rate next to a straight wall at the
+          preferred distance and direction, in Hz
         - ``'baseline_rate'``: float - baseline firing rate in Hz
 
     **GridCell**
@@ -100,7 +109,7 @@ class NeuralModel(Protocol):
     See Also
     --------
     PlaceCellModel : Gaussian place field model
-    BoundaryCellModel : Boundary-distance tuned model
+    BorderCellModel : Wall-distance tuned model
     GridCellModel : Hexagonal grid pattern model
 
     Notes

@@ -88,7 +88,7 @@ class GridCellModel:
 
     **Performance**: Grid pattern computation is O(n_positions) with low
     constant factor (3 cosine evaluations per position). Much faster than
-    geodesic distance metrics in PlaceCellModel or BoundaryCellModel.
+    geodesic distance metrics in PlaceCellModel.
 
     **Numerical Stability**: The cosine gratings are bounded [-1, 1], so
     grid_pattern is bounded [-1, 1]. After rectification (max(0, g(x))),

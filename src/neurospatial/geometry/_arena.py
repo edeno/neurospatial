@@ -355,7 +355,11 @@ class OpenArena(_CappedContainment, ReadOnlyState):
         One name per wall in a sequence of walls. Several segments of one wall
         may share its name. Not allowed with a mapping of walls.
     physical_footprint_known : bool, default=True
-        False for a computational domain inferred from observations.
+        Whether the polygon's outline is a physical wall. False for a
+        computational domain inferred from observations, and for an elevated
+        track or platform, whose edges are drops rather than walls.
+        Wall-based analyses use only declared walls, so they refuse an arena
+        with neither a known footprint nor internal ``walls``.
 
     Attributes
     ----------

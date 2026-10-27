@@ -65,6 +65,7 @@ from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
+    elevated_arena,
     make_corridor_polygon,
     union_polygons,
 )
@@ -235,9 +236,11 @@ def make_crossword_maze(
             x - half_box, y - half_box, x + half_box, y + half_box
         )
 
+    floor = union_polygons([*tracks, *boxes.values()])
     env_2d = Environment.from_polygon(
-        polygon=union_polygons([*tracks, *boxes.values()]),
+        polygon=floor,
         bin_size=bin_size,
+        arena=elevated_arena(floor),
         name="crossword_maze",
         connect_diagonal_neighbors=False,  # Manhattan grid only
     )
