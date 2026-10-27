@@ -2,6 +2,84 @@
 
 ## [Unreleased]
 
+### Unequal bins and bin numbering
+
+Bins can differ in size (cells clipped by an outline or split by a wall,
+hexagonal, mesh and track bins, `Environment.from_bins`), and their numbering
+is arbitrary. Several metrics weighted every bin equally or read meaning into
+the bin numbers. On equal bins numbered along the track, results are unchanged
+except where noted.
+
+Results that change:
+
+- Field geometry weights each bin by its rate times its area (or length):
+  `rate_map_centroid` (both methods), `field_shift_distance`,
+  `field_shape_metrics` and `compute_field_emd`. A uniform field on a 10 cm
+  square cut into strips 1, 1 and 8 cm wide had its centroid at x = 2.67
+  instead of 5. `compute_field_emd(normalize=False)` now moves rate × area,
+  so its value carries the bin measure's units.
+- Coverage and overlap are fractions of space, not of bins:
+  `spatial_coverage_single_cell`, population coverage and redundancy,
+  `field_overlap` (a Jaccard index of areas), `compute_region_coverage` and
+  `SpatialRateResult.region_coverage`. `in_out_field_ratio` averages rates
+  over space.
+- `compare_spatial_rates` reports `mean_rate_a` and `mean_rate_b` as firing
+  over time (occupancy-weighted, spikes per second on the common bins)
+  instead of an unweighted mean of bins: 28 spikes in 8 s now reads 3.5 Hz
+  where it read 3.0 Hz when one bin was visited longer than another.
+- Border score: a field's wall coverage is the fraction of the whole wall it
+  covers, as in Solstad et al. (2008); unvisited wall counts as not covered.
+  Before, unvisited wall was left out of the wall's length, so missing data
+  raised the score: a field along 20% of one wall scored 0.23 with every wall
+  visited, 0.39 with half of the other wall bins unvisited and 0.78 with
+  only the field visited; it now scores 0.23 in all three. The distance term
+  weights each field bin by its rate times its area. Fully visited maps on
+  equal bins score as before; the share of untuned simulated units passing
+  the 0.5 cutoff in the user guide's example fell from 46% to 8% because 3%
+  of the wall was unvisited.
+- Decoding: the default prior is uniform over space (mass proportional to
+  bin size) instead of equal mass per bin, which pulled estimates toward
+  small bins (untuned cells on a track with one long bin decoded to 66.7 cm
+  instead of 50). MAP estimates (`map_estimate`, `map_position`,
+  `confusion_matrix(method="map")`) and `credible_region` rank bins by
+  density, mass divided by bin size; the credible region includes every bin
+  tied with its boundary bin, so it no longer depends on bin numbering. An
+  explicit `prior` is a mass per bin: pass `prior=rates.spatial_support *
+  env.bin_sizes` for a uniform prior on supported bins. A time bin that no
+  position can explain keeps the prior. An environment that combines
+  lengths and areas (a corridor joined to an arena) refuses the default
+  prior, MAP and credible region, since density has no common unit there;
+  decode each component with `env.subset`, or pass a prior.
+- Replay fits read each bin's position along the track instead of its
+  index: `fit_linear_trajectory` and `fit_isotonic_trajectory` report slopes
+  in environment units per second (not bins per second), and
+  `detect_trajectory_radon` resamples unequal bins onto equal columns.
+  Renumbering the bins changed a clean sweep's fit from slope 100 bins/s,
+  r² = 1.00 to slope −19.4, r² = 0.04; it now fits 500 cm/s, r² = 1.00
+  either way. Environments without a position along a track are refused.
+- `spatial_autocorrelation_radial` counts each pair of bins in both orders
+  around one mean per distance band. Pairs were ordered by bin number, so
+  renumbering a five-bin path changed one band from +1 to −1; values also
+  change for bins numbered in order (a linear ramp reads 0.67 at the first
+  lag instead of 1).
+- `trajectory_similarity`: `method="correlation"` correlates positions along
+  the track, not bin numbers (renumbering changed one score from 0.00 to
+  0.44), and refuses environments without a track coordinate;
+  `method="jaccard"` is a Jaccard index of areas.
+- `shuffle_place_fields_circular`, `shuffle_posterior_circular` and
+  `shuffle_posterior_weighted_circular` shift along the track instead of
+  rolling bin numbers, which broke fields into pieces on a masked 2-D grid,
+  and refuse environments without a track order.
+
+Breaking API changes:
+
+- `env` is the first argument of `in_out_field_ratio`,
+  `spatial_coverage_single_cell`, `field_overlap`, `detect_trajectory_radon`,
+  `fit_isotonic_trajectory` (no longer an optional keyword),
+  `shuffle_place_fields_circular`, `shuffle_posterior_circular` and
+  `shuffle_posterior_weighted_circular`. `PopulationCoverageResult` has a
+  `bin_sizes` field.
+
 ### Missing tracking and `max_gap`
 
 Results that change:
