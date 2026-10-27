@@ -903,9 +903,10 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
             windows and settings, and the population's unit-label provenance.
         """
         from neurospatial._results import label_at
+        from neurospatial.encoding._metrics import _share_variance_cache
 
         position = self._unit_position(idx)
-        return unit_class(
+        unit = unit_class(
             firing_rate=self._get_rates()[position],
             occupancy=self.occupancy,
             unit_id=label_at(self.unit_ids, position),
@@ -918,3 +919,5 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
             _unit_ids_generated=self._unit_ids_generated,
             **fields,
         )
+        _share_variance_cache(self, unit)
+        return unit

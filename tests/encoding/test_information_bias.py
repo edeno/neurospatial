@@ -152,3 +152,24 @@ def test_screens_share_one_probe_pass(box, monkeypatch):
     assert len(calls) == 1
     first[0] = -1.0  # the returned array belongs to the caller
     assert rates.spatial_information_bias()[0] > 0
+
+
+def test_unit_results_share_the_population_probe(box, monkeypatch):
+    """Iterating a population's units probes a linear estimator once."""
+    from neurospatial.encoding import _metrics
+
+    env, times, positions = box
+    rates = compute_spatial_rates(
+        env, _untuned(times, 600, 3, seed=500), times, positions, bandwidth=5.0
+    )
+    calls = []
+    probe = _metrics._untuned_rate_variance
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return probe(*args, **kwargs)
+
+    monkeypatch.setattr(_metrics, "_untuned_rate_variance", counted)
+    unit_bias = [unit.spatial_information_bias() for unit in rates]
+    np.testing.assert_allclose(unit_bias, rates.spatial_information_bias(), rtol=1e-12)
+    assert len(calls) == 1

@@ -490,10 +490,13 @@ def _count_to_rate(
     )
 
 
-# Private attribute that keeps ``V`` on the result that owns it. Results are
-# immutable, so ``V`` cannot go stale; it is not a dataclass field, so it is
-# outside equality, repr and ``dataclasses.replace``.
+# Private attributes that keep ``V`` on the result that owns it. Results are
+# immutable, so ``V`` cannot go stale; they are not dataclass fields, so they
+# are outside equality, repr and ``dataclasses.replace``. The GAM's ``V`` is
+# per unit. A linear estimator's ``V`` is one number per occupancy support,
+# kept in a mapping that a population shares with its single-unit results.
 _VARIANCE_CACHE = "_untuned_rate_variance"
+_SHARED_VARIANCE_CACHE = "_untuned_rate_variance_by_support"
 
 
 def _cached_variance(
@@ -502,25 +505,43 @@ def _cached_variance(
     """Per-unit ``V`` of ``result``, probed once and then reused.
 
     The probe pass costs about one rate computation per occupied bin, so the
-    screens (``classify``, ``label_cell_types``, ``summary_table``) share it.
+    screens (``classify``, ``label_cell_types``, ``summary_table``) share it,
+    and so do the single-unit results of a population (see
+    :func:`_share_variance_cache`).
     """
-    cached: NDArray[np.float64] | None = vars(result).get(_VARIANCE_CACHE)
-    if cached is not None:
-        return cached
     if result.method == "glm":
+        cached: NDArray[np.float64] | None = vars(result).get(_VARIANCE_CACHE)
+        if cached is not None:
+            return cached
         variance = _glm_untuned_rate_variance(result, mean_rates, support)
-    else:
-        variance = np.full(
-            mean_rates.size,
-            _untuned_rate_variance(
-                _count_to_rate(result),
-                np.asarray(result.occupancy, dtype=np.float64),
-                support,
-            ),
+        variance.flags.writeable = False
+        vars(result)[_VARIANCE_CACHE] = variance
+        return variance
+    shared: dict[bytes, float] = vars(result).setdefault(_SHARED_VARIANCE_CACHE, {})
+    key = support.tobytes()
+    if key not in shared:
+        shared[key] = _untuned_rate_variance(
+            _count_to_rate(result),
+            np.asarray(result.occupancy, dtype=np.float64),
+            support,
         )
+    variance = np.full(mean_rates.size, shared[key])
     variance.flags.writeable = False
-    vars(result)[_VARIANCE_CACHE] = variance
     return variance
+
+
+def _share_variance_cache(population: Any, unit: Any) -> None:
+    """Let a single-unit result reuse its population's untuned-rate variance.
+
+    For every estimator but the GAM, ``V`` depends only on the occupancy, the
+    estimator settings and the support, which a unit result takes from its
+    population, so the two share one cache keyed by the support. The GAM's
+    ``V`` depends on each unit's rate and penalty and is not shared.
+    """
+    if getattr(population, "method", None) != "glm":
+        vars(unit)[_SHARED_VARIANCE_CACHE] = vars(population).setdefault(
+            _SHARED_VARIANCE_CACHE, {}
+        )
 
 
 class _InformationBias(NamedTuple):
