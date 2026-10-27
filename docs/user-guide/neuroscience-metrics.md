@@ -50,7 +50,11 @@ fields = detect_place_fields(env, rates.firing_rate,
 1. **Iterative peak detection**: Identifies local maxima above threshold
 2. **Connected component extraction**: Groups neighboring bins into fields
 3. **Optional map-mean filter**: An explicitly finite `max_mean_rate` can skip maps
-4. **Subfield discrimination**: Recursively re-thresholds at 50% and 70% to separate coalescent fields
+4. **Subfield discrimination**: FMAToolbox `MapStats`'s rule. The core of a
+   field is the region above `m + threshold * (peak - m)`, with
+   `m = threshold * peak` (36% of the peak at the default 0.2). When the core
+   is less than half the field, two fields share it: the core is kept and the
+   neighboring field is found from its own peak
 
 **Key parameters:**
 
@@ -68,7 +72,8 @@ fields = detect_place_fields(env, rates.firing_rate,
 - `max_mean_rate`: Optional upper bound on the unweighted mean of non-NaN spatial-bin rates
   (default `np.inf`, disabled). This is not spike count divided by recording time,
   and does not identify interneurons or another cell type.
-- `detect_subfields`: Enable subfield discrimination (default True, following neurocode)
+- `detect_subfields`: Enable subfield discrimination (default True, following
+  FMAToolbox and neurocode `MapStats`)
 
 Segmentation is descriptive: even a flat map can yield a region. Field count
 and `has_place_field` do not establish a place cell. Keep cell-type tests and

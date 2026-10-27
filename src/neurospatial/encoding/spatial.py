@@ -1502,8 +1502,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             rates (Hz). The default disables exclusion. This is not the
             recording-time mean firing rate and does not identify cell type.
         detect_subfields : bool, default=True
-            If True, split a large field at 0.5 and then 0.7 of its peak when
-            that separates two neighboring fields.
+            If True, separate two fields that merge at ``threshold`` (the
+            FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
 
         Returns
         -------
@@ -5080,9 +5080,10 @@ def detect_place_fields(
         rates (Hz). The default disables exclusion. This is not the
         recording-time mean firing rate and does not identify cell type.
     detect_subfields : bool, default=True
-        If True, try to split each field more than twice the smallest field
-        into separate fields at 0.5 and then 0.7 of its peak. This separates
-        two neighboring fields that merge at the ``threshold`` level.
+        If True, separate two fields that merge at the ``threshold`` level,
+        with the rule of FMAToolbox ``MapStats`` [2]_: when the field's core
+        is less than half the field, the core is the field and the rest is
+        searched again from its own peak (see Notes, step 4).
 
     Returns
     -------
@@ -5110,19 +5111,22 @@ def detect_place_fields(
        also fail.
     3. **Field**: the bins connected to the peak through ``env.connectivity``
        whose rate is at least ``threshold`` times this peak.
-    4. **Keep or discard**: mark those bins as assigned. Keep the field only
+    4. **Coalescent fields**: with ``detect_subfields``, repeat step 3 on the
+       map minus the field's floor ``m = threshold * peak``, at ``threshold``
+       of the remaining height: the core is the connected region above
+       ``m + threshold * (peak - m)`` (0.36 of the peak at the default 0.2).
+       If the core is less than half the field, a second field shares the
+       region, and the core replaces the field; the rest of the region stays
+       unassigned, so the neighboring field is found from its own peak with
+       the same rules. This is the subfield rule of FMAToolbox ``MapStats``
+       [2]_ (``Analyses/MapStats.m``, lines 194-203).
+    5. **Keep or discard**: mark the field's bins as assigned. Keep it only
        if it is larger than the smallest field (below) and its peak bin is a
        local maximum of the full map (no neighbor has a higher rate). A candidate
        that rises toward a neighbor is the flank of a field already assigned,
        left behind when that field was cut at its own threshold. This is the
        n-D form of neurocode's 1-D check that the rate dips below threshold
        between two fields, and of the ``localmax`` option of ``MapStats``.
-    5. **Subfields**: if ``detect_subfields`` is True and the field is more
-       than twice the smallest field, threshold it at 0.5 and then 0.7 of its
-       peak. The first level that leaves two or more connected parts larger
-       than the smallest field replaces the field by those parts. This is one
-       pass over two levels, not a recursion; bins of the field outside
-       every part are assigned to no field.
     6. Repeat from step 2 until a peak fails the floor or every finite bin
        is assigned.
 
@@ -5177,6 +5181,8 @@ def detect_place_fields(
     .. [1] AyA Lab neurocode toolbox, ``PlaceCells/MapStats.m`` and
            ``PlaceCells/findPlaceFieldsAvg1D.m``,
            https://github.com/ayalab1/neurocode
+    .. [2] Zugaro, M. FMAToolbox, ``Analyses/MapStats.m``,
+           https://github.com/michael-zugaro/FMAToolbox
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     if firing_rate.shape != (env.n_bins,):
@@ -5251,29 +5257,21 @@ def detect_place_fields(
             break
 
         # NaN compares False, so assigned and missing bins are excluded.
-        above_threshold = remaining >= peak_rate * threshold
-        field_bins = _extract_connected_component(peak_idx, above_threshold, env)
+        floor = peak_rate * threshold
+        field_bins = _extract_connected_component(peak_idx, remaining >= floor, env)
+        if detect_subfields:
+            # FMAToolbox MapStats: the same search on the map minus the floor.
+            core_level = floor + (peak_rate - floor) * threshold
+            core = _extract_connected_component(peak_idx, remaining >= core_level, env)
+            if measures[core].sum() < measures[field_bins].sum() / 2:
+                field_bins = core
         remaining[field_bins] = np.nan
         if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
             continue
         smallest = _smoothed_bin_measure(
             env, peak_idx, bandwidth, threshold, finite, measures
         )
-        if measures[field_bins].sum() <= smallest:
-            continue
-
-        if detect_subfields and measures[field_bins].sum() > 2 * smallest:
-            fields.extend(
-                _detect_subfields(
-                    firing_rate[field_bins],
-                    field_bins,
-                    peak_rate,
-                    env,
-                    measures,
-                    smallest,
-                )
-            )
-        else:
+        if measures[field_bins].sum() > smallest:
             fields.append(field_bins)
 
     return PlaceFieldsResult(fields=fields)
@@ -5373,8 +5371,8 @@ def has_place_field(
         rates (Hz). The default disables exclusion. This is not the
         recording-time mean firing rate and does not identify cell type.
     detect_subfields : bool, default=True
-        If True, split a large field at 0.5 and then 0.7 of its peak when that
-        separates two neighboring fields.
+        If True, separate two fields that merge at ``threshold`` (the
+        FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
 
     min_occupancy : float | None, default=None
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
@@ -5965,80 +5963,6 @@ def _extract_connected_component(
     The environment graph is authoritative for every binning family.
     """
     return _extract_connected_component_graph(seed_idx, mask, env)
-
-
-def _detect_subfields(
-    field_rates: NDArray[np.float64],
-    field_bins: NDArray[np.int64],
-    peak_rate: float,
-    env: Environment,
-    measures: NDArray[np.float64],
-    smallest: float,
-) -> list[NDArray[np.int64]]:
-    """Recursively detect subfields using higher thresholds.
-
-    Parameters
-    ----------
-    field_rates : array
-        Firing rates within field bins.
-    field_bins : array
-        Bin indices of field.
-    peak_rate : float
-        Peak firing rate in field.
-    env : Environment
-        Spatial environment.
-    measures : array, shape (n_bins,)
-        Measure (length, area or volume) of each bin.
-    smallest : float
-        Measure a part must exceed to be a field.
-
-    Returns
-    -------
-    subfields : list of arrays
-        List of subfield bin indices. If only one subfield found,
-        returns list with original field.
-    """
-    # Try thresholds: 0.5 and 0.7 of peak
-    subfield_thresholds = [0.5, 0.7]
-
-    for thresh in subfield_thresholds:
-        threshold_rate = peak_rate * thresh
-        above_threshold = field_rates >= threshold_rate
-
-        # Find connected components
-        subfields = []
-        remaining_mask = above_threshold.copy()
-
-        while remaining_mask.any():
-            # Find a seed
-            seed_local_idx = np.where(remaining_mask)[0][0]
-            seed_global_idx = field_bins[seed_local_idx]
-
-            # Build mask in global coordinates
-            global_mask = np.zeros(env.n_bins, dtype=bool)
-            global_mask[field_bins[above_threshold]] = True
-
-            # Extract component
-            component_global = _extract_connected_component(
-                seed_global_idx, global_mask, env
-            )
-
-            if measures[component_global].sum() > smallest:
-                subfields.append(component_global)
-
-            # Remove from remaining mask
-            for bin_idx in component_global:
-                # Find local index
-                local_indices = np.where(field_bins == bin_idx)[0]
-                if len(local_indices) > 0:
-                    remaining_mask[local_indices[0]] = False
-
-        # If found multiple subfields, return them
-        if len(subfields) > 1:
-            return subfields
-
-    # No subfields found
-    return [field_bins]
 
 
 def place_cell_significance(

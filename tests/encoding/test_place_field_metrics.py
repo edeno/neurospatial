@@ -200,9 +200,13 @@ class TestDetectPlaceFields:
             assert abs(peak - 100) <= bin_size
 
     def test_coalescent_fields_split_at_true_centers(self, track_arena):
-        """Two fields 16 cm apart (sigma 5 cm) merge at 0.2 x peak; subfields split them."""
+        """Two fields 20 cm apart (sigma 5 cm) merge at 0.2 x peak; subfields split them.
+
+        The rate between them dips to 2.7 Hz: above the 2 Hz field edge, below
+        the 3.6 Hz core level of the MapStats rule.
+        """
         env, bump = track_arena
-        firing_rate = bump(32, 20, 10.0, 5.0) + bump(48, 20, 10.0, 5.0)
+        firing_rate = bump(30, 20, 10.0, 5.0) + bump(50, 20, 10.0, 5.0)
         from neurospatial.encoding.spatial import detect_place_fields
 
         fields = detect_place_fields(
@@ -217,13 +221,66 @@ class TestDetectPlaceFields:
             key=lambda centroid: centroid[0],
         )
         bin_size = 2.0
-        assert_allclose(centroids[0], [32.0, 20.0], atol=bin_size)
-        assert_allclose(centroids[1], [48.0, 20.0], atol=bin_size)
+        assert_allclose(centroids[0], [30.0, 20.0], atol=bin_size)
+        assert_allclose(centroids[1], [50.0, 20.0], atol=bin_size)
 
         merged = detect_place_fields(
             env, firing_rate, bandwidth=0.0, detect_subfields=False
         )
         assert len(merged) == 1
+
+    def test_track_fields_36_cm_apart_are_two_fields(self):
+        """Fields 36 cm apart (10 and 8 Hz, sigma 8 cm) merge at 0.2 x peak.
+
+        Smoothed (sigma about 9.4 cm), the rate between them dips to about
+        2.9 Hz: above the 2 Hz field edge, below the 3.6 Hz core level, so the
+        MapStats rule separates them. Each part is at least the core of a lone
+        field: the 0.36 contour of a Gaussian is
+        sqrt(ln(1/0.36) / ln(1/0.2)) = 0.8 of its 0.2 contour.
+        """
+        from neurospatial.encoding.spatial import (
+            compute_spatial_rates,
+            detect_place_fields,
+        )
+        from neurospatial.simulation import (
+            generate_poisson_spikes,
+            simulate_trajectory_laps,
+        )
+
+        bin_size = 2.0
+        env = Environment.from_samples(
+            np.linspace(0, 200, 401)[:, None], bin_size=bin_size
+        ).with_metadata(units="cm")
+
+        def gauss(x, center, peak):
+            return peak * np.exp(-((x - center) ** 2) / (2 * 8.0**2))
+
+        for seed in range(3):
+            positions, times = simulate_trajectory_laps(
+                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, seed=seed
+            )
+            x = positions[:, 0]
+            pair = gauss(x, 60, 10) + gauss(x, 96, 8) + 0.1
+            alone = gauss(x, 150, 10) + 0.1
+            spikes = [
+                generate_poisson_spikes(rate, times, seed=300 + 2 * seed + k)
+                for k, rate in enumerate((pair, alone))
+            ]
+            rates = compute_spatial_rates(env, spikes, times, positions)
+            pair_map, alone_map = np.asarray(rates.firing_rates)
+            fields = list(detect_place_fields(env, pair_map, bandwidth=rates.bandwidth))
+            (single,) = detect_place_fields(env, alone_map, bandwidth=rates.bandwidth)
+            peaks = sorted(
+                env.bin_centers[f[np.argmax(pair_map[f])], 0] for f in fields
+            )
+            assert len(peaks) == 2
+            assert abs(peaks[0] - 60) <= 4 and abs(peaks[1] - 96) <= 4
+            core = 0.8 * len(single) * bin_size
+            assert all(len(f) * bin_size >= core - bin_size for f in fields)
+            merged = detect_place_fields(
+                env, pair_map, bandwidth=rates.bandwidth, detect_subfields=False
+            )
+            assert len(merged) == 1
 
     def test_peak_floor_stops_cascade_into_noise(self, track_arena):
         """Each field's threshold scales with its own peak, so low bumps need a floor.

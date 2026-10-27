@@ -331,9 +331,8 @@ def population_coverage(
         (Hz), passed to ``detect_place_fields``. The default disables exclusion.
         This is not a recording-time mean and does not identify cell type.
     detect_subfields : bool, default=True
-        If True, split a large field at 0.5 and then 0.7 of its peak when
-        that separates two neighboring fields. Passed to
-        `detect_place_fields()`.
+        If True, separate two fields that merge at ``threshold`` (the
+        FMAToolbox ``MapStats`` rule). Passed to `detect_place_fields()`.
     n_jobs : int, default=1
         Number of parallel jobs for per-neuron place-field detection. Use
         ``-1`` for all CPUs. ``1`` means sequential processing (no joblib
