@@ -63,6 +63,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.encoding._core_numpy import compute_firing_rates_batch
 from neurospatial.ops import (
     _RESOLUTION_MARGIN,
     _above_component_floor,
@@ -998,17 +999,14 @@ def _binned_batch(
 
     This order can introduce discretization artifacts.
     """
-    spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        raw_rates = np.where(occupancy > 0, spike_counts / occupancy, np.nan)
-
-    # Exclude sub-threshold bins from the smoothing average so their noisy
-    # ratios do not bleed into neighbors. The output-side mask below then keeps
-    # them NaN even if the masked average would re-fill them from neighbors.
-    if min_occupancy > 0:
-        raw_rates = np.where(occupancy >= min_occupancy, raw_rates, np.nan)
+    # Sub-threshold bins are NaN, which excludes them from the smoothing
+    # average so their noisy ratios do not bleed into neighbors. The
+    # output-side mask below then keeps them NaN even if the masked average
+    # would re-fill them from neighbors.
+    raw_rates = compute_firing_rates_batch(
+        spike_counts, occupancy, min_occupancy=min_occupancy
+    )
 
     if bandwidth <= 0:
         return raw_rates.astype(dtype)
