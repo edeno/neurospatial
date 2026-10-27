@@ -30,7 +30,14 @@ Key Difference: Place Cells vs Spatial View Cells
 
 For place cells, both place field and view field are similar (because viewing
 location correlates with position). For spatial view cells, the view field
-has higher spatial information than the place field.
+has higher spatial information than the place field. So does a head-direction
+cell: the wall a heading points at follows from the heading, so a cell tuned
+to heading has a field on that wall in its view map and little information
+about position (simulated head-direction cells, von Mises kappa 6: view
+information 0.66 bits/spike, place information 0.04). A spatial view cell keeps
+one view field wherever the animal stands; compare view maps computed from
+separate halves of the arena (set positions in the other half to NaN), in
+which a head-direction cell's field slides along the wall with the animal.
 
 Examples
 --------
@@ -570,7 +577,11 @@ class ViewRateResult(SingleUnitRateMixin):
         **Place cells vs spatial view cells**: Both may show high spatial
         information, but spatial view cells have higher *view* spatial
         information (using view occupancy) than *position* spatial information
-        (using standard occupancy).
+        (using standard occupancy). Head-direction cells pass that comparison
+        too, since the heading fixes which wall is in view (simulated kappa 6
+        head-direction cells: view 0.66 bits/spike, place 0.04). Check that the
+        view field stays in place when computed from separate halves of the
+        arena; a head-direction cell's field moves with the animal's position.
 
         References
         ----------
@@ -1558,7 +1569,9 @@ def compute_view_rate(
     **Place cells vs spatial view cells**: For place cells, the view field
     and place field are correlated (viewing location correlates with position).
     For true spatial view cells, the view field shows stronger spatial
-    selectivity than the place field.
+    selectivity than the place field, but so does a head-direction cell,
+    whose heading fixes the wall in view. A spatial view cell's field stays in
+    place in view maps computed from separate halves of the arena.
 
     Examples
     --------

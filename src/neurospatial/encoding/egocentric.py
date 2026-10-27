@@ -635,17 +635,15 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         or is_egocentric_object_vector_cell(..., criterion="shuffle") with the raw
         arrays; a result does not keep the arrays it was computed from.
 
-        **Object-vector vs place cells**: Both may show high spatial
-        information. Compare polar tuning in the appropriate direction frame
-        with a Cartesian position map; an egocentric map is appropriate only
-        for heading-relative bearing. A threshold screen alone does not
-        distinguish object-vector tuning from a place-cell control.
-
-        For more rigorous classification, consider also using:
-
-        - Stability across sessions
-        - Multiple objects (OVCs should generalize)
-        - Shuffling controls
+        **Object-vector vs place cells**: with one fixed object, a place
+        field is also a field at one distance and direction from the object,
+        so an allocentric object-vector map cannot tell the two apart within
+        a session: in simulation both pass this screen and score alike on
+        ``object_vector_score``. The control is
+        to move the object: an object-vector field keeps its vector to the
+        object, so vector maps from the two placements correlate, while a
+        place field stays put (Høydal et al., 2019). An egocentric map is
+        appropriate only for heading-relative bearing.
 
         References
         ----------
@@ -1898,11 +1896,12 @@ def compute_object_vector_rate(
     **Coordinate convention**: Direction uses allocentric (world-centered)
     coordinates where 0=East, +π/2=North, -π/2=South.
 
-    **Place cells vs object-vector cells**: For place cells, firing is
-    determined by allocentric position. For OVCs, firing is determined by
-    allocentric relationship to objects. Computing place field using
-    ``compute_spatial_rate`` and OVC field using this function, then comparing
-    spatial information, can help distinguish cell types.
+    **Place cells vs object-vector cells**: with one fixed object, a place
+    field lies at one distance and direction from it, so this map shows a
+    place cell as a localized vector field; comparing its information with
+    ``compute_spatial_rate`` does not separate them. Record a session with
+    the object moved and correlate the two vector maps: an object-vector
+    field follows the object, a place field does not (Høydal et al., 2019).
 
     Examples
     --------
