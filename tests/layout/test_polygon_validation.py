@@ -25,6 +25,7 @@ from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     ClippedLocator,
     PolygonCells,
+    _polygon_coordinate_errors,
     clip_mapping_of,
 )
 from neurospatial.geometry._validation import validate_components
@@ -192,3 +193,11 @@ def test_a_cell_may_take_unbinned_space_next_to_its_parent():
         )
     with pytest.raises(ValueError, match="outside its source parent"):
         _publish(_over_grid([box(0, 0, 2.5, 1)], [0], [True, False, False]))
+
+
+@pytest.mark.parametrize("start", range(6))
+def test_resolvability_does_not_depend_on_where_the_ring_starts(start):
+    # Overlay can leave two vertices a rounding error apart at a corner (here
+    # where a slanted edge crosses a grid vertex); they are not a feature.
+    ring = [(33, 78), (30, 78), (27, 79), (30, 80), (32.99999999999999, 81), (33, 81)]
+    _polygon_coordinate_errors(Polygon(ring[start:] + ring[:start]))
