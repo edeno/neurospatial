@@ -560,6 +560,15 @@ Results that change:
   take that arena, so every position falls in a piece of the bin the grid
   gives it and the cells' areas add up to the arena's. Bins along such an
   outline grow and their centers move toward the outline.
+- `Environment.clip` keeps the same arena: a clip that reaches a slanted or
+  curved outline lost the positions a grid gives to a bin from a dropped
+  neighboring cell (2,179 of 105,942 uniform points in a box clip of the
+  same arena). Every position inside the clip polygon that the parent
+  gives a bin now falls in a piece of that bin, and the clipped cells'
+  areas add up to the clipped arena's. `bin_mapping_from` paired 30 of
+  those bins with their parent bin although the clipped bin had lost
+  positions; a bin that takes such arena is a different cell, so it is now
+  reported unmapped (its values are not carried) instead.
 
 Breaking API changes:
 

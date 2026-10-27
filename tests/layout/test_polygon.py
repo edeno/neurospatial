@@ -8,6 +8,7 @@ from dataclasses import FrozenInstanceError, replace
 
 import numpy as np
 import pytest
+import shapely
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
@@ -546,3 +547,32 @@ def test_domain_intersection_discards_only_zero_area_collection_parts():
 def test_mapping_refuses_unrepresentable_parent_count_before_integer_cast():
     with pytest.raises(ValueError, match="representable"):
         ClipMapping(np.array([2**63], dtype=np.uint64), 2**64)
+
+
+SLANTED_ARENA = Polygon([(0, 0), (90, 0), (90, 40), (50, 40), (60, 90), (0, 70)])
+
+
+@pytest.mark.parametrize(
+    "clip",
+    [box(-5, -5, 95, 95), box(20, 0, 95, 95), Point(45, 40).buffer(30)],
+    ids=["whole", "box", "disk"],
+)
+def test_clip_keeps_the_arena_a_grid_drops_at_its_outline(clip):
+    # A grid drops the cells whose centers lie outside a slanted outline and
+    # gives a position in their arena part to the nearest neighboring bin. The
+    # clipped cells take that arena, so a clip keeps every position the grid
+    # gives a bin, in a piece of that bin, and covers the clipped arena.
+    env = Environment.from_polygon(SLANTED_ARENA, bin_size=3.0, units="cm")
+    clipped = env.clip(clip)
+    points = np.random.default_rng(0).uniform(0, 90, (40_000, 2))
+    target = SLANTED_ARENA.intersection(clip)
+    points = points[shapely.contains_xy(target, *points.T)]
+    grid_bins = env.bin_at(points)
+    clipped_bins = clipped.bin_at(points)
+    assert np.all(grid_bins >= 0)
+    assert np.all(clipped_bins >= 0)
+    np.testing.assert_array_equal(
+        clipped.clip_mapping.parent_bin_indices[clipped_bins], grid_bins
+    )
+    area = sum(cell.area for cell in materialize_cells(clipped.binning))
+    assert area == pytest.approx(target.area, rel=1e-12)

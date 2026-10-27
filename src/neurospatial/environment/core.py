@@ -2732,6 +2732,11 @@ class Environment(Generic[_C]):
             Exact positive-area cells, with the parent's units, frame, arena
             and named regions. Disconnected pieces get separate bins;
             ``clip_mapping.parent_bin_indices`` identifies their input bins.
+            A grid drops the cells whose centers lie outside a slanted or
+            curved outline and gives a position in their arena part to the
+            nearest neighboring bin; that bin's clipped cell takes that
+            arena, so the clip keeps every position inside ``polygon`` that
+            the parent gives a bin, in a piece of that bin.
             Rates, counts and fitted models are not transferred. Numerical
             operations require certified finite-volume geometry. The analysis
             crop preserves the parent arena and does not assert new walls.

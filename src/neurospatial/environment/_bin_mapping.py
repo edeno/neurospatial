@@ -64,18 +64,21 @@ class BinMapping(ReadOnlyArraysMixin):
     n_parent_bins, n_child_bins : int
         Number of bins in each environment.
     unmapped_parent_bins : ndarray of intp, shape (n_unmapped,)
-        Parent bins with no child bin: dropped by a subset or a clip, beyond
-        a truncated rebin, or in a coarse cell whose center fell outside the
-        arena. Their values are not carried to the child.
+        Parent bins with no child bin that is the same cell: dropped by a
+        subset or a clip, beyond a truncated rebin, in a coarse cell whose
+        center fell outside the arena, or grown by a clip, which gives a grid
+        bin next to a cell dropped at a slanted or curved outline the arena
+        of that cell. Their values are not carried to the child.
     split_parent_bins : ndarray of intp, shape (n_split,)
         Parent bins whose points are divided between child bins: cells a clip
         cut, and grid cells that own a boundary point (next to an empty
         neighbor) which the child grid gives to another cell. They are in no
         pair, and their values are not carried.
     uncovered_child_bins : ndarray of intp, shape (n_uncovered,)
-        Child bins whose value cannot be carried exactly: those that contain
-        no whole parent bin, such as the pieces of a cut cell, and those that
-        own points of a split parent bin. Transfers give them NaN (or
+        Child bins whose value cannot be carried exactly: those that are
+        not the same cell as a parent bin, such as the pieces of a cut cell
+        or a cell a clip grew, and those that own points of a split parent
+        bin. Transfers give them NaN (or
         ``missing``), because a binned value cannot say how much of it lay on
         the shared boundary.
     child_coverage : ndarray of float64, shape (n_child_bins,)
