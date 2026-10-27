@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -210,13 +210,15 @@ def _representative(polygon: Polygon) -> tuple[float, float]:
 
 
 def _overlay(
-    source: tuple[Polygon, ...], polygon: Polygon | MultiPolygon
+    source: tuple[Polygon, ...],
+    polygon: Polygon | MultiPolygon,
+    slivers: Sequence[tuple[int, Polygon]] = (),
 ) -> tuple[PolygonCells, ClipMapping]:
     # Each intersection retains its known parent. Polygonizing all boundaries
     # together can create rounding-sized strips whose representative point is
     # assigned to a different parent, losing coverage of an otherwise valid
     # cell. GEOS overlay computes the common intersections directly instead.
-    overlaps = [cell.intersection(polygon) for cell in source]
+    overlaps = _kept_regions(source, slivers, polygon.intersection)
     pieces = [
         [shapely.normalize(piece) for piece in sorted(_parts(overlap), key=_key)]
         for overlap in overlaps
@@ -396,14 +398,44 @@ def certify_faces(
     return KnownFaces(FaceGeometry(pairs, areas, distances, volumes))
 
 
+def _kept_regions(
+    source: Sequence[Polygon],
+    slivers: Sequence[tuple[int, Polygon]],
+    keep: Callable[[Polygon], shapely.Geometry],
+) -> tuple[shapely.Geometry, ...]:
+    """Each cell of ``source`` kept by ``keep``, with its ``slivers`` parts.
+
+    Every cell and part is kept separately before they are joined, so a part
+    and the cell beside it are cut along their own shared edges and meet at
+    identical vertices; cutting their union instead recomputes a crossing on
+    a merged edge, one rounding error away from the vertex beside it.
+    """
+    owned: dict[int, list[Polygon]] = defaultdict(list)
+    for bin_index, part in slivers:
+        owned[bin_index].append(part)
+    return tuple(
+        unary_union([keep(cell), *(keep(part) for part in owned[index])])
+        if index in owned
+        else keep(cell)
+        for index, cell in enumerate(source)
+    )
+
+
 def clip_binning(
     binning: Binning,
     polygon: Polygon | MultiPolygon,
     *,
     domain: Polygon | MultiPolygon | None = None,
     walls: Sequence[shapely.Geometry] = (),
+    slivers: Sequence[tuple[int, Polygon]] = (),
 ) -> tuple[Binning, ClipMapping]:
-    """Intersect stored cells with a polygon, retaining exact support and ancestry."""
+    """Intersect stored cells with a polygon, retaining exact support and ancestry.
+
+    Each ``(bin, part)`` of ``slivers`` (from
+    :func:`~neurospatial.geometry._lookup.outline_sliver_regions`) joins that
+    bin's cell first, so the pieces cover the arena a grid dropped at its
+    outline wherever the polygon does.
+    """
     _validate_polygon(polygon, "clip polygon")
     if domain is not None:
         _validate_polygon(domain, "arena domain")
@@ -419,7 +451,7 @@ def clip_binning(
     # retained area. Those contacts have no cell measure or boundary authority.
     effective = unary_union(_parts(effective))
     source = materialize_cells(binning)
-    cells, mapping = _overlay(source, effective)
+    cells, mapping = _overlay(source, effective, slivers)
     return _pieces_binning(binning, source, cells, mapping, walls), mapping
 
 
@@ -453,22 +485,13 @@ def split_binning(
     """
     source = materialize_cells(binning)
     wall = unary_union(walls)
-    regions = (
-        source
-        if domain is None
-        else tuple(
-            cell if domain.covers(cell) else cell.intersection(domain)
-            for cell in source
-        )
-    )
-    if slivers:
-        owned: dict[int, list[Polygon]] = defaultdict(list)
-        for bin_index, part in slivers:
-            owned[bin_index].append(part)
-        regions = tuple(
-            unary_union([region, *owned[index]]) if index in owned else region
-            for index, region in enumerate(regions)
-        )
+
+    def keep(cell: Polygon) -> shapely.Geometry:
+        if domain is None or domain.covers(cell):
+            return cell
+        return cell.intersection(domain)
+
+    regions = _kept_regions(source, slivers, keep)
     records = [
         (parent, shapely.normalize(piece))
         for parent, region in enumerate(regions)

@@ -11,6 +11,7 @@ from neurospatial.geometry import (
     bridge_values,
     clip_binning,
 )
+from neurospatial.geometry._lookup import outline_sliver_regions
 
 
 def _clip(
@@ -37,6 +38,7 @@ def _clip(
         polygon,
         domain=domain,
         walls=arena.walls,
+        slivers=outline_sliver_regions(binning, arena),
     )
     # Publication records the clipped cells' extent as the ranges.
     return _Derivation(clipped, "clip")

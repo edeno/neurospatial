@@ -157,15 +157,18 @@ def outline_sliver_regions(binning: Binning, arena: Arena) -> list[tuple[int, Po
     bin whose cell center is strictly inside (see
     :func:`_snap_outline_slivers`). These are the same assignments as
     polygons: each dropped cell is cut along the perpendicular bisectors
-    between its owners' centers, in the grid's own frame, and each part is
-    kept to the arena. Exact polygon cells that take these parts cover every
-    position the grid's lookup gives a bin.
+    between its owners' centers, in the grid's own frame. Exact polygon cells
+    that take these parts, kept to the arena, cover every position the grid's
+    lookup gives a bin.
 
     Returns
     -------
     list of (int, Polygon)
-        Active-bin index and one part, in world coordinates. Empty when the
-        bins are not planar grid cells or the arena has no polygonal domain.
+        Active-bin index and one part of a dropped cell that reaches into the
+        arena, in world coordinates and not yet kept to it: intersect each
+        part with the arena once, as the cells are, so that the parts and
+        cells meet at identical vertices. Empty when the bins are not planar
+        grid cells or the arena has no polygonal domain.
     """
     grid = _sliver_grid(binning)
     domain = arena.polygonal_domain()
@@ -215,12 +218,9 @@ def outline_sliver_regions(binning: Binning, arena: Arena) -> list[tuple[int, Po
                 remaining = remaining.difference(nearest)
             if owner_bin[j] < 0 or nearest.is_empty:
                 continue
-            world = shapely.transform(nearest, to_world).intersection(domain)
-            parts.extend(
-                (int(owner_bin[j]), piece)
-                for piece in shapely.get_parts(world)
-                if isinstance(piece, Polygon) and piece.area > 0
-            )
+            world = shapely.transform(nearest, to_world)
+            if isinstance(world, Polygon) and world.intersection(domain).area > 0:
+                parts.append((int(owner_bin[j]), world))
     return parts
 
 
