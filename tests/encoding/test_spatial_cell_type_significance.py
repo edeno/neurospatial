@@ -603,29 +603,79 @@ def test_unknown_correction_is_refused(mixed_p_values):
         mixed_p_values.label_cell_types(correction="bonferroni")
 
 
-@pytest.mark.parametrize(
-    ("correction", "n_units", "observed", "needed"),
-    [
-        # Holm passes a unit's smallest of 3 p-values when 3 p < alpha.
-        ("holm", 1, [[1.0, 1.0, 1.0]], 60),
-        # BH passes 1 floor p-value of 30 tests when 30 p < alpha.
-        ("fdr_bh", 10, [[1.0, 0.0, 0.0]] + [[0.0, 0.0, 0.0]] * 9, 600),
-    ],
-)
-def test_shuffle_count_that_limits_a_correction_is_named(
-    correction, n_units, observed, needed
-):
-    """A test at the smallest attainable p-value passes once shuffles allow it."""
-    for n_shuffles, passes in ((needed - 1, False), (needed, True)):
-        result = _synthetic(observed, np.full((n_units, n_shuffles, 3), 0.5))
+def test_shuffle_count_that_limits_a_correction_is_named():
+    """A test at the smallest attainable p-value passes once shuffles allow it.
+
+    BH passes 1 floor p-value of 30 tests when 30 p < alpha.
+    """
+    observed = [[1.0, 0.0, 0.0]] + [[0.0, 0.0, 0.0]] * 9
+    for n_shuffles, passes in ((599, False), (600, True)):
+        result = _synthetic(observed, np.full((10, n_shuffles, 3), 0.5))
         if passes:
             with warnings.catch_warnings():
                 warnings.simplefilter("error")
-                labels = result.label_cell_types(correction=correction)
+                labels = result.label_cell_types(correction="fdr_bh")
         else:
-            with pytest.warns(UserWarning, match=f"n_shuffles >= {needed}"):
-                labels = result.label_cell_types(correction=correction)
+            with pytest.warns(UserWarning, match="n_shuffles >= 600"):
+                labels = result.label_cell_types(correction="fdr_bh")
         assert (labels[0] != "unclassified") == passes
+
+
+def _border_unit(n_shuffles):
+    """Information and border p-values at the floor 1 / (n + 1); grid at 1."""
+    return _synthetic([[1.0, 0.0, 1.0]], np.zeros((1, n_shuffles, 3)))
+
+
+def test_holm_floor_above_the_first_step_is_undetermined():
+    """Holm's first step needs m p < alpha, so 3 floors of 1 / 40 cannot reject.
+
+    Uncorrected, 1 / 40 < 0.05 passes. Under Holm no data could make any of
+    the unit's three tests pass, so they are undetermined, not failed.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert _border_unit(39).label_cell_types()[0] == "border"
+    with pytest.warns(UserWarning, match="at least 60 finite null scores"):
+        table = _border_unit(39).summary_table(correction="holm")
+    assert table["cell_type"].iloc[0] == "undetermined"
+    for name in ("spatial_information", "grid_score", "border_score"):
+        assert table[f"passes_{name}"].isna().all()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert _border_unit(60).label_cell_types(correction="holm")[0] == "border"
+
+
+def test_holm_test_that_could_pass_stays_determined():
+    """A floor p-value that fails only because another test's data is weak.
+
+    The border test has 59 finite nulls (floor 1 / 60) and the information
+    test 199. Had the information test been significant (p >= 1 / 200), Holm
+    would pass the border test at its second step (2 / 60 < 0.05); its data
+    (p = 1) decided otherwise, so the border test failed rather than being
+    undetermined.
+    """
+    null = np.zeros((1, 199, 3))
+    null[0, 59:, 2] = np.nan
+    result = _synthetic([[0.0, 0.0, 1.0]], null)
+    with pytest.warns(UserWarning, match="at least 60 finite null scores"):
+        table = result.summary_table(correction="holm")
+    assert table["passes_border_score"].tolist() == [False]
+    assert table["cell_type"].tolist() == ["unclassified"]
+
+
+def test_bh_floor_below_alpha_is_never_undetermined():
+    """With every test at its floor, BH passes all of them when each floor < alpha.
+
+    The largest of M p-values passes when M p / M < alpha, so a test whose
+    floor is below alpha can always be determined; at or above alpha it
+    cannot reject, as without a correction.
+    """
+    with pytest.warns(UserWarning, match="fail correction='fdr_bh'"):
+        table = _floor_unit_among_null_units(39).summary_table(correction="fdr_bh")
+    assert not table.filter(like="passes_").isna().any().any()
+    with pytest.warns(UserWarning, match="at least 20 finite null scores"):
+        table = _floor_unit_among_null_units(19).summary_table(correction="fdr_bh")
+    assert table.loc[0, "cell_type"] == "undetermined"
 
 
 def _floor_unit_among_null_units(n_shuffles):

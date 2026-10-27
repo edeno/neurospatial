@@ -6818,7 +6818,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         silent unit, or a border map with no field of the minimum size), the
         statistic is unscored, or no null score is finite. With n finite null
         scores the smallest p-value is 1 / (n + 1), so a test with
-        1 / (n + 1) >= alpha cannot reject and is undetermined.
+        1 / (n + 1) >= alpha cannot reject and is undetermined; under a
+        correction, so is a test that fails the corrected cutoff even with
+        every test at its smallest p-value.
     n_shuffles : int
         Number of shifted trains per unit.
 
@@ -6935,14 +6937,29 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
         """Adjusted p-values and the tests that cannot reject at ``level``.
 
-        The smallest p-value of n finite null scores is 1 / (n + 1); when it
-        is not below ``level`` the test cannot reject, whatever the data, and
-        is left out of the correction's family along with unscored tests.
+        The smallest p-value of n finite null scores is its floor
+        1 / (n + 1); when the floor is not below ``level`` the test cannot
+        reject, whatever the data, and is left out of the correction's family
+        along with unscored tests.
+
+        A test in the family can still be unable to pass the corrected
+        cutoff. Holm and Benjamini-Hochberg are monotone: lowering any
+        p-value never removes a rejection, because both act on the sorted
+        p-values, which can only fall, through a running maximum (Holm) or a
+        step-up search (BH). Every p-value is at least its floor, so the most
+        favorable data put every test of the family at its floor; a test the
+        correction rejects for no data set fails there, and is also a test
+        that cannot reject. For Holm, a unit whose m tests share one floor
+        needs ``m / (n + 1) < level`` at the first step. For BH, the largest
+        of M p-values passes when ``M p / M < level``, so a floor below
+        ``level`` can always pass and BH adds no such test.
         """
-        cannot_reject = np.isfinite(self.observed_scores) & (
-            1.0 / (1.0 + self._n_finite_null()) >= level
-        )
+        floor = 1.0 / (1.0 + self._n_finite_null())
+        cannot_reject = np.isfinite(self.observed_scores) & (floor >= level)
         family = np.where(cannot_reject, np.nan, self.p_values)
+        in_family = np.isfinite(family)
+        best_case = _adjusted_p_values(np.where(in_family, floor, np.nan), correction)
+        cannot_reject |= in_family & ~(best_case < level)
         return _adjusted_p_values(family, correction), cannot_reject
 
     def _outcomes(
@@ -6963,7 +6980,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         with np.errstate(invalid="ignore"):
             passed = adjusted < level
         if correction is not None:
-            self._warn_resolution_limit(adjusted, passed, level, correction)
+            self._warn_resolution_limit(
+                adjusted, passed, cannot_reject, level, correction
+            )
         from neurospatial.encoding._metrics import _warn_unknown_bias
 
         debiased = self.observed_scores[:, 0] - self.spatial_information_bias
@@ -6980,15 +6999,27 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 for k, name in enumerate(self.statistics)
                 if undetermined[:, k].any()
             ]
+            # With every test of a unit at one floor, Holm's first step needs
+            # m p < level for the unit's m scored tests; uncorrected and BH
+            # tests need p < level (see _adjusted).
+            m = 1
+            if correction == "holm":
+                scored = np.isfinite(self.observed_scores).sum(axis=1)
+                m = int(scored[undetermined.any(axis=1)].max())
+            needed = _smallest_null_count(lambda p: p * m < level, m / level)
+            cutoff = (
+                f"p < {level}"
+                if correction is None
+                else f"correction={correction!r} at alpha={level}"
+            )
             warnings.warn(
                 f"{int(undetermined.any(axis=1).sum())} of {len(self)} units "
                 f"have a test ({', '.join(names)}) with too few finite null "
-                f"scores to reach p < {level}, so that test is undetermined.\n"
+                f"scores to pass {cutoff}, so that test is undetermined.\n"
                 "Why: with n finite null scores the smallest p-value is "
                 "1 / (n + 1); shifted maps without a defined score (a silent "
                 "shift, or a border map with no field) are left out of n.\n"
-                "Fix: run more shuffles, so that each test has at least "
-                f"{_smallest_null_count(lambda p: p < level, 1 / level)} "
+                f"Fix: run more shuffles, so that each test has at least {needed} "
                 "finite null scores; summary_table() reports them as "
                 "<statistic>_n_finite_null.",
                 UserWarning,
@@ -7007,13 +7038,15 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         self,
         adjusted: NDArray[np.float64],
         passed: NDArray[np.bool_],
+        cannot_reject: NDArray[np.bool_],
         level: float,
         correction: str,
     ) -> None:
         """Warn when tests at the smallest attainable p-value fail a correction.
 
         Such a test is as extreme as its shuffles can show, so the number of
-        shuffles, not the data, decided it. Holm passes the smallest of a
+        shuffles, not the data, decided it. Tests that cannot reject for any
+        data are undetermined and warned about separately. Holm passes the smallest of a
         unit's m p-values when ``m p < alpha``, and Benjamini-Hochberg passes
         k equal p-values of M tests when ``M p / k < alpha``; the message
         names the smallest n whose floor p-value ``1 / (n + 1)`` passes,
@@ -7023,7 +7056,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
 
         n_finite = self._n_finite_null()
         at_floor = np.isfinite(adjusted) & (self.p_values <= 1.0 / (1.0 + n_finite))
-        limited = at_floor & ~passed
+        limited = at_floor & ~passed & ~cannot_reject
         if not limited.any():
             return
         if correction == "holm":
@@ -7109,9 +7142,13 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             is neither a grid nor a border cell; ``"unclassified"`` for none;
             ``"undetermined"`` when a grid or border test applies to the
             environment but its score could not be computed, or when a test
-            has too few finite null scores to reach ``p < alpha``
-            (``1 / (n_finite + 1) >= alpha``) and its other requirement
-            holds; a ``UserWarning`` gives the reason. On a 1-D environment
+            has too few finite null scores to pass and its other requirement
+            holds; a ``UserWarning`` gives the reason. Too few means
+            ``1 / (n_finite + 1) >= alpha``, or, with a ``correction``, that
+            the test fails the correction even with every test at its
+            smallest p-value ``1 / (n_finite + 1)``: under Holm, a unit's
+            ``m`` tests with equal ``n_finite`` need
+            ``m / (n_finite + 1) < alpha``. On a 1-D environment
             grid and border do not apply, so a significant cell is
             ``"place"``.
         """
@@ -7377,7 +7414,9 @@ def spatial_cell_type_significance(
     observed score. Its smallest value is 1 / (1 + n), so when
     1 / (1 + n) >= alpha the test cannot reject and the unit's label is
     ``"undetermined"`` rather than ``"unclassified"``; ``summary_table()``
-    reports n as ``<statistic>_n_finite_null``.
+    reports n as ``<statistic>_n_finite_null``. With a correction the same
+    holds for a test that fails it even with every test at its smallest
+    p-value (see :meth:`CellTypeSignificanceResult.label_cell_types`).
 
     Each test controls its own false-positive rate at ``alpha``, and each
     unit is tested three times. Calibration: three simulated 20-minute

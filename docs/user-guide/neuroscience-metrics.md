@@ -1124,7 +1124,10 @@ p-value is `(1 + k) / (1 + n)` over the `n` finite null scores. When
 `1 / (1 + n)` is not below `alpha` the test cannot reject, and
 `spatial_cell_type_significance` labels the unit `"undetermined"` rather than
 `"unclassified"`; its `summary_table()` reports `n` as
-`<statistic>_n_finite_null`.
+`<statistic>_n_finite_null`. With `correction="holm"` the cutoff is stricter:
+a unit's three tests need `3 / (1 + n) < alpha` at Holm's first step, so with
+39 shuffles (smallest p 0.025) every test is undetermined under Holm although
+each passes uncorrected.
 The cost is about `n_shuffles` plural-map recomputes; significance rejects
 `method="glm"` because pooled REML couples units. Neither a significant polar
 association nor a chosen cutoff distinguishes an object-vector cell from a
