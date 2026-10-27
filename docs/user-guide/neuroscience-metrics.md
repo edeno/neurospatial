@@ -399,7 +399,8 @@ arenas with internal walls and combined rooms.
 
 Which boundary counts as a wall is a scientific choice. By default
 (`boundary_source="physical"`), the score uses measured walls: the arena's
-declared footprint and any internal walls. An environment built from tracked
+declared outline and any named walls, whether opaque walls, transparent walls or
+the drop edges of an elevated platform. An environment built from tracked
 positions (`Environment.from_samples`) has no measured walls, so the default
 raises and asks for that choice. Either build the environment from the
 measured arena outline (`Environment.from_polygon(outline, bin_size=...)`), or

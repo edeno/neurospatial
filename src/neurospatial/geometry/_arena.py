@@ -3,6 +3,12 @@
 Arena containment includes physical boundaries. A bin locator can retain its
 own half-open ownership rules. An inferred computational domain does not assert
 that its boundary is a measured physical wall.
+
+Physical boundaries have a kind (:data:`BoundaryKind`). Every kind keeps the
+animal in: an opaque ``"wall"``, a ``"transparent_wall"`` and a ``"drop"``,
+the edge of an elevated track or platform. Only an opaque wall blocks the
+animal's view, so analyses of movement (border scores, boundary vectors)
+use every physical boundary and analyses of gaze use only opaque walls.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from neurospatial.geometry._arrays import ReadOnlyState, owned_grid
 
 __all__ = [
     "Arena",
+    "BoundaryKind",
     "EgocentricSurround",
     "MaskArena",
     "OpenArena",
@@ -33,6 +40,30 @@ __all__ = [
 ]
 
 _CoordinateKind = Literal["cartesian", "polar"]
+
+BoundaryKind = Literal["wall", "transparent_wall", "drop"]
+"""What a physical boundary is, which decides what it blocks.
+
+- ``"wall"``: an opaque wall. Blocks movement and gaze.
+- ``"transparent_wall"``: a clear wall, such as a plexiglass divider. Blocks
+  movement; the animal sees through it.
+- ``"drop"``: the edge of an elevated track or platform. Blocks movement; the
+  animal sees past it.
+
+An animal climbing a wall or leaning over a drop is not modeled: every kind
+bounds positions at the boundary itself.
+"""
+
+_BOUNDARY_KINDS: tuple[BoundaryKind, ...] = ("wall", "transparent_wall", "drop")
+Blocking = Literal["movement", "gaze"]
+
+
+def blocks(kind: BoundaryKind, blocking: Blocking) -> bool:
+    """Whether a boundary of ``kind`` blocks ``"movement"`` or ``"gaze"``.
+
+    Every physical boundary blocks movement; only an opaque wall blocks gaze.
+    """
+    return blocking == "movement" or kind == "wall"
 
 
 @runtime_checkable
@@ -53,7 +84,13 @@ class Arena(Protocol):
     def domain_known(self) -> bool: ...
 
     @property
-    def physical_footprint_known(self) -> bool: ...
+    def outline(self) -> BoundaryKind | None:
+        """The kind of physical boundary along the domain's outline.
+
+        None when the outline is not a physical boundary: a domain inferred
+        from observations or bins, or unknown geometry.
+        """
+        ...
 
     @property
     def walls(self) -> tuple[LineString, ...]: ...
@@ -61,6 +98,11 @@ class Arena(Protocol):
     @property
     def wall_names(self) -> tuple[str, ...]:
         """The name of the wall each segment of ``walls`` belongs to."""
+        ...
+
+    @property
+    def wall_kinds(self) -> tuple[BoundaryKind, ...]:
+        """The kind of each segment of ``walls``."""
         ...
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
@@ -114,6 +156,67 @@ def _boolean(value: Any, name: str) -> bool:
     if not isinstance(value, (bool, np.bool_)):
         raise _error(f"{name} must be boolean.", "pass True or False")
     return bool(value)
+
+
+def _kind(value: Any, name: str, *, allow_none: bool = False) -> BoundaryKind | None:
+    if (value is None and allow_none) or (
+        isinstance(value, str) and value in _BOUNDARY_KINDS
+    ):
+        return cast("BoundaryKind | None", value)
+    choices = ", ".join(repr(kind) for kind in _BOUNDARY_KINDS)
+    none = ", or None for an outline that is not a physical boundary"
+    raise _error(
+        f"{name}={value!r} is not a boundary kind.",
+        f"pass one of {choices}{none if allow_none else ''}",
+    )
+
+
+def _wall_kinds(kinds: Any, names: tuple[str, ...]) -> tuple[BoundaryKind, ...]:
+    """One kind per wall segment, from one kind, a name mapping or a sequence."""
+    if isinstance(kinds, str):
+        return (cast("BoundaryKind", _kind(kinds, "wall_kinds")),) * len(names)
+    if isinstance(kinds, Mapping):
+        unknown = sorted(set(kinds) - set(names))
+        if unknown:
+            raise _error(
+                f"wall_kinds names walls that do not exist: {unknown}.",
+                f"use the wall names {sorted(set(names))}",
+            )
+        return tuple(
+            cast(
+                "BoundaryKind", _kind(kinds.get(name, "wall"), f"wall_kinds[{name!r}]")
+            )
+            for name in names
+        )
+    given = tuple(kinds)
+    if len(given) != len(names):
+        raise _error(
+            f"wall_kinds has {len(given)} kinds for {len(names)} walls.",
+            "give one kind, a mapping from wall name to kind, or one kind per wall",
+        )
+    result = tuple(
+        cast("BoundaryKind", _kind(kind, f"wall_kinds[{index}]"))
+        for index, kind in enumerate(given)
+    )
+    for name in dict.fromkeys(names):
+        named = {
+            kind for kind, owner in zip(result, names, strict=True) if owner == name
+        }
+        if len(named) > 1:
+            raise _error(
+                f"Wall {name!r} has segments of different kinds: {sorted(named)}.",
+                "give every segment of one wall the same kind, or name them apart",
+            )
+    return result
+
+
+def outline_declared(arena: Arena) -> bool:
+    """Whether every component of ``arena`` declares a physical outline."""
+    if isinstance(arena, _CombinedArena):
+        return all(outline_declared(child) for child in arena.children)
+    if isinstance(arena, _TransformedArena):
+        return outline_declared(arena.base)
+    return arena.outline is not None
 
 
 def _query(
@@ -287,9 +390,10 @@ class UnknownArena:
     n_dims: int
     coordinate_kind: _CoordinateKind = "cartesian"
     domain_known: ClassVar[bool] = False
-    physical_footprint_known: ClassVar[bool] = False
+    outline: ClassVar[BoundaryKind | None] = None
     walls: ClassVar[tuple[LineString, ...]] = ()
     wall_names: ClassVar[tuple[str, ...]] = ()
+    wall_kinds: ClassVar[tuple[BoundaryKind, ...]] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -340,26 +444,35 @@ class UnknownArena:
 
 @dataclass(frozen=True, eq=False, init=False)
 class OpenArena(_CappedContainment, ReadOnlyState):
-    """A known planar polygonal domain with separately asserted internal walls.
+    """A known planar polygonal domain, the kind of its outline and named walls.
 
     Parameters
     ----------
     polygon : Polygon or MultiPolygon
         Valid finite support, including any holes.
+    outline : {'wall', 'transparent_wall', 'drop'} or None, default='wall'
+        What the polygon's outline physically is (see :data:`BoundaryKind`):
+        ``"wall"`` for a walled box or maze, ``"drop"`` for an elevated
+        track or platform, ``"transparent_wall"`` for clear walls. None
+        when the outline is not a physical boundary, such as a domain
+        inferred from observations; analyses that need physical boundaries
+        then use only the named ``walls``, and refuse an arena without any.
     walls : mapping of str to LineString, or sequence of LineString, optional
-        Explicit internal physical walls; analysis boundaries are not inferred.
-        A mapping names each wall, for example ``{"divider": line}``; walls
-        given as a sequence are named ``"wall_0"``, ``"wall_1"``, ... unless
-        ``wall_names`` is given.
+        Named physical walls; analysis boundaries are not inferred. A mapping
+        names each wall, for example ``{"divider": line}``; walls given as a
+        sequence are named ``"wall_0"``, ``"wall_1"``, ... unless
+        ``wall_names`` is given. A wall inside the polygon is an internal
+        wall. A wall lying on the outline gives that stretch of outline its
+        own kind, for example clear walls between the arms of a maze whose
+        outer walls are opaque; build it from the outline's own vertices so
+        that the two coincide exactly.
     wall_names : sequence of str, optional
         One name per wall in a sequence of walls. Several segments of one wall
         may share its name. Not allowed with a mapping of walls.
-    physical_footprint_known : bool, default=True
-        Whether the polygon's outline is a physical wall. False for a
-        computational domain inferred from observations, and for an elevated
-        track or platform, whose edges are drops rather than walls.
-        Wall-based analyses use only declared walls, so they refuse an arena
-        with neither a known footprint nor internal ``walls``.
+    wall_kinds : str, mapping of str to str, or sequence of str, default='wall'
+        The kind of the walls: one kind for all of them, a mapping from wall
+        name to kind (walls it does not name are opaque ``"wall"``), or one
+        kind per segment. The segments of one wall share its kind.
 
     Attributes
     ----------
@@ -368,12 +481,35 @@ class OpenArena(_CappedContainment, ReadOnlyState):
     wall_names : tuple of str, shape (n_walls,)
         The name of the wall each segment belongs to. Errors and warnings
         report walls by these names.
+    wall_kinds : tuple of str, shape (n_walls,)
+        The kind of each wall segment.
+
+    Examples
+    --------
+    An elevated platform: its edges keep the animal on it but do not block
+    its view.
+
+    >>> from shapely.geometry import LineString, box
+    >>> from neurospatial.arena import OpenArena
+    >>> OpenArena(box(0, 0, 50, 50), outline="drop").outline
+    'drop'
+
+    A walled box with a clear divider:
+
+    >>> arena = OpenArena(
+    ...     box(0, 0, 100, 50),
+    ...     walls={"divider": LineString([(50, 0), (50, 30)])},
+    ...     wall_kinds={"divider": "transparent_wall"},
+    ... )
+    >>> arena.outline, arena.wall_kinds
+    ('wall', ('transparent_wall',))
     """
 
     polygon: Polygon | MultiPolygon
+    outline: BoundaryKind | None
     walls: tuple[LineString, ...]
     wall_names: tuple[str, ...]
-    physical_footprint_known: bool
+    wall_kinds: tuple[BoundaryKind, ...]
     n_dims: ClassVar[int] = 2
     coordinate_kind: ClassVar[_CoordinateKind] = "cartesian"
     domain_known: ClassVar[bool] = True
@@ -382,9 +518,12 @@ class OpenArena(_CappedContainment, ReadOnlyState):
         self,
         polygon: Polygon | MultiPolygon,
         *,
+        outline: BoundaryKind | None = "wall",
         walls: Mapping[str, LineString] | Sequence[LineString] = (),
         wall_names: Sequence[str] | None = None,
-        physical_footprint_known: bool = True,
+        wall_kinds: BoundaryKind
+        | Mapping[str, BoundaryKind]
+        | Sequence[BoundaryKind] = "wall",
     ) -> None:
         if isinstance(walls, Mapping):
             if wall_names is not None:
@@ -414,9 +553,10 @@ class OpenArena(_CappedContainment, ReadOnlyState):
                     'name each wall with a string such as "divider"',
                 )
         object.__setattr__(self, "polygon", polygon)
+        object.__setattr__(self, "outline", _kind(outline, "outline", allow_none=True))
         object.__setattr__(self, "walls", segments)
         object.__setattr__(self, "wall_names", names)
-        object.__setattr__(self, "physical_footprint_known", physical_footprint_known)
+        object.__setattr__(self, "wall_kinds", _wall_kinds(wall_kinds, names))
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -444,11 +584,6 @@ class OpenArena(_CappedContainment, ReadOnlyState):
                     f"Wall {self.wall_names[index]!r} lies outside the arena domain.",
                     "provide walls within the polygonal domain",
                 )
-        object.__setattr__(
-            self,
-            "physical_footprint_known",
-            _boolean(self.physical_footprint_known, "physical_footprint_known"),
-        )
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         super().__setstate__(state)
@@ -498,17 +633,20 @@ class MaskArena(_CappedContainment, ReadOnlyState):
         Finite strictly increasing per-axis edges; spacing may vary.
     active_mask : ndarray of bool
         Active cells, with shape ``tuple(len(edge) - 1 for edge in edges)``.
-    physical_footprint_known : bool, default=False
-        Whether this mask was explicitly asserted to be the physical footprint.
+    outline : {'wall', 'transparent_wall', 'drop'} or None, default=None
+        What the mask's outline physically is (see :data:`BoundaryKind`).
+        None, the default, for a computational domain rather than an
+        asserted physical footprint.
     """
 
     edges: tuple[NDArray[np.float64], ...]
     active_mask: NDArray[np.bool_]
-    physical_footprint_known: bool = field(default=False, kw_only=True)
+    outline: BoundaryKind | None = field(default=None, kw_only=True)
     coordinate_kind: ClassVar[_CoordinateKind] = "cartesian"
     domain_known: ClassVar[bool] = True
     walls: ClassVar[tuple[LineString, ...]] = ()
     wall_names: ClassVar[tuple[str, ...]] = ()
+    wall_kinds: ClassVar[tuple[BoundaryKind, ...]] = ()
 
     def __post_init__(self) -> None:
         edges, _, mask = owned_grid(
@@ -521,11 +659,7 @@ class MaskArena(_CappedContainment, ReadOnlyState):
             )
         object.__setattr__(self, "edges", edges)
         object.__setattr__(self, "active_mask", mask)
-        object.__setattr__(
-            self,
-            "physical_footprint_known",
-            _boolean(self.physical_footprint_known, "physical_footprint_known"),
-        )
+        _kind(self.outline, "outline", allow_none=True)
 
     @property
     def n_dims(self) -> int:
@@ -603,11 +737,7 @@ class MaskArena(_CappedContainment, ReadOnlyState):
             for axis, edge in enumerate(self.edges):
                 with np.errstate(over="ignore", invalid="ignore"):
                     edges.append(edge * diagonal[axis] + matrix[axis, -1])
-            return MaskArena(
-                tuple(edges),
-                self.active_mask,
-                physical_footprint_known=self.physical_footprint_known,
-            )
+            return MaskArena(tuple(edges), self.active_mask, outline=self.outline)
         return _TransformedArena(self, matrix)
 
     def polygonal_domain(self) -> Polygon | MultiPolygon | None:
@@ -688,13 +818,22 @@ class TrackArena(_CappedContainment, ReadOnlyState):
         direction, so its domain is the centerline itself, ends included
         (``domain_known``), though no physical footprint is recorded.
         End caps are round and junctions are unions of segment capsules.
+
+    Notes
+    -----
+    A width bounds where positions can lie, but a track declares no physical
+    boundary (``outline`` is None): its round-capped outline is not an exact
+    polygon, so analyses that need walls or drop edges refuse it. Declare a
+    walled or elevated track as an :class:`OpenArena` of its floor polygon.
     """
 
     segments: NDArray[np.float64]
     width: float | None
     coordinate_kind: ClassVar[_CoordinateKind] = "cartesian"
+    outline: ClassVar[BoundaryKind | None] = None
     walls: ClassVar[tuple[LineString, ...]] = ()
     wall_names: ClassVar[tuple[str, ...]] = ()
+    wall_kinds: ClassVar[tuple[BoundaryKind, ...]] = ()
 
     def __post_init__(self) -> None:
         segments = _real_array(self.segments, "segments")
@@ -741,11 +880,6 @@ class TrackArena(_CappedContainment, ReadOnlyState):
     def domain_known(self) -> bool:
         """Whether a width was supplied or the track is one-dimensional."""
         return self.width is not None or self.n_dims == 1
-
-    @property
-    def physical_footprint_known(self) -> bool:
-        """Whether the physical capsule footprint is known."""
-        return self.width is not None
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Use point-to-segment distance rather than nearest bin centers.
@@ -874,9 +1008,10 @@ class EgocentricSurround:
     n_dims: ClassVar[int] = 2
     coordinate_kind: ClassVar[_CoordinateKind] = "polar"
     domain_known: ClassVar[bool] = True
-    physical_footprint_known: ClassVar[bool] = False
+    outline: ClassVar[BoundaryKind | None] = None
     walls: ClassVar[tuple[LineString, ...]] = ()
     wall_names: ClassVar[tuple[str, ...]] = ()
+    wall_kinds: ClassVar[tuple[BoundaryKind, ...]] = ()
 
     def __post_init__(self) -> None:
         for name in ("distance_range", "angle_range"):
@@ -1036,8 +1171,8 @@ class _TransformedArena(ReadOnlyState):
         return self.base.domain_known
 
     @property
-    def physical_footprint_known(self) -> bool:
-        return self.base.physical_footprint_known
+    def outline(self) -> BoundaryKind | None:
+        return self.base.outline
 
     @property
     def walls(self) -> tuple[LineString, ...]:
@@ -1046,6 +1181,10 @@ class _TransformedArena(ReadOnlyState):
     @property
     def wall_names(self) -> tuple[str, ...]:
         return self.base.wall_names
+
+    @property
+    def wall_kinds(self) -> tuple[BoundaryKind, ...]:
+        return self.base.wall_kinds
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         query, finite = _query(positions, self.n_dims)
@@ -1196,8 +1335,14 @@ class _CombinedArena:
         return all(child.domain_known for child in self.children)
 
     @property
-    def physical_footprint_known(self) -> bool:
-        return all(child.physical_footprint_known for child in self.children)
+    def outline(self) -> BoundaryKind | None:
+        """The outline kind every component shares, otherwise None.
+
+        Components of different kinds, such as a walled box joined to an
+        elevated track, keep their own; read them from ``children``.
+        """
+        kinds = {child.outline for child in self.children}
+        return kinds.pop() if len(kinds) == 1 else None
 
     @property
     def walls(self) -> tuple[LineString, ...]:
@@ -1206,6 +1351,10 @@ class _CombinedArena:
     @property
     def wall_names(self) -> tuple[str, ...]:
         return tuple(name for child in self.children for name in child.wall_names)
+
+    @property
+    def wall_kinds(self) -> tuple[BoundaryKind, ...]:
+        return tuple(kind for child in self.children for kind in child.wall_kinds)
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         query, finite = _query(positions, self.n_dims)

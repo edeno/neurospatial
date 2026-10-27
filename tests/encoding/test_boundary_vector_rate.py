@@ -261,7 +261,7 @@ def test_an_environment_without_known_walls_is_refused(session):
     times, positions, _ = session
     env = Environment.from_samples(positions, bin_size=5.0, units="cm")
 
-    with pytest.raises(NotImplementedError, match="Physical walls are unknown"):
+    with pytest.raises(NotImplementedError, match="Physical boundaries are unknown"):
         compute_boundary_vector_rate(
             env, np.array([1.0]), times, positions, direction_frame="allocentric"
         )

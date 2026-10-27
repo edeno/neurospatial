@@ -23,6 +23,11 @@ with a preferred food if it alternates". Each goal arm ends in a food well,
 the same name, centred in the end square of their arm. For spontaneous
 alternation, ignore the wells.
 
+The arms are walled (``arena.outline == "wall"``): Wijnen et al. (2024) note
+that in a T-maze "animals would collide with a wall" and "cannot look inside
+one of the arms until arrival at the intersection". They do not give the
+wall material; the walls are modeled as opaque.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes import make_t_maze, TMazeDims
@@ -45,7 +50,6 @@ from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
-    elevated_arena,
     make_corridor_polygon,
     union_polygons,
 )
@@ -213,7 +217,6 @@ def make_t_maze(
     env_2d = Environment.from_polygon(
         polygon=t_polygon,
         bin_size=bin_size,
-        arena=elevated_arena(t_polygon),
         name="t_maze",
         connect_diagonal_neighbors=True,
     )

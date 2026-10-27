@@ -39,6 +39,9 @@ Wijnen et al. (2024, Fig. 1b): start at the left, goal at the right::
 Choice points 1-6 in order; b1-b6 are the ends of the blind alleys. Blind
 alley 4 runs back toward alley 1 and stops a partition short of it.
 
+The alleys are walled (``arena.outline == "wall"``). The sources do not give
+the wall material; the walls are modeled as opaque.
+
 References
 ----------
 Blodgett, H. C. (1929). The effect of the introduction of reward upon the

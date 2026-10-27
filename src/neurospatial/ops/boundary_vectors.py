@@ -15,6 +15,10 @@ the distance and allocentric direction to the closest wall point.
 Walls come from ``boundary_source``: ``"physical"`` (the default) uses the
 arena's declared outline and walls, such as ``Environment.from_polygon`` or
 an ``OpenArena``; ``"analysis"`` uses the edges of the environment's bins.
+Every physical boundary counts, whatever its kind: an opaque wall, a
+transparent wall or the drop edge of an elevated platform. Boundary-vector
+cells fire at a drop as at a wall: Lever et al. (2009) found that "any given
+BVC responds to both extended vertical surfaces and to drops".
 
 References
 ----------
@@ -135,7 +139,8 @@ def compute_boundary_distances(
         If ``headings`` does not match ``direction_frame``, or the shapes do
         not match.
     NotImplementedError
-        If the arena has no known walls and ``boundary_source="physical"``.
+        If the arena declares no physical boundary and
+        ``boundary_source="physical"``.
     CartesianOnlyError
         If ``env`` is an egocentric polar environment.
 
@@ -171,7 +176,7 @@ def compute_boundary_distances(
     )
     directions = boundary_directions(n_directions=n_directions)
     binning, arena = env.binning, env.arena
-    walls = boundary_geometry(binning, arena, boundary_source)
+    walls = boundary_geometry(binning, arena, boundary_source, blocking="movement")
     indexes = CallIndexes()
     observed = valid_observers(binning, arena, positions, boundary_source, indexes)
     if headings is not None:
@@ -187,7 +192,14 @@ def compute_boundary_distances(
     angles = (turn[:, None] + directions[None, :]).ravel()
     starts = np.repeat(origins, n_directions, axis=0)
     hits = boundary_view(
-        binning, arena, starts, angles, max_distance, boundary_source, indexes
+        binning,
+        arena,
+        starts,
+        angles,
+        max_distance,
+        boundary_source,
+        indexes,
+        blocking="movement",
     )
     reached = np.hypot.reduce(hits - starts, axis=1).reshape(-1, n_directions)
     distances[observed] = np.where(np.isnan(reached), np.inf, reached)
@@ -226,7 +238,8 @@ def nearest_boundary(
     Raises
     ------
     NotImplementedError
-        If the arena has no known walls and ``boundary_source="physical"``.
+        If the arena declares no physical boundary and
+        ``boundary_source="physical"``.
     CartesianOnlyError
         If ``env`` is an egocentric polar environment.
 
@@ -255,7 +268,7 @@ def nearest_boundary(
         positions, None, "allocentric", call="nearest_boundary()"
     )
     binning, arena = env.binning, env.arena
-    walls = boundary_geometry(binning, arena, boundary_source)
+    walls = boundary_geometry(binning, arena, boundary_source, blocking="movement")
     observed = valid_observers(
         binning, arena, positions, boundary_source, CallIndexes()
     )

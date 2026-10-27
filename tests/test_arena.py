@@ -26,14 +26,25 @@ def arenas():
         UnknownArena(2),
         UnknownArena(2, coordinate_kind="polar"),
         OpenArena(box(0, 0, 2, 2), walls=(LineString([(1, 0), (1, 2)]),)),
-        OpenArena(
-            MultiPolygon([box(0, 0, 1, 1), box(2, 0, 3, 1)]),
-            physical_footprint_known=False,
-        ),
+        OpenArena(MultiPolygon([box(0, 0, 1, 1), box(2, 0, 3, 1)]), outline=None),
         MaskArena((np.arange(3.0),) * 2, np.array([[True, False], [False, True]])),
         TrackArena(np.array([[[0.0, 0.0], [4.0, 0.0]]]), width=2.0),
         TrackArena(np.array([[[0.0, 0.0], [4.0, 0.0]]]), width=None),
         EgocentricSurround((0.0, 5.0), (-np.pi, np.pi), circular=True),
+        OpenArena(
+            box(0, 0, 2, 2),
+            outline="drop",
+            walls={
+                "glass": LineString([(1, 0), (1, 1)]),
+                "board": LineString([(0, 1), (1, 1)]),
+            },
+            wall_kinds={"glass": "transparent_wall"},
+        ),
+        MaskArena(
+            (np.arange(3.0),) * 2,
+            np.array([[True, False], [False, True]]),
+            outline="transparent_wall",
+        ),
     ]
 
 
@@ -45,7 +56,9 @@ def test_arena_roundtrip_identity_and_owned_payload(arena):
     assert restored.n_dims == arena.n_dims
     assert restored.coordinate_kind == arena.coordinate_kind
     assert restored.domain_known == arena.domain_known
-    assert restored.physical_footprint_known == arena.physical_footprint_known
+    assert restored.outline == arena.outline
+    assert restored.wall_names == arena.wall_names
+    assert restored.wall_kinds == arena.wall_kinds
     if arena.domain_known:
         points = np.array([[0.0, 0.0], [0.5, 0.5], [1.5, 1.5], [20.0, 20.0]])
         np.testing.assert_array_equal(restored.contains(points), arena.contains(points))
@@ -83,7 +96,7 @@ def test_open_arena_hole_boundary_multipolygon_and_walls():
 )
 def test_unknown_footprint_refuses_physical_containment(constructor):
     arena = constructor()
-    assert not arena.domain_known and not arena.physical_footprint_known
+    assert not arena.domain_known and arena.outline is None
     assert arena.polygonal_domain() is None
     with pytest.raises(NotImplementedError, match="unknown"):
         arena.contains([[0.0, 0.0]])
@@ -97,7 +110,7 @@ def test_mask_domain_is_closed_cell_union_not_half_open_lookup():
         ),
         [True, True, False, True, True, False, False],
     )
-    assert arena.domain_known and not arena.physical_footprint_known
+    assert arena.domain_known and arena.outline is None
     assert arena.walls == ()
     assert arena.polygonal_domain().area == 2.0
 
@@ -105,7 +118,7 @@ def test_mask_domain_is_closed_cell_union_not_half_open_lookup():
 def test_nd_mask_owns_input_and_uses_real_nonuniform_edges():
     edge = np.array([0.0, 1.0, 3.0])
     mask = np.array([True, False])
-    arena = MaskArena((edge,), mask, physical_footprint_known=True)
+    arena = MaskArena((edge,), mask, outline="wall")
     edge[:] = 20
     mask[:] = False
     np.testing.assert_array_equal(
@@ -113,7 +126,7 @@ def test_nd_mask_owns_input_and_uses_real_nonuniform_edges():
         [True, True, True, False, False],
     )
     assert arena.polygonal_domain() is None
-    assert arena.physical_footprint_known
+    assert arena.outline == "wall"
 
 
 def test_track_uses_exact_segments_and_round_endcaps():
@@ -146,7 +159,7 @@ def test_egocentric_windows_periodicity_and_analysis_boundary():
         ),
         [True, True, True, False, False, False],
     )
-    assert arena.coordinate_kind == "polar" and not arena.physical_footprint_known
+    assert arena.coordinate_kind == "polar" and arena.outline is None
     assert arena.walls == () and arena.polygonal_domain() is None
 
 
@@ -188,7 +201,8 @@ def test_affine_maps_domain_walls_and_track_width():
         np.testing.assert_array_equal(derived.contains(mapped), arena.contains(points))
         restored = decode_arena(*encode_arena(derived))
         np.testing.assert_array_equal(restored.contains(mapped), arena.contains(points))
-        assert derived.physical_footprint_known == arena.physical_footprint_known
+        assert derived.outline == arena.outline
+        assert derived.wall_kinds == arena.wall_kinds
     np.testing.assert_array_equal(
         arenas()[5].transformed(matrix).contains([[10.0, 7.0], [10.0, 7.01]]),
         [True, False],
@@ -441,9 +455,10 @@ def test_codec_rejects_unknown_versions_missing_arrays_and_wrong_dtypes():
     meta, arrays = encode_arena(arenas()[4])
     for patch in [
         {"codec": "ExternalArena"},
-        {"codec_version": 1},
-        {"codec_version": 3},
-        {"physical_footprint_known": "false"},
+        {"codec_version": 2},
+        {"codec_version": 4},
+        {"outline": "glass"},
+        {"outline": False},
     ]:
         with pytest.raises(ValueError):
             decode_arena({**meta, **patch}, arrays)

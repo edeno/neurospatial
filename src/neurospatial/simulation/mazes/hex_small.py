@@ -28,6 +28,11 @@ barrier sets are allowed:
   triangle, the outer side of its port hex, which is the vertex where the
   paper places it.
 
+The floor's outline is modeled as opaque walls (``arena.outline ==
+"wall"``). Krausz et al. (2023) describe the barriers as columns and do not
+say what bounds the platform's edge; the ``hexmaze`` package places half
+barriers "along the walls".
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.hex_small import (

@@ -53,7 +53,7 @@ def test_unknown_footprint_requires_explicit_analysis_mode():
     env = Environment.from_grid_mask(
         np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2
     )
-    with pytest.raises(NotImplementedError, match="Physical walls"):
+    with pytest.raises(NotImplementedError, match="Physical boundaries"):
         compute_viewed_location([[2.5, 4.5]], [0.0], env=env, method="ray_cast")
     np.testing.assert_allclose(
         compute_viewed_location(
@@ -858,7 +858,7 @@ def test_mirrored_mask_arena_keeps_wall_view_bins():
     edges = (np.arange(11.0),) * 2
     mask = np.ones((10, 10), dtype=bool)
     env = Environment.from_grid_mask(
-        mask, edges, arena=MaskArena(edges, mask, physical_footprint_known=True)
+        mask, edges, arena=MaskArena(edges, mask, outline="wall")
     )
     mirror = np.array([[1.0, 0.0, 0.0], [0.0, -1.0, 10.0], [0.0, 0.0, 1.0]])
     mirrored = env.apply_transform(AffineND(mirror))

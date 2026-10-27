@@ -33,7 +33,7 @@ def test_samples_and_image_masks_remain_first_class():
     points = np.array([[0.0, 0.0], [2.0, 0.0], [0.0, 2.0], [2.0, 2.0]])
     env = Environment.from_samples(points, bin_size=1.0)
     assert isinstance(env.arena, MaskArena)
-    assert env.arena.domain_known and not env.arena.physical_footprint_known
+    assert env.arena.domain_known and env.arena.outline is None
     assert not env.arena.walls
     mask = np.array([[True, False, True], [False, True, False]])
     image = Environment.from_pixel_mask(mask, pixel_size=(2.0, 3.0))
@@ -267,8 +267,9 @@ def test_analytic_domain_needs_materialization_for_exact_clipping():
         n_dims = 2
         coordinate_kind = "cartesian"
         domain_known = True
-        physical_footprint_known = True
+        outline = "wall"
         walls = ()
+        wall_kinds = ()
 
         def contains(self, positions):
             return np.linalg.norm(positions, axis=1) <= 1

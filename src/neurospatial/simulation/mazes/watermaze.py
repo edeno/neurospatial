@@ -8,6 +8,8 @@ Unlike corridor-based mazes (T-maze, Y-maze), the MWM is an open-field environme
 with no physical constraints on movement paths. Animals can swim in any direction,
 making it ideal for studying flexible spatial strategies.
 
+The pool's side wall is modeled as opaque (``arena.outline == "wall"``).
+
 Reference: Morris (1984). "Developments of a water-maze procedure for studying
 spatial learning in the rat." J Neurosci Methods 11:47-60,
 doi:10.1016/0165-0270(84)90007-4.

@@ -8,7 +8,12 @@ firing according to its distance and allocentric direction.
 
 Both measure the walls themselves (the arena's declared outline and internal
 walls), not the edges of the bins, so a rate depends on the animal's exact
-position and not on the bin size.
+position and not on the bin size. Every physical boundary counts, whatever
+its kind: opaque and transparent walls, and the drop edges of an elevated
+track or platform. Boundary-vector cells respond to drops as to walls (Lever
+et al., 2009), and most border cells keep their fields when the walls are
+removed and only a drop edge confines the animal (van Wijngaarden et al.,
+2020).
 
 References
 ----------
@@ -19,6 +24,12 @@ Barry, C., Lever, C., Hayman, R., Hartley, T., Burton, S., O'Keefe, J.,
     Jeffery, K., & Burgess, N. (2006). The boundary vector cell model of
     place cell firing and spatial memory. Reviews in the Neurosciences, 17,
     71-97.
+Lever, C., Burton, S., Jeewajee, A., O'Keefe, J., & Burgess, N. (2009).
+    Boundary vector cells in the subiculum of the hippocampal formation.
+    Journal of Neuroscience, 29(31), 9771-9777.
+van Wijngaarden, J. B. G., Babl, S. S., & Ito, H. T. (2020).
+    Entorhinal-retrosplenial circuits for allocentric-egocentric
+    transformation of boundary coding. eLife, 9, e59816.
 """
 
 from __future__ import annotations
@@ -84,7 +95,7 @@ def _require_walls(
         "the animal's allocentric Cartesian position.",
         fix="simulate on the allocentric environment the animal moves in",
     )
-    boundary_geometry(env.binning, env.arena, boundary_source)
+    boundary_geometry(env.binning, env.arena, boundary_source, blocking="movement")
 
 
 class BorderCellModel:
@@ -120,8 +131,8 @@ class BorderCellModel:
     ValueError
         If a distance or rate is not finite, or ``baseline_rate >= max_rate``.
     NotImplementedError
-        If the arena has no known walls and ``boundary_source='physical'``
-        (an elevated track, or bins inferred from positions).
+        If the arena declares no physical boundary and
+        ``boundary_source='physical'`` (bins inferred from positions).
 
     See Also
     --------
@@ -259,7 +270,8 @@ class BoundaryVectorCellModel:
         If a distance, angle or rate is not finite, or
         ``baseline_rate >= max_rate``.
     NotImplementedError
-        If the arena has no known walls and ``boundary_source='physical'``.
+        If the arena declares no physical boundary and
+        ``boundary_source='physical'``.
 
     See Also
     --------
@@ -326,7 +338,9 @@ class BoundaryVectorCellModel:
         self.baseline_rate = float(baseline_rate)
         self.boundary_source = boundary_source
         self._walls = Walls.from_geometry(
-            boundary_geometry(env.binning, env.arena, boundary_source)
+            boundary_geometry(
+                env.binning, env.arena, boundary_source, blocking="movement"
+            )
         )
         self._directions = boundary_directions(n_directions=_N_RAYS)
         # von Mises concentration with half-maximum at direction_tolerance.
