@@ -36,7 +36,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -523,12 +523,25 @@ def _cached_variance(
     return variance
 
 
-def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
+class _InformationBias(NamedTuple):
+    """Untuned-cell information bias of each unit, before any warning."""
+
+    bias: NDArray[np.float64]
+    """Expected untuned information (bits/spike), shape (n_units,); NaN for
+    silent units and units in ``too_few``."""
+    too_few: NDArray[np.bool_]
+    """Units with fewer spikes than independent bins, shape (n_units,)."""
+    effective_bins: float
+    """Independent bins of the worst ``too_few`` unit; NaN when there is none."""
+
+
+def _information_bias_terms(result: Any, *, base: float = 2.0) -> _InformationBias:
     """Expected plug-in Skaggs information of an untuned cell, per unit.
 
     The derivation is in the Notes of the result classes'
     ``spatial_information_bias``. Units with fewer spikes than the map has
-    effectively independent bins get NaN, with one warning naming how many.
+    effectively independent bins get NaN. This computation does not warn;
+    :func:`_information_bias` adds the warning.
 
     Parameters
     ----------
@@ -539,19 +552,20 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
 
     Returns
     -------
-    ndarray, shape (n_units,)
+    _InformationBias
         Expected information in bits per spike of an untuned Poisson cell
-        with each unit's mean rate, on this result's occupancy and estimator.
-        NaN for a silent unit and where the expansion does not hold.
+        with each unit's mean rate, on this result's occupancy and estimator,
+        and the units where the expansion does not hold.
     """
-    from neurospatial._stacklevel import _external_stacklevel
     from neurospatial.encoding._base import _to_numpy
 
     rates = np.atleast_2d(np.asarray(_to_numpy(result._get_rates()), np.float64))
     occupancy = np.asarray(_to_numpy(result.occupancy), dtype=np.float64)
     support = np.asarray(result.spatial_support, dtype=bool)
     if not support.any():
-        return np.full(len(rates), np.nan)
+        return _InformationBias(
+            np.full(len(rates), np.nan), np.zeros(len(rates), dtype=bool), np.nan
+        )
     dwell = occupancy[support]
     mean_rates = rates[:, support] @ dwell / dwell.sum()
     variance = _cached_variance(result, mean_rates, support)
@@ -562,12 +576,34 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
     # ``V / lam`` on average. The second-order bias breaks down once it
     # reaches 1: fewer spikes than independent bins.
     too_few = spiking & ~(variance <= mean_rates)
+    effective_bins = (
+        float(np.nanmax(variance[too_few]) * occupancy[occupancy > 0].sum())
+        if too_few.any()
+        else np.nan
+    )
+    return _InformationBias(
+        np.where(spiking & ~too_few, bias, np.nan), too_few, effective_bins
+    )
+
+
+def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
+    """:func:`_information_bias_terms`, warning once about too few spikes.
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        The bias; NaN for silent units and units with fewer spikes than the
+        map has effectively independent bins, with one warning naming how
+        many.
+    """
+    from neurospatial._stacklevel import _external_stacklevel
+
+    terms = _information_bias_terms(result, base=base)
+    too_few = terms.too_few
     if too_few.any():
-        total = occupancy[occupancy > 0].sum()
-        effective_bins = float(np.nanmax(variance[too_few]) * total)
         warnings.warn(
-            f"{int(too_few.sum())} of {len(rates)} units have fewer spikes than "
-            f"their rate maps have independent bins (about {effective_bins:.0f}), "
+            f"{int(too_few.sum())} of {len(too_few)} units have fewer spikes than "
+            f"their rate maps have independent bins (about {terms.effective_bins:.0f}), "
             "so their information bias is NaN and they fail the information "
             "screen.\n"
             "Why: the bias of plug-in information is an expansion in "
@@ -581,7 +617,7 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    return np.where(spiking & ~too_few, bias, np.nan)
+    return terms.bias
 
 
 def _debiased_information(
@@ -649,11 +685,8 @@ def _beyond_bias(result: Any, min_info: float, *, kind: str) -> bool:
     ``min_info``. An unknown bias fails, with the warning of
     :func:`_warn_unknown_bias`.
     """
-    with warnings.catch_warnings():
-        # An unknown bias is reported below, in terms of the verdict.
-        warnings.simplefilter("ignore", UserWarning)
-        bias = _information_bias(result)
-    debiased = _debiased_information(result, bias)
+    # An unknown bias is reported below, in terms of the verdict.
+    debiased = _debiased_information(result, _information_bias_terms(result).bias)
     _warn_unknown_bias(np.array([True]), debiased, kind=kind)
     return bool(debiased[0] >= min_info)
 

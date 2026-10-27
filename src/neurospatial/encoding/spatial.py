@@ -7440,12 +7440,10 @@ def spatial_cell_type_significance(
         min_shift=min_shift,
         rng=rng,
     )
-    from neurospatial.encoding._metrics import _information_bias
+    from neurospatial.encoding._metrics import _information_bias_terms
 
-    with warnings.catch_warnings():
-        # Labeling reports the units whose bias is unknown, in terms of labels.
-        warnings.simplefilter("ignore", UserWarning)
-        bias = _information_bias(shuffled.reference)
+    # Labeling reports the units whose bias is unknown, in terms of labels.
+    bias = _information_bias_terms(shuffled.reference).bias
     grid_spacing = np.full(len(shuffled.unit_ids), np.nan)
     if "grid_score" not in shuffled.unavailable:
         grid_spacing = _grid_spacings(
