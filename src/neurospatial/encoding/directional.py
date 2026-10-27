@@ -172,19 +172,12 @@ def _half_max_halfwidth(
 HEAD_DIRECTION_THRESHOLDS = MappingProxyType({"min_mvl": 0.4, "alpha": 0.05})
 
 
-def _directional_xarray_attrs(
-    result: DirectionalRateResult | DirectionalRatesResult,
-) -> dict[str, Any]:
-    """Coordinate and estimator metadata specific to this rate family."""
-    return {"units": "radians", "bin_size": result.bin_size}
-
-
 DIRECTIONAL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
     {"binned": "none", "circular_gaussian": "positive"}
 )
 
 
-def _check_angular_bins(result: DirectionalRateResult | DirectionalRatesResult) -> int:
+def _check_angular_bins(result: _DirectionalRateMixin) -> int:
     """Refuse bin centers or a bin width that are not one circle of bins.
 
     Returns
@@ -221,7 +214,7 @@ def _check_angular_bins(result: DirectionalRateResult | DirectionalRatesResult) 
     return int(np.shape(centers)[0])
 
 
-def _check_spike_counts(result: DirectionalRateResult | DirectionalRatesResult) -> None:
+def _check_spike_counts(result: _DirectionalRateMixin) -> None:
     """Refuse spike counts that do not match the rates bin for bin."""
     if result.spike_counts is None:
         return
@@ -240,7 +233,7 @@ def _check_spike_counts(result: DirectionalRateResult | DirectionalRatesResult) 
         )
 
 
-def _check_dispersion(result: DirectionalRateResult | DirectionalRatesResult) -> None:
+def _check_dispersion(result: _DirectionalRateMixin) -> None:
     """Refuse a dispersion that is not one value >= 0 per unit, or a bad dof."""
     kind = type(result).__name__
     dispersion, dof = result.spike_count_dispersion, result.dispersion_dof
@@ -613,9 +606,51 @@ def _directional_summary_frame(
     return df
 
 
+class _DirectionalRateMixin:
+    """Angular bins, export metadata and family checks of a directional result.
+
+    Hosts store ``bin_centers`` and ``bin_size`` (radians) on the dataclass,
+    since heading needs no Environment, and inherit
+    :class:`~neurospatial.encoding._base.SingleUnitRateMixin` or
+    :class:`~neurospatial.encoding._base.PopulationRateMixin` after this class.
+    """
+
+    bin_centers: ArrayLike
+    bin_size: float
+    spike_counts: ArrayLike | None
+    spike_count_dispersion: ArrayLike | None
+    dispersion_dof: int | None
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = DIRECTIONAL_ESTIMATORS
+
+    if TYPE_CHECKING:
+        # Provided by the rate-result base the host inherits after this class.
+        def _get_rates(self) -> ArrayLike: ...
+
+    def _xarray_attrs(self) -> dict[str, Any]:
+        return {"units": "radians", "bin_size": self.bin_size}
+
+    def _n_bins(self) -> int:
+        return _check_angular_bins(self)
+
+    def _check_family(self) -> None:
+        _check_spike_counts(self)
+        _check_dispersion(self)
+
+    @property
+    def _bin_centers(self) -> NDArray[np.float64]:
+        # Override SpatialResultMixin: directional results store bin centers
+        # directly on the dataclass (no Environment).
+        return np.asarray(self.bin_centers, dtype=np.float64)
+
+    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
+        # Directional results have no Environment; the bin center is the
+        # angular center (radians). Emit it under the shared vocabulary name.
+        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
+
+
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class DirectionalRateResult(SingleUnitRateMixin):
+class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
     """Result of directional rate computation for a single neuron.
 
     This class wraps a directional tuning curve with its associated metadata
@@ -769,25 +804,14 @@ class DirectionalRateResult(SingleUnitRateMixin):
         default=None, kw_only=True, repr=False, compare=False
     )
 
-    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = DIRECTIONAL_ESTIMATORS
     _unit_ids_generated: bool = field(
         default=False, kw_only=True, repr=False, compare=False
     )
-
-    def _xarray_attrs(self) -> dict[str, Any]:
-        return _directional_xarray_attrs(self)
 
     @property
     def method(self) -> str:
         """Estimator: ``"circular_gaussian"`` when smoothed, else ``"binned"``."""
         return "binned" if self.bandwidth is None else "circular_gaussian"
-
-    def _n_bins(self) -> int:
-        return _check_angular_bins(self)
-
-    def _check_family(self) -> None:
-        _check_spike_counts(self)
-        _check_dispersion(self)
 
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
@@ -837,17 +861,6 @@ class DirectionalRateResult(SingleUnitRateMixin):
             "preferred_direction": float(self.preferred_direction()),
             "mean_vector_length": float(self.mean_vector_length()),
         }
-
-    @property
-    def _bin_centers(self) -> NDArray[np.float64]:
-        # Override SpatialResultMixin: directional results store bin centers
-        # directly on the dataclass (no Environment).
-        return np.asarray(self.bin_centers, dtype=np.float64)
-
-    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
-        # Directional results have no Environment; the bin center is the
-        # angular center (radians). Emit it under the shared vocabulary name.
-        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
 
     def plot(
         self,
@@ -1536,7 +1549,9 @@ class DirectionalRateResult(SingleUnitRateMixin):
 @_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
+class DirectionalRatesResult(
+    _DirectionalRateMixin, PopulationRateMixin[DirectionalRateResult]
+):
     """Result of directional rate computation for multiple neurons.
 
     This class wraps directional tuning curves for a population of neurons
@@ -1711,36 +1726,14 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         default=None, kw_only=True, repr=False, compare=False
     )
 
-    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]] = DIRECTIONAL_ESTIMATORS
     _unit_ids_generated: bool = field(
         default=False, kw_only=True, repr=False, compare=False
     )
-
-    def _xarray_attrs(self) -> dict[str, Any]:
-        return _directional_xarray_attrs(self)
 
     @property
     def method(self) -> str:
         """Estimator: ``"circular_gaussian"`` when smoothed, else ``"binned"``."""
         return "binned" if self.bandwidth is None else "circular_gaussian"
-
-    def _n_bins(self) -> int:
-        return _check_angular_bins(self)
-
-    def _check_family(self) -> None:
-        _check_spike_counts(self)
-        _check_dispersion(self)
-
-    @property
-    def _bin_centers(self) -> NDArray[np.float64]:
-        # Override SpatialResultMixin: directional results store bin centers
-        # directly on the dataclass (no Environment).
-        return np.asarray(self.bin_centers, dtype=np.float64)
-
-    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
-        # Directional results have no Environment; the bin center is the
-        # angular center (radians). Emit it under the shared vocabulary name.
-        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
 
     def __getitem__(self, idx: int) -> DirectionalRateResult:
         """Get single-neuron result by index.
