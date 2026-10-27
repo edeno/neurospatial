@@ -854,6 +854,26 @@ class TestRatesOutsideOccupancySupport:
     """
 
     @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+    @pytest.mark.parametrize("backend", ["numpy", "jax"])
+    @pytest.mark.parametrize("min_occupancy", [-1.0, np.nan, np.inf])
+    def test_invalid_min_occupancy_raises_on_every_backend(
+        self, half_visited_arena, method, backend, min_occupancy
+    ):
+        if backend == "jax":
+            pytest.importorskip("jax")
+        env, spike_counts, occupancy = half_visited_arena
+        with pytest.raises(ValueError, match="min_occupancy must be a finite"):
+            smooth_rate_maps_batch(
+                env,
+                spike_counts[None, :],
+                occupancy,
+                method=method,
+                bandwidth=5.0,
+                min_occupancy=min_occupancy,
+                backend=backend,
+            )
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
     @pytest.mark.parametrize("bandwidth", [5.0, 20.0])
     @pytest.mark.parametrize("backend", ["numpy", "jax"])
     @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])

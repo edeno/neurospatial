@@ -364,6 +364,7 @@ def smooth_rate_maps_batch(
         If spike_counts is not 2D.
         If spike_counts.shape[1] != occupancy.shape[0].
         If spike_counts.shape[1] != env.n_bins.
+        If min_occupancy is negative, NaN or infinite.
     """
     # Validate batch-specific requirements. Use np.shape/np.ndim (which read
     # .shape/.ndim) rather than np.asarray, so a traced JAX array passes through
@@ -387,6 +388,9 @@ def smooth_rate_maps_batch(
             f"spike_counts has {sc_shape[1]} bins but "
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
+    # The threshold is a plain number on both backends (only occupancy may be
+    # traced), so refuse a negative, NaN or infinite one before dispatching.
+    min_occupancy = validate_min_occupancy(min_occupancy)
 
     # Dispatch to JAX or NumPy implementation.
     if backend == "jax":
