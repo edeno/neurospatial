@@ -2402,8 +2402,10 @@ def _observed_path_length(
         (missing samples are skipped as if deleted); ``nan`` when none
         counted.
     complete : bool
-        True when there is at least one interval, every interval is usable
-        and every step counted.
+        True when there is at least one interval between the first and last
+        valid samples, every such interval is usable and every step counted.
+        Missing samples before the first or after the last valid sample are
+        left out, as if their rows were deleted.
     """
     from neurospatial.behavior.trajectory import (
         _observed_cumulative,
@@ -2423,11 +2425,13 @@ def _observed_path_length(
     # The step of a gap sits on the interval ending at its next valid sample.
     gap_ends = support.interval_mask & support.sample_valid[1:]
     counted = gap_ends & ~np.isnan(steps)
-    complete = bool(
-        support.interval_mask.size
-        and support.interval_mask.all()
-        and np.array_equal(counted, gap_ends)
+    observed = np.flatnonzero(support.sample_valid)
+    span = (
+        support.interval_mask[observed[0] : observed[-1]]
+        if observed.size
+        else support.interval_mask[:0]
     )
+    complete = bool(span.size and span.all() and np.array_equal(counted, gap_ends))
     if not counted.any():
         return float("nan"), complete
     return float(steps[counted].sum()), complete
@@ -2873,8 +2877,11 @@ def compute_path_efficiency(
     Returns
     -------
     PathEfficiencyResult
-        All path efficiency metrics combined, measured from the first sample
-        ``positions[0]`` to ``goal``. When the goal is unreachable under
+        All path efficiency metrics combined, measured from the first
+        observed sample (the first row with finite coordinates) to ``goal``;
+        missing rows before the first or after the last observed sample are
+        treated as deleted, also for ``time_efficiency``. When the goal is
+        unreachable under
         ``metric="geodesic"`` (it lies on a disconnected component),
         ``shortest_length`` is ``inf`` and the derived ``efficiency`` and
         ``time_efficiency`` fields are ``nan`` (not ``0.0``).
@@ -2885,9 +2892,10 @@ def compute_path_efficiency(
         If ``metric`` is not recognized, or if the inputs are empty or
         malformed (for example ``times`` not strictly increasing, or
         ``break_before`` not a Boolean array with one entry per sample).
-        With ``metric="geodesic"``, also if ``positions[0]`` or ``goal`` is
-        NaN or outside the environment (raised by ``distance_between``). With
-        ``metric="euclidean"`` a NaN first row gives ``shortest_length=nan``.
+        With ``metric="geodesic"``, also if the first observed position or
+        ``goal`` is outside the environment, or no position is observed
+        (raised by ``distance_between``). With ``metric="euclidean"`` a
+        recording with no observed position gives ``shortest_length=nan``.
 
     Notes
     -----
@@ -2898,8 +2906,8 @@ def compute_path_efficiency(
     outside ``epochs`` is left out, and it is ``nan`` when nothing was
     observed (including a single sample). ``efficiency`` and
     ``angular_efficiency`` compare the whole route with the shortest one, so
-    they are ``nan`` unless every interval from the first to the last sample
-    is usable; with an unbridged stretch the observed length underestimates
+    they are ``nan`` unless every interval from the first to the last observed
+    sample is usable; with an unbridged stretch the observed length underestimates
     the route and the ratio would be biased upward. ``shortest_length`` and
     the wall-clock ``time_efficiency`` keep their meanings. When a long
     tracking loss makes a trial's efficiency ``nan``, report its
@@ -2951,6 +2959,12 @@ def compute_path_efficiency(
     traveled, complete = _observed_path_length(
         positions_arr, support, metric=metric, env=env
     )
+    # Missing rows before the first or after the last observed sample are
+    # deleted rows: the path starts and ends where the animal was observed.
+    observed = np.flatnonzero(support.sample_valid)
+    if observed.size:
+        times_arr = times_arr[observed[0] : observed[-1] + 1]
+        positions_arr = positions_arr[observed[0] : observed[-1] + 1]
     shortest = shortest_path_length(env, positions_arr[0], goal, metric=metric)
 
     eff = (
@@ -2969,7 +2983,7 @@ def compute_path_efficiency(
         )
 
     ang_eff = (
-        angular_efficiency(positions_arr[support.sample_valid], goal)
+        angular_efficiency(positions_arr[np.isfinite(positions_arr).all(axis=1)], goal)
         if complete
         else np.nan
     )

@@ -157,3 +157,38 @@ def test_animation_samples_a_bridged_gap_between_its_valid_rows(tracking):
         [np.interp(query, times[kept], positions[kept, d]) for d in range(2)]
     )
     np.testing.assert_allclose(sampled, expected, rtol=0, atol=1e-9)
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+@pytest.mark.parametrize("lost_rows", [[0], [-1], [0, 1, -2, -1]])
+def test_path_efficiency_with_missing_end_rows_equals_deleted_rows(
+    env, tracking, metric, lost_rows
+):
+    """A trial whose first or last rows are lost starts or ends where observed."""
+    from neurospatial.behavior import compute_path_efficiency
+
+    times, positions, _, _, _ = tracking
+    trial = slice(0, 90)  # 3 s running toward the goal
+    times, positions = times[trial], positions[trial]
+    lost = np.zeros(times.size, dtype=bool)
+    lost[lost_rows] = True
+    goal = positions[-1] + np.array([2.0, 0.0])
+    missing, deleted = (
+        compute_path_efficiency(env, t, p, goal, metric=metric, reference_speed=30.0)
+        for t, p in (
+            (times, _with_nan(positions, lost)),
+            (times[~lost], positions[~lost]),
+        )
+    )
+    assert np.isfinite(deleted.efficiency)
+    for name in (
+        "traveled_length",
+        "shortest_length",
+        "efficiency",
+        "time_efficiency",
+        "angular_efficiency",
+    ):
+        assert getattr(missing, name) == pytest.approx(
+            getattr(deleted, name), rel=1e-12
+        ), name
+    np.testing.assert_array_equal(missing.start_position, deleted.start_position)
