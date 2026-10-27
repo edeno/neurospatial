@@ -81,7 +81,8 @@ is biased upward when a unit has few spikes, so a short or sparse recording
 can push untuned cells over any fixed cutoff (see
 [information bias and cell verdicts](neuroscience-metrics.md#information-bias-and-cell-verdicts)).
 For a per-cell decision you can report, use the shuffle test
-`place_cell_significance` on the raw spike times and tracking.
+`place_cell_significance` on the raw spike times and tracking, or
+`spatial_cell_type_significance` to test grid and border scores as well.
 
 Now compare coverage computed from every map with coverage computed from the
 screened units only:
@@ -678,7 +679,8 @@ Checks before you interpret the numbers:
   position, so every count matrix must share one column order.
 - **Screens, not verdicts.** The information cutoff, the Marchenko-Pastur
   threshold, the membership cutoff, activation above 2, and EV versus REV are
-  descriptive. Use `place_cell_significance` for place-cell decisions and a
+  descriptive. Use `place_cell_significance` or
+  `spatial_cell_type_significance` for cell-type decisions and a
   null built for your recording for reactivation claims.
 - **Missing is not zero.** Unvisited bins stay NaN in rate maps; compare
   conditions only over bins visited in both, and check whether coverage gaps
