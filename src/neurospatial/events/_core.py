@@ -51,8 +51,15 @@ def _validate_event_indices(
         )
 
 
-def _validate_window(window: tuple[float, float], *, context: str) -> None:
-    """Validate a peri-event window expressed in seconds."""
+def _validate_window(
+    window: tuple[float, float], *, context: str, warn_wide: bool = True
+) -> tuple[float, float]:
+    """Validate a window in seconds and return its bounds as floats.
+
+    ``warn_wide`` warns when the window spans more than 60 s, which for a
+    peri-event window usually means milliseconds were passed. History
+    regressors (rewards in the last two minutes) turn it off.
+    """
     try:
         if np.asarray(window).dtype.kind not in "biuf":
             raise TypeError("window bounds must be real numbers")
@@ -82,7 +89,7 @@ def _validate_window(window: tuple[float, float], *, context: str) -> None:
                 fix="pass window=(-0.5, 1.0), with start < stop, in seconds",
             )
         )
-    if bounds[1] - bounds[0] > 60:
+    if warn_wide and bounds[1] - bounds[0] > 60:
         warnings.warn(
             _format_error(
                 f"{context}: window={window!r} spans {bounds[1] - bounds[0]:g} seconds, more than 60 seconds.",
@@ -92,6 +99,7 @@ def _validate_window(window: tuple[float, float], *, context: str) -> None:
             UserWarning,
             stacklevel=3,
         )
+    return float(bounds[0]), float(bounds[1])
 
 
 def _make_bin_edges(

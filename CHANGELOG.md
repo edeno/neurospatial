@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Event analyses refuse bad input instead of returning wrong numbers
+
+Results that change:
+
+- `event_count_in_window` and `event_indicator` count each event at exactly
+  one sample when bin-centred windows tile time. Window edges computed twice
+  with different float rounding (`s[k] + dt/2` and `s[k+1] - dt/2`) left gaps
+  and overlaps: 11,999 events on a 20 Hz camera clock gave 12,462 counts in
+  10 Hz bins, and events exactly at sample midpoints were lost about half the
+  time. Edges that agree up to rounding are now one instant.
+
+Fixed:
+
+- `event_count_in_window` and `event_indicator` refuse a NaN or infinite
+  window bound (a NaN start gave negative counts) and 2-D time arrays.
+  `time_to_nearest_event` refuses `max_time=nan`, which returned all NaN.
+
 ### Encoding cleanup and faster analyses
 
 Single-unit and population rate maps now share one code path in every

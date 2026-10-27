@@ -15,7 +15,53 @@ are in :mod:`neurospatial.behavior`.
 from __future__ import annotations
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
+
+from neurospatial._time_bins import _time_bin_rounding
+from neurospatial.events._core import _validate_window
+
+
+def _as_times(values: ArrayLike, name: str) -> NDArray[np.float64]:
+    """Return ``values`` as a 1-D float64 array of finite seconds."""
+    times = np.asarray(values, dtype=np.float64)
+    if times.ndim != 1:
+        raise ValueError(
+            f"{name} must be a 1-D array of times in seconds, got shape "
+            f"{times.shape}.\n"
+            "  WHY: Each entry is one time on the recording clock.\n"
+            "  Fix: Pass one time per sample or event."
+        )
+    for is_bad, what in ((np.isnan, "NaN"), (np.isinf, "inf")):
+        if is_bad(times).any():
+            raise ValueError(
+                f"{name} contains {what} values.\n"
+                "  WHY: Times must be finite seconds.\n"
+                f"  Fix: Remove {what} values before calling."
+            )
+    return times
+
+
+def _share_coincident_edges(
+    starts: NDArray[np.float64], stops: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Give window edges that agree up to float rounding one shared value.
+
+    Adjacent windows of samples ``bin_size`` apart meet at an edge computed
+    twice, as ``s[k] + stop`` and ``s[k + 1] + start``. Rounding can leave a
+    gap or an overlap of a few ulp between the two, which counts an event on
+    that edge at no sample or at two. Edges within a few ulp of each other
+    are the same instant at float precision, so each group of them takes its
+    smallest value; then the half-open windows partition time exactly.
+    """
+    edges = np.concatenate([starts, stops])
+    order = np.argsort(edges, kind="stable")
+    ordered = edges[order]
+    tolerance = 4.0 * np.spacing(np.maximum(np.abs(ordered[:-1]), np.abs(ordered[1:])))
+    new_group = np.r_[True, np.diff(ordered) > tolerance]
+    first = np.flatnonzero(new_group)
+    shared = np.empty_like(edges)
+    shared[order] = ordered[first][np.cumsum(new_group) - 1]
+    return shared[: starts.size], shared[starts.size :]
 
 
 def time_to_nearest_event(
@@ -35,14 +81,15 @@ def time_to_nearest_event(
     Parameters
     ----------
     sample_times : NDArray[np.float64], shape (n_samples,)
-        Times at which to compute regressor.
+        Times at which to compute regressor (seconds).
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps (seconds).
     signed : bool, default=True
         If True, return signed time (negative before event, positive after).
         If False, return absolute distance to nearest event.
     max_time : float, optional
-        Maximum absolute time to return. Values beyond this are clipped.
+        Maximum absolute time to return, in seconds. Values beyond this are
+        clipped to it; no sample is removed.
         For signed=True, clips to [-max_time, +max_time].
         For signed=False, clips to [0, max_time].
 
@@ -57,8 +104,8 @@ def time_to_nearest_event(
     Raises
     ------
     ValueError
-        If sample_times or event_times contain NaN or Inf values.
-        If max_time is negative.
+        If sample_times or event_times are not 1-D or contain NaN or Inf
+        values. If max_time is negative or NaN.
 
     Notes
     -----
@@ -67,7 +114,8 @@ def time_to_nearest_event(
 
     - Use `signed=True` (default) for PSTH-like time axis
     - Use `signed=False` for distance-based filtering
-    - Use `max_time` to define a peri-event window
+    - Use `max_time` to bound the regressor; select samples in a window
+      with a mask on the result (see Examples)
 
     Common use cases:
     - PSTH time axis: samples within window of events
@@ -77,17 +125,9 @@ def time_to_nearest_event(
     At exact midpoints between two events, the earlier event is used
     (tie-breaking is consistent but arbitrary).
 
-    **Why ``max_time`` rather than a ``(start, end)`` window?**
-
-    ``time_to_nearest_event`` returns a *continuous signed time-to-event
-    regressor*, not a windowed count or indicator. Its ``max_time`` is a
-    symmetric clip on the returned magnitude, which is semantically distinct
-    from a ``(start, end)`` masking window: it bounds the value, it does not
-    select which samples are "in" a window. Forcing a tuple here would be a
-    false unification. The ``(start, end)`` ``window`` contract therefore
-    applies only to the two *windowing* regressors,
-    :func:`event_count_in_window` and :func:`event_indicator`; this asymmetry
-    is intentional.
+    ``max_time`` is a symmetric clip on the returned value, not a
+    ``(start, end)`` window: :func:`event_count_in_window` and
+    :func:`event_indicator` take windows because they select events.
 
     Examples
     --------
@@ -113,44 +153,13 @@ def time_to_nearest_event(
     >>> time_to_nearest_event(sample_times, event_times, max_time=1.0)
     array([-1., -1.,  0.,  1.,  1.])
     """
-    # Convert to numpy arrays and validate
-    sample_times = np.asarray(sample_times, dtype=np.float64)
-    event_times = np.asarray(event_times, dtype=np.float64)
+    sample_times = _as_times(sample_times, "sample_times")
+    event_times = _as_times(event_times, "event_times")
 
-    # Input validation
-    if np.any(np.isnan(sample_times)):
+    if max_time is not None and not max_time >= 0:
         raise ValueError(
-            "sample_times contains NaN values.\n"
-            "  WHY: Times must be valid numeric values.\n"
-            "  Fix: Remove or interpolate NaN values before calling."
-        )
-
-    if np.any(np.isinf(sample_times)):
-        raise ValueError(
-            "sample_times contains inf values.\n"
-            "  WHY: Times must be finite.\n"
-            "  Fix: Remove or clip infinite values before calling."
-        )
-
-    if len(event_times) > 0:
-        if np.any(np.isnan(event_times)):
-            raise ValueError(
-                "event_times contains NaN values.\n"
-                "  WHY: Event times must be valid numeric values.\n"
-                "  Fix: Remove NaN values from event times."
-            )
-
-        if np.any(np.isinf(event_times)):
-            raise ValueError(
-                "event_times contains inf values.\n"
-                "  WHY: Event times must be finite.\n"
-                "  Fix: Remove infinite values from event times."
-            )
-
-    if max_time is not None and max_time < 0:
-        raise ValueError(
-            f"max_time must be non-negative, got {max_time}.\n"
-            "  WHY: max_time defines a symmetric window around events.\n"
+            f"max_time must be a non-negative number of seconds, got {max_time}.\n"
+            "  WHY: max_time is the largest time-to-event magnitude returned.\n"
             "  Fix: Use max_time >= 0 or None for no clipping."
         )
 
@@ -229,11 +238,11 @@ def event_count_in_window(
     Parameters
     ----------
     sample_times : NDArray[np.float64], shape (n_samples,)
-        Times at which to compute count.
+        Times at which to compute count (seconds).
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps (seconds).
     window : tuple[float, float]
-        Time window (start, end) relative to sample_time.
+        Time window (start, end) relative to sample_time, in seconds.
         E.g., (-1.0, 0.0) counts events in previous 1 second.
         E.g., (0.0, 1.0) counts events in next 1 second.
         E.g., (-0.5, 0.5) counts events within +/- 0.5 seconds.
@@ -248,8 +257,10 @@ def event_count_in_window(
     Raises
     ------
     ValueError
-        If sample_times or event_times contain NaN or Inf values.
-        If window start >= window stop.
+        If sample_times or event_times are not 1-D or contain NaN or Inf
+        values. If a window bound is not finite, or window start >= window
+        stop. If the window is too narrow to resolve in float64 at these
+        timestamps.
 
     Notes
     -----
@@ -257,13 +268,16 @@ def event_count_in_window(
 
     - Count rewards in last N seconds: ``window=(-N, 0.0)``
     - Count licks before reward: ``window=(-1.0, 0.0)``
-    - Count spikes around event: ``window=(-0.5, 0.5)``
+    - Count spikes in a +/- 0.5 s window around each sample:
+      ``window=(-0.5, 0.5)``
 
     Windows are half-open, ``[sample_time + start, sample_time + stop)``: an
     event exactly at the start is counted and one exactly at the stop is not.
-    Windows of samples ``bin_size`` apart with ``window=(-bin_size / 2,
-    bin_size / 2)`` therefore tile time, and each event counts at exactly one
-    sample.
+    Window edges that agree up to float rounding are treated as one instant,
+    so windows of samples ``bin_size`` apart with ``window=(-bin_size / 2,
+    bin_size / 2)`` tile time: each event inside the samples' windows counts
+    at exactly one sample, even when events and samples share a clock grid
+    and fall on bin edges. Events outside every window are not counted.
 
     Examples
     --------
@@ -282,77 +296,34 @@ def event_count_in_window(
     >>> event_count_in_window(sample_times, reward_times, window=(-1.5, 1.5))
     array([1, 1, 1, 0])
     """
-    # Convert to numpy arrays and validate
-    sample_times = np.asarray(sample_times, dtype=np.float64)
-    event_times = np.asarray(event_times, dtype=np.float64)
+    sample_times = _as_times(sample_times, "sample_times")
+    event_times = _as_times(event_times, "event_times")
+    window_start, window_end = _validate_window(
+        window, context="event_count_in_window", warn_wide=False
+    )
 
-    # Input validation
-    if np.any(np.isnan(sample_times)):
-        raise ValueError(
-            "sample_times contains NaN values.\n"
-            "  WHY: Times must be valid numeric values.\n"
-            "  Fix: Remove or interpolate NaN values before calling."
-        )
-
-    if np.any(np.isinf(sample_times)):
-        raise ValueError(
-            "sample_times contains inf values.\n"
-            "  WHY: Times must be finite.\n"
-            "  Fix: Remove or clip infinite values before calling."
-        )
-
-    if len(event_times) > 0:
-        if np.any(np.isnan(event_times)):
-            raise ValueError(
-                "event_times contains NaN values.\n"
-                "  WHY: Event times must be valid numeric values.\n"
-                "  Fix: Remove NaN values from event times."
-            )
-
-        if np.any(np.isinf(event_times)):
-            raise ValueError(
-                "event_times contains inf values.\n"
-                "  WHY: Event times must be finite.\n"
-                "  Fix: Remove infinite values from event times."
-            )
-
-    # Validate window
-    window_start, window_end = window
-    if window_start >= window_end:
-        raise ValueError(
-            f"window start ({window_start}) must be before its stop ({window_end}).\n"
-            "  WHY: Window is the half-open range [start, stop) relative to each "
-            "sample, so a window with stop <= start holds no time.\n"
-            "  Fix: Use window=(start, stop) with start < stop, e.g. "
-            "window=(-bin_size / 2, bin_size / 2) to count each event at the "
-            "sample nearest it."
-        )
-
-    # Handle empty sample_times
     if len(sample_times) == 0:
         return np.array([], dtype=np.int64)
-
-    # Handle empty events
     if len(event_times) == 0:
         return np.zeros(len(sample_times), dtype=np.int64)
 
-    # Sort events for efficient searchsorted
+    starts = sample_times + window_start
+    stops = sample_times + window_end
+    # Refuse windows too narrow for float64 at these timestamps; below that,
+    # sharing coincident edges could also merge a window's own two edges.
+    _time_bin_rounding(
+        np.array([[starts.min(), stops.max()]]),
+        window_end - window_start,
+        context="event_count_in_window windows",
+        width_name="window width",
+    )
+    starts, stops = _share_coincident_edges(starts, stops)
+
+    # Count = number of events in [start, stop)
     sorted_events = np.sort(event_times)
-
-    # For each sample, compute window bounds in absolute time
-    # and count events within those bounds
-    window_starts = sample_times + window_start
-    window_ends = sample_times + window_end
-
-    # Use searchsorted to find event indices at window boundaries
-    # left_indices: first event >= window_start
-    # right_indices: first event >= window_end (so count = right - left)
-    left_indices = np.searchsorted(sorted_events, window_starts, side="left")
-    right_indices = np.searchsorted(sorted_events, window_ends, side="left")
-
-    # Count = number of events in [window_start, window_end)
-    counts = right_indices - left_indices
-
+    counts = np.searchsorted(sorted_events, stops, side="left") - np.searchsorted(
+        sorted_events, starts, side="left"
+    )
     return counts.astype(np.int64)
 
 
@@ -372,9 +343,9 @@ def event_indicator(
     Parameters
     ----------
     sample_times : NDArray[np.float64], shape (n_samples,)
-        Sample timestamps.
+        Sample timestamps (seconds).
     event_times : NDArray[np.float64], shape (n_events,)
-        Event timestamps.
+        Event timestamps (seconds).
     window : tuple[float, float]
         Time window (start, stop) relative to sample_time (seconds), half-open
         ``[sample_time + start, sample_time + stop)``. Required: no window is
@@ -390,8 +361,7 @@ def event_indicator(
     Raises
     ------
     ValueError
-        If sample_times or event_times contain NaN or Inf values.
-        If window start >= window stop.
+        As for :func:`event_count_in_window`.
 
     Notes
     -----
