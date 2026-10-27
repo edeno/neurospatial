@@ -192,3 +192,31 @@ def test_path_efficiency_with_missing_end_rows_equals_deleted_rows(
             getattr(deleted, name), rel=1e-12
         ), name
     np.testing.assert_array_equal(missing.start_position, deleted.start_position)
+
+
+@pytest.mark.parametrize("summary", [False, True])
+def test_decoding_skips_lost_tracking_like_deleted_rows(env, tracking, summary):
+    """A 10 s tracking loss is not decoded, with NaN rows or deleted rows.
+
+    The decode clock is the tracked clock: spikes are counted where position
+    was recorded, as without ``spike_window``.
+    """
+    from neurospatial.decoding import decode_session, decode_session_summary
+
+    times, positions, _, spikes, lost = tracking
+    lost = lost.copy()
+    lost[(times >= 20) & (times < 30)] = True
+    decode = decode_session_summary if summary else decode_session
+    missing, deleted = (
+        decode(env, spikes, t, p, dt=0.25, bandwidth=8.0)
+        for t, p in (
+            (times, _with_nan(positions, lost)),
+            (times[~lost], positions[~lost]),
+        )
+    )
+    assert not np.any((deleted.times > 20) & (deleted.times < 30))
+    np.testing.assert_array_equal(missing.times, deleted.times)
+    if summary:
+        np.testing.assert_allclose(missing.map_position, deleted.map_position)
+    else:
+        np.testing.assert_allclose(missing.posterior, deleted.posterior, atol=1e-12)

@@ -304,7 +304,13 @@ def decode_session(
     Decode time bins are formed separately within each run of samples whose
     gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
     ``spike_window``; no bin spans a pause, and spikes between runs are not
-    counted. ``result.times`` may therefore be non-contiguous.
+    counted. ``result.times`` may therefore be non-contiguous. A gap is the
+    time between consecutive tracked samples: a NaN position is missing
+    tracking, bridged like a deleted row, so a tracking loss longer than
+    ``max_gap`` is not decoded, as without ``spike_window`` spikes are assumed
+    recorded only while position was. To decode spans without tracking, fit
+    a :class:`~neurospatial.decoding.BayesianDecoder` and predict with
+    ``times=np.arange(t0, t1, dt)``.
 
     **Orientation contract**:
     :func:`~neurospatial.decoding.bin_spikes_in_time` returns a count
@@ -421,6 +427,7 @@ def decode_session(
         warn_partial_bins=warn_on_drop,
         dtype=dtype,
         spatial_support=rates_result.spatial_support,
+        sample_valid=_tracked(times, positions),
         **decode_kwargs,
     )
 
@@ -452,6 +459,13 @@ def _validate_session_dtype(
     return dtype
 
 
+def _tracked(times: ArrayLike, positions: ArrayLike) -> NDArray[np.bool_]:
+    """True at samples whose every coordinate is finite, shape (n_samples,)."""
+    from neurospatial.encoding._spatial_counts import tracked_samples
+
+    return tracked_samples(len(np.asarray(times)), np.asarray(positions))
+
+
 def _prepare_session_decode(
     spike_times: Any,
     times: ArrayLike,
@@ -462,6 +476,7 @@ def _prepare_session_decode(
     epochs: NDArray[np.float64] | None = None,
     break_before: ArrayLike | None = None,
     spike_window: NDArray[np.float64] | None = None,
+    sample_valid: NDArray[np.bool_] | None = None,
     warn_spikes_outside: bool,
     warn_partial_bins: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -475,7 +490,9 @@ def _prepare_session_decode(
     """Normalize spike inputs/models and tile bins inside observed runs.
 
     ``break_before`` is validated here (naming ``context``); no decode bin
-    spans a declared break.
+    spans a declared break. ``sample_valid`` marks the tracked samples; a
+    missing one is bridged like a deleted row, so a tracking loss longer than
+    ``max_gap`` is not decoded.
     """
     from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.decoding._time_bins import validate_dt
@@ -518,15 +535,16 @@ def _prepare_session_decode(
     from neurospatial._time_bins import _time_bins_in_windows
 
     # Decode bins exist only where the recording was observed: the gap, epochs and
-    # spike_window gates. The speed and out-of-bounds gates restrict only the
-    # ENCODING step, so periods of immobility (for example replay) are still
-    # decoded.
+    # spike_window gates, with missing tracking bridged like deleted rows. The
+    # speed and out-of-bounds gates restrict only the ENCODING step, so periods
+    # of immobility (for example replay) are still decoded.
     observed = interval_valid_mask(
         times_arr,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
         break_before=breaks,
+        sample_valid=sample_valid,
     )
     recording_support = TimeSupport.from_mask(
         times_arr,
@@ -725,6 +743,7 @@ def _build_encoding_model(
         epochs=epochs,
         break_before=break_before,
         spike_window=spike_window,
+        sample_valid=_tracked(times, positions),
         warn_spikes_outside=False,
         # The decode step tiles the same bins and owns this warning.
         warn_partial_bins=False,
@@ -749,6 +768,7 @@ def _decode_with_models(
     warn_partial_bins: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     spatial_support: NDArray[np.bool_] | None = None,
+    sample_valid: NDArray[np.bool_] | None = None,
     context: str = "decode_session",
     **decode_kwargs: Any,
 ) -> DecodingResult:
@@ -765,6 +785,7 @@ def _decode_with_models(
         epochs=resolved_epochs,
         break_before=break_before,
         spike_window=resolved_spike_window,
+        sample_valid=sample_valid,
         warn_spikes_outside=warn_spikes_outside,
         warn_partial_bins=warn_partial_bins,
         dtype=dtype,
@@ -897,7 +918,13 @@ warn_on_drop, dtype
     Decode time bins are formed separately within each run of samples whose
     gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
     ``spike_window``; no bin spans a pause, and spikes between runs are not
-    counted. ``result.times`` may therefore be non-contiguous.
+    counted. ``result.times`` may therefore be non-contiguous. A gap is the
+    time between consecutive tracked samples: a NaN position is missing
+    tracking, bridged like a deleted row, so a tracking loss longer than
+    ``max_gap`` is not decoded, as without ``spike_window`` spikes are assumed
+    recorded only while position was. To decode spans without tracking, fit
+    a :class:`~neurospatial.decoding.BayesianDecoder` and predict with
+    ``times=np.arange(t0, t1, dt)``.
 
     See Also
     --------
@@ -966,6 +993,7 @@ warn_on_drop, dtype
         warn_partial_bins=warn_on_drop,
         dtype=dtype,
         spatial_support=rates_result.spatial_support,
+        sample_valid=_tracked(times, positions),
         **decode_kwargs,
     )
 
@@ -985,6 +1013,7 @@ def _decode_with_models_summary(
     warn_partial_bins: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     spatial_support: NDArray[np.bool_] | None = None,
+    sample_valid: NDArray[np.bool_] | None = None,
     context: str = "decode_session_summary",
     **decode_kwargs: Any,
 ) -> DecodingSummary:
@@ -1027,6 +1056,7 @@ def _decode_with_models_summary(
         epochs=resolved_epochs,
         break_before=break_before,
         spike_window=resolved_spike_window,
+        sample_valid=sample_valid,
         warn_spikes_outside=warn_spikes_outside,
         warn_partial_bins=warn_partial_bins,
         dtype=dtype,

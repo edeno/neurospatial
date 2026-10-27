@@ -18,8 +18,14 @@ Results that change:
   applies to occupancy and rate maps of every cell family, environment
   occupancy, `bin_sequence` and transitions, speed and kinematics (which use
   the real time between valid samples across a bridged gap), behavior
-  segmentation, region visits, trials, continuous alignment, decoding ground
-  truth, visibility and animation overlays. `bin_sequence` drops NaN samples
+  segmentation, region visits, trials, path efficiency (which starts and
+  ends at the first and last observed samples), continuous alignment,
+  decoding ground truth, decode time bins, the all-units-silent warning,
+  visibility and animation overlays. `decode_session` and
+  `decode_session_summary` tile decode bins on the tracked clock, so a
+  tracking loss longer than `max_gap` is not decoded, as when its rows are
+  deleted; to decode spans without tracking, predict with a fitted
+  `BayesianDecoder` on `times=np.arange(t0, t1, dt)`. `bin_sequence` drops NaN samples
   instead of reporting −1, so −1 means only "outside the environment", and
   functions that take `position_bins` bridge bin −1 like a missing sample.
 - `max_gap` defaults to 1.0 s (was 0.5 s) in every function that takes it,
