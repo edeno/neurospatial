@@ -203,3 +203,50 @@ def test_field_shape_on_equal_bins_is_the_rate_weighted_one(grid) -> None:
     assert shape["minor_axis_length"] == pytest.approx(
         2 * np.sqrt(eigenvalues[0]), rel=1e-12
     )
+
+
+# --- compute_field_emd ----------------------------------------------------------
+
+
+def test_emd_is_unchanged_by_splitting_a_bin(square, square_split) -> None:
+    from neurospatial.encoding import compute_field_emd
+
+    # A uniform field over the square moves into the narrow left strip.
+    emd = compute_field_emd(square, np.ones(3), np.array([1.0, 0.0, 0.0]))
+    split_emd = compute_field_emd(
+        square_split, np.ones(4), np.array([1.0, 0.0, 0.0, 0.0])
+    )
+    # 0.1 of the mass moves 1 cm and 0.8 moves 5.5 cm.
+    assert emd == pytest.approx(4.5, rel=1e-9)
+    assert split_emd == pytest.approx(4.5, rel=1e-9)
+
+
+@pytest.mark.parametrize(
+    "edges", [np.arange(11.0), np.array([0.0, 1.0, 2.0, 3.0, 7.0, 8.0, 10.0])]
+)
+def test_emd_on_a_track_is_the_wasserstein_distance_of_the_rate_fields(
+    edges,
+) -> None:
+    from scipy.stats import wasserstein_distance
+
+    from neurospatial.encoding import compute_field_emd
+
+    env = track(edges)
+    rng = np.random.default_rng(6)
+    rates_1, rates_2 = rng.uniform(0, 5, (2, env.n_bins))
+    centers, measures = env.bin_centers[:, 0], env.bin_sizes
+    expected = wasserstein_distance(
+        centers, centers, rates_1 * measures, rates_2 * measures
+    )
+    assert compute_field_emd(env, rates_1, rates_2) == pytest.approx(expected, rel=1e-9)
+
+
+def test_unnormalized_emd_moves_rate_times_measure(square) -> None:
+    from neurospatial.encoding import compute_field_emd
+
+    # 1 Hz over the 100 cm^2 square and 10 Hz over the 10 cm^2 left strip
+    # hold the same firing, 100 Hz cm^2.
+    uniform, strip = np.ones(3), np.array([10.0, 0.0, 0.0])
+    unnormalized = compute_field_emd(square, uniform, strip, normalize=False)
+    normalized = compute_field_emd(square, uniform, strip)
+    assert unnormalized == pytest.approx(100.0 * normalized, rel=1e-9)

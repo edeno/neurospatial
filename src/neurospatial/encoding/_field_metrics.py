@@ -1063,9 +1063,10 @@ def compute_field_emd(
         - "euclidean": Straight-line distance between bin centers
         - "geodesic": Shortest path distance through connectivity graph
     normalize : bool, default=True
-        If True, normalize each distribution to sum to 1.0 over the bins
-        finite in both maps before computing EMD. If False, use raw firing
-        rates (their sums over those bins must already be equal).
+        If True, normalize each map's mass (rate x bin measure) to sum to 1.0
+        over the bins finite in both maps before computing EMD. If False,
+        move the mass itself, rate x ``env.bin_sizes`` (e.g. Hz x cm^2);
+        the two maps' totals over those bins must already be equal.
 
     Returns
     -------
@@ -1075,7 +1076,8 @@ def compute_field_emd(
         - With ``normalize=True``: the mean distance the firing-rate mass
           moves, in the environment's distance units (e.g. cm). Moving a
           whole field 10 cm gives 10.0.
-        - With ``normalize=False``: cost in units of (rate x distance).
+        - With ``normalize=False``: cost in units of (rate x bin measure x
+          distance), e.g. Hz x cm^2 x cm in a 2-D environment.
         - NaN if either distribution has zero total mass (with a warning).
         - ``inf`` with ``metric="geodesic"`` when the maps put different
           mass in parts of the environment with no path between them, so
@@ -1105,6 +1107,12 @@ def compute_field_emd(
     Notes
     -----
     The Earth Mover's Distance is computed by solving the optimal transport problem.
+
+    **Mass.** Bin :math:`i` holds :math:`r_i \\mu_i` of the firing, its rate
+    times its measure (``env.bin_sizes``: area, length or volume), so the
+    distance is that between the continuous rate fields and does not depend
+    on how finely a region is binned. On a regular grid every bin has the
+    same measure, and the normalized mass is the normalized rate.
 
     **Missing bins.** Only bins finite in both maps are compared: an
     unsampled (NaN) bin in either map is left out of both, and with
@@ -1200,8 +1208,15 @@ def compute_field_emd(
     common_bins = np.flatnonzero(
         np.isfinite(firing_rate_1) & np.isfinite(firing_rate_2)
     )
-    firing_rate_1 = firing_rate_1[common_bins]
-    firing_rate_2 = firing_rate_2[common_bins]
+    # The mass in each bin is the firing it holds, rate x measure, so a large
+    # bin carries more than a small one at the same rate. Normalized masses
+    # depend only on measure ratios; relative measures keep equal bins'
+    # masses exactly the rates.
+    measures = env.bin_sizes[common_bins]
+    if normalize:
+        measures = _relative_measures(measures)
+    firing_rate_1 = firing_rate_1[common_bins] * measures
+    firing_rate_2 = firing_rate_2[common_bins] * measures
 
     # Normalize distributions if requested
     if normalize:
@@ -1225,9 +1240,9 @@ def compute_field_emd(
         sum2 = np.sum(firing_rate_2)
         if not np.isclose(sum1, sum2, rtol=1e-6):
             raise ValueError(
-                f"Unnormalized distributions must have equal total mass on the "
-                f"bins finite in both maps. Got {sum1:.6f} and {sum2:.6f}. Set "
-                f"normalize=True to auto-normalize."
+                f"Unnormalized distributions must have equal total mass (rate x "
+                f"bin measure) on the bins finite in both maps. Got {sum1:.6f} "
+                f"and {sum2:.6f}. Set normalize=True to auto-normalize."
             )
 
     # Filter to bins with non-zero mass in either distribution
