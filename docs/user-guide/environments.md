@@ -600,13 +600,14 @@ when it has internal walls. A crop or a missing position sample does not create 
 wall. If only tracking-derived support or an analysis mask is available, request
 `boundary_source="analysis"` to score against the outline of the retained bins
 instead.
-Physical mode is the default. It requires measured wall geometry and retained
-cells with finite firing rates along every measured wall segment. Missing wall
-observations cannot establish that firing was zero near the wall. Supplying
-`OpenArena` establishes wall locations; it does not add bins or observations.
-Physical scoring refuses when either geometry or this observation support is
-missing. A valid zero rate near the wall still contributes to a negative score
-for a field away from the wall.
+Physical mode is the default. It requires measured wall geometry and a
+retained bin at every piece of measured wall; it refuses, saying where, when
+bins stop short of a wall. Supplying `OpenArena` establishes wall locations; it
+does not add bins. Unvisited bins along a wall are missing, not evidence of
+zero firing: coverage is measured on the observed part of each wall, and
+`observed_wall_fraction(env, firing_rate)` reports how much of the walls a rate
+map observes. A valid zero rate near the wall still contributes to a negative
+score for a field away from the wall.
 
 <!-- docs-test: run -->
 ```python
@@ -632,14 +633,19 @@ np.testing.assert_allclose(approximation, score)
 
 This is the border score of Solstad et al. (2008). Coverage is the largest
 fraction of one wall that one field covers. Each footprint ring is split into
-walls at its corners (a rectangle has four walls, a circle one), and each named
-internal wall is one more wall. Distance is the firing-rate-weighted mean
+walls at its corners, in physical units: a polygon's vertices are corners
+unless they sample a curve (a rectangle has four walls, an octagon eight, a box
+with rounded corners four). A ring without corners, such as a circular arena,
+offers each field any half of it as its wall, following Høydal et al. (2018).
+Each named wall is one more wall; a named wall that lies on the outline
+replaces that piece of it, so walls can be declared by hand. Distance is the firing-rate-weighted mean
 distance from field bin centers to the nearest wall, divided by the radius of
 the largest circle that fits in the arena without crossing a wall. Geodesic
 mode includes center-to-wall lengths and paths through retained graph bins. An
 unavailable route makes the score NaN; crops can restrict represented routes.
 Euclidean mode avoids that graph restriction. The usual 0.5 cutoff was chosen
-for rectangular boxes; calibrate it for other arena shapes.
+for rectangular boxes, where a map that fires everywhere scores 0.5;
+`untuned_border_score(env)` gives that baseline for other arena shapes.
 
 For a rotated rectangular arena, construct bins in coordinates aligned with the
 measured rectangle, then transform the bins and arena together. Transform the

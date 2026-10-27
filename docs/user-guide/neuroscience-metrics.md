@@ -418,11 +418,16 @@ score = border_score(
    converted to the environment's units; without metric length units, at
    least 9 bins, the BNT/opexebo default). `summary_table()` records the rule
    it applied in `df.attrs["border_field_minimum"]`.
-2. *Walls*: each outline is split into walls at its corners, where it turns by
-   more than 50° within two bin widths. A rectangle has four walls; a circle,
-   or any gently curving outline, is one wall. Each named internal wall is one
-   more wall.
-3. *Coverage* `cM`: the largest fraction of one wall covered by one field.
+2. *Walls*: each outline is split into walls at its corners, in physical
+   units. A polygon's vertices are corners unless they sample a curve: a
+   rectangle has four walls, an octagon eight, and a box with rounded corners
+   or a hand-traced square four. A ring without corners (a circular arena) is
+   one wall that offers each field any half of it, following Høydal et al.
+   (2018). Each named wall (`OpenArena(walls={name: line})`) is one wall; one
+   that lies on the outline replaces that piece of it.
+3. *Coverage* `cM`: the largest fraction of one wall's observed length covered
+   by one field. Unvisited wall bins are missing, not uncovered;
+   `observed_wall_fraction` reports how much of the walls was observed.
 4. *Distance* `dm`: the firing-rate-weighted mean distance from the bins of all
    fields to the nearest wall, divided by the radius of the largest circle that
    fits in the arena (half the shorter side of a rectangle).
@@ -437,18 +442,20 @@ score = border_score(
   does not reject untuned cells by itself; `label_cell_types` also requires
   spatial information, and a shuffle test gives a verdict.
 
-The 0.5 cutoff was chosen for rectangular boxes. On other shapes the same field
-scores differently: a circular arena is one wall, so a field along a quarter
-of it covers 0.25 of its wall and scores lower than along one side of a square.
-Calibrate a cutoff for other shapes, for example against shuffled spike trains.
+The 0.5 cutoff was chosen for rectangular boxes. The score of a map that fires
+everywhere depends on the arena: 0.5 in convex arenas, higher in corridor mazes
+(every bin is near a wall), lower on a narrow linear track.
+`untuned_border_score(env)` computes it, and `summary_table()` records it in
+`df.attrs["border_score_untuned"]`. Calibrate a cutoff for other shapes, for
+example against shuffled spike trains.
 
 **Differences from BNT and opexebo** on rectangular boxes: distances run from
 each bin center to the wall (a bin against the wall is half a bin away, where
 they count it as one bin away, so their scores are lower: about 0.07 for a
 round field on one wall of a 100 cm box with 2.5 cm bins); fields follow Solstad et al. (2008) rather than their place-field
-detection (0.2 of the peak, at least 9 bins, peak at least 1 Hz); and an
-unvisited bin along a measured wall makes the physical score unavailable
-instead of being skipped.
+detection (0.2 of the peak, at least 9 bins, peak at least 1 Hz); and where
+they look up to 8 bins inward past unvisited wall bins, unvisited pieces of
+wall are left out of the wall's length here.
 
 **Example: Checking a synthetic boundary field**
 
@@ -806,6 +813,7 @@ preserve supplied unit labels.
 
 **Boundary Cell Analysis:**
 - Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I. (2008). Representation of geometric borders in the entorhinal cortex. Science, 322(5909), 1865-1868.
+- Høydal, Ø. A., Skytøen, E. R., Moser, M.-B., & Moser, E. I. (2018). Object-vector coding in the medial entorhinal cortex. bioRxiv 286286. https://doi.org/10.1101/286286
 
 ### Validation Notes
 
