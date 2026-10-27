@@ -1385,6 +1385,7 @@ def bin_spike_trains(
     linear_intervals: LinearSpatialIntervals | None = None,
     n_jobs: int = 1,
     warn_on_drop: bool = True,
+    drop_scope: str = "across all neurons ",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains into spatial bins.
 
@@ -1433,6 +1434,9 @@ def bin_spike_trains(
         aggregate statistics, so it fires exactly once even when
         ``n_jobs != 1`` (joblib worker warnings are commonly swallowed).
         Set to ``False`` to suppress all drop-related warnings.
+    drop_scope : str, default="across all neurons "
+        Phrase naming the spikes a drop warning counts; ``""`` for one unit
+        analyzed on its own.
 
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict complete sampling intervals to these half-open windows in
@@ -1627,14 +1631,14 @@ def bin_spike_trains(
                 t_min,
                 t_max,
                 all_spikes_cat,
-                scope="across all neurons ",
+                scope=drop_scope,
             )
 
         if total_after_time > 0 and total_bin_dropped > 0:
             _emit_inactive_bin_warning(
                 total_bin_dropped,
                 total_after_time,
-                scope="across all neurons ",
+                scope=drop_scope,
             )
 
     return spike_counts, occupancy

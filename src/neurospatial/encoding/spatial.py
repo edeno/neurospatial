@@ -3153,6 +3153,7 @@ def _compute_glm_spatial_rates(
         The raw (always-NumPy, float64) fit result; the caller reads the GAM
         result fields off it.
     """
+    from neurospatial._stacklevel import _external_stacklevel
     from neurospatial.encoding._backend import _to_backend
     from neurospatial.encoding._glm import _RATE_FLOOR, fit_mrf_gam
 
@@ -3177,9 +3178,7 @@ def _compute_glm_spatial_rates(
             f"never occupied (dead); their bins are set to _RATE_FLOOR "
             f"({_RATE_FLOOR:.0e} Hz). Fit runs on the live bins only.",
             UserWarning,
-            # 3 frames out: warn -> _compute_glm_spatial_rates -> the public
-            # compute_spatial_rate(s), so it points at the caller's line.
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
 
     # Boundary in: unit-major (n_units, n_bins) -> bin-major (n_live_bins,
@@ -3474,6 +3473,316 @@ def _prepare_spatial_support(
         time_support=time_support,
         analysis_settings=settings,
     )
+
+
+class _SpatialRateMaps(NamedTuple):
+    """Population rate maps and their provenance, before wrapping as a result."""
+
+    firing_rates: ArrayLike  # (n_units, n_bins) Hz, in the backend's array type
+    occupancy: ArrayLike  # (n_bins,) seconds, float64, in the backend's array type
+    spike_times: list[NDArray[np.float64]]  # (n_units,) validated trains
+    unit_ids: NDArray[Any] | None  # caller-supplied labels, else None
+    support: _SpatialSupport
+    bandwidth: float  # resolved ratio bandwidth (0.0 for method="glm")
+    min_occupancy: float  # resolved seconds threshold
+    fit: Any  # MRFFit for method="glm", else None
+
+
+def _spatial_rate_maps(
+    env: Environment,
+    spike_times: Any,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"],
+    bandwidth: float | None,
+    min_occupancy: float | None,
+    fill_value: float | None,
+    penalty: float | None,
+    rank: int | None,
+    pooled: bool,
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    max_gap: float | None,
+    time_allocation: Literal["start", "linear"],
+    epochs: Any,
+    break_before: ArrayLike | None,
+    spike_window: Any,
+    n_jobs: int,
+    backend: BackendType,
+    warn_on_drop: bool,
+    dtype: type[np.float32] | type[np.float64],
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    context: str,
+    single_unit: bool,
+) -> _SpatialRateMaps:
+    """Validate the inputs and estimate every unit's spatial rate map.
+
+    The one implementation behind :func:`compute_spatial_rate` and
+    :func:`compute_spatial_rates`; the parameters are theirs.
+
+    Parameters
+    ----------
+    context : str
+        Name of the public entry point, used in error messages.
+    single_unit : bool
+        True for :func:`compute_spatial_rate`: ``spike_times`` is one train,
+        validated without a neuron index, drop warnings do not say "across
+        all neurons", and GLM warnings name the unit by position because a
+        standalone unit has no label.
+
+    Returns
+    -------
+    _SpatialRateMaps
+        Rates of shape ``(n_units, n_bins)``, with ``n_units == 1`` when
+        ``single_unit``.
+    """
+    from neurospatial._spikes import as_labelled_spike_trains
+    from neurospatial.encoding._backend import (
+        _to_backend,
+        validate_and_resolve_backend,
+    )
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+    from neurospatial.encoding._spatial_counts import (
+        _warn_if_population_silent,
+        bin_spike_trains,
+        compute_occupancy,
+        tracked_samples,
+    )
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_spike_trains,
+        validate_trajectory,
+    )
+
+    _check_spatial_env(env, time_allocation, context=context)
+
+    # Raises ValueError for unknown names and ImportError if jax is unavailable;
+    # "auto" resolves to "numpy" or "jax".
+    resolved_backend = validate_and_resolve_backend(backend)
+
+    # Validate dtype: only single/double precision rate maps are supported.
+    # Wrap the parse so an unparseable dtype string (e.g. "bogus") raises this
+    # clean ValueError naming `dtype`, not a raw NumPy
+    # ``TypeError: data type 'bogus' not understood``.
+    _dtype_msg = (
+        f"dtype must be np.float32 or np.float64, got {dtype!r}. "
+        "Only single- and double-precision rate maps are supported "
+        "(float32 halves the (n_units, n_bins) storage and the downstream "
+        "decode working set)."
+    )
+    try:
+        _resolved_dtype = np.dtype(dtype)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(_dtype_msg) from exc
+    if _resolved_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise ValueError(_dtype_msg)
+    # Normalize to the canonical numpy scalar type for downstream casts.
+    dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
+
+    resolved_bandwidth, resolved_min_occupancy, penalty, rank = _resolve_spatial_method(
+        env,
+        method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
+    )
+
+    # Normalize spike times to canonical list-of-arrays format and resolve the
+    # per-unit identity labels (defaults to arange). A labelled input keeps its
+    # own labels; a differing unit_ids= raises. A standalone unit has no label.
+    if single_unit:
+        spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
+        resolved_unit_ids = None
+        result_unit_ids = None
+    else:
+        spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+            spike_times, unit_ids, context=context
+        )
+        result_unit_ids = resolved_unit_ids if labels_supplied else None
+    n_neurons = len(spike_times_list)
+
+    # Convert inputs to arrays
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+
+    validate_trajectory(times, positions=positions, context=context, n_dims=env.n_dims)
+    if single_unit:
+        validate_spike_times(spike_times_list[0], context=context)
+    else:
+        validate_spike_trains(spike_times_list, context=context)
+    breaks = validate_break_before(break_before, len(times), call=context)
+
+    # The speed gate is resolved once for the population, so a gate that
+    # excludes every interval warns once rather than per neuron.
+    support = _prepare_spatial_support(
+        env,
+        times,
+        positions,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        spike_window=spike_window,
+        warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        method=method,
+        bandwidth=resolved_bandwidth,
+        min_occupancy=resolved_min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
+        backend=resolved_backend,
+    )
+    resolved_speed = support.speed
+    linear_intervals = support.linear_intervals
+    interval_mask = support.time_support.mask
+
+    # Recording coverage uses tracked runs, independently of speed or frame
+    # bins. Fewer than five units never warn, so a single unit never does.
+    _warn_if_population_silent(
+        spike_times_list,
+        times,
+        max_gap=max_gap,
+        epochs=support.time_support.epochs,
+        spike_window=support.time_support.spike_window,
+        tracked=tracked_samples(len(times), positions),
+        break_before=breaks,
+    )
+
+    def maps(firing_rates: ArrayLike, occupancy: Any, fit: Any) -> _SpatialRateMaps:
+        return _SpatialRateMaps(
+            firing_rates=firing_rates,
+            occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
+            spike_times=spike_times_list,
+            unit_ids=result_unit_ids,
+            support=support,
+            bandwidth=resolved_bandwidth,
+            min_occupancy=resolved_min_occupancy,
+            fit=fit,
+        )
+
+    # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
+    # Handles the no-neurons case too (fit_mrf_gam returns an (r_eff, 0) fit), so
+    # it sits before the ratio no-neurons short-circuit and returns early, leaving
+    # the ratio path below untouched.
+    if method == "glm":
+        if n_neurons == 0:
+            spike_counts = np.zeros((0, env.n_bins), dtype=np.float64)
+            occupancy = compute_occupancy(
+                env,
+                times,
+                positions,
+                speed=resolved_speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                interval_mask=interval_mask,
+                context=context,
+                time_allocation=time_allocation,
+                linear_intervals=linear_intervals,
+            )
+        else:
+            spike_counts, occupancy = bin_spike_trains(
+                env,
+                spike_times_list,
+                times,
+                positions,
+                speed=resolved_speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                interval_mask=interval_mask,
+                n_jobs=n_jobs,
+                warn_on_drop=warn_on_drop,
+                time_allocation=time_allocation,
+                linear_intervals=linear_intervals,
+                drop_scope="" if single_unit else "across all neurons ",
+            )
+
+        glm_firing_rates, fit = _compute_glm_spatial_rates(
+            env,
+            spike_counts,
+            occupancy,
+            penalty=penalty,
+            rank=rank,
+            pooled=pooled,
+            # Resolved labels flow in so a per-unit convergence / boundary warning
+            # names the caller's unit_ids, not bare unit-axis indices.
+            unit_ids=resolved_unit_ids,
+            resolved_backend=resolved_backend,
+            dtype=dtype,
+        )
+        return maps(glm_firing_rates, occupancy, fit)
+
+    # Handle edge case: no neurons
+    # Still compute occupancy from trajectory (occupancy is independent of neural data)
+    if n_neurons == 0:
+        # Use compute_occupancy which handles 1D position reshaping
+        occupancy = compute_occupancy(
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            interval_mask=interval_mask,
+            context=context,
+            time_allocation=time_allocation,
+            linear_intervals=linear_intervals,
+        )
+        empty = _to_backend(
+            np.empty((0, env.n_bins), dtype=dtype), resolved_backend, dtype=dtype
+        )
+        return maps(empty, occupancy, None)
+
+    # Bin spike trains and compute occupancy (always NumPy - CPU/joblib)
+    # bin_spike_trains returns (spike_counts, occupancy)
+    spike_counts, occupancy = bin_spike_trains(
+        env,
+        spike_times_list,
+        times,
+        positions,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        interval_mask=interval_mask,
+        n_jobs=n_jobs,
+        warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
+        drop_scope="" if single_unit else "across all neurons ",
+    )
+
+    # Apply batch smoothing to compute firing rates
+    # When backend="jax", uses JAX for the core rate computation
+    firing_rates = smooth_rate_maps_batch(
+        env,
+        spike_counts,
+        occupancy,
+        method=method,
+        bandwidth=resolved_bandwidth,
+        min_occupancy=resolved_min_occupancy,
+        backend=resolved_backend,
+        dtype=dtype,
+    )
+
+    # Replace masked/low-occupancy NaN bins with fill_value when requested;
+    # None keeps them NaN (missing).
+    if fill_value is not None:
+        firing_rates = _fill_nan(firing_rates, fill_value)
+
+    # Defensive final cast to the requested dtype. Under NEP 50,
+    # np.where(mask, 0.0, f32_array) keeps float32, but this guarantees the
+    # stored dtype regardless of the fill_value / backend path.
+    if isinstance(firing_rates, np.ndarray):
+        firing_rates = firing_rates.astype(dtype, copy=False)
+    else:
+        firing_rates = _to_backend(firing_rates, resolved_backend, dtype=dtype)
+    return maps(firing_rates, occupancy, None)
 
 
 def compute_spatial_rate(
@@ -3806,186 +4115,67 @@ default="diffusion_kde"
     >>> linear.analysis_settings["time_allocation"]
     'linear'
     """
-    from neurospatial.encoding._backend import (
-        _to_backend,
-        validate_and_resolve_backend,
-    )
-    from neurospatial.encoding._smoothing import smooth_rate_map
-    from neurospatial.encoding._spatial_counts import (
-        bin_spike_train,
-        compute_occupancy,
-    )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_trajectory,
-    )
-
-    _check_spatial_env(env, time_allocation, context="compute_spatial_rate")
-
-    # Raises ValueError for unknown names and ImportError if jax is unavailable;
-    # "auto" resolves to "numpy" or "jax".
-    resolved_backend = validate_and_resolve_backend(backend)
-
-    bandwidth, min_occupancy, penalty, rank = _resolve_spatial_method(
-        env,
-        method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        fill_value=fill_value,
-        penalty=penalty,
-        rank=rank,
-        pooled=pooled,
-    )
-
-    # Convert inputs to arrays
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
-
-    validate_trajectory(
-        times, positions=positions, context="compute_spatial_rate", n_dims=env.n_dims
-    )
-    validate_spike_times(spike_times, context="compute_spatial_rate")
-    breaks = validate_break_before(
-        break_before, len(times), call="compute_spatial_rate"
-    )
-
-    support = _prepare_spatial_support(
-        env,
-        times,
-        positions,
-        speed=speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=breaks,
-        spike_window=spike_window,
-        warn_on_drop=warn_on_drop,
-        time_allocation=time_allocation,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        fill_value=fill_value,
-        penalty=penalty,
-        rank=rank,
-        pooled=pooled,
-        backend=resolved_backend,
-    )
-    resolved_speed = support.speed
-    linear_intervals = support.linear_intervals
-    interval_mask = support.time_support.mask
-    resolved_spike_window = support.time_support.spike_window
-    settings = support.analysis_settings
-
-    # Bin spike train into spatial bins (always NumPy - CPU/joblib)
-    spike_counts = bin_spike_train(
+    maps = _spatial_rate_maps(
         env,
         spike_times,
         times,
         positions,
-        speed=resolved_speed,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
+        speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        interval_mask=interval_mask,
-        context="compute_spatial_rate",
+        time_allocation=time_allocation,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
+        n_jobs=1,
+        backend=backend,
         warn_on_drop=warn_on_drop,
-        time_allocation=time_allocation,
-        linear_intervals=linear_intervals,
-    )
-
-    # Compute occupancy (always NumPy) using the SAME resolved speed gate and
-    # the SAME max_gap, so the numerator and denominator drop identical
-    # intervals.
-    occupancy = compute_occupancy(
-        env,
-        times,
-        positions,
-        speed=resolved_speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        interval_mask=interval_mask,
+        dtype=np.float64,
+        unit_ids=None,
         context="compute_spatial_rate",
-        time_allocation=time_allocation,
-        linear_intervals=linear_intervals,
+        single_unit=True,
     )
-
-    # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset) and
-    # return finite rates everywhere -- no ratio smoothing / min_occupancy / NaN.
-    # The single-neuron counts (n_bins,) become a 1-unit unit-major batch.
-    if method == "glm":
-        glm_firing_rates, fit = _compute_glm_spatial_rates(
-            env,
-            spike_counts[np.newaxis, :],
-            occupancy,
-            penalty=penalty,
-            rank=rank,
-            pooled=pooled,
-            resolved_backend=resolved_backend,
-            dtype=np.float64,
-        )
-        # ``glm_firing_rates`` already has the right array type from the helper
-        # (JAX for backend="jax", NumPy otherwise); slice row 0 once, preserving
-        # that type -- no redundant round-trip.
-        single_firing_rate = _to_backend(glm_firing_rates, resolved_backend)[0]
-        single_occupancy = _to_backend(occupancy, resolved_backend, dtype=np.float64)
-        # Singular result: UNWRAP the one-element per-unit vectors (pooled=False)
-        # to scalars so ``compute_spatial_rate(pooled=False)`` equals
-        # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
-        # ``pooled=True`` fields are already scalars and pass through untouched.
-        return SpatialRateResult(
-            n_spikes_outside_intervals=int(
-                spikes_outside_intervals([spike_times], support.time_support)[0]
-            ),
-            analysis_settings=settings,
-            spike_window=resolved_spike_window,
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            env=env,
-            method=method,
-            bandwidth=None,
-            coefficients=np.asarray(fit.coefficients)[:, 0],
-            penalty=_index_per_unit(fit.penalty, 0),
-            penalty_weights=fit.penalty_weights,
-            rank=fit.rank,
-            deviance=fit.deviance[0],
-            converged=fit.converged,
-            n_iter=fit.n_iter,
-            reml_objective=_index_per_unit(fit.reml_objective, 0),
-            reml_at_boundary=_index_per_unit(fit.reml_at_boundary, 0),
-            penalty_selected_by_reml=_index_per_unit(fit.penalty_selected_by_reml, 0),
-            pooled=fit.pooled,
-        )
-
-    # Apply smoothing to compute firing rate
-    # When backend="jax", uses JAX for the core rate computation
-    firing_rate = smooth_rate_map(
-        env,
-        spike_counts,
-        occupancy,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=resolved_backend,
-    )
-
-    # Replace masked/low-occupancy NaN bins with fill_value when requested;
-    # None keeps them NaN (missing).
-    if fill_value is not None:
-        firing_rate = _fill_nan(firing_rate, fill_value)
-
-    # Return result (firing_rate is already JAX from smooth_rate_map)
-    return SpatialRateResult(
-        n_spikes_outside_intervals=int(
-            spikes_outside_intervals([spike_times], support.time_support)[0]
+    common: dict[str, Any] = {
+        "n_spikes_outside_intervals": int(
+            spikes_outside_intervals(maps.spike_times, maps.support.time_support)[0]
         ),
-        min_occupancy=min_occupancy,
-        analysis_settings=settings,
-        spike_window=resolved_spike_window,
-        firing_rate=firing_rate,
-        occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
-        env=env,
-        method=method,
-        bandwidth=bandwidth,
+        "analysis_settings": maps.support.analysis_settings,
+        "spike_window": maps.support.time_support.spike_window,
+        "firing_rate": maps.firing_rates[0],  # type: ignore[index]
+        "occupancy": maps.occupancy,
+        "env": env,
+        "method": method,
+    }
+    fit = maps.fit
+    if fit is None:
+        return SpatialRateResult(
+            **common, min_occupancy=maps.min_occupancy, bandwidth=maps.bandwidth
+        )
+    # Singular result: UNWRAP the one-element per-unit vectors (pooled=False)
+    # to scalars so ``compute_spatial_rate(pooled=False)`` equals
+    # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
+    # ``pooled=True`` fields are already scalars and pass through untouched.
+    return SpatialRateResult(
+        **common,
+        bandwidth=None,
+        coefficients=np.asarray(fit.coefficients)[:, 0],
+        penalty=_index_per_unit(fit.penalty, 0),
+        penalty_weights=fit.penalty_weights,
+        rank=fit.rank,
+        deviance=fit.deviance[0],
+        converged=fit.converged,
+        n_iter=fit.n_iter,
+        reml_objective=_index_per_unit(fit.reml_objective, 0),
+        reml_at_boundary=_index_per_unit(fit.reml_at_boundary, 0),
+        penalty_selected_by_reml=_index_per_unit(fit.penalty_selected_by_reml, 0),
+        pooled=fit.pooled,
     )
 
 
@@ -4341,303 +4531,72 @@ default="diffusion_kde"
     >>> linear.analysis_settings["time_allocation"]
     'linear'
     """
-    from neurospatial._spikes import as_labelled_spike_trains
-    from neurospatial.encoding._backend import (
-        _to_backend,
-        validate_and_resolve_backend,
-    )
-    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
-    from neurospatial.encoding._spatial_counts import (
-        _warn_if_population_silent,
-        bin_spike_trains,
-        tracked_samples,
-    )
-    from neurospatial.encoding._validation import (
-        validate_spike_trains,
-        validate_trajectory,
-    )
-
-    _check_spatial_env(env, time_allocation, context="compute_spatial_rates")
-
-    # Raises ValueError for unknown names and ImportError if jax is unavailable;
-    # "auto" resolves to "numpy" or "jax".
-    resolved_backend = validate_and_resolve_backend(backend)
-
-    # Validate dtype: only single/double precision rate maps are supported.
-    # Wrap the parse so an unparseable dtype string (e.g. "bogus") raises this
-    # clean ValueError naming `dtype`, not a raw NumPy
-    # ``TypeError: data type 'bogus' not understood``.
-    _dtype_msg = (
-        f"dtype must be np.float32 or np.float64, got {dtype!r}. "
-        "Only single- and double-precision rate maps are supported "
-        "(float32 halves the (n_units, n_bins) storage and the downstream "
-        "decode working set)."
-    )
-    try:
-        _resolved_dtype = np.dtype(dtype)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(_dtype_msg) from exc
-    if _resolved_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
-        raise ValueError(_dtype_msg)
-    # Normalize to the canonical numpy scalar type for downstream casts.
-    dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
-
-    bandwidth, min_occupancy, penalty, rank = _resolve_spatial_method(
+    maps = _spatial_rate_maps(
         env,
-        method,
+        spike_times,
+        times,
+        positions,
+        method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         fill_value=fill_value,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
-    )
-
-    # Normalize spike times to canonical list-of-arrays format and resolve the
-    # per-unit identity labels (defaults to arange). A labelled input keeps its
-    # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
-        spike_times, unit_ids, context="compute_spatial_rates"
-    )
-    n_neurons = len(spike_times_list)
-    result_unit_ids = resolved_unit_ids if labels_supplied else None
-
-    # Convert inputs to arrays
-    times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
-
-    validate_trajectory(
-        times, positions=positions, context="compute_spatial_rates", n_dims=env.n_dims
-    )
-    validate_spike_trains(spike_times_list, context="compute_spatial_rates")
-    breaks = validate_break_before(
-        break_before, len(times), call="compute_spatial_rates"
-    )
-
-    # The speed gate is resolved once for the population, so a gate that
-    # excludes every interval warns once rather than per neuron.
-    support = _prepare_spatial_support(
-        env,
-        times,
-        positions,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        time_allocation=time_allocation,
         epochs=epochs,
-        break_before=breaks,
+        break_before=break_before,
         spike_window=spike_window,
-        warn_on_drop=warn_on_drop,
-        time_allocation=time_allocation,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        fill_value=fill_value,
-        penalty=penalty,
-        rank=rank,
-        pooled=pooled,
-        backend=resolved_backend,
-    )
-    resolved_speed = support.speed
-    linear_intervals = support.linear_intervals
-    interval_mask = support.time_support.mask
-    resolved_epochs = support.time_support.epochs
-    resolved_spike_window = support.time_support.spike_window
-    settings = support.analysis_settings
-
-    # Recording coverage uses tracked runs, independently of speed or frame bins.
-    _warn_if_population_silent(
-        spike_times_list,
-        times,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        tracked=tracked_samples(len(times), positions),
-        break_before=breaks,
-    )
-
-    # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
-    # Handles the no-neurons case too (fit_mrf_gam returns an (r_eff, 0) fit), so
-    # it sits before the ratio no-neurons short-circuit and returns early, leaving
-    # the ratio path below untouched.
-    if method == "glm":
-        from neurospatial.encoding._spatial_counts import (
-            bin_spike_trains as _bin_spike_trains,
-        )
-        from neurospatial.encoding._spatial_counts import (
-            compute_occupancy as _compute_occupancy,
-        )
-
-        if n_neurons == 0:
-            spike_counts = np.zeros((0, env.n_bins), dtype=np.float64)
-            occupancy = _compute_occupancy(
-                env,
-                times,
-                positions,
-                speed=resolved_speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
-                interval_mask=interval_mask,
-                context="compute_spatial_rates",
-                time_allocation=time_allocation,
-                linear_intervals=linear_intervals,
-            )
-        else:
-            spike_counts, occupancy = _bin_spike_trains(
-                env,
-                spike_times_list,
-                times,
-                positions,
-                speed=resolved_speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
-                interval_mask=interval_mask,
-                n_jobs=n_jobs,
-                warn_on_drop=warn_on_drop,
-                time_allocation=time_allocation,
-                linear_intervals=linear_intervals,
-            )
-
-        glm_firing_rates, fit = _compute_glm_spatial_rates(
-            env,
-            spike_counts,
-            occupancy,
-            penalty=penalty,
-            rank=rank,
-            pooled=pooled,
-            # Resolved labels flow in so a per-unit convergence / boundary warning
-            # names the caller's unit_ids, not bare unit-axis indices.
-            unit_ids=resolved_unit_ids,
-            resolved_backend=resolved_backend,
-            dtype=dtype,
-        )
-        # The per-unit lambda fields (``penalty`` / ``reml_objective`` /
-        # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
-        # straight through from the fit; they are scalar/None under pooled=True.
-        return SpatialRatesResult(
-            n_spikes_outside_intervals=spikes_outside_intervals(
-                spike_times_list, support.time_support
-            ),
-            analysis_settings=settings,
-            unit_table=getattr(spike_times, "unit_table", None),
-            spike_window=resolved_spike_window,
-            firing_rates=glm_firing_rates,
-            occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
-            env=env,
-            method=method,
-            bandwidth=None,
-            unit_ids=result_unit_ids,
-            # dtype governs the (n_units, n_bins) rate-map storage only. The GLM
-            # diagnostics are the float64 fit result and are kept float64 -- so
-            # they do not lose precision (deviance/coefficients) and rates[i]
-            # matches compute_spatial_rate, whose diagnostics are always float64.
-            coefficients=fit.coefficients,
-            penalty=fit.penalty,
-            penalty_weights=fit.penalty_weights,
-            rank=fit.rank,
-            deviance=fit.deviance,
-            converged=fit.converged,
-            n_iter=fit.n_iter,
-            reml_objective=fit.reml_objective,
-            reml_at_boundary=fit.reml_at_boundary,
-            penalty_selected_by_reml=fit.penalty_selected_by_reml,
-            pooled=fit.pooled,
-        )
-
-    # Handle edge case: no neurons
-    # Still compute occupancy from trajectory (occupancy is independent of neural data)
-    if n_neurons == 0:
-        from neurospatial.encoding._spatial_counts import compute_occupancy
-
-        # Use compute_occupancy which handles 1D position reshaping
-        occupancy = compute_occupancy(
-            env,
-            times,
-            positions,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            interval_mask=interval_mask,
-            context="compute_spatial_rates",
-            time_allocation=time_allocation,
-            linear_intervals=linear_intervals,
-        )
-
-        return SpatialRatesResult(
-            n_spikes_outside_intervals=spikes_outside_intervals(
-                spike_times_list, support.time_support
-            ),
-            min_occupancy=min_occupancy,
-            analysis_settings=settings,
-            unit_table=getattr(spike_times, "unit_table", None),
-            spike_window=resolved_spike_window,
-            firing_rates=_to_backend(
-                np.empty((0, env.n_bins), dtype=dtype), resolved_backend, dtype=dtype
-            ),
-            occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
-            env=env,
-            method=method,
-            bandwidth=bandwidth,
-            unit_ids=result_unit_ids,
-        )
-
-    # Bin spike trains and compute occupancy (always NumPy - CPU/joblib)
-    # bin_spike_trains returns (spike_counts, occupancy)
-    spike_counts, occupancy = bin_spike_trains(
-        env,
-        spike_times_list,
-        times,
-        positions,
-        speed=resolved_speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        interval_mask=interval_mask,
         n_jobs=n_jobs,
+        backend=backend,
         warn_on_drop=warn_on_drop,
-        time_allocation=time_allocation,
-        linear_intervals=linear_intervals,
-    )
-
-    # Apply batch smoothing to compute firing rates
-    # When backend="jax", uses JAX for the core rate computation
-    firing_rates = smooth_rate_maps_batch(
-        env,
-        spike_counts,
-        occupancy,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=resolved_backend,
         dtype=dtype,
+        unit_ids=unit_ids,
+        context="compute_spatial_rates",
+        single_unit=False,
     )
-
-    # Replace masked/low-occupancy NaN bins with fill_value when requested;
-    # None keeps them NaN (missing).
-    if fill_value is not None:
-        firing_rates = _fill_nan(firing_rates, fill_value)
-
-    # Defensive final cast to the requested dtype. Under NEP 50,
-    # np.where(mask, 0.0, f32_array) keeps float32, but this guarantees the
-    # stored dtype regardless of the fill_value / backend path.
-    if isinstance(firing_rates, np.ndarray):
-        firing_rates = firing_rates.astype(dtype, copy=False)
-    else:
-        firing_rates = _to_backend(firing_rates, resolved_backend, dtype=dtype)
-
-    # Return result
-    return SpatialRatesResult(
-        n_spikes_outside_intervals=spikes_outside_intervals(
-            spike_times_list, support.time_support
+    common: dict[str, Any] = {
+        "n_spikes_outside_intervals": spikes_outside_intervals(
+            maps.spike_times, maps.support.time_support
         ),
-        min_occupancy=min_occupancy,
-        analysis_settings=settings,
-        unit_table=getattr(spike_times, "unit_table", None),
-        spike_window=resolved_spike_window,
-        firing_rates=firing_rates,
-        occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
-        env=env,
-        method=method,
-        bandwidth=bandwidth,
-        unit_ids=result_unit_ids,
+        "analysis_settings": maps.support.analysis_settings,
+        "unit_table": getattr(spike_times, "unit_table", None),
+        "spike_window": maps.support.time_support.spike_window,
+        "firing_rates": maps.firing_rates,
+        "occupancy": maps.occupancy,
+        "env": env,
+        "method": method,
+        "unit_ids": maps.unit_ids,
+    }
+    fit = maps.fit
+    if fit is None:
+        return SpatialRatesResult(
+            **common, min_occupancy=maps.min_occupancy, bandwidth=maps.bandwidth
+        )
+    # The per-unit lambda fields (``penalty`` / ``reml_objective`` /
+    # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
+    # straight through from the fit; they are scalar/None under pooled=True.
+    # dtype governs the (n_units, n_bins) rate-map storage only. The GLM
+    # diagnostics are the float64 fit result and are kept float64 -- so
+    # they do not lose precision (deviance/coefficients) and rates[i]
+    # matches compute_spatial_rate, whose diagnostics are always float64.
+    return SpatialRatesResult(
+        **common,
+        bandwidth=None,
+        coefficients=fit.coefficients,
+        penalty=fit.penalty,
+        penalty_weights=fit.penalty_weights,
+        rank=fit.rank,
+        deviance=fit.deviance,
+        converged=fit.converged,
+        n_iter=fit.n_iter,
+        reml_objective=fit.reml_objective,
+        reml_at_boundary=fit.reml_at_boundary,
+        penalty_selected_by_reml=fit.penalty_selected_by_reml,
+        pooled=fit.pooled,
     )
 
 
