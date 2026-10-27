@@ -1117,8 +1117,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
         The border score's baseline is ``df.attrs["border_score_untuned"]``,
         the score of a map that fires everywhere the animal was (0.5 in a
-        convex arena), and ``df.attrs["border_observed_wall_fraction"]`` is the
-        fraction of the walls' length that was observed.
+        convex arena with every wall visited, less where parts of the walls
+        were not), and ``df.attrs["border_observed_wall_fraction"]`` is the
+        fraction of the walls' length that was observed. Unobserved wall
+        counts as not covered, so when that fraction is below 1 a border score
+        can understate a field's coverage but never overstate it.
 
         Examples
         --------
@@ -2976,8 +2979,11 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
         The border score's baseline is ``df.attrs["border_score_untuned"]``,
         the score of a map that fires everywhere the animal was (0.5 in a
-        convex arena), and ``df.attrs["border_observed_wall_fraction"]`` is the
-        fraction of the walls' length that was observed.
+        convex arena with every wall visited, less where parts of the walls
+        were not), and ``df.attrs["border_observed_wall_fraction"]`` is the
+        fraction of the walls' length that was observed. Unobserved wall
+        counts as not covered, so when that fraction is below 1 a border score
+        can understate a field's coverage but never overstate it.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
@@ -7436,7 +7442,8 @@ def spatial_cell_type_significance(
     shuffles ``"fdr_bh"`` labeled no unit at all, tuned cells included: their
     p-values sat at the floor 1 / 201, which the correction cannot use, and
     a warning names the number of shuffles needed. The fixed-cutoff screen
-    labeled 46% of untuned units in such a session border cells. Of 12
+    labeled 8-53% of 100 untuned units border cells in each of four 20- to
+    40-minute sessions, fewer where more of the walls went unvisited. Of 12
     simulated place cells on a radial-arm maze none was labeled a border cell (the screen labeled 6). A significant grid score says the
     map's autocorrelogram is more sixfold-symmetric than those of its own
     shifted spike trains, not that it has a lattice of fields: 2 of 30

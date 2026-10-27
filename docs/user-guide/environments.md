@@ -661,9 +661,11 @@ Physical mode is the default. It requires measured wall geometry and a
 retained bin at every piece of measured wall; it refuses, saying where, when
 bins stop short of a wall. Supplying `OpenArena` establishes wall locations; it
 does not add bins. Unvisited bins along a wall are missing, not evidence of
-zero firing: coverage is measured on the observed part of each wall, and
-`observed_wall_fraction(env, firing_rate)` reports how much of the walls a rate
-map observes. A valid zero rate near the wall still contributes to a negative
+zero firing, and they are not evidence that a field reaches the wall either:
+as in Solstad et al. (2008), coverage is the fraction of the whole wall, and
+unvisited wall counts as not covered, so missing data can lower a border score
+but never raise it. `observed_wall_fraction(env, firing_rate)` reports how
+much of the walls a rate map observes. A valid zero rate near the wall still contributes to a negative
 score for a field away from the wall.
 
 <!-- docs-test: run -->
