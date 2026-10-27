@@ -252,6 +252,28 @@ def resolve_object_positions(
     return env.landmarks.nearest_points(positions, names), names
 
 
+def _validate_object_vector_metric(
+    env: Environment | None, metric: str, *, context: str
+) -> None:
+    """Validate public metric choices before coordinate construction."""
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(
+            _format_error(
+                f"{context}: Invalid metric: {metric!r}; expected 'euclidean' or 'geodesic'.",
+                why="Why: nearest-object distance uses a straight line or the environment graph",
+                fix="pass metric='euclidean', or metric='geodesic' with an env",
+            )
+        )
+    if metric == "geodesic" and env is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: metric='geodesic' requires env parameter.",
+                why="Why: geodesic distance needs the environment's connectivity graph",
+                fix="pass an env, or use metric='euclidean' with env=None",
+            )
+        )
+
+
 def _moving_geodesic_error() -> str:
     return _format_error(
         "metric='geodesic' needs a fixed position for each object, but these "
@@ -613,17 +635,7 @@ def prepare_egocentric_binning(
     )
     object_positions = np.asarray(object_positions, dtype=np.float64)
 
-    # Validate metric and env
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
-            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
-        )
-
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            "metric='geodesic' requires env parameter.\n"
-            "Pass the allocentric environment to compute geodesic distances."
-        )
+    _validate_object_vector_metric(env, metric, context="prepare_egocentric_binning")
 
     # Validate times
     _validate_times(times, context="prepare_egocentric_binning")

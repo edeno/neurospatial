@@ -76,6 +76,7 @@ from neurospatial.encoding._base import (
     SingleUnitRateMixin,
     _to_numpy,
 )
+from neurospatial.encoding._egocentric_counts import _validate_object_vector_metric
 from neurospatial.encoding._polar_results import (
     DEFAULT_DIRECTION_BIN_SIZE,
     _PolarRateMixin,
@@ -1925,28 +1926,6 @@ def compute_object_vector_rate(
         backend=backend,
         context="compute_object_vector_rate",
     )
-
-
-def _validate_object_vector_metric(
-    env: Environment | None, metric: str, *, context: str
-) -> None:
-    """Validate public metric choices before coordinate construction."""
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
-            _format_error(
-                f"{context}: Invalid metric: {metric!r}; expected 'euclidean' or 'geodesic'.",
-                why="Why: nearest-object distance uses a straight line or the environment graph",
-                fix="pass metric='euclidean', or metric='geodesic' with an env",
-            )
-        )
-    if metric == "geodesic" and env is None:
-        raise ValueError(
-            _format_error(
-                f"{context}: metric='geodesic' requires env parameter.",
-                why="Why: geodesic distance needs the environment's connectivity graph",
-                fix="pass an env, or use metric='euclidean' with env=None",
-            )
-        )
 
 
 def _require_planar_env(env: Environment, operation: str, *, measures: str) -> None:
