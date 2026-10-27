@@ -26,6 +26,10 @@ by the experimenter, and the abstract gives neither the food cup's nor the
 start boxes' size, so the four arm ends are plain regions. Add reward-port
 and start-box landmarks at the arm ends your protocol uses.
 
+No published apparatus fixes the build. The maze is modeled as an elevated
+open plus whose edges are drops (``arena.outline == "drop"``); rebuild the
+floor with ``Environment.from_polygon`` for an enclosed version.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes import make_plus_maze, PlusMazeDims
@@ -42,6 +46,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
@@ -219,6 +224,7 @@ def make_plus_maze(
     env_2d = Environment.from_polygon(
         polygon=plus_polygon,
         bin_size=bin_size,
+        arena=OpenArena(plus_polygon, outline="drop"),
         name="plus_maze",
         connect_diagonal_neighbors=True,
     )

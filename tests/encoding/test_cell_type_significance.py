@@ -51,17 +51,84 @@ def test_shuffles_reuse_one_dense_eigensolve(monkeypatch, ou_2min, strong_field_
     assert len(dense_solves) == 1
 
 
-def test_threshold_flags_noise_as_object_vector_cell(
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {},
+        {"method": "binned", "min_speed": 2.0},
+        {
+            "method": "gaussian_kde",
+            "epochs": [[0, 25], [30, 60]],
+            "min_occupancy": 0.2,
+            "fill_value": 0.0,
+        },
+    ],
+)
+def test_null_maps_match_rate_maps_of_shifted_trains(
+    significance_recording, monkeypatch, settings
+):
+    """Reusing the trajectory binning gives the maps a full recompute gives."""
+    from neurospatial.encoding import spatial
+
+    r = significance_recording
+    shifted = []
+    score = spatial._spatial_scores
+
+    def capture(*args, **kwargs):
+        shifted.append([train.copy() for train in args[1]])
+        return score(*args, **kwargs)
+
+    monkeypatch.setattr(spatial, "_spatial_scores", capture)
+    result = spatial.place_cell_significance(
+        r.env,
+        r.trains,
+        r.times,
+        r.positions,
+        n_shuffles=3,
+        min_shift=5,
+        rng=0,
+        **settings,
+    )
+    assert len(shifted) == 4
+    for k, trains in enumerate(shifted):
+        expected = spatial.compute_spatial_rates(
+            r.env, trains, r.times, r.positions, **settings
+        ).spatial_information()
+        got = [
+            res.observed_score if k == 0 else res.null_scores[k - 1]
+            for res in result.values()
+        ]
+        np.testing.assert_array_equal(got, expected)
+
+
+def test_object_vector_screen_rejects_untuned_units(
     ou_env, ou_10min, noise_trains, obj
 ):
+    """Untuned 0.5 Hz units (about 300 spikes) on the 120-bin polar map.
+
+    Their uncorrected information passes 0.3 bits/spike by chance; the screen
+    subtracts the untuned-cell bias (K - 1) / (2 ln 2 N), so none passes.
+    """
     times, positions, headings = ou_10min
     trains = noise_trains(600)
     ego = encoding.compute_egocentric_rates(
         ou_env, trains, times, positions, headings, obj
     )
     allo = encoding.compute_object_vector_rates(ou_env, trains, times, positions, obj)
-    assert ego.classify().sum() == 20
-    assert allo.classify().sum() >= 18
+    for rates in (ego, allo):
+        assert (rates.spatial_information() >= 0.3).sum() >= 18
+        bias = rates.spatial_information_bias()
+        assert np.isfinite(bias).all()
+        occupancy = np.asarray(rates.occupancy)
+        occupied = int((occupancy > 0).sum())
+        # Spikes in the map: the polar grid covers only samples within its
+        # distance range of the object.
+        n_spikes = np.nansum(np.asarray(rates.firing_rates) * occupancy, axis=1)
+        # Unsmoothed polar bins: exactly the Miller-Madow form.
+        np.testing.assert_allclose(
+            bias, (occupied - 1) / (2 * np.log(2) * n_spikes), rtol=1e-10
+        )
+        assert rates.classify().sum() == 0
 
 
 def test_population_labels_and_order(significance_family, significance_recording):
@@ -264,6 +331,8 @@ def test_shuffle_detects_true_spatial_view_cell(ou_env, ou_10min):
         headings,
         n_shuffles=200,
         rng=0,
+        gaze_model="fixed_distance",
+        view_distance=10.0,
         boundary_source="analysis",
     )[0]
     assert result.p_value == 1 / 201
@@ -283,6 +352,8 @@ def test_shuffle_detects_true_spatial_view_cell(ou_env, ou_10min):
 def test_shuffle_noise_false_positives(name, ou_env, ou_10min, noise_trains, obj):
     args = _significance_args(name, ou_env, noise_trains(600), ou_10min, obj)
     kwargs = {"bandwidth": 5} if name.startswith("place") else {}
+    if name.startswith("spatial_view"):
+        kwargs = {"boundary_source": "analysis"}
     result = getattr(encoding, name)(*args, n_shuffles=200, rng=0, **kwargs)
     assert sum(r.p_value < 0.05 for r in result.values()) <= 3
 
@@ -302,6 +373,8 @@ def test_shuffle_pooled_false_positive_rate(name, ou_env, ou_10min, noise_trains
     trains = [train for seed in range(1, 6) for train in noise_trains(600, seed=seed)]
     args = _significance_args(name, ou_env, trains, ou_10min, obj)
     kwargs = {"bandwidth": 5} if name.startswith("place") else {}
+    if name.startswith("spatial_view"):
+        kwargs = {"boundary_source": "analysis"}
     result = getattr(encoding, name)(*args, n_shuffles=200, rng=0, **kwargs)
     assert sum(r.p_value < 0.05 for r in result.values()) <= 10
 
@@ -393,13 +466,13 @@ def test_inferred_speed_gate_preserves_retained_null_spikes(
     r.positions = np.c_[10 + np.maximum(r.times - 20, 0), np.full(len(r.times), 50.0)]
     trains = [np.arange(21.0, 59.5, 0.4)]
     recorded = []
-    compute = spatial.compute_spatial_rates
+    compute = spatial._spatial_scores
 
     def capture(*args, **kwargs):
         recorded.append([train.copy() for train in args[1]])
         return compute(*args, **kwargs)
 
-    monkeypatch.setattr(spatial, "compute_spatial_rates", capture)
+    monkeypatch.setattr(spatial, "_spatial_scores", capture)
     implicit = spatial.place_cell_significance(
         r.env,
         trains,

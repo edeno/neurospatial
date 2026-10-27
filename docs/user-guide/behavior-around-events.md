@@ -24,13 +24,15 @@ port on the east wall, one 8 s lap at a time. It arrives at the port
 (x = 90 cm, 10 cm from the east wall) 4 s into each lap and gets a reward
 there; on each lap its path bends a little north or south. The east half of
 the floor is rough, the west half smooth. Tracking runs at 30 Hz, and the
-tracker lost the animal for 0.8 s around one reward.
+tracker lost the animal for 1.6 s around one reward.
 
 Some choices in the code:
 
 - **Lost frames are NaN rows.** Every function here treats a NaN row as a
-  missing sample: it gets NaN, and nothing is computed or interpolated across
-  it.
+  missing sample, exactly like a deleted row: it gets NaN, and it is bridged
+  only when the time between the observed samples around it is at most
+  `max_gap`. The 1.6 s loss here is longer, so nothing is computed or
+  interpolated across it.
 - **Speed** comes from `compute_speed`, which smooths the velocity with a
   0.1 s Gaussian so tracking jitter does not read as running.
 - **Heading** comes from `heading_from_velocity`: the direction of movement in
@@ -65,11 +67,11 @@ y = 50.0 + lateral[lap] * np.sin(np.pi * times / 8) ** 2
 positions = np.column_stack([x, y])  # cm
 reward_times = np.arange(4.0, 120.0, 8.0)  # s, each arrival at the port (x = 90 cm)
 
-# The tracker lost the animal for 0.8 s around one reward
-lost = (times > 35.6) & (times < 36.4)
+# The tracker lost the animal for 1.6 s around one reward
+lost = (times > 35.2) & (times < 36.8)
 positions[lost] = np.nan  # lost frames are missing, not zero
 print(f"{lost.sum()} frames lost; {times.size} frames; {reward_times.size} rewards")
-assert (lost.sum(), times.size, reward_times.size) == (23, 3600, 15)
+assert (lost.sum(), times.size, reward_times.size) == (47, 3600, 15)
 
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
 
@@ -160,7 +162,7 @@ assert (result.n_events, result.n_events_dropped) == (14, 1)
 `events_table()` has one row per input event, in input order, and `status`
 says whether the event was kept (`"retained"`) or why it was not. 14 rewards
 are kept and 1 is excluded: the reward at 36.0 s, with status
-`"incomplete_support"`. The tracking dropout (35.6 to 36.4 s) lies inside its
+`"incomplete_support"`. The tracking dropout (35.2 to 36.8 s) lies inside its
 window, so none of the features was observed there. With complete
 coverage, the other reasons are:
 
@@ -286,6 +288,13 @@ are angles in radians, and the mean is the direction of the average unit
 vector, not the average of the numbers. The slow frames already carry NaN
 heading, so the alignment treats them as unobserved for heading only.
 
+A stop is not a tracking loss, though. The alignment bridges any stretch of
+missing values no longer than `max_gap`, and the stop at the port lasts only
+0.2 s, as long as a burst of low-confidence frames. Bridging it would
+interpolate a heading through the animal's turn. This session has no dropped
+frames, so `max_gap=1.5 / 30` (one and a half frames) bridges nothing and keeps
+the undefined headings unobserved.
+
 <!-- docs-test: run setup=docs_behavior_around_reward -->
 ```python
 import matplotlib.pyplot as plt
@@ -305,12 +314,13 @@ partial = align_continuous_to_events(
     value_kinds={"heading": "circular", "texture": "categorical"},
     category_labels={"texture": {0: "smooth", 1: "rough"}},
     window_coverage="partial",
+    max_gap=1.5 / 30,  # a stop is not a dropped frame: do not bridge it
 )
 print(partial.events_table()["status"].value_counts().to_string())
 assert partial.n_events == 15
 
 course = partial.time_course_table()
-shown = course["relative_time"].round(2).isin([-1.0, -0.4, -0.35, 0.0, 0.35, 0.4, 1.0])
+shown = course["relative_time"].round(2).isin([-1.0, -0.8, -0.75, 0.0, 0.75, 0.8, 1.0])
 columns = ["relative_time", "feature_id", "count", "mean", "resultant_length", "status"]
 print(
     course.loc[shown & course["feature_id"].isin(["speed", "heading"]), columns]
@@ -320,13 +330,13 @@ print(
 
 # Counts, heading means and resultant length quoted below (atol = 0.6 * 10**-decimals)
 by_time = course.assign(time=course["relative_time"].round(2)).set_index(["feature_id", "time"])
-assert by_time.loc[("speed", -0.4), "count"] == by_time.loc[("speed", 0.4), "count"] == 15
-assert by_time.loc[("speed", -0.35), "count"] == by_time.loc[("speed", 0.35), "count"] == 14
+assert by_time.loc[("speed", -0.8), "count"] == by_time.loc[("speed", 0.8), "count"] == 15
+assert by_time.loc[("speed", -0.75), "count"] == by_time.loc[("speed", 0.75), "count"] == 14
 assert by_time.loc[("heading", 0.0), "count"] == 0
 assert by_time.loc[("heading", 0.0), "status"] == "no_support"
 assert np.isclose(by_time.loc[("heading", -1.0), "mean"], 0.008, atol=0.0006)
 assert np.isclose(by_time.loc[("heading", -1.0), "resultant_length"], 0.996, atol=0.0006)
-after_means = [by_time.loc[("heading", t), "mean"] for t in (0.35, 0.4, 1.0)]
+after_means = [by_time.loc[("heading", t), "mean"] for t in (0.75, 0.8, 1.0)]
 assert np.min(after_means) > -3.1396 and np.max(after_means) < -3.1334  # -3.139 to -3.134
 
 # Averaging angles as plain numbers goes wrong across the +-pi wrap
@@ -355,14 +365,14 @@ ax.set_yticks(
 All 15 rewards are retained now, including the one at 36 s. The printed time
 course shows what that costs:
 
-- **Counts dip at the dropout.** Speed has 15 events at −0.40 s and +0.40 s
-  but 14 from −0.35 to +0.35 s: the 36 s reward has no tracking there, so the
+- **Counts dip at the dropout.** Speed has 15 events at −0.80 s and +0.80 s
+  but 14 from −0.75 to +0.75 s: the 36 s reward has no tracking there, so the
   mean at those times rests on one event fewer than its neighbors.
 - **Heading is undefined at the stop.** At 0 s heading has `count` 0 and
   `status` `"no_support"`: no event was moving fast enough to have a heading.
   The mean is NaN there, not 0 rad, which would mean East.
 - **Heading turns around.** One second before reward the circular mean is
-  0.008 rad (East); 0.35, 0.40 and 1.00 s after reward it is −3.139 to
+  0.008 rad (East); 0.75, 0.80 and 1.00 s after reward it is −3.139 to
   −3.134 rad (West). The resultant length, 0.996, is near 1: the events agree
   closely on the direction.
 

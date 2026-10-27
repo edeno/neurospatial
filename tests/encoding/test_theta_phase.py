@@ -64,6 +64,22 @@ class TestThetaPhase:
         interior = (t > 1.0) & (t < 4.0)
         assert np.median(error[interior]) < 0.01
 
+    def test_phase_zero_is_the_filtered_peak_and_pi_the_trough(self) -> None:
+        """Phase 0 falls on the peaks of the LFP and pi on its troughs."""
+        from neurospatial.encoding import theta_phase
+
+        sampling_rate = 1000.0
+        t = np.arange(0, 5, 1 / sampling_rate)
+        lfp = np.cos(2 * np.pi * 8.0 * t)
+        phase = theta_phase(lfp, sampling_rate=sampling_rate)
+
+        interior = (t > 1.0) & (t < 4.0)
+        peaks = interior & (np.abs(lfp - 1) < 1e-3)
+        troughs = interior & (np.abs(lfp + 1) < 1e-3)
+        assert peaks.any() and troughs.any()
+        assert np.max(np.abs(np.angle(np.exp(1j * phase[peaks])))) < 0.05
+        assert np.max(np.abs(np.angle(np.exp(1j * (phase[troughs] - np.pi))))) < 0.05
+
     def test_theta_phase_monotonic(self) -> None:
         """Phase advances ~linearly mod 2*pi on a pure sinusoid.
 
@@ -110,7 +126,7 @@ class TestThetaPhase:
 
         # Consumed without error and returns the standard result type.
         assert isinstance(result.slope, float)
-        assert 0.0 <= result.pval <= 1.0
+        assert 0.0 <= result.p_value <= 1.0
 
     def test_rejects_invalid_inputs(self) -> None:
         """Bad shape / sampling_rate / band raise clear ValueErrors."""

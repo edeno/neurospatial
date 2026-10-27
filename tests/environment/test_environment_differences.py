@@ -187,6 +187,38 @@ def test_a_wall_is_topology_and_does_not_hide_a_cell_difference(square) -> None:
     )
 
 
+def _two_boxes(first_outline: str, second_outline: str) -> Environment:
+    """Two separate boxes joined, each with its own outline kind."""
+    boxes = {"a": box(0, 0, 10, 10), "b": box(20, 0, 30, 10)}
+    outlines = {"a": first_outline, "b": second_outline}
+    return Environment.combine(
+        {
+            name: Environment.from_polygon(
+                polygon,
+                bin_size=1.0,
+                arena=OpenArena(polygon, outline=outlines[name]),
+            )
+            for name, polygon in boxes.items()
+        },
+        auto_bridge=False,
+    )
+
+
+def test_combined_arenas_differ_by_which_component_has_which_outline() -> None:
+    """A walled box beside a drop-edged one differs from the swapped pair.
+
+    Rays stop at the walled box's edge but leave the open one, so the two
+    joins are different spaces although neither has one outline kind.
+    """
+    walled_first = _two_boxes("wall", "drop")
+    swapped = _environment_differences(walled_first, _two_boxes("drop", "wall"))
+    assert swapped.topology == "continuous arena or physical walls"
+    assert _environment_differences(walled_first, _two_boxes("wall", "drop")) == (
+        None,
+        None,
+    )
+
+
 def test_independently_built_environments_from_the_same_samples_agree() -> None:
     first = Environment.from_samples(_samples(), bin_size=3.0)
     second = Environment.from_samples(_samples(), bin_size=3.0)

@@ -24,7 +24,12 @@ import scipy.sparse
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     as_intervals,
+    drop_missing_samples,
+    fill_missing_positions,
+    gap_endpoints,
+    hold_last_valid,
     interval_valid_mask,
     observed_interval_mask,
     start_allocated_occupancy,
@@ -77,22 +82,29 @@ class BinSequenceWithRuns:
     run_starts : NDArray[np.int64], shape (n_runs,)
         Start index of each run in the original ``times`` array.
     run_lengths : NDArray[np.int64], shape (n_runs,)
-        Number of trajectory samples contributed by each run, equivalent
-        to the inclusive run extent in the original ``times`` array
-        (the inclusive end index is ``run_starts[i] + run_lengths[i] -
-        1``). Always >= 1 for any emitted run.
+        Inclusive extent of each run in the original ``times`` array (the
+        inclusive end index is ``run_starts[i] + run_lengths[i] - 1``),
+        counting any missing (NaN) rows bridged inside the run. Always >= 1
+        for any emitted run.
 
         With ``outside_value=None``, samples outside the environment
         are dropped from ``bins`` *and* outside gaps split runs even
         when consecutive in-env samples land in the same bin — so a
         sequence ``[bin0, outside, bin0]`` becomes two runs of length
-        1, not one run of length 3. ``run_lengths.sum()`` then equals
-        the post-filter count of in-env samples.
+        1, not one run of length 3. ``run_lengths.sum()`` then counts
+        the in-env samples plus the missing rows bridged inside runs.
     """
 
     bins: NDArray[np.intp]
     run_starts: NDArray[np.int64]
     run_lengths: NDArray[np.int64]
+
+
+def _finite_rows(positions: NDArray[np.float64]) -> NDArray[np.bool_]:
+    """True for samples whose every coordinate is finite, shape (n_samples,)."""
+    return np.asarray(
+        np.isfinite(positions).all(axis=tuple(range(1, positions.ndim))), dtype=bool
+    )
 
 
 def _occupancy(
@@ -105,7 +117,7 @@ def _occupancy(
     cache: AnalysisCache,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: Any = None,
     bandwidth: float | None = None,
@@ -195,6 +207,10 @@ def _occupancy(
     # keeps the time its straight path spends inside.
     observation_only = time_allocation == "linear"
     resolved_epochs = as_intervals(epochs, name="epochs")
+    # A missing (NaN) sample is bridged like a deleted row, by the same rule
+    # spike binning uses: the gap between the valid samples on either side
+    # passes the gates, and the missing rows are filled from those samples.
+    finite = _finite_rows(positions)
     valid_mask = interval_valid_mask(
         times,
         positions,
@@ -204,11 +220,23 @@ def _occupancy(
         start_bin=None if observation_only else bin_indices,
         epochs=resolved_epochs,
         break_before=breaks,
+        sample_valid=finite,
+    )
+    positions = fill_missing_positions(
+        times,
+        positions.reshape(len(times), -1),
+        time_allocation=time_allocation,
     )
     if time_allocation == "start":
         # Complete-case rule, shared with spike binning: the animal's place
-        # during an interval is known only when both samples are inside.
-        valid_mask &= bin_indices[1:] >= 0
+        # during a gap is known only when both of its samples are inside.
+        _, gap_end, _ = gap_endpoints(finite)
+        valid_mask &= bin_indices[gap_end] >= 0
+        bin_indices = hold_last_valid(bin_indices, finite, fill=-1)
+    else:
+        bin_indices = locate(
+            binning, arena, positions, cache, call="Environment.occupancy"
+        )
     # Intervals that kept time; linear allocation narrows this below.
     retained_mask = valid_mask
 
@@ -287,7 +315,7 @@ def _bin_sequence(
     dedup: bool,
     outside_value: int | None,
     gap_splits_runs: bool,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: Any = None,
 ) -> BinSequenceWithRuns:
@@ -300,6 +328,10 @@ def _bin_sequence(
     # Before the gap warnings, so wrong positions are reported first.
     require_position_columns(positions, binning.bins.n_dims, call=call)
     breaks = validate_break_before(break_before, times.size, call=call)
+    # A missing (NaN) sample is skipped as if its row were deleted; run
+    # indices are mapped back to the caller's rows at the end.
+    rows, breaks = drop_missing_samples(_finite_rows(positions), breaks)
+    times, positions = times[rows], positions[rows]
 
     mask = observed_interval_mask(
         times,
@@ -381,6 +413,7 @@ def _bin_sequence(
 
     # Convert (start, end) to (start, length) for the public API. ``end``
     # is inclusive, so length = end - start + 1 is always >= 1.
+    run_starts, run_ends = rows[run_starts], rows[run_ends]
     run_lengths = (run_ends - run_starts + 1).astype(np.int64)
     return BinSequenceWithRuns(
         bins=deduplicated_bins,
@@ -406,7 +439,7 @@ def _transitions(
     bandwidth: float | None = None,
     # Common parameters
     normalize: bool = True,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: Any = None,
 ) -> scipy.sparse.csr_matrix:
@@ -495,7 +528,7 @@ def _empirical_transitions(
     lag: int = 1,
     normalize: bool = True,
     allow_teleports: bool = False,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: Any = None,
 ) -> scipy.sparse.csr_matrix:
@@ -511,7 +544,8 @@ def _empirical_transitions(
         Cannot be provided together with times/positions.
         Must contain valid bin indices in range [0, n_bins). Outside values
         (-1) are not allowed; use times/positions input to handle outside samples.
-        From times/positions, a pair counts only when both of its samples are
+        From times/positions, missing (NaN) samples are skipped as deleted
+        rows, and a pair counts only when both of its samples are
         inside the environment; outside and NaN samples add no transition.
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps in seconds. Required if bins is None.
@@ -609,8 +643,14 @@ def _empirical_transitions(
         breaks = validate_break_before(
             break_before, np.asarray(times).size, call="Environment.transitions"
         )
+        # The bin sequence skips missing (NaN) samples as deleted rows; gate
+        # the same rows.
+        times = np.asarray(times, dtype=np.float64)
+        rows, breaks = drop_missing_samples(
+            _finite_rows(np.asarray(positions, dtype=np.float64)), breaks
+        )
         mask = observed_interval_mask(
-            times,
+            times[rows],
             max_gap=max_gap,
             epochs=epochs,
             break_before=breaks,

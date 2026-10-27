@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._region_names import shown_region_names
 
@@ -375,7 +376,7 @@ def animate_fields(
     frame_times: NDArray[np.float64],
     speed: float = DEFAULT_SPEED,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = None,  # bool | ScaleBarConfig
@@ -420,10 +421,13 @@ def animate_fields(
         ``speed / fps`` recording seconds, where ``fps`` is the sampling rate
         of ``frame_times`` times ``speed``, capped at this value. A capped
         export keeps ``speed`` and skips the rows between output frames.
-    max_gap : float or None, default=0.5
-        Longest interval in seconds over which a field row is held until the
-        next one. Across longer gaps the field shows as missing. Pass None to
-        hold every row until the next.
+    max_gap : float or None, default=1.0
+        Longest interval, in seconds, over which a field row is held until
+        the next one; across longer gaps the field shows as missing. Pass
+        None to hold every row until the next, for example for one field per
+        trial. The default is shared with the trajectory analyses, calibrated
+        for typical video and DeepLabCut tracking; choose a value longer than
+        the spacing of your rows and shorter than real pauses in the recording.
     show_regions : bool or list of str, default=False
         Draw all environment regions, or the named ones.
     region_alpha : float, default=0.3

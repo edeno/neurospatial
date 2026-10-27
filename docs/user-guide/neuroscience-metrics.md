@@ -30,14 +30,14 @@ from neurospatial.encoding import compute_spatial_rate, detect_place_fields
 
 # Create environment and compute firing rate map
 env = Environment.from_samples(positions, bin_size=2.5)
-firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
+rates = compute_spatial_rate(env, spike_times, times, positions)
 
 # Detect place fields
-fields = detect_place_fields(env, firing_rate,
-    threshold=0.2,          # 20% of peak rate
-    min_size=None,          # Default: at least 9 bins
-    max_mean_rate=np.inf,   # Default: no rate-based exclusion
-    detect_subfields=True   # Discriminate coalescent fields
+fields = detect_place_fields(env, rates.firing_rate,
+    bandwidth=rates.bandwidth,  # smoothing of the map: sets the smallest field
+    threshold=0.2,              # 20% of each field's peak rate
+    max_mean_rate=np.inf,       # Default: no rate-based exclusion
+    detect_subfields=True       # Discriminate coalescent fields
 )
 
 # Result: iterable PlaceFieldsResult with bin arrays and optional exclusion metadata
@@ -50,19 +50,40 @@ fields = detect_place_fields(env, firing_rate,
 1. **Iterative peak detection**: Identifies local maxima above threshold
 2. **Connected component extraction**: Groups neighboring bins into fields
 3. **Optional map-mean filter**: An explicitly finite `max_mean_rate` can skip maps
-4. **Subfield discrimination**: Recursively re-thresholds at 50% and 70% to separate coalescent fields
+4. **Subfield discrimination**: FMAToolbox `MapStats`'s rule. The core of a
+   field is the region above `m + threshold * (peak - m)`, with
+   `m = threshold * peak` (36% of the peak at the default 0.2). When the core
+   is less than half the field, two fields share it: the core is kept and the
+   neighboring field is found from its own peak
 
 **Key parameters:**
 
 - `threshold`: Fraction of peak rate (default 0.2 = 20%, following Muller & Kubie, 1989)
-- `min_size`: Minimum field size in bins (defaults to 9; choose for your bin size)
+- `bandwidth`: The smoothing bandwidth the map was estimated with
+  (`rates.bandwidth`; 0 for an unsmoothed map). A field must be larger than
+  what one noisy bin becomes after that smoothing: with a 5 cm bandwidth and
+  the 0.2 threshold, 18 cm on a track and 253 cm² in an open field, whatever
+  the bin size. `has_place_field` passes it for you.
+- `min_secondary_peak_fraction`: A second field must peak at least this
+  fraction of the map's maximum (default 0: every field peaking above
+  `min_peak_rate` counts). neurocode's 1-D pipeline uses 0.6, which on
+  simulated tracks and mazes missed every secondary field at 20-50% of the main
+  peak without reducing the fields found in untuned maps.
 - `max_mean_rate`: Optional upper bound on the unweighted mean of non-NaN spatial-bin rates
   (default `np.inf`, disabled). This is not spike count divided by recording time,
   and does not identify interneurons or another cell type.
-- `detect_subfields`: Enable subfield discrimination (default True, following neurocode)
+- `detect_subfields`: Enable subfield discrimination (default True, following
+  FMAToolbox and neurocode `MapStats`)
+- `min_peak_rate`: The smallest peak that starts a field (default 1 Hz, the
+  `minPeak` of FMAToolbox and neurocode `MapStats` and opexebo; neurocode's
+  1-D `findPlaceFieldsAvg1D` uses 2 Hz)
 
-Segmentation is descriptive: even a flat map can yield a region. Field count
-and `has_place_field` do not establish a place cell. Keep cell-type tests and
+Segmentation is descriptive, not a test: even a flat map can yield a region.
+In simulations, every untuned unit firing at 1 Hz or more had a "field" at
+every recording length from 1 to 20 minutes, and so did interneuron-like units
+with a high, broadly modulated rate, whose field covered the whole track. Field
+count and `has_place_field` do not establish a place cell; use
+`is_place_cell(..., criterion="shuffle")` for a verdict. Keep cell-type tests and
 quality selection separate from map segmentation. To recover the previous
 10 Hz map-mean exclusion, pass `max_mean_rate=10.0` explicitly and inspect
 `fields.excluded_reason`; it remains `"mean_rate_above_threshold"` when the
@@ -198,8 +219,9 @@ import numpy as np
 # Stack firing rate maps from all neurons: shape (n_neurons, n_bins)
 firing_rates = np.array([rate_map_cell1, rate_map_cell2, rate_map_cell3])
 
-# Compute coverage (runs detect_place_fields internally)
-result = population_coverage(env, firing_rates)
+# Compute coverage (runs detect_place_fields internally); pass the bandwidth
+# the maps were smoothed with, e.g. rates.bandwidth from compute_spatial_rates
+result = population_coverage(env, firing_rates, bandwidth=5.0)
 
 # Access results
 print(f"Coverage: {result.coverage_fraction:.1%}")
@@ -220,12 +242,17 @@ ax = plot_population_coverage(env, result, show_field_count=True)
 
 The `PopulationCoverageResult` object contains:
 
-- `coverage_fraction`: Fraction of bins covered (0.0-1.0)
-- `uncovered_bins`: Indices of gaps
+- `coverage_fraction`: Fraction of observed bins covered (0.0-1.0)
+- `uncovered_bins`: Indices of gaps (observed bins outside every field)
 - `uncovered_positions`: Coordinates of gaps
 - `field_count`: Number of place fields per bin
 - `n_neurons`, `n_place_cells`, `n_fields`: Population statistics
 - `place_fields`: Detected fields for each neuron
+- `is_observed`: Bins with a finite rate for at least one neuron
+
+A bin that is NaN in every rate map was never visited (or fell below
+`min_occupancy`); it is neither covered nor a gap. Compute the rates with the
+default `fill_value=None` so these bins stay NaN.
 
 **Computed properties** (standard hippocampal metrics):
 
@@ -233,7 +260,7 @@ The `PopulationCoverageResult` object contains:
 - `fields_per_place_cell`: n_fields / n_place_cells (typical: 1.0-2.0)
 - `mean_redundancy`: Average fields per covered bin (Wilson & McNaughton 1993)
 
-Coverage is the fraction of bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
+Coverage is the fraction of observed bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
 
 ### Field Density Map
 
@@ -274,29 +301,22 @@ $$
 
 ### Count Place-Cell Candidates
 
-Count cells at or above a spatial information threshold (inclusive):
+Count the units that pass the place-cell information screen. The screen
+subtracts the information an untuned cell shows by chance on the same maps
+before it compares with the cutoff, so it needs the rate result, not bare
+information values:
 
 ```python
-from neurospatial.encoding import count_place_cells
+from neurospatial.encoding import compute_spatial_rates, count_place_cells
 
-# Compute spatial information for all cells
-spatial_info = [
-    spatial_information(rate_map1, occupancy),
-    spatial_information(rate_map2, occupancy),
-    spatial_information(rate_map3, occupancy),
-]
-
-# Count candidates at or above the selected information screen
-n_place_cells = count_place_cells(
-    spatial_info,
-    threshold=0.5  # bits/spike
-)
-# Returns: integer count
+rates = compute_spatial_rates(env, all_spike_trains, times, positions)
+n_place_cells = count_place_cells(rates, min_info=0.5)  # bits/spike, inclusive
+# Equivalent: int(rates.classify(min_info=0.5).sum())
 ```
 
-The 0.5 bits/spike cutoff is a screening choice, not a universal significance
-threshold. Information depends on sample size, occupancy, binning and smoothing;
-see [information bias and cell verdicts](#information-bias-and-cell-verdicts).
+The 0.5 bits/spike cutoff is a common screening convention, not derived or
+calibrated, and not a significance threshold; see
+[information bias and cell verdicts](#information-bias-and-cell-verdicts).
 
 ### Rate-map correlations
 
@@ -348,11 +368,11 @@ pv = population_vector_correlation(first_half, second_half)  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"median {np.median(pv[defined]):.2f}, "
       f"{(~defined).sum()} of {pv.size} locations undefined")
-assert np.isclose(np.median(pv[defined]), 1.00, atol=0.006)
+assert np.isclose(np.median(pv[defined]), 0.98, atol=0.006)
 ```
 
 The simulated place fields do not move, so the two halves have a median
-correlation near 1 (1.00). A location is NaN, not 0, where either condition
+correlation near 1 (0.98). A location is NaN, not 0, where either condition
 lacks occupancy or has a NaN rate there, or where every cell has the same rate. Units recorded in only one
 condition are left out (`unit_selection="exact"` refuses them instead), and
 maps estimated on different environments need an explicit `bin_mapping=`, such
@@ -360,9 +380,9 @@ as `part.bin_mapping_from(env).pairs` for a subset of the arena.
 
 With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
 then be the same units in the same order in both, and pass
-`spatial_support=rates_1.spatial_support & rates_2.spatial_support`: smoothing
-gives finite rates in bins the animal never visited, and zero-filling reads
-them as 0 Hz, so without it unvisited bins are compared. See
+`spatial_support=rates_1.spatial_support & rates_2.spatial_support`:
+zero-filled maps (`fill_value=0`) read unvisited bins as 0 Hz, so without it
+unvisited bins are compared. See
 [Does the spatial map change between conditions?](population-analysis.md#does-the-spatial-map-change-between-conditions)
 for a worked remapping example.
 
@@ -370,11 +390,17 @@ for a worked remapping example.
 
 ### Border Score
 
-The border score quantifies how strongly a cell's firing field is aligned with environmental boundaries (walls). Implements the algorithm from Solstad et al. (2008), adapted for arbitrary graph-based environments.
+Border cells of the medial entorhinal cortex fire along one or more walls of
+the arena (Solstad et al., 2008). The border score compares how much of one
+wall a firing field covers with how far the cell's firing lies from the walls.
+On a rectangular box it is the score of Solstad et al. (2008), as computed by
+BNT and opexebo; the same definition applies to polygonal and circular arenas,
+arenas with internal walls and combined rooms.
 
 Which boundary counts as a wall is a scientific choice. By default
 (`boundary_source="physical"`), the score uses measured walls: the arena's
-declared footprint and any internal walls. An environment built from tracked
+declared outline and any named walls, whether opaque walls, transparent walls or
+the drop edges of an elevated platform. An environment built from tracked
 positions (`Environment.from_samples`) has no measured walls, so the default
 raises and asks for that choice. Either build the environment from the
 measured arena outline (`Environment.from_polygon(outline, bin_size=...)`), or
@@ -401,43 +427,55 @@ score = border_score(
 # Returns: score in [-1, 1], or NaN when no field reaches min_area
 ```
 
-**Algorithm with `boundary_source="analysis"` (adapted for irregular graphs):**
+**Algorithm:**
 
-1. Segment field at threshold: bins where `firing_rate >= threshold × peak_rate`
-2. Compute boundary coverage (cM): fraction of boundary bins in field
-3. Compute normalized mean distance (d): mean distance from field bins to nearest boundary,
-   divided by the bin-center bounding-box diagonal
-4. Border score: `(cM - d) / (cM + d)`
+1. *Fields*: groups of neighboring bins at or above `threshold × peak_rate`
+   (default 0.3), each with an area of at least `min_area` (default 200 cm²,
+   converted to the environment's units; without metric length units, at
+   least 9 bins, the BNT/opexebo default). `summary_table()` records the rule
+   it applied in `df.attrs["border_field_minimum"]`.
+2. *Walls*: each outline is split into walls at its corners, in physical
+   units. A polygon's vertices are corners unless they sample a curve: a
+   rectangle has four walls, an octagon eight, and a box with rounded corners
+   or a hand-traced square four. A ring without corners (a circular arena) is
+   one wall that offers each field any half of it, following Høydal et al.
+   (2018). Each named wall (`OpenArena(walls={name: line})`) is one wall; one
+   that lies on the outline replaces that piece of it.
+3. *Coverage* `cM`: the largest fraction of one wall's observed length covered
+   by one field. Unvisited wall bins are missing, not uncovered;
+   `observed_wall_fraction` reports how much of the walls was observed.
+4. *Distance* `dm`: the firing-rate-weighted mean distance from the bins of all
+   fields to the nearest wall, divided by the radius of the largest circle that
+   fits in the arena (half the shorter side of a rectangle).
+5. Border score: `(cM - dm) / (cM + dm)`, in [-1, 1].
 
 **Interpretation:**
-- **+1**: Field covers boundary bins with zero mean boundary distance
-- **0**: Boundary coverage equals normalized boundary distance
-- **-1**: No boundary coverage with positive boundary distance
-- **>0.5**: A possible candidate-screen cutoff; its calibration does not
-  automatically transfer from a rectangular arena to this graph adaptation
 
-A uniform positive map also covers every boundary and can score well above 0.5;
-zero is not its untuned baseline. For a complete 5 × 5 unit grid, mean boundary
-distance is `(8*1 + 1*2)/25`, the bin-center diagonal is `4*sqrt(2)`, and this
-formula gives approximately 0.868 for a flat map. Compare with untuned controls
-and spatial information before interpreting a boundary-selectivity claim;
-this cutoff alone is insufficient.
+- **Near +1**: a thin field along the whole of one wall.
+- **-1**: firing only away from the walls.
+- **0.5 on a square for a uniform map**: one field covers every wall and its
+  mean distance is a third of the half side. The usual 0.5 cutoff therefore
+  does not reject untuned cells: in a simulated 20-minute session in a 100 cm
+  box, 46% of untuned units reached it, and on a radial-arm maze 6 of 12 arm
+  place cells did.
 
-**Key differences from original algorithm:**
+The 0.5 cutoff is a convention from rectangular boxes. The score of a map that
+fires everywhere depends on the arena: 0.5 in convex arenas, higher in corridor
+mazes (every bin is near a wall), lower on a narrow linear track.
+`untuned_border_score(env)` computes it, and `summary_table()` records it in
+`df.attrs["border_score_untuned"]`. `label_cell_types` judges each label by its
+own cutoff and is a screen; for a verdict, `spatial_cell_type_significance`
+compares each unit's border score (and its spatial information and grid score)
+with the scores of its own circularly shifted spike trains, which adapts to the
+arena's shape.
 
-The original Solstad et al. (2008) paper used rectangular arenas with 4 discrete walls. This implementation generalizes to arbitrary graph-based environments:
-
-- **Boundary definition**: Analysis mode uses `env.boundary_bins` (graph-based boundary detection) instead of discrete walls; physical mode uses the declared wall geometry
-- **Distance metric**: Uses graph geodesic distances instead of Euclidean distances
-- **Coverage**: Computed over all boundary bins (not per-wall)
-- **Normalization**: Distance normalized by environment extent (bounding box diagonal)
-
-This adaptation is appropriate for irregular layouts, mazes, and complex environments where the concept of "walls" doesn't apply cleanly.
-
-**Parameters:**
-
-- `threshold`: Fraction of peak for field segmentation (default 0.3 = 30%, following Solstad et al.)
-- `min_area`: Minimum field area to compute score (default 0.0, Solstad et al. used 200 cm² for rats)
+**Differences from BNT and opexebo** on rectangular boxes: distances run from
+each bin center to the wall (a bin against the wall is half a bin away, where
+they count it as one bin away, so their scores are lower: about 0.07 for a
+round field on one wall of a 100 cm box with 2.5 cm bins); fields follow Solstad et al. (2008) rather than their place-field
+detection (0.2 of the peak, at least 9 bins, peak at least 1 Hz); and where
+they look up to 8 bins inward past unvisited wall bins, unvisited pieces of
+wall are left out of the wall's length here.
 
 **Example: Checking a synthetic boundary field**
 
@@ -455,7 +493,7 @@ boundary_bins = env.boundary_bins
 firing_rate[boundary_bins] = 5.0  # High firing at boundaries
 
 score = border_score(env, firing_rate, boundary_source="analysis")
-print(f"Border score: {score:.3f}")  # Should be > 0.5
+print(f"Border score: {score:.3f}")  # near 1: thin fields along the walls
 
 # Visualize
 import matplotlib.pyplot as plt
@@ -482,6 +520,15 @@ boundary-vector cells and `direction_frame="egocentric"` with `headings` for
 egocentric boundary cells. The walls are the arena's declared walls
 (`boundary_source="physical"`), so build the environment from the measured
 outline; an unvisited corner is then not a wall.
+
+The map covers walls 0-50 cm away by default, the range Hinman et al. (2019)
+used, in 5 cm rings and 30° direction bins. It does not reach the far side of
+the arena on purpose: in a box, a cell firing 15 cm from the East wall is
+also firing 85 cm from the West wall, and a map out to the far walls lets the
+peak jump there. `analysis_settings["fraction_of_time_in_distance_range"]`
+records the share of ray time the map covers. A field may continue beyond the
+range: for a cell whose preferred distance is in the last ring, widen
+`distance_range=` and check that the peak stays on the near wall.
 
 This example simulates an egocentric boundary cell that fires when a wall is
 about 15 cm to the animal's left:
@@ -512,7 +559,7 @@ spike_times = generate_poisson_spikes(rate, times, seed=1)
 
 result = compute_boundary_vector_rate(
     env, spike_times, times, positions, headings,
-    direction_frame="egocentric", n_direction_bins=18,
+    direction_frame="egocentric", direction_bin_size=np.deg2rad(20),
 )
 print(f"Preferred direction: {np.degrees(result.preferred_direction()):.0f} deg")
 print(f"Preferred distance: {result.preferred_distance():.1f} cm")
@@ -523,8 +570,11 @@ The peak is at +90° (left) in a distance bin near 15 cm, as simulated.
 `result.plot()` draws the map with distance on one axis and direction on the
 other. A bin whose rate is NaN never had a wall at that distance and
 direction, which means it was not measured, not that the cell was silent.
-Spatial information on this map is biased upward for few spikes, so compare
-it with a shuffled control before calling a cell boundary-tuned.
+Skaggs information is not defined over this whole map, because every sample
+counts once per ray; `result.distance_information()` gives the information
+about wall distance along the preferred direction, where the distance bins do
+partition time. It is biased upward for few spikes, so compare it with a
+shuffled control before calling a cell boundary-tuned.
 `neurospatial.ops.compute_boundary_distances` gives the ray distances
 themselves, and `neurospatial.ops.nearest_boundary` the distance and
 direction to the closest wall at each sample.
@@ -547,16 +597,21 @@ measurement of where the head or eyes point.
 | Is firing associated with a vector to an object? | Object distance and allocentric or egocentric bearing | `compute_object_vector_rate`, `compute_egocentric_rate` |
 | Is firing associated with a vector to a wall? | Wall distance and allocentric or egocentric direction | `compute_boundary_vector_rate` |
 | Is firing associated with a viewed location? | Projected gaze location in the arena | `compute_view_rate` |
+| Does spike theta phase advance across a place field? | Distance travelled into one field, per spike | `compute_phase_precession` |
 
 Keep the same analysis epochs and known spike-recording window across related
 maps. Each snippet assumes spikes were recorded throughout the tracked span;
 replace its `spike_window` with the actual electrophysiology recording
-intervals. The default `max_gap=0.5` excludes longer sampling intervals. NaNs
-and gaps remain missing observations, and each domain has its own support.
-If you set `max_gap` yourself, keep it above the sampling interval, for example
-`max_gap=1.5 / sampling_rate`. Timestamps such as `np.arange(n) / 30` carry
-float rounding, so with `max_gap` equal to the sampling interval a quarter to a
-half of the intervals count as gaps; a warning says when this happens.
+intervals. A NaN row is a missing sample, treated exactly like a dropped
+frame, and each domain has its own support. `max_gap` is the longest stretch
+of missing tracking that is bridged; the default, 1.0 s, is calibrated for
+typical video and DeepLabCut tracking, and longer gaps are excluded as
+tracking losses. To choose another value, make it longer than your routine
+dropped or low-confidence frames and shorter than real tracking losses or
+pickups. Keep it above the sampling interval: timestamps such as
+`np.arange(n) / 30` carry float rounding, so with `max_gap` equal to the
+sampling interval a quarter to a half of the intervals count as gaps; a
+warning says when this happens.
 
 ### Spatial maps conditioned on movement direction
 
@@ -616,10 +671,20 @@ print("Rate-weighted mean vector length:", hd.mean_vector_length())
 ```
 
 Inspect angular occupancy as well as rates. Mean vector length describes the
-estimated tuning curve. A fixed cutoff is a screen, and a Rayleigh statistic
-on spike angles can reflect uneven heading dwell time. A circular-shift test
-on the raw recording is available when its stationarity assumptions fit the
-experiment:
+estimated tuning curve. A fixed cutoff is a screen. `hd.tuning_pvalue()` tests
+for one preferred direction given how long the animal faced each heading, so
+uneven heading dwell time alone does not make a cell look tuned. Real cells
+fire in bursts and drift in rate, so their spike counts vary more than
+independent spikes would; the test estimates that extra variability from spike
+counts in time windows (`hd.spike_count_dispersion`, 1 for independent spikes,
+about 2b - 1 for bursts of b spikes) and divides its statistic by it. It needs
+at least 50 spikes and returns NaN below that. A result you build yourself
+from tuning curves has no dispersion, so its test is NaN until you pass
+`spike_count_dispersion` (1.0 assumes independent spikes). Mean vector length uses only visited headings, so check
+`hd.largest_unvisited_arc()`: when the animal never faced an arc wider than
+90°, untuned cells get inflated MVLs and the screen warns. A circular-shift
+test on the raw recording is the verdict when its stationarity assumptions fit
+the experiment:
 
 <!-- docs-test: run -->
 ```python
@@ -639,10 +704,25 @@ The selected analyzed span must be long enough for the minimum shift. Report
 the null, estimator, seed and number of shuffles; a small p-value establishes
 association against that null rather than independence from position or speed.
 
+**Heading and position are confounded on tracks and mazes.** On a linear
+track, T-maze or W-maze the animal faces one direction on each arm and run,
+so a place cell that fires on only one running direction has a sharp heading
+tuning curve. Both the screen and the circular-shift test flag such cells (in
+simulation, 83-100% of one-direction place cells on tracks and T/W mazes),
+because shifting spikes in time keeps the cell's position-locked firing. A
+head-direction claim needs a control that holds position fixed: compare the
+cell's spatial maps for each running direction with
+`compute_directional_place_fields` (a place-by-direction cell has a field in
+one direction only, while a head-direction cell fires everywhere the animal
+faces its preferred direction), fit a model in which the rate is the product
+of a position map and a direction tuning curve and ask which factor explains
+the firing, or use a shuffle that keeps each spike's position.
+
 ### Grid periodicity on a regular 2D arena
 
-Use a regular 2D grid for the FFT autocorrelation. Preserve missing support;
-filling unvisited locations with zero changes the map being analyzed.
+Use a regular 2D grid of rectangular cells for the autocorrelogram. Preserve
+missing support; filling unvisited locations with zero changes the map being
+analyzed.
 
 <!-- docs-test: run -->
 ```python
@@ -659,14 +739,32 @@ score = grid_score(autocorrelation)
 print("Hexagonal rotational-symmetry score:", score)
 ```
 
-The autocorrelation uses circular FFT boundaries and centers observed values;
-its missing-bin treatment does not remove sampling bias. Inspect the rate map,
-autocorrelogram and occupancy together. The annulus and binning affect the
-score, which may be unavailable for small or constant maps. A conventional
-score cutoff is not a calibrated significance test. For an irregular graph,
-`spatial_autocorrelation_radial` and `periodicity_score` from
-`neurospatial.encoding.grid` describe radial periodicity; a radial profile
-does not establish sixfold symmetry.
+At each shift the autocorrelogram is the Pearson correlation between the map
+and its shifted copy over the bins visited in both, without wrapping around
+the arena. Shifts at which fewer than a quarter of the visited bins overlap
+are NaN: their correlation rests on a strip of bins along two walls and is
+more than twice as noisy as at zero lag. Unvisited bins are left out rather
+than counted as silent, but that does not remove sampling bias. The score
+sweeps an annulus from the edge of the central peak out to those shifts and
+keeps the best 60°-versus-30° rotational contrast, so it does not depend on
+the grid spacing as long as the first ring of fields fits, for spacings up to
+about 0.6 of the arena's side. It is NaN when the central peak is not bounded
+inside the defined shifts or the arena is too small for an annulus around it.
+`grid_properties` reads spacing and orientation only from peaks that can be one
+hexagon's first ring, and leaves them NaN otherwise. Inspect the rate map,
+autocorrelogram and occupancy together. A score of 0.4 is a common screening
+convention, not a significance test: on circularly time-shifted spike trains of
+simulated grid, place and untuned cells, 1-8% of the shuffled maps reached it.
+`spatial_cell_type_significance` tests each unit's grid score against its own
+spike train circularly shifted in time. A map without a lattice can still have a
+sixfold-symmetric autocorrelogram, so both the screen and the shuffle test call a
+unit a grid cell only when its autocorrelogram also has a hexagonal first ring
+(a finite `grid_properties` spacing); a grid whose spacing exceeds about 0.6 of
+the arena's side has no such ring and is not labeled grid. On layouts without a rectangular grid (hexagonal bins,
+tracks, meshes) there is no grid score: `summary_table()` records it in
+`attrs["unavailable_metrics"]`. `spatial_autocorrelation_radial` from
+`neurospatial.encoding.grid` gives a distance-correlation profile there, but a
+radial profile does not test for sixfold symmetry.
 
 ### Allocentric and egocentric object vectors
 
@@ -676,14 +774,20 @@ measures the vector **from animal to object** in world coordinates;
 egocentric bearing measures that vector relative to the animal's heading
 (zero is straight ahead).
 
+The map is a grid of distance rings and direction bins around the object. By
+default it covers every distance inside the arena, as in Høydal et al. (2019),
+so a cell tuned to a far point is not cut off, and maps of one arena with the
+object moved share a grid. The default rings are 5 cm wide and the direction
+bins 30°, a resolution unsmoothed maps of 5-15 minute sessions support. Pass
+`distance_range=` to restrict the map: the share of time it then covers is in
+`analysis_settings["fraction_of_time_in_distance_range"]`, and a unit whose
+peak lies in the outermost ring of a range that cut time off raises a warning.
+
 <!-- docs-test: run -->
 ```python
 from neurospatial.encoding import compute_egocentric_rate, compute_object_vector_rate
 
 polar_settings = {
-    "distance_range": (0.0, 50.0),
-    "n_distance_bins": 10,
-    "n_direction_bins": 12,
     "method": "binned",
     "min_occupancy": 0.5,
     "epochs": (float(times[0]), float(times[-1])),
@@ -719,7 +823,6 @@ screen = Landmark("monitor", "line", [(x_low, y_high), (x_high, y_high)])
 with_screen = env.with_landmarks(Landmarks([screen]))
 by_screen = compute_object_vector_rate(
     with_screen, spike_times, times, positions, "monitor",
-    distance_range=(0.0, 50.0), n_distance_bins=10, n_direction_bins=12,
     epochs=(float(times[0]), float(times[-1])),
     spike_window=(float(times[0]), float(times[-1])),
 )
@@ -729,15 +832,22 @@ print(by_screen.analysis_settings["objects"])
 Compare support in the two polar domains before comparing their information
 scores. Polar bin area grows with distance, and occupancy corrects dwell time;
 do not smooth a finished rate map as if it contained counts. A place field near
-one stationary object can yield a localized object-vector map. Stable vector
-tuning after object relocation, diverse heading coverage and appropriate
-controls are needed to distinguish those explanations.
+one stationary object yields a localized object-vector map, and within one
+session it scores like an object-vector cell. Move the object and correlate the
+two vector maps: an object-vector field keeps its vector to the object, a place
+field stays where it was (Høydal et al., 2019).
 
 ### Viewed-location maps
 
-A view map indexes projected gaze locations rather than the animal's position.
-The fixed-distance model below projects 15 cm along measured heading; it is a
-geometric assumption, not a measurement of eye gaze.
+A view map indexes the location the animal looked at rather than its
+position. The default `gaze_model="ray_cast"` takes the first wall along each
+sample's heading; `gaze_model="fixed_distance"` takes the point
+`view_distance` ahead, or the first wall when one is nearer. A gaze never
+passes through a wall, so the map needs the arena's walls: build the
+environment from the measured outline (`Environment.from_polygon`) to use its
+walls, or pass `boundary_source="analysis"` to treat the edge of the binned
+area as the wall, as below. Either model is a geometric assumption about where
+the animal looked, not a measurement of eye gaze.
 
 <!-- docs-test: run -->
 ```python
@@ -745,28 +855,130 @@ from neurospatial.encoding import compute_view_rate
 
 view = compute_view_rate(
     env, spike_times, times, positions, headings,
-    gaze_model="fixed_distance", view_distance=15.0,
+    boundary_source="analysis",
     bandwidth=5.0, min_occupancy=0.5,
     epochs=(float(times[0]), float(times[-1])),
     spike_window=(float(times[0]), float(times[-1])),
 )
 view.plot(vmin=0)
-print("View information (bits/spike):", view.view_spatial_information())
+print("View information (bits/spike):", view.spatial_information())
 ```
 
-`gaze_model="ray_cast"` takes the first wall along the gaze instead.
-Projected locations outside the environment lack support. View and position
+Bins that were never viewed lack support (NaN). View and position
 maps generally have different occupancy and correlated predictors, so a larger
-view-information score alone does not demonstrate a spatial view cell. Match
-the scientific interpretation to the head/eye measurements and gaze model.
+view-information score alone does not demonstrate a spatial view cell. A
+head-direction cell also has more view than place information, because its
+heading fixes which wall is in view. A spatial view cell's field stays in place
+when the view map is computed separately from the two halves of the arena; a
+head-direction cell's field slides along the wall with the animal. Match the
+scientific interpretation to the head/eye measurements and gaze model.
 The plural `compute_*_rates` APIs share preprocessing across a population and
 preserve supplied unit labels.
+
+### Theta phase precession on a linear track
+
+A place cell precesses when its spikes come at earlier theta phases as the
+animal moves through the field (O'Keefe & Recce, 1993). The test fits a line
+to spike phase against position by circular-linear regression, one field and
+one running direction at a time, in a coordinate that increases along the
+run: the distance travelled into the field. Precession is then a negative
+slope whichever way the animal ran.
+
+The example simulates back-and-forth laps over one field, with an 8 Hz LFP
+standing in for the recording. Replace the simulated block with your LFP
+channel, its sampling rate, the spike times, the linearized track position
+and the field bounds from the rate map.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.encoding import compute_phase_precession, theta_phase
+from neurospatial.simulation import generate_poisson_spikes
+
+# --- Simulated session; replace with your recording ---
+lfp_rate = 1000.0  # Hz
+lfp_times = np.arange(0, 400, 1 / lfp_rate)  # s
+lfp = np.cos(2 * np.pi * 8.0 * lfp_times)  # 8 Hz theta
+times = lfp_times[::20]  # 50 Hz tracking
+track_position = 200 * np.abs((times / 10 + 1) % 2 - 1)  # cm, 10 s per run
+field_start, field_end = 86.0, 114.0  # field bounds from the rate map, cm
+x = np.interp(lfp_times, times, track_position)
+rightward = np.gradient(x, lfp_times) > 0
+crossed = np.where(rightward, x - field_start, field_end - x) / (field_end - field_start)
+preferred_phase = 5.5 - 5.0 * crossed  # rad: falls by 5 rad across the field
+theta_locking = np.exp(2.0 * (np.cos(2 * np.pi * 8.0 * lfp_times - preferred_phase) - 1))
+rate = 40.0 * ((x > field_start) & (x < field_end)) * theta_locking  # Hz
+spike_times = generate_poisson_spikes(rate, lfp_times, seed=1)
+# ---
+
+# Theta phase at each spike: interpolate the unwrapped phase, then re-wrap.
+phase = theta_phase(lfp, sampling_rate=lfp_rate)  # 0 = peak of the filtered LFP
+spike_phases = np.mod(np.interp(spike_times, lfp_times, np.unwrap(phase)), 2 * np.pi)
+
+# Position and running direction at each spike.
+spike_positions = np.interp(spike_times, times, track_position)
+spike_velocity = np.interp(spike_times, times, np.gradient(track_position, times))
+in_field = (spike_positions >= field_start) & (spike_positions <= field_end)
+field_width = field_end - field_start
+
+runs = {"rightward": spike_velocity > 0, "leftward": spike_velocity < 0}
+for direction, running in runs.items():
+    keep = in_field & running
+    if direction == "rightward":
+        distance_into_field = spike_positions[keep] - field_start  # cm
+    else:
+        distance_into_field = field_end - spike_positions[keep]  # cm
+    result = compute_phase_precession(
+        distance_into_field, spike_phases[keep],
+        position_range=(0.0, field_width), rng=0,
+    )
+    print(f"{direction}: slope {result.slope:.3f} rad/cm, "
+          f"{result.normalized_slope:.1f} rad across the field, p = {result.p_value:.3f}")
+```
+
+Both directions give a slope near -0.18 rad/cm, a fall of about 5 rad (a
+little less than one theta cycle) across the 28 cm field, with p = 0.001,
+the smallest p-value 1000 shuffles can give. `slope` is in radians per cm;
+`normalized_slope` is the phase change across `position_range`. The
+p-value comes from shuffling which phase goes with which position and
+re-fitting the slope each time, and it is calibrated: on simulated spikes
+with no phase-position relationship it fell below 0.05 in 2-5% of cells
+for 10 to 200 spikes. `result.correlation` and `result.mean_resultant_length`
+describe how tightly the spikes follow the line; neither has a cutoff.
+
+Choices that change the answer:
+
+- **Direction of travel.** With raw track positions, the leftward runs give
+  +0.18 rad/cm, which reads as recession. Pooling both directions in raw
+  positions mixes the two slopes and the correlation drops to near zero.
+- **One field, its own range.** Spikes from two fields, or from the whole
+  track with the default range (the spike extent), give a slope pinned at
+  the search bound of one theta cycle across the range, several times too
+  shallow, and still a small p-value. A warning flags any fit whose best
+  slope lies on the bound, and `result.slope_at_bound` records it for
+  batch analyses. Pass one field's spikes with
+  `position_range=(field_start, field_end)` in the same coordinate.
+- **Fields cut by the end of the track.** The spikes cover only part of the
+  field, so with the default range `normalized_slope` is the phase change
+  across that part. `slope` is unaffected; compare cells by `slope`, or pass
+  the field's full extent as `position_range`.
+- **Theta reference.** Phase 0 is the peak of the theta-filtered LFP on the
+  channel you used. Theta reverses polarity across hippocampal layers, so
+  phase offsets compare between recordings only on the same reference;
+  slopes do not depend on it.
+
+`has_phase_precession` screens many cells with the same test: it returns
+`True` when `p_value < alpha` and the slope is negative, so untuned cells pass
+at about `alpha / 2`. `plot_phase_precession(distance_into_field,
+spike_phases[keep], result)` draws the spikes twice, at phase and phase +
+2π, with the fitted line.
 
 ## References and Cross-References
 
 ### Scientific References
 
 **Place Field Analysis:**
+- O'Keefe, J., & Recce, M. L. (1993). Phase relationship between hippocampal place units and the EEG theta rhythm. Hippocampus, 3(3), 317-330.
 - O'Keefe, J., & Dostrovsky, J. (1971). The hippocampus as a spatial map. Brain Research, 34(1), 171-175.
 - Muller, R. U., & Kubie, J. L. (1989). The effects of changes in the environment on the spatial firing of hippocampal complex-spike cells. Journal of Neuroscience, 9(1), 137-154.
 - Skaggs, W. E., McNaughton, B. L., Wilson, M. A., & Barnes, C. A. (1996). Theta phase precession in hippocampal neuronal populations and the compression of temporal sequences. Hippocampus, 6(2), 149-172.
@@ -774,6 +986,7 @@ preserve supplied unit labels.
 
 **Boundary Cell Analysis:**
 - Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I. (2008). Representation of geometric borders in the entorhinal cortex. Science, 322(5909), 1865-1868.
+- Høydal, Ø. A., Skytøen, E. R., Moser, M.-B., & Moser, E. I. (2018). Object-vector coding in the medial entorhinal cortex. bioRxiv 286286. https://doi.org/10.1101/286286
 
 ### Validation Notes
 
@@ -786,45 +999,117 @@ accuracy on a new recording.
 When comparing with opexebo, neurocode or buzcode, match bin geometry,
 occupancy windows, smoothing, NaN handling and thresholds, and record package
 versions and numerical differences. This guide does not provide an executable
-cross-package benchmark. The border score intentionally uses a graph
-adaptation and should not be treated as numerically interchangeable with the
-original per-wall calculation.
+cross-package benchmark. On rectangular boxes the border score is the
+per-wall calculation of Solstad et al. (2008); see the border score section for
+the remaining differences from BNT and opexebo.
 
 ## Information bias and cell verdicts
 
-Plug-in information has approximate upward finite-count bias
-`(n_bins - 1) / (2 ln(2) N_spikes)`. This approximation describes independent
-multinomial sampling; occupancy imbalance, smoothing and temporal dependence
-change its magnitude. A fixed cutoff is a screening heuristic, and raw binning
-is not universally lower or more conservative than smoothed estimation.
+Plug-in Skaggs information is positive even for a cell that fires at the same
+rate everywhere: Poisson noise makes its rate map uneven. On average, an
+untuned cell shows `K / (2 ln(2) N)` bits/spike, where `N` is its number of
+spikes and `K` is the number of effectively independent bins of the map.
+`spatial_information_bias()` on spatial, view and object-vector rate results
+returns this value for each unit. For an unsmoothed map, `K` is the number of
+occupied bins minus one: the Miller (1955) and Treves & Panzeri (1995) bias.
+Smoothing makes neighboring bins share spikes, so `K` is much smaller than the
+number of bins. It is derived from the estimator itself (each spike's
+footprint on the map, weighted by occupancy). For a 1 m box with 5 cm bins and
+a 5 cm kernel, `K` is about 46 for 441 bins. With a 10 cm kernel it is about
+11. The derivation is in the Notes of
+`SpatialRateResult.spatial_information_bias`. In simulations of untuned cells
+across arena sizes, bin sizes, bandwidths and estimators, it matched the mean
+information to within 10% (16% for `method="binned"`) whenever the units had at
+least as many spikes as independent bins.
+
+Every information screen subtracts this bias before it applies its cutoff:
+`is_place_cell(criterion="threshold")`, `classify()`, `label_cell_types()`,
+`summary_table()` labels, `count_place_cells`, `is_object_vector_cell()` and
+`is_spatial_view_cell()`. `spatial_information()` itself still returns the
+plug-in value. The expansion behind the bias needs at least as many spikes as
+independent bins. A unit with fewer spikes gets a NaN bias and fails the
+screen with a warning. Record longer, or use coarser bins or a larger
+bandwidth. The shuffle tests (`*_significance`) still give such a unit a
+p-value, but the shuffle verdicts apply the same bias-corrected cutoff, so
+they refuse it too.
 
 Measured on 20 independent untuned 0.5 Hz Poisson units with a 30 Hz OU
 trajectory in a 100 x 100 cm arena (trajectory seed 0, spikes seed 1):
 place/view maps used 5 cm bins and diffusion KDE with bandwidth 5;
-egocentric maps used the default binned 10 x 12 polar grid. Entries are
-counts flagged by the screen, not cells with ground-truth tuning.
+egocentric maps used the default binned polar grid (5 cm rings and 30°
+directions out to the arena's diagonal). Entries are
+counts flagged by the screen, not cells with ground-truth tuning. "Raw" is the
+uncorrected plug-in information against the same cutoff.
 
-| Minutes (approximate spikes) | Egocentric information median / flags (0.3) | Place information median / flags (0.5) | Detected fields | View flags (0.5) | HD flags |
+| Minutes (approximate spikes) | Egocentric information median / raw flags / screen flags (0.3) | Place information median / raw flags / screen flags (0.5) | Detected fields | View raw / screen flags (0.5) | HD flags |
 | --- | --- | --- | --- | --- | --- |
-| 1 (30) | 2.12 / 20/20 | 0.86 / 19/20 | 20/20 | 19/20 | 0/20 |
-| 2 (60) | 1.41 / 20/20 | 0.53 / 15/20 | 20/20 | 19/20 | 0/20 |
-| 5 (150) | 0.70 / 20/20 | 0.22 / 0/20 | 20/20 | 0/20 | 0/20 |
-| 10 (300) | 0.41 / 20/20 | 0.11 / 0/20 | 20/20 | 0/20 | 0/20 |
-| 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 20/20 | 0/20 | 0/20 |
+| 1 (29) | 2.05 / 20/20 / 0/20 | 0.86 / 19/20 / 0/20 | 20/20 | 20/20 / 0/20 | 0/20 |
+| 2 (59) | 1.42 / 20/20 / 0/20 | 0.54 / 14/20 / 0/20 | 20/20 | 20/20 / 0/20 | 0/20 |
+| 5 (148) | 0.76 / 20/20 / 0/20 | 0.22 / 0/20 / 0/20 | 20/20 | 0/20 / 0/20 | 0/20 |
+| 10 (298) | 0.44 / 20/20 / 0/20 | 0.11 / 0/20 / 0/20 | 20/20 | 0/20 / 0/20 | 0/20 |
+| 20 (598) | 0.22 / 0/20 / 0/20 | 0.05 / 0/20 / 0/20 | 16/20 | 0/20 / 0/20 | 0/20 |
 
-The allocentric object-vector information screen also flagged 20/20 in the
-10-minute fixture. HD's MVL screen weights firing rates, while its Rayleigh
-statistic weights spike counts (or reconstructs counts from rate times
-occupancy). The spike-angle distribution can reflect heading dwell time, so
-Rayleigh can be occupancy-biased; these empirical zero counts do not calibrate
-the combined screen for another occupancy distribution.
+The allocentric object-vector screen behaves like the egocentric one: raw
+information flagged 20/20 up to 10 minutes, the corrected screen none. The
+correction costs power at low counts. Place cells with a 2 Hz peak in this
+arena passed the corrected screen at 10 minutes (about 110 spikes) but were
+refused at 2 minutes (about 18 spikes, fewer than the 46 independent bins).
+Object-vector cells with a 2 Hz peak fired about 70 spikes in 10 minutes,
+fewer than the 150-170 occupied polar bins: the default grid covers the
+whole arena (348 bins in a 1 m box), so a narrower `distance_range` or wider
+bins lower the floor. The shuffle test's p-value has no such floor; the shuffle
+verdicts, which also need the corrected information, do.
+
+HD's screen combines the rate-weighted mean vector length
+with an occupancy-corrected test of one preferred direction (a score test with
+heading occupancy as exposure, divided by the estimated spike-count
+dispersion), which keeps its false-positive rate near `alpha` for untuned
+cells under uneven heading sampling, including bursting cells.
 
 `has_place_field()` preserves field detection. `is_place_cell()` requires
-`criterion="spatial_info"` (screen) or `"shuffle"` (circular-shift verdict).
+`criterion="threshold"` (screen) or `"shuffle"` (circular-shift verdict).
 The other four cell predicates default to `criterion="threshold"` and allow
-opt-in `"shuffle"`. Result methods and batch `classify()` offer threshold
+opt-in `"shuffle"`. For place, view and object-vector cells the shuffle
+verdict needs both a significant information test and bias-corrected
+information at or above the screen's cutoff (`min_info=`, the same keyword and
+default in both modes). In 2-minute recordings untuned 0.5 Hz units passed the
+place information test by chance (p = 0.02 and 0.04 against 99 shifts) with
+0.04 bits/spike beyond their bias; the cutoff refuses them, as it refuses them
+a `"place"` label below. Result methods and batch `classify()` offer threshold
 screens; results keep no raw input arrays. Threshold comparisons are inclusive;
-shuffle and Rayleigh p-values must be strictly below `alpha`.
+shuffle and tuning-test p-values must be strictly below `alpha`.
+
+For grid and border cells there are no predicates:
+`spatial_cell_type_significance(env, spike_times, times, positions)` shifts
+each unit's spikes once per shuffle and recomputes spatial information, grid
+score and border score from the same shifted trains. Its `summary_table()`
+gives each statistic's observed score, p-value and null percentile, and a
+`cell_type` label in which each type is judged by its own test (a unit that
+passes the grid and border tests is `"grid+border"`). A `"place"` label also
+needs the same bias-corrected information as the screen (0.5 bits/spike by
+default, `min_spatial_info=`): in a short recording an untuned unit can pass the
+information test by chance with almost no information beyond its bias, and is
+then `"unclassified"`. Grid and border do not
+apply on a 1-D track, and scores that cannot be computed (no measured walls
+for the physical border score) have NaN p-values with the reason recorded.
+
+Each unit gets three tests, so an untuned unit can receive some label by chance
+more often than `alpha`. `label_cell_types(correction=...)` and
+`summary_table(correction=...)` choose how to handle that. The default,
+`correction=None`, tests each statistic at `alpha`, as most studies report; in
+simulated 20-minute sessions 7% of untuned units still received a label.
+`correction="holm"` adjusts each unit's own tests together, so an untuned unit
+receives any label with probability at most `alpha` (2% in the same
+simulation) while all simulated place and grid cells kept their labels. Use it
+when each unit's label must stand on its own. `correction="fdr_bh"` adjusts
+every test of every unit together, so at most a fraction `alpha` of the labels
+you count are expected to be false (1% of untuned units were labeled, 3 false
+labels among 48). Use it to report how many cells of each
+type a population holds, and run it on the whole population: one unit's verdict
+depends on the others. A correction compares p-values with a fraction of
+`alpha`, and a shuffle p-value cannot go below `1/(n_shuffles+1)`. When tests
+sit at that floor and still fail the correction, a warning names the number of
+shuffles needed.
 
 For publication, report a shuffle test through the raw-array predicate or the
 matching `*_cell_significance` function, together with its estimator, windows,
@@ -833,7 +1118,16 @@ statistics on the joined analyzed clock. Gaps, invalid samples and excluded
 epochs never receive shifted spikes. Stable integer seeds and matching unit
 labels give the same shifts alone, in a population and after reordering.
 The corrected upper-tail rank counts ties; its minimum p is `1/(n_shuffles+1)`
-when all null scores are finite. NaN observed scores give NaN p-values.
+when all null scores are finite. NaN observed scores give NaN p-values. Shifted
+maps without a defined score (a border map with no field) are left out, so the
+p-value is `(1 + k) / (1 + n)` over the `n` finite null scores. When
+`1 / (1 + n)` is not below `alpha` the test cannot reject, and
+`spatial_cell_type_significance` labels the unit `"undetermined"` rather than
+`"unclassified"`; its `summary_table()` reports `n` as
+`<statistic>_n_finite_null`. With `correction="holm"` the cutoff is stricter:
+a unit's three tests need `3 / (1 + n) < alpha` at Holm's first step, so with
+39 shuffles (smallest p 0.025) every test is undetermined under Holm although
+each passes uncorrected.
 The cost is about `n_shuffles` plural-map recomputes; significance rejects
 `method="glm"` because pooled REML couples units. Neither a significant polar
 association nor a chosen cutoff distinguishes an object-vector cell from a
@@ -857,12 +1151,13 @@ from neurospatial.encoding import compute_spatial_rate
 
 # 1. Create environment and compute firing rate
 env = Environment.from_samples(positions, bin_size=2.5)
-firing_rate = compute_spatial_rate(
-    env, spike_times, times, positions, min_occupancy=0.5
-).firing_rate
+rates = compute_spatial_rate(env, spike_times, times, positions, min_occupancy=0.5)
+firing_rate = rates.firing_rate
 
 # 2. Detect place fields
-fields = detect_place_fields(env, firing_rate, detect_subfields=True)
+fields = detect_place_fields(
+    env, firing_rate, bandwidth=rates.bandwidth, detect_subfields=True
+)
 print(f"Detected {len(fields)} place fields")
 
 # 3. Compute field properties
@@ -878,9 +1173,9 @@ sparse = sparsity(firing_rate, occupancy)
 print(f"Spatial information: {info:.3f} bits/spike")
 print(f"Sparsity: {sparse:.3f}")
 
-# 5. Explicit fast screen (biased at low counts)
+# 5. Explicit fast screen (subtracts the untuned-cell information bias)
 from neurospatial.encoding import is_place_cell
-candidate = is_place_cell(env, spike_times, times, positions, criterion="spatial_info")
+candidate = is_place_cell(env, spike_times, times, positions, criterion="threshold")
 print(f"Place candidate: {candidate}")
 # For publication: criterion="shuffle" on these raw arrays.
 ```
@@ -898,10 +1193,10 @@ import numpy as np
 
 # Batch-encode firing rate maps for all cells: shape (n_neurons, n_bins)
 # all_spike_trains is a list of per-cell spike-time arrays.
-firing_rates = compute_spatial_rates(env, all_spike_trains, times, positions).firing_rates
+rates = compute_spatial_rates(env, all_spike_trains, times, positions)
 
 # Analyze population coverage (runs detect_place_fields internally)
-result = population_coverage(env, firing_rates)
+result = population_coverage(env, rates.firing_rates, bandwidth=rates.bandwidth)
 
 print(f"Population coverage: {result.coverage_fraction:.1%}")
 print(f"Place cells: {result.n_place_cells}/{result.n_neurons}")

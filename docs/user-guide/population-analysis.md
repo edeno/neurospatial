@@ -66,30 +66,41 @@ rates = compute_spatial_rates(
     unit_ids=unit_ids, bandwidth=5.0, min_occupancy=0.05,
 )
 information = rates.spatial_information()  # bits/spike, one value per unit
-n_spatial = count_place_cells(information, threshold=0.5)
-print(f"Units at or above 0.5 bits/spike: {n_spatial} of {len(unit_ids)}")
+bias = rates.spatial_information_bias()  # expected for an untuned unit
+n_spatial = count_place_cells(rates, min_info=0.5)
+print(f"Units at or above 0.5 bits/spike beyond chance: {n_spatial} of {len(unit_ids)}")
 print("Information of the untuned units:", np.round(information[20:], 2))
+print("Expected for untuned units:      ", np.round(bias[20:], 2))
 # Quoted numbers: atol = 0.6 * 10**-decimals
 assert n_spatial == 20
 assert 0.004 <= information[20:].min() <= information[20:].max() <= 0.046
 ```
 
 All 20 simulated place cells pass the 0.5 bits/spike screen and none of the
-untuned units do; the untuned units carry almost no spatial information
-(0.01-0.04 bits/spike). This is a screen, not a verdict. Spatial information
-is biased upward when a unit has few spikes, so a short or sparse recording
-can push untuned cells over any fixed cutoff (see
+untuned units do. The untuned units show 0.01-0.04 bits/spike, about what an
+untuned unit with their spike counts is expected to show from Poisson noise
+alone (`spatial_information_bias()`, 0.03-0.04 here). The screen subtracts that
+expectation before it applies the cutoff, so short or sparse recordings do not
+pass untuned cells (see
 [information bias and cell verdicts](neuroscience-metrics.md#information-bias-and-cell-verdicts)).
-For a per-cell decision you can report, use the shuffle test
-`place_cell_significance` on the raw spike times and tracking.
+This is a screen, not a verdict.
+For a per-cell decision you can report, use the shuffle labels of
+`spatial_cell_type_significance` on the raw spike times and tracking (they
+test grid and border scores as well), or `is_place_cell(...,
+criterion="shuffle")` for one cell. Both call a cell place only when its
+information test is significant and its bias-corrected information reaches the
+screen's cutoff; `place_cell_significance` gives the information test's
+p-values alone.
 
 Now compare coverage computed from every map with coverage computed from the
 screened units only:
 
 ```python
-coverage_all = population_coverage(env, rates.firing_rates)
-is_spatial = information >= 0.5  # the same cutoff count_place_cells uses
-coverage = population_coverage(env, rates.firing_rates[is_spatial])
+coverage_all = population_coverage(env, rates.firing_rates, bandwidth=rates.bandwidth)
+is_spatial = rates.classify(min_info=0.5)  # the screen count_place_cells counts
+coverage = population_coverage(
+    env, rates.firing_rates[is_spatial], bandwidth=rates.bandwidth
+)
 print(f"All 25 units: {coverage_all.coverage_fraction:.0%} of bins covered, "
       f"{coverage_all.n_fields} fields")
 print(f"20 screened units: {coverage.coverage_fraction:.0%} of bins covered, "
@@ -99,20 +110,22 @@ print("Uncovered positions, rounded to 10 cm:",
       np.unique(np.round(gap_positions, -1)))
 print("Uncovered bins the animal never visited:",
       int((~rates.spatial_support[coverage.uncovered_bins]).sum()))
-assert np.isclose(coverage.coverage_fraction, 0.69, atol=0.006)
+assert np.isclose(coverage.coverage_fraction, 0.94, atol=0.006)
 assert np.isclose(coverage.fields_per_place_cell, 1.0, atol=0.06)
 ```
 
 With all 25 maps the track looks fully covered, but only because the detector
 found fields in the flat maps of the untuned units. The 20 screened place cells
-cover 69% of the bins with one field each. The gaps are the two ends of the
+cover 94% of the bins with one field each. The gaps are the two ends of the
 track, where no simulated place cell has its field. Every gap bin was visited,
 so these are locations without a field, not locations without data. In your
 own recording, check `rates.spatial_support` the same way: coverage counts an
 unvisited bin as a gap.
 
 `population_coverage` detects fields with `detect_place_fields` (field edge at
-20% of the peak rate by default, set with `threshold=`). If you detect fields
+20% of the peak rate by default, set with `threshold=`). Pass the smoothing
+`bandwidth` the maps were estimated with: a field must be larger than what one
+noisy bin becomes after that smoothing. If you detect fields
 yourself, for example with a different threshold, `field_density_map` counts
 how many fields include each bin:
 
@@ -120,7 +133,7 @@ how many fields include each bin:
 density = field_density_map(coverage.place_fields, env.n_bins)
 covered = density[coverage.covered_bins]
 print(f"Fields per covered bin: median {np.median(covered):.0f}, max {covered.max()}")
-assert covered.max() == 4
+assert covered.max() == 12
 
 fig, ax = plt.subplots(figsize=(8, 2.5))
 plot_population_coverage(env, coverage, show_field_count=True, ax=ax)
@@ -128,7 +141,7 @@ plt.show()
 ```
 
 `plot_population_coverage` draws the same count from the coverage result:
-how many place fields include each position, zero at both ends and up to four
+how many place fields include each position, zero at both ends and up to twelve
 overlapping fields in between. Dashed lines mark the uncovered bins, and the
 title gives the coverage fraction. A location covered by several fields is
 represented redundantly; a location covered by none is decoded poorly, if at
@@ -208,7 +221,7 @@ per_cell = np.diag(map_similarity[:n_units, n_units:])
 print("Map correlation, cells that kept their field:", np.round(per_cell[~moves], 2))
 print("Map correlation, cells that moved their field:", np.round(per_cell[moves], 2))
 assert per_cell[~moves].min() >= 0.99 - 0.006  # 0.99-1.00
-assert (per_cell[moves] > -0.15).all() and (per_cell[moves] < 0).all()
+assert -0.476 <= per_cell[moves].min() <= per_cell[moves].max() <= -0.404
 
 # Identical maps with one flat location: the flat one is NaN, the rest are 1.
 demo = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
@@ -219,7 +232,7 @@ pv = population_vector_correlation(maps["before"], maps["after"])  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"Population-vector correlation per location: median {np.median(pv[defined]):.2f} "
       f"({(~defined).sum()} of {pv.size} locations undefined)")
-assert np.isclose(np.median(pv[defined]), 0.27, atol=0.006)
+assert np.isclose(np.median(pv[defined]), 0.22, atol=0.006)
 assert np.array_equal(defined, shared)  # undefined only where a condition lacks data
 
 # Units are paired by label: listing the cells in another order changes nothing.
@@ -240,8 +253,8 @@ assert np.isclose(np.median(by_position), -0.1, atol=0.06)
 ```
 
 The cells that kept their field have map correlations of 0.99-1.00, and the
-cells that moved have correlations slightly below 0: you can read off which
-cells remapped. The median population-vector correlation of 0.27 says the
+cells that moved have correlations of -0.47 to -0.41: you can read off which
+cells remapped. The median population-vector correlation of 0.22 says the
 population code changed substantially even though half the cells kept their
 fields, because a moved field lowers the correlation both where it was and
 where it went. An unchanged map gives values near 1 and a completely new map
@@ -268,8 +281,12 @@ show whether a field is there. A cell with no field bin on shared bins in
 either condition has no defined overlap and gets NaN.
 
 ```python
-fields_before = population_coverage(env, maps["before"].firing_rates).place_fields
-fields_after = population_coverage(env, maps["after"].firing_rates).place_fields
+fields_before = population_coverage(
+    env, maps["before"].firing_rates, bandwidth=maps["before"].bandwidth
+).place_fields
+fields_after = population_coverage(
+    env, maps["after"].firing_rates, bandwidth=maps["after"].bandwidth
+).place_fields
 
 
 def field_bins(fields):
@@ -297,12 +314,12 @@ overlap = np.array([
 ])
 print("Field overlap, cells that kept their field:", np.round(overlap[~moves], 2))
 print("Field overlap, cells that moved their field:", np.round(overlap[moves], 2))
-assert 0.854 <= overlap[~moves].min() <= overlap[~moves].max() <= 1.0 + 1e-9  # Jaccard is at most 1
+assert 0.894 <= overlap[~moves].min() <= overlap[~moves].max() <= 1.0 + 1e-9  # Jaccard is at most 1
 assert (overlap[moves] == 0).all()
 ```
 
 Cells that kept their field share most of their field bins (overlap
-0.86-1.00), and cells that moved share none. Neither per-cell measure detects
+0.90-0.97), and cells that moved share none. Neither per-cell measure detects
 a cell that keeps its field but changes its peak rate (rate remapping): field
 overlap ignores rates, and a correlation ignores a change of scale. Compare
 in-field rates for that; the per-location `population_vector_correlation` does
@@ -641,8 +658,10 @@ my_rates = compute_spatial_rates(
     unit_ids=my_unit_ids, epochs=my_periods["run"],
     bandwidth=5.0, min_occupancy=0.05, min_speed=4.0,
 )
-spatial = my_rates.spatial_information() >= 0.5
-my_coverage = population_coverage(my_env, my_rates.firing_rates[spatial])
+spatial = my_rates.classify(min_info=0.5)  # bias-corrected information screen
+my_coverage = population_coverage(
+    my_env, my_rates.firing_rates[spatial], bandwidth=my_rates.bandwidth
+)
 my_assemblies = detect_assemblies(my_counts["run"], unit_ids=my_unit_ids, rng=0)
 my_reactivation = explained_variance_reactivation(
     pairwise_correlations(my_counts["run"]),
@@ -678,7 +697,8 @@ Checks before you interpret the numbers:
   position, so every count matrix must share one column order.
 - **Screens, not verdicts.** The information cutoff, the Marchenko-Pastur
   threshold, the membership cutoff, activation above 2, and EV versus REV are
-  descriptive. Use `place_cell_significance` for place-cell decisions and a
+  descriptive. Use `spatial_cell_type_significance` labels or
+  `is_place_cell(..., criterion="shuffle")` for cell-type decisions and a
   null built for your recording for reactivation claims.
 - **Missing is not zero.** Unvisited bins stay NaN in rate maps; compare
   conditions only over bins visited in both, and check whether coverage gaps

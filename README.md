@@ -226,7 +226,7 @@ result = compute_spatial_rate(
 )
 
 # Fast screen; field detection and cell classification are separate questions.
-print("Place candidate:", result.is_place_cell(criterion="spatial_info"))
+print("Place candidate:", result.is_place_cell(criterion="threshold"))
 
 # 6. Plot.
 fig, ax = plt.subplots()
@@ -239,8 +239,8 @@ The recovered field will be a Gaussian-like blob centered near `(30,
 30)` — the same location we put the simulated cell. From here you can
 swap in real spike times, change the trajectory, add more cells, or
 detect place fields with [`detect_place_fields`](https://edeno.github.io/neurospatial/api/).
-A field or fixed information cutoff can also flag untuned low-count units.
-For a calibrated verdict under a circular-shift null, call
+A field can also flag untuned low-count units. For a verdict that also
+tests information against a circular-shift null, call
 `is_place_cell(env, spike_times, times, positions_t, criterion="shuffle", rng=0)`
 with the raw arrays (about 1000 map recomputes by default).
 See [the spatial rate-map tutorial](https://github.com/edeno/neurospatial/blob/main/examples/02_spatial_rate_maps.ipynb)
@@ -477,10 +477,11 @@ env = env.with_metadata(units="cm")  # Required for trajectory simulation
 # speed_units must match env.units exactly (no auto-conversion).
 positions, times = simulate_trajectory_ou(
     env,
-    duration=120.0,  # seconds
+    duration=600.0,  # seconds: ten minutes covers a 1 m arena
     speed_units="cm",
     speed_mean=8.0,  # cm/s
-    coherence_time=0.7,  # smoothness parameter
+    speed_std=4.0,  # cm/s: the animal speeds up and slows down
+    coherence_time=0.7,  # seconds over which the speed changes
     seed=42
 )
 
@@ -494,7 +495,8 @@ place_cell = PlaceCellModel(
 
 # Generate spikes
 firing_rates = place_cell.firing_rate(positions, times)
-spike_times = generate_poisson_spikes(firing_rates, times, seed=42)
+# Seed spikes apart from the trajectory so spike draws do not track position.
+spike_times = generate_poisson_spikes(firing_rates, times, seed=1)
 
 # Validate with neurospatial analysis
 from neurospatial import compute_spatial_rate

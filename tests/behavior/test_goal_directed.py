@@ -361,14 +361,20 @@ class TestApproachRate:
         rates = approach_rate(*jump, break_before=break_before)
         np.testing.assert_array_equal(rates, [np.nan, -8, -8, np.nan, -8, -8])
 
-    def test_nan_row_leaves_its_intervals_nan(self, jump):
-        """A missing position gives no rate into or out of it."""
+    def test_nan_row_is_bridged_like_a_deleted_row(self, jump):
+        """A missing position has no rate; the rate after it spans the gap."""
         from neurospatial.behavior.navigation import approach_rate
 
         times, positions, goal = jump
         positions = positions.copy()
         positions[1] = np.nan
         rates = approach_rate(times, positions, goal)
+        kept = np.delete(np.arange(len(times)), 1)
+        deleted = approach_rate(times[kept], positions[kept], goal)
+        np.testing.assert_array_equal(rates[kept], deleted)
+        np.testing.assert_array_equal(rates, [np.nan, np.nan, -8, -384, -8, -8])
+        # The 0.25 s gap is a tracking loss when max_gap is shorter.
+        rates = approach_rate(times, positions, goal, max_gap=0.2)
         np.testing.assert_array_equal(rates, [np.nan, np.nan, np.nan, -384, -8, -8])
 
     def test_empty_input_raises(self):

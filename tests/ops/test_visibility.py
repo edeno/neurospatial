@@ -522,6 +522,33 @@ class TestComputeViewedLocation:
                 positions, headings, method="ray_cast", boundary_source="analysis"
             )
 
+    def test_fixed_distance_needs_an_explicit_view_distance(self):
+        """No published distance applies to every species, task and arena."""
+        from neurospatial.ops.visibility import compute_viewed_location
+
+        positions = np.array([[5.0, 5.0]])
+        headings = np.array([0.0])
+
+        with pytest.raises(ValueError, match="needs view_distance"):
+            compute_viewed_location(positions, headings, method="fixed_distance")
+        with pytest.raises(ValueError, match="no meaning with method='ray_cast'"):
+            compute_viewed_location(
+                positions, headings, env=_open_box(20.0, 5.0), view_distance=10.0
+            )
+        with pytest.raises(ValueError, match="positive finite"):
+            compute_viewed_location(
+                positions, headings, method="fixed_distance", view_distance=0.0
+            )
+
+    def test_the_default_gaze_takes_the_first_wall(self):
+        """With no method, the viewed point is the wall, as in compute_view_rate."""
+        from neurospatial.ops.visibility import compute_viewed_location
+
+        viewed = compute_viewed_location(
+            np.array([[5.0, 5.0]]), np.array([0.0]), env=_open_box(20.0, 5.0)
+        )
+        assert_allclose(viewed, [[20.0, 5.0]], atol=1e-9)
+
     @pytest.mark.parametrize("boundary_source", ["physical", "analysis"])
     def test_ray_cast_reaches_a_distant_wall_by_default(self, boundary_source):
         """The default search reaches every wall, even in a 3 m arena."""
@@ -563,6 +590,7 @@ class TestComputeViewedLocation:
                 positions,
                 headings,
                 method=method,
+                view_distance=10.0 if method == "fixed_distance" else None,
                 gaze_offsets=offsets,
                 env=_open_box(20.0, 5.0),
             )
@@ -1011,19 +1039,26 @@ class TestVisibilityOccupancySupport:
         )
 
     @pytest.mark.parametrize("missing", ["position", "heading"])
-    def test_a_missing_sample_adds_nothing(self, open_square, walk, missing):
+    def test_a_missing_sample_is_a_deleted_row(self, open_square, walk, missing):
         times, positions, headings = walk
         positions, headings = positions.copy(), headings.copy()
         if missing == "position":
             positions[15, 1] = np.nan
         else:
             headings[15] = np.nan
+        kept = np.delete(np.arange(len(times)), 15)
 
         seen = self._seen(open_square, times, positions, headings)
+        deleted = self._seen(open_square, times[kept], positions[kept], headings[kept])
 
+        assert_allclose(seen, deleted, rtol=1e-12)
         dt = np.diff(times)
-        # Both intervals that touch sample 15 are unobserved.
-        assert_allclose(seen, dt.sum() - dt[14] - dt[15], rtol=1e-12)
+        # The gap around sample 15 is bridged and viewed from sample 14.
+        assert_allclose(seen, dt.sum(), rtol=1e-12)
+        # Shorter than that gap, max_gap leaves both of its intervals unobserved.
+        max_gap = 0.75 * (times[16] - times[14])
+        short = self._seen(open_square, times, positions, headings, max_gap=max_gap)
+        assert_allclose(short, dt.sum() - dt[14] - dt[15], rtol=1e-12)
 
     def test_the_last_sample_adds_no_time(self, open_square, walk):
         times, positions, headings = walk

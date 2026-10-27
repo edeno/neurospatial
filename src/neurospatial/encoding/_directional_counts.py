@@ -4,7 +4,7 @@ This module converts spike trains and head direction data into discrete spike
 counts and occupancy arrays for head direction cell analysis.
 
 The functions in this module handle:
-1. Circular binning of head directions into angular bins (0 to 2π)
+1. Circular binning of head directions into angular bins over [-π, π)
 2. Occupancy computation from continuous head direction time series
 3. Spike counting from the most recent frame, using shared interval validity
 4. Batch processing of multiple neurons with joblib parallelization
@@ -13,12 +13,10 @@ Output shapes:
 - Spike counts (single neuron): (n_bins,)
 - Spike counts (batch): (n_neurons, n_bins)
 - Occupancy: (n_bins,) - always shared across neurons
-- Bin centers: (n_bins,) - angles in radians [0, 2π)
+- Bin centers: (n_bins,) - angles in radians [-π, π)
 
-The binning layer is intentionally separated from smoothing to allow:
-- Reusing occupancy across multiple neurons
-- Precomputing bin centers for efficiency
-- Future JAX implementations with different parallelization strategies
+The binning layer is separated from smoothing so occupancy and bin centers
+are computed once and shared across neurons.
 
 Notes
 -----
@@ -35,6 +33,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
 )
@@ -87,7 +87,7 @@ def compute_directional_occupancy(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -110,11 +110,13 @@ def compute_directional_occupancy(
         - 'rad': headings in radians, bin_size in radians
         - 'deg': headings in degrees, bin_size in degrees
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -135,7 +137,7 @@ def compute_directional_occupancy(
     occupancy : ndarray, shape (n_bins,)
         Time in seconds spent at each direction.
     bin_centers : ndarray, shape (n_bins,)
-        Center of each angular bin in radians [0, 2π).
+        Center of each angular bin in radians [-π, π).
 
     Raises
     ------
@@ -153,8 +155,8 @@ def compute_directional_occupancy(
     The last frame is excluded from occupancy since we don't know how
     long the animal stayed at that direction.
 
-    **Circular binning**: Headings are wrapped to [0, 2π) before binning.
-    Bins are evenly spaced from 0 to 2π.
+    **Circular binning**: Headings are wrapped to [-π, π) before binning.
+    Bins are evenly spaced from -π to π.
 
     Examples
     --------
@@ -181,26 +183,44 @@ def compute_directional_occupancy(
         headings, bin_size, angle_unit=angle_unit
     )
     n_bins = len(bin_centers)
+    observed = np.isfinite(headings)
     mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    frame_bins = hold_last_valid(frame_bins, observed, fill=-1)
     occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
     return occupancy, bin_centers
 
 
+DEFAULT_HEADING_BIN_SIZE_DEG = 6.0
+
+
 def directional_frame_bins(
     headings: NDArray[np.float64],
-    bin_size: float,
+    bin_size: float | None,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
 ) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
-    """Map finite headings to circular bins; non-finite headings map to -1."""
+    """Map finite headings to circular bins; non-finite headings map to -1.
+
+    Any finite angle is accepted and wrapped to [-π, π); bins tile [-π, π)
+    and their centers are returned in radians. A 0 to 2π heading and the
+    same heading minus 2π fall in the same bin. ``bin_size=None`` means 6°
+    expressed in ``angle_unit``.
+    """
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
+    if bin_size is None:
+        bin_size = (
+            DEFAULT_HEADING_BIN_SIZE_DEG
+            if angle_unit == "deg"
+            else float(np.radians(DEFAULT_HEADING_BIN_SIZE_DEG))
+        )
 
     if bin_size <= 0:
         raise ValueError(
@@ -220,8 +240,8 @@ def directional_frame_bins(
         )
 
     finite = np.isfinite(headings_rad)
-    wrapped = headings_rad[finite] % (2 * np.pi)
-    bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
+    wrapped = (headings_rad[finite] + np.pi) % (2 * np.pi) - np.pi
+    bin_edges = np.linspace(-np.pi, np.pi, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     frame_bins = np.full(headings.shape, -1, dtype=np.intp)
     bins = np.digitize(wrapped, bin_edges) - 1
@@ -237,7 +257,7 @@ def bin_directional_spike_train(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
@@ -260,11 +280,13 @@ def bin_directional_spike_train(
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings`` and ``bin_size``.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -288,11 +310,11 @@ def bin_directional_spike_train(
 
     Notes
     -----
-    **Spike assignment**: Spikes are assigned to bins using nearest-neighbor
-    lookup (not interpolation) to correctly handle circular discontinuities.
-    Linear interpolation would give wrong results when head direction crosses
-    the 0°/360° boundary (e.g., 350° to 10° would incorrectly interpolate to
-    180°). Spikes outside the recording window are excluded.
+    **Spike assignment**: Each spike takes the heading bin of the most recent
+    sample at or before it (the start of its sampling interval), the same
+    bin that interval's duration is added to in the occupancy. Headings are
+    not interpolated, which would be wrong across the ±π wrap (350° to 10°
+    would interpolate to 180°). Spikes in excluded intervals are not counted.
 
     Examples
     --------
@@ -325,23 +347,26 @@ def bin_directional_spike_train(
         headings, bin_size, angle_unit=angle_unit
     )
     n_bins = len(bin_centers)
+    observed = np.isfinite(headings)
     mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    frame_bins = hold_last_valid(frame_bins, observed, fill=-1)
     return count_spikes_by_frame(spike_times, times, frame_bins, mask, n_bins)
 
 
 def prepare_directional_binning(
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
-    bin_size: float,
+    bin_size: float | None,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     break_before: NDArray[np.bool_] | None = None,
@@ -366,6 +391,8 @@ def prepare_directional_binning(
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
+        samples="headings",
+        sample_valid=np.isfinite(headings),
     )
     return prepared, bin_centers
 
@@ -377,7 +404,7 @@ def bin_directional_spike_trains(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
@@ -403,11 +430,13 @@ def bin_directional_spike_trains(
         Width of angular bins. Units match ``angle_unit``.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings`` and ``bin_size``.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -433,7 +462,7 @@ def bin_directional_spike_trains(
     occupancy : ndarray, shape (n_bins,)
         Time in seconds spent at each direction (shared across neurons).
     bin_centers : ndarray, shape (n_bins,)
-        Center of each angular bin in radians [0, 2π).
+        Center of each angular bin in radians [-π, π).
 
     Examples
     --------

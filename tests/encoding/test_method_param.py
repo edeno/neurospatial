@@ -288,14 +288,6 @@ def test_method_in_singular_projections(ovc_session):
         assert "method" in df.columns and (df["method"] == "binned").all()
 
 
-def test_method_absent_from_non_method_result_projection(ovc_session):
-    """Results with no estimator field (egocentric) get no spurious `method`."""
-    env, st, t, pos, hd, obj = ovc_session
-    result = compute_egocentric_rate(env, st, t, pos, hd, obj)
-    assert "method" not in result.summary()
-    assert "method" not in result.to_dataframe().columns
-
-
 # --- Invalid-method error text is stable -------------------------------------
 _INVALID_METHOD_SCRIPT = """
 import numpy as np

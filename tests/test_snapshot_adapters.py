@@ -368,8 +368,9 @@ class _ExternalArena:
     n_dims = 2
     coordinate_kind = "cartesian"
     domain_known = True
-    physical_footprint_known = True
+    outline = "wall"
     walls = ()
+    wall_kinds = ()
 
     def contains(self, positions):
         pytest.fail("an external arena must be adapted before center selection")

@@ -22,6 +22,11 @@ no reward: the arms have no reward ports, there is no start box, and the arm
 ends are plain regions. Add a reward-port landmark at an arm end for a
 rewarded Y-maze task.
 
+The arms are walled (``arena.outline == "wall"``): Wijnen et al. (2024) note
+that in a Y-maze "an animal could continue its trajectory into one of the
+arms if it is running alongside a wall". They do not give the wall material;
+the walls are modeled as opaque.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes import make_y_maze, YMazeDims

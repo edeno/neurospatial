@@ -27,6 +27,10 @@ start chamber was placed over it". Neither the escape box's nor the start
 chamber's size is given. The light and noise that drive the animal off the
 platform have no published placement, so the maze has no cue landmarks.
 
+The platform's edge is a drop (``arena.outline == "drop"``): Gawel et al.
+(2018) write that Barnes's apparatus "was located 91 cm above the floor to
+prevent the animals (rats) from jumping down".
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.barnes import make_barnes_maze, BarnesDims
@@ -45,6 +49,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
@@ -220,6 +225,7 @@ def make_barnes_maze(
     env_2d = Environment.from_polygon(
         polygon=platform_polygon,
         bin_size=bin_size,
+        arena=OpenArena(platform_polygon, outline="drop"),
         name="barnes_maze",
         connect_diagonal_neighbors=True,
     )

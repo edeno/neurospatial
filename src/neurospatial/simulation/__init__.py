@@ -2,7 +2,7 @@
 
 This subpackage provides tools for:
 - Trajectory simulation (random walks, laps, sinusoidal motion)
-- Neural model implementations (place cells, boundary cells, grid cells)
+- Neural model implementations (place, border, boundary-vector and grid cells)
 - Spike train generation (Poisson process with refractory periods)
 - High-level session simulation with validation helpers
 - Pre-built maze environments (via mazes submodule)
@@ -51,14 +51,15 @@ from neurospatial.simulation import mazes
 
 # Pre-configured example simulations
 from neurospatial.simulation.examples import (
-    boundary_cell_session,
+    border_cell_session,
     grid_cell_session,
     linear_track_session,
     open_field_session,
     tmaze_alternation_session,
 )
 from neurospatial.simulation.models import (
-    BoundaryCellModel,
+    BorderCellModel,
+    BoundaryVectorCellModel,
     GridCellModel,
     HeadDirectionCellModel,
     NeuralModel,  # Protocol
@@ -90,7 +91,7 @@ from neurospatial.simulation.validation import (
 # from neurospatial.simulation.examples import (
 #     linear_track_session,
 #     tmaze_alternation_session,
-#     boundary_cell_session,
+#     border_cell_session,
 #     grid_cell_session,
 # )
 
@@ -98,7 +99,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Submodule
     "mazes",
     # Models
-    "BoundaryCellModel",
+    "BorderCellModel",
+    "BoundaryVectorCellModel",
     "GridCellModel",
     "HeadDirectionCellModel",
     "NeuralModel",
@@ -111,7 +113,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "generate_poisson_spikes",
     "generate_population_spikes",
     # Example sessions
-    "boundary_cell_session",
+    "border_cell_session",
     "grid_cell_session",
     "linear_track_session",
     "open_field_session",

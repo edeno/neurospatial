@@ -89,14 +89,14 @@ def test_pose_and_heading_missingness_are_independent(env):
     body = np.array([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]])
     query = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
     data = (
-        BodypartOverlay({"nose": nose, "body": body}, times)
+        BodypartOverlay({"nose": nose, "body": body}, times, max_gap=0.3)
         .convert_to_data(query, 5, env)
         .on_clock(query)
     )
     assert np.isnan(data.bodyparts["nose"][1:4]).all()
     assert np.isfinite(data.bodyparts["body"]).all()
     headings = (
-        HeadDirectionOverlay(np.array([3.0, np.nan, -3.0]), times)
+        HeadDirectionOverlay(np.array([3.0, np.nan, -3.0]), times, max_gap=0.3)
         .convert_to_data(query, 5, env)
         .on_clock(query)
     )

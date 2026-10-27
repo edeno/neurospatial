@@ -25,6 +25,7 @@ def located_events():
         times,
         positions,
         np.array([0.0, 0.2, 1.0]),
+        max_gap=0.5,  # shorter than the 0.8 s tracking gap
     )
     data = overlay.convert_to_data(times, len(times), env)
     assert np.isnan(data.event_positions["event"][2]).all()
@@ -43,7 +44,7 @@ def test_native_events_submit_only_located_points(located_events, decay, all_mis
     if all_missing:
         positions[:] = np.nan
     overlay = EventOverlay.from_trajectory(
-        times, positions, np.array([0.0, 0.2, 1.0]), decay_frames=decay
+        times, positions, np.array([0.0, 0.2, 1.0]), decay_frames=decay, max_gap=0.5
     )
     graphics = []
 
@@ -86,6 +87,7 @@ def test_napari_scene_events_show_only_located_points(located_events, decay):
         np.array([[1.0, 2.0], [2.0, 3.0], [4.0, 5.0]]),
         np.array([0.0, 0.2, 1.0]),
         decay_frames=decay,
+        max_gap=0.5,  # shorter than the 0.8 s tracking gap
     )
     with Animation(
         env, np.zeros((len(times), env.n_bins)), frame_times=times, overlays=[overlay]

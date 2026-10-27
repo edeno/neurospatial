@@ -43,6 +43,49 @@ panels of Wijnen et al. 2024, Fig. 1.
 | `make_square_maze` | | 30 cm rest box | none |
 | `make_sungod_maze` | Gillespie et al. 2021 | about 1 x 1 m | `home_port`, `center_port_*`, `arm_port_1` to `arm_port_8` |
 
+## Walls, drop edges and clear walls
+
+Each maze declares what its edges are, as its source describes the apparatus
+(see each factory's docstring). Edges stop the animal in every case, so border
+scores, boundary-vector maps, `BorderCellModel` and `BoundaryVectorCellModel`
+use them all; a gaze stops only at opaque walls.
+
+- Opaque walls (`arena.outline == "wall"`): the Hampton Court, Hamlet, repeated
+  T and Y, T and Y mazes, rat HexMaze and small hex mazes, the watermaze pool
+  and the square box.
+- Drop edges (`"drop"`), an elevated track or platform the animal sees past:
+  the linear track, W and plus mazes, radial arm, crossword, Barnes,
+  cheeseboard and honeycomb mazes. A ray-cast gaze leaving one of these views
+  nothing in the environment, so its viewed location is NaN.
+- The Sungod maze has opaque external walls and transparent walls between its
+  arms (Gillespie et al. 2021): `arena.walls` holds the stretches of outline
+  between neighbouring arms, each a `"transparent_wall"`.
+
+If your apparatus is built differently, rebuild the floor with its own edges:
+
+<!-- docs-test: run -->
+```python
+from neurospatial import Environment
+from neurospatial.arena import OpenArena
+from neurospatial.simulation.mazes import make_plus_maze
+
+maze = make_plus_maze()
+assert maze.env_2d.arena.outline == "drop"  # an elevated plus maze
+walled = (
+    Environment.from_polygon(maze.env_2d.arena.polygon, bin_size=2.0, units="cm")
+    .with_regions(maze.env_2d.regions)
+    .with_landmarks(maze.env_2d.landmarks)
+)
+assert walled.arena.outline == "wall"
+clear = Environment.from_polygon(
+    maze.env_2d.arena.polygon,
+    bin_size=2.0,
+    units="cm",
+    arena=OpenArena(maze.env_2d.arena.polygon, outline="transparent_wall"),
+)
+assert clear.arena.outline == "transparent_wall"
+```
+
 ## Use the apparatus by name
 
 A reward port, hole, hidden platform or start or goal box is a landmark whose

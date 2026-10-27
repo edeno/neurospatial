@@ -668,8 +668,8 @@ class TestComputeEgocentricRateJaxBackend:
             headings,
             object_positions,
             distance_range=(0.0, 100.0),
-            n_distance_bins=5,
-            n_direction_bins=8,
+            distance_bin_size=20.0,
+            direction_bin_size=2 * np.pi / 8,
             method="binned",
             backend="jax",
         )
@@ -680,6 +680,8 @@ class TestComputeEgocentricRateJaxBackend:
         assert _is_jax_array(result.firing_rate)
         assert _is_jax_array(result.occupancy)
 
+    @pytest.mark.parametrize("method", ["binned", "diffusion_kde", "gaussian_kde"])
+    @pytest.mark.parametrize("frame", ["egocentric", "allocentric"])
     def test_jax_backend_matches_numpy(
         self,
         spike_times: np.ndarray,
@@ -687,47 +689,41 @@ class TestComputeEgocentricRateJaxBackend:
         positions: np.ndarray,
         headings: np.ndarray,
         object_positions: np.ndarray,
+        method: str,
+        frame: str,
     ) -> None:
-        """JAX backend should produce numerically equivalent results to NumPy."""
+        """JAX and NumPy give the same map for every estimator and frame.
 
-        from neurospatial.encoding.egocentric import compute_egocentric_rate
-
-        # Compute with NumPy backend
-        result_numpy = compute_egocentric_rate(
-            None,
-            spike_times,
-            times,
-            positions,
-            headings,
-            object_positions,
-            distance_range=(0.0, 100.0),
-            n_distance_bins=5,
-            n_direction_bins=8,
-            method="binned",
-            backend="numpy",
+        "binned" divides counts by occupancy in NumPy for both backends, so
+        only the kernel methods exercise the JAX smoothing path.
+        """
+        from neurospatial.encoding.egocentric import (
+            compute_egocentric_rate,
+            compute_object_vector_rate,
         )
 
-        # Compute with JAX backend
-        result_jax = compute_egocentric_rate(
-            None,
-            spike_times,
-            times,
-            positions,
-            headings,
-            object_positions,
-            distance_range=(0.0, 100.0),
-            n_distance_bins=5,
-            n_direction_bins=8,
-            method="binned",
-            backend="jax",
-        )
+        settings = {
+            "distance_range": (0.0, 100.0),
+            "distance_bin_size": 20.0,
+            "direction_bin_size": np.pi / 4,
+            "method": method,
+            "bandwidth": 10.0,
+        }
+        if frame == "egocentric":
+            data = (None, spike_times, times, positions, headings, object_positions)
+            compute = compute_egocentric_rate
+        else:
+            data = (None, spike_times, times, positions, object_positions)
+            compute = compute_object_vector_rate
+        result_numpy = compute(*data, **settings, backend="numpy")
+        result_jax = compute(*data, **settings, backend="jax")
 
-        # Results should match
+        assert _is_jax_array(result_jax.firing_rate)
         assert_allclose(
             np.asarray(result_jax.firing_rate),
             result_numpy.firing_rate,
-            rtol=1e-10,
-            atol=1e-14,
+            rtol=1e-8,
+            atol=1e-12,
         )
         assert_allclose(
             np.asarray(result_jax.occupancy),
@@ -765,8 +761,8 @@ class TestComputeEgocentricRatesJaxBackend:
             headings,
             object_positions,
             distance_range=(0.0, 100.0),
-            n_distance_bins=5,
-            n_direction_bins=8,
+            distance_bin_size=20.0,
+            direction_bin_size=2 * np.pi / 8,
             method="binned",
             backend="jax",
         )
@@ -780,6 +776,8 @@ class TestComputeEgocentricRatesJaxBackend:
         assert _is_jax_array(result.firing_rates)
         assert _is_jax_array(result.occupancy)
 
+    @pytest.mark.parametrize("method", ["binned", "diffusion_kde", "gaussian_kde"])
+    @pytest.mark.parametrize("frame", ["egocentric", "allocentric"])
     def test_jax_backend_matches_numpy(
         self,
         spike_times_batch: list[np.ndarray],
@@ -787,45 +785,48 @@ class TestComputeEgocentricRatesJaxBackend:
         positions: np.ndarray,
         headings: np.ndarray,
         object_positions: np.ndarray,
+        method: str,
+        frame: str,
     ) -> None:
-        """JAX backend should produce numerically equivalent results to NumPy for batch."""
-
-        from neurospatial.encoding.egocentric import compute_egocentric_rates
-
-        # Compute with NumPy backend
-        result_numpy = compute_egocentric_rates(
-            None,
-            spike_times_batch,
-            times,
-            positions,
-            headings,
-            object_positions,
-            distance_range=(0.0, 100.0),
-            n_distance_bins=5,
-            n_direction_bins=8,
-            method="binned",
-            backend="numpy",
+        """JAX and NumPy give the same population maps for every estimator."""
+        from neurospatial.encoding.egocentric import (
+            compute_egocentric_rates,
+            compute_object_vector_rates,
         )
 
-        # Compute with JAX backend
-        result_jax = compute_egocentric_rates(
-            None,
-            spike_times_batch,
-            times,
-            positions,
-            headings,
-            object_positions,
-            distance_range=(0.0, 100.0),
-            n_distance_bins=5,
-            n_direction_bins=8,
-            method="binned",
-            backend="jax",
-        )
+        settings = {
+            "distance_range": (0.0, 100.0),
+            "distance_bin_size": 20.0,
+            "direction_bin_size": np.pi / 4,
+            "method": method,
+            "bandwidth": 10.0,
+        }
+        if frame == "egocentric":
+            data = (
+                None,
+                spike_times_batch,
+                times,
+                positions,
+                headings,
+                object_positions,
+            )
+            compute = compute_egocentric_rates
+        else:
+            data = (None, spike_times_batch, times, positions, object_positions)
+            compute = compute_object_vector_rates
+        result_numpy = compute(*data, **settings, backend="numpy")
+        result_jax = compute(*data, **settings, backend="jax")
 
-        # Results should match
+        assert _is_jax_array(result_jax.firing_rates)
         assert_allclose(
             np.asarray(result_jax.firing_rates),
             result_numpy.firing_rates,
+            rtol=1e-8,
+            atol=1e-12,
+        )
+        assert_allclose(
+            np.asarray(result_jax.occupancy),
+            result_numpy.occupancy,
             rtol=1e-10,
             atol=1e-14,
         )

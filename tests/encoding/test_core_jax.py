@@ -100,27 +100,6 @@ def non_uniform_occupancy() -> jnp.ndarray:
     return jnp.array(occ)
 
 
-@pytest.fixture
-def adjacency() -> jnp.ndarray:
-    """Simple adjacency matrix for smoothing.
-
-    Returns
-    -------
-    jax.Array, shape (100, 100)
-        Tridiagonal adjacency (1D chain graph).
-    """
-    n_bins = 100
-    # Tridiagonal adjacency - each bin connected to neighbors
-    adj = np.eye(n_bins, dtype=np.float64)
-    for i in range(n_bins - 1):
-        adj[i, i + 1] = 0.5
-        adj[i + 1, i] = 0.5
-    # Normalize rows to sum to 1
-    row_sums = adj.sum(axis=1, keepdims=True)
-    adj = adj / row_sums
-    return jnp.array(adj)
-
-
 # =============================================================================
 # Import Tests
 # =============================================================================
@@ -140,18 +119,6 @@ class TestImports:
         from neurospatial.encoding._core_jax import compute_firing_rates_batch
 
         assert callable(compute_firing_rates_batch)
-
-    def test_import_smooth_rate_map_single(self):
-        """smooth_rate_map_single should be importable."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        assert callable(smooth_rate_map_single)
-
-    def test_import_smooth_rate_maps_batch(self):
-        """smooth_rate_maps_batch should be importable."""
-        from neurospatial.encoding._core_jax import smooth_rate_maps_batch
-
-        assert callable(smooth_rate_maps_batch)
 
 
 # =============================================================================
@@ -287,238 +254,6 @@ class TestComputeFiringRatesBatch:
 
 
 # =============================================================================
-# Test smooth_rate_map_single - diffusion_kde
-# =============================================================================
-
-
-class TestSmoothRateMapSingleDiffusion:
-    """Tests for smooth_rate_map_single with diffusion_kde method.
-
-    Note: These low-level functions apply matrix multiplication with the
-    provided adjacency/kernel matrix. The bandwidth parameter is present
-    for API compatibility but does not affect the computation - the kernel
-    should already encode the bandwidth.
-    """
-
-    def test_returns_jax_array(self, spike_counts_1d, adjacency):
-        """Result should be a JAX array."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        result = smooth_rate_map_single(
-            spike_counts_1d, adjacency, bandwidth=2.0, method="diffusion_kde"
-        )
-        assert is_jax_array(result)
-
-    def test_output_shape_matches_input(self, spike_counts_1d, adjacency):
-        """Output shape should match input shape."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        result = smooth_rate_map_single(
-            spike_counts_1d, adjacency, bandwidth=2.0, method="diffusion_kde"
-        )
-        assert result.shape == spike_counts_1d.shape
-
-    def test_applies_kernel_smoothing(self):
-        """Smoothing should apply kernel via matrix multiplication."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        # Simple test: apply identity kernel, should return input unchanged
-        firing_rate = jnp.array([0.0, 1.0, 5.0, 1.0, 0.0])
-        identity_kernel = jnp.eye(5)
-
-        result = smooth_rate_map_single(
-            firing_rate, identity_kernel, bandwidth=2.0, method="diffusion_kde"
-        )
-        assert_allclose(np.asarray(result), np.asarray(firing_rate), rtol=1e-10)
-
-    def test_smoothing_spreads_with_kernel(self):
-        """Smoothing should spread values according to kernel weights."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        # Input with a single spike at center
-        firing_rate = jnp.array([0.0, 0.0, 10.0, 0.0, 0.0])
-
-        # Simple averaging kernel (each bin averages with neighbors)
-        kernel = jnp.array(
-            [
-                [0.6, 0.4, 0.0, 0.0, 0.0],
-                [0.3, 0.4, 0.3, 0.0, 0.0],
-                [0.0, 0.3, 0.4, 0.3, 0.0],
-                [0.0, 0.0, 0.3, 0.4, 0.3],
-                [0.0, 0.0, 0.0, 0.4, 0.6],
-            ]
-        )
-
-        result = smooth_rate_map_single(
-            firing_rate, kernel, bandwidth=2.0, method="diffusion_kde"
-        )
-        result_np = np.asarray(result)
-
-        # Center should have peak (4.0 = 10 * 0.4)
-        assert result_np[2] == pytest.approx(4.0)
-        # Neighbors should have values (3.0 = 10 * 0.3)
-        assert result_np[1] == pytest.approx(3.0)
-        assert result_np[3] == pytest.approx(3.0)
-
-    def test_non_negative_output(self, spike_counts_1d, adjacency):
-        """Smoothed output should be non-negative for non-negative input."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        result = smooth_rate_map_single(
-            spike_counts_1d, adjacency, bandwidth=2.0, method="diffusion_kde"
-        )
-        result_np = np.asarray(result)
-        assert np.all(result_np[~np.isnan(result_np)] >= 0)
-
-
-# =============================================================================
-# Test smooth_rate_map_single - gaussian_kde
-# =============================================================================
-
-
-class TestSmoothRateMapSingleGaussian:
-    """Tests for smooth_rate_map_single with gaussian_kde method.
-
-    Note: Like diffusion_kde, these low-level functions apply matrix
-    multiplication with the provided adjacency/kernel matrix.
-    """
-
-    def test_returns_jax_array(self, spike_counts_1d, adjacency):
-        """Result should be a JAX array."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        result = smooth_rate_map_single(
-            spike_counts_1d, adjacency, bandwidth=2.0, method="gaussian_kde"
-        )
-        assert is_jax_array(result)
-
-    def test_output_shape_matches_input(self, spike_counts_1d, adjacency):
-        """Output shape should match input shape."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        result = smooth_rate_map_single(
-            spike_counts_1d, adjacency, bandwidth=2.0, method="gaussian_kde"
-        )
-        assert result.shape == spike_counts_1d.shape
-
-    def test_applies_kernel_smoothing(self):
-        """Smoothing should apply kernel via matrix multiplication."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        # Simple test: apply identity kernel, should return input unchanged
-        firing_rate = jnp.array([0.0, 1.0, 5.0, 1.0, 0.0])
-        identity_kernel = jnp.eye(5)
-
-        result = smooth_rate_map_single(
-            firing_rate, identity_kernel, bandwidth=2.0, method="gaussian_kde"
-        )
-        assert_allclose(np.asarray(result), np.asarray(firing_rate), rtol=1e-10)
-
-    def test_same_result_as_diffusion_kde(self, spike_counts_1d, adjacency):
-        """gaussian_kde and diffusion_kde should give same result for same kernel."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        result_gaussian = smooth_rate_map_single(
-            spike_counts_1d, adjacency, bandwidth=2.0, method="gaussian_kde"
-        )
-        result_diffusion = smooth_rate_map_single(
-            spike_counts_1d, adjacency, bandwidth=2.0, method="diffusion_kde"
-        )
-
-        # Both methods apply the same kernel multiplication
-        assert_allclose(
-            np.asarray(result_gaussian), np.asarray(result_diffusion), rtol=1e-10
-        )
-
-
-# =============================================================================
-# Test smooth_rate_map_single - binned
-# =============================================================================
-
-
-class TestSmoothRateMapSingleBinned:
-    """Tests for smooth_rate_map_single with binned method."""
-
-    def test_returns_jax_array(self, spike_counts_1d, adjacency):
-        """Result should be a JAX array."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        result = smooth_rate_map_single(
-            spike_counts_1d, adjacency, bandwidth=2.0, method="binned"
-        )
-        assert is_jax_array(result)
-
-    def test_binned_returns_input_unchanged_with_identity(self, spike_counts_1d):
-        """With identity adjacency and method=binned, should return input."""
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        identity = jnp.eye(len(spike_counts_1d))
-        result = smooth_rate_map_single(
-            spike_counts_1d, identity, bandwidth=0.0, method="binned"
-        )
-        assert_allclose(np.asarray(result), np.asarray(spike_counts_1d), rtol=1e-10)
-
-
-# =============================================================================
-# Test smooth_rate_maps_batch
-# =============================================================================
-
-
-class TestSmoothRateMapsBatch:
-    """Tests for smooth_rate_maps_batch function."""
-
-    def test_returns_jax_array(self, spike_counts_2d, adjacency):
-        """Result should be a JAX array."""
-        from neurospatial.encoding._core_jax import smooth_rate_maps_batch
-
-        result = smooth_rate_maps_batch(
-            spike_counts_2d, adjacency, bandwidth=2.0, method="diffusion_kde"
-        )
-        assert is_jax_array(result)
-
-    def test_output_shape(self, spike_counts_2d, adjacency):
-        """Output shape should be (n_neurons, n_bins)."""
-        from neurospatial.encoding._core_jax import smooth_rate_maps_batch
-
-        result = smooth_rate_maps_batch(
-            spike_counts_2d, adjacency, bandwidth=2.0, method="diffusion_kde"
-        )
-        assert result.shape == spike_counts_2d.shape
-
-    def test_matches_looped_single(self, spike_counts_2d, adjacency):
-        """Batch result should match looped single calls."""
-        from neurospatial.encoding._core_jax import (
-            smooth_rate_map_single,
-            smooth_rate_maps_batch,
-        )
-
-        batch_result = smooth_rate_maps_batch(
-            spike_counts_2d, adjacency, bandwidth=2.0, method="diffusion_kde"
-        )
-
-        for i in range(spike_counts_2d.shape[0]):
-            single_result = smooth_rate_map_single(
-                spike_counts_2d[i], adjacency, bandwidth=2.0, method="diffusion_kde"
-            )
-            assert_allclose(
-                np.asarray(batch_result[i]),
-                np.asarray(single_result),
-                rtol=1e-10,
-                equal_nan=True,
-            )
-
-    def test_all_methods_work(self, spike_counts_2d, adjacency):
-        """All smoothing methods should work with batch processing."""
-        from neurospatial.encoding._core_jax import smooth_rate_maps_batch
-
-        for method in ["diffusion_kde", "gaussian_kde", "binned"]:
-            result = smooth_rate_maps_batch(
-                spike_counts_2d, adjacency, bandwidth=2.0, method=method
-            )
-            assert result.shape == spike_counts_2d.shape
-
-
-# =============================================================================
 # Test Numerical Equivalence with NumPy
 # =============================================================================
 
@@ -624,24 +359,6 @@ class TestJAXSpecificFeatures:
         assert result.shape == spike_counts_2d.shape
         assert is_jax_array(result)
 
-    def test_jittable_smooth_rate_map_single(self, spike_counts_1d, adjacency):
-        """smooth_rate_map_single should be JIT-compilable."""
-        from functools import partial
-
-        import jax
-
-        from neurospatial.encoding._core_jax import smooth_rate_map_single
-
-        # Use partial to fix bandwidth and method (static args)
-        jitted_fn = jax.jit(
-            partial(smooth_rate_map_single, bandwidth=2.0, method="diffusion_kde")
-        )
-        result = jitted_fn(spike_counts_1d, adjacency)
-
-        # Should produce valid result
-        assert result.shape == spike_counts_1d.shape
-        assert is_jax_array(result)
-
     def test_vmap_over_neurons(self, spike_counts_2d, occupancy):
         """Functions should work with vmap for vectorization."""
         import jax
@@ -664,22 +381,14 @@ class TestJAXSpecificFeatures:
 class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
-    def test_all_zero_spike_counts(self, occupancy, adjacency):
+    def test_all_zero_spike_counts(self, occupancy):
         """All zero spike counts should return all zeros."""
-        from neurospatial.encoding._core_jax import (
-            compute_firing_rate_single,
-            smooth_rate_map_single,
-        )
+        from neurospatial.encoding._core_jax import compute_firing_rate_single
 
         zero_counts = jnp.zeros(100, dtype=jnp.float64)
 
         rate = compute_firing_rate_single(zero_counts, occupancy)
         assert_allclose(np.asarray(rate), 0.0, atol=1e-10)
-
-        smoothed = smooth_rate_map_single(
-            zero_counts, adjacency, bandwidth=2.0, method="diffusion_kde"
-        )
-        assert_allclose(np.asarray(smoothed), 0.0, atol=1e-10)
 
     def test_single_bin(self):
         """Should handle single-bin case."""

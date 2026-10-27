@@ -22,142 +22,62 @@ from neurospatial.encoding.population import (
 matplotlib.use("Agg")  # Use non-interactive backend for testing
 
 
+def _coverage_result(place_fields, is_observed):
+    is_observed = np.asarray(is_observed, dtype=bool)
+    bin_centers = np.column_stack(
+        [np.arange(len(is_observed), dtype=float), np.zeros(len(is_observed))]
+    )
+    return PopulationCoverageResult(
+        place_fields=place_fields, is_observed=is_observed, bin_centers=bin_centers
+    )
+
+
 class TestPopulationCoverageResult:
-    """Test PopulationCoverageResult dataclass."""
+    """Counts and bin sets are derived from the fields and observed bins."""
+
+    def test_derived_counts_and_bins(self) -> None:
+        result = _coverage_result(
+            [
+                [np.array([0, 1]), np.array([3])],
+                [np.array([1, 2])],
+                [],
+                [],
+            ],
+            [True, True, True, True, True, False],
+        )
+        assert result.n_neurons == 4
+        assert result.n_place_cells == 2
+        assert result.n_fields == 3
+        np.testing.assert_array_equal(result.field_count, [1, 2, 1, 1, 0, 0])
+        np.testing.assert_array_equal(result.covered_bins, [0, 1, 2, 3])
+        # Bin 5 was never observed, so it is not a gap.
+        np.testing.assert_array_equal(result.uncovered_bins, [4])
+        np.testing.assert_array_equal(result.uncovered_positions, [[4.0, 0.0]])
+        assert result.coverage_fraction == pytest.approx(4 / 5)
+        assert result.place_cell_fraction == pytest.approx(0.5)
+        assert result.fields_per_place_cell == pytest.approx(1.5)
+        assert result.mean_redundancy == pytest.approx(5 / 4)
+        text = str(result)
+        assert "80.0%" in text and "2/4" in text and "1 bins" in text
 
     def test_dataclass_frozen(self) -> None:
-        """Test that PopulationCoverageResult is immutable."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.5,
-            is_covered=np.array([True, False]),
-            field_count=np.array([1, 0]),
-            covered_bins=np.array([0]),
-            uncovered_bins=np.array([1]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=1,
-            n_place_cells=1,
-            n_fields=1,
-            place_fields=[[np.array([0])]],
-        )
+        result = _coverage_result([[np.array([0])]], [True, True])
         with pytest.raises(AttributeError):
-            result.coverage_fraction = 0.9  # type: ignore[misc]
+            result.is_observed = np.ones(2, dtype=bool)  # type: ignore[misc]
 
-    def test_str_representation(self) -> None:
-        """Test human-readable string representation."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.75,
-            is_covered=np.array([True, True, True, False]),
-            field_count=np.array([2, 1, 1, 0]),
-            covered_bins=np.array([0, 1, 2]),
-            uncovered_bins=np.array([3]),
-            uncovered_positions=np.array([[10.0, 10.0]]),
-            n_neurons=5,
-            n_place_cells=3,
-            n_fields=4,
-            place_fields=[[], [], [], [], []],
-        )
-        result_str = str(result)
-        assert "75.0%" in result_str
-        assert "3/5" in result_str
-        assert "60.0%" in result_str  # place_cell_fraction
-        assert "1.3" in result_str  # fields_per_place_cell
-        assert "1 bins" in result_str  # gaps
+    def test_undefined_ratios_are_nan(self) -> None:
+        """0/0 ratios are undefined, not zero."""
+        empty = _coverage_result([], [False, False])
+        assert np.isnan(empty.place_cell_fraction)
+        assert np.isnan(empty.coverage_fraction)
+        no_fields = _coverage_result([[], []], [True, True])
+        assert np.isnan(no_fields.fields_per_place_cell)
+        assert np.isnan(no_fields.mean_redundancy)
+        assert no_fields.coverage_fraction == 0.0
 
-    def test_place_cell_fraction(self) -> None:
-        """Test place_cell_fraction computed property."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.5,
-            is_covered=np.array([True, False]),
-            field_count=np.array([1, 0]),
-            covered_bins=np.array([0]),
-            uncovered_bins=np.array([1]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=10,
-            n_place_cells=4,
-            n_fields=5,
-            place_fields=[],
-        )
-        assert result.place_cell_fraction == pytest.approx(0.4)
-
-    def test_place_cell_fraction_zero_neurons(self) -> None:
-        """Test place_cell_fraction when n_neurons is zero."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.0,
-            is_covered=np.array([False]),
-            field_count=np.array([0]),
-            covered_bins=np.array([], dtype=np.intp),
-            uncovered_bins=np.array([0]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=0,
-            n_place_cells=0,
-            n_fields=0,
-            place_fields=[],
-        )
-        assert result.place_cell_fraction == 0.0
-
-    def test_fields_per_place_cell(self) -> None:
-        """Test fields_per_place_cell computed property."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.5,
-            is_covered=np.array([True, False]),
-            field_count=np.array([1, 0]),
-            covered_bins=np.array([0]),
-            uncovered_bins=np.array([1]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=10,
-            n_place_cells=4,
-            n_fields=6,
-            place_fields=[],
-        )
-        assert result.fields_per_place_cell == pytest.approx(1.5)
-
-    def test_fields_per_place_cell_zero_place_cells(self) -> None:
-        """Test fields_per_place_cell when no place cells detected."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.0,
-            is_covered=np.array([False]),
-            field_count=np.array([0]),
-            covered_bins=np.array([], dtype=np.intp),
-            uncovered_bins=np.array([0]),
-            uncovered_positions=np.array([[1.0, 1.0]]),
-            n_neurons=5,
-            n_place_cells=0,
-            n_fields=0,
-            place_fields=[],
-        )
-        assert result.fields_per_place_cell == 0.0
-
-    def test_mean_redundancy(self) -> None:
-        """Test mean_redundancy computed property."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.75,
-            is_covered=np.array([True, True, True, False]),
-            field_count=np.array([3, 2, 1, 0]),  # Mean of [3, 2, 1] = 2.0
-            covered_bins=np.array([0, 1, 2]),
-            uncovered_bins=np.array([3]),
-            uncovered_positions=np.array([[10.0, 10.0]]),
-            n_neurons=5,
-            n_place_cells=3,
-            n_fields=6,
-            place_fields=[],
-        )
-        assert result.mean_redundancy == pytest.approx(2.0)
-
-    def test_mean_redundancy_no_coverage(self) -> None:
-        """Test mean_redundancy when no bins are covered."""
-        result = PopulationCoverageResult(
-            coverage_fraction=0.0,
-            is_covered=np.array([False, False]),
-            field_count=np.array([0, 0]),
-            covered_bins=np.array([], dtype=np.intp),
-            uncovered_bins=np.array([0, 1]),
-            uncovered_positions=np.array([[1.0, 1.0], [2.0, 2.0]]),
-            n_neurons=5,
-            n_place_cells=0,
-            n_fields=0,
-            place_fields=[],
-        )
-        assert result.mean_redundancy == 0.0
+    def test_field_bins_must_index_the_bins(self) -> None:
+        with pytest.raises(ValueError, match="only 2 bins"):
+            _coverage_result([[np.array([0, 5])]], [True, True])
 
 
 class TestPopulationCoverage:
@@ -182,7 +102,7 @@ class TestPopulationCoverage:
             for j in simple_env.neighbors(bins=i):
                 firing_rates[i, j] = 5.0
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         assert result.coverage_fraction == pytest.approx(1.0)
         assert len(result.uncovered_bins) == 0
         assert result.n_neurons == n_bins
@@ -199,7 +119,7 @@ class TestPopulationCoverage:
                 if j < n_bins:
                     firing_rates[i, j] = 5.0
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         assert 0.0 < result.coverage_fraction < 1.0
         assert len(result.uncovered_bins) > 0
         assert len(result.uncovered_positions) == len(result.uncovered_bins)
@@ -213,7 +133,9 @@ class TestPopulationCoverage:
         firing_rates = np.ones((5, n_bins)) * 15.0
 
         with pytest.warns(UserWarning, match="spatial-map-mean filter"):
-            result = population_coverage(simple_env, firing_rates, max_mean_rate=10.0)
+            result = population_coverage(
+                simple_env, firing_rates, bandwidth=0.0, max_mean_rate=10.0
+            )
         assert result.coverage_fraction == 0.0
         assert len(result.uncovered_bins) == n_bins
         assert result.n_place_cells == 0
@@ -222,9 +144,9 @@ class TestPopulationCoverage:
     def test_default_coverage_does_not_exclude_high_rate_maps(self, simple_env):
         """A flat high-rate map covers space descriptively without implying cell identity."""
         rates = np.full((2, simple_env.n_bins), 25.0)
-        result = population_coverage(simple_env, rates)
+        result = population_coverage(simple_env, rates, bandwidth=0.0)
         assert result.coverage_fraction == pytest.approx(1.0)
-        assert result.n_place_cells == 2  # Legacy name: units with segmented regions.
+        assert result.n_place_cells == 2  # Units with segmented regions.
         assert all(fields.excluded_reason is None for fields in result.place_fields)
 
     def test_single_neuron(self, simple_env: Environment) -> None:
@@ -236,11 +158,25 @@ class TestPopulationCoverage:
         for j in simple_env.neighbors(bins=0):
             firing_rates[0, j] = 5.0
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         assert result.n_neurons == 1
-        if result.n_place_cells > 0:
-            assert result.n_place_cells == 1
-            assert len(result.place_fields[0]) > 0
+        assert result.n_place_cells == 1
+        assert len(result.place_fields[0]) == 1
+        np.testing.assert_array_equal(
+            result.covered_bins, np.sort([0, *simple_env.neighbors(bins=0)])
+        )
+
+    def test_unobserved_bins_are_not_gaps(self, simple_env: Environment) -> None:
+        """Bins NaN for every neuron were not visited: neither covered nor gaps."""
+        n_bins = simple_env.n_bins
+        firing_rates = np.full((1, n_bins), np.nan)
+        observed = np.array([0, *simple_env.neighbors(bins=0)])
+        firing_rates[0, observed] = 5.0
+        firing_rates[0, 0] = 10.0
+
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
+        assert result.coverage_fraction == 1.0
+        assert len(result.uncovered_bins) == 0
 
     def test_field_count_matches_density_map(self, simple_env: Environment) -> None:
         """Verify field_count matches field_density_map output."""
@@ -251,7 +187,7 @@ class TestPopulationCoverage:
         firing_rates[1, 3:8] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
         firing_rates[2, 6:11] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         expected_density = field_density_map(result.place_fields, n_bins)
         np.testing.assert_array_equal(result.field_count, expected_density)
 
@@ -263,7 +199,7 @@ class TestPopulationCoverage:
         # Low uniform firing (no fields detected)
         firing_rates = np.ones((5, n_bins)) * 0.1
 
-        result = population_coverage(simple_env, firing_rates)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         expected_positions = simple_env.bin_centers[result.uncovered_bins]
         np.testing.assert_array_equal(result.uncovered_positions, expected_positions)
 
@@ -275,11 +211,11 @@ class TestPopulationCoverage:
         for i in range(3):
             firing_rates[i, i * 10 : (i + 1) * 10] = np.linspace(10.0, 1.0, 10)
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
-        neurons_with_fields = sum(
-            1 for fields in result.place_fields if len(fields) > 0
-        )
-        assert result.n_place_cells == neurons_with_fields
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
+        assert result.n_place_cells == 3
+        assert [len(fields) > 0 for fields in result.place_fields] == [True] * 3 + [
+            False
+        ] * 2
 
     def test_place_fields_format(self, simple_env: Environment) -> None:
         """Verify place_fields structure matches detect_place_fields output."""
@@ -290,7 +226,7 @@ class TestPopulationCoverage:
 
         from neurospatial.encoding.spatial import PlaceFieldsResult
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         # Should have list of length n_neurons
         assert len(result.place_fields) == 2
         # Each element is a PlaceFieldsResult that iterates as list[NDArray]
@@ -308,18 +244,18 @@ class TestPopulationCoverage:
         wrong_n_bins = simple_env.n_bins + 10
         firing_rates = rng.random((5, wrong_n_bins))
         with pytest.raises(ValueError, match="firing_rates shape mismatch"):
-            population_coverage(simple_env, firing_rates)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0)
 
     def test_non_2d_input_error(self, simple_env: Environment) -> None:
         """Test error for non-2D firing_rates."""
         rng = np.random.default_rng(42)
         firing_rates_1d = rng.random(simple_env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
-            population_coverage(simple_env, firing_rates_1d)  # type: ignore[arg-type]
+            population_coverage(simple_env, firing_rates_1d, bandwidth=0.0)  # type: ignore[arg-type]
 
         firing_rates_3d = rng.random((5, simple_env.n_bins, 3))
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
-            population_coverage(simple_env, firing_rates_3d)  # type: ignore[arg-type]
+            population_coverage(simple_env, firing_rates_3d, bandwidth=0.0)  # type: ignore[arg-type]
 
     def test_threshold_out_of_range_error(self, simple_env: Environment) -> None:
         """Test error for threshold outside (0, 1)."""
@@ -328,16 +264,16 @@ class TestPopulationCoverage:
         firing_rates = rng.random((5, n_bins))
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(simple_env, firing_rates, threshold=0.0)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0, threshold=0.0)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(simple_env, firing_rates, threshold=1.0)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0, threshold=1.0)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(simple_env, firing_rates, threshold=-0.1)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0, threshold=-0.1)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(simple_env, firing_rates, threshold=1.5)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0, threshold=1.5)
 
     def test_max_mean_rate_non_positive_error(self, simple_env: Environment) -> None:
         """Test error for non-positive max_mean_rate."""
@@ -346,10 +282,14 @@ class TestPopulationCoverage:
         firing_rates = rng.random((5, n_bins))
 
         with pytest.raises(ValueError, match="max_mean_rate must be positive"):
-            population_coverage(simple_env, firing_rates, max_mean_rate=0.0)
+            population_coverage(
+                simple_env, firing_rates, bandwidth=0.0, max_mean_rate=0.0
+            )
 
         with pytest.raises(ValueError, match="max_mean_rate must be positive"):
-            population_coverage(simple_env, firing_rates, max_mean_rate=-1.0)
+            population_coverage(
+                simple_env, firing_rates, bandwidth=0.0, max_mean_rate=-1.0
+            )
 
     def test_n_jobs_parity(self, simple_env: Environment) -> None:
         """population_coverage(n_jobs=2) equals n_jobs=1 on the same input."""
@@ -366,8 +306,8 @@ class TestPopulationCoverage:
         # Add a little noise so detection is non-trivial.
         firing_rates += rng.random((n_neurons, n_bins)) * 0.1
 
-        seq = population_coverage(simple_env, firing_rates, min_size=1, n_jobs=1)
-        par = population_coverage(simple_env, firing_rates, min_size=1, n_jobs=2)
+        seq = population_coverage(simple_env, firing_rates, bandwidth=0.0, n_jobs=1)
+        par = population_coverage(simple_env, firing_rates, bandwidth=0.0, n_jobs=2)
 
         # Scalar stats identical.
         assert seq.coverage_fraction == par.coverage_fraction
@@ -408,7 +348,7 @@ class TestPlotPopulationCoverage:
         for i in range(3):
             firing_rates[i, i * 10 : (i + 1) * 10] = np.linspace(10.0, 1.0, 10)
 
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
         return env, result
 
     @pytest.fixture
@@ -436,7 +376,7 @@ class TestPlotPopulationCoverage:
         firing_rates[0, 0:3] = np.array([10.0, 8.0, 6.0])
         firing_rates[1, 5:8] = np.array([10.0, 8.0, 6.0])
 
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
         return env, result
 
     def test_binary_plot(
@@ -509,7 +449,7 @@ class TestPlotPopulationCoverage:
         assert not env.is_linearized_track
         firing_rates = np.zeros((2, env.n_bins))
         firing_rates[0, 2:5] = [6.0, 10.0, 6.0]
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
         assert result.uncovered_positions.shape[1] == 1
         assert len(result.uncovered_bins) > 0
 
@@ -544,7 +484,7 @@ class TestPlotPopulationCoverage:
         assert env.n_dims == 2
         firing_rates = np.zeros((2, env.n_bins))
         firing_rates[0, 2:5] = [6.0, 10.0, 6.0]
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
 
         ax = plot_population_coverage(env, result)
         np.testing.assert_allclose(
@@ -637,46 +577,47 @@ class TestFieldDensityMap:
 
 
 class TestCountPlaceCells:
-    """Test count_place_cells function."""
+    """count_place_cells counts the bias-corrected place-cell screen."""
 
-    def test_count_place_cells_above_threshold(self) -> None:
-        """Test counting cells above information threshold."""
-        spatial_information = np.array([0.2, 0.8, 1.5, 0.3, 1.2])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        # 3 cells have information > 0.5
-        assert count == 3
+    @pytest.fixture(scope="class")
+    def rates(self):
+        from neurospatial import Environment
+        from neurospatial.encoding import compute_spatial_rates
+        from neurospatial.simulation import generate_poisson_spikes
 
-    def test_count_place_cells_default_threshold(self) -> None:
-        """Test default threshold of 0.5 bits/spike."""
-        spatial_information = np.array([0.3, 0.5, 0.6, 0.4, 1.0])
-        count = count_place_cells(spatial_information)
-        # Default threshold is 0.5, inclusive: 0.5, 0.6 and 1.0 count
-        assert count == 3
+        rng = np.random.default_rng(0)
+        positions = rng.uniform(0, 100, (36000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+        times = np.arange(36000) / 30.0
+        distance2 = np.sum((positions - 50.0) ** 2, axis=1)
+        field = 8.0 * np.exp(-distance2 / (2 * 10.0**2))
+        trains = [
+            generate_poisson_spikes(field, times, seed=1),  # place cell
+            generate_poisson_spikes(np.full(36000, 0.5), times, seed=2),  # untuned
+            np.array([]),  # silent
+        ]
+        return compute_spatial_rates(env, trains, times, positions)
 
-    def test_count_place_cells_none_qualify(self) -> None:
-        """Test when no cells exceed threshold."""
-        spatial_information = np.array([0.1, 0.2, 0.3])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        assert count == 0
+    def test_counts_the_classify_screen(self, rates) -> None:
+        assert count_place_cells(rates) == int(rates.classify().sum()) == 1
+        assert rates.classify().tolist() == [True, False, False]
 
-    def test_count_place_cells_all_qualify(self) -> None:
-        """Test when all cells exceed threshold."""
-        spatial_information = np.array([1.0, 1.5, 2.0, 0.8])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        assert count == 4
+    def test_untuned_cell_passes_only_without_the_correction(self, rates) -> None:
+        corrected = rates.spatial_information() - rates.spatial_information_bias()
+        raw = rates.spatial_information()
+        # 600 spikes of an untuned cell: raw information is all bias.
+        assert raw[1] > 0.04
+        assert abs(corrected[1]) < 0.02
+        assert count_place_cells(rates, min_info=raw[1]) == 1
 
-    def test_count_place_cells_boundary(self) -> None:
-        """A value exactly at the threshold counts (inclusive >=)."""
-        spatial_information = np.array([0.5, 0.50001, 0.49999])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        assert count == 2  # 0.5 and 0.50001
+    def test_cutoff_is_inclusive(self, rates) -> None:
+        corrected = rates.spatial_information() - rates.spatial_information_bias()
+        assert count_place_cells(rates, min_info=corrected[0]) == 1
+        assert count_place_cells(rates, min_info=np.nextafter(corrected[0], 9)) == 0
 
-    def test_count_place_cells_nan_handling(self) -> None:
-        """Test handling of NaN values in spatial information."""
-        spatial_information = np.array([0.8, np.nan, 1.2, 0.3, np.nan])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        # NaN values should be excluded from count
-        assert count == 2  # 0.8 and 1.2
+    def test_information_values_alone_are_refused(self) -> None:
+        with pytest.raises(TypeError, match="SpatialRatesResult"):
+            count_place_cells(np.array([0.8, 1.2]))  # type: ignore[arg-type]
 
 
 class TestFieldOverlap:
@@ -915,7 +856,8 @@ class TestPopulationVectorCorrelation:
         a = np.random.default_rng(2).random((12, 40))
         order = np.roll(np.arange(12), 1)
         pv = population_vector_correlation(a, a[order])
-        assert np.all(pv < 0.99)
+        # Independent random maps: correlations scatter around zero, not one.
+        assert abs(np.median(pv)) < 0.2
 
     def test_nan_rate_makes_location_nan(self, random_maps) -> None:
         a, c = random_maps
@@ -1001,7 +943,7 @@ class TestPopulationMetricsIntegration:
         firing_rates[4, :] = 0.1
 
         # Run population_coverage
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
 
         # Verify result structure
         assert isinstance(result, PopulationCoverageResult)

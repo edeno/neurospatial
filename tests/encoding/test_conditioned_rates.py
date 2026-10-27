@@ -12,6 +12,8 @@ from neurospatial.decoding import BayesianDecoder
 from neurospatial.encoding import compute_spatial_rates
 
 UNITS = ["u1"]
+# Below two 0.1 s frames, so the lost frame at 1.2 s is a tracking loss.
+MAX_GAP = 0.15
 
 
 @pytest.fixture(scope="module")
@@ -36,7 +38,9 @@ def positions() -> np.ndarray:
 @pytest.fixture(scope="module")
 def conditions(times, positions):
     labels = ["out"] * 10 + ["in"] * 10
-    return labels_to_epochs(times, labels, valid=np.isfinite(positions).all(axis=1))
+    return labels_to_epochs(
+        times, labels, valid=np.isfinite(positions).all(axis=1), max_gap=MAX_GAP
+    )
 
 
 def rates(env, spikes, times, positions, epochs):
@@ -49,6 +53,7 @@ def rates(env, spikes, times, positions, epochs):
         unit_ids=UNITS,
         method="binned",
         bandwidth=1.0,
+        max_gap=MAX_GAP,
     )
 
 
@@ -90,6 +95,24 @@ def test_unit_identity_and_epochs_recorded(env, times, positions, conditions, la
     result = rates(env, [0.05, 1.35], times, positions, conditions[label])
     assert result.unit_ids.tolist() == UNITS
     assert result.analysis_settings["epochs"] == conditions[label].tolist()
+
+
+def test_lost_frame_inside_max_gap_keeps_one_condition_epoch(env, times, positions):
+    labels = ["out"] * 10 + ["in"] * 10
+    conditions = labels_to_epochs(
+        times, labels, valid=np.isfinite(positions).all(axis=1)
+    )
+    assert_allclose(conditions["in"], [[1.0, 1.9]])
+    result = compute_spatial_rates(
+        env,
+        [np.array([1.05, 1.15, 1.25])],
+        times,
+        positions,
+        epochs=conditions["in"],
+        method="binned",
+        bandwidth=1.0,
+    )
+    assert_allclose(result.occupancy.sum(), 0.9, rtol=1e-12)
 
 
 def test_decoder_reuses_condition_epochs(env, times, positions, conditions):

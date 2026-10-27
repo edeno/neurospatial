@@ -15,9 +15,9 @@ Common Use Cases
 Which Function Should I Use?
 ----------------------------
 **Computing viewed location from gaze direction?**
-    Use ``compute_viewed_location()`` with method="fixed_distance" for a
-    point at fixed distance, or method="ray_cast" for the first wall along
-    the gaze.
+    Use ``compute_viewed_location()`` with method="ray_cast" for the first
+    wall along the gaze, or method="fixed_distance" for a point at a fixed
+    distance that stops at a nearer wall.
 
 **Need full visibility analysis from a position?**
     Use ``compute_viewshed()`` to get the visible bins and cues. A bin is
@@ -32,6 +32,14 @@ Which Function Should I Use?
 
 **Analyze visibility along a trajectory?**
     Use ``compute_viewshed_trajectory()`` or ``visibility_occupancy()``.
+
+What Blocks the View
+--------------------
+Only opaque walls block a line of sight or stop a gaze ray. Transparent
+walls and the drop edges of an elevated track or platform keep the animal in
+but not its view (``OpenArena(outline=..., wall_kinds=...)``). A gaze that
+leaves an elevated track meets no wall, so its ray-cast viewed location is
+NaN: the animal looks at something outside the environment.
 
 Species-Specific Field of View
 ------------------------------
@@ -75,11 +83,13 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
     CallIndexes,
     batch_line_of_sight_clear,
     boundary_view,
+    valid_observers,
 )
 from neurospatial.ops.egocentric import _check_pose
 
@@ -590,8 +600,8 @@ def compute_viewed_location(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    method: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
-    view_distance: float = 10.0,
+    method: Literal["fixed_distance", "ray_cast"] = "ray_cast",
+    view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
     env: BinningConsumer | None = None,
     max_distance: float | None = None,
@@ -606,19 +616,29 @@ def compute_viewed_location(
     headings : NDArray[np.float64], shape (n_time,)
         Animal heading at each time (allocentric radians: 0 = East,
         +pi/2 = North).
-    method : {"fixed_distance", "ray_cast"}, default "fixed_distance"
+    method : {"ray_cast", "fixed_distance"}, default "ray_cast"
         Method for computing viewed location:
 
-        - "fixed_distance": the point ``view_distance`` ahead along the gaze.
-        - "ray_cast": the first wall the gaze ray reaches.
-    view_distance : float, default 10.0
-        Distance in environment units (e.g. cm) for the fixed_distance method.
+        - "ray_cast": the first wall the gaze ray reaches. Needs ``env``.
+        - "fixed_distance": the point ``view_distance`` ahead along the gaze,
+          or the first wall when one is nearer. Without ``env`` the walls are
+          unknown and the point is not stopped.
+
+        Only opaque walls stop the gaze: it passes transparent walls and the
+        drop edges of an elevated track or platform (see
+        :class:`~neurospatial.arena.OpenArena`).
+    view_distance : float or None, default None
+        Distance along the gaze to the viewed point, in environment units
+        (e.g. cm). Required with ``method="fixed_distance"`` and refused
+        with ``"ray_cast"``: how far ahead an animal looks depends on the
+        species, task and arena, so there is no default.
     gaze_offsets : NDArray[np.float64], shape (n_time,), optional
         Gaze direction relative to the heading, in egocentric radians
         (0 = ahead, + = left, - = right), e.g. from eye tracking. If None,
         gaze is aligned with heading.
     env : Environment, optional
-        Required for the ray_cast method.
+        Supplies the walls. Required for the ray_cast method; with
+        fixed_distance it stops the gaze at the first wall.
     max_distance : float or None, default None
         Longest gaze ray for the ray_cast method, in environment units.
         ``None`` searches far enough to reach every wall: twice the diagonal
@@ -626,21 +646,25 @@ def compute_viewed_location(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+        bins do not occlude a physical ray. Unused without ``env``.
 
     Returns
     -------
     NDArray[np.float64], shape (n_time, 2)
         Viewed location in allocentric coordinates. NaN for a missing
-        observation and, with ray_cast, where no wall lies within
-        ``max_distance`` or the observer is outside the walls.
+        observation and, with ``env``, for an observer outside the walls;
+        with ray_cast also where no opaque wall lies within
+        ``max_distance``, such as a gaze past the edge of an elevated
+        track, whose viewed location is unknown.
 
     Raises
     ------
     ValueError
-        If method is invalid, ray_cast has no environment, the shapes of
-        ``positions``, ``headings`` and ``gaze_offsets`` disagree, or
-        ``max_distance`` is not finite and positive.
+        If method is invalid, ray_cast has no environment, ``view_distance``
+        is missing with fixed_distance, given with ray_cast or not a
+        positive finite distance, the shapes of ``positions``, ``headings``
+        and ``gaze_offsets`` disagree, or ``max_distance`` is not finite and
+        positive.
 
     Examples
     --------
@@ -666,6 +690,114 @@ def compute_viewed_location(
     ...     np.array([[10.0, 150.0]]), np.array([0.0]), method="ray_cast", env=env
     ... )
     array([[300., 150.]])
+
+    A fixed-distance gaze stops at a nearer wall instead of passing through it:
+
+    >>> compute_viewed_location(
+    ...     np.array([[295.0, 150.0]]),
+    ...     np.array([0.0]),
+    ...     method="fixed_distance",
+    ...     view_distance=10.0,
+    ...     env=env,
+    ... )
+    array([[300., 150.]])
+    """
+    viewed, _at_wall = gaze_points(
+        positions,
+        headings,
+        method=method,
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
+        env=env,
+        max_distance=max_distance,
+        boundary_source=boundary_source,
+    )
+    return viewed
+
+
+def _resolve_gaze_distance(
+    method: str,
+    view_distance: float | None,
+    *,
+    units: str | None,
+    context: str,
+    argument: str,
+) -> float | None:
+    """The fixed gaze distance in environment units, or None for ray casting.
+
+    Parameters
+    ----------
+    method : {"ray_cast", "fixed_distance"}
+        The gaze model.
+    view_distance : float or None
+        The caller's distance along the gaze.
+    units : str or None
+        Length units of the positions, for the message.
+    context : str
+        Public call for error messages.
+    argument : str
+        Name of the caller's gaze-model argument (``"method"`` or
+        ``"gaze_model"``).
+
+    Raises
+    ------
+    ValueError
+        If ``view_distance`` is given with ``ray_cast``, is missing with
+        ``fixed_distance``, or is not a positive finite number.
+    """
+    if method == "ray_cast":
+        if view_distance is not None:
+            raise ValueError(
+                _format_error(
+                    f"{context}: view_distance={view_distance!r} has no meaning "
+                    f"with {argument}='ray_cast'.",
+                    why="Why: ray casting takes the first wall along the gaze, at "
+                    "whatever distance it lies",
+                    fix=f"drop view_distance, or pass {argument}='fixed_distance'",
+                )
+            )
+        return None
+    if view_distance is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: {argument}='fixed_distance' needs view_distance.",
+                why="Why: how far ahead an animal looks depends on the species, "
+                "task and arena, and no published value applies by default",
+                fix="pass view_distance, the distance along the gaze to the "
+                f"viewed point in the units of positions (env.units={units!r}), "
+                f"or use {argument}='ray_cast' to take the first wall",
+            )
+        )
+    if not (np.isfinite(view_distance) and view_distance > 0):
+        raise ValueError(
+            f"{context}: view_distance must be a positive finite distance, "
+            f"got {view_distance!r}."
+        )
+    return float(view_distance)
+
+
+def gaze_points(
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    method: Literal["fixed_distance", "ray_cast"],
+    view_distance: float | None,
+    gaze_offsets: NDArray[np.float64] | None,
+    env: BinningConsumer | None,
+    max_distance: float | None,
+    boundary_source: BoundarySource,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Viewed points, and which of them lie on a wall.
+
+    The arguments are those of :func:`compute_viewed_location`.
+
+    Returns
+    -------
+    viewed : NDArray[np.float64], shape (n_time, 2)
+        As returned by :func:`compute_viewed_location`.
+    at_wall : NDArray[np.bool_], shape (n_time,)
+        True where the gaze stopped at a wall: every finite ray-cast point,
+        and each fixed-distance point a nearer wall cut short.
     """
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
@@ -675,7 +807,15 @@ def compute_viewed_location(
             f"method must be 'fixed_distance' or 'ray_cast', got {method!r}."
         )
     if method == "ray_cast" and env is None:
-        raise ValueError("env is required when method='ray_cast'")
+        raise ValueError(
+            _format_error(
+                "compute_viewed_location(): method='ray_cast' needs env.",
+                why="Why: ray casting stops the gaze at the first wall, and the "
+                "walls come from the environment",
+                fix="pass the env the positions were recorded in, or "
+                "method='fixed_distance' with a view_distance",
+            )
+        )
     _check_pose(
         "compute_viewed_location()",
         positions,
@@ -694,11 +834,41 @@ def compute_viewed_location(
                 )
             )
         gaze_direction = headings + gaze_offsets
+    view_distance = _resolve_gaze_distance(
+        method,
+        view_distance,
+        units=getattr(env, "units", None),
+        context="compute_viewed_location()",
+        argument="method",
+    )
 
     if method == "fixed_distance":
-        return positions + view_distance * np.column_stack(
+        assert view_distance is not None  # resolved above
+        fixed = positions + view_distance * np.column_stack(
             (np.cos(gaze_direction), np.sin(gaze_direction))
         )
+        if env is None:
+            return fixed, np.zeros(len(positions), dtype=np.bool_)
+        # The first wall within view_distance; NaN where none is nearer or
+        # the observer is outside the walls.
+        indexes = CallIndexes()
+        hits = boundary_view(
+            env.binning,
+            env.arena,
+            positions,
+            gaze_direction,
+            float(view_distance),
+            boundary_source,
+            indexes,
+            blocking="gaze",
+        )
+        at_wall = np.all(np.isfinite(hits), axis=1)
+        viewed = np.where(at_wall[:, None], hits, fixed)
+        observed = valid_observers(
+            env.binning, env.arena, positions, boundary_source, indexes
+        )
+        viewed[~observed] = np.nan
+        return viewed, at_wall
 
     from neurospatial.geometry import boundary_geometry, search_distance
 
@@ -706,9 +876,10 @@ def compute_viewed_location(
     binning, arena = env.binning, env.arena
     if max_distance is None:
         max_distance = search_distance(
-            boundary_geometry(binning, arena, boundary_source), positions
+            boundary_geometry(binning, arena, boundary_source, blocking="gaze"),
+            positions,
         )
-    return boundary_view(
+    viewed = boundary_view(
         binning,
         arena,
         positions,
@@ -716,7 +887,9 @@ def compute_viewed_location(
         max_distance,
         boundary_source,
         CallIndexes(),
+        blocking="gaze",
     )
+    return viewed, np.all(np.isfinite(viewed), axis=1)
 
 
 def compute_viewshed(
@@ -887,7 +1060,7 @@ def _sight_lines(
         physical_clear_segments,
     )
 
-    walls = boundary_geometry(binning, arena, boundary_source)
+    walls = boundary_geometry(binning, arena, boundary_source, blocking="gaze")
     if boundary_source == "physical":
         return lambda observer, targets: physical_clear_segments(
             arena, observer, targets
@@ -1258,7 +1431,7 @@ def visibility_occupancy(
     *,
     fov: FieldOfView | float | None = None,
     boundary_source: BoundarySource = "physical",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -1291,13 +1464,13 @@ def visibility_occupancy(
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
         bins do not occlude a physical ray.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) add no
-        viewing time. ``None`` disables the gap check.
-        A ``UserWarning`` names the cause when every interval is excluded,
-        or when the median sampling interval exceeds ``max_gap`` (usually
-        ``times`` that are not in seconds).
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1333,11 +1506,13 @@ def visibility_occupancy(
 
     Notes
     -----
-    Interval ``k`` adds time only when it passes ``max_gap``, lies inside
-    ``epochs``, is not crossed by a declared break, and both of its samples
-    have a finite position and heading. A tracking pause or the join between
-    two recordings is therefore not counted as viewing time. Viewsheds are
-    computed only for samples that start such an interval.
+    A sample without a finite position and heading is missing and is
+    treated as a deleted row: the gap between the observed samples around it
+    adds its time to the viewshed of the sample that starts it when the gap
+    passes ``max_gap``, lies inside ``epochs`` and is not crossed by a
+    declared break. A longer tracking pause or the join between two
+    recordings is therefore not counted as viewing time. Viewsheds are
+    computed only for samples that start such a gap.
 
     Examples
     --------
@@ -1357,6 +1532,7 @@ def visibility_occupancy(
     """
     from neurospatial._intervals import (
         as_intervals,
+        hold_last_valid,
         interval_valid_mask,
         validate_max_gap,
         warn_excluded_intervals,
@@ -1390,10 +1566,15 @@ def visibility_occupancy(
         return occupancy
 
     observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
+    # A missing sample is bridged like a deleted row: the gap's time is
+    # viewed from the observed sample that starts it.
     usable = interval_valid_mask(
-        times, max_gap=max_gap, epochs=resolved_epochs, break_before=breaks
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        break_before=breaks,
+        sample_valid=observed,
     )
-    usable &= observed[:-1] & observed[1:]
     warn_excluded_intervals(
         times,
         usable,
@@ -1404,10 +1585,13 @@ def visibility_occupancy(
         result="no bin received viewing time",
     )
 
-    dt = np.diff(times)
+    held = hold_last_valid(np.arange(n_time), observed, fill=0)
+    dt = np.bincount(
+        held[:-1][usable], weights=np.diff(times)[usable], minlength=n_time
+    )
     no_cues = np.empty((0, 2))
     # Viewsheds are per-frame; compute them only for frames that add time.
-    for i in np.flatnonzero(usable & (dt > 0)):
+    for i in np.flatnonzero(dt > 0):
         result = _viewshed(
             binning,
             arena,

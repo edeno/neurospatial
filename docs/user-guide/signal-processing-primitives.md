@@ -112,6 +112,8 @@ if valid.sum() >= 3:
 print(f"Descriptive coherence: {coherence:.3f}")
 ```
 
+This recipe reports the correlation r so each step stays visible. `rate_map_coherence(env, firing_rate)` reports the Fisher z, `arctanh(r)`, which is the value Muller and Kubie (1989) report, so its numbers are larger than this r.
+
 Coherence depends on binning, support, smoothing, and neighborhood definition. Smoothing a map before measuring coherence can raise it by construction. There is no universal coherence cutoff that establishes a place cell; use a stated analysis and validation procedure.
 
 ## Custom graph-distance filtering

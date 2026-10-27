@@ -25,7 +25,7 @@ env = Environment.from_samples(
 )
 
 assert env.arena.domain_known
-assert not env.arena.physical_footprint_known
+assert env.arena.outline is None  # inferred from positions, not a wall
 ```
 
 By default, bins containing observations are active. `bin_count_threshold`
@@ -161,8 +161,9 @@ assert env.contains(np.array([[1.0, 1.5], [5.0, 1.5]])).all()
 
 The mask itself supplies the domain; you do not need to trace an additional
 polygon. Its physical interpretation depends on how the mask was obtained.
-The default `MaskArena` records computational support without claiming a
-measured physical footprint.
+The default `MaskArena` records computational support without declaring its
+outline a physical boundary; pass `arena=MaskArena(..., outline="wall")` (or
+`"drop"`) when the mask traces the apparatus.
 
 ## Immutable values and labels
 
@@ -335,8 +336,8 @@ optional `arena=` argument of the sample and mask factories. Explicit polygon
 selection keeps whole bins whose centers lie strictly inside the polygon;
 lookup also rejects points outside its boundary or inside its holes. A curved or
 diagonal wall leaves slivers inside the arena whose grid cells were not kept
-(their centers lie outside); a position in a sliver belongs to the neighboring
-bin, less than one cell away, so an animal running along the wall stays in
+(their centers lie outside, or exactly on the wall); a position in a sliver
+belongs to the neighboring bin, less than one cell away, so an animal running along the wall stays in
 occupancy and spike counts. This selection does not change cell areas. Use
 `clip()` below when exact intersected cell areas are needed.
 
@@ -347,8 +348,64 @@ from shapely.geometry import Point
 from neurospatial import Environment
 
 env = Environment.from_polygon(Point(0.0, 0.0).buffer(10.0), bin_size=2.0)
-assert env.arena.physical_footprint_known
+assert env.arena.outline == "wall"
 assert env.bin_at(np.array([[9.9, 2.0]]))[0] == -1
+```
+
+### Walls, transparent walls and drop edges
+
+Every physical boundary has a kind, which says what it blocks:
+
+| kind | blocks movement | blocks gaze | example |
+| --- | --- | --- | --- |
+| `"wall"` | yes | yes | an opaque box or maze wall |
+| `"transparent_wall"` | yes | no | a clear plexiglass divider |
+| `"drop"` | yes | no | the edge of an elevated track or platform |
+| `None` (outline only) | unknown | no | a domain inferred from positions or a mask |
+
+`from_polygon` declares the polygon's outline an opaque wall. For an elevated
+track or platform pass `arena=OpenArena(polygon, outline="drop")`. Named walls
+take their kinds from `wall_kinds`: one kind for all, or a mapping from wall
+name to kind. A named wall lying on the outline gives that stretch its own
+kind, so a box with opaque outer walls and one clear side declares the clear
+side as a named transparent wall built from the outline's vertices. An animal
+that climbs a wall or leans over a drop is not modeled.
+
+Analyses choose the property they need. Border scores and boundary-vector maps
+measure every boundary the animal cannot cross, so an elevated platform scores
+like the same platform with walls; boundary-vector cells (Lever et al., 2009)
+and most border cells (van Wijngaarden et al., 2020) keep firing along a drop
+edge. Gaze, line of sight and view fields stop only at opaque walls: a gaze
+that leaves an elevated track meets no wall, so its ray-cast viewed location is
+NaN.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import LineString, box
+from neurospatial import Environment
+from neurospatial.arena import OpenArena
+from neurospatial.ops.visibility import compute_viewed_location
+
+platform = box(0, 0, 100, 100)
+arena = OpenArena(
+    platform,
+    outline="drop",
+    walls={
+        "glass": LineString([(30, 20), (30, 80)]),
+        "board": LineString([(70, 20), (70, 80)]),
+    },
+    wall_kinds={"glass": "transparent_wall"},
+)
+env = Environment.from_polygon(platform, bin_size=5.0, units="cm", arena=arena)
+viewed = compute_viewed_location(
+    np.array([[10.0, 50.0], [10.0, 50.0]]),
+    np.array([0.0, np.pi]),  # east, then west
+    method="ray_cast",
+    env=env,
+)
+np.testing.assert_allclose(viewed[0], [70.0, 50.0])  # through the glass
+assert np.isnan(viewed[1]).all()  # past the drop edge
 ```
 
 `OpenArena` separates a known polygon from explicitly supplied internal walls.
@@ -592,20 +649,22 @@ their coordinate and distance conventions.
 
 ## Choose physical walls or analysis boundaries
 
-Physical border scores use asserted footprint rings (including holes) and
-explicit internal walls. The footprint must be known: internal walls alone do
-not say where the outer walls are, so an arena declared with
-`OpenArena(..., physical_footprint_known=False)` refuses physical scoring even
-when it has internal walls. A crop or a missing position sample does not create a
+Physical border scores use the declared outline rings (including holes) and
+named walls, of every kind: walls, transparent walls and drop edges. The
+outline must be declared: internal walls alone do not say where the outer
+boundary is, so an arena declared with `OpenArena(..., outline=None)` refuses
+physical scoring even when it has internal walls. A crop or a missing position sample does not create a
 wall. If only tracking-derived support or an analysis mask is available, request
-`boundary_source="analysis"` to use the legacy boundary-bin approximation.
-Physical mode is the default. It requires measured wall geometry and retained
-cells with finite firing rates along every measured wall segment. Missing wall
-observations cannot establish that firing was zero near the wall. Supplying
-`OpenArena` establishes wall locations; it does not add bins or observations.
-Physical scoring refuses when either geometry or this observation support is
-missing. A valid zero rate near the wall still contributes to a negative score
-for a field away from the wall.
+`boundary_source="analysis"` to score against the outline of the retained bins
+instead.
+Physical mode is the default. It requires measured wall geometry and a
+retained bin at every piece of measured wall; it refuses, saying where, when
+bins stop short of a wall. Supplying `OpenArena` establishes wall locations; it
+does not add bins. Unvisited bins along a wall are missing, not evidence of
+zero firing: coverage is measured on the observed part of each wall, and
+`observed_wall_fraction(env, firing_rate)` reports how much of the walls a rate
+map observes. A valid zero rate near the wall still contributes to a negative
+score for a field away from the wall.
 
 <!-- docs-test: run -->
 ```python
@@ -616,23 +675,34 @@ from neurospatial.arena import OpenArena
 from neurospatial.encoding import border_score
 
 env = Environment.from_grid_mask(
-    np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2,
-    arena=OpenArena(box(0, 0, 10, 10)), units="cm",
+    np.ones((10, 10), dtype=bool), grid_edges=(np.arange(0.0, 101.0, 10.0),) * 2,
+    arena=OpenArena(box(0, 0, 100, 100)), units="cm",
 )
-field = (env.bin_centers[:, 0] < 1).astype(float)
+field = (env.bin_centers[:, 0] < 10).astype(float)  # one column on the west wall
 score = border_score(env, field, metric="euclidean")
-assert 0 < score < 1
+# The field covers the whole west wall; its centers are 5 cm from it, a tenth
+# of the 50 cm radius of the largest circle that fits in the box.
+np.testing.assert_allclose(score, (1 - 0.1) / (1 + 0.1))
+# The full grid's outline is the box, so the analysis outline agrees here.
 approximation = border_score(env, field, boundary_source="analysis")
-assert approximation == 1.0
+np.testing.assert_allclose(approximation, score)
 ```
 
-Physical coverage is the fraction of declared wall length covered by field
-cells. Distance is mean field-center distance to actual walls, normalized by
-the wall diameter (maximum point separation). Geodesic mode includes center-to-wall lengths
-and paths through retained graph bins. An unavailable route makes the score
-NaN; crops can restrict represented routes. Euclidean mode avoids that graph
-restriction. This is a generalized screening metric; existing fixed thresholds
-are not a calibrated significance test for this geometry.
+This is the border score of Solstad et al. (2008). Coverage is the largest
+fraction of one wall that one field covers. Each outline ring is split into
+walls at its corners, in physical units: a polygon's vertices are corners
+unless they sample a curve (a rectangle has four walls, an octagon eight, a box
+with rounded corners four). A ring without corners, such as a circular arena,
+offers each field any half of it as its wall, following Høydal et al. (2018).
+Each named wall is one more wall; a named wall that lies on the outline
+replaces that piece of it, so walls can be declared by hand. Distance is the firing-rate-weighted mean
+distance from field bin centers to the nearest wall, divided by the radius of
+the largest circle that fits in the arena without crossing a wall. Geodesic
+mode includes center-to-wall lengths and paths through retained graph bins. An
+unavailable route makes the score NaN; crops can restrict represented routes.
+Euclidean mode avoids that graph restriction. The usual 0.5 cutoff was chosen
+for rectangular boxes, where a map that fires everywhere scores 0.5;
+`untuned_border_score(env)` gives that baseline for other arena shapes.
 
 For a rotated rectangular arena, construct bins in coordinates aligned with the
 measured rectangle, then transform the bins and arena together. Transform the
@@ -647,8 +717,8 @@ from neurospatial import Environment
 from neurospatial.encoding import border_score
 from neurospatial.ops.transforms import AffineND
 
-env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
-field = (env.bin_centers[:, 0] < 1).astype(float)
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
+field = (env.bin_centers[:, 0] < 10).astype(float)
 score = border_score(env, field, metric="euclidean")
 angle = np.pi / 4
 transform = AffineND(np.array([
@@ -658,7 +728,7 @@ transform = AffineND(np.array([
 ]))
 rotated = env.apply_transform(transform)
 np.testing.assert_allclose(border_score(rotated, field, metric="euclidean"), score)
-recorded_positions = np.array([[0.5, 0.5], [0.5, 1.5]])
+recorded_positions = np.array([[5.0, 5.0], [5.0, 15.0]])
 rotated_positions = transform(recorded_positions)
 assert np.all(rotated.bin_at(rotated_positions) >= 0)
 ```
@@ -672,23 +742,26 @@ The same choice is available on `result.border_score()`, population
 `border_scores()` and `label_cell_types()`, and `summary_table()`. Tables retain
 other metrics when wall geometry is unavailable: border scores are NaN, with a
 reason in `table.attrs["unavailable_metrics"]` and the chosen source in
-`table.attrs["border_boundary_source"]`. A spatially tuned cell that is not a
-grid cell is then labeled `"undetermined"` rather than `"place"`, because it may
-be a border cell. No analysis approximation is selected
+`table.attrs["border_boundary_source"]`. Cell-type labels are then
+`"undetermined"`, because any cell may be a border cell. On a 1-D track grid
+and border cells do not apply, so a tuned cell is `"place"`. No analysis
+approximation is selected
 implicitly. Physical border coverage currently requires exact planar cells and
-polygonal walls; curved track footprints require a separate representation.
+polygonal walls; a `TrackArena` declares no physical boundary, so declare a
+walled or elevated track as an `OpenArena` of its floor polygon.
 Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.
-A combined environment also needs a measured footprint for every component: a
+A combined environment also needs a declared outline for every component: a
 field at the edge of a component without one would otherwise be scored against
 walls elsewhere, so physical scoring refuses and names the component.
 
 ## Compute gaze and visibility against walls
 
 Ray casting and cue visibility use the same `boundary_source` choice. Physical
-mode reads declared footprint rings and internal walls; it does not stop when a
-ray crosses an analysis crop or an unvisited bin. Analysis mode explicitly uses
+mode reads the declared outline and named walls, and only opaque walls
+(`"wall"`) stop a gaze: transparent walls and drop edges do not. It does not
+stop when a ray crosses an analysis crop or an unvisited bin. Analysis mode explicitly uses
 analysis-cell boundaries, constrained by the known domain and internal walls.
 
 <!-- docs-test: run -->
@@ -721,8 +794,8 @@ np.testing.assert_array_equal(visible, [True, False])  # on the wall; behind it
 ```
 
 `compute_viewed_location()` returns the first wall contact. No hit within
-`max_distance`, a nonfinite observation, or an observer outside an asserted
-footprint yields NaN. An observer tracked exactly on a wall sees the next wall
+`max_distance`, a nonfinite observation, or an observer outside a declared
+outline yields NaN. An observer tracked exactly on a wall sees the next wall
 when it faces into the room; facing out through the wall, or exactly along it,
 gives a zero-distance contact at the observer. On an internal wall, the
 observer sees the side it faces. A cue at the first contact is visible; a cue
@@ -743,17 +816,20 @@ for visible bins and 0 for hidden ones. Averaging it over observed frames gives
 the fraction of time each bin was in view.
 
 The source choice is forwarded by the single/population view encoders, shuffle
-tests and `SpatialViewCellModel`. With `gaze_model="ray_cast"`,
-encoding assigns a wall hit to the bin just inside the observer's side. A hit
-outside the retained analysis support makes physical view encoding unavailable
-and raises with guidance when it contributes to the selected recording time.
-The final sample starts no exposure interval, and hits during excluded epochs,
-recording windows, long gaps or zero-duration intervals cannot change the map.
-Supplying wall geometry cannot add missing bins, and
-assigning a distant wall to a nearby bin would change the measured location.
-Build cells that reach the wall, or explicitly request the analysis-boundary
-approximation. `from_polygon()` keeps whole cells whose centers lie inside, so
-its cells stop short of a curved or slanted wall. To reach such a wall, clip a
+tests and `SpatialViewCellModel`. With the default `gaze_model="ray_cast"`,
+encoding assigns a wall hit to the bin just inside the observer's side.
+`from_polygon()` keeps whole cells whose centers lie strictly inside, so its
+cells stop short of a curved or slanted wall; a hit in the sliver between them
+and the wall belongs to the bin that owns positions there, as an animal's
+position in that sliver does. A hit outside the retained analysis support (in
+bins a subset removed, or beyond the cells) makes physical view encoding
+unavailable and raises with guidance when it contributes to the selected
+recording time. The final sample starts no exposure interval, and hits during
+excluded epochs, recording windows, long gaps or zero-duration intervals cannot
+change the map. Supplying wall geometry cannot add missing bins, and assigning
+a distant wall to a nearby bin would change the measured location. Build cells
+that reach the wall, or explicitly request the analysis-boundary
+approximation. To give exact cell areas at a curved or slanted wall, clip a
 grid that covers the arena to the measured polygon and attach its walls:
 `Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
 The geometry-only `compute_viewed_location()` still returns the known physical
@@ -764,11 +840,14 @@ require gaze observations at every wall. Unviewed bins remain missing, and rays
 with no hit or invalid observations remain missing. Spike counts and exposure
 share that assignment, and results record the source in `analysis_settings`.
 Encoder/model searches cover the known geometry rather than imposing a fixed
-100-unit range. Fixed-distance gaze keeps its existing behavior.
+100-unit range. In the view encoders, fixed-distance gaze stops at the same
+walls: its viewed point is `view_distance` ahead or the first wall, whichever
+is nearer, so a gaze never lands behind a wall.
 
 Physical encoding of independently transformed combined components requires a
-shared certified owner frame; unsupported cases refuse with guidance. Curved
-track footprints still require a separate exact wall representation. For a
+shared certified owner frame; unsupported cases refuse with guidance. A
+`TrackArena` declares no physical boundary; declare a track's floor polygon as
+an `OpenArena` instead. For a
 position-derived environment with supported planar cells, explicitly select
 `boundary_source="analysis"` when that approximation is the intended model.
 

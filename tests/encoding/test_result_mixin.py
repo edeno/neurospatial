@@ -48,7 +48,6 @@ def _directional(env: Environment, rate_a, rate_b) -> DirectionalPlaceFields:
         firing_rates={"fwd": np.asarray(rate_a), "rev": np.asarray(rate_b)},
         occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         env=env,
-        labels=("fwd", "rev"),
     )
 
 
@@ -82,8 +81,14 @@ def test_directional_place_fields_compare(linear_env: Environment) -> None:
     # Reversed map -> perfectly anti-correlated (-1.0).
     flipped = _directional(linear_env, base, base[::-1].copy())
     assert np.isclose(flipped.correlation("fwd", "rev"), -1.0)
-    # Directionality index is positive when the maps differ per bin.
-    assert flipped.directionality_index("fwd", "rev") > 0.0
+    # The same total rate in both directions: the field moved, the rate did
+    # not, so the directionality index is 0 and only the correlation drops.
+    assert np.isclose(flipped.directionality_index("fwd", "rev"), 0.0)
+
+    # Twice the rate in one direction: DI = (2 - 1) / (2 + 1), sign by order.
+    louder = _directional(linear_env, 2 * base, base.copy())
+    assert np.isclose(louder.directionality_index("fwd", "rev"), 1 / 3)
+    assert np.isclose(louder.directionality_index("rev", "fwd"), -1 / 3)
 
     # Unknown label is a clear error, not a silent NaN.
     with pytest.raises(KeyError):
@@ -142,9 +147,7 @@ def test_place_fields_result_surface() -> None:
     assert df["bin"].tolist() == [0, 1, 5]
 
     # Empty / excluded result yields an empty tidy frame with the columns.
-    excluded = PlaceFieldsResult(
-        fields=[], excluded_reason="mean_rate_above_threshold", n_excluded=1
-    )
+    excluded = PlaceFieldsResult(fields=[], excluded_reason="mean_rate_above_threshold")
     assert excluded.summary()["n_excluded"] == 1
     empty_df = excluded.to_dataframe()
     assert list(empty_df.columns) == ["field", "bin"]
@@ -252,7 +255,6 @@ class TestRetrofittedResultSummaries:
                     orientation=0.3,
                     orientation_std=0.05,
                     peak_coords=np.zeros((6, 2)),
-                    n_peaks=6,
                 ),
                 {"score", "scale", "orientation", "n_peaks"},
             ),

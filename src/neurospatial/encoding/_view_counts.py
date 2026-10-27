@@ -19,8 +19,9 @@ Output shapes:
 - View occupancy: (n_bins,) - always shared across neurons
 
 Gaze models supported:
-- "fixed_distance": Point at fixed distance in gaze direction (default)
-- "ray_cast": Intersection with environment boundary
+- "ray_cast": the first wall along the gaze (default)
+- "fixed_distance": the point a fixed distance along the gaze, or the first
+  wall when one is nearer
 """
 
 from __future__ import annotations
@@ -31,7 +32,10 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
 )
@@ -42,7 +46,7 @@ from neurospatial.encoding._spatial_counts import (
 )
 from neurospatial.encoding._validation import _validate_times as _validate_times
 from neurospatial.geometry import require_cartesian, wall_hit_bins
-from neurospatial.ops.visibility import compute_viewed_location
+from neurospatial.ops.visibility import gaze_points
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -57,22 +61,34 @@ __all__ = [
 
 def _view_observation_mask(
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    gaze_offsets: NDArray[np.float64] | None,
     *,
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None = None,
-) -> NDArray[np.bool_]:
-    """Resolve selected exposure before requiring bins at physical wall hits."""
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Resolve selected exposure before requiring bins at physical wall hits.
+
+    A sample with a non-finite position, heading or gaze offset is missing
+    and is bridged like a deleted row. Returns the interval mask, shape
+    ``(n_samples - 1,)``, and the observed samples, shape ``(n_samples,)``.
+    """
+    observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
+    if gaze_offsets is not None:
+        observed &= np.isfinite(gaze_offsets)
     mask = interval_valid_mask(
         times,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
+        sample_valid=observed,
     )
     mask &= np.diff(times) > 0
-    return mask
+    return mask, observed
 
 
 def require_allocentric_view(env: Environment, operation: str) -> None:
@@ -89,6 +105,8 @@ def require_allocentric_view(env: Environment, operation: str) -> None:
     ------
     CartesianOnlyError
         If ``env`` is polar.
+    ValueError
+        If ``env`` is not two-dimensional.
     """
     require_cartesian(
         env.coordinate_system,
@@ -98,6 +116,14 @@ def require_allocentric_view(env: Environment, operation: str) -> None:
         fix="compute view rates on the allocentric environment the positions "
         "were recorded in",
     )
+    if env.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"{operation} needs a 2-D environment; got a {env.n_dims}-D one.",
+                why="Why: gaze is cast in the plane from (x, y) positions and headings",
+                fix="build the environment from the animal's 2-D (x, y) positions",
+            )
+        )
 
 
 def _precompute_view_bins(
@@ -105,8 +131,8 @@ def _precompute_view_bins(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
-    view_distance: float = 10.0,
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
+    view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
     boundary_source: BoundarySource = "physical",
     interval_mask: NDArray[np.bool_] | None = None,
@@ -124,10 +150,11 @@ def _precompute_view_bins(
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, 0=East).
-    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="ray_cast"
         Method for computing viewed location.
-    view_distance : float, default=10.0
-        Distance for fixed_distance gaze model (environment units).
+    view_distance : float or None, default=None
+        Distance for the fixed_distance gaze model (environment units);
+        required by it and unused by ray_cast.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
 
@@ -137,7 +164,7 @@ def _precompute_view_bins(
         bins do not occlude a physical ray. For ray-based rate maps, a finite
         physical hit without a retained bin raises NotImplementedError; provide
         bins at the wall or explicitly select the analysis approximation.
-        Fixed-distance gaze ignores this.
+        Fixed-distance gaze stops at the same walls.
 
     Returns
     -------
@@ -153,57 +180,55 @@ def _precompute_view_bins(
     """
     n_samples = len(positions)
 
-    # Compute viewed locations for all timepoints
-    viewed_locations = compute_viewed_location(
+    # Viewed locations for all timepoints; a gaze never passes through a wall.
+    viewed_locations, at_wall = gaze_points(
         positions,
         headings,
         method=gaze_model,
-        boundary_source=boundary_source,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
-        env=env if gaze_model == "ray_cast" else None,
+        env=env,
+        max_distance=None,
+        boundary_source=boundary_source,
     )
 
-    # Identify valid viewed locations (finite and inside environment)
-    valid_view_mask = np.all(np.isfinite(viewed_locations), axis=1)
-
-    # Map viewed locations to bins
     view_bins = np.full(n_samples, -1, dtype=np.intp)
-    if np.any(valid_view_mask):
-        valid_viewed = viewed_locations[valid_view_mask]
-        if gaze_model != "fixed_distance":
-            origins = positions[valid_view_mask]
-            valid_bins = env.bin_at(np.nextafter(valid_viewed, origins))
-            valid_bins = wall_hit_bins(
-                env.binning,
-                env.arena,
-                valid_viewed,
-                origins,
-                valid_bins,
-                boundary_source,
+    finite = np.all(np.isfinite(viewed_locations), axis=1)
+    # A point in open space lies in a bin or outside the environment (-1).
+    open_space = finite & ~at_wall
+    if np.any(open_space):
+        view_bins[open_space] = env.bin_at(viewed_locations[open_space])
+    # A point on a wall belongs to the bin on the observer's side.
+    wall = finite & at_wall
+    if np.any(wall):
+        hits = viewed_locations[wall]
+        origins = positions[wall]
+        wall_bins = env.bin_at(np.nextafter(hits, origins))
+        wall_bins = wall_hit_bins(
+            env.binning,
+            env.arena,
+            hits,
+            origins,
+            wall_bins,
+            boundary_source,
+        )
+        required = np.zeros(n_samples, dtype=bool)
+        if interval_mask is not None:
+            required[:-1] = interval_mask
+        if boundary_source == "physical" and np.any((wall_bins < 0) & required[wall]):
+            raise NotImplementedError(
+                "Physical wall hit has no retained bin on the observer's side. "
+                "Build bins that reach the measured wall before computing view rates; "
+                "adding OpenArena or clipping existing cells cannot add missing bins. "
+                "For curved or slanted walls, clip a grid that covers the arena to the "
+                "measured polygon and attach its walls: Environment.from_bins("
+                "grid.clip(polygon).binning, arena=OpenArena(polygon)). "
+                "For rotated rectangular arenas, construct bins in the arena-aligned frame "
+                "and transform bins, arena and observations together. Alternatively, explicitly "
+                "choose boundary_source='analysis' to encode the retained analysis boundary. "
+                "compute_viewed_location(...) remains available for geometry-only wall contacts."
             )
-            required = np.zeros(n_samples, dtype=bool)
-            if interval_mask is not None:
-                required[:-1] = interval_mask
-            if boundary_source == "physical" and np.any(
-                (valid_bins < 0) & required[valid_view_mask]
-            ):
-                raise NotImplementedError(
-                    "Physical wall hit has no retained bin on the observer's side. "
-                    "Build bins that reach the measured wall before computing view rates; "
-                    "adding OpenArena or clipping existing cells cannot add missing bins. "
-                    "For curved or slanted walls, clip a grid that covers the arena to the "
-                    "measured polygon and attach its walls: Environment.from_bins("
-                    "grid.clip(polygon).binning, arena=OpenArena(polygon)). "
-                    "For rotated rectangular arenas, construct bins in the arena-aligned frame "
-                    "and transform bins, arena and observations together. Alternatively, explicitly "
-                    "choose boundary_source='analysis' to encode the retained analysis boundary. "
-                    "compute_viewed_location(...) remains available for geometry-only wall contacts."
-                )
-        else:
-            valid_bins = env.bin_at(valid_viewed)
-        view_bins[valid_view_mask] = valid_bins
-        # Bins outside environment return -1 from bin_at, which is what we want
+        view_bins[wall] = wall_bins
 
     return view_bins
 
@@ -214,10 +239,10 @@ def compute_occupancy(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
-    view_distance: float = 10.0,
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
+    view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     boundary_source: BoundarySource = "physical",
@@ -240,21 +265,25 @@ def compute_occupancy(
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, 0=East).
-    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="ray_cast"
         Method for computing viewed location:
-        - "fixed_distance": Point at fixed distance in gaze direction
-        - "ray_cast": Intersection with environment boundary
-    view_distance : float, default=10.0
-        Distance for fixed_distance gaze model (environment units).
+        - "ray_cast": the first wall along the gaze
+        - "fixed_distance": the point ``view_distance`` along the gaze, or
+          the first wall when one is nearer
+    view_distance : float or None, default=None
+        Distance for the fixed_distance gaze model (environment units);
+        required by it and unused by ray_cast.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction (e.g., from eye tracking).
         If None, gaze is aligned with heading.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -276,7 +305,7 @@ def compute_occupancy(
         bins do not occlude a physical ray. For ray-based rate maps, a finite
         physical hit without a retained bin raises NotImplementedError; provide
         bins at the wall or explicitly select the analysis approximation.
-        Fixed-distance gaze ignores this.
+        Fixed-distance gaze stops at the same walls.
 
     Returns
     -------
@@ -305,12 +334,12 @@ def compute_occupancy(
     Examples
     --------
     >>> import numpy as np
+    >>> from shapely.geometry import box
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding._view_counts import compute_occupancy
 
-    >>> # Create environment
-    >>> positions = np.random.rand(100, 2) * 100
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
+    >>> # A 100 x 100 cm box whose outline is a wall
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
 
     >>> # Create trajectory with positions and headings
     >>> times = np.linspace(0, 10, 1000)
@@ -363,8 +392,14 @@ def compute_occupancy(
                 f"times length ({n_samples})"
             )
 
-    mask = _view_observation_mask(
-        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    mask, observed = _view_observation_mask(
+        times,
+        positions,
+        headings,
+        gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
     )
     view_bins = _precompute_view_bins(
         env,
@@ -376,6 +411,7 @@ def compute_occupancy(
         boundary_source=boundary_source,
         interval_mask=mask,
     )
+    view_bins = hold_last_valid(view_bins, observed, fill=-1)
     mask &= view_bins[:-1] >= 0
     return start_allocated_occupancy(view_bins, np.diff(times), mask, env.n_bins)
 
@@ -387,10 +423,10 @@ def bin_view_spike_train(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
-    view_distance: float = 10.0,
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
+    view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     boundary_source: BoundarySource = "physical",
@@ -413,18 +449,21 @@ def bin_view_spike_train(
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, 0=East).
-    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="ray_cast"
         Method for computing viewed location.
-    view_distance : float, default=10.0
-        Distance for fixed_distance gaze model (environment units).
+    view_distance : float or None, default=None
+        Distance for the fixed_distance gaze model (environment units);
+        required by it and unused by ray_cast.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -446,7 +485,7 @@ def bin_view_spike_train(
         bins do not occlude a physical ray. For ray-based rate maps, a finite
         physical hit without a retained bin raises NotImplementedError; provide
         bins at the wall or explicitly select the analysis approximation.
-        Fixed-distance gaze ignores this.
+        Fixed-distance gaze stops at the same walls.
 
     Returns
     -------
@@ -473,12 +512,12 @@ def bin_view_spike_train(
     Examples
     --------
     >>> import numpy as np
+    >>> from shapely.geometry import box
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding._view_counts import bin_view_spike_train
 
-    >>> # Create environment
-    >>> positions = np.random.rand(100, 2) * 100
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
+    >>> # A 100 x 100 cm box whose outline is a wall
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
 
     >>> # Create trajectory
     >>> times = np.linspace(0, 10, 1000)
@@ -507,8 +546,14 @@ def bin_view_spike_train(
     # Validate times (minimum samples and monotonicity)
     _validate_times(times, context="bin_view_spike_train")
 
-    mask = _view_observation_mask(
-        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    mask, observed = _view_observation_mask(
+        times,
+        positions,
+        headings,
+        gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
     )
     view_bins = _precompute_view_bins(
         env,
@@ -520,6 +565,7 @@ def bin_view_spike_train(
         boundary_source=boundary_source,
         interval_mask=mask,
     )
+    view_bins = hold_last_valid(view_bins, observed, fill=-1)
     mask &= view_bins[:-1] >= 0
     return count_spikes_by_frame(spike_times, times, view_bins, mask, env.n_bins)
 
@@ -530,10 +576,10 @@ def prepare_view_binning(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
-    view_distance: float = 10.0,
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
+    view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     view_bins: NDArray[np.intp] | None = None,
@@ -555,8 +601,11 @@ def prepare_view_binning(
     # Precompute view bins ONCE (shared across all neurons) unless the caller
     # already holds them for these exact samples and gaze settings.
     # This is the expensive computation - computed once instead of per-neuron
-    mask = _view_observation_mask(
+    mask, observed = _view_observation_mask(
         times,
+        positions,
+        headings,
+        None if gaze_offsets is None else np.asarray(gaze_offsets, dtype=np.float64),
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
@@ -574,7 +623,7 @@ def prepare_view_binning(
             interval_mask=mask,
         )
 
-    mask &= view_bins[:-1] >= 0
+    mask &= hold_last_valid(view_bins, observed, fill=-1)[:-1] >= 0
     n_bins = env.n_bins
     prepared = prepare_frame_binning(
         times,
@@ -585,6 +634,7 @@ def prepare_view_binning(
         spike_window=spike_window,
         interval_mask=mask,
         break_before=break_before,
+        sample_valid=observed,
     )
     return prepared
 
@@ -596,10 +646,10 @@ def bin_view_spike_trains(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    gaze_model: Literal["fixed_distance", "ray_cast"] = "fixed_distance",
-    view_distance: float = 10.0,
+    gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
+    view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
@@ -627,17 +677,20 @@ def bin_view_spike_trains(
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, 0=East).
-    gaze_model : {"fixed_distance", "ray_cast"}, default="fixed_distance"
+    gaze_model : {"fixed_distance", "ray_cast"}, default="ray_cast"
         Method for computing viewed location.
-    view_distance : float, default=10.0
-        Distance for fixed_distance gaze model (environment units).
+    view_distance : float or None, default=None
+        Distance for the fixed_distance gaze model (environment units);
+        required by it and unused by ray_cast.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -666,7 +719,7 @@ def bin_view_spike_trains(
         bins do not occlude a physical ray. For ray-based rate maps, a finite
         physical hit without a retained bin raises NotImplementedError; provide
         bins at the wall or explicitly select the analysis approximation.
-        Fixed-distance gaze ignores this.
+        Fixed-distance gaze stops at the same walls.
 
     Returns
     -------
@@ -685,12 +738,12 @@ def bin_view_spike_trains(
     Examples
     --------
     >>> import numpy as np
+    >>> from shapely.geometry import box
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding._view_counts import bin_view_spike_trains
 
-    >>> # Create environment
-    >>> positions = np.random.rand(100, 2) * 100
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
+    >>> # A 100 x 100 cm box whose outline is a wall
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
 
     >>> # Create trajectory
     >>> times = np.linspace(0, 10, 1000)

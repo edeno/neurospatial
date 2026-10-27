@@ -36,6 +36,9 @@ cues", with no placement given. For a session's goal, use its
 ``platform_*`` region for visits, and add a landmark at that platform's
 centre if an encoding analysis needs the goal as an object position.
 
+Each platform is raised on its own and the animal steps between raised
+platforms, so the floor's edges are drops (``arena.outline == "drop"``).
+
 References
 ----------
 Wood, R. A., Bauza, M., Krupic, J., Burton, S., Delekate, A., Chan, D., &
@@ -67,6 +70,7 @@ import numpy as np
 import shapely
 from shapely.geometry import Polygon
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
@@ -228,6 +232,7 @@ def make_honeycomb_maze(
     env_2d = Environment.from_polygon(
         polygon=floor,
         bin_size=bin_size,
+        arena=OpenArena(floor, outline="drop"),
         name="honeycomb_maze",
         connect_diagonal_neighbors=True,
     )

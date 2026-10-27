@@ -6,6 +6,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from neurospatial.simulation.models.boundary_cells import BORDER_DISTANCE_TOLERANCE_CM
+from neurospatial.simulation.models.place_cells import (
+    TRACK_PLACE_FIELD_PEAK_HZ,
+    TRACK_PLACE_FIELD_WIDTH_CM,
+)
+
 if TYPE_CHECKING:
     from neurospatial.simulation.session import SimulationSession
 
@@ -39,10 +45,10 @@ def open_field_session(
         Random seed for reproducibility (default: None).
     **kwargs : Any
         Additional parameters passed to PlaceCellModel. Common options:
-        - max_rate : float - Peak firing rate in Hz (default: 20.0)
-        - width : float - Place field width in cm (default: 3 × bin spacing,
-          the median distance between neighbouring bin centres, or the median
-          bin length on a track; equals ``bin_size`` on a regular grid)
+        - max_rate : float - Peak firing rate in Hz (default: 12.4, see
+          ``PlaceCellModel``)
+        - width : float - Place field width in cm (default: 11.1, see
+          ``PlaceCellModel``)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
 
     Returns
@@ -185,6 +191,7 @@ def linear_track_session(
     n_place_cells: int = 40,
     n_laps: int = 20,
     seed: int | None = None,
+    **kwargs: Any,
 ) -> SimulationSession:
     """Generate linear track simulation with lap-based running.
 
@@ -209,6 +216,12 @@ def linear_track_session(
         inbound starting outbound. Two traversals form one out-and-back cycle.
     seed : int | None, optional
         Random seed for reproducibility (default: None).
+    **kwargs : Any
+        Place cell parameters passed to ``PlaceCellModel``: ``width`` (cm,
+        default 17.5) and ``max_rate`` (Hz, default 14.5), the CA1
+        linear-track values of Mizuseki et al. (2012) (see
+        ``PlaceCellModel``), and ``baseline_rate`` and ``metric`` with
+        ``PlaceCellModel``'s defaults.
 
     Returns
     -------
@@ -331,7 +344,10 @@ def linear_track_session(
     env = Environment.from_samples(track_data, bin_size=bin_size)
     env = env.with_metadata(units="cm")
 
-    # Simulate session with place cells and lap trajectory
+    # Simulate session with place cells and lap trajectory, with linear-track
+    # place fields unless the caller chose others.
+    kwargs.setdefault("width", TRACK_PLACE_FIELD_WIDTH_CM)
+    kwargs.setdefault("max_rate", TRACK_PLACE_FIELD_PEAK_HZ)
     session = simulate_session(
         env,
         duration=duration,
@@ -342,6 +358,7 @@ def linear_track_session(
         n_laps=n_laps,
         seed=seed,
         show_progress=False,  # Disable progress bar for convenience function
+        **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
 
     return session
@@ -390,8 +407,8 @@ def tmaze_alternation_session(
     ValueError
         If duration, n_trials, or n_place_cells are non-positive.
     ValueError
-        If duration is non-finite or too short for two samples per traversal
-        and fixed 0.5 s pauses between the ``n_trials`` traversals.
+        If duration is non-finite or too short for two samples per trial
+        and fixed 0.5 s pauses between the ``n_trials`` trials.
 
     Examples
     --------
@@ -444,25 +461,26 @@ def tmaze_alternation_session(
     - Duration: 300 seconds (5 minutes) - sufficient for multiple trials
     - Number of trials: 20 - typical experimental session length
     - Number of cells: 60 - realistic hippocampal CA1 recording
+    - Place fields: 17.5 cm standard deviation and 14.5 Hz peak, the CA1
+      linear-track values of Mizuseki et al. (2012); see ``PlaceCellModel``
 
     **T-maze Structure**:
 
-    Creates a simplified T-maze graph with:
-    - Central stem (100 cm)
-    - Left arm (50 cm)
-    - Right arm (50 cm)
-    - Corridors 10 cm wide
-    Total track length: approximately 150 cm
+    The track of ``make_t_maze()``: a 100 cm stem from ``start`` to the
+    ``junction`` and two perpendicular 50 cm arms ending at ``well_left`` and
+    ``well_right``, with 10 cm corridors and 2 cm bins (200 cm of track).
+    ``session.env`` carries those regions.
 
     **Trajectory**:
 
-    Uses lap-based trajectory generation. The animal alternates between
-    left and right arms according to a perfect alternation pattern,
-    starting with a random first choice determined by the seed.
+    Each trial runs from the end of the stem to the end of the chosen arm and
+    back. Choices alternate perfectly, starting with a random first choice
+    determined by the seed, so trial ``i`` visits the arm
+    ``trial_choices[i]``.
 
-    Session timing preserves ``n_trials`` one-way traversals and fixed 0.5 s
-    pauses between them. Absolute speeds follow from the requested duration;
-    seeded speed draws determine relative traversal times. Metadata records
+    Session timing preserves ``n_trials`` round trips and fixed 0.5 s pauses
+    between them. Absolute speeds follow from the requested duration;
+    seeded speed draws determine relative trial durations. Metadata records
     duration and the sampling convention; infeasible sample budgets raise.
 
     **Trial Metadata**:
@@ -473,14 +491,13 @@ def tmaze_alternation_session(
 
     **Coverage**:
 
-    Place field centers are uniformly distributed across the T-maze
-    environment to ensure representative spatial sampling across all
-    regions (stem, left arm, right arm).
+    Place field centers are evenly spaced along the track, so the stem and
+    both arms carry fields.
     """
     # Import here to avoid circular dependencies
     import networkx as nx
 
-    from neurospatial.environment import Environment
+    from neurospatial.simulation.mazes import TMazeDims, make_t_maze
     from neurospatial.simulation.session import simulate_session
 
     # Validate parameters
@@ -494,62 +511,39 @@ def tmaze_alternation_session(
         msg = f"n_place_cells must be positive, got {n_place_cells}"
         raise ValueError(msg)
 
-    # Create T-maze graph structure
-    # Nodes: stem_start (0,0), center (0,100), left_end (-50,150), right_end (50,150)
-    tmaze_graph = nx.Graph()
-    tmaze_graph.add_node("stem_start", pos=(0.0, 0.0))
-    tmaze_graph.add_node("center", pos=(0.0, 100.0))
-    tmaze_graph.add_node("left_end", pos=(-50.0, 150.0))
-    tmaze_graph.add_node("right_end", pos=(50.0, 150.0))
-
-    # Add edges with distance attribute
-    # Stem edge
-    pos1 = np.array(tmaze_graph.nodes["stem_start"]["pos"])
-    pos2 = np.array(tmaze_graph.nodes["center"]["pos"])
-    distance = np.linalg.norm(pos2 - pos1)
-    tmaze_graph.add_edge("stem_start", "center", distance=distance)
-
-    # Left arm edge
-    pos1 = np.array(tmaze_graph.nodes["center"]["pos"])
-    pos2 = np.array(tmaze_graph.nodes["left_end"]["pos"])
-    distance = np.linalg.norm(pos2 - pos1)
-    tmaze_graph.add_edge("center", "left_end", distance=distance)
-
-    # Right arm edge
-    pos1 = np.array(tmaze_graph.nodes["center"]["pos"])
-    pos2 = np.array(tmaze_graph.nodes["right_end"]["pos"])
-    distance = np.linalg.norm(pos2 - pos1)
-    tmaze_graph.add_edge("center", "right_end", distance=distance)
-
-    # Define edge order for linearization (stem -> left arm path as primary)
-    edge_order = [("stem_start", "center"), ("center", "left_end")]
-    edge_spacing = 0.0  # No spacing between connected edges
-
-    # Create environment from graph
-    env = Environment.from_graph(
-        graph=tmaze_graph,
-        edge_order=edge_order,
-        edge_spacing=edge_spacing,
-        bin_size=2.0,
-        track_width=10.0,  # 10 cm corridors
+    # The published T-maze track: a 100 cm stem and two 50 cm arms.
+    dims = TMazeDims()
+    env = make_t_maze(dims, bin_size=2.0).env_track
+    assert env is not None
+    half_stem = dims.stem_length / 2.0
+    stem_end, left_end, right_end = env.bin_at(
+        np.array(
+            [
+                [0.0, -half_stem],
+                [-dims.arm_length, half_stem],
+                [dims.arm_length, half_stem],
+            ]
+        )
     )
-    env = env.with_metadata(units="cm")
 
-    # Generate trial choices (perfect alternation pattern)
-    # Use seed to determine first choice, then alternate
+    # Perfect alternation from a seeded first choice.
     rng = np.random.default_rng(seed)
-    first_choice = rng.choice(["left", "right"])
+    first_choice = str(rng.choice(["left", "right"]))
+    second_choice = "right" if first_choice == "left" else "left"
+    trial_choices = [
+        first_choice if i % 2 == 0 else second_choice for i in range(n_trials)
+    ]
 
-    trial_choices = []
-    for i in range(n_trials):
-        if i == 0:
-            trial_choices.append(first_choice)
-        else:
-            # Alternate from previous choice
-            prev = trial_choices[-1]
-            trial_choices.append("right" if prev == "left" else "left")
+    # A trial runs from the stem's end to the chosen arm's end and back. The
+    # lap engine alternates its two paths, so trial i follows trial_choices[i].
+    arm_ends = {"left": int(left_end), "right": int(right_end)}
 
-    # Simulate session with place cells and lap trajectory
+    def round_trip(choice: str) -> list[int]:
+        run: list[int] = nx.shortest_path(
+            env.connectivity, int(stem_end), arm_ends[choice]
+        )
+        return run + run[-2::-1]
+
     session = simulate_session(
         env,
         duration=duration,
@@ -558,6 +552,10 @@ def tmaze_alternation_session(
         trajectory_method="laps",
         coverage="uniform",
         n_laps=n_trials,
+        outbound_path=round_trip(first_choice),
+        inbound_path=round_trip(second_choice),
+        width=TRACK_PLACE_FIELD_WIDTH_CM,  # linear-track CA1 fields
+        max_rate=TRACK_PLACE_FIELD_PEAK_HZ,
         seed=seed,
         show_progress=False,  # Disable progress bar for convenience function
     )
@@ -568,25 +566,31 @@ def tmaze_alternation_session(
     return session
 
 
-def boundary_cell_session(
+def border_cell_session(
     *,
+    border_width: float = BORDER_DISTANCE_TOLERANCE_CM,
     duration: float = 180.0,
     arena_shape: str = "square",
     arena_size: float = 100.0,
     bin_size: float = 2.0,
-    n_boundary_cells: int = 30,
+    n_border_cells: int = 30,
     n_place_cells: int = 20,
     seed: int | None = None,
 ) -> SimulationSession:
-    """Generate session with boundary and place cells.
+    """Generate session with border and place cells.
 
-    Creates an arena environment with a mix of boundary cells (fire near
-    walls/edges) and place cells (fire in specific locations). This is a
+    Creates a walled square arena with a mix of border cells (fire along the
+    walls) and place cells (fire in specific locations). This is a
     convenience function for simulating recordings that include both
-    boundary-responsive and place-responsive neurons.
+    wall-responsive and place-responsive neurons.
 
     Parameters
     ----------
+    border_width : float, optional
+        Standard deviation in cm of each border cell's distance tuning
+        (``BorderCellModel(distance_tolerance=...)``): how far from the walls
+        the cells fire (default: 9.8, derived from mouse border fields; see
+        ``BorderCellModel``).
     duration : float, optional
         Session duration in seconds (default: 180.0).
     arena_shape : str, optional
@@ -595,29 +599,31 @@ def boundary_cell_session(
         Arena side length in cm for square arena (default: 100.0).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
-    n_boundary_cells : int, optional
-        Number of boundary cells (default: 30).
+    n_border_cells : int, optional
+        Number of border cells (default: 30).
     n_place_cells : int, optional
         Number of place cells (default: 20).
     seed : int | None, optional
-        Random seed for reproducibility (default: None).
+        Random seed for reproducibility (default: None). The trajectory and
+        the spikes draw from independent streams spawned from it.
 
     Returns
     -------
     session : SimulationSession
         Complete simulation session containing:
-        - env: Arena Environment with units="cm"
+        - env: Walled square arena (``Environment.from_polygon``), units="cm"
         - positions: Trajectory from OU random walk
         - times: Time points matching trajectory
-        - spike_times: Poisson spikes for each cell (boundary + place)
-        - models: BoundaryCellModel and PlaceCellModel instances
+        - spike_times: Poisson spikes for each cell (border + place)
+        - models: BorderCellModel and PlaceCellModel instances
         - ground_truth: True parameters for each cell
         - metadata: Session configuration
 
     Raises
     ------
     ValueError
-        If duration, n_boundary_cells, or n_place_cells are non-positive.
+        If duration, n_border_cells, n_place_cells or border_width are not
+        positive.
     ValueError
         If bin_size >= arena_size or bin_size <= 0.
     ValueError
@@ -627,9 +633,9 @@ def boundary_cell_session(
     --------
     Quick start for testing:
 
-    >>> from neurospatial.simulation import boundary_cell_session
-    >>> session = boundary_cell_session(
-    ...     duration=5.0, n_boundary_cells=3, n_place_cells=2
+    >>> from neurospatial.simulation import border_cell_session
+    >>> session = border_cell_session(
+    ...     border_width=5.0, duration=5.0, n_border_cells=3, n_place_cells=2
     ... )
     >>> env = session.env
     >>> len(session.spike_times)
@@ -637,25 +643,24 @@ def boundary_cell_session(
 
     Check cell type distribution:
 
-    >>> from neurospatial.simulation import boundary_cell_session
-    >>> from neurospatial.simulation.models import BoundaryCellModel, PlaceCellModel
-    >>> session = boundary_cell_session(
-    ...     duration=5.0, n_boundary_cells=3, n_place_cells=2, seed=42
+    >>> from neurospatial.simulation.models import BorderCellModel, PlaceCellModel
+    >>> session = border_cell_session(
+    ...     border_width=5.0, duration=5.0, n_border_cells=3, n_place_cells=2, seed=42
     ... )
-    >>> n_boundary = sum(isinstance(m, BoundaryCellModel) for m in session.models)
+    >>> n_border = sum(isinstance(m, BorderCellModel) for m in session.models)
     >>> n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
-    >>> print(f"Boundary cells: {n_boundary}, Place cells: {n_place}")
-    Boundary cells: 3, Place cells: 2
+    >>> print(f"Border cells: {n_border}, Place cells: {n_place}")
+    Border cells: 3, Place cells: 2
 
     Visualize session summary:
 
     >>> from neurospatial.simulation import (  # doctest: +SKIP
-    ...     boundary_cell_session,
+    ...     border_cell_session,
     ...     plot_session_summary,
     ... )
     >>> import matplotlib.pyplot as plt  # doctest: +SKIP
-    >>> session = boundary_cell_session(  # doctest: +SKIP
-    ...     duration=5.0, n_boundary_cells=3, n_place_cells=2, seed=42
+    >>> session = border_cell_session(  # doctest: +SKIP
+    ...     border_width=5.0, duration=5.0, n_border_cells=3, n_place_cells=2, seed=42
     ... )
     >>> fig, axes = plot_session_summary(session)  # doctest: +SKIP
     >>> plt.show()  # doctest: +SKIP
@@ -666,44 +671,36 @@ def boundary_cell_session(
     validate_simulation : Validate detected vs ground truth fields
     plot_session_summary : Visualize session summary
     open_field_session : Open field with only place cells
+    BoundaryVectorCellModel : Cells tuned to a wall at a distance and direction
 
     Notes
     -----
     **Default Parameters**:
 
-    The defaults are chosen to match typical rodent recordings with mixed
-    cell types:
-
     - Duration: 180 seconds (3 minutes) - sufficient for spatial coverage
     - Arena size: 100 cm × 100 cm - standard open field chamber
     - Bin size: 2 cm - balances spatial resolution vs smoothing
-    - Boundary cells: 30 - realistic proportion (~60% of total)
-    - Place cells: 20 - remaining proportion (~40% of total)
+    - Border cells: 30
+    - Place cells: 20
 
     **Mixed Cell Types**:
 
-    This function creates a heterogeneous population with both boundary
-    cells (which fire preferentially near arena walls) and place cells
-    (which fire in localized spatial regions). Boundary cells are created
-    first, followed by place cells. All cells use uniform spatial coverage
-    for their field centers/boundary preferences.
-
-    **Arena Shapes**:
-
-    Currently only square arenas are supported. The arena is created using
-    Environment.from_samples() with a regular grid of points spanning the
-    arena dimensions.
+    Border cells (``BorderCellModel``) fire as a function of the distance to
+    the nearest wall, highest along the walls. Border cells are created
+    first, followed by place cells.
 
     **Trajectory**:
 
     Uses Ornstein-Uhlenbeck (OU) process for trajectory generation, which
     produces smooth, realistic random walk behavior. The trajectory covers
-    both central regions (place cell firing) and edges (boundary cell
+    both central regions (place cell firing) and edges (border cell
     firing).
     """
     # Import here to avoid circular dependencies
+    from shapely.geometry import box
+
     from neurospatial.environment import Environment
-    from neurospatial.simulation.models import BoundaryCellModel, PlaceCellModel
+    from neurospatial.simulation.models import BorderCellModel, PlaceCellModel
     from neurospatial.simulation.session import SimulationSession
     from neurospatial.simulation.spikes import generate_population_spikes
     from neurospatial.simulation.trajectory import simulate_trajectory_ou
@@ -721,8 +718,8 @@ def boundary_cell_session(
     if bin_size >= arena_size:
         msg = f"bin_size ({bin_size}) must be smaller than arena_size ({arena_size})"
         raise ValueError(msg)
-    if n_boundary_cells <= 0:
-        msg = f"n_boundary_cells must be positive, got {n_boundary_cells}"
+    if n_border_cells <= 0:
+        msg = f"n_border_cells must be positive, got {n_border_cells}"
         raise ValueError(msg)
     if n_place_cells <= 0:
         msg = f"n_place_cells must be positive, got {n_place_cells}"
@@ -731,53 +728,37 @@ def boundary_cell_session(
         msg = f"Only 'square' arena_shape is currently supported, got {arena_shape!r}"
         raise ValueError(msg)
 
-    # Create square arena environment (same as open_field_session)
-    n_points_per_dim = max(20, int(arena_size / bin_size) + 1)
-    x = np.linspace(0, arena_size, n_points_per_dim)
-    y = np.linspace(0, arena_size, n_points_per_dim)
-    xx, yy = np.meshgrid(x, y)
-    arena_data = np.column_stack([xx.ravel(), yy.ravel()])
-
-    # Create environment from data
-    env = Environment.from_samples(arena_data, bin_size=bin_size)
-    env = env.with_metadata(units="cm")
-
-    # Generate trajectory using OU process
-    positions, times = simulate_trajectory_ou(
-        env, duration=duration, speed_units="cm", seed=seed
+    # A walled square arena: its outline is a physical wall.
+    env = Environment.from_polygon(
+        box(0.0, 0.0, arena_size, arena_size), bin_size=bin_size, units="cm"
     )
 
-    # Create models: boundary cells first, then place cells
+    # Independent streams for the trajectory and the spikes.
+    trajectory_seed, spike_seed = np.random.SeedSequence(seed).spawn(2)
+    positions, times = simulate_trajectory_ou(
+        env,
+        duration=duration,
+        speed_units="cm",
+        seed=int(trajectory_seed.generate_state(1)[0]),
+    )
+
+    # Create models: border cells first, then place cells
     # Use uniform coverage for field centers
-    total_cells = n_boundary_cells + n_place_cells
+    total_cells = n_border_cells + n_place_cells
     step = max(1, env.n_bins // total_cells)
     field_centers = env.bin_centers[::step][:total_cells]
 
     models: list = []
     ground_truth = {}
 
-    # Create boundary cells (don't use field_centers for boundary cells)
-    for i in range(n_boundary_cells):
-        model = BoundaryCellModel(env)
+    for i in range(n_border_cells):
+        model = BorderCellModel(env, distance_tolerance=border_width)
         models.append(model)
-        # Store ground truth for boundary cell
-        ground_truth[i] = {
-            "cell_type": "boundary",
-            "preferred_distance": float(model.preferred_distance),
-            "distance_tolerance": float(model.distance_tolerance),
-            "preferred_direction": (
-                float(model.preferred_direction)
-                if model.preferred_direction is not None
-                else None
-            ),
-            "direction_tolerance": float(model.direction_tolerance),
-            "max_rate": float(model.max_rate),
-            "baseline_rate": float(model.baseline_rate),
-        }
+        ground_truth[i] = {"cell_type": "border", **model.ground_truth}
 
     # Create place cells using field centers
     for i in range(n_place_cells):
-        cell_idx = n_boundary_cells + i
+        cell_idx = n_border_cells + i
         center = (
             field_centers[cell_idx]
             if cell_idx < len(field_centers)
@@ -789,13 +770,18 @@ def boundary_cell_session(
         ground_truth[cell_idx] = {
             "cell_type": "place",
             "center": center.tolist(),
+            "width": float(place_model.width),
             "max_rate": float(place_model.max_rate),
             "baseline_rate": float(place_model.baseline_rate),
         }
 
     # Generate spikes for all cells
     spike_times = generate_population_spikes(
-        models, times, positions, seed=seed, show_progress=False
+        models,
+        times,
+        positions,
+        seed=int(spike_seed.generate_state(1)[0]),
+        show_progress=False,
     )
 
     # Create metadata
@@ -804,9 +790,10 @@ def boundary_cell_session(
         "arena_shape": arena_shape,
         "arena_size": arena_size,
         "bin_size": bin_size,
-        "n_boundary_cells": n_boundary_cells,
+        "border_width": border_width,
+        "n_border_cells": n_border_cells,
         "n_place_cells": n_place_cells,
-        "cell_type": "mixed_boundary_place",
+        "cell_type": "mixed_border_place",
         "trajectory_method": "ou",
         "coverage": "uniform",
         "seed": seed,
@@ -831,7 +818,7 @@ def grid_cell_session(
     *,
     duration: float = 300.0,
     arena_size: float = 150.0,
-    grid_spacing: float = 50.0,
+    grid_spacing: float = 41.0,
     n_grid_cells: int = 40,
     seed: int | None = None,
 ) -> SimulationSession:
@@ -850,7 +837,8 @@ def grid_cell_session(
     arena_size : float, optional
         Square arena side length in cm (default: 150.0).
     grid_spacing : float, optional
-        Grid spacing (distance between firing fields) in cm (default: 50.0).
+        Grid spacing (distance between firing fields) in cm (default: 41.0,
+        dorsal-most rat grid cells; see ``GridCellModel``).
     n_grid_cells : int, optional
         Number of grid cells (default: 40).
     seed : int | None, optional
@@ -919,7 +907,7 @@ def grid_cell_session(
 
     - Duration: 300 seconds (5 minutes) - sufficient for spatial coverage
     - Arena size: 150 cm × 150 cm - larger arena to show grid structure
-    - Grid spacing: 50 cm - typical grid scale for medial entorhinal cortex
+    - Grid spacing: 41 cm - dorsal-most rat grid cells (Hafting et al. 2005)
     - Number of cells: 40 - realistic grid cell recording
 
     **Grid Cell Model**:

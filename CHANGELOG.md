@@ -2,6 +2,617 @@
 
 ## [Unreleased]
 
+### Missing tracking and `max_gap`
+
+Results that change:
+
+- A missing tracking sample (a NaN row, for example a low-confidence
+  DeepLabCut frame) is treated exactly like a deleted row. A gap is the time
+  between consecutive valid samples; a gap no longer than `max_gap` is
+  bridged (its time goes to the last valid position and spikes in it count),
+  and a longer gap is excluded. Before, one NaN frame always excluded both
+  neighboring intervals and split the run, whatever `max_gap` said: on
+  simulated 30 Hz tracking with dropped frames and NaN bursts, occupancy
+  differed from the same recording with the rows deleted by 7.0 of 60 s, one
+  bin's rate by 4.2 Hz, and 21 running bouts were found instead of 19. This
+  applies to occupancy and rate maps of every cell family, environment
+  occupancy, `bin_sequence` and transitions, speed and kinematics (which use
+  the real time between valid samples across a bridged gap), behavior
+  segmentation, region visits, trials, path efficiency (which starts and
+  ends at the first and last observed samples), continuous alignment,
+  decoding ground truth, decode time bins, the all-units-silent warning,
+  visibility and animation overlays. `decode_session` and
+  `decode_session_summary` tile decode bins on the tracked clock, so a
+  tracking loss longer than `max_gap` is not decoded, as when its rows are
+  deleted; to decode spans without tracking, predict with a fitted
+  `BayesianDecoder` on `times=np.arange(t0, t1, dt)`. `bin_sequence` drops NaN samples
+  instead of reporting −1, so −1 means only "outside the environment", and
+  functions that take `position_bins` bridge bin −1 like a missing sample.
+- `max_gap` defaults to 1.0 s (was 0.5 s) in every function that takes it,
+  from one shared constant. The value is calibrated by simulation: on 15
+  minutes of linear-track running tracked at 30, 60 and 120 Hz with 1–5%
+  dropped frames, DeepLabCut-style bursts of 1–15 low-confidence frames,
+  2–5 s tracking losses and a 10 s pickup, occupancy, rate maps, bout counts
+  and complete runs were all near their best for `max_gap` between 0.55 and
+  2.0 s; 1.0 s is the middle of that range. At 0.5 s the longest routine
+  bursts (15 frames at 30 Hz) split running bouts. Choose another value
+  when your tracking differs: longer than routine dropped or low-confidence
+  stretches, shorter than real tracking losses or pickups.
+- A NaN that means "undefined" rather than "not tracked" (for example
+  `heading_from_velocity` while the animal is still) is bridged like
+  missing tracking when it is shorter than `max_gap`. Pass a smaller
+  `max_gap` where that would invent values, as the behavior-around-events
+  guide shows.
+
+### Encoding review (`neurospatial.encoding`)
+
+#### Grid score
+
+Results that change:
+
+- `spatial_autocorrelation` returns the Pearson correlation at every lag over
+  the bins visited in both copies of the map, full size `(2N - 1, 2N - 1)`.
+  It was a circular FFT of N×N lags, so shifts wrapped across the arena and
+  unvisited bins counted as zero firing. A lag is defined only when at least
+  a quarter of the visited bins (and at least 20) overlap; others are NaN, so
+  no correlation rests on a strip of bins along two walls. Grids with many
+  inactive bins, and arenas that fill only part of their bounding box, are no
+  longer refused.
+- `grid_score` sweeps the annulus outward from the central peak and keeps the
+  best mean over three consecutive radii (the BNT/opexebo gridness score). The
+  fixed ring at 0.2–0.5 of the half-width missed the first ring of fields once
+  the spacing was a sizeable part of the arena: ideal 40–60 cm grids in a
+  100 cm box scored as low as −0.18 and were labeled "place". They now score
+  +1.33 to +1.41 and are labeled "grid". 1–8% of circularly time-shifted
+  shuffles reach 0.4, so the docs call 0.4 a screening convention and point
+  to `spatial_cell_type_significance` for a verdict.
+- `grid_scale` and `grid_properties` report a spacing, orientation and
+  orientation spread only from one hexagon's first ring: at least 3
+  autocorrelogram peaks within 1.5 times the nearest one, whose directions
+  agree within 15° modulo 60°, and whose neighbors are all defined lags.
+  Otherwise, or when the grid score is NaN, they are NaN. Second-ring and
+  edge peaks gave wrong spacings (66 cm for a 50 cm grid, 71 cm for an 85 cm
+  grid), and every time-shifted shuffle got a spacing (now 20%). Peaks are
+  separated by the central-peak radius instead of 5 pixels, so they follow
+  field size, not bin size.
+  `threshold_rel` is relative to the zero-lag correlation.
+- On layouts without a rectangular grid (hexagonal, track, mesh),
+  `SpatialRateResult.grid_score()` and `SpatialRatesResult.grid_scores()`
+  raise `NotImplementedError`, as `spatial_autocorrelation` does, instead of
+  returning NaN; NaN now means an all-NaN or constant map. `summary_table()`
+  records the refusal in `df.attrs["unavailable_metrics"]`, and a tuned cell
+  is labeled "undetermined" instead of "place".
+
+Breaking API changes:
+
+- `grid_score` loses `inner_radius_fraction` and `outer_radius_fraction`.
+  `grid_scale` and `grid_properties` lose `min_distance` and take
+  `pixel_size=` (the side of an autocorrelogram pixel,
+  `autocorrelation_pixel_size(env)`) instead of `bin_size=`; `n_peaks` must
+  be at least 3.
+- `GridProperties` is frozen with read-only arrays. `peak_coords` are offsets
+  in the environment's units (they were autocorrelogram pixels) and
+  `n_peaks` is derived from them.
+- `periodicity_score` is removed. A hexagonal lattice's radial
+  autocorrelation peaks at unevenly spaced distances by construction, so the
+  score penalized true grids, and no threshold separated grids from shuffled
+  maps. `spatial_autocorrelation_radial` stays.
+
+#### Border score
+
+Results that change:
+
+- `border_score` is the Solstad et al. (2008) score: coverage is the largest
+  fraction of one wall covered by one field, and distance is the
+  firing-rate-weighted mean distance of field bins to the nearest wall over
+  the radius of the largest inscribed circle. Fields are connected bins at or
+  above `threshold` (0.3) of the peak and at least `min_area`. On
+  rectangular arenas it equals an independent implementation of Solstad's
+  score exactly; the docstring lists where BNT and opexebo differ (they
+  count distance in whole bins, which lowers their scores slightly). Before,
+  coverage was contact over the whole perimeter and distance an unweighted
+  mean over the arena diameter: in a 100 cm box a field on one wall scored
+  0.07 instead of 0.29 and a broad central field 0.62 instead of 0.12.
+- `min_area` defaults to 200 cm² (Solstad et al., 2008) converted to
+  `env.units`. Without metric length units (the default for `from_samples`
+  and `from_polygon`), a field needs at least 9 bins (the BNT/opexebo
+  default) instead of the score being unavailable. `summary_table()` records
+  the rule in `df.attrs["border_field_minimum"]`.
+- Walls come from the arena geometry in physical units. An outline splits
+  into walls at corners, judged against the bin resolution: an octagon has 8
+  walls (a cell along one side scores 0.90, was 0.53), a box with rounded
+  corners or a jittered hand trace 4, and a pixel-mask hexagon 6 like its
+  polygon. Named internal walls are separate walls, and walls declared on the
+  outline (`OpenArena(walls=...)`) replace that piece of it. A round arena
+  offers each field its best half-ring (Høydal et al., 2018): a 90° arc cell
+  scores 0.82 (was 0.66) and a place field near the wall 0.04 (was −0.30).
+- Unvisited wall bins are missing, not uncovered: coverage is the covered
+  fraction of each wall's observed length, and the score is NaN only when no
+  wall is observed. One unvisited wall bin no longer makes the physical score
+  unavailable for every unit of a realistic session.
+- Wall pieces owned by no bin raise a geometry error that says how much wall,
+  where and how to fix it. A geodesic failure of the environment raises once
+  for a population instead of marking every unit as failed.
+
+Added:
+
+- `observed_wall_fraction(env, firing_rate)` (how much wall a map observes)
+  and `untuned_border_score(env)` (the score of a map firing everywhere:
+  0.5 in a convex arena, the baseline to compare against).
+  `summary_table()` records both in `df.attrs["border_observed_wall_fraction"]`
+  and `df.attrs["border_score_untuned"]`.
+
+#### Head direction
+
+Results that change:
+
+- The head-direction screen tests tuning with occupancy as exposure. The
+  count-weighted Rayleigh test measured where the animal faced, not the
+  cell: a constant-rate cell's spike headings follow heading occupancy. The
+  new test is the score test of a Poisson cosine-tuning model with occupancy
+  as exposure, corrected for spike-count dispersion (bursts, slow rate drift)
+  estimated from each unit's counts in time windows. Flat-tuned cells with
+  headings sampled unevenly within ±60° of East passed
+  `is_head_direction_cell(criterion="threshold")` 20/20 times and now 2/20,
+  while real head-direction cells still pass 20/20. The test gave p < 0.05
+  for 13–69% of untuned bursting cells, now 4–6%. The p-value is NaN
+  below 50 spikes in visited bins (was 3) and on a hand-built result without
+  `spike_count_dispersion` (pass 1.0 to assume Poisson spiking).
+  `classify()`, `summary_table()` and `interpretation()` use the same test.
+- Mean vector length uses only visited heading bins, so `classify()`,
+  `is_head_direction_cell()`, `summary_table()` and `interpretation()` warn
+  when more than 90° of heading was never sampled and point to the shuffle.
+- `bin_size` defaults to `None`, meaning 6° in either `angle_unit`, in
+  `compute_directional_rate(s)`, `is_head_direction_cell` and
+  `head_direction_cell_significance`. The old default `np.pi / 30` was read
+  in `angle_unit`, so with `angle_unit="deg"` it gave 0.105° bins (3438
+  bins). Degree and radian inputs now give identical maps and statistics.
+- Headings are wrapped to [−π, π) and bins tile that range, so
+  `peak_location()`, `preferred_direction()`, `to_dataframe()` and the plots
+  agree (one curve read 4.24 and −2.0). Any finite radians are still
+  accepted. Results record `direction_frame="allocentric"`.
+- `tuning_width()`, `tuning_width_deg()` and `tuning_widths()` return NaN for
+  a unit whose heading bins were never visited instead of raising.
+- `bandwidth` must be `None` or a finite number > 0; `bandwidth=0` raised
+  `ZeroDivisionError` in radians and silently skipped smoothing in degrees.
+- Headings read as radians that look like degrees (finite magnitudes above
+  2π, all within ±360, with a step between samples larger than π) warn and
+  name `np.radians` or `angle_unit="deg"`: a head-direction cell with mean
+  vector length 0.806 read as 0.015. Unwrapped radians do not warn. The check
+  covers directional, egocentric, view and boundary-vector maps and
+  phase-precession phases. All-NaN headings now say to check the headings,
+  not the positions.
+- `head_direction_cell_significance` runs about 3 times faster with
+  bit-identical seeded p-values.
+- The docs warn that on tracks and mazes heading is locked to position, so a
+  one-direction place cell passes both the screen and the shuffle, and name
+  controls that hold position fixed.
+
+Breaking API changes:
+
+- `rayleigh_pvalue()` is removed; use `DirectionalRateResult.tuning_pvalue()`
+  or `DirectionalRatesResult.tuning_pvalues()`. `summary_table()` gains
+  `tuning_pvalue` and `spike_count_dispersion` columns.
+
+Added:
+
+- Directional results gain keyword-only `spike_count_dispersion` and
+  `dispersion_dof` fields, `analysis_settings["dispersion_window"]`, and
+  `largest_unvisited_arc()` (radians; also in `summary_table().attrs`).
+
+#### Spatial information, sparsity, cell-type labels and shuffle significance
+
+Results that change:
+
+- Information screens subtract the information an untuned cell has by
+  chance. Plug-in Skaggs information is positive for a cell that fires at the
+  same rate everywhere, so in short recordings untuned Poisson cells passed:
+  14/20 at 2 minutes for the place screen, 20/20 up to 10 minutes for the
+  object-vector screens and 20/20 at 2 minutes for the view screen. After the
+  correction none passed at 20–600 spikes. `is_place_cell(criterion=
+  "threshold")`, `classify()`, `label_cell_types()`, `summary_table()`,
+  `is_object_vector_cell` and `is_spatial_view_cell` compare
+  `spatial_information() - spatial_information_bias()` with their cutoff;
+  `spatial_information()` still returns the plug-in value. A unit with fewer
+  spikes than the map has effectively independent bins gets a NaN bias and
+  fails the screen with a warning.
+- Spatial information and sparsity are NaN, not 0, for a silent cell, an
+  all-NaN map or zero total occupancy, in both backends and in `summary()`
+  and `summary_table()` alike. Sparsity divides by the peak rate first, so
+  very small or large rates no longer underflow to NaN.
+- Every metric method on spatial rate results reads rates masked to NaN
+  outside the occupancy support, so metrics are identical with
+  `fill_value=None` and `fill_value=0.0`. Filling raised an untuned cell
+  from 0.092 to 0.175 bits/spike.
+- Each spatial cell-type label is judged by its own statistic.
+  `label_cell_types()` and `summary_table()` return "grid", "border",
+  "grid+border" or "place" (tuned and neither). Grid and border cells were
+  gated on the place-cell information cutoff, so every simulated grid cell
+  with 1 Hz background was "unclassified" while 11% of place cells were
+  labeled "grid". On a 1-D track grid and border do not apply and a tuned cell
+  is "place". When a score is unavailable, `label_cell_types()` labels the
+  cell "undetermined" and warns instead of raising.
+- A shuffle p-value is NaN when no null score is finite (it was 1.0, which
+  reads as tested and not significant), and a warning names the units whose
+  non-finite null scores were left out.
+- `place_cell_significance` bins the trajectory once for every shuffle; null
+  scores are bit-identical and a 4-unit, 50-shuffle run takes 0.05 s instead
+  of 0.22 s.
+- A "grid" label needs a hexagonal first ring of autocorrelogram peaks (a
+  finite `grid_properties` spacing), on the fixed-cutoff screen and the
+  shuffle labels alike. A smoothed-noise map scored 0.50 with shuffle
+  p = 0.025 and no ring, and both called it a grid cell; it now falls through
+  to its other labels.
+- A shuffle verdict of place, view or object-vector cell needs both a
+  significant information test and bias-corrected information at the
+  screen's cutoff: `CellTypeSignificanceResult.label_cell_types()` (keyword
+  `min_spatial_info`) and `criterion="shuffle"` on `is_place_cell`,
+  `is_spatial_view_cell`, `is_object_vector_cell` and
+  `is_egocentric_object_vector_cell` (keyword `min_info`, which no longer
+  raises with the shuffle). Untuned units that passed by chance in 2-minute
+  recordings (p = 0.01–0.04, 0.04–0.17 bits/spike beyond their bias) are no
+  longer called cells. Units with too few spikes for a bias estimate are
+  refused with a warning; the significance functions still return their
+  p-values and their docstrings say a p-value alone is not a verdict.
+- A shuffle test whose p-value cannot fall below `alpha` because too few
+  null scores are finite (`1 / (1 + n_finite) >= alpha`) is "undetermined",
+  not "unclassified". p-values are `(1 + k) / (1 + n)` over the `n` finite
+  null scores, as the docs now state, and `summary_table()` reports
+  `<statistic>_n_finite_null`.
+- The 0.5 and 0.3 bits/spike cutoffs are described everywhere as a common
+  screening convention; no source derives or calibrates them.
+
+Breaking API changes:
+
+- `count_place_cells(rates, *, min_info=None)` takes the
+  `SpatialRatesResult` and counts `rates.classify(min_info=...)`, so it
+  applies the bias correction. Passing an information array raises.
+- `is_place_cell` names its information screen `criterion="threshold"`, like
+  every other cell family (was `"spatial_info"`).
+- `place_cell_significance` loses `n_jobs`.
+
+Added:
+
+- `spatial_cell_type_significance(env, spike_times, times, positions)`
+  circularly shifts each unit's spikes and recomputes spatial information,
+  grid score and border score from the same shifted trains, returning a
+  `CellTypeSignificanceResult` with observed and null scores, p-values and a
+  `summary_table()` of null percentiles and per-test labels. On 100 untuned
+  simulated units, 6%, 1% and 3% had p < 0.05 for information, grid and
+  border score; the fixed 0.5 border cutoff flagged 46%. Scores that cannot
+  be computed get NaN p-values and a recorded reason.
+- `spatial_information_bias()` on spatial, view and object-vector rate
+  results, and a `spatial_information_bias` column after
+  `spatial_information` in their summary tables, so a unit that fails a
+  screen despite high information shows why. `summary_table()` of spatial
+  results adds nullable `passes_spatial_information`, `passes_grid_score` and
+  `passes_border_score` columns.
+- `CellTypeSignificanceResult.label_cell_types()` and `summary_table()` take
+  `correction="holm"` (Holm–Bonferroni across each unit's applicable tests:
+  the chance that an untuned unit gets any label stays at `alpha`) or
+  `correction="fdr_bh"` (Benjamini–Hochberg across every unit and test: the
+  expected fraction of false labels in the population stays at `alpha`); the
+  default `None` tests each statistic at `alpha`. On 345 untuned simulated
+  units 6.7%, 2.3% and 1.0% got some label with no correction, Holm and
+  BH; all 30 place and 15 grid cells kept their labels. With a correction the
+  table adds `<statistic>_p_adjusted` columns, and a warning says how many
+  shuffles are needed when p-values at the shuffle floor cannot pass it
+  (with 200 shuffles BH labeled no unit at all).
+
+#### Place fields
+
+Results that change:
+
+- `detect_place_fields` stops searching at a peak-rate floor. Each field was
+  cut at 0.2 of its own peak and the search continued below ever smaller
+  peaks, so a 20 Hz field plus one isolated 5 Hz bin gave 22 fields; it now
+  gives 1. A candidate must peak at `min_peak_rate` (1 Hz, as in FMAToolbox
+  MapStats and opexebo), and a candidate whose peak bin rises toward a
+  neighbor is the flank of an assigned field. `min_secondary_peak_fraction`
+  (default 0.0) keeps neurocode's 60% rule available; at 0.6 it missed every
+  secondary field at 20–50% of the main peak.
+- The smallest field follows the map's smoothing instead of a fixed 9 bins
+  (45 cm on a track with 5 cm bins, which rejected every realistic field): a
+  field must be larger than one noisy bin becomes after the smoothing, about
+  18 cm on a track or 253 cm² in an open field at a 5 cm bandwidth.
+- Coalescent fields split by FMAToolbox's MapStats rule, so subfields are
+  sized like single fields. Untuned 1 Hz track maps give one whole-track
+  region instead of 2–4 fragments; the docs state that the detector segments
+  maps and point to `place_cell_significance` for a verdict.
+- Coverage counts only observed bins. `spatial_coverage_single_cell` and
+  `population_coverage` divided by every bin, so a cell firing over all of
+  the visited half of an arena had coverage 0.5. Region coverage of a silent
+  map or of a region with no bins, and undefined population ratios, are NaN.
+- `field_shape_metrics` reports orientation as an axial angle in
+  [−π/2, π/2) (it could read −3.1), and `area` is physical area, not a bin
+  count.
+- `compute_field_emd` compares only bins finite in both maps, without the
+  warning that fired on every default rate map. Geodesic mass moves only
+  along paths; maps with different mass in disconnected parts give `inf`
+  instead of jumping walls. The value is in the environment's units.
+- `field_shift_distance(metric="geodesic")` raises
+  `IncompatibleEnvironmentError` unless both environments have the same bins
+  and connectivity, instead of silently returning a Euclidean distance.
+- `DirectionalPlaceFields.directionality_index` is the signed index of
+  Navratilova et al. (2012), (Σr_a − Σr_b) / (Σr_a + Σr_b) over bins observed
+  in both directions. It averaged |a − b| / (a + b) per bin, so noisy
+  out-of-field bins dominated: identical bidirectional maps scored 0.30–0.35
+  (now −0.03 to 0.05) and an outbound-only cell 0.54–0.70 (now 0.90–0.91).
+- `compute_directional_place_fields` keys results by label value in natural
+  order (laps 1, 2, 10, not "1", "10", "2"), and every label that occurs gets
+  an entry; a label with no analyzable time has an all-NaN map.
+- The docs give the effect of not gating by speed (rest firing raised
+  information and added fields at track ends) and how to choose `min_speed`,
+  and say `gaussian_kde` leaks across thin walls (21–60% of the peak in a
+  simulated maze); use `diffusion_kde` or `binned` in walled mazes.
+
+Breaking API changes:
+
+- `detect_place_fields` and `population_coverage` take a required keyword
+  `bandwidth` (the map's smoothing; 0 for an unsmoothed map) and lose
+  `min_size`. `has_place_field` passes the map's own bandwidth.
+- `PopulationCoverageResult` stores only `place_fields`, `is_observed` and
+  `bin_centers`; counts, bin sets and `coverage_fraction` are properties.
+  `PlaceFieldsResult.n_excluded` is derived from `excluded_reason`.
+- `DirectionalPlaceFields` loses its `labels` argument (labels come from the
+  `firing_rates` keys) and checks its maps against the environment when
+  built.
+
+#### Phase precession
+
+Results that change:
+
+- `compute_phase_precession` rescales positions to [0, 1] over
+  `position_range` (default: the spike extent), and `slope_bounds` are
+  radians across that range (default ±2π: one theta cycle per field). The old
+  bounds were radians per raw position unit, up to 40 cycles across a 40 cm
+  field, and noisy spikes aliased onto steep slopes. Slope recovery on
+  simulated cells rises from 38–75% to 80–95%.
+- `has_phase_precession` decides on the shuffle p-value alone. The
+  `min_correlation` cutoff meant a different error rate at every spike count
+  and rejected a quarter of weakly precessing cells with p < 0.05.
+- A slope at a `slope_bounds` edge (two fields fit as one, or both running
+  directions pooled) warns and is flagged by `slope_at_bound`.
+  `has_phase_precession` warns only for a significant fit.
+- `interpretation()` names precession or recession only for a significant
+  fit and prints the correlation and fit quality as numbers, not
+  strong/weak bands.
+- `has_phase_precession` raises on configuration errors (a bad `n_shuffles`,
+  `slope_bounds` or `position_range`) instead of returning False; only too
+  few spikes or constant positions return False. An unknown `angle_unit`
+  raises.
+- The docs say positions must increase along the direction of travel (one
+  field and one running direction at a time), state where `theta_phase` puts
+  phase 0 (the theta peak; π is the trough), and add a linear-track recipe.
+
+Breaking API changes:
+
+- `PhasePrecessionResult` is frozen; `pval` is renamed `p_value`;
+  `slope_units` is removed; `slope` is in radians per position unit,
+  `normalized_slope` is radians across `position_range`, and `offset` is the
+  phase at `position_range[0]`. It gains a required `slope_at_bound` field.
+- `has_phase_precession` loses `min_correlation` and gains `slope_bounds`,
+  `position_range` and `min_spikes`.
+
+#### Object-vector, view and boundary-vector cells
+
+Results that change:
+
+- Object-vector maps cover every distance inside the environment by default
+  (the bounding-box diagonal for Euclidean distance, the farthest reachable
+  bin for geodesic distance), following Høydal et al. (2019). The 0–50 cm
+  default cut off a cell tuned 60 cm from an object in a 150 cm box, which
+  reported a preferred distance of 2.5 cm; it now reports 57.5 cm.
+  `analysis_settings` records `time_beyond_distance_range` and
+  `fraction_of_time_in_distance_range`, and a peak in the outermost ring of a
+  range that cut time off warns.
+- `object_vector_score` scores the distance and direction profiles. Distance
+  tuning is the normalized sparsity of the per-ring mean rate (0 when flat, 1
+  when all firing is in one ring), and both profiles use only rings sampled
+  in every direction, so unvisited bins are not read as silence. A map tuned
+  to direction alone scored 0.943 and now scores 0; simulated object-vector
+  cells score 0.41 against 0.02 for ring cells and 0.00 for untuned cells.
+  The score is NaN with no complete ring or a silent map.
+- Object-vector and egocentric maps drop samples outside the environment, as
+  place maps do; a sample tracked 1000 cm outside counted as "far from the
+  object".
+- Object-vector maps and their shuffle test warn when some directions to the
+  object were never sampled (an object outside the arena or in another
+  frame), which skewed the preferred direction and the score silently.
+- `preferred_distance()` and `preferred_direction()` of object-vector results
+  are NaN for a unit with no rate instead of raising.
+- Object-vector, egocentric, boundary-vector and view maps refuse an
+  environment that is not 2-D with a message naming its dimension, and
+  object-vector maps refuse a polar environment.
+- Boundary-vector maps keep the 0–50 cm default range of Hinman et al.
+  (2019) on purpose: an arena-wide range ties firing at one wall to the
+  opposite wall and put 45% of simulated preferred directions more than 45°
+  off. They record `time_beyond_distance_range` and
+  `fraction_of_time_in_distance_range` (ray time).
+- View maps cast the gaze to the first wall by default
+  (`gaze_model="ray_cast"`). Fixed-distance gaze passed through walls: in a
+  U-maze all 100 s of view occupancy landed in the arm behind the divider.
+  `gaze_model="fixed_distance"` now stops at the first wall.
+  `ops.compute_viewed_location` also defaults to `method="ray_cast"`.
+- The docs say that head-direction cells carry view information (the
+  heading fixes which wall is in view) and that a place field passes the
+  object-vector screen with one fixed object, and name the controls: view
+  fields stable across arena halves, and vector maps that correlate across
+  object positions.
+
+Breaking API changes:
+
+- Object-vector, egocentric and boundary-vector maps take
+  `distance_bin_size` (default 5 cm in `env.units`) and `direction_bin_size`
+  (radians, default π/6) instead of `n_distance_bins` and
+  `n_direction_bins`, and `distance_range` defaults to `None`. Defaults in cm
+  need known length units: with `env=None` pass `distance_range`, and without
+  `env.units` pass `distance_bin_size` (and, for kernel methods, `bandwidth`,
+  default 5 cm) in the positions' units.
+- `object_vector_score` loses `max_distance_selectivity` and takes the
+  `ObjectVectorRateResult` or its `(n_distance_bins, n_direction_bins)` map; a
+  1-D array raises with the reshape to use.
+- Boundary-vector results replace `spatial_information()` with
+  `distance_information()`: Skaggs information about wall distance along the
+  peak's direction. The whole-map value was not a Skaggs information, since a
+  sample's time goes to every ray.
+- With `gaze_model="fixed_distance"` (and `compute_viewed_location(method=
+  "fixed_distance")`) `view_distance` is required; it is refused with
+  `"ray_cast"`. The 10-unit default had no source.
+- Polar results read `distance_range`, `n_distance_bins` and
+  `n_direction_bins` from `env`; they are no longer constructor fields.
+  Object-vector and boundary-vector results gain `method` and `bandwidth`.
+
+#### Rate maps and result classes
+
+Results that change:
+
+- Kernel rate maps (`diffusion_kde`, `gaussian_kde`, `binned`; both backends)
+  are NaN outside `spatial_support` (occupied bins at or above
+  `min_occupancy`). Smoothed rates in never-visited bins are extrapolations:
+  with the animal confined to half an arena, `peak_location()` fell in
+  unvisited space for 54/100 units; now 0/100. Smoothed directional tuning
+  curves mask unvisited headings the same way.
+- `peak_location()` and `peak_firing_rate()` use only the occupancy
+  support. A map without a positive rate has a NaN peak location (it was the
+  first bin's center).
+- With `time_allocation="start"` each spike counts in its interval's start
+  bin, where that interval's time goes. Spikes at their interpolated position
+  disagreed with the occupancy along the direction of travel: an untuned cell
+  on a track had a rate CV of 0.229 around its true rate, now 0.036.
+- `min_occupancy` must be finite seconds ≥ 0; NaN masked every bin without a
+  warning and negative values skipped masking. Every rate result has a typed
+  `min_occupancy` field that defines `spatial_support`.
+- `rate_map_coherence` returns the Fisher z (arctanh r) of Muller & Kubie
+  (1989) and BNT, not r, and loses `method` (the Spearman option has no
+  counterpart in the cited method).
+- Every rate result checks its arrays, estimator and bandwidth when built
+  (a directional result with 10 rates, 7 occupancy values and 3 bin centers
+  was accepted).
+- Each metric has one name across families: the `summary_table()` column
+  `peak_rate` is `peak_firing_rate`, `spatial_info` and `view_spatial_info`
+  are `spatial_information`, and `ViewRateResult.view_spatial_information()`
+  is `spatial_information()`.
+- `unit_table` is copied on every read, so editing it cannot misalign units,
+  and every population family keeps the `unit_table` of `SpikeTrains` input
+  and records whether its unit labels were generated.
+
+Added:
+
+- Every rate result counts each unit's spikes outside the analyzed intervals
+  (before or after tracking, in gaps, outside epochs or `spike_window`) as
+  `n_spikes_outside_intervals`, also a `summary_table()` column.
+- Every family records `method` (and `bandwidth`) in `summary()`,
+  `to_dataframe()` and `summary_table().attrs`.
+- NWB spatial-rate tables (schema 2.5) store `min_occupancy` and
+  `n_spikes_outside_intervals`; files without `min_occupancy` are refused,
+  since their support threshold is unknown.
+
+#### Walls, transparent walls and drop edges
+
+Results that change:
+
+- A physical boundary has a kind that says what it blocks: `"wall"` blocks
+  movement and gaze, `"transparent_wall"` and `"drop"` (the edge of an
+  elevated track or platform) block movement only. Climbing a wall or
+  leaning over a drop is not modeled. Gaze (ray-cast viewed locations,
+  viewsheds, line of sight, view maps, `SpatialViewCellModel`) stops only at
+  walls; a ray that leaves the floor views nothing (NaN). Border scores,
+  boundary-vector maps, boundary distances, `BorderCellModel` and
+  `BoundaryVectorCellModel` use every kind, so elevated mazes are analyzed
+  instead of refused: a border cell on an elevated square platform scores
+  exactly as in the walled box, as boundary-vector cells respond to drops
+  (Lever et al., 2009) and most border cells keep firing when the walls are
+  removed (van Wijngaarden et al., 2020). Inferred domains (`from_samples`,
+  masks) have no physical outline, and wall-based analyses still refuse them
+  with a message naming `outline="drop"`.
+
+Breaking API changes:
+
+- `physical_footprint_known` is removed from every arena. `OpenArena(polygon,
+  *, outline="wall", walls=..., wall_kinds="wall")` takes the outline's kind
+  (None for a non-physical outline) and one kind per named wall (a single
+  kind, a mapping by wall name, or one per segment); a named wall lying on
+  the outline overrides that stretch of it. `MaskArena(outline=)` replaces
+  its flag, and arenas expose `outline` and `wall_kinds`.
+  `neurospatial.arena.BoundaryKind` names the kinds. The geometry helpers
+  `boundary_geometry`, `physical_walls`, `boundary_view` and
+  `physical_ray_hits` take a required `blocking="movement" | "gaze"`. The
+  arena codec (version 3) and `STATE_FORMAT` (7) record the kinds and refuse
+  older records; save them again from rebuilt environments. The
+  `elevated_arena` maze helper is removed.
+
+#### Simulation and mazes
+
+Results that change:
+
+- `simulate_trajectory_ou` varies speed (gamma-distributed with an OU time
+  course) instead of holding it at `speed_mean`, mirrors steps off walls
+  instead of reversing them, and never crosses internal walls (53 divider
+  crossings in 15 minutes before). Ten minutes at 30 Hz take 0.07 s instead
+  of 1.1 s.
+- `SpatialViewCellModel` gets the viewed location the way the view analysis
+  does, by ray casting to the first wall by default; simulated gaze passed
+  through walls in 24% of samples in a box and 83% in the Hampton Court maze.
+- `tmaze_alternation_session` runs to both arms (the right arm had no bins),
+  and uniform field coverage on a track spaces field centers along the
+  track.
+- Each maze declares its edges as its published apparatus has them. Drop
+  edges: linear track, radial arm, Barnes, honeycomb, crossword, cheeseboard,
+  W and plus maze. Opaque walls: hamlet, Hampton Court, repeated T and Y,
+  rat HexMaze, small hex, square maze, watermaze, and the T and Y mazes
+  (Wijnen et al., 2024 describe walls; they were elevated before). Sungod
+  has an opaque outline with 14 transparent stretches between its arms
+  (`arm_k_wall_facing_arm_j`), so simulated and analyzed gaze crosses
+  between arms: 52% of random gaze rays now land farther away (median
+  4.1 → 41.6 cm). Where a source does not say, the docstring states it and
+  the maze uses the common open build.
+- Simulated cells default to published values, converted from cm to the
+  environment's units. Place cells: width 11.1 cm and peak 12.4 Hz from the
+  median CA1 open-field field in Mizuseki et al. (2012); on the linear-track
+  and T-maze sessions 17.5 cm and 14.5 Hz from the same paper's track data.
+  Head direction: peak 35 Hz and concentration 9.1 (a 22.5° half-width) from
+  Taube, Muller & Ranck (1990). Grid spacing 41 cm, the dorsal-most cells of
+  Hafting et al. (2005). Border-cell distance tolerance 9.8 cm and
+  object-vector distance 21.2 cm from Høydal et al. (2019), and
+  object-vector cells fire at the same vector from every object
+  (`object_selectivity="any"`, as Høydal et al. found with 2–6 objects).
+  Values no source supports (baseline rates, the remaining peak rates) are
+  marked illustrative in each docstring. The place width no longer scales
+  with `bin_size`, so simulated ground truth does not change with the
+  analysis binning; an environment without length units needs an explicit
+  `width`.
+- Place fields stay Gaussian beyond five widths (the rate sat on a
+  7.5e-05 Hz floor there), and object-vector cells with very sharp direction
+  tuning return their peak rate at the preferred direction instead of NaN.
+- `validate_simulation` compares each cell's center error with 1.5 times its
+  true field width and requires a field correlation of 0.9 (was a 2-bin
+  center error and 0.5). Calibrated on 180 s and 600 s open-field sessions
+  with 6–17.5 cm fields: 94% of correctly simulated cells pass, 96% of cells
+  whose ground-truth center is moved by one width fail and every cell whose
+  ground-truth width is tripled fails. The old default failed 71% of correct
+  cells and passed 93% of moved ones. Short sessions with small fields (180 s,
+  6 cm) pass only 69%; the docstring gives the numbers. The per-cell limits
+  are returned as `max_center_errors`.
+- `from_polygon` gives a grid cell centered exactly on the outline to its
+  neighboring bin. Positions there were dropped from occupancy, and wall
+  pieces and ray-cast hits there had no bin, so border scores and view maps
+  raised on the T, W and crossword mazes and on curved or slanted arenas.
+  The small hex maze no longer has zero-width slits between wall hexes.
+
+Breaking API changes:
+
+- `BoundaryCellModel` is replaced by `BoundaryVectorCellModel` (Barry et
+  al., 2006: every visible piece of wall contributes) and `BorderCellModel`
+  (firing by distance to the nearest wall), measured against the declared
+  walls. Both default their tuning (see above); `BoundaryVectorCellModel`
+  draws a random preferred direction from a new `seed`.
+  `boundary_cell_session` becomes `border_cell_session` (`n_boundary_cells`
+  becomes `n_border_cells`), and `simulate_session`'s
+  `cell_type="boundary"` becomes `"border"`.
+- `grid_cell_session(grid_spacing=)` defaults to 41.0 (was 50.0), and
+  `linear_track_session` passes extra keyword arguments to its place cells.
+
 ### Operations review (`neurospatial.ops`)
 
 Results that change:

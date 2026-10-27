@@ -55,6 +55,8 @@ from neurospatial.encoding._validation import _validate_times as _validate_times
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
+    observed_wall_fraction,
+    untuned_border_score,
 )
 
 # Directional rate (head direction cells)
@@ -97,7 +99,6 @@ from neurospatial.encoding.grid import (
     grid_properties,
     grid_scale,
     grid_score,
-    periodicity_score,
     spatial_autocorrelation,
 )
 
@@ -124,6 +125,7 @@ from neurospatial.encoding.population import (
 
 # Spatial rate (place/grid/border cells)
 from neurospatial.encoding.spatial import (
+    CellTypeSignificanceResult,
     DirectionalPlaceFields,
     PlaceFieldsResult,
     SpatialRateResult,
@@ -135,6 +137,7 @@ from neurospatial.encoding.spatial import (
     has_place_field,
     is_place_cell,
     place_cell_significance,
+    spatial_cell_type_significance,
 )
 from neurospatial.encoding.spike_trains import SpikeTrains
 
@@ -156,12 +159,16 @@ __all__ = [  # noqa: RUF022 - organized by category
     "spatial_view_cell_significance",
     "head_direction_cell_significance",
     "place_cell_significance",
+    "spatial_cell_type_significance",
+    "CellTypeSignificanceResult",
     # Spike-time normalization
     # Ragged-spike-train container
     "SpikeTrains",
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
+    "observed_wall_fraction",
+    "untuned_border_score",
     # Boundary-vector rate (boundary-vector and egocentric boundary cells)
     "BoundaryVectorRateResult",
     "BoundaryVectorRatesResult",
@@ -206,7 +213,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "grid_properties",
     "grid_scale",
     "grid_score",
-    "periodicity_score",
     "spatial_autocorrelation",
     # Head direction cell analysis
     "is_head_direction_cell",

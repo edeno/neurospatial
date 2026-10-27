@@ -78,7 +78,7 @@ def _from_bins(
     if member is not None:
         snapshot = replace(snapshot, kind=member.value)
     if arena is None and snapshot.outline is not None:
-        arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
+        arena = OpenArena(snapshot.outline.geometry, outline=None)
     result = _publication._publish(
         cls,
         snapshot,

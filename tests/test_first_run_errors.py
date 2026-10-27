@@ -431,9 +431,7 @@ def test_direction_label_errors_teach(method, recording):
 
     env = recording.env
     rates = {name: np.ones(env.n_bins) for name in ["forward", "reverse"]}
-    result = DirectionalPlaceFields(
-        firing_rates=rates, occupancy=rates, env=env, labels=tuple(rates)
-    )
+    result = DirectionalPlaceFields(firing_rates=rates, occupancy=rates, env=env)
     with pytest.raises(KeyError) as caught:
         getattr(result, method)("missing", "reverse")
     assert "Fix:" in str(caught.value)

@@ -33,7 +33,7 @@ def test_event_locations_respect_tracking_support(env, interp, gap):
     times = np.array([0.0, 0.2, 1.0, 1.2])
     positions = np.column_stack((times, times))
     breaks = None
-    max_gap = 0.5 if gap == "duration" else None
+    max_gap = None if gap == "break" else 0.5
     if gap == "break":
         breaks = np.array([False, False, True, False])
     elif gap == "missing":
@@ -238,10 +238,10 @@ def test_borrowed_reader_is_not_closed_on_pipeline_failure(env):
 def test_prepared_realign_preserves_break_when_clock_skips_gap(env):
     overlay = PositionOverlay(
         np.ones((4, 2)),
-        np.array([0.0, 0.2, 1.0, 1.2]),
+        np.array([0.0, 0.2, 2.0, 2.2]),
     )
-    prepared, _ = _convert_overlays_to_data([overlay], np.array([0.0, 1.2]), 2, env)
-    result = _realign_prepared_overlays(prepared, np.array([0.0, 1.2]))
+    prepared, _ = _convert_overlays_to_data([overlay], np.array([0.0, 2.2]), 2, env)
+    result = _realign_prepared_overlays(prepared, np.array([0.0, 2.2]))
     assert_array_equal(result.positions[0].sample_valid, [True, True])
     assert_array_equal(result.positions[0].interval_valid, [False])
 

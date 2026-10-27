@@ -12,6 +12,7 @@ from neurospatial._units import default_speed
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.simulation._lap_routes import LapRouter
+from neurospatial.simulation._walls import Walls
 
 
 def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
@@ -77,10 +78,11 @@ def simulate_trajectory_ou(
     boundary_mode: Literal["reflect", "periodic", "stop"] = "reflect",
     seed: int | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Simulate trajectory using Ornstein-Uhlenbeck process.
+    """Simulate random exploration with smoothly varying speed and heading.
 
-    Generates smooth, realistic random exploration in N-D space with
-    biologically plausible movement statistics (fitted to Sargolini et al. 2006).
+    The animal's speed and turning rate are Ornstein-Uhlenbeck processes, as
+    in RatInABox (George et al. 2023). It never crosses the arena's outline or
+    an internal wall: it bounces off them like a billiard ball.
 
     Parameters
     ----------
@@ -88,50 +90,39 @@ def simulate_trajectory_ou(
         The environment to simulate within.
     duration : float
         Simulation duration in seconds.
+    speed_units : str
+        Units of ``speed_mean`` and ``speed_std``. Must equal ``env.units``;
+        speeds are not converted between units.
     dt : float, optional
         Time step in seconds (default: 0.01 = 10ms).
     start_position : NDArray[np.float64], shape (n_dims,), optional
         Starting position. If None, randomly chosen from bin centers.
     speed_mean : float, optional
-        Mean speed in ``speed_units`` per second (default: 8.0 cm/s).
+        Mean running speed in ``speed_units`` per second (default: 8.0).
     speed_std : float, optional
-        Speed standard deviation in ``speed_units`` per second (default: 4.0 cm/s).
+        Standard deviation of the running speed in ``speed_units`` per second
+        (default: 4.0). 0 gives a constant speed.
     coherence_time : float, optional
-        Time scale for speed autocorrelation in seconds (default: 0.7s).
-        Controls speed smoothness (how gradually speed changes).
-        For 2D environments, this does NOT affect direction changes
-        (see rotational_velocity_coherence_time instead).
+        Autocorrelation time of the speed in seconds (default: 0.7 s, the
+        RatInABox default): how gradually the animal speeds up and slows down.
     rotational_velocity_std : float, optional
-        Standard deviation of rotational velocity in radians/second
-        (default: 120°/s = 2.094 rad/s). Only used for 2D environments.
-        Controls how quickly direction changes. Typical range: 60-180°/s.
+        Standard deviation of the turning rate in radians/second (default:
+        120°/s = 2.094 rad/s, the RatInABox default). Used in 2-D.
     rotational_velocity_coherence_time : float, optional
-        Time scale for rotational velocity autocorrelation in seconds
-        (default: 0.08s). Only used for 2D environments. Controls
-        direction change smoothness:
-
-        - 0.05-0.1s: Frequent direction changes (realistic exploration)
-        - 0.1-0.2s: Moderate persistence
-        - >0.2s: Very persistent straight-line movement
-
-        Smaller values = more uniform spatial exploration.
+        Autocorrelation time of the turning rate in seconds (default: 0.08 s,
+        the RatInABox default). In 2-D it sets how long a turn persists; in
+        three or more dimensions, how long the heading persists.
     boundary_mode : {'reflect', 'periodic', 'stop'}, optional
-        How to handle environment boundaries (default: 'reflect').
+        What happens when a step would cross a wall (default: 'reflect').
 
-        - 'reflect': Trajectories bounce off walls elastically. Most realistic
-          for typical experiments (open field arenas, water mazes).
-        - 'periodic': Opposite boundaries wrap around (torus topology). Use
-          only for specialized analyses. NOT biologically realistic.
-        - 'stop': Trajectory halts at boundaries. Can create unrealistic
-          accumulation at walls.
-    speed_units : str
-        Units for ``speed_mean`` and ``speed_std``. Required keyword
-        argument: must match ``env.units`` exactly. Auto-conversion
-        between unit families (e.g. m/s -> cm/s) was removed in v0.4
-        because silent rescaling of speeds was easy to miss in
-        practice. Pre-convert ``speed_mean`` / ``speed_std`` into
-        ``env.units`` before calling, or call
-        :func:`_get_conversion_factor` yourself.
+        - 'reflect': the velocity is mirrored about the wall, keeping its
+          component along the wall and reversing the component into it, and
+          the animal takes the step in the mirrored direction.
+        - 'periodic': opposite sides of ``env.dimension_ranges`` are joined
+          (a torus) and walls are ignored. Not biologically realistic.
+        - 'stop': the animal waits in place until its heading turns away
+          from the wall. In 1-D, where the heading turns only at a wall, it
+          reverses there as with 'reflect'.
     seed : int | None, optional
         Random seed for reproducibility.
 
@@ -147,58 +138,49 @@ def simulate_trajectory_ou(
     ValueError
         If env.units is not set. Pass units="cm" when constructing the environment.
     ValueError
-        If speed_units are incompatible with env.units.
+        If speed_units differs from env.units, or a speed or time constant is
+        not finite and positive (``speed_std`` may be 0).
 
     Notes
     -----
-    The OU process implements velocity-based random walk with different
-    approaches for 2D vs N-D environments:
+    **Speed.** At every time the speed follows a gamma distribution with mean
+    ``speed_mean`` and standard deviation ``speed_std``: shape
+    ``k = (speed_mean / speed_std)**2`` and scale
+    ``speed_std**2 / speed_mean``. Its time course is a standard-normal OU
+    process ``z`` with time constant ``coherence_time``, mapped through the
+    gamma quantile function, ``speed = F⁻¹(Φ(z))`` (a Gaussian copula).
+    RatInABox uses the same construction with a Rayleigh distribution; the
+    gamma distribution lets the mean and spread be set separately and keeps
+    the speed non-negative. The default spread (``speed_std = speed_mean / 2``)
+    is close to the Rayleigh distribution's (standard deviation 0.52 times
+    the mean).
 
-    **For 2D environments (recommended for realistic exploration):**
+    **Heading.** In 2-D the turning rate ``ω`` is an OU process with
+    standard deviation ``rotational_velocity_std`` and time constant
+    ``rotational_velocity_coherence_time``, and the heading advances by
+    ``ω dt`` each step (RatInABox). In 1-D the animal keeps its direction
+    until a wall reverses it. In three or more dimensions the heading diffuses
+    on the sphere, decorrelating as ``exp(-t / τ)`` with
+    ``τ = rotational_velocity_coherence_time``.
 
-    Uses separate OU processes for rotational velocity (direction) and
-    speed magnitude, following RatInABox (George et al. 2023):
+    Each OU process ``x`` is advanced exactly,
+    ``x(t + dt) = x(t) e^(-dt/τ) + σ sqrt(1 - e^(-2 dt/τ)) ξ``, so its
+    standard deviation is ``σ`` at any ``dt``.
 
-    .. math::
-
-        d\\omega = -\\theta_r \\omega dt + \\sigma_r dW_r
-
-        d\\theta = \\omega dt
-
-        \\mathbf{v}(t+dt) = R(\\theta) \\mathbf{v}(t)
-
-    where ω is rotational velocity, θ is heading angle, R is rotation matrix,
-    θ_r = 1/rotational_velocity_coherence_time, and
-    σ_r = rotational_velocity_std * sqrt(2*θ_r/dt).
-
-    Speed magnitude is controlled separately to maintain |v| ≈ speed_mean.
-    This produces uniform spatial exploration with biologically realistic
-    movement statistics.
-
-    **For N-D environments (n_dims != 2):**
-
-    Uses independent OU processes on each Cartesian velocity component:
-
-    .. math::
-
-        dv_i = -\\theta v_i dt + \\sigma dW_i
-
-        dx_i = v_i dt
-
-    where θ = 1/coherence_time and σ = speed_std * sqrt(2*θ/dt).
-
-    Boundary Handling Implementation:
-
-    - 'reflect': Upon boundary crossing, reflect position across boundary and
-      reverse velocity component normal to boundary: v_perp → -v_perp
-    - 'periodic': Wrap position using modulo on dimension_ranges, keep velocity
-    - 'stop': Clamp position to nearest valid bin center, zero velocity in
-      crossing direction
+    **Walls.** In 2-D the walls are the outline of the arena (or of the bins,
+    when the arena has no known outline) and the arena's internal walls, so
+    the animal never steps through a divider. A step that would cross a wall
+    is mirrored about the first wall it meets, using that wall's normal; if
+    the mirrored step crosses a wall too (a corner), it is mirrored again,
+    and an animal still blocked after that waits one step. Elsewhere the
+    walls are the faces of the bins: a step that would leave the bins
+    reverses each velocity component whose move alone would leave them.
 
     References
     ----------
-    George et al. (2023) eLife
-    Sargolini et al. (2006) Science
+    George, T. M., de Cothi, W., Stachenfeld, K. L., & Barry, C. (2023).
+    RatInABox, a toolkit for modelling locomotion and neuronal activity in
+    continuous environments. eLife, 12, e85274.
 
     Examples
     --------
@@ -207,41 +189,33 @@ def simulate_trajectory_ou(
     >>> from neurospatial import Environment
     >>> from neurospatial.simulation import simulate_trajectory_ou
     >>> import numpy as np
+    >>> from shapely.geometry import box
     >>>
-    >>> # Create environment
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env = env.with_metadata(units="cm")
-    >>>
-    >>> # Simulate trajectory (speed_units must match env.units exactly).
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0, speed_units="cm")
-    >>> print(positions.shape)  # (6000, 2) at 100 Hz
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=60.0, speed_units="cm", seed=0
+    ... )
+    >>> positions.shape  # (6000, 2) at 100 Hz
     (6000, 2)
-    >>> print(times.shape)
-    (6000,)
+    >>> bool(np.all(env.bin_at(positions) >= 0))
+    True
 
-    Customize movement parameters:
+    The speed varies around its mean:
 
-    >>> # Slower, more persistent movement
+    >>> speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / 0.01
+    >>> bool(2.0 < speed.std() < 6.0)
+    True
+
+    Slower, steadier movement:
+
     >>> positions, times = simulate_trajectory_ou(
     ...     env,
     ...     duration=60.0,
     ...     speed_units="cm",
     ...     speed_mean=5.0,  # cm/s
+    ...     speed_std=1.0,  # cm/s
     ...     coherence_time=1.0,  # seconds
-    ...     seed=42,  # reproducible
-    ... )
-
-    Pre-convert speed if your speeds are in a different unit family
-    (auto-conversion was removed in v0.4):
-
-    >>> from neurospatial.simulation.trajectory import _get_conversion_factor
-    >>> speed_in_cm = 0.10 * _get_conversion_factor("m", env.units)
-    >>> positions, times = simulate_trajectory_ou(
-    ...     env,
-    ...     duration=60.0,
-    ...     speed_units="cm",
-    ...     speed_mean=speed_in_cm,
+    ...     seed=42,
     ... )
 
     See Also
@@ -256,15 +230,42 @@ def simulate_trajectory_ou(
         "keeps it inside the environment's cells.",
         fix="simulate on the allocentric environment the animal moves in",
     )
-    # Validate environment units
     if env.units is None:
         msg = (
             "Environment units must be set before simulation. "
             "Pass units='cm' (or 'm', 'mm', etc.) when constructing the environment"
         )
         raise ValueError(msg)
-
-    # Validate periodic boundary requirements
+    if speed_units != env.units:
+        raise ValueError(
+            _format_error(
+                f"speed_units {speed_units!r} must match env.units {env.units!r}.",
+                why="Why: speeds are not converted between units.",
+                fix="convert speed_mean and speed_std into env.units and pass "
+                f"speed_units={env.units!r}",
+            )
+        )
+    for name, value, positive in [
+        ("duration", duration, True),
+        ("dt", dt, True),
+        ("speed_mean", speed_mean, True),
+        ("speed_std", speed_std, False),
+        ("coherence_time", coherence_time, True),
+        ("rotational_velocity_std", rotational_velocity_std, False),
+        (
+            "rotational_velocity_coherence_time",
+            rotational_velocity_coherence_time,
+            True,
+        ),
+    ]:
+        if not np.isfinite(value) or (value <= 0 if positive else value < 0):
+            bound = "positive" if positive else "non-negative"
+            raise ValueError(
+                _format_error(
+                    f"{name} must be finite and {bound}, got {value}.",
+                    fix=f"pass a finite {bound} {name}",
+                )
+            )
     if boundary_mode == "periodic" and env.dimension_ranges is None:
         msg = (
             "Environment dimension_ranges must be set for periodic boundary mode. "
@@ -273,174 +274,141 @@ def simulate_trajectory_ou(
         )
         raise ValueError(msg)
 
-    # speed_units must match env.units exactly. Auto-conversion was
-    # removed in v0.4 because it silently rescaled speeds in a
-    # way that was easy to miss; users must now pre-convert (or call
-    # _get_conversion_factor themselves) before calling.
-    if speed_units != env.units:
-        raise ValueError(
-            f"speed_units {speed_units!r} must match env.units {env.units!r}. "
-            "Auto-conversion was removed in v0.4. Convert speed_mean / "
-            "speed_std into env.units before calling simulate_trajectory_ou."
-        )
-
-    # Initialize random number generator
     rng = np.random.default_rng(seed)
+    n_dims = env.n_dims
+    n_steps = int(duration / dt)
+    times = np.arange(n_steps, dtype=np.float64) * dt
 
-    # Initialize starting position
     if start_position is None:
-        # Randomly choose from bin centers
-        start_idx = rng.integers(0, env.n_bins)
-        position = env.bin_centers[start_idx].copy()
+        position = env.bin_centers[rng.integers(0, env.n_bins)].copy()
     else:
         position = np.asarray(start_position, dtype=np.float64).copy()
 
-    # Initialize velocity (random direction with magnitude ~speed_mean)
-    n_dims = env.n_dims
-    velocity = rng.standard_normal(n_dims)
-    velocity = velocity / np.linalg.norm(velocity) * speed_mean  # Normalize and scale
-
-    # OU process parameters depend on dimensionality
+    speeds = _ou_speeds(n_steps, dt, speed_mean, speed_std, coherence_time, rng)
     if n_dims == 2:
-        # For 2D: use rotational velocity OU (RatInABox approach)
-        rotational_velocity = 0.0  # Start with zero angular velocity
-        theta_rot = 1.0 / rotational_velocity_coherence_time
-        # Euler-Maruyama discretization: sigma without /dt factor
-        # because noise is scaled by sqrt(dt) when applied
-        sigma_rot = rotational_velocity_std * np.sqrt(2 * theta_rot)
+        turning = _ou_series(
+            n_steps,
+            dt,
+            rotational_velocity_std,
+            rotational_velocity_coherence_time,
+            rng,
+        )
+        direction = rng.uniform(-np.pi, np.pi)
+        unit = np.array([np.cos(direction), np.sin(direction)])
     else:
-        # For N-D: use Cartesian velocity OU
-        theta = 1.0 / coherence_time  # mean reversion rate
-        # Euler-Maruyama discretization: sigma without /dt factor
-        sigma = speed_std * np.sqrt(2 * theta)  # noise amplitude
+        unit = rng.standard_normal(n_dims)
+        unit /= np.linalg.norm(unit)
+        if n_dims > 2:
+            # Rotational diffusion on the sphere with coefficient D: heading
+            # correlation decays as exp(-(n_dims - 1) D t), so D = 1 /
+            # ((n_dims - 1) tau) gives time constant tau; each step adds
+            # independent N(0, 2 D dt) to every component.
+            heading_noise = rng.standard_normal((n_steps, n_dims)) * np.sqrt(
+                2 * dt / ((n_dims - 1) * rotational_velocity_coherence_time)
+            )
 
-    # Time setup
-    n_steps = int(duration / dt)
-    times = np.arange(n_steps) * dt
+    walls = (
+        Walls.enclosing(env) if n_dims == 2 and boundary_mode != "periodic" else None
+    )
 
-    # Pre-allocate trajectory
     positions = np.zeros((n_steps, n_dims), dtype=np.float64)
     positions[0] = position
-
-    # Euler-Maruyama integration
     for i in range(1, n_steps):
         if n_dims == 2:
-            # 2D: Rotational velocity OU (direction changes)
-            # Update rotational velocity using OU: dω = -θ_r ω dt + σ_r dW
-            dw_rot = rng.standard_normal() * np.sqrt(dt)
-            rotational_velocity = (
-                rotational_velocity
-                - theta_rot * rotational_velocity * dt
-                + sigma_rot * dw_rot
+            angle = turning[i] * dt
+            cos, sin = np.cos(angle), np.sin(angle)
+            unit = np.array(
+                [cos * unit[0] - sin * unit[1], sin * unit[0] + cos * unit[1]]
             )
+        elif n_dims > 2:
+            unit = unit + heading_noise[i]
+            unit /= np.linalg.norm(unit)
+        step = speeds[i] * dt * unit
 
-            # Rotate velocity vector by dtheta = ω * dt
-            dtheta = rotational_velocity * dt
-            cos_dtheta = np.cos(dtheta)
-            sin_dtheta = np.sin(dtheta)
-            # Rotation matrix: [[cos, -sin], [sin, cos]]
-            velocity = np.array(
-                [
-                    velocity[0] * cos_dtheta - velocity[1] * sin_dtheta,
-                    velocity[0] * sin_dtheta + velocity[1] * cos_dtheta,
-                ]
-            )
-
-            # Maintain constant speed (simplest approach)
-            # Direction changes via rotation, speed stays at speed_mean
-            speed = np.linalg.norm(velocity)
-            if speed > 0:
-                velocity = velocity * (speed_mean / speed)
-
-            # Set max_speed for boundary reflection
-            max_speed = 3 * speed_mean
-        else:
-            # N-D: Cartesian velocity OU (original approach)
-            dw = rng.standard_normal(n_dims) * np.sqrt(dt)
-            velocity = velocity - theta * velocity * dt + sigma * dw
-
-            # Clip velocity magnitude to maintain realistic speeds
-            speed = np.linalg.norm(velocity)
-            max_speed = 3 * speed_mean
-            if speed > max_speed:
-                velocity = velocity * (max_speed / speed)
-
-        # Handle boundaries - check BEFORE updating position
-        if boundary_mode == "reflect":
-            # Predict next position
-            proposed_position = position + velocity * dt
-
-            # Check if proposed position would be outside environment
-            # Note: contains() returns ndarray, so use [None, :] for single point
-            if not env.contains(proposed_position[None, :])[0]:
-                # Compute outward normal (from current position toward boundary)
-                # Direction from current position to proposed position
-                displacement = proposed_position - position
-                dist = np.linalg.norm(displacement)
-                if dist > 1e-10:
-                    normal = displacement / dist
-                else:
-                    # Fallback: random direction
-                    normal = rng.standard_normal(n_dims)
-                    normal = normal / np.linalg.norm(normal)
-
-                # Reflect velocity: v' = v - 2(v·n)n
-                v_parallel = np.dot(velocity, normal) * normal
-                velocity = velocity - 2 * v_parallel
-
-                # Normalize velocity after reflection
-                speed_after = np.linalg.norm(velocity)
-                if n_dims == 2:
-                    # For 2D rotational OU: maintain constant speed
-                    if speed_after > 0:
-                        velocity = velocity * (speed_mean / speed_after)
-                else:
-                    # For N-D Cartesian OU: clip to max_speed
-                    if speed_after > max_speed:
-                        velocity = velocity * (max_speed / speed_after)
-
-        # Update position with (possibly reflected) velocity
-        position = position + velocity * dt
-
-        # Ensure position stays within environment after update
-        if boundary_mode == "reflect":
-            # Note: contains() returns ndarray, so use [None, :] for single point
-            if not env.contains(position[None, :])[0]:
-                position = _nearest_bin_center(env, position)
-
-        elif boundary_mode == "periodic":
-            # Wrap position using dimension ranges
-            # Note: dimension_ranges validated at function entry
+        if boundary_mode == "periodic":
+            position = position + step
             for dim in range(n_dims):
-                range_min, range_max = env.dimension_ranges[dim]  # type: ignore[index]
-                range_size = range_max - range_min
-                position[dim] = range_min + (position[dim] - range_min) % range_size
-
-        # Note: contains() returns ndarray, so use [None, :] for single point
-        elif boundary_mode == "stop" and not env.contains(position[None, :])[0]:
-            position = _nearest_bin_center(env, position)
-
-            # Zero velocity in crossing direction (simple: zero all velocity)
-            velocity = np.zeros(n_dims)
-
-        # Note: No else block needed - Literal type ensures all cases covered
-
+                low, high = env.dimension_ranges[dim]  # type: ignore[index]
+                position[dim] = low + (position[dim] - low) % (high - low)
+        elif walls is not None:
+            position, unit = walls.move(position, step, unit, boundary_mode)
+        else:
+            position, unit = _move_within_bins(env, position, step, unit, boundary_mode)
         positions[i] = position
 
-    return positions, times  # type: ignore[return-value]
+    return positions, times
 
 
-def _nearest_bin_center(
-    env: Environment, position: NDArray[np.float64]
+def _ou_series(
+    n_steps: int,
+    dt: float,
+    std: float,
+    coherence_time: float,
+    rng: np.random.Generator,
 ) -> NDArray[np.float64]:
-    """Center of the bin nearest a position that has left the environment.
+    """A stationary OU process, shape (n_steps,), advanced exactly each step.
 
-    ``bin_at`` cannot clamp: it returns -1 for an outside point, and -1 would
-    index the last bin center.
+    ``x(t + dt) = a x(t) + std sqrt(1 - a²) ξ`` with ``a = exp(-dt /
+    coherence_time)``, so the standard deviation is ``std`` at any ``dt``.
     """
-    nearest = int(env.nearest_bin(position[None, :])[0])
-    center: NDArray[np.float64] = env.bin_centers[nearest].copy()
-    return center
+    from scipy.signal import lfilter
+
+    decay = np.exp(-dt / coherence_time)
+    noise = rng.standard_normal(n_steps)
+    noise[0] *= std
+    noise[1:] *= std * np.sqrt(1.0 - decay**2)
+    series: NDArray[np.float64] = lfilter([1.0], [1.0, -decay], noise)
+    return series
+
+
+def _ou_speeds(
+    n_steps: int,
+    dt: float,
+    speed_mean: float,
+    speed_std: float,
+    coherence_time: float,
+    rng: np.random.Generator,
+) -> NDArray[np.float64]:
+    """Speeds with a gamma(mean, std) distribution and OU time course."""
+    from scipy.stats import gamma, norm
+
+    z = _ou_series(n_steps, dt, 1.0, coherence_time, rng)
+    if speed_std == 0:
+        return np.full(n_steps, speed_mean)
+    shape = (speed_mean / speed_std) ** 2
+    scale = speed_std**2 / speed_mean
+    # norm.sf keeps the far upper tail representable, where norm.cdf rounds
+    # to 1 and the quantile would be infinite.
+    speeds: NDArray[np.float64] = gamma.isf(norm.sf(z), shape, scale=scale)
+    return speeds
+
+
+def _move_within_bins(
+    env: Environment,
+    position: NDArray[np.float64],
+    step: NDArray[np.float64],
+    unit: NDArray[np.float64],
+    boundary_mode: str,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """One step kept inside the bins, without wall geometry.
+
+    A step that would leave the bins reverses each component whose move
+    alone would leave them: the mirror image off a face of a grid cell.
+    """
+    proposed = position + step
+    if env.contains(proposed[None, :])[0]:
+        return proposed, unit
+    if boundary_mode == "stop" and len(position) > 1:
+        return position, unit
+    single = position[None, :] + np.diag(step)
+    leaving = ~env.contains(single)
+    if not np.any(leaving):
+        leaving[:] = True
+    unit = np.where(leaving, -unit, unit)
+    proposed = position + np.where(leaving, -step, step)
+    if env.contains(proposed[None, :])[0]:
+        return proposed, unit
+    return position, unit
 
 
 def simulate_trajectory_sinusoidal(

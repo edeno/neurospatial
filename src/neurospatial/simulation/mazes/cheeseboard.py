@@ -43,6 +43,10 @@ meets the board, so the maze has no start box. Dupret et al. placed cue
 objects "near the baited food-wells" only in a cued condition, so the maze
 has no cue landmarks.
 
+Neither Mátyás et al. (2025) nor Roux et al. (2017) say whether the board was
+raised or walled. It is modeled as an open board whose edge is a drop
+(``arena.outline == "drop"``), the build of the Barnes maze it resembles.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.cheeseboard import (
@@ -66,6 +70,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
@@ -215,6 +220,7 @@ def make_cheeseboard_maze(
     env_2d = Environment.from_polygon(
         polygon=platform_polygon,
         bin_size=bin_size,
+        arena=OpenArena(platform_polygon, outline="drop"),
         name="cheeseboard_maze",
         connect_diagonal_neighbors=True,
     )

@@ -107,7 +107,7 @@ def test_max_gap_none_preserves_unrestricted_sequence(two_epoch_recording):
 @pytest.mark.parametrize(
     "times, lag, epochs, warning",
     [
-        ([0.0, 1.0, 2.0], 1, None, "excluded ALL.*probably not in seconds"),
+        ([0.0, 2.0, 4.0], 1, None, "excluded ALL.*probably not in seconds"),
         ([0.0, 0.1, 0.2], 1, (1.0, 2.0), "excluded ALL.*epochs"),
         ([0.0, 0.1, 5.0, 5.1], 2, None, None),
     ],

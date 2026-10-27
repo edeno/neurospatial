@@ -40,6 +40,9 @@ positions, the alley width, the agora's wall and its exits are not published;
 the defaults are estimates measured from an overhead photograph of the
 apparatus scaled to the 1.6 m diameter.
 
+The alleys and the agora are walled (``arena.outline == "wall"``). The
+sources do not give the wall material; the walls are modeled as opaque.
+
 References
 ----------
 Couly, S. (2018). Analyse d'un peptide P42 protecteur de la maladie de

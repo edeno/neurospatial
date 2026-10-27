@@ -425,9 +425,9 @@ class TestHeadingFromBodyOrientation:
     def test_long_gap_is_nan(self):
         from neurospatial.behavior import heading_from_body_orientation
 
-        times = np.arange(10) * 0.1
+        times = np.arange(10) * 0.2
         nose, tail = _facing(np.zeros(10))
-        nose[2:8] = np.nan  # anchors 1 and 8 are 0.7 s apart
+        nose[2:8] = np.nan  # anchors 1 and 8 are 1.4 s apart
         headings = heading_from_body_orientation(times, nose, tail)
         assert np.isnan(headings[2:8]).all()
         assert np.isfinite(headings[[0, 1, 8, 9]]).all()
@@ -517,12 +517,12 @@ class TestHeadingFromBodyOrientation:
         assert np.isnan(headings).all()
 
     def test_all_intervals_excluded_keeps_observed_headings(self):
-        """At 1 Hz every interval exceeds max_gap: no fill, observed frames kept."""
+        """At 0.5 Hz every interval exceeds max_gap: no fill, observed frames kept."""
         from neurospatial.behavior import heading_from_body_orientation
 
         nose, tail = _facing(np.linspace(-1.0, 1.0, 10))
         with pytest.warns(UserWarning) as record:
-            headings = heading_from_body_orientation(np.arange(10.0), nose, tail)
+            headings = heading_from_body_orientation(2 * np.arange(10.0), nose, tail)
         message = str(record[0].message)
         assert "so no missing frame is filled" in message
         assert "heading is NaN" not in message
@@ -530,7 +530,7 @@ class TestHeadingFromBodyOrientation:
 
         nose[4] = np.nan
         with pytest.warns(UserWarning, match="no missing frame is filled"):
-            headings = heading_from_body_orientation(np.arange(10.0), nose, tail)
+            headings = heading_from_body_orientation(2 * np.arange(10.0), nose, tail)
         assert np.isnan(headings[4])
         assert np.isfinite(np.delete(headings, 4)).all()
 
@@ -730,7 +730,7 @@ def test_heading_from_velocity_zero_speed_has_no_heading():
     np.testing.assert_array_equal(heading, [0.0, 0.0, np.nan, 0.0, 0.0])
 
 
-def test_heading_from_velocity_nan_row_is_missing_not_bridged():
+def test_heading_from_velocity_nan_row_is_missing_but_bridged():
     from neurospatial.behavior import heading_from_velocity
 
     times = np.arange(8) * 0.1
@@ -739,14 +739,17 @@ def test_heading_from_velocity_nan_row_is_missing_not_bridged():
     heading = heading_from_velocity(times, positions, smooth_window=0.0)
     np.testing.assert_array_equal(heading, [0, 0, 0, np.nan, 0, 0, 0, 0])
 
-    # With rows 3 and 5 missing, sample 4 touches no observed interval.
+    # With rows 3 and 5 missing and a gap limit below 0.2 s, sample 4 touches
+    # no observed interval.
     positions[5] = np.nan
-    heading = heading_from_velocity(times, positions, smooth_window=0.0)
+    heading = heading_from_velocity(times, positions, smooth_window=0.0, max_gap=0.15)
     np.testing.assert_array_equal(heading, [0, 0, 0, np.nan, np.nan, np.nan, 0, 0])
+    heading = heading_from_velocity(times, positions, smooth_window=0.0)
+    np.testing.assert_array_equal(heading, [0, 0, 0, np.nan, 0, np.nan, 0, 0])
 
 
-def test_heading_from_velocity_nan_rows_match_separate_runs():
-    """Missing rows split the path into runs analyzed as separate recordings."""
+def test_heading_from_velocity_nan_rows_match_deleted_rows():
+    """Missing rows are skipped exactly as if they were deleted."""
     from neurospatial.behavior import heading_from_velocity
 
     times = np.arange(200) / 50  # s, 50 Hz
@@ -756,12 +759,29 @@ def test_heading_from_velocity_nan_rows_match_separate_runs():
     missing = np.arange(98, 103)
     positions[missing] = np.nan
     joined = heading_from_velocity(times, positions)
+    kept = np.setdiff1d(np.arange(200), missing)
+    expected = np.full(200, np.nan)
+    expected[kept] = heading_from_velocity(times[kept], positions[kept])
+    np.testing.assert_array_equal(joined, expected)
+    assert np.isfinite(joined[kept]).all()
+
+
+def test_heading_from_velocity_long_nan_stretch_splits_runs():
+    """A missing stretch longer than max_gap splits the path into runs."""
+    from neurospatial.behavior import heading_from_velocity
+
+    times = np.arange(200) / 50  # s, 50 Hz
+    x = 10.0 * np.minimum(times, 2.0)
+    y = 10.0 * np.maximum(times - 2.0, 0.0)
+    positions = np.c_[x, y]
+    missing = np.arange(98, 103)
+    positions[missing] = np.nan
+    joined = heading_from_velocity(times, positions, max_gap=0.1)
     before, after = slice(0, 98), slice(103, 200)
     expected = np.full(200, np.nan)
     expected[before] = heading_from_velocity(times[before], positions[before])
     expected[after] = heading_from_velocity(times[after], positions[after])
     np.testing.assert_array_equal(joined, expected)
-    assert np.isfinite(joined[before]).all() and np.isfinite(joined[after]).all()
 
 
 def test_nan_anchor_not_propagated():

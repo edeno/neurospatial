@@ -244,7 +244,7 @@ def test_constant_normalization_preserves_missing_observations_in_consumers(env)
 
 @pytest.mark.parametrize("custom", [False, True])
 def test_conversion_keeps_frame_clock_samples_and_their_support(env, custom):
-    times = np.array([0.0, 0.1, 1.0, 1.1])
+    times = np.array([0.0, 0.1, 2.0, 2.1])
     positions = np.ones((4, 2))
 
     class Adapter:
@@ -263,7 +263,7 @@ def test_conversion_keeps_frame_clock_samples_and_their_support(env, custom):
     prepared, _ = _convert_overlays_to_data([overlay], times, 4, env)
     item = prepared.positions[0]
     assert_array_equal(item.times, times)
-    # The 0.9 s interval is longer than max_gap; a rejected sample takes its
+    # The 1.9 s interval is longer than max_gap; a rejected sample takes its
     # intervals with it.
     assert_array_equal(
         item.interval_valid, [False, False, True] if custom else [True, False, True]

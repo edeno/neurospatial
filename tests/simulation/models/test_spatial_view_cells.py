@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from shapely.geometry import box
 
 from neurospatial import Environment
 
@@ -38,8 +39,7 @@ class TestSpatialViewCellModelCreation:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_basic_creation(self, env):
         """Model can be created with required parameters."""
@@ -68,19 +68,23 @@ class TestSpatialViewCellModelCreation:
             boundary_source="analysis",
         )
 
-        # Default view field width
-        assert model.view_field_width > 0
+        # Default view field width: 10 cm in the environment's units
+        assert env.units == "cm"
+        assert model.view_field_width == pytest.approx(10.0)
 
         # Default rates
         assert model.max_rate > 0
         assert model.baseline_rate >= 0
         assert model.baseline_rate < model.max_rate
 
-        # Default view distance
-        assert model.view_distance > 0
+        # The view analysis's default gaze: the first wall along the gaze.
+        import inspect
 
-        # Default gaze model
-        assert model.gaze_model in ("fixed_distance", "ray_cast")
+        from neurospatial.encoding.view import compute_view_rate
+
+        default = inspect.signature(compute_view_rate).parameters["gaze_model"]
+        assert model.gaze_model == default.default == "ray_cast"
+        assert model.view_distance is None
 
         # Default visibility requirement
         assert isinstance(model.require_visibility, bool)
@@ -103,7 +107,7 @@ class TestSpatialViewCellModelCreation:
             preferred_view_location=np.array([50.0, 50.0]),
             view_field_width=15.0,
             view_distance=25.0,
-            gaze_model="ray_cast",
+            gaze_model="fixed_distance",
             max_rate=30.0,
             baseline_rate=0.5,
             require_visibility=True,
@@ -113,7 +117,7 @@ class TestSpatialViewCellModelCreation:
 
         assert model.view_field_width == 15.0
         assert model.view_distance == 25.0
-        assert model.gaze_model == "ray_cast"
+        assert model.gaze_model == "fixed_distance"
         assert model.max_rate == 30.0
         assert model.baseline_rate == 0.5
         assert model.require_visibility is True
@@ -126,8 +130,7 @@ class TestParameterValidation:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_invalid_preferred_view_location_shape_raises(self, env):
         """Invalid preferred_view_location shape raises ValueError."""
@@ -184,6 +187,7 @@ class TestParameterValidation:
                 env=env,
                 preferred_view_location=np.array([50.0, 50.0]),
                 view_distance=0.0,
+                gaze_model="fixed_distance",
                 boundary_source="analysis",
             )
 
@@ -264,8 +268,7 @@ class TestFiringRateComputation:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_firing_rate_shape(self, env):
         """Firing rate has correct shape."""
@@ -408,8 +411,7 @@ class TestGazeModels:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_fixed_distance_gaze_model(self, env):
         """fixed_distance gaze model works correctly."""
@@ -492,8 +494,7 @@ class TestVisibilityRequirement:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_require_visibility_false(self, env):
         """With require_visibility=False, fires even if view blocked."""
@@ -553,8 +554,7 @@ class TestFieldOfViewIntegration:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_fov_restricts_viewing(self, env):
         """FOV restricts what can be viewed."""
@@ -598,8 +598,7 @@ class TestGroundTruth:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_ground_truth_contains_all_parameters(self, env):
         """ground_truth contains all model parameters."""
@@ -613,7 +612,7 @@ class TestGroundTruth:
             preferred_view_location=np.array([50.0, 50.0]),
             view_field_width=15.0,
             view_distance=25.0,
-            gaze_model="ray_cast",
+            gaze_model="fixed_distance",
             max_rate=30.0,
             baseline_rate=0.5,
             require_visibility=True,
@@ -637,7 +636,7 @@ class TestGroundTruth:
         assert_allclose(gt["preferred_view_location"], [50.0, 50.0])
         assert gt["view_field_width"] == 15.0
         assert gt["view_distance"] == 25.0
-        assert gt["gaze_model"] == "ray_cast"
+        assert gt["gaze_model"] == "fixed_distance"
         assert gt["max_rate"] == 30.0
         assert gt["baseline_rate"] == 0.5
         assert gt["require_visibility"] is True
@@ -669,8 +668,7 @@ class TestVectorizationEquivalence:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     @staticmethod
     def _reference_firing_rate(model, positions, headings):
@@ -688,7 +686,7 @@ class TestVectorizationEquivalence:
             headings,
             method=model.gaze_model,
             view_distance=model.view_distance,
-            env=model.env if model.gaze_model != "fixed_distance" else None,
+            env=model.env,
             boundary_source="analysis",
         )
 
@@ -825,8 +823,7 @@ class TestProtocolCompliance:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_implements_neural_model_protocol(self, env):
         """SpatialViewCellModel implements NeuralModel protocol."""
@@ -874,8 +871,7 @@ class TestEdgeCases:
     @pytest.fixture
     def env(self):
         """Create a simple 2D environment."""
-        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
-        return Environment.from_samples(samples, bin_size=2.0)
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
 
     def test_nan_viewed_location_returns_baseline(self, env):
         """When viewed location is NaN (outside env), returns baseline rate."""
@@ -925,7 +921,7 @@ class TestEdgeCases:
 
 @pytest.mark.parametrize("gaze_model", ["fixed_distance", "ray_cast"])
 def test_firing_rate_builds_the_mesh_lookup_once_per_call(gaze_model, monkeypatch):
-    """Every timestep's line of sight shares one triangle index."""
+    """The triangle index is built a fixed number of times, not per timestep."""
     from shapely.geometry import box
 
     from neurospatial import Environment
@@ -941,7 +937,9 @@ def test_firing_rate_builds_the_mesh_lookup_once_per_call(gaze_model, monkeypatc
     model = SpatialViewCellModel(
         env,
         preferred_view_location=np.array([10.0, 10.0]),
+        view_field_width=10.0,
         gaze_model=gaze_model,
+        view_distance=5.0 if gaze_model == "fixed_distance" else None,
         require_visibility=True,
         boundary_source="analysis",
     )
@@ -954,12 +952,75 @@ def test_firing_rate_builds_the_mesh_lookup_once_per_call(gaze_model, monkeypatc
 
     monkeypatch.setattr(_locators, "_triangle_index", counted)
     rng = np.random.default_rng(0)
-    n_time = 12
-    rates = model.firing_rate(
-        rng.uniform(3, 17, (n_time, 2)),
-        times=np.arange(n_time) / 30,
-        headings=rng.uniform(-np.pi, np.pi, n_time),
-    )
+    counts = []
+    for n_time in (12, 48):
+        builds.clear()
+        rates = model.firing_rate(
+            rng.uniform(3, 17, (n_time, 2)),
+            times=np.arange(n_time) / 30,
+            headings=rng.uniform(-np.pi, np.pi, n_time),
+        )
+        assert np.all(np.isfinite(rates))
+        counts.append(len(builds))
+    assert counts[0] == counts[1] < 12
 
-    assert np.all(np.isfinite(rates))
-    assert len(builds) == 1
+
+class TestGazeStopsAtWalls:
+    """The simulated gaze is the view analysis's gaze: it never crosses a wall."""
+
+    @pytest.fixture(scope="class")
+    def divided(self):
+        """A 1 m box with a 4 cm thick divider from the south wall to y = 60."""
+        footprint = box(0, 0, 100, 100).difference(box(48, 0, 52, 60))
+        return Environment.from_polygon(footprint, bin_size=2.0, units="cm")
+
+    def test_a_location_behind_a_wall_is_not_seen(self, divided):
+        from neurospatial.simulation.models.spatial_view_cells import (
+            SpatialViewCellModel,
+        )
+
+        # 20 cm east of the observer, behind the divider 8 cm away.
+        model = SpatialViewCellModel(
+            divided,
+            preferred_view_location=np.array([60.0, 30.0]),
+            view_field_width=3.0,
+            view_distance=20.0,
+            gaze_model="fixed_distance",
+            max_rate=20.0,
+            baseline_rate=0.1,
+        )
+        rate = model.firing_rate(np.array([[40.0, 30.0]]), headings=np.array([0.0]))
+        # The gaze stops at the divider (48, 30), 12 cm (4 widths) away.
+        assert rate[0] == pytest.approx(0.1 + 19.9 * np.exp(-0.5 * 4.0**2))
+
+    @pytest.mark.parametrize("gaze_model", ["ray_cast", "fixed_distance"])
+    def test_rates_follow_the_analysis_gaze(self, divided, gaze_model):
+        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.simulation.models.spatial_view_cells import (
+            SpatialViewCellModel,
+        )
+
+        model = SpatialViewCellModel(
+            divided,
+            preferred_view_location=np.array([48.0, 30.0]),
+            view_field_width=10.0,
+            gaze_model=gaze_model,
+            view_distance=20.0 if gaze_model == "fixed_distance" else None,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+        rng = np.random.default_rng(5)
+        positions = divided.bin_centers[rng.integers(0, divided.n_bins, 500)]
+        headings = rng.uniform(-np.pi, np.pi, 500)
+        viewed = compute_viewed_location(
+            positions,
+            headings,
+            method=gaze_model,
+            view_distance=model.view_distance,
+            env=divided,
+        )
+        distance = np.linalg.norm(viewed - [48.0, 30.0], axis=1)
+        assert_allclose(
+            model.firing_rate(positions, headings=headings),
+            20.0 * np.exp(-0.5 * (distance / 10.0) ** 2),
+        )

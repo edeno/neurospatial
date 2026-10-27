@@ -28,6 +28,14 @@ class TestHeadDirectionCellModel:
         assert hd.max_rate == 50.0
         assert hd.baseline_rate == 2.0
 
+    def test_default_tuning_matches_a_90_degree_firing_range(self):
+        """Half the rate 22.5 degrees off the peak, as a 90-degree triangle."""
+        hd = HeadDirectionCellModel(preferred_direction=0.0, baseline_rate=0.0)
+        assert hd.max_rate == 35.0
+        assert hd.ground_truth["tuning_width_deg"] == pytest.approx(22.5, abs=0.05)
+        rates = hd.firing_rate(np.radians([0.0, 22.5]))
+        assert rates[1] / rates[0] == pytest.approx(0.5, abs=1e-3)
+
     def test_random_direction_selection(self):
         """Test that direction is randomly chosen if not provided."""
         hd1 = HeadDirectionCellModel(seed=42)
@@ -135,6 +143,25 @@ class TestHeadDirectionCellModel:
             hd_sharp.ground_truth["tuning_width"]
             < hd_broad.ground_truth["tuning_width"]
         )
+
+    @pytest.mark.parametrize(
+        ("concentration", "half_width_deg"), [(1, 72), (2, 49), (5, 31), (10, 21)]
+    )
+    def test_tuning_width_is_the_half_width_at_half_maximum(
+        self, concentration, half_width_deg
+    ):
+        """The reported tuning width is where the rate above baseline halves."""
+        hd = HeadDirectionCellModel(
+            preferred_direction=0.0,
+            concentration=concentration,
+            max_rate=40.0,
+            baseline_rate=1.0,
+        )
+        width = hd.ground_truth["tuning_width"]
+        np.testing.assert_allclose(
+            hd.firing_rate(np.array([width, -width])), 1.0 + 39.0 / 2, rtol=1e-12
+        )
+        assert round(hd.ground_truth["tuning_width_deg"]) == half_width_deg
 
     def test_ground_truth_properties(self):
         """Test that ground_truth returns correct parameters."""

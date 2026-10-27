@@ -102,7 +102,7 @@ def test_combined_snapshot_publishes_and_round_trips(tmp_path):
     env.to_file(path)
     restored = Environment.from_file(path)
     assert restored.arena.domain_known
-    assert not restored.arena.physical_footprint_known
+    assert restored.arena.outline is None
     source.children[0].bins.centers.setflags(write=True)
     source.children[0].bins.centers[:] = 100
     np.testing.assert_array_equal(env.bin_at([[0.5, 0.5]]), [0])

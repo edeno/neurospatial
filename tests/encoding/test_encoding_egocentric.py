@@ -22,33 +22,17 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def sample_env() -> Environment:
-    """Create a sample egocentric polar environment for testing.
-
-    The egocentric environment represents distance/direction space centered
-    on the animal. For simplicity, we create a regular 2D environment that
-    represents the polar grid (distance on one axis, direction on another).
-    """
+    """The polar grid an object-vector map uses: 10 x 5 cm rings, 12 directions."""
     from neurospatial import Environment
 
-    # Create a 2D grid environment to represent polar coordinates
-    # In practice, env would be created by from_polar_egocentric()
-    # but for testing the result class definitions, any fitted Environment works
-    n_distance = 10
-    n_direction = 12
-    n_bins = n_distance * n_direction
-
-    # Create positions representing a flattened polar grid
-    positions = np.zeros((n_bins, 2))
-    for i in range(n_distance):
-        for j in range(n_direction):
-            idx = i * n_direction + j
-            # Distance from 0 to 50 cm, direction from -pi to pi
-            positions[idx, 0] = i * 5.0  # distance
-            positions[idx, 1] = -np.pi + j * (2 * np.pi / n_direction)  # direction
-
-    # 5 cm distance bins and 30-degree direction bins, one per sample.
-    env = Environment.from_samples(positions, bin_size=(5.0, 2 * np.pi / n_direction))
-    return env
+    return Environment.from_polar_egocentric(
+        distance_range=(0.0, 50.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=2 * np.pi / 12,
+        circular_angle=True,
+        units="cm",
+    )
 
 
 @pytest.fixture
@@ -142,9 +126,6 @@ class TestObjectVectorRateResultDefinition:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         with pytest.raises(FrozenInstanceError):
@@ -160,9 +141,9 @@ class TestObjectVectorRateResultDefinition:
         assert "firing_rate" in fields
         assert "occupancy" in fields
         assert "env" in fields
-        assert "distance_range" in fields
-        assert "n_distance_bins" in fields
-        assert "n_direction_bins" in fields
+        # The grid's extent and shape are read from env, not stored twice.
+        derived = {"distance_range", "n_distance_bins", "n_direction_bins"}
+        assert not derived & set(fields)
 
 
 class TestObjectVectorRateResultCreation:
@@ -182,9 +163,6 @@ class TestObjectVectorRateResultCreation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         assert result is not None
@@ -204,9 +182,6 @@ class TestObjectVectorRateResultCreation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         np.testing.assert_array_equal(result.firing_rate, single_neuron_firing_rate)
@@ -225,9 +200,6 @@ class TestObjectVectorRateResultCreation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         np.testing.assert_array_equal(result.occupancy, single_neuron_occupancy)
@@ -246,9 +218,6 @@ class TestObjectVectorRateResultCreation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         assert result.env is sample_env
@@ -267,9 +236,6 @@ class TestObjectVectorRateResultCreation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         assert result.distance_range == (0.0, 50.0)
@@ -288,9 +254,6 @@ class TestObjectVectorRateResultCreation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         assert result.n_distance_bins == 10
@@ -309,9 +272,6 @@ class TestObjectVectorRateResultCreation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         assert result.n_direction_bins == 12
@@ -376,9 +336,6 @@ class TestObjectVectorRatesResultDefinition:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         with pytest.raises(FrozenInstanceError):
@@ -394,9 +351,9 @@ class TestObjectVectorRatesResultDefinition:
         assert "firing_rates" in fields
         assert "occupancy" in fields
         assert "env" in fields
-        assert "distance_range" in fields
-        assert "n_distance_bins" in fields
-        assert "n_direction_bins" in fields
+        # The grid's extent and shape are read from env, not stored twice.
+        derived = {"distance_range", "n_distance_bins", "n_direction_bins"}
+        assert not derived & set(fields)
 
 
 class TestObjectVectorRatesResultCreation:
@@ -416,9 +373,6 @@ class TestObjectVectorRatesResultCreation:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         assert result is not None
@@ -438,9 +392,6 @@ class TestObjectVectorRatesResultCreation:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         np.testing.assert_array_equal(result.firing_rates, batch_firing_rates)
@@ -468,9 +419,6 @@ class TestObjectVectorRatesResultLen:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         assert len(result) == 5  # batch_firing_rates has 5 neurons
@@ -489,9 +437,6 @@ class TestObjectVectorRatesResultLen:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         assert isinstance(len(result), int)
@@ -517,9 +462,6 @@ class TestObjectVectorRatesResultGetitem:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         single = result[0]
@@ -539,9 +481,6 @@ class TestObjectVectorRatesResultGetitem:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         single = result[2]
@@ -561,9 +500,6 @@ class TestObjectVectorRatesResultGetitem:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         single = result[0]
@@ -583,9 +519,6 @@ class TestObjectVectorRatesResultGetitem:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         single = result[0]
@@ -605,9 +538,6 @@ class TestObjectVectorRatesResultGetitem:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         single = result[0]
@@ -633,9 +563,6 @@ class TestObjectVectorRatesResultIter:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         count = 0
@@ -661,9 +588,6 @@ class TestObjectVectorRatesResultIter:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         for single in result:
@@ -683,9 +607,6 @@ class TestObjectVectorRatesResultIter:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         for i, single in enumerate(result):
@@ -716,9 +637,6 @@ class TestObjectVectorRateResultPlot:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         ax = result.plot()
@@ -740,9 +658,6 @@ class TestObjectVectorRateResultPlot:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         fig, ax = plt.subplots()
@@ -764,9 +679,6 @@ class TestObjectVectorRateResultPlot:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Should not raise - kwargs are passed through
@@ -791,9 +703,6 @@ class TestObjectVectorRateResultPreferredDistance:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         dist = result.preferred_distance()
@@ -813,9 +722,6 @@ class TestObjectVectorRateResultPreferredDistance:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         dist = result.preferred_distance()
@@ -836,9 +742,6 @@ class TestObjectVectorRateResultPreferredDistance:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=distance_range,
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         dist = result.preferred_distance()
@@ -865,9 +768,6 @@ class TestObjectVectorRateResultPreferredDistance:
             firing_rate=firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         dist = result.preferred_distance()
@@ -893,9 +793,6 @@ class TestObjectVectorRateResultPreferredDirection:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         direction = result.preferred_direction()
@@ -919,9 +816,6 @@ class TestObjectVectorRateResultPreferredDirection:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         direction = result.preferred_direction()
@@ -946,9 +840,6 @@ class TestObjectVectorRateResultPreferredDirection:
             firing_rate=firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         direction = result.preferred_direction()
@@ -984,9 +875,6 @@ class TestObjectVectorRateResultPreferredDirection:
             firing_rate=firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         direction = result.preferred_direction()
@@ -1014,9 +902,6 @@ class TestObjectVectorRateResultConvenienceMethodsWithNaN:
             firing_rate=firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         dist = result.preferred_distance()
@@ -1041,9 +926,6 @@ class TestObjectVectorRateResultConvenienceMethodsWithNaN:
             firing_rate=firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         direction = result.preferred_direction()
@@ -1074,9 +956,6 @@ class TestObjectVectorRateResultIsOVC:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         is_egocentric_object_vector_cell = result.is_object_vector_cell()
@@ -1096,9 +975,6 @@ class TestObjectVectorRateResultIsOVC:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Should not raise - accepts min_info parameter
@@ -1124,9 +1000,6 @@ class TestObjectVectorRateResultIsOVC:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Should return the same as explicitly passing 0.3
@@ -1151,14 +1024,12 @@ class TestObjectVectorRateResultIsOVC:
         firing_rate = np.zeros(n_bins)
         firing_rate[n_bins // 2] = 30.0  # Single peak
 
+        # 100 s per bin: 3000 spikes, enough for the 120-bin polar map.
         result = ObjectVectorRateResult(
             direction_frame="egocentric",
             firing_rate=firing_rate,
-            occupancy=single_neuron_occupancy,
+            occupancy=np.full(n_bins, 100.0),
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Should be classified as OVC (high spatial info)
@@ -1185,9 +1056,6 @@ class TestObjectVectorRateResultIsOVC:
             firing_rate=firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Should NOT be classified as OVC (zero spatial info)
@@ -1207,22 +1075,19 @@ class TestObjectVectorRateResultIsOVC:
 
         # Create moderately selective firing (some spatial info)
         n_bins = sample_env.n_bins
-        firing_rate = np.random.rand(n_bins) * 5.0
+        firing_rate = np.random.default_rng(0).random(n_bins) * 5.0
         # Add a mild peak
         firing_rate[n_bins // 2] = 15.0
 
         result = ObjectVectorRateResult(
             direction_frame="egocentric",
             firing_rate=firing_rate,
-            occupancy=single_neuron_occupancy,
+            occupancy=np.full(n_bins, 100.0),
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
-        # Compute actual info to set appropriate thresholds
-        info = result.spatial_information()
+        # The screen thresholds information minus the untuned-cell bias
+        info = result.spatial_information() - result.spatial_information_bias()
 
         # Should be True for lower threshold
         assert result.is_object_vector_cell(min_info=info - 0.1) is True
@@ -1250,9 +1115,6 @@ class TestObjectVectorRateResultEgocentricSpatialInformation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         info = result.spatial_information()
@@ -1272,9 +1134,6 @@ class TestObjectVectorRateResultEgocentricSpatialInformation:
             firing_rate=single_neuron_firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         info = result.spatial_information()
@@ -1297,9 +1156,6 @@ class TestObjectVectorRateResultEgocentricSpatialInformation:
             firing_rate=firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         info = result.spatial_information()
@@ -1323,9 +1179,6 @@ class TestObjectVectorRateResultEgocentricSpatialInformation:
             firing_rate=firing_rate,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         info = result.spatial_information()
@@ -1353,9 +1206,6 @@ class TestObjectVectorRateResultEgocentricSpatialInformation:
             firing_rate=firing_rate,
             occupancy=occupancy1,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         result2 = ObjectVectorRateResult(
@@ -1363,9 +1213,6 @@ class TestObjectVectorRateResultEgocentricSpatialInformation:
             firing_rate=firing_rate,
             occupancy=occupancy2,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Different occupancy should give different information
@@ -1398,9 +1245,6 @@ class TestObjectVectorRatesResultPlot:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         ax = result.plot(idx=0)
@@ -1420,9 +1264,6 @@ class TestObjectVectorRatesResultPlot:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Should raise TypeError without idx
@@ -1445,9 +1286,6 @@ class TestObjectVectorRatesResultPlot:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         fig, ax = plt.subplots()
@@ -1469,9 +1307,6 @@ class TestObjectVectorRatesResultPlot:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Should not raise - kwargs are passed through
@@ -1496,9 +1331,6 @@ class TestObjectVectorRatesResultPreferredDistances:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         distances = result.preferred_distances()
@@ -1518,9 +1350,6 @@ class TestObjectVectorRatesResultPreferredDistances:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         distances = result.preferred_distances()
@@ -1540,9 +1369,6 @@ class TestObjectVectorRatesResultPreferredDistances:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         distances = result.preferred_distances()
@@ -1562,9 +1388,6 @@ class TestObjectVectorRatesResultPreferredDistances:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         batch_distances = result.preferred_distances()
@@ -1591,9 +1414,6 @@ class TestObjectVectorRatesResultPreferredDirections:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         directions = result.preferred_directions()
@@ -1613,9 +1433,6 @@ class TestObjectVectorRatesResultPreferredDirections:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         directions = result.preferred_directions()
@@ -1635,9 +1452,6 @@ class TestObjectVectorRatesResultPreferredDirections:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         batch_directions = result.preferred_directions()
@@ -1664,9 +1478,6 @@ class TestObjectVectorRatesResultClassify:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         is_egocentric_object_vector_cell = result.classify()
@@ -1686,9 +1497,6 @@ class TestObjectVectorRatesResultClassify:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         is_egocentric_object_vector_cell = result.classify()
@@ -1710,9 +1518,6 @@ class TestObjectVectorRatesResultClassify:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         is_egocentric_object_vector_cell = result.classify()
@@ -1732,9 +1537,6 @@ class TestObjectVectorRatesResultClassify:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         # Should not raise
@@ -1755,9 +1557,6 @@ class TestObjectVectorRatesResultClassify:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         default_result = result.classify()
@@ -1778,9 +1577,6 @@ class TestObjectVectorRatesResultClassify:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         batch_is_ovc = result.classify()
@@ -1805,9 +1601,6 @@ class TestObjectVectorRatesResultEgocentricSpatialInformation:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         info = result.spatial_information()
@@ -1827,9 +1620,6 @@ class TestObjectVectorRatesResultEgocentricSpatialInformation:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         info = result.spatial_information()
@@ -1849,9 +1639,6 @@ class TestObjectVectorRatesResultEgocentricSpatialInformation:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         info = result.spatial_information()
@@ -1871,9 +1658,6 @@ class TestObjectVectorRatesResultEgocentricSpatialInformation:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         batch_info = result.spatial_information()
@@ -1898,9 +1682,6 @@ class TestObjectVectorRatesResultPeakFiringRates:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         peak_rates = result.peak_firing_rate()
@@ -1920,9 +1701,6 @@ class TestObjectVectorRatesResultPeakFiringRates:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         peak_rates = result.peak_firing_rate()
@@ -1942,9 +1720,6 @@ class TestObjectVectorRatesResultPeakFiringRates:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         peak_rates = result.peak_firing_rate()
@@ -1974,9 +1749,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         import pandas as pd
@@ -1998,21 +1770,18 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
         assert len(df) == 5  # batch_firing_rates has 5 neurons
 
-    def test_summary_table_has_unit_id_column(
+    def test_summary_table_columns_in_order(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() should be indexed by unit_id."""
+        """Peak, preferred vector, the screen's two terms, classification last."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -2020,123 +1789,20 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
         assert df.index.name == "unit_id"
-
-    def test_summary_table_has_preferred_distance_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have preferred_distance column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-
-        df = result.summary_table()
-        assert "preferred_distance" in df.columns
-
-    def test_summary_table_has_preferred_direction_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have preferred_direction column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-
-        df = result.summary_table()
-        assert "preferred_direction" in df.columns
-
-    def test_summary_table_has_preferred_direction_deg_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have preferred_direction_deg column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-
-        df = result.summary_table()
-        assert "preferred_direction_deg" in df.columns
-
-    def test_summary_table_has_peak_rate_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have peak_rate column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-
-        df = result.summary_table()
-        assert "peak_rate" in df.columns
-
-    def test_summary_table_has_is_ovc_column(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have is_object_vector_cell column."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-
-        df = result.summary_table()
-        assert "is_object_vector_cell" in df.columns
+        assert list(df.columns) == [
+            "peak_firing_rate",
+            "preferred_distance",
+            "preferred_direction_deg",
+            "preferred_direction",
+            "spatial_information",
+            "spatial_information_bias",
+            "n_spikes_outside_intervals",
+            "is_object_vector_cell",
+        ]
 
     def test_summary_table_default_unit_ids(
         self,
@@ -2152,9 +1818,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
@@ -2174,9 +1837,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         custom_ids = ["unit_a", "unit_b", "unit_c", "unit_d", "unit_e"]
@@ -2197,9 +1857,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         with pytest.raises(ValueError, match="unit_ids length mismatch"):
@@ -2219,9 +1876,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
@@ -2242,9 +1896,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
@@ -2265,9 +1916,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
@@ -2290,14 +1938,11 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
         expected = result.peak_firing_rate()
-        np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
+        np.testing.assert_array_almost_equal(df["peak_firing_rate"].values, expected)
 
     def test_summary_table_is_ovc_correctness(
         self,
@@ -2313,9 +1958,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=batch_firing_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
@@ -2337,9 +1979,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=empty_rates,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
@@ -2349,7 +1988,7 @@ class TestObjectVectorRatesResultSummaryTable:
         assert "preferred_distance" in df.columns
         assert "preferred_direction" in df.columns
         assert "preferred_direction_deg" in df.columns
-        assert "peak_rate" in df.columns
+        assert "peak_firing_rate" in df.columns
         assert "is_object_vector_cell" in df.columns
 
     def test_summary_table_single_neuron(
@@ -2369,9 +2008,6 @@ class TestObjectVectorRatesResultSummaryTable:
             firing_rates=rates_2d,
             occupancy=single_neuron_occupancy,
             env=sample_env,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
         )
 
         df = result.summary_table()
@@ -2414,8 +2050,8 @@ class TestIsObjectVectorCellFreeFunction:
             headings,
             object_positions,
             distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            distance_bin_size=5.0,
+            direction_bin_size=2 * np.pi / 12,
             metric="euclidean",
         )
 
@@ -2436,8 +2072,8 @@ class TestIsObjectVectorCellFreeFunction:
                 headings,
                 object_positions,
                 distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
+                distance_bin_size=5.0,
+                direction_bin_size=2 * np.pi / 12,
                 metric="euclidean",
                 min_info=min_info,
             )
@@ -2517,9 +2153,6 @@ def test_object_vector_plot_draws_left_on_left(polar_display_offset) -> None:
         firing_rate=firing_rate,
         occupancy=np.ones(env.n_bins),
         env=env,
-        distance_range=(0.0, 50.0),
-        n_distance_bins=10,
-        n_direction_bins=12,
     )
 
     ax = plot_object_vector_tuning(result)

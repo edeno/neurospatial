@@ -44,12 +44,21 @@ class NeuralModel(Protocol):
         - ``'max_rate'``: float - peak firing rate in Hz
         - ``'baseline_rate'``: float - baseline firing rate in Hz
 
-    **BoundaryCell**
+    **BorderCell**
 
-        - ``'preferred_distance'``: float - preferred distance from boundary
+        - ``'preferred_distance'``: float - preferred distance from the nearest wall
         - ``'distance_tolerance'``: float - tuning width
-        - ``'preferred_direction'``: float | None - direction (radians, or None for omnidirectional)
         - ``'max_rate'``: float - peak firing rate in Hz
+        - ``'baseline_rate'``: float - baseline firing rate in Hz
+
+    **BoundaryVectorCell**
+
+        - ``'preferred_distance'``: float - preferred distance to a wall
+        - ``'preferred_direction'``: float - allocentric direction (radians)
+        - ``'distance_tolerance'``: float - distance tuning width
+        - ``'direction_tolerance'``: float - angular half-width (radians)
+        - ``'max_rate'``: float - rate next to a straight wall at the
+          preferred distance and direction, in Hz
         - ``'baseline_rate'``: float - baseline firing rate in Hz
 
     **GridCell**
@@ -100,7 +109,7 @@ class NeuralModel(Protocol):
     See Also
     --------
     PlaceCellModel : Gaussian place field model
-    BoundaryCellModel : Boundary-distance tuned model
+    BorderCellModel : Wall-distance tuned model
     GridCellModel : Hexagonal grid pattern model
 
     Notes
@@ -210,3 +219,48 @@ def geodesic_lookup_bins(
     if inside.any():
         bins[inside] = env.bin_at(positions[inside])
     return bins
+
+
+def default_length(
+    env: "Environment", centimeters: float, *, name: str, call: str
+) -> float:
+    """A default length of ``centimeters`` expressed in the environment's units.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose ``units`` give the positions' length unit.
+    centimeters : float
+        The default length in centimeters.
+    name : str
+        The argument left as None, such as ``"width"``.
+    call : str
+        The public call, named in the error.
+
+    Returns
+    -------
+    float
+        The default length in environment units.
+
+    Raises
+    ------
+    ValueError
+        If ``env.units`` is not a metric length unit, so a length in
+        centimeters has no value in the environment's coordinates.
+    """
+    from neurospatial._exceptions import _format_error
+    from neurospatial._units import units_per_centimeter
+
+    per_cm = units_per_centimeter(env.units)
+    if per_cm is None:
+        raise ValueError(
+            _format_error(
+                f"{call} needs {name}: the environment's units ({env.units!r}) "
+                f"are not a known length, so the {centimeters:g} cm default "
+                "cannot be expressed in them.",
+                why=f"Why: {name} is a length in the environment's units.",
+                fix=f"pass {name}=<length in position units>, or declare the "
+                "units with env.with_metadata(units='cm')",
+            )
+        )
+    return centimeters * per_cm

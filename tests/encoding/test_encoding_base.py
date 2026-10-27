@@ -3,8 +3,6 @@
 This module tests the shared infrastructure for encoding result classes:
 - _to_numpy: Convert arrays (NumPy or JAX) to NumPy
 - _get_array_module: Detect array backend (numpy or jax.numpy)
-- HasOccupancy protocol
-- HasEnvironment protocol
 - SpatialResultMixin: Shared methods for spatial result classes
 """
 
@@ -145,46 +143,6 @@ class TestGetArrayModule:
 
 
 # ==============================================================================
-# Test Protocols
-# ==============================================================================
-
-
-class TestHasEnvironmentProtocol:
-    """Tests for the runtime-checkable HasEnvironment protocol.
-
-    The single regression worth catching is the protocol forgetting
-    ``@runtime_checkable`` (which makes ``isinstance`` raise) or the
-    attribute set drifting from the protocol declaration. Both happen
-    when someone refactors the protocol; the per-attribute "should match
-    this dataclass" smoke test is the cheapest way to catch them. The
-    ``HasOccupancy`` mirror of these tests was dropped — same shape,
-    same trivia, single protocol is enough.
-    """
-
-    def test_protocol_is_runtime_checkable(self, simple_env: Environment) -> None:
-        """HasEnvironment protocol should be runtime checkable."""
-        from neurospatial.encoding._base import HasEnvironment
-
-        @dataclass
-        class MockResult:
-            env: Environment
-
-        result = MockResult(env=simple_env)
-        assert isinstance(result, HasEnvironment)
-
-    def test_non_conforming_class_fails(self) -> None:
-        """Classes without env attribute should not satisfy protocol."""
-        from neurospatial.encoding._base import HasEnvironment
-
-        @dataclass
-        class NoEnv:
-            other_field: int
-
-        result = NoEnv(other_field=42)
-        assert not isinstance(result, HasEnvironment)
-
-
-# ==============================================================================
 # Test SpatialResultMixin
 # ==============================================================================
 
@@ -202,6 +160,7 @@ class TestSpatialResultMixin:
             firing_rate: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         # Create firing rate with peak at a specific bin
         n_bins = simple_env.n_bins
@@ -231,6 +190,7 @@ class TestSpatialResultMixin:
             firing_rates: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         n_neurons = 3
@@ -262,6 +222,7 @@ class TestSpatialResultMixin:
             firing_rate: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         firing_rate = np.random.rand(n_bins) * 5.0
@@ -287,6 +248,7 @@ class TestSpatialResultMixin:
             firing_rates: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         n_neurons = 3
@@ -316,6 +278,7 @@ class TestSpatialResultMixin:
             firing_rate: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         firing_rate = np.zeros(n_bins)
@@ -346,6 +309,7 @@ class TestSpatialResultMixin:
             firing_rate: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         result = MockSingleResult(
@@ -368,6 +332,7 @@ class TestSpatialResultMixin:
             firing_rates: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         rates = np.zeros((2, n_bins))
@@ -381,6 +346,65 @@ class TestSpatialResultMixin:
         peaks = result.peak_location()
         assert np.all(np.isnan(peaks[0]))
         np.testing.assert_array_equal(peaks[1], simple_env.bin_centers[n_bins // 2])
+
+    def test_peak_ignores_rates_outside_occupancy_support(
+        self, simple_env: Environment
+    ) -> None:
+        """A filled or extrapolated rate where the animal never was is no peak."""
+        from neurospatial.encoding._base import SpatialResultMixin
+
+        @dataclass
+        class MockBatchResult(SpatialResultMixin):
+            firing_rates: NDArray[np.float64]
+            occupancy: NDArray[np.float64]
+            env: Environment
+            min_occupancy: float = 0.0
+
+        n_bins = simple_env.n_bins
+        rates = np.ones((2, n_bins))
+        rates[:, 0] = 50.0  # never occupied, e.g. a GLM extrapolation
+        rates[:, 1] = 9.0  # occupied 0.2 s, below min_occupancy
+        rates[:, 2] = 8.0
+        occupancy = np.ones(n_bins)
+        occupancy[0] = 0.0
+        occupancy[1] = 0.2
+        result = MockBatchResult(
+            firing_rates=rates,
+            occupancy=occupancy,
+            env=simple_env,
+            min_occupancy=0.5,
+        )
+        np.testing.assert_array_equal(
+            result.peak_location(), simple_env.bin_centers[[2, 2]]
+        )
+        np.testing.assert_array_equal(result.peak_firing_rate(), [8.0, 8.0])
+
+    @pytest.mark.parametrize("population", [False, True])
+    def test_silent_unit_has_no_peak_location(
+        self, simple_env: Environment, population: bool
+    ) -> None:
+        """An all-zero map is 0 Hz everywhere; it has no peak location."""
+        from neurospatial.encoding._base import SpatialResultMixin
+
+        @dataclass
+        class MockResult(SpatialResultMixin):
+            firing_rates: NDArray[np.float64]
+            occupancy: NDArray[np.float64]
+            env: Environment
+            min_occupancy: float = 0.0
+
+        rates = np.zeros((2, simple_env.n_bins))
+        rates[1, 3] = 2.0
+        result = MockResult(
+            firing_rates=rates if population else rates[0],
+            occupancy=np.ones(simple_env.n_bins),
+            env=simple_env,
+        )
+        peaks = np.atleast_2d(result.peak_location())
+        assert np.isnan(peaks[0]).all()
+        assert np.atleast_1d(result.peak_firing_rate())[0] == 0.0
+        if population:
+            np.testing.assert_array_equal(peaks[1], simple_env.bin_centers[3])
 
     def test_single_unit_summary_table_na_when_no_unit_id(
         self, simple_env: Environment
@@ -418,6 +442,7 @@ class TestSpatialResultMixin:
             firing_rate: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         firing_rate = np.zeros(n_bins)
@@ -444,6 +469,7 @@ class TestSpatialResultMixin:
             firing_rate: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_1d_env.n_bins
         firing_rate = np.zeros(n_bins)

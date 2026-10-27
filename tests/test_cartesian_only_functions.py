@@ -34,8 +34,11 @@ from neurospatial.behavior import (
 from neurospatial.decoding import decoding_error
 from neurospatial.encoding import (
     border_score,
+    compute_boundary_vector_rate,
     compute_directional_place_fields,
+    compute_egocentric_rate,
     compute_field_emd,
+    compute_object_vector_rate,
     compute_spatial_rates,
     compute_view_rate,
     field_shape_metrics,
@@ -56,7 +59,8 @@ from neurospatial.ops import (
 )
 from neurospatial.regions import Regions
 from neurospatial.simulation import (
-    BoundaryCellModel,
+    BorderCellModel,
+    BoundaryVectorCellModel,
     ObjectVectorCellModel,
     PlaceCellModel,
     SpatialViewCellModel,
@@ -260,6 +264,33 @@ def _polar_regions_env(env: Environment) -> Environment:
             "compute_view_rate()",
         ),
         (
+            lambda env: compute_object_vector_rate(
+                env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS, [[20.0, 0.0]]
+            ),
+            "compute_object_vector_rate()",
+        ),
+        (
+            lambda env: compute_egocentric_rate(
+                env,
+                np.array([0.5, 1.5]),
+                _TIMES,
+                _POLAR_POSITIONS,
+                np.zeros(6),
+                [[20.0, 0.0]],
+            ),
+            "compute_egocentric_rate()",
+        ),
+        (
+            lambda env: compute_boundary_vector_rate(
+                env,
+                np.array([0.5, 1.5]),
+                _TIMES,
+                _POLAR_POSITIONS,
+                direction_frame="allocentric",
+            ),
+            "compute_boundary_vector_rate()",
+        ),
+        (
             lambda env: compute_decision_analysis(
                 _polar_regions_env(env),
                 _TIMES,
@@ -307,7 +338,20 @@ def _polar_regions_env(env: Environment) -> Environment:
             ),
             "simulate_trajectory_ou()",
         ),
-        (lambda env: BoundaryCellModel(env), "BoundaryCellModel()"),
+        (
+            lambda env: BorderCellModel(env, distance_tolerance=3.0),
+            "BorderCellModel()",
+        ),
+        (
+            lambda env: BoundaryVectorCellModel(
+                env,
+                preferred_distance=5.0,
+                preferred_direction=0.0,
+                distance_tolerance=3.0,
+                direction_tolerance=0.5,
+            ),
+            "BoundaryVectorCellModel()",
+        ),
         (
             lambda env: ObjectVectorCellModel(
                 env,
@@ -422,3 +466,52 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
 )
 def test_graph_modes_still_accept_polar(polar, call):
     call(polar)
+
+
+def _line_or_volume(n_dims: int) -> Environment:
+    """A 1-D track or a 3-D volume in cm, 0-100 along every axis."""
+    edges = np.arange(0.0, 101.0, 10.0 if n_dims == 1 else 25.0)
+    shape = (len(edges) - 1,) * n_dims
+    return Environment.from_grid_mask(
+        np.ones(shape, dtype=bool), grid_edges=(edges,) * n_dims, units="cm"
+    )
+
+
+@pytest.mark.parametrize("n_dims", [1, 3])
+@pytest.mark.parametrize(
+    ("operation", "call"),
+    [
+        (
+            "compute_object_vector_rate()",
+            lambda env, positions: compute_object_vector_rate(
+                env, [0.5], _TIMES, positions, [[50.0] * env.n_dims]
+            ),
+        ),
+        (
+            "compute_egocentric_rate()",
+            lambda env, positions: compute_egocentric_rate(
+                env, [0.5], _TIMES, positions, np.zeros(6), [[50.0] * env.n_dims]
+            ),
+        ),
+        (
+            "compute_boundary_vector_rate()",
+            lambda env, positions: compute_boundary_vector_rate(
+                env, [0.5], _TIMES, positions, direction_frame="allocentric"
+            ),
+        ),
+        (
+            "compute_view_rate()",
+            lambda env, positions: compute_view_rate(
+                env, [0.5], _TIMES, positions, np.zeros(6)
+            ),
+        ),
+    ],
+)
+def test_planar_vector_maps_refuse_1d_and_3d_environments(n_dims, operation, call):
+    """Vectors to objects, walls and gaze targets live in the plane."""
+    env = _line_or_volume(n_dims)
+    positions = np.full((len(_TIMES), n_dims), 40.0)
+    with pytest.raises(ValueError) as info:
+        call(env, positions)
+    what = str(info.value).split("\n")[0]
+    assert what == f"{operation} needs a 2-D environment; got a {n_dims}-D one."

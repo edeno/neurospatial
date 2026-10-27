@@ -522,13 +522,15 @@ class TestSparsityProperties:
     def test_sparsity_range_property(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
-        """Property: sparsity is always in [0, 1] for valid inputs."""
+        """Property: sparsity is in [0, 1], or NaN for a silent map."""
         firing_rate, occupancy = data
 
         sp = sparsity(firing_rate, occupancy)
 
-        # Property: 0 <= sparsity <= 1 (strict, guaranteed by implementation)
-        assert 0.0 <= sp <= 1.0, f"Sparsity {sp} outside valid range [0, 1]"
+        if not np.any((firing_rate > 0) & (occupancy > 0)):
+            assert np.isnan(sp), f"Silent map gave sparsity {sp}, expected NaN"
+        else:
+            assert 0.0 <= sp <= 1.0, f"Sparsity {sp} outside valid range [0, 1]"
 
     @given(
         valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
@@ -676,13 +678,15 @@ class TestSkaggsInformationProperties:
     def test_information_non_negative(
         self, data: tuple[NDArray[np.float64], NDArray[np.float64]]
     ):
-        """Property: Skaggs information is always non-negative."""
+        """Property: Skaggs information is non-negative, or NaN for a silent map."""
         firing_rate, occupancy = data
 
         info = skaggs_information(firing_rate, occupancy)
 
-        # Property: information >= 0.0 always (strict, guaranteed by implementation)
-        assert info >= 0.0, f"Information {info} should be >= 0.0"
+        if not np.any((firing_rate > 0) & (occupancy > 0)):
+            assert np.isnan(info), f"Silent map gave information {info}, expected NaN"
+        else:
+            assert info >= 0.0, f"Information {info} should be >= 0.0"
 
     @given(
         valid_firing_rate_and_occupancy(min_bins=10, max_bins=100),
@@ -736,10 +740,11 @@ class TestRateMapCoherenceProperties:
     """Property-based tests for rate map coherence metric.
 
     Coherence measures spatial smoothness of firing.
-    Formula: correlation between each bin and mean of its neighbors
+    Formula: Fisher z (arctanh) of the correlation between each bin and the
+    mean of its neighbors
 
     Mathematical properties:
-    - Range: [-1, 1] (correlation coefficient)
+    - tanh(coherence) is the Pearson correlation, in [-1, 1]
     - Smooth fields → high coherence (> 0.5)
     - Random noise → low coherence (~ 0)
     """
@@ -749,8 +754,10 @@ class TestRateMapCoherenceProperties:
         st.integers(min_value=0, max_value=10000),
     )
     @settings(deadline=None)  # Use profile's max_examples
-    def test_coherence_range_property(self, n_positions: int, seed: int):
-        """Property: coherence is in [-1, 1] for all valid inputs."""
+    def test_coherence_is_fisher_z_of_neighbor_correlation(
+        self, n_positions: int, seed: int
+    ):
+        """Property: coherence is arctanh of the bin/neighbor-mean Pearson r."""
         # Create simple environment
         rng = np.random.default_rng(seed)
         positions = rng.standard_normal((n_positions, 2)) * 10
@@ -767,11 +774,18 @@ class TestRateMapCoherenceProperties:
 
         coherence = rate_map_coherence(env, firing_rate)
 
-        # Property: -1 <= coherence <= 1 (correlation coefficient range)
-        if not np.isnan(coherence):
-            assert -1.0 <= coherence <= 1.0, (
-                f"Coherence {coherence} outside valid range [-1, 1]"
-            )
+        # Independent computation from the connectivity graph.
+        graph = env.connectivity
+        has_neighbors = [node for node in graph.nodes if graph.degree(node) > 0]
+        rates = firing_rate[has_neighbors]
+        neighbor_means = np.array(
+            [np.mean(firing_rate[list(graph.neighbors(n))]) for n in has_neighbors]
+        )
+        if len(rates) < 2 or np.std(rates) == 0 or np.std(neighbor_means) == 0:
+            assert np.isnan(coherence)
+        else:
+            r = np.corrcoef(rates, neighbor_means)[0, 1]
+            assert coherence == pytest.approx(np.arctanh(r), rel=1e-9, abs=1e-12)
 
     @given(
         st.integers(min_value=100, max_value=300),
@@ -1096,7 +1110,7 @@ class TestPlaceFieldDetectionProperties:
 
         # Detect fields
         try:
-            fields = detect_place_fields(env, firing_rate)
+            fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
 
             # Property: all field bin indices should be valid
             for field in fields:
@@ -1141,6 +1155,7 @@ class TestPlaceFieldDetectionProperties:
             fields = detect_place_fields(
                 env,
                 firing_rate,
+                bandwidth=0.0,
                 threshold=0.5,  # Threshold for field detection
             )
 

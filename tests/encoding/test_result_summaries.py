@@ -8,8 +8,8 @@ import pytest
 
 FAMILIES = ("spatial", "view", "allocentric", "egocentric", "directional")
 HEADLINES = {
-    "spatial": {"spatial_info": "spatial_information", "sparsity": "sparsity"},
-    "view": {"view_spatial_info": "view_spatial_information"},
+    "spatial": {"spatial_information": "spatial_information", "sparsity": "sparsity"},
+    "view": {"spatial_information": "spatial_information"},
     "allocentric": {
         "preferred_distance": "preferred_distance",
         "preferred_direction": "preferred_direction",
@@ -25,43 +25,59 @@ HEADLINES = {
 }
 TABLE_COLUMNS = {
     "spatial": [
-        "peak_rate",
-        "spatial_info",
+        "peak_firing_rate",
+        "spatial_information",
+        "spatial_information_bias",
         "sparsity",
         "grid_score",
         "border_score",
         "peak_x",
         "peak_y",
+        "n_spikes_outside_intervals",
+        "passes_spatial_information",
+        "passes_grid_score",
+        "passes_border_score",
         "cell_type",
     ],
     "view": [
-        "peak_rate",
-        "view_spatial_info",
+        "peak_firing_rate",
+        "spatial_information",
+        "spatial_information_bias",
         "peak_x",
         "peak_y",
+        "n_spikes_outside_intervals",
         "is_spatial_view_cell",
     ],
     "allocentric": [
-        "peak_rate",
+        "peak_firing_rate",
         "preferred_distance",
         "preferred_direction_deg",
         "preferred_direction",
+        "spatial_information",
+        "spatial_information_bias",
+        "n_spikes_outside_intervals",
         "is_object_vector_cell",
     ],
     "egocentric": [
-        "peak_rate",
+        "peak_firing_rate",
         "preferred_distance",
         "preferred_direction_deg",
         "preferred_direction",
+        "spatial_information",
+        "spatial_information_bias",
+        "n_spikes_outside_intervals",
         "is_object_vector_cell",
     ],
     "directional": [
-        "peak_rate",
+        "peak_firing_rate",
         "mean_vector_length",
         "preferred_direction_deg",
         "tuning_width_deg",
         "preferred_direction",
         "tuning_width",
+        "tuning_pvalue",
+        "spike_count_dispersion",
+        "n_spikes_outside_intervals",
         "is_head_direction_cell",
     ],
 }
@@ -73,13 +89,13 @@ def test_summary_table_column_order_and_attrs(rate_family_results, family):
     frame = result.summary_table()
     assert frame.columns.tolist() == TABLE_COLUMNS[family]
     assert "method" not in frame.columns
-    assert frame.attrs["units"]["peak_rate"] == "Hz"
+    assert frame.attrs["units"]["peak_firing_rate"] == "Hz"
     if family in ("spatial", "view"):
         assert frame.attrs["method"] == result.method
     if family == "spatial":
-        assert "spatial_info" in frame.to_string(max_cols=6)
+        assert "spatial_information" in frame.to_string(max_cols=6)
         assert "cell_type" in frame.to_string(max_cols=6)
-        assert frame.attrs["units"]["spatial_info"] == "bits/spike"
+        assert frame.attrs["units"]["spatial_information"] == "bits/spike"
     if family in ("allocentric", "egocentric"):
         assert frame.attrs["direction_frame"] == family
         assert frame.attrs["units"]["preferred_direction"] == "rad"
@@ -125,12 +141,12 @@ def test_population_summary_names_aggregation(rate_family_results, family):
         "total_occupancy",
         "spike_window_assumed",
         "spike_window",
+        "method",
     }
-    if family in ("spatial", "view"):
-        expected.add("method")
-    if family in ("allocentric", "egocentric"):
+    if family in ("allocentric", "egocentric", "directional"):
         expected.add("direction_frame")
-        assert summary["direction_frame"] == family
+        frame = "allocentric" if family == "directional" else family
+        assert summary["direction_frame"] == frame
     assert set(summary) == expected
     assert summary["n_units"] == 3
     assert summary["max_peak_firing_rate"] == np.nanmax(result.peak_firing_rate())
@@ -188,6 +204,31 @@ def test_singular_verdict_matches_table_and_classify(rate_family_results, family
         assert result.classify()[i] == expected
         assert result[i].summary_table()[predicate].iloc[0] == expected
         assert batch[predicate].iloc[i] == expected
+
+
+@pytest.mark.parametrize("family", ("spatial", "view", "allocentric", "egocentric"))
+def test_summary_table_shows_both_terms_of_the_information_screen(
+    rate_family_results, family
+):
+    """The screen column is information minus its bias against the cutoff."""
+    result = rate_family_results[family]
+    frame = result.summary_table()
+    screen, cutoff = {
+        "spatial": ("passes_spatial_information", 0.5),
+        "view": ("is_spatial_view_cell", 0.5),
+        "allocentric": ("is_object_vector_cell", 0.3),
+        "egocentric": ("is_object_vector_cell", 0.3),
+    }[family]
+
+    bias = frame["spatial_information_bias"].to_numpy()
+    np.testing.assert_allclose(bias, result.spatial_information_bias())
+    assert np.isfinite(bias).any()
+    assert frame.attrs["units"]["spatial_information_bias"] == "bits/spike"
+    corrected = frame["spatial_information"].to_numpy() - bias
+    np.testing.assert_array_equal(
+        frame[screen].to_numpy(dtype=float) == 1.0,
+        np.isfinite(corrected) & (corrected >= cutoff),
+    )
 
 
 @pytest.mark.parametrize("pooled", [True, False])

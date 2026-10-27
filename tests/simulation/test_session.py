@@ -7,7 +7,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.simulation.models import (
-    BoundaryCellModel,
+    BorderCellModel,
     GridCellModel,
     PlaceCellModel,
 )
@@ -205,20 +205,41 @@ class TestSimulateSession:
         assert len(session.spike_times) == 5
         assert len(session.ground_truth) == 5
 
-    def test_simulate_session_boundary_cells(self, simple_2d_env):
-        """simulate_session() with cell_type='boundary' should create boundary cells."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
+    def test_simulate_session_border_cells(self, connected_arena_env):
+        """simulate_session() with cell_type='border' should create border cells."""
         session = simulate_session(
-            simple_2d_env,
+            connected_arena_env,
             duration=2.0,
             n_cells=5,
-            cell_type="boundary",
+            cell_type="border",
+            border_width=5.0,
             seed=42,
             show_progress=False,
         )
 
         assert len(session.models) == 5
-        assert all(isinstance(m, BoundaryCellModel) for m in session.models)
+        assert all(isinstance(m, BorderCellModel) for m in session.models)
+        assert all(m.distance_tolerance == 5.0 for m in session.models)
+
+    @pytest.mark.parametrize("cell_type", ["border", "mixed"])
+    def test_border_cells_default_to_a_physical_width(
+        self, connected_arena_env, cell_type
+    ):
+        """Without border_width, border cells use the 9.8 cm default."""
+        session = simulate_session(
+            connected_arena_env,
+            duration=1.0,
+            n_cells=5,
+            cell_type=cell_type,
+            show_progress=False,
+            seed=0,
+        )
+        tolerances = [
+            m.distance_tolerance
+            for m in session.models
+            if hasattr(m, "distance_tolerance")
+        ]
+        assert tolerances and all(t == pytest.approx(9.8) for t in tolerances)
 
     def test_simulate_session_grid_cells(self, simple_2d_env):
         """simulate_session() with cell_type='grid' should create grid cells."""
@@ -235,27 +256,27 @@ class TestSimulateSession:
         assert len(session.models) == 5
         assert all(isinstance(m, GridCellModel) for m in session.models)
 
-    def test_simulate_session_mixed_cells(self, simple_2d_env):
-        """simulate_session() with cell_type='mixed' should create 60% place, 20% boundary, 20% grid."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
+    def test_simulate_session_mixed_cells(self, connected_arena_env):
+        """simulate_session() with cell_type='mixed' should create 60% place, 20% border, 20% grid."""
         n_cells = 10
         session = simulate_session(
-            simple_2d_env,
+            connected_arena_env,
             duration=2.0,
             n_cells=n_cells,
             cell_type="mixed",
+            border_width=5.0,
             seed=42,
             show_progress=False,
         )
 
         # Count cell types
         n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
-        n_boundary = sum(isinstance(m, BoundaryCellModel) for m in session.models)
+        n_border = sum(isinstance(m, BorderCellModel) for m in session.models)
         n_grid = sum(isinstance(m, GridCellModel) for m in session.models)
 
         # Check proportions (with tolerance for rounding)
         assert n_place == 6  # 60% of 10
-        assert n_boundary == 2  # 20% of 10
+        assert n_border == 2  # 20% of 10
         assert n_grid == 2  # 20% of 10
 
     def test_simulate_session_trajectory_ou(self, simple_2d_env):
@@ -352,46 +373,46 @@ class TestSimulateSession:
             np.testing.assert_array_equal(st1, st2)
 
     def test_simulate_session_mixed_shared_max_rate_reaches_all_cell_types(
-        self, simple_2d_env
+        self, connected_arena_env
     ):
         """A non-default ``max_rate`` in mixed mode must reach every cell type.
 
         Previously the place-cell parameter pop consumed shared rate kwargs
-        (``max_rate``/``baseline_rate``/``metric``) before the boundary and grid
-        loops read them, so boundary/grid cells silently fell back to their
+        (``max_rate``/``baseline_rate``/``metric``) before the border and grid
+        loops read them, so border/grid cells silently fell back to their
         defaults. The shared kwargs must now reach all three model types.
         """
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         custom_max_rate = 37.0  # not equal to any model's default
 
         session = simulate_session(
-            simple_2d_env,
+            connected_arena_env,
             duration=1.0,
-            n_cells=10,  # 6 place, 2 boundary, 2 grid
+            n_cells=10,  # 6 place, 2 border, 2 grid
             cell_type="mixed",
+            border_width=5.0,
             max_rate=custom_max_rate,
             seed=42,
             show_progress=False,
         )
 
         from neurospatial.simulation.models import (
-            BoundaryCellModel,
+            BorderCellModel,
             GridCellModel,
             PlaceCellModel,
         )
 
-        saw_boundary = saw_grid = saw_place = False
+        saw_border = saw_grid = saw_place = False
         for model in session.models:
             assert model.max_rate == custom_max_rate, (
                 f"{type(model).__name__} did not receive shared max_rate; "
                 f"got {model.max_rate}"
             )
-            saw_boundary |= isinstance(model, BoundaryCellModel)
+            saw_border |= isinstance(model, BorderCellModel)
             saw_grid |= isinstance(model, GridCellModel)
             saw_place |= isinstance(model, PlaceCellModel)
 
-        assert saw_place and saw_boundary and saw_grid, (
-            "mixed session should contain place, boundary, and grid cells"
+        assert saw_place and saw_border and saw_grid, (
+            "mixed session should contain place, border, and grid cells"
         )
 
     def test_simulate_session_spike_stream_independent_of_trajectory(

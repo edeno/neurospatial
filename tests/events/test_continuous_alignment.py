@@ -10,12 +10,13 @@ import pytest
 
 import neurospatial.events._continuous as continuous_kernels
 import neurospatial.events.continuous as continuous_module
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.events import ContinuousEventResult, align_continuous_to_events
 from neurospatial.events._continuous import _relative_times
 
 EIGHTHS = np.arange(0, 10.0001, 0.125)
-# Two runs of dyadic samples separated by a 1 s gap: [0, 1] and [2, 3].
-TWO_RUNS = np.r_[np.arange(0, 1.0001, 0.125), np.arange(2, 3.0001, 0.125)]
+# Two runs of dyadic samples separated by a 2 s gap: [0, 1] and [3, 4].
+TWO_RUNS = np.r_[np.arange(0, 1.0001, 0.125), np.arange(3, 4.0001, 0.125)]
 
 
 # ------------------------------------------------------------- event cohort
@@ -78,7 +79,7 @@ def test_result_records_settings():
     assert result.dt == 0.25
     assert result.window_coverage == "complete"
     assert result.resultant_threshold == 1e-12
-    assert result.max_gap == 0.5
+    assert result.max_gap == DEFAULT_MAX_GAP
     # Epochs are stored normalized: sorted and merged.
     np.testing.assert_array_equal(result.epochs, [[0.0, 9.0]])
 
@@ -87,12 +88,12 @@ def test_result_records_settings():
 
 
 def test_partial_coverage_keeps_supported_cells():
-    # Event 1.5625 sits in the gap: no query lands on a sample or a usable
+    # Event 2.0625 sits in the gap: no query lands on a sample or a usable
     # interval. Event 0.75 is observed up to the last sample of run 0, t = 1.
     result = align_continuous_to_events(
         TWO_RUNS,
         TWO_RUNS,
-        [0.75, 1.5625, 2.5],
+        [0.75, 2.0625, 3.5],
         (-0.5, 0.5),
         dt=0.125,
         window_coverage="partial",
@@ -131,7 +132,7 @@ def test_window_starting_on_last_sample_of_a_run_is_a_point_observation():
 
 def test_complete_coverage_needs_one_run_over_the_window():
     result = align_continuous_to_events(
-        TWO_RUNS, TWO_RUNS, [0.75, 1.5625, 2.5], (-0.5, 0.5), dt=0.125
+        TWO_RUNS, TWO_RUNS, [0.75, 2.0625, 3.5], (-0.5, 0.5), dt=0.125
     )
     np.testing.assert_array_equal(
         result.event_status,
@@ -148,13 +149,28 @@ def test_window_coverage_outside_epochs():
     np.testing.assert_array_equal(result.event_status, ["retained", "outside_epochs"])
 
 
+def test_per_feature_invalid_samples_are_bridged_like_deleted_rows():
+    signals = np.column_stack([EIGHTHS, 2 * EIGHTHS])
+    valid = np.ones(signals.shape, dtype=bool)
+    valid[(EIGHTHS >= 5.75) & (EIGHTHS <= 6.0), 1] = False
+    result = align_continuous_to_events(
+        EIGHTHS, signals, [3.0, 6.0], (-0.5, 0.5), dt=0.25, valid=valid, max_gap=0.5
+    )
+    np.testing.assert_array_equal(result.event_status, ["retained", "retained"])
+    assert result.support.all()
+    # Feature 1 is the line 2 t, interpolated across its missing samples.
+    np.testing.assert_allclose(
+        result.values[1, :, 1], 2 * (6.0 + result.relative_times)
+    )
+
+
 def test_per_feature_validity_decides_coverage():
     signals = np.column_stack([EIGHTHS, 2 * EIGHTHS])
     valid = np.ones(signals.shape, dtype=bool)
     valid[(EIGHTHS >= 5.75) & (EIGHTHS <= 6.0), 1] = False
 
     complete = align_continuous_to_events(
-        EIGHTHS, signals, [3.0, 6.0], (-0.5, 0.5), dt=0.25, valid=valid
+        EIGHTHS, signals, [3.0, 6.0], (-0.5, 0.5), dt=0.25, valid=valid, max_gap=0.2
     )
     np.testing.assert_array_equal(
         complete.event_status, ["retained", "incomplete_support"]
@@ -168,6 +184,7 @@ def test_per_feature_validity_decides_coverage():
         dt=0.25,
         valid=valid,
         window_coverage="partial",
+        max_gap=0.2,
     )
     np.testing.assert_array_equal(partial.event_status, ["retained", "retained"])
     assert partial.support[1, :, 0].all()

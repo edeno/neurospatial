@@ -112,15 +112,30 @@ def test_interval_valid_mask_gap_without_positions():
 def test_observed_runs(two_epoch_recording):
     from neurospatial._intervals import observed_runs
 
+    def bounds(runs):
+        return [(int(run[0]), int(run[-1]) + 1) for run in runs]
+
     times = two_epoch_recording.times
-    assert observed_runs(times, max_gap=0.5, epochs=None) == [
-        slice(0, 5000),
-        slice(5000, 10000),
+    assert bounds(observed_runs(times, max_gap=0.5, epochs=None)) == [
+        (0, 5000),
+        (5000, 10000),
     ]
-    assert observed_runs(times, max_gap=0.5, epochs=[(0.0, 50.0)]) == [slice(0, 2501)]
-    assert observed_runs(
-        np.array([0.0, 0.1, 0.2, 10.0, 20.0, 20.1, 20.2]), max_gap=0.5, epochs=None
-    ) == [slice(0, 3), slice(4, 7)]
+    assert bounds(observed_runs(times, max_gap=0.5, epochs=[(0.0, 50.0)])) == [
+        (0, 2501)
+    ]
+    assert bounds(
+        observed_runs(
+            np.array([0.0, 0.1, 0.2, 10.0, 20.0, 20.1, 20.2]), max_gap=0.5, epochs=None
+        )
+    ) == [(0, 3), (4, 7)]
+    # Missing samples are skipped inside a run, as if their rows were deleted.
+    runs = observed_runs(
+        np.arange(6) * 0.1,
+        max_gap=0.5,
+        epochs=None,
+        sample_valid=np.array([True, True, False, True, True, False]),
+    )
+    assert [run.tolist() for run in runs] == [[0, 1, 3, 4]]
 
 
 def test_start_allocated_occupancy():

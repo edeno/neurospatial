@@ -39,6 +39,7 @@ FLAGSHIP = (
             "is_place_cell",
             "has_place_field",
             "place_cell_significance",
+            "spatial_cell_type_significance",
             "head_direction_cell_significance",
             "object_vector_cell_significance",
             "egocentric_object_vector_cell_significance",

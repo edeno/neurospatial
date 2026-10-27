@@ -44,11 +44,19 @@ def populations() -> dict[str, object]:
             times,
             positions,
             headings,
+            gaze_model="fixed_distance",
             view_distance=10.0,
             boundary_source="analysis",
         ),
         "egocentric": compute_egocentric_rates(
-            None, trains, times, positions, headings, objects
+            None,
+            trains,
+            times,
+            positions,
+            headings,
+            objects,
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         ),
         "peri_event": population_peri_event_histogram(
             trains, np.array([10.0, 20.0]), (-1.0, 1.0)

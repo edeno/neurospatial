@@ -75,7 +75,7 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 Payload = tuple[dict[str, Any], dict[str, NDArray[Any]]]
 
 # Version 2 added the required wall names of an OpenArena.
-_ARENA_VERSION = 2
+_ARENA_VERSION = 3
 
 
 @dataclass(frozen=True, eq=False)
@@ -1227,18 +1227,17 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
         meta.update(n_dims=arena.n_dims, coordinate_kind=arena.coordinate_kind)
     elif type(arena) is OpenArena:
         meta.update(
+            outline=arena.outline,
             n_walls=len(arena.walls),
             wall_names=list(arena.wall_names),
-            physical_footprint_known=arena.physical_footprint_known,
+            wall_kinds=list(arena.wall_kinds),
         )
         arrays["polygon_wkb"] = _wkb(arena.polygon)
         arrays.update(
             {f"walls_wkb_{i}": _wkb(wall) for i, wall in enumerate(arena.walls)}
         )
     elif type(arena) is MaskArena:
-        meta.update(
-            n_dims=arena.n_dims, physical_footprint_known=arena.physical_footprint_known
-        )
+        meta.update(n_dims=arena.n_dims, outline=arena.outline)
         arrays.update(
             {f"edges_{axis}": edge.copy() for axis, edge in enumerate(arena.edges)}
         )
@@ -1357,10 +1356,14 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
             if not isinstance(snapshot, Arena):
                 raise ValueError("The installed adapter must decode an arena snapshot.")
             return snapshot
-        if _count(meta, "codec_version", minimum=1) != _ARENA_VERSION:
+        version = _count(meta, "codec_version", minimum=1)
+        if version != _ARENA_VERSION:
             raise _error(
-                "Unsupported arena codec version.",
-                "read this record with a version that supports its arena codec",
+                f"Arena codec version {version} is not supported; this version "
+                f"reads version {_ARENA_VERSION}, which records what each physical "
+                "boundary is (wall, transparent wall or drop edge).",
+                "recreate the environment with this neurospatial version and save "
+                "it again",
             )
         kind = meta["codec"]
         if kind == "_CombinedArena":
@@ -1382,10 +1385,9 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
                     cast("LineString", _read_wkb(arrays, f"walls_wkb_{i}"))
                     for i in range(_count(meta, "n_walls"))
                 ),
+                outline=meta["outline"],
                 wall_names=meta["wall_names"],
-                physical_footprint_known=_boolean(
-                    meta["physical_footprint_known"], "physical_footprint_known"
-                ),
+                wall_kinds=meta["wall_kinds"],
             )
         if kind == "MaskArena":
             return MaskArena(
@@ -1394,9 +1396,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
                     for axis in range(_count(meta, "n_dims", minimum=1))
                 ),
                 arrays["active_mask"],
-                physical_footprint_known=_boolean(
-                    meta["physical_footprint_known"], "physical_footprint_known"
-                ),
+                outline=meta["outline"],
             )
         if kind == "TrackArena":
             return TrackArena(arrays["segments"], meta["width"])

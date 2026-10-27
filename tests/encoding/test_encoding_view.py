@@ -650,15 +650,15 @@ class TestViewRateResultPeakLocation:
 
 
 class TestViewRateResultViewSpatialInformation:
-    """Test ViewRateResult.view_spatial_information() method."""
+    """Test ViewRateResult.spatial_information() method."""
 
-    def test_view_spatial_information_returns_float(
+    def test_spatial_information_returns_float(
         self,
         simple_env: Environment,
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """view_spatial_information() should return float."""
+        """spatial_information() should return float."""
         from neurospatial.encoding.view import ViewRateResult
 
         result = ViewRateResult(
@@ -671,16 +671,16 @@ class TestViewRateResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         assert isinstance(info, float)
 
-    def test_view_spatial_information_non_negative(
+    def test_spatial_information_non_negative(
         self,
         simple_env: Environment,
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """view_spatial_information() should be non-negative."""
+        """spatial_information() should be non-negative."""
         from neurospatial.encoding.view import ViewRateResult
 
         result = ViewRateResult(
@@ -693,15 +693,15 @@ class TestViewRateResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         assert info >= 0.0
 
-    def test_view_spatial_information_uses_occupancy(
+    def test_spatial_information_uses_occupancy(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """view_spatial_information() should use occupancy, not standard occupancy."""
+        """spatial_information() should use occupancy, not standard occupancy."""
         from neurospatial.encoding.view import ViewRateResult
 
         # Create a peaked firing rate
@@ -723,16 +723,16 @@ class TestViewRateResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         # Should produce meaningful spatial information
         assert info >= 0.0
 
-    def test_view_spatial_information_uniform_firing_is_zero(
+    def test_spatial_information_uniform_firing_is_zero(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """view_spatial_information() should return 0 for uniform firing."""
+        """spatial_information() should return 0 for uniform firing."""
         from neurospatial.encoding.view import ViewRateResult
 
         # Uniform firing rate across all bins
@@ -748,16 +748,16 @@ class TestViewRateResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         # Uniform firing should have zero spatial information
         assert info == pytest.approx(0.0, abs=1e-10)
 
-    def test_view_spatial_information_peaked_is_positive(
+    def test_spatial_information_peaked_is_positive(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """view_spatial_information() should be positive for peaked firing."""
+        """spatial_information() should be positive for peaked firing."""
         from neurospatial.encoding.view import ViewRateResult
 
         # Peaked firing rate
@@ -775,7 +775,7 @@ class TestViewRateResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         assert info > 0.0
 
 
@@ -873,9 +873,11 @@ class TestViewRateResultIsViewCell:
         firing_rate = np.ones(n_bins, dtype=np.float64) * 2.0
         firing_rate[n_bins // 2] = 10.0  # Moderate peak
 
+        # 100 s per bin: thousands of spikes, so the untuned-cell bias is
+        # small and defined.
         result = ViewRateResult(
             firing_rate=firing_rate,
-            occupancy=single_occupancy,
+            occupancy=np.full(n_bins, 100.0),
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
@@ -883,7 +885,7 @@ class TestViewRateResultIsViewCell:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
 
         # With very low threshold, should be True
         assert result.is_spatial_view_cell(min_info=0.0) is True
@@ -915,11 +917,11 @@ class TestViewRateResultIsViewCell:
         # With default threshold (0.5), uniform firing should be False
         assert result.is_spatial_view_cell() is False
 
-    def test_is_view_cell_uses_view_spatial_information(
+    def test_is_view_cell_uses_bias_corrected_information(
         self,
         simple_env: Environment,
     ) -> None:
-        """is_spatial_view_cell() should use view_spatial_information() for classification."""
+        """The screen thresholds spatial information minus its untuned bias."""
         from neurospatial.encoding.view import ViewRateResult
 
         # Create peaked firing rate with custom view occupancy
@@ -927,8 +929,7 @@ class TestViewRateResultIsViewCell:
         firing_rate = np.zeros(n_bins, dtype=np.float64)
         firing_rate[n_bins // 2] = 30.0
 
-        # Custom view occupancy that emphasizes the peak
-        occupancy = np.ones(n_bins, dtype=np.float64)
+        occupancy = np.full(n_bins, 100.0)
 
         result = ViewRateResult(
             firing_rate=firing_rate,
@@ -940,12 +941,13 @@ class TestViewRateResultIsViewCell:
             bandwidth=5.0,
         )
 
-        # Get actual info value
-        info = result.view_spatial_information()
+        info = result.spatial_information()
+        bias = result.spatial_information_bias()
+        assert 0 < bias < 0.01
+        corrected = info - bias
 
-        # Classification should be consistent with the threshold
-        assert result.is_spatial_view_cell(min_info=info - 0.01) is True
-        assert result.is_spatial_view_cell(min_info=info + 0.01) is False
+        assert result.is_spatial_view_cell(min_info=corrected) is True
+        assert result.is_spatial_view_cell(min_info=corrected + bias / 2) is False
 
 
 # ==============================================================================
@@ -1131,15 +1133,15 @@ class TestViewRatesResultPeakLocations:
 
 
 class TestViewRatesResultViewSpatialInformation:
-    """Test ViewRatesResult.view_spatial_information() method."""
+    """Test ViewRatesResult.spatial_information() method."""
 
-    def test_view_spatial_information_returns_ndarray(
+    def test_spatial_information_returns_ndarray(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """view_spatial_information() should return ndarray."""
+        """spatial_information() should return ndarray."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1152,17 +1154,17 @@ class TestViewRatesResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         assert isinstance(info, np.ndarray)
 
-    def test_view_spatial_information_shape(
+    def test_spatial_information_shape(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """view_spatial_information() should return (n_neurons,) array."""
+        """spatial_information() should return (n_neurons,) array."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1175,17 +1177,17 @@ class TestViewRatesResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         assert info.shape == (n_neurons,)
 
-    def test_view_spatial_information_matches_single_neuron(
+    def test_spatial_information_matches_single_neuron(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """view_spatial_information() should match single-neuron view_spatial_information()."""
+        """spatial_information() should match single-neuron spatial_information()."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1198,21 +1200,21 @@ class TestViewRatesResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        batch_info = result.view_spatial_information()
+        batch_info = result.spatial_information()
 
         # Verify each neuron's info matches single-neuron result
         for i in range(n_neurons):
             single = result[i]
-            single_info = single.view_spatial_information()
+            single_info = single.spatial_information()
             assert batch_info[i] == pytest.approx(single_info, rel=1e-10)
 
-    def test_view_spatial_information_non_negative(
+    def test_spatial_information_non_negative(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """view_spatial_information() should be non-negative for all neurons."""
+        """spatial_information() should be non-negative for all neurons."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1225,16 +1227,16 @@ class TestViewRatesResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         assert np.all(info >= 0.0)
 
-    def test_view_spatial_information_uniform_is_zero(
+    def test_spatial_information_uniform_is_zero(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """view_spatial_information() should return 0 for uniform firing."""
+        """spatial_information() should return 0 for uniform firing."""
         from neurospatial.encoding.view import ViewRatesResult
 
         # Uniform firing rates
@@ -1250,7 +1252,7 @@ class TestViewRatesResultViewSpatialInformation:
             bandwidth=5.0,
         )
 
-        info = result.view_spatial_information()
+        info = result.spatial_information()
         assert np.all(np.abs(info) < 1e-10)
 
 
@@ -1453,13 +1455,13 @@ class TestViewRatesResultSummaryTable:
         df = result.summary_table()
         assert len(df) == n_neurons
 
-    def test_summary_table_has_unit_id_column(
+    def test_summary_table_columns_in_order(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() should be indexed by unit_id."""
+        """Primary metrics first, peak coordinates, classification last."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1474,116 +1476,15 @@ class TestViewRatesResultSummaryTable:
 
         df = result.summary_table()
         assert df.index.name == "unit_id"
-
-    def test_summary_table_has_peak_x_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have peak_x column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "peak_x" in df.columns
-
-    def test_summary_table_has_peak_y_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have peak_y column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "peak_y" in df.columns
-
-    def test_summary_table_has_peak_rate_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have peak_rate column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "peak_rate" in df.columns
-
-    def test_summary_table_has_view_spatial_info_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have view_spatial_info column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "view_spatial_info" in df.columns
-
-    def test_summary_table_has_is_view_cell_column(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() should have is_spatial_view_cell column."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        df = result.summary_table()
-        assert "is_spatial_view_cell" in df.columns
+        assert list(df.columns) == [
+            "peak_firing_rate",
+            "spatial_information",
+            "spatial_information_bias",
+            "peak_x",
+            "peak_y",
+            "n_spikes_outside_intervals",
+            "is_spatial_view_cell",
+        ]
 
     def test_summary_table_default_unit_ids(
         self,
@@ -1725,15 +1626,15 @@ class TestViewRatesResultSummaryTable:
 
         df = result.summary_table()
         expected = np.nanmax(batch_firing_rates, axis=1)
-        np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
+        np.testing.assert_array_almost_equal(df["peak_firing_rate"].values, expected)
 
-    def test_summary_table_view_spatial_info_matches_batch_method(
+    def test_summary_table_spatial_information_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() view_spatial_info should match view_spatial_information()."""
+        """summary_table() spatial_information should match spatial_information()."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1747,8 +1648,8 @@ class TestViewRatesResultSummaryTable:
         )
 
         df = result.summary_table()
-        expected = result.view_spatial_information()
-        np.testing.assert_array_almost_equal(df["view_spatial_info"].values, expected)
+        expected = result.spatial_information()
+        np.testing.assert_array_almost_equal(df["spatial_information"].values, expected)
 
     def test_summary_table_is_view_cell_matches_batch_method(
         self,
@@ -1802,8 +1703,9 @@ class TestViewRatesResultSummaryTable:
         expected_columns = {
             "peak_x",
             "peak_y",
-            "peak_rate",
-            "view_spatial_info",
+            "peak_firing_rate",
+            "spatial_information",
+            "n_spikes_outside_intervals",
             "is_spatial_view_cell",
         }
         assert expected_columns.issubset(set(df.columns))
@@ -1872,7 +1774,7 @@ class TestIsSpatialViewCellParamOrder:
             times,
             positions,
             headings,
-            gaze_model="ray_cast",
+            gaze_model="fixed_distance",
             view_distance=15.0,
             boundary_source="analysis",
         )

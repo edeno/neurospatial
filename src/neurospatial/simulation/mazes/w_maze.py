@@ -14,6 +14,11 @@ doi:10.1371/journal.pone.0005494, describe the same reward sites as wells:
 "Sweetened milk was automatically dispensed in food wells located at the
 three ends of the track."
 
+Karlsson & Frank (2009) do not say whether the W-tracks were elevated. Kim &
+Frank (2009), from the same laboratory, ran rats on "an elevated linear
+track", and the W-track is modeled the same way: its edges are drops
+(``arena.outline == "drop"``).
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.w_maze import make_w_maze, WMazeDims
@@ -33,6 +38,7 @@ from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
@@ -212,6 +218,7 @@ def make_w_maze(
     env_2d = Environment.from_polygon(
         polygon=w_polygon,
         bin_size=bin_size,
+        arena=OpenArena(w_polygon, outline="drop"),
         name="w_maze",
         connect_diagonal_neighbors=True,
     )

@@ -23,7 +23,6 @@ Output shapes:
 The binning layer is separated from smoothing to allow:
 - Reusing occupancy across multiple neurons
 - Precomputing egocentric coordinates for efficiency
-- Future JAX implementations with different parallelization strategies
 
 Coordinate Conventions
 ----------------------
@@ -55,6 +54,8 @@ from numpy.typing import NDArray
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
 )
@@ -482,18 +483,112 @@ def _coords_to_flat_bin_idx(
     return flat_bin_idx
 
 
+BEYOND_RANGE = -2
+"""Frame bin of a sample whose nearest object is beyond the polar range."""
+
+
+def observed_frames(
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+) -> NDArray[np.bool_]:
+    """True for samples whose position, heading and objects were tracked.
+
+    Any other sample is missing: it is skipped as if its row were deleted,
+    and the gap around it is bridged when it is no longer than ``max_gap``.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_time, 2)
+    headings : ndarray, shape (n_time,), or None
+    object_positions : ndarray, shape (n_objects, 2) or (n_time, n_objects, 2)
+
+    Returns
+    -------
+    ndarray of bool, shape (n_time,)
+    """
+    positions = np.asarray(positions, dtype=np.float64)
+    observed = np.asarray(
+        np.isfinite(positions.reshape(len(positions), -1)).all(axis=1), dtype=bool
+    )
+    if headings is not None:
+        observed &= np.isfinite(np.asarray(headings, dtype=np.float64)).ravel()
+    objects = np.asarray(object_positions, dtype=np.float64)
+    if objects.ndim == 3:
+        observed &= np.isfinite(objects).all(axis=(1, 2))
+    return observed
+
+
+def object_frame_bins(
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
+    metric: DistanceMetric,
+    env: Environment | None,
+) -> NDArray[np.intp]:
+    """Polar bin of the nearest object at each sample, or -1.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_time, 2)
+        Animal positions in allocentric coordinates.
+    headings : ndarray, shape (n_time,) or None
+        Heading in radians, or None for allocentric bearing.
+    object_positions : ndarray, shape (n_objects, 2) or (n_time, n_objects, 2)
+        Object positions, fixed or per sample.
+    distance_range, n_distance_bins, n_direction_bins
+        The polar grid.
+    metric : {"euclidean", "geodesic"}
+        Distance to the objects.
+    env : Environment or None
+        The environment the positions were recorded in, or None.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_time,)
+        Flat polar bin; :data:`BEYOND_RANGE` for a tracked sample whose
+        nearest object is at or beyond ``distance_range[1]``, and -1 for a
+        missing sample, a distance below ``distance_range[0]`` and, when
+        ``env`` is given, a position outside every environment bin. The
+        last is the rule place maps use: a sample tracked outside the
+        environment is not an observation of it. Both codes are negative,
+        so every consumer that keeps bins ``>= 0`` drops them.
+    """
+    distances, bearings = _compute_object_coords(
+        positions, headings, object_positions, metric=metric, env=env
+    )
+    distances, bearings = distances.ravel(), bearings.ravel()
+    bins = _coords_to_flat_bin_idx(
+        distances,
+        bearings,
+        distance_range,
+        n_distance_bins,
+        n_direction_bins,
+    )
+    with np.errstate(invalid="ignore"):
+        beyond = np.isfinite(bearings) & (distances >= distance_range[1])
+    bins[beyond] = BEYOND_RANGE
+    if env is not None:
+        bins[env.bin_at(positions) < 0] = -1
+    return bins
+
+
 def compute_egocentric_occupancy(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], PolarEnvironment]:
@@ -513,25 +608,27 @@ def compute_egocentric_occupancy(
         Head direction at each time sample (radians, 0=East).
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
-    distance_range : tuple of float, default=(0.0, 50.0)
+    distance_range : tuple of float
         (min_distance, max_distance) for binning.
-    n_distance_bins : int, default=10
+    n_distance_bins : int
         Number of distance bins.
-    n_direction_bins : int, default=12
+    n_direction_bins : int
         Number of direction bins (covers full circle -pi to pi).
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric:
         - "euclidean": Straight-line distance
         - "geodesic": Path distance respecting environment boundaries
     env : Environment, optional
-        Required when metric="geodesic". The allocentric environment
-        used to compute geodesic distances.
+        The allocentric environment. Required when metric="geodesic"; when
+        given, samples outside its bins add no occupancy.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -580,7 +677,13 @@ def compute_egocentric_occupancy(
 
     >>> # Compute occupancy
     >>> occupancy, env = compute_egocentric_occupancy(
-    ...     times, positions, headings, object_positions
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
+    ...     n_distance_bins=10,
+    ...     n_direction_bins=12,
     ... )
     >>> occupancy.shape == (10 * 12,)  # n_distance * n_direction
     True
@@ -627,35 +730,27 @@ def compute_egocentric_occupancy(
     )
     n_bins = polar_env.n_bins
 
-    # Compute egocentric coordinates
-    nearest_distances, nearest_bearings = _compute_object_coords(
+    bin_indices = object_frame_bins(
         positions,
         headings,
         object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
         metric=metric,
         env=env,
     )
 
-    # Flatten from (n_time, 1) to (n_time,)
-    nearest_distances = nearest_distances.ravel()
-    nearest_bearings = nearest_bearings.ravel()
-
-    # Convert to flat bin indices
-    bin_indices = _coords_to_flat_bin_idx(
-        nearest_distances,
-        nearest_bearings,
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
-    )
-
+    observed = observed_frames(positions, headings, object_positions)
     mask = interval_valid_mask(
         times,
         start_bin=bin_indices,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    bin_indices = hold_last_valid(bin_indices, observed, fill=-1)
     occupancy = start_allocated_occupancy(bin_indices, np.diff(times), mask, n_bins)
     return occupancy, polar_env
 
@@ -667,12 +762,12 @@ def bin_egocentric_spike_train(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], PolarEnvironment]:
@@ -693,22 +788,25 @@ def bin_egocentric_spike_train(
         Head direction at each time sample (radians, 0=East).
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
-    distance_range : tuple of float, default=(0.0, 50.0)
+    distance_range : tuple of float
         (min_distance, max_distance) for binning.
-    n_distance_bins : int, default=10
+    n_distance_bins : int
         Number of distance bins.
-    n_direction_bins : int, default=12
+    n_direction_bins : int
         Number of direction bins.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
     env : Environment, optional
-        Required when metric="geodesic".
+        Required when metric="geodesic"; when given, samples outside its
+        bins are dropped.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -760,7 +858,14 @@ def bin_egocentric_spike_train(
 
     >>> # Bin spikes
     >>> spike_counts, env = bin_egocentric_spike_train(
-    ...     spike_times, times, positions, headings, object_positions
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
+    ...     n_distance_bins=10,
+    ...     n_direction_bins=12,
     ... )
     >>> spike_counts.shape == (env.n_bins,)
     True
@@ -795,27 +900,26 @@ def bin_egocentric_spike_train(
     )
     n_bins = polar_env.n_bins
 
-    nearest_distances, nearest_bearings = _compute_object_coords(
+    bin_indices = object_frame_bins(
         positions,
         headings,
         object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
         metric=metric,
         env=env,
     )
-    bin_indices = _coords_to_flat_bin_idx(
-        nearest_distances.ravel(),
-        nearest_bearings.ravel(),
-        distance_range,
-        n_distance_bins,
-        n_direction_bins,
-    )
+    observed = observed_frames(positions, headings, object_positions)
     mask = interval_valid_mask(
         times,
         start_bin=bin_indices,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    bin_indices = hold_last_valid(bin_indices, observed, fill=-1)
     counts = count_spikes_by_frame(spike_times, times, bin_indices, mask, n_bins)
     return counts, polar_env
 
@@ -826,22 +930,33 @@ def prepare_egocentric_binning(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     frame_bins: NDArray[np.int64] | None = None,
     polar_env: PolarEnvironment | None = None,
     break_before: NDArray[np.bool_] | None = None,
-) -> tuple[FrameBinning, PolarEnvironment]:
+) -> tuple[FrameBinning, PolarEnvironment, float]:
     """Prepare geometry and exact temporal support before counting spikes.
 
     ``break_before`` is already validated; the interval ending at each
     declared recording break is dropped from counts and occupancy.
+
+    Returns
+    -------
+    prepared : FrameBinning
+        Frame bins and the exact interval support of the map.
+    polar_env : Environment
+        The polar grid.
+    time_beyond : float
+        Seconds, within the same temporal gates, during which the nearest
+        object was at or beyond ``distance_range[1]``: the time the map
+        would have covered had its range been unbounded.
     """
     times = np.asarray(times, dtype=np.float64).ravel()
     positions = np.asarray(positions, dtype=np.float64)
@@ -873,28 +988,32 @@ def prepare_egocentric_binning(
     n_bins = polar_env.n_bins
 
     if frame_bins is None:
-        # Compute egocentric coordinates ONCE (shared across all neurons)
-        nearest_distances, nearest_bearings = _compute_object_coords(
+        # Polar bins ONCE (shared across all neurons)
+        frame_bins = object_frame_bins(
             positions,
             headings,
             object_positions,
+            distance_range=distance_range,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
             metric=metric,
             env=env,
         )
 
-        # Flatten
-        nearest_distances = nearest_distances.ravel()
-        nearest_bearings = nearest_bearings.ravel()
-
-        # Precompute bin indices for all behavioral frames
-        frame_bins = _coords_to_flat_bin_idx(
-            nearest_distances,
-            nearest_bearings,
-            distance_range,
-            n_distance_bins,
-            n_direction_bins,
-        )
-
+    # One temporal gate for the map and for the time its range left out: a
+    # sample beyond the range passes the bin check here and is split off below.
+    observed = observed_frames(positions, headings, object_positions)
+    gated = interval_valid_mask(
+        times,
+        start_bin=np.where(frame_bins == BEYOND_RANGE, 0, frame_bins),
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        break_before=break_before,
+        sample_valid=observed,
+    )
+    starts = hold_last_valid(frame_bins, observed, fill=-1)[:-1]
+    time_beyond = float(np.diff(times)[gated & (starts == BEYOND_RANGE)].sum())
     prepared = prepare_frame_binning(
         times,
         frame_bins,
@@ -902,9 +1021,11 @@ def prepare_egocentric_binning(
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        interval_mask=gated & (starts >= 0),
         break_before=break_before,
+        sample_valid=observed,
     )
-    return prepared, polar_env
+    return prepared, polar_env, time_beyond
 
 
 def bin_egocentric_spike_trains(
@@ -914,12 +1035,12 @@ def bin_egocentric_spike_trains(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
@@ -947,21 +1068,24 @@ def bin_egocentric_spike_trains(
         Head direction at each time sample (radians, 0=East).
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
-    distance_range : tuple of float, default=(0.0, 50.0)
+    distance_range : tuple of float
         (min_distance, max_distance) for binning.
-    n_distance_bins : int, default=10
+    n_distance_bins : int
         Number of distance bins.
-    n_direction_bins : int, default=12
+    n_direction_bins : int
         Number of direction bins.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
     env : Environment, optional
-        Required when metric="geodesic".
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+        Required when metric="geodesic"; when given, samples outside its
+        bins are dropped.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1021,7 +1145,14 @@ def bin_egocentric_spike_trains(
 
     >>> # Bin spikes
     >>> spike_counts, occupancy, env = bin_egocentric_spike_trains(
-    ...     spike_times, times, positions, headings, object_positions
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
+    ...     n_distance_bins=10,
+    ...     n_direction_bins=12,
     ... )
     >>> spike_counts.shape == (3, env.n_bins)
     True
@@ -1036,7 +1167,7 @@ def bin_egocentric_spike_trains(
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
 
-    prepared, polar_env = prepare_egocentric_binning(
+    prepared, polar_env, _ = prepare_egocentric_binning(
         times,
         positions,
         headings,

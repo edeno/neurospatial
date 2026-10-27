@@ -206,6 +206,8 @@ def _make_call(
             trajectory_headings,
             object_positions,
             backend=backend,
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         ),
         "compute_egocentric_rates": lambda backend: compute_egocentric_rates(
             None,
@@ -215,6 +217,8 @@ def _make_call(
             trajectory_headings,
             object_positions,
             backend=backend,
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         ),
     }
     return table[func_name]

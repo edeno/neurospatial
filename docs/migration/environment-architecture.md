@@ -1104,12 +1104,14 @@ assert np.allclose(smoothed[np.isfinite(smoothed)], 5.0)
 assert env.nearest_bin(np.array([[np.nan, 10.0]]))[0] == -1
 ```
 
-`env.occupancy` gives an interval time only when both of its samples are
-inside the environment, the rule `compute_spatial_rate` uses for spike counts
-and occupancy. An interval that ends at a dropout or outside the environment
-used to keep its time in its start bin, so dividing your own spike counts by
-`env.occupancy` used a different denominator than the rate maps. Fill short
-dropouts during tracking preprocessing if you want that time back.
+`env.occupancy` follows the rules `compute_spatial_rate` uses for spike counts
+and occupancy, so dividing your own spike counts by `env.occupancy` uses the
+same denominator as the rate maps. An interval counts only when both of its
+tracked samples are inside the environment. A dropout (a NaN row) is a
+missing sample, treated exactly like a deleted row: the gap between the
+tracked samples around it is bridged when it is no longer than `max_gap`,
+with its time in the bin of the sample before it, and excluded when it is
+longer. Do not fill dropouts during preprocessing.
 
 <!-- docs-test: run -->
 ```python
@@ -1119,8 +1121,10 @@ from neurospatial import Environment
 env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
 times = np.array([0.0, 0.1, 0.2, 0.3])
 positions = np.array([[15.0], [16.0], [np.nan], [45.0]])  # cm; one dropout
-# Before: 0.2 s (the interval ending at the dropout kept its time)
-assert np.isclose(env.occupancy(times, positions).sum(), 0.1)
+deleted = env.occupancy(times[[0, 1, 3]], positions[[0, 1, 3]])
+assert np.allclose(env.occupancy(times, positions), deleted)  # 0.3 s in all
+# A max_gap shorter than the 0.2 s gap makes it a tracking loss
+assert np.isclose(env.occupancy(times, positions, max_gap=0.15).sum(), 0.1)
 ```
 
 `occupancy`, `bin_sequence`, `bin_sequence_with_runs` and trajectory
@@ -1340,11 +1344,13 @@ assert set(arm[east]) == {1}
 
 ## Grid analyses on layouts without square lags raise `NotImplementedError`
 
-The FFT autocorrelogram behind grid scores needs a 2-D grid of rectangular
+The autocorrelogram behind grid scores needs a 2-D grid of rectangular
 cells, one width along each axis. `spatial_autocorrelation` used to raise
-`ValueError` for tracks, meshes and sparse grids, and accepted hexagonal
-environments with wrong results. It now raises `NotImplementedError` for all
-of them, naming `spatial_autocorrelation_radial`, which works on every layout.
+`ValueError` for tracks and meshes, and accepted hexagonal environments with
+wrong results. It now raises `NotImplementedError` for all of them, naming
+`spatial_autocorrelation_radial`, which works on every layout. Grids with
+many inactive cells are accepted: inactive cells are left out of each lag
+like unvisited bins.
 Polar environments raise `CartesianOnlyError` (a `TypeError`), here and for
 wall-based measures such as `border_score`:
 
@@ -1364,8 +1370,11 @@ except NotImplementedError:
     distances, correlations = spatial_autocorrelation_radial(track, rate)
 ```
 
-Rate-map `grid_score()` and `summary_table()` report NaN on these
-environments, as before for tracks and meshes.
+Rate-map `grid_score()`, `grid_scores()` and `batch_grid_scores()` raise the
+same `NotImplementedError` on these environments. `summary_table()` reports a
+NaN grid score, explains it in `attrs["unavailable_metrics"]["grid_score"]`,
+and labels a spatially tuned cell `"undetermined"` rather than `"place"`,
+since it could be a grid cell.
 
 ## Grid orientation is in radians, in the environment's frame
 
@@ -1392,7 +1401,7 @@ open_field = np.random.default_rng(0).uniform(0, 100, size=(5000, 2))  # x, y in
 arena = Environment.from_samples(open_field, bin_size=2.0, units="cm")
 cell = GridCellModel(arena, grid_spacing=30.0, grid_orientation=np.radians(20.0))
 autocorr = spatial_autocorrelation(arena, cell.firing_rate(arena.bin_centers))
-properties = grid_properties(autocorr, bin_size=autocorrelation_pixel_size(arena))
+properties = grid_properties(autocorr, pixel_size=autocorrelation_pixel_size(arena))
 # Before: the lattice sat at 50° (grid_orientation set the plane waves), and
 # properties.orientation reported it reflected about 45°, in degrees
 assert abs(np.degrees(properties.orientation) - 20.0) < 2.0

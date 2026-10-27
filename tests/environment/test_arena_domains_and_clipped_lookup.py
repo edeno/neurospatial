@@ -293,8 +293,9 @@ class _CustomArena:
     n_dims = 2
     coordinate_kind = "cartesian"
     domain_known = False
-    physical_footprint_known = False
+    outline = None
     walls = ()
+    wall_kinds = ()
 
     def contains(self, positions):
         raise NotImplementedError
@@ -365,7 +366,7 @@ def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
     )
     env = publish_environment("custom", layout, "CustomHex", {})
     assert env.arena.domain_known
-    assert not env.arena.physical_footprint_known
+    assert env.arena.outline is None
     np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(env.n_bins))
 
 
@@ -401,7 +402,7 @@ def test_transformed_physical_walls_use_the_shared_source_frame(offset, scale, c
     np.testing.assert_array_equal(
         child._binning.connections.pairs, parent._binning.connections.pairs
     )
-    assert child.arena.physical_footprint_known
+    assert child.arena.outline == "wall"
     import networkx as nx
 
     assert nx.number_connected_components(child.connectivity) == 2

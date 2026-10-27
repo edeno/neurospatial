@@ -23,7 +23,8 @@ def _grid(*, diagonal: bool, shape: tuple[int, ...] = (2, 2), arena=None):
 
 
 def _assert_fields(env: Environment, rates: np.ndarray, expected: list[list[int]]):
-    result = detect_place_fields(env, rates, min_size=1, detect_subfields=False)
+    """Fields of an unsmoothed map; a lone bin is too small to be a field."""
+    result = detect_place_fields(env, rates, bandwidth=0.0, detect_subfields=False)
     assert len(result) == len(expected)
     for field, bins in zip(result, expected, strict=True):
         assert_array_equal(field, bins)
@@ -34,7 +35,7 @@ def test_three_dimensional_field_uses_declared_diagonal_edges(diagonal):
     env = _grid(diagonal=diagonal, shape=(2, 2, 2))
     rates = np.zeros(env.n_bins)
     rates[0], rates[-1] = 10.0, 9.0
-    expected = [[0, 7]] if diagonal else [[0], [7]]
+    expected = [[0, 7]] if diagonal else []
     _assert_fields(env, rates, expected)
 
 
@@ -65,7 +66,7 @@ def test_diagonal_field_connections_survive_grid_derivation(diagonal, derivation
     rates = np.zeros(env.n_bins)
     rates[0], rates[-1] = 10.0, 9.0
     assert env.connectivity.has_edge(0, env.n_bins - 1) is diagonal
-    expected = [[0, env.n_bins - 1]] if diagonal else [[0], [env.n_bins - 1]]
+    expected = [[0, env.n_bins - 1]] if diagonal else []
     _assert_fields(env, rates, expected)
 
 
@@ -79,7 +80,7 @@ def test_serialized_field_detection_uses_restored_edges(tmp_path, storage, bound
             shape=(2, 1),
             arena=OpenArena(box(0, 0, 2, 1), walls=(LineString([(1, 0), (1, 1)]),)),
         )
-        rates, expected = np.array([10.0, 9.0]), [[0], [1]]
+        rates, expected = np.array([10.0, 9.0]), []
     else:
         env = _grid(diagonal=True).subset(mask=np.array([True, False, False, True]))
         rates, expected = np.array([10.0, 9.0]), [[0, 1]]
@@ -107,7 +108,7 @@ def test_serialized_field_detection_uses_restored_edges(tmp_path, storage, bound
 
 
 def test_declared_wall_splits_a_field_before_and_after_subsetting():
-    """Adjacent high-rate cells on opposite sides of a wall are separate fields."""
+    """Adjacent high-rate cells on opposite sides of a wall are not one field."""
     env = _grid(
         diagonal=False,
         shape=(2, 1),
@@ -115,13 +116,13 @@ def test_declared_wall_splits_a_field_before_and_after_subsetting():
     )
     assert env.connectivity.number_of_edges() == 0
     for candidate in (env, env.subset(mask=np.ones(2, dtype=bool))):
-        _assert_fields(candidate, np.array([10.0, 9.0]), [[0], [1]])
+        _assert_fields(candidate, np.array([10.0, 9.0]), [])
 
 
 def test_subfield_discrimination_uses_graph_connections():
     """Diagonal peaks stay connected when applying higher thresholds."""
     env = _grid(diagonal=True)
     rates = np.array([10.0, 3.0, 3.0, 9.0])
-    result = detect_place_fields(env, rates, min_size=1, detect_subfields=True)
+    result = detect_place_fields(env, rates, bandwidth=0.0, detect_subfields=True)
     assert len(result) == 1
     assert_array_equal(result[0], [0, 1, 2, 3])

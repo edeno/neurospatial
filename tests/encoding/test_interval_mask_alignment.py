@@ -91,7 +91,8 @@ def gap_trajectory() -> dict:
     """Dense 10 Hz trajectory with ONE deliberate large time gap.
 
     Samples 0..29 step at dt=0.1 s from x=10 to x=12.9 (all in bin 1). Between
-    sample 29 and 30 there is a 1.0 s time gap (dt=1.0 > max_gap=0.5) while the
+    sample 29 and 30 there is a 2.0 s time gap (longer than the default
+    max_gap) while the
     animal sits near the same location; then samples 30..59 resume at dt=0.1 s
     from x=13.0 to x=15.9 (bins 1..1), so a spike interpolated into the gap
     interval lands in an OCCUPIED bin — the precise condition under which the
@@ -111,8 +112,8 @@ def gap_trajectory() -> dict:
     positions = x.reshape(-1, 1)
 
     ta = np.arange(n_a) * dt
-    # Insert a 1.0 s gap between segment a and b.
-    tb = ta[-1] + 1.0 + np.arange(n_b) * dt
+    # Insert a 2.0 s gap between segment a and b.
+    tb = ta[-1] + 2.0 + np.arange(n_b) * dt
     times = np.concatenate([ta, tb])
 
     gap_interval = n_a - 1  # interval [t_29, t_30)
@@ -181,15 +182,15 @@ def test_max_gap_spike_in_gap_excluded_from_count(env_1d, gap_trajectory) -> Non
 
 
 def test_max_gap_occupancy_excludes_gap(env_1d, gap_trajectory) -> None:
-    """env.occupancy excludes the gap interval's 1.0 s (denominator)."""
+    """env.occupancy excludes the gap interval's 2.0 s (denominator)."""
     times = gap_trajectory["times"]
     positions = gap_trajectory["positions"]
 
     occ_default = compute_occupancy(env_1d, times, positions)
     occ_no_gap = compute_occupancy(env_1d, times, positions, max_gap=None)
 
-    # The no-gap occupancy includes the 1.0 s gap interval; default excludes it.
-    assert occ_no_gap.sum() == pytest.approx(occ_default.sum() + 1.0)
+    # The no-gap occupancy includes the 2.0 s gap interval; default excludes it.
+    assert occ_no_gap.sum() == pytest.approx(occ_default.sum() + 2.0)
 
 
 def test_max_gap_alignment_against_hand_masked_reference(
@@ -569,10 +570,10 @@ def test_batch_njobs_parity_under_max_gap(env_1d, gap_trajectory) -> None:
     gap_interval = gap_trajectory["gap_interval"]
     t_gap = 0.5 * (times[gap_interval] + times[gap_interval + 1])
 
-    # Segment a: t in [0, 2.9]; gap: [2.9, 3.9]; segment b: [3.9, 6.8].
+    # Segment a: t in [0, 2.9]; gap: [2.9, 4.9]; segment b: [4.9, 7.8].
     spike_times = [
-        np.array([0.5, t_gap, 4.5]),  # valid, GAP, valid -> 2
-        np.array([1.0, 5.0, t_gap]),  # valid, valid, GAP -> 2
+        np.array([0.5, t_gap, 5.5]),  # valid, GAP, valid -> 2
+        np.array([1.0, 6.0, t_gap]),  # valid, valid, GAP -> 2
         np.array([2.0]),  # valid -> 1
     ]
 
@@ -705,19 +706,41 @@ def test_interval_mask_precompute_results_unchanged(env_1d, gap_trajectory) -> N
         np.testing.assert_array_equal(batch_counts[i], single)
 
 
-def test_interval_ending_in_dropout_is_excluded_from_both_sides():
-    """Complete-case rule: an interval counts only if both samples are tracked.
+def test_dropout_is_bridged_like_a_deleted_row_on_both_sides():
+    """A NaN dropout inside max_gap is skipped as if its row were deleted.
 
-    Interval [t_k, t_k+1) whose end sample is a NaN dropout has no observed
-    position for its spikes, so its spikes and its time are both left out
-    rather than imputing where the animal was.
+    The gap's time and its spikes both go to the bin of the tracked sample
+    that starts it, so the rate is that of the recording without the row.
     """
     env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
     times = np.array([0.0, 0.1, 0.2, 0.3])
     positions = np.array([[15.0], [np.nan], [45.0], [46.0]])
-    spikes = np.array([0.05, 0.25])
+    spikes = np.array([0.05, 0.15, 0.25])
     counts = bin_spike_train(env, spikes, times, positions, warn_on_drop=False)
     occupancy = compute_occupancy(env, times, positions)
+    kept = [0, 2, 3]
+    np.testing.assert_array_equal(
+        counts,
+        bin_spike_train(env, spikes, times[kept], positions[kept], warn_on_drop=False),
+    )
+    np.testing.assert_allclose(
+        occupancy, compute_occupancy(env, times[kept], positions[kept])
+    )
+    in_first = int(env.bin_at(np.array([[15.0]]))[0])
+    assert counts[in_first] == 2.0
+    assert occupancy[in_first] == pytest.approx(0.2)
+
+
+def test_dropout_beyond_max_gap_is_excluded_from_both_sides():
+    """A dropout longer than max_gap is a tracking loss on both sides."""
+    env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
+    times = np.array([0.0, 0.1, 0.2, 0.3])
+    positions = np.array([[15.0], [np.nan], [45.0], [46.0]])
+    spikes = np.array([0.05, 0.25])
+    counts = bin_spike_train(
+        env, spikes, times, positions, warn_on_drop=False, max_gap=0.15
+    )
+    occupancy = compute_occupancy(env, times, positions, max_gap=0.15)
     in_last = int(env.bin_at(np.array([[45.0]]))[0])
     expected_counts = np.zeros(env.n_bins)
     expected_counts[in_last] = 1.0
@@ -727,7 +750,7 @@ def test_interval_ending_in_dropout_is_excluded_from_both_sides():
 
 
 def test_environment_occupancy_is_the_rate_denominator():
-    """``env.occupancy`` applies the same complete-case rule as the rate maps.
+    """``env.occupancy`` applies the same rules as the rate maps.
 
     A scientist dividing spike counts by ``env.occupancy`` must get the
     denominator ``compute_spatial_rate`` uses, including across a dropout and
@@ -742,8 +765,9 @@ def test_environment_occupancy_is_the_rate_denominator():
     occupancy = env.occupancy(times, positions)
 
     np.testing.assert_allclose(occupancy, compute_occupancy(env, times, positions))
-    # Only the three intervals with both samples inside keep their time.
-    assert occupancy.sum() == pytest.approx(0.3)
+    # The dropout is bridged (0.2 s from x = 16); the two intervals touching
+    # the excursion outside the environment lose their time.
+    assert occupancy.sum() == pytest.approx(0.5)
 
 
 def test_isolated_tracking_dropouts_do_not_bias_rate():

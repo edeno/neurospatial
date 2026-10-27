@@ -13,7 +13,11 @@ reaches a wall within ``distance_range``, and each spike adds one count to
 the same bins of the sample it falls after. The rate is spikes divided by that
 boundary occupancy, so a bin's rate is the firing rate while a wall was at
 that distance in that direction. Walls are the arena's declared walls by
-default (``boundary_source="physical"``).
+default (``boundary_source="physical"``), of every kind: opaque walls,
+transparent walls and the drop edges of an elevated track or platform. Lever
+et al. (2009) found that "any given BVC responds to both extended vertical
+surfaces and to drops", so an elevated arena's boundary-vector map is
+measured from its edges.
 
 Examples
 --------
@@ -46,17 +50,29 @@ Alexander, A. S., et al. (2020). Egocentric boundary vector tuning of the
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import validate_break_before
-from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
-from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
-from neurospatial.encoding._polar_results import _PolarRateMixin, polar_summary_frame
+from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial.encoding._base import (
+    PopulationRateMixin,
+    SingleUnitRateMixin,
+    _to_numpy,
+)
+from neurospatial.encoding._polar_results import (
+    DEFAULT_DIRECTION_BIN_SIZE,
+    _PolarRateMixin,
+    _unknown_units,
+    polar_summary_frame,
+    require_known_bandwidth,
+    resolve_polar_grid,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -77,6 +93,53 @@ __all__ = [
 ]
 
 
+# Default wall distances, 0-50 cm: the range of Hinman et al. (2019)'s
+# egocentric boundary rate maps (``distanceBins = 0:1:50``, "How far to look
+# (cm)", in EgocentricRatemap.m of github.com/hasselmonians/
+# EgocentricBoundaryCells). The range is not the arena: along a line through
+# the animal, the walls on either side are a chord apart, so a cell tuned to a
+# wall at distance d in one direction is equally tuned to the opposite wall at
+# (chord - d). In a 100 cm box, a cell firing 15 cm from the East wall peaked
+# at the West wall 87.5 cm away on a grid covering the whole box, and at the
+# East wall 17.5 cm away on 0-50 cm.
+_DEFAULT_WALL_RANGE_CM = 50.0
+
+
+def _resolve_wall_range(
+    units: str | None,
+    distance_range: tuple[float, float] | None,
+    *,
+    context: str,
+) -> tuple[float, float]:
+    """The caller's wall-distance range, or 0-50 cm converted to ``units``.
+
+    Raises
+    ------
+    ValueError
+        If ``distance_range`` is None and ``units`` is not a known length
+        unit: 50 cm has no meaning without a scale.
+    """
+    from neurospatial._exceptions import _format_error
+    from neurospatial._units import units_per_centimeter
+
+    if distance_range is not None:
+        return distance_range
+    per_cm = units_per_centimeter(units)
+    if per_cm is None:
+        raise ValueError(
+            _format_error(
+                f"{context}: distance_range is required because "
+                f"{_unknown_units(units)}.",
+                why=f"Why: the default 0-{_DEFAULT_WALL_RANGE_CM:g} cm range "
+                "cannot be converted to coordinates of unknown scale",
+                fix="pass distance_range=(0.0, max_distance) and "
+                "distance_bin_size in the units of positions, or an env with "
+                "units='cm' (or 'mm', 'm')",
+            )
+        )
+    return (0.0, _DEFAULT_WALL_RANGE_CM * per_cm)
+
+
 def _check_boundary_labels(direction_frame: str, boundary_source: str) -> None:
     """Refuse frame and wall labels that exports would misread."""
     from neurospatial.encoding.egocentric import _check_direction_frame
@@ -88,21 +151,56 @@ def _check_boundary_labels(direction_frame: str, boundary_source: str) -> None:
         )
 
 
+def _distance_information(
+    result: BoundaryVectorRateResult | BoundaryVectorRatesResult,
+) -> NDArray[np.float64]:
+    """Skaggs information about wall distance along each unit's preferred direction.
+
+    Each ray's distance bins partition the time a wall lay within
+    ``distance_range`` in that direction, so Skaggs information is defined
+    per direction; it is not defined over the whole map, whose occupancy
+    counts every sample once per ray.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_units,)
+        Bits per spike in the direction bin of each unit's peak rate; NaN
+        for a unit with no rate.
+    """
+    from neurospatial.encoding._metrics import batch_spatial_information
+
+    shape = (result.n_distance_bins, result.n_direction_bins)
+    rates = np.atleast_2d(_to_numpy(result._get_rates()))
+    occupancy = np.asarray(_to_numpy(result.occupancy), dtype=np.float64).reshape(shape)
+    grids = rates.reshape(len(rates), *shape)
+    # (n_units, n_direction_bins): information about distance per direction.
+    per_direction = np.stack(
+        [
+            np.asarray(batch_spatial_information(grids[:, :, j], occupancy[:, j]))
+            for j in range(shape[1])
+        ],
+        axis=1,
+    )
+    information = np.full(len(rates), np.nan)
+    observed = np.isfinite(rates).any(axis=1)
+    if observed.any():
+        peak_bins = np.nanargmax(rates[observed], axis=1)
+        columns = peak_bins % shape[1]  # distance-major flat bins
+        information[observed] = per_direction[observed, columns]
+    return information
+
+
 def _boundary_summary(
     result: BoundaryVectorRateResult | BoundaryVectorRatesResult,
     *,
     index: Sequence[Any],
 ) -> pd.DataFrame:
     """The same metric columns for single and population results."""
-    from neurospatial.encoding._metrics import batch_spatial_information
-
-    rates = np.atleast_2d(_to_numpy(result._get_rates()))
-    information = batch_spatial_information(rates, _to_numpy(result.occupancy))
     df = polar_summary_frame(
         result,
         index=index,
-        extra={"spatial_information": np.asarray(information)},
-        extra_units={"spatial_information": "bits/spike"},
+        extra={"distance_information": _distance_information(result)},
+        extra_units={"distance_information": "bits/spike"},
         thresholds=None,
     )
     df.attrs["boundary_source"] = result.boundary_source
@@ -111,7 +209,7 @@ def _boundary_summary(
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
-class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
+class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     """Firing rate of one unit by distance and direction to walls.
 
     Parameters
@@ -126,20 +224,42 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         ``n_direction_bins`` times the analyzed duration.
     env : Environment
         The polar (distance, direction) environment of the bins.
-    distance_range : tuple of float
-        (min, max) distance to a wall covered by the bins.
-    n_distance_bins, n_direction_bins : int
-        Number of distance and direction bins.
     direction_frame : {"allocentric", "egocentric"}
         Frame of the direction to the wall. Allocentric: 0 = East,
         +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
     boundary_source : {"physical", "analysis"}
         Which walls the rays stopped at.
+    method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
+        Estimator used. ``"binned"`` is the raw rate in each polar bin.
+    bandwidth : float or None, default=None
+        Kernel bandwidth in the environment's length units for the kernel
+        methods; ``None`` for ``"binned"``, which does not smooth.
     unit_id : int or str or None
         Identifier for this unit; set by indexing a population result.
 
+    Attributes
+    ----------
+    distance_range : tuple of float
+        (min, max) distance to a wall covered by the bins; read from ``env``.
+    n_distance_bins, n_direction_bins : int
+        Number of distance and direction bins; read from ``env``.
+
     Other Parameters
     ----------------
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         binning settings.
@@ -153,22 +273,25 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     firing_rate: ArrayLike
     occupancy: ArrayLike
     env: PolarEnvironment
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_id: int | str | None = None
+    min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
+    def _check_family(self) -> None:
         _check_boundary_labels(self.direction_frame, self.boundary_source)
-        self._own_arrays()
 
     def _family_attrs(self) -> dict[str, Any]:
         return {"boundary_source": self.boundary_source}
@@ -179,9 +302,9 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         Returns
         -------
         pandas.DataFrame
-            One row indexed by ``unit_id``: ``peak_rate``,
+            One row indexed by ``unit_id``: ``peak_firing_rate``,
             ``preferred_distance``, ``preferred_direction_deg``,
-            ``preferred_direction`` and ``spatial_information``. The frame
+            ``preferred_direction`` and ``distance_information``. The frame
             and wall source are in ``df.attrs``.
         """
         return _boundary_summary(self, index=self._row_unit_ids().tolist())
@@ -212,21 +335,25 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         """
         return float(self._peak_coordinates(1)[0])
 
-    def spatial_information(self) -> float:
-        """Skaggs information of the boundary map, in bits per spike.
+    def distance_information(self) -> float:
+        """Information about wall distance along the preferred direction.
+
+        Skaggs information, in bits per spike, of the rates along the
+        direction bin that holds the peak, with that direction's boundary
+        occupancy as the bin probabilities. Within one direction the
+        distance bins partition the time a wall was in range, so this is a
+        Skaggs information; over the whole map it is not, because every
+        sample is counted once per ray.
 
         Returns
         -------
         float
-            Computed with the boundary occupancy as the bin probabilities. It
-            is biased upward for few spikes; compare it with a shuffled
-            control before calling a cell boundary-tuned.
+            Bits per spike; NaN when no bin has a rate. Plug-in information
+            is biased upward for few spikes, and choosing the direction by
+            its peak adds to that bias, so compare it with shuffled spike
+            trains before calling a cell boundary-tuned.
         """
-        from neurospatial.encoding._metrics import spatial_information
-
-        return spatial_information(
-            _to_numpy(self.firing_rate), _to_numpy(self.occupancy)
-        )
+        return float(_distance_information(self)[0])
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the rate by distance (x axis) and direction (y axis).
@@ -245,10 +372,11 @@ class BoundaryVectorRateResult(_PolarRateMixin, SpatialResultMixin):
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
 
+@_copy_unit_table
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False, eq=False)
 class BoundaryVectorRatesResult(
-    _PolarRateMixin, SpatialResultMixin, UnitSelectionMixin
+    _PolarRateMixin, PopulationRateMixin[BoundaryVectorRateResult]
 ):
     """Firing rates of several units by distance and direction to walls.
 
@@ -261,10 +389,6 @@ class BoundaryVectorRatesResult(
         Boundary occupancy in seconds, shared by every unit.
     env : Environment
         The polar (distance, direction) environment of the bins.
-    distance_range : tuple of float
-        (min, max) distance to a wall covered by the bins.
-    n_distance_bins, n_direction_bins : int
-        Number of distance and direction bins.
     direction_frame : {"allocentric", "egocentric"}
         Frame of the direction to the wall.
     boundary_source : {"physical", "analysis"}
@@ -274,8 +398,29 @@ class BoundaryVectorRatesResult(
     unit_table : pandas.DataFrame, optional
         Per-unit metadata indexed by ``unit_id``.
 
+    Attributes
+    ----------
+    distance_range : tuple of float
+        (min, max) distance to a wall covered by the bins; read from ``env``.
+    n_distance_bins, n_direction_bins : int
+        Number of distance and direction bins; read from ``env``.
+
     Other Parameters
     ----------------
+    _unit_ids_generated : bool, default=False
+        True when the unit labels were generated (no ``unit_ids`` or
+        ``unit_id`` supplied), so pairing with spike inputs stays positional.
+        Set by the compute functions and by indexing; not an analysis choice.
+    n_spikes_outside_intervals : int or ndarray of int64, shape (n_units,), or None
+        Each unit's spikes outside the analyzed time intervals
+        (``analysis_settings["observed_intervals"]``), which are in no rate:
+        an int for one unit, one count per unit for a population. ``None``
+        when unknown, as for a result built by hand. Also a
+        ``summary_table()`` column.
+    min_occupancy : float, default=0.0
+        Seconds a bin must be occupied to be in ``spatial_support``: the
+        threshold the rates were estimated with. ``analysis_settings`` only
+        records it.
     analysis_settings : dict or None
         Resolved analysis windows, retained time intervals, smoothing and
         binning settings.
@@ -289,63 +434,43 @@ class BoundaryVectorRatesResult(
     firing_rates: ArrayLike
     occupancy: ArrayLike
     env: PolarEnvironment
-    distance_range: tuple[float, float]
-    n_distance_bins: int
-    n_direction_bins: int
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
+    method: str = field(default="binned", kw_only=True)
+    bandwidth: float | None = field(default=None, kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+    min_occupancy: float = field(default=0.0, kw_only=True)
+    n_spikes_outside_intervals: NDArray[np.int64] | None = field(
+        default=None, kw_only=True
+    )
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
     analysis_settings: dict[str, Any] | None = field(
         default=None, kw_only=True, repr=False, compare=False
     )
+    _unit_ids_generated: bool = field(
+        default=False, kw_only=True, repr=False, compare=False
+    )
 
-    def __post_init__(self) -> None:
-        from neurospatial._results import align_unit_table, resolve_unit_ids
-
+    def _check_family(self) -> None:
         _check_boundary_labels(self.direction_frame, self.boundary_source)
-        n_units = int(np.asarray(self.firing_rates).shape[0])
-        object.__setattr__(self, "unit_ids", resolve_unit_ids(self.unit_ids, n_units))
-        object.__setattr__(
-            self,
-            "unit_table",
-            align_unit_table(
-                self.unit_table, self.unit_ids, context="BoundaryVectorRatesResult"
-            ),
-        )
-        self._own_arrays()
 
     def _family_attrs(self) -> dict[str, Any]:
         return {"boundary_source": self.boundary_source}
 
-    def __len__(self) -> int:
-        """Number of units."""
-        return int(np.asarray(self.firing_rates).shape[0])
-
     def __getitem__(self, idx: int) -> BoundaryVectorRateResult:
         """The single-unit result at position ``idx``; ``sel(unit_id=...)`` by label."""
-        idx = self._unit_position(idx)
-        return BoundaryVectorRateResult(
-            firing_rate=self.firing_rates[idx],  # type: ignore[index]
-            occupancy=self.occupancy,
+        return self._unit_result(
+            BoundaryVectorRateResult,
+            idx,
             env=self.env,
-            distance_range=self.distance_range,
-            n_distance_bins=self.n_distance_bins,
-            n_direction_bins=self.n_direction_bins,
             direction_frame=self.direction_frame,
             boundary_source=self.boundary_source,
-            unit_id=label_at(self.unit_ids, idx),
-            spike_window=self.spike_window,
-            analysis_settings=self._analysis_attrs()["analysis_settings"],
+            method=self.method,
+            bandwidth=self.bandwidth,
         )
-
-    def __iter__(self) -> Iterator[BoundaryVectorRateResult]:
-        """Each unit's single-unit result, in order."""
-        for i in range(len(self)):
-            yield self[i]
 
     def preferred_distances(self) -> NDArray[np.float64]:
         """Distance to the wall at each unit's peak rate, shape (n_units,)."""
@@ -358,15 +483,17 @@ class BoundaryVectorRatesResult(
         """
         return self._peak_coordinates(1)
 
-    def spatial_information(self) -> NDArray[np.float64]:
-        """Skaggs information of each unit's map, bits per spike, shape (n_units,)."""
-        from neurospatial.encoding._metrics import batch_spatial_information
+    def distance_information(self) -> NDArray[np.float64]:
+        """Information about wall distance along each unit's preferred direction.
 
-        return np.asarray(
-            batch_spatial_information(
-                _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
-            )
-        )
+        See :meth:`BoundaryVectorRateResult.distance_information`.
+
+        Returns
+        -------
+        NDArray[np.float64], shape (n_units,)
+            Bits per spike; NaN for a unit with no rate.
+        """
+        return _distance_information(self)
 
     def summary_table(
         self, unit_ids: Sequence[str | int] | None = None
@@ -430,21 +557,27 @@ def _boundary_frame_bins(
     Returns
     -------
     frame_bins : NDArray[np.intp], shape (n_samples, n_direction_bins)
-        Flat polar bin of each ray's wall; -1 when the wall is outside
-        ``distance_range`` or the sample is missing.
+        Flat polar bin of each ray's wall; ``BEYOND_RANGE`` when the wall is
+        at or beyond ``distance_range[1]``, and -1 when the ray meets no
+        wall, the wall is nearer than ``distance_range[0]`` or the sample is
+        missing.
     observed : NDArray[np.bool_], shape (n_samples,)
         Samples with a position inside the walls (and a heading, when used).
     """
-    from neurospatial.encoding._egocentric_counts import _coords_to_flat_bin_idx
+    from neurospatial.encoding._egocentric_counts import (
+        BEYOND_RANGE,
+        _coords_to_flat_bin_idx,
+    )
     from neurospatial.ops.boundary_vectors import compute_boundary_distances
 
+    # Search every wall, not only those in range, so the time a wall lay
+    # beyond the range is known.
     distances, directions = compute_boundary_distances(
         env,
         positions,
         headings,
         direction_frame=direction_frame,
         n_directions=n_direction_bins,
-        max_distance=float(distance_range[1]),
         boundary_source=boundary_source,
     )
     observed = np.asarray(~np.isnan(distances).all(axis=1), dtype=np.bool_)
@@ -455,6 +588,10 @@ def _boundary_frame_bins(
         n_distance_bins,
         n_direction_bins,
     ).reshape(distances.shape)
+    with np.errstate(invalid="ignore"):
+        frame_bins[np.isfinite(distances) & (distances >= distance_range[1])] = (
+            BEYOND_RANGE
+        )
     return frame_bins, observed
 
 
@@ -469,22 +606,28 @@ def _count_boundary_events(
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], TimeSupport]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], float, TimeSupport]:
     """Spike counts and boundary occupancy summed over every ray.
 
-    An interval counts when its start sample was observed and it passes the
+    An unobserved sample is skipped as if its row were deleted: an interval
+    counts when the gap between the observed samples around it passes the
     gap, window and declared-break checks; it then adds its duration, and each
-    of its spikes one count, to the bin of every ray of its start sample that
-    met a wall in range. Spikes and occupancy use the same intervals.
+    of its spikes one count, to the bin of every ray of the observed sample
+    that starts the gap and met a wall in range. Spikes and occupancy use the
+    same intervals.
 
     Returns
     -------
     spike_counts : NDArray[np.float64], shape (n_units, n_bins)
     occupancy : NDArray[np.float64], shape (n_bins,)
+    time_beyond : float
+        Seconds of the same intervals, summed over rays, in which a ray's
+        wall lay at or beyond the range.
     support : TimeSupport
         The retained intervals, for the result's analysis settings.
     """
-    from neurospatial._intervals import warn_excluded_intervals
+    from neurospatial._intervals import hold_last_valid, warn_excluded_intervals
+    from neurospatial.encoding._egocentric_counts import BEYOND_RANGE
     from neurospatial.encoding._spatial_counts import prepare_frame_binning
 
     prepared = prepare_frame_binning(
@@ -495,7 +638,9 @@ def _count_boundary_events(
         epochs=epochs,
         break_before=break_before,
         spike_window=spike_window,
+        sample_valid=observed,
     )
+    frame_bins = hold_last_valid(frame_bins, observed, fill=-1)
     support = prepared.support
     mask = support.mask
     warn_excluded_intervals(
@@ -514,6 +659,7 @@ def _count_boundary_events(
     occupancy = np.bincount(
         starts[hit], weights=durations[hit], minlength=n_bins
     ).astype(np.float64)
+    time_beyond = float(durations[starts == BEYOND_RANGE].sum())
 
     spike_counts = np.zeros((len(spike_trains), n_bins), dtype=np.float64)
     for unit, spikes in enumerate(spike_trains):
@@ -521,7 +667,7 @@ def _count_boundary_events(
         frames = np.searchsorted(times, spikes, side="right") - 1
         rays = frame_bins[frames[mask[frames]]]
         spike_counts[unit] = np.bincount(rays[rays >= 0], minlength=n_bins)
-    return spike_counts, occupancy, support
+    return spike_counts, occupancy, time_beyond, support
 
 
 def compute_boundary_vector_rates(
@@ -532,11 +678,11 @@ def compute_boundary_vector_rates(
     headings: NDArray[np.float64] | None = None,
     *,
     direction_frame: Literal["allocentric", "egocentric"],
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float] | None = None,
+    distance_bin_size: float | None = None,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     boundary_source: BoundarySource = "physical",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -566,18 +712,41 @@ def compute_boundary_vector_rates(
         North); ``"egocentric"`` for egocentric boundary cells (0 = ahead,
         +pi/2 = left). There is no default: the two maps answer different
         questions.
-    distance_range : tuple of float, default=(0.0, 50.0)
+    distance_range : tuple of float or None, default=None
         (min, max) distance to a wall, in the environment's units. A wall
         farther along a ray than the maximum adds nothing for that ray.
-    n_distance_bins : int, default=10
-        Number of distance bins.
-    n_direction_bins : int, default=12
-        Number of direction bins; one ray is cast at each bin's center.
+        None uses 0-50 cm converted to ``env.units``, the range of Hinman
+        et al. (2019); with units that are not a known length, pass it
+        explicitly. The range does not cover the whole arena on purpose:
+        the walls on either side of the animal are a chord apart, so firing
+        tied to a wall at distance d in one direction is equally tied to the
+        opposite wall at (chord - d), and a grid reaching the far walls lets
+        the peak jump to them (see Notes).
+        ``analysis_settings["time_beyond_distance_range"]`` records the
+        seconds, summed over rays like the occupancy, in which a ray's wall
+        lay beyond the range, and
+        ``analysis_settings["fraction_of_time_in_distance_range"]`` the
+        share of that ray time the map covers (see Notes).
+    distance_bin_size : float or None, default=None
+        Width of each distance ring, in the environment's units. None uses
+        5 cm converted to ``env.units``; pass it when the units are unknown.
+        An explicit ``distance_range`` is divided into the whole number of
+        rings nearest this width.
+    direction_bin_size : float, default=pi/6
+        Width of each direction bin in radians (30 degrees); the circle is
+        divided into ``round(2 pi / direction_bin_size)`` bins and one ray
+        is cast at each bin's center. The 5 cm and 30 degree defaults suit
+        unsmoothed maps of 15-minute sessions (see Notes).
     boundary_source : {"physical", "analysis"}, default="physical"
         ``"physical"`` stops rays at the arena's declared outline and walls;
         ``"analysis"`` at the edge of the environment's bins.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open windows (seconds).
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -594,7 +763,8 @@ def compute_boundary_vector_rates(
         smooth over the polar grid, which also mixes neighboring distances.
     bandwidth : float, optional
         Smoothing bandwidth for the kernel methods, in the environment's
-        units.
+        units. None uses 5 cm converted to ``env.units``; with units that
+        are not a known length, a kernel method needs it explicitly.
     min_occupancy : float, default=0.0
         Seconds of boundary occupancy a bin needs to get a rate.
     unit_ids : array-like, optional
@@ -610,9 +780,10 @@ def compute_boundary_vector_rates(
         If ``headings`` does not match ``direction_frame``, or the inputs do
         not have matching lengths.
     NotImplementedError
-        If the arena has no known walls and ``boundary_source="physical"``:
-        build the environment with ``Environment.from_polygon`` or pass an
-        ``OpenArena`` to say where the walls are.
+        If the arena declares no physical boundary and
+        ``boundary_source="physical"``: build the environment with
+        ``Environment.from_polygon`` or pass an ``OpenArena`` to say where
+        the walls or drop edges are.
     CartesianOnlyError
         If ``env`` is an egocentric polar environment.
 
@@ -632,6 +803,29 @@ def compute_boundary_vector_rates(
     intervals. Bins never reached stay NaN, which means not measured, not
     silent.
 
+    The default grid was checked on simulated cells in 15-minute sessions in
+    a 100 cm square and a 100 cm circle: Hartley-style boundary-vector and
+    egocentric boundary cells (preferred distances 5-35 cm) and
+    ``BoundaryVectorCellModel`` cells, with unsmoothed maps. With 5 cm rings
+    and 30 degree bins over 0-50 cm, the preferred distance was within one
+    ring (2.5 cm) of the truth and the preferred direction within 17 degrees
+    for 90% of cells (median 9 degrees); 15 degree bins narrowed the
+    direction error to 13 degrees, and 2.5 cm rings did not improve the
+    distance. The same grid out to the square's diagonal (0-145 cm) put 45%
+    of allocentric cells' preferred direction more than 45 degrees off,
+    usually on the opposite wall: in a box, firing tied to one wall is
+    equally tied to the wall across from it.
+
+    A field can still continue past the range. Unlike object-vector maps, no
+    warning flags a peak in the outermost ring: with walls beyond 50 cm in most
+    directions, untuned cells peak there by chance (16% of flat, 31% of
+    head-direction and 6% of place cells in the simulations above, against none
+    of the boundary cells). ``analysis_settings["time_beyond_distance_range"]``
+    and ``analysis_settings["fraction_of_time_in_distance_range"]`` record how
+    much ray time the range left out; for a cell whose preferred distance is in
+    the last ring, widen ``distance_range`` and check that the peak stays on the
+    near wall.
+
     Examples
     --------
     >>> import numpy as np
@@ -648,7 +842,7 @@ def compute_boundary_vector_rates(
     ...     env, spikes, times, positions, headings, direction_frame="egocentric"
     ... )
     >>> list(rates.summary_table().columns)
-    ['peak_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'spatial_information']
+    ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information', 'n_spikes_outside_intervals']
     """
     return _boundary_vector_rates(
         env,
@@ -658,8 +852,8 @@ def compute_boundary_vector_rates(
         headings,
         direction_frame=direction_frame,
         distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
+        distance_bin_size=distance_bin_size,
+        direction_bin_size=direction_bin_size,
         boundary_source=boundary_source,
         max_gap=max_gap,
         epochs=epochs,
@@ -681,11 +875,11 @@ def compute_boundary_vector_rate(
     headings: NDArray[np.float64] | None = None,
     *,
     direction_frame: Literal["allocentric", "egocentric"],
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float] | None = None,
+    distance_bin_size: float | None = None,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     boundary_source: BoundarySource = "physical",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -721,8 +915,8 @@ def compute_boundary_vector_rate(
         headings,
         direction_frame=direction_frame,
         distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
+        distance_bin_size=distance_bin_size,
+        direction_bin_size=direction_bin_size,
         boundary_source=boundary_source,
         max_gap=max_gap,
         epochs=epochs,
@@ -736,14 +930,15 @@ def compute_boundary_vector_rate(
     )
     unit = population[0]
     return BoundaryVectorRateResult(
+        min_occupancy=unit.min_occupancy,
         firing_rate=unit.firing_rate,
         occupancy=unit.occupancy,
         env=unit.env,
-        distance_range=unit.distance_range,
-        n_distance_bins=unit.n_distance_bins,
-        n_direction_bins=unit.n_direction_bins,
         direction_frame=unit.direction_frame,
         boundary_source=unit.boundary_source,
+        method=unit.method,
+        bandwidth=unit.bandwidth,
+        n_spikes_outside_intervals=unit.n_spikes_outside_intervals,
         spike_window=unit.spike_window,
         analysis_settings=unit.analysis_settings,
     )
@@ -757,9 +952,9 @@ def _boundary_vector_rates(
     headings: NDArray[np.float64] | None,
     *,
     direction_frame: Literal["allocentric", "egocentric"],
-    distance_range: tuple[float, float],
-    n_distance_bins: int,
-    n_direction_bins: int,
+    distance_range: tuple[float, float] | None,
+    distance_bin_size: float | None,
+    direction_bin_size: float,
     boundary_source: BoundarySource,
     max_gap: float | None,
     epochs: Any,
@@ -775,29 +970,50 @@ def _boundary_vector_rates(
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._egocentric_counts import _create_egocentric_environment
-    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._provenance import (
+        rate_analysis_settings,
+        spikes_outside_intervals,
+    )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         _warn_if_fully_masked,
         resolve_spatial_bandwidth,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spatial_counts import _warn_if_population_silent
+    from neurospatial.encoding._spatial_counts import (
+        _warn_if_population_silent,
+        tracked_samples,
+    )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
         validate_spike_trains,
         validate_trajectory,
     )
-    from neurospatial.encoding.egocentric import _raw_polar_rate
+    from neurospatial.encoding.egocentric import (
+        _raw_polar_rate,
+        _require_planar_env,
+    )
 
     _validate_env_argument(
         env, context=context, arguments="spike_times, times, positions[, headings]"
     )
+    _require_planar_env(
+        env, f"{context}()", measures="distance and direction to the walls"
+    )
     _check_boundary_labels(direction_frame, boundary_source)
     _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
+    distance_range, n_distance_bins, n_direction_bins = resolve_polar_grid(
+        env.units,
+        distance_range=_resolve_wall_range(env.units, distance_range, context=context),
+        largest_distance=None,
+        distance_bin_size=distance_bin_size,
+        direction_bin_size=direction_bin_size,
+        context=context,
+    )
+    require_known_bandwidth(env.units, bandwidth, method, context=context)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    spike_trains, resolved_unit_ids, _ = as_labelled_spike_trains(
+    spike_trains, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
         spike_times, unit_ids, context=context
     )
     times = np.asarray(times, dtype=np.float64)
@@ -814,6 +1030,7 @@ def _boundary_vector_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        tracked=tracked_samples(len(times), positions, headings),
         break_before=breaks,
     )
 
@@ -830,7 +1047,7 @@ def _boundary_vector_rates(
     polar_env = _create_egocentric_environment(
         distance_range, n_distance_bins, n_direction_bins
     ).with_metadata(units=env.units)
-    spike_counts, occupancy, support = _count_boundary_events(
+    spike_counts, occupancy, time_beyond, support = _count_boundary_events(
         spike_trains,
         times,
         frame_bins,
@@ -864,6 +1081,7 @@ def _boundary_vector_rates(
                 min_occupancy=min_occupancy,
             )
         )
+    time_in_range = float(occupancy.sum())
     settings = rate_analysis_settings(
         support,
         method=method,
@@ -875,17 +1093,25 @@ def _boundary_vector_rates(
         distance_range=[float(value) for value in distance_range],
         n_distance_bins=int(n_distance_bins),
         n_direction_bins=int(n_direction_bins),
+        time_beyond_distance_range=time_beyond,
+        fraction_of_time_in_distance_range=(
+            time_in_range / (time_in_range + time_beyond)
+            if time_in_range + time_beyond > 0
+            else float("nan")
+        ),
     )
     return BoundaryVectorRatesResult(
+        min_occupancy=min_occupancy,
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=polar_env,
-        distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
         direction_frame=direction_frame,
         boundary_source=boundary_source,
-        unit_ids=resolved_unit_ids,
+        method=method,
+        bandwidth=resolved_bandwidth,
+        unit_ids=resolved_unit_ids if labels_supplied else None,
+        unit_table=getattr(spike_times, "unit_table", None),
+        n_spikes_outside_intervals=spikes_outside_intervals(spike_trains, support),
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )

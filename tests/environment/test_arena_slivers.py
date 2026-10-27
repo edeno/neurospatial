@@ -118,11 +118,84 @@ def test_transformed_grid_keeps_every_in_arena_position(
 
 def test_rotated_grid_owns_its_whole_physical_wall(round_arena):
     """Wall pieces in outline slivers keep an owner after a rotation."""
-    from neurospatial.encoding._physical_border import physical_border_geometry
-    from neurospatial.geometry import physical_walls
+    from neurospatial.encoding._physical_border import border_geometry
     from neurospatial.ops import AffineND
 
     moved = round_arena.apply_transform(AffineND(_rotation(0.3, (1.5, -2.0))))
-    original = physical_border_geometry(round_arena, physical_walls(round_arena.arena))
-    rotated = physical_border_geometry(moved, physical_walls(moved.arena))
+    original = border_geometry(round_arena, "physical")
+    rotated = border_geometry(moved, "physical")
     np.testing.assert_array_equal(rotated.wall_bins, original.wall_bins)
+
+
+def test_outline_through_cell_centers_gives_every_wall_point_a_bin():
+    """A cell whose center lies exactly on the outline is not kept, so it is a
+    sliver whose wall points belong to a neighboring bin. These kite edges
+    pass through grid cell centers at 2.5 cm bins."""
+    from neurospatial.geometry import locate_outline_points
+
+    kite = shapely.Polygon([(0, 0), (100, -10), (120, 90), (10, 100)])
+    env = Environment.from_polygon(kite, bin_size=2.5, units="cm")
+    outline = shapely.segmentize(kite.exterior, 0.1)
+    points = shapely.get_coordinates(outline)[:-1]
+    bins = locate_outline_points(env._binning, env.arena, points)
+    assert (bins >= 0).all()
+    gaps = np.linalg.norm(env.bin_centers[bins] - points, axis=1)
+    assert gaps.max() < 2.5 * np.sqrt(2) * 1.5  # within the neighboring cell
+
+
+# A T whose 10 cm stem, on 2 cm bins spanning the 100 cm crossbar, has a column
+# of bin centers exactly on each stem wall (x = -5 and x = 5); a kite whose
+# slanted side passes through every fifth row of 2.5 cm bin centers.
+WALL_CENTRED = {
+    "t_shape": (
+        shapely.union(shapely.box(-5, -50, 5, 50), shapely.box(-50, 40, 50, 50)),
+        2.0,
+    ),
+    "kite": (shapely.Polygon([(0, 0), (100, -10), (120, 90), (10, 100)]), 2.5),
+}
+
+
+@pytest.fixture(scope="module", params=list(WALL_CENTRED), ids=list(WALL_CENTRED))
+def wall_centred(request):
+    polygon, bin_size = WALL_CENTRED[request.param]
+    return polygon, Environment.from_polygon(polygon, bin_size=bin_size, units="cm")
+
+
+def test_cells_centred_on_a_wall_give_their_positions_a_bin(wall_centred):
+    """A cell whose center lies on the wall is dropped, like a sliver."""
+    polygon, env = wall_centred
+    rng = np.random.default_rng(3)
+    lo, hi = np.reshape(polygon.bounds, (2, 2))
+    points = rng.uniform(lo, hi, (40_000, 2))
+    points = points[shapely.contains_xy(polygon, points[:, 0], points[:, 1])]
+    bins = env.bin_at(points)
+    assert (bins >= 0).all()
+    gaps = np.linalg.norm(env.bin_centers[bins] - points, axis=1)
+    assert gaps.max() < np.sqrt(2) * env.bin_sizes.max()
+
+
+def test_every_wall_piece_of_a_wall_centred_grid_has_an_owner(wall_centred):
+    """Border geometry refuses wall pieces that no bin owns, so building it
+    is the check."""
+    from neurospatial.encoding._physical_border import border_geometry
+
+    _polygon, env = wall_centred
+    border_geometry(env, "physical")
+
+
+def test_every_gaze_wall_hit_has_a_bin(wall_centred):
+    """Ray-cast gaze stopping at a wall in a dropped cell still has a bin."""
+    from neurospatial.geometry import wall_hit_bins
+    from neurospatial.ops.visibility import compute_viewed_location
+
+    _polygon, env = wall_centred
+    rng = np.random.default_rng(4)
+    origins = env.bin_centers[rng.integers(0, env.n_bins, 2000)]
+    hits = compute_viewed_location(
+        origins, rng.uniform(-np.pi, np.pi, 2000), method="ray_cast", env=env
+    )
+    bins = env.bin_at(np.nextafter(hits, origins))
+    bins = wall_hit_bins(env.binning, env.arena, hits, origins, bins, "physical")
+    assert (bins >= 0).all()
+    gaps = np.linalg.norm(env.bin_centers[bins] - hits, axis=1)
+    assert gaps.max() < np.sqrt(2) * env.bin_sizes.max()

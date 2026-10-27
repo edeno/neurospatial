@@ -61,6 +61,7 @@ def view_batch():
         times,
         trajectory,
         headings,
+        gaze_model="fixed_distance",
         view_distance=10.0,
         boundary_source="analysis",
     )
@@ -75,7 +76,14 @@ def egocentric_batch():
     object_positions = np.array([[50.0, 50.0]])
     spike_times = [np.sort(rng.uniform(0, 100, k)) for k in (100, 150, 50)]
     return compute_egocentric_rates(
-        None, spike_times, times, positions, headings, object_positions
+        None,
+        spike_times,
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=(0.0, 50.0),
+        distance_bin_size=5.0,
     )
 
 
@@ -86,7 +94,7 @@ def boundary_batch():
     from neurospatial.encoding import compute_boundary_vector_rates
 
     rng = np.random.default_rng(0)
-    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
+    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
     times = np.linspace(0, 100, 1000)
     positions = rng.uniform(10, 90, (1000, 2))
     headings = rng.uniform(-np.pi, np.pi, 1000)
@@ -133,7 +141,7 @@ def test_batch_summary_table_is_one_row_per_unit(fixture_name, request):
     assert summary.index.name == "unit_id"
     assert list(summary.index) == list(result.unit_ids)
     # peak_rate is the shared scalar metric on every summary table.
-    assert "peak_rate" in summary.columns
+    assert "peak_firing_rate" in summary.columns
 
 
 @pytest.mark.parametrize("fixture_name", BATCH_FIXTURES)

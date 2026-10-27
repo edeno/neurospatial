@@ -142,6 +142,31 @@ def _copy_analysis_settings(cls: type[_ResultT]) -> type[_ResultT]:
     return cls
 
 
+def _copy_unit_table(cls: type[_ResultT]) -> type[_ResultT]:
+    """Give a unit container an independently owned ``unit_table`` on every read.
+
+    A frozen result cannot rebind ``unit_table``, but a DataFrame can be
+    edited in place (``drop(..., inplace=True)``), which would break its
+    one-row-per-unit alignment with ``unit_ids``. Reads return a copy, so
+    edits stay with the caller. Apply after ``@dataclass``.
+
+    Parameters
+    ----------
+    cls : type
+        Dataclass with a ``unit_table`` field holding a DataFrame or None.
+    """
+
+    def read_table(result: object) -> Any:
+        table = vars(result).get("_unit_table")
+        return None if table is None else table.copy()
+
+    def write_table(result: object, table: Any) -> None:
+        vars(result)["_unit_table"] = table
+
+    setattr(cls, "unit_table", property(read_table, write_table))  # noqa: B010
+    return cls
+
+
 class ReadOnlyArraysMixin:
     """A frozen result whose NumPy arrays are read-only copies it owns.
 

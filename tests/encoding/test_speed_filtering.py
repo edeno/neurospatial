@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.encoding._spatial_counts import (
     bin_spike_train,
     compute_occupancy,
@@ -549,13 +550,12 @@ def test_all_excluded_suppressed_when_warn_off(
 
 @pytest.fixture
 def all_gap_trajectory() -> dict:
-    """A trajectory where EVERY interval exceeds the default max_gap of 0.5 s.
+    """A trajectory where EVERY interval exceeds the default max_gap.
 
-    Sampled at dt=1.0 s, so every dt > 0.5 and the default max_gap excludes all
-    intervals -> occupancy is all-zero and the rate map is empty. This emptied
-    the map SILENTLY before the generalized warning.
+    Sampled at dt=2.0 s, longer than the default max_gap, so every interval is
+    excluded -> occupancy is all-zero and the rate map is empty.
     """
-    dt = 1.0
+    dt = 2.0
     x = 10.0 + np.arange(10) * 1.0  # 10..19, all in-bounds
     positions = x.reshape(-1, 1)
     times = np.arange(len(x), dtype=np.float64) * dt
@@ -574,7 +574,7 @@ def _empty_map_warnings(recwarn) -> list:
 
 
 def test_max_gap_excludes_all_warns_single(recwarn, env_1d, all_gap_trajectory) -> None:
-    """max_gap (default 0.5) excluding every interval now WARNS (was silent)."""
+    """The default max_gap excluding every interval warns."""
     times = all_gap_trajectory["times"]
     positions = all_gap_trajectory["positions"]
     spike_times = np.array([0.5, 3.5, 6.5])
@@ -584,7 +584,7 @@ def test_max_gap_excludes_all_warns_single(recwarn, env_1d, all_gap_trajectory) 
     warns = _empty_map_warnings(recwarn)
     assert len(warns) == 1
     msg = str(warns[0].message)
-    assert "max_gap=0.5" in msg  # names the active gate
+    assert f"max_gap={DEFAULT_MAX_GAP}" in msg  # names the active gate
     # The map is genuinely empty.
     assert np.nansum(res.occupancy) == 0.0
     fr = res.firing_rate

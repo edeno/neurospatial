@@ -104,7 +104,7 @@ def test_detect_place_fields_grid():
     from neurospatial.encoding.spatial import detect_place_fields
 
     # Detect the Gaussian field using graph edges
-    fields = detect_place_fields(env, firing_rate)
+    fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
 
     # Should detect exactly one field
     assert len(fields) == 1

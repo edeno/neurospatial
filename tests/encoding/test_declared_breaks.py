@@ -74,7 +74,12 @@ def _family_args(name, r, trains, times):
 FAMILIES = {
     "spatial": {"method": "binned", "bandwidth": 0.0, "min_occupancy": 0.0},
     "directional": {"bandwidth": None},
-    "view": {"method": "binned", "bandwidth": 0.0, "view_distance": 5.0},
+    "view": {
+        "method": "binned",
+        "bandwidth": 0.0,
+        "gaze_model": "fixed_distance",
+        "view_distance": 5.0,
+    },
     "object_vector": {"method": "binned"},
     "egocentric": {"method": "binned"},
     "boundary_vector": {"method": "binned", "direction_frame": "egocentric"},
@@ -265,7 +270,7 @@ PREDICATES = {
         "spatial",
         "spatial",
         "compute_spatial_rate",
-        {"criterion": "spatial_info"},
+        {"criterion": "threshold"},
     ),
     "is_head_direction_cell": (
         "directional",

@@ -113,7 +113,7 @@ def test_home_range_dwell_excludes_pause(two_epoch_recording):
 
     r = two_epoch_recording
     mask = observed_interval_mask(r.times, max_gap=0.5, epochs=None)
-    weights = _sample_dwell_times(r.times, mask)
+    weights = _sample_dwell_times(r.times, mask, np.ones(r.times.size, dtype=bool))
     assert weights.sum() == pytest.approx(200.0, rel=0, abs=1e-9)
     assert weights[4999] == pytest.approx(0.02, rel=0, abs=1e-12)
     assert weights[-1] == pytest.approx(0.02, rel=0, abs=1e-12)

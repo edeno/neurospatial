@@ -232,11 +232,12 @@ plt.show()
 # ## 5. Outline the firing field using a stated threshold
 #
 # Use the 5 cm smoothed map and group neighboring bins above 30% of its peak.
-# `detect_place_fields()` returns the bin indices for each field. We require
-# at least four 5 × 5 cm bins, giving a minimum area of 100 cm².
+# `detect_place_fields()` returns the bin indices for each field. A field must
+# be larger than what one noisy bin becomes after the same 5 cm smoothing: at
+# the 30% level, a disk of radius 7.8 cm (about 190 cm²), whatever the bin size.
 
 # %%
-fields = detect_place_fields(env, supported_rate, threshold=0.3, min_size=4)
+fields = detect_place_fields(env, supported_rate, bandwidth=5.0, threshold=0.3)
 print(f"Fields meeting the rate and area criteria: {len(fields)}")
 for number, bins in enumerate(fields, start=1):
     area = env.bin_sizes[bins].sum()

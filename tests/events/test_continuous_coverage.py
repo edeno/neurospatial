@@ -43,7 +43,8 @@ def _supports(times, signals, *, epochs=None):
         signals,
         valid=None,
         call="test",
-        max_gap=0.5,
+        # Below two 0.125 s frames: a single missing sample is a tracking loss.
+        max_gap=0.2,
         epochs=epochs,
         break_before=None,
         result="nothing is sampled",

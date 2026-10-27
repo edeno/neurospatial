@@ -272,9 +272,6 @@ def test_egocentric_rates_to_xarray_polar_coords():
         firing_rates=rng.uniform(0, 10, (n_neurons, env.n_bins)),
         occupancy=rng.uniform(0.5, 2.0, env.n_bins),
         env=env,
-        distance_range=(0.0, 50.0),
-        n_distance_bins=5,
-        n_direction_bins=12,
     )
     ds = result.to_xarray()
     assert isinstance(ds, xr.Dataset)
@@ -291,45 +288,35 @@ def test_egocentric_rates_to_xarray_polar_coords():
     )
 
 
-def test_rates_occupancy_length_mismatch_raises():
+def test_build_population_dataset_occupancy_length_mismatch_raises():
     """A present occupancy whose length != n_bins raises ValueError.
 
     Guards against silently dropping the occupancy data var and emitting a
-    structurally-incomplete Dataset. Spatial results refuse such occupancy at
-    construction, so a directional result (no environment) exercises the
-    export guard.
+    structurally-incomplete Dataset. Rate results refuse such occupancy at
+    construction, so the export guard is exercised directly.
     """
     pytest.importorskip("xarray")
+    from neurospatial._results import build_population_dataset
 
     n_bins = 60
-    bad = DirectionalRatesResult(
-        firing_rates=np.ones((3, n_bins)),
-        # occupancy present but one element too short
-        occupancy=np.ones(n_bins - 1),
-        bin_centers=np.linspace(0, 2 * np.pi, n_bins, endpoint=False),
-        bin_size=np.pi / 30,
-        bandwidth=None,
-    )
     with pytest.raises(ValueError, match="occupancy length does not match"):
-        bad.to_xarray()
+        build_population_dataset(
+            np.ones((3, n_bins)), np.arange(3), occupancy=np.ones(n_bins - 1)
+        )
 
 
-def test_directional_bin_centers_length_mismatch_raises():
+def test_build_population_dataset_bin_centers_length_mismatch_raises():
     """A present bin_centers whose length != n_bins raises ValueError."""
     pytest.importorskip("xarray")
+    from neurospatial._results import build_population_dataset
 
-    rng = np.random.default_rng(11)
-    n_neurons, n_bins = 3, 60
-    result = DirectionalRatesResult(
-        firing_rates=rng.random((n_neurons, n_bins)) * 10,
-        occupancy=np.ones(n_bins) * 0.5,
-        # bin_centers present but one element too short
-        bin_centers=np.linspace(0, 2 * np.pi, n_bins - 1, endpoint=False),
-        bin_size=np.pi / 30,
-        bandwidth=None,
-    )
+    n_bins = 60
     with pytest.raises(ValueError, match="bin_centers length does not match"):
-        result.to_xarray()
+        build_population_dataset(
+            np.ones((3, n_bins)),
+            np.arange(3),
+            bin_centers=np.linspace(0, 2 * np.pi, n_bins - 1, endpoint=False),
+        )
 
 
 def test_build_population_dataset_env_bin_center_mismatch_raises():

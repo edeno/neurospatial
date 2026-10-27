@@ -13,6 +13,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import plain_value
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.stats import _validate_circular_shift_settings
 from neurospatial.stats.shuffle import ShuffleTestResult, shuffle_spike_times_circular
 
@@ -105,11 +106,16 @@ def run_shuffle_test(
 def shuffle_pvalues(
     observed: NDArray[np.float64], null: NDArray[np.float64]
 ) -> NDArray[np.float64]:
-    """Correct upper-tail Monte Carlo ranks over finite null scores."""
+    """Correct upper-tail Monte Carlo ranks over finite null scores.
+
+    The p-value is NaN when the observed score is not finite or no null score
+    is finite: there is nothing to rank against.
+    """
     finite = np.isfinite(null)
+    n_finite = np.sum(finite, axis=0)
     exceed = np.sum(finite & (null >= observed[None]), axis=0)
-    p = (1.0 + exceed) / (1.0 + np.sum(finite, axis=0))
-    return np.where(np.isfinite(observed), p, np.nan)
+    p = (1.0 + exceed) / (1.0 + n_finite)
+    return np.where(np.isfinite(observed) & (n_finite > 0), p, np.nan)
 
 
 def to_shuffle_results(
@@ -117,29 +123,58 @@ def to_shuffle_results(
     null: NDArray[np.float64],
     unit_ids: NDArray[Any],
 ) -> dict[Hashable, ShuffleTestResult]:
-    """Return independent per-unit score arrays in caller label order."""
+    """Return independent per-unit score arrays in caller label order.
+
+    Warns, naming the units, when non-finite null scores were left out of a
+    unit's p-value; units whose observed score is undefined are not named.
+    """
     p = shuffle_pvalues(observed, null)
-    result = {}
-    for i, label in enumerate(unit_ids):
-        scores = null[:, i, 0].copy()
-        finite = scores[np.isfinite(scores)]
-        std = float(np.std(finite)) if finite.size else float("nan")
-        obs = float(observed[i, 0])
-        z = (
-            (obs - float(np.mean(finite))) / std
-            if finite.size and std > 0
-            else float("nan")
+    n_dropped = np.sum(~np.isfinite(null), axis=0)[:, 0]
+    affected = np.flatnonzero((n_dropped > 0) & np.isfinite(observed[:, 0]))
+    if affected.size:
+        details = ", ".join(
+            f"unit {plain_value(unit_ids[i])!r}: {int(n_dropped[i])}" for i in affected
         )
-        result[plain_value(label)] = ShuffleTestResult(
-            observed_score=obs,
-            null_scores=scores,
-            p_value=float(p[i, 0]),
-            z_score=z,
-            shuffle_type="circular_time_shift",
-            n_shuffles=len(scores),
+        warnings.warn(
+            f"Dropped {int(n_dropped[affected].sum())} non-finite null score(s) "
+            f"out of {null.shape[0]} per unit before computing p-values ({details}). "
+            "Each p-value uses only its unit's finite null scores; a unit with "
+            "none gets p_value=NaN. Shifted spike trains that leave no spikes in "
+            "the analyzed bins give undefined scores; more spikes or a longer "
+            "recording reduce them.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
         )
+    result = {
+        plain_value(label): shuffle_test_result(
+            float(observed[i, 0]), null[:, i, 0], float(p[i, 0])
+        )
+        for i, label in enumerate(unit_ids)
+    }
     assert len(result) == len(unit_ids)
     return result
+
+
+def shuffle_test_result(
+    observed: float, null_scores: NDArray[np.float64], p_value: float
+) -> ShuffleTestResult:
+    """One unit's circular-shift test, with a z-score over finite null scores."""
+    scores = np.array(null_scores, dtype=np.float64, copy=True)
+    finite = scores[np.isfinite(scores)]
+    std = float(np.std(finite)) if finite.size else float("nan")
+    z = (
+        (observed - float(np.mean(finite))) / std
+        if finite.size and std > 0
+        else float("nan")
+    )
+    return ShuffleTestResult(
+        observed_score=observed,
+        null_scores=scores,
+        p_value=p_value,
+        z_score=z,
+        shuffle_type="circular_time_shift",
+        n_shuffles=len(scores),
+    )
 
 
 def check_criterion(criterion: str, allowed: tuple[str, ...], *, call: str) -> None:
@@ -170,11 +205,7 @@ def check_mode_keywords(
     offending = {name: value for name, value in wrong.items() if value is not None}
     if offending:
         values = ", ".join(f"{name}={value!r}" for name, value in offending.items())
-        alternate = (
-            "shuffle"
-            if criterion != "shuffle"
-            else ("spatial_info" if call.endswith("is_place_cell") else "threshold")
-        )
+        alternate = "shuffle" if criterion != "shuffle" else "threshold"
         raise ValueError(
             _format_error(
                 f"{call}(criterion={criterion!r}) got {values}, which apply only with criterion={alternate!r}.",

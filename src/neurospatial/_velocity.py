@@ -33,9 +33,12 @@ def smoothed_velocity(
     positions : NDArray[np.float64], shape (n_samples, n_dims) or (n_samples,)
         Positions in environment units.
     interval_mask : NDArray[np.bool_], shape (n_samples - 1,)
-        Observed intervals (gaps, epochs). Intervals with a non-finite end or
-        zero duration are also excluded, so a run never spans missing tracking
-        or a duplicate timestamp.
+        Usable intervals (gaps, epochs), with missing samples already bridged
+        (``ObservationSupport.interval_mask``). Within each run, samples with a
+        non-finite coordinate are skipped as if deleted, so velocity across a
+        bridged gap uses the elapsed time between the valid samples on either
+        side. Zero-duration intervals end a run, so it never spans a
+        duplicate timestamp.
     smooth_window : float
         Standard deviation, in seconds, of the Gaussian applied to each
         velocity component. 0 keeps the unsmoothed centered-secant velocity.
@@ -43,8 +46,8 @@ def smoothed_velocity(
     Returns
     -------
     NDArray[np.float64], shape (n_samples, n_dims)
-        Velocity in position units per second; NaN at samples in no run of
-        at least two samples.
+        Velocity in position units per second; NaN at missing samples and at
+        samples in no run of at least two valid samples.
     """
     from neurospatial._intervals import run_sample_bounds
 
@@ -58,15 +61,13 @@ def smoothed_velocity(
         positions = positions[:, np.newaxis]
     finite = np.all(np.isfinite(positions), axis=1)
     # A zero-length interval (duplicate timestamps) has no defined velocity.
-    mask = (
-        np.asarray(interval_mask, dtype=bool)
-        & finite[:-1]
-        & finite[1:]
-        & (np.diff(times) > 0)
-    )
+    mask = np.asarray(interval_mask, dtype=bool) & (np.diff(times) > 0)
     velocity = np.full(positions.shape, np.nan, dtype=np.float64)
     for first, last in run_sample_bounds(mask):
-        run = slice(int(first), int(last) + 1)
+        # Missing samples inside a run are skipped, exactly like deleted rows.
+        run = first + np.flatnonzero(finite[first : last + 1])
+        if run.size < 2:
+            continue
         run_times = times[run]
         run_velocity = _secant_velocity(run_times, positions[run])
         if smooth_window > 0:

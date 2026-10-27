@@ -21,6 +21,7 @@ from scipy import sparse
 from typing_extensions import Self
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.environment._affine import _apply_transform
 from neurospatial.environment._bin_mapping import BinMapping, _bin_mapping_from
@@ -277,12 +278,16 @@ class Environment(Generic[_C]):
     -----
     **Missing data.** NaN marks a missing value, never zero.
 
-    - Per-sample inputs (``bin_at``, ``contains``, ``nearest_bin``,
-      ``interpolate``, and the positions given to ``occupancy``,
-      ``bin_sequence`` and ``transitions``): a sample with a NaN coordinate
-      is missing. It gets bin ``-1``, ``False`` or a NaN value, and adds no
-      occupancy time and no transition. ``-1`` also marks samples outside the
+    - Per-sample queries (``bin_at``, ``contains``, ``nearest_bin``,
+      ``interpolate``): a sample with a NaN coordinate is missing. It gets bin
+      ``-1``, ``False`` or a NaN value. ``-1`` also marks samples outside the
       environment.
+    - Trajectories (the positions given to ``occupancy``, ``bin_sequence``
+      and ``transitions``): a sample with a NaN coordinate is missing and is
+      treated exactly like a deleted row, so a dropped frame and a
+      low-confidence frame give the same result. The gap between the valid
+      samples around it is bridged when it is no longer than ``max_gap``
+      (its time held at the sample before it) and excluded otherwise.
     - Explicit targets (``points=`` in ``distance_between``, ``distance_to``,
       ``neighbors`` and the other target queries) refuse NaN with an error,
       because a missing target has no answer. ``inf`` from
@@ -1839,7 +1844,7 @@ class Environment(Generic[_C]):
         *,
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         epochs: Any = None,
         break_before: ArrayLike | None = None,
         bandwidth: float | None = None,
@@ -1859,29 +1864,28 @@ class Environment(Generic[_C]):
             Position coordinates matching environment dimensions, located as
             :meth:`bin_at` does: on an egocentric polar environment, each
             sample's ``(distance, angle)`` of the object or place the bins
-            describe, relative to the animal. With the default
+            describe, relative to the animal. A sample with a NaN
+            coordinate is missing and treated as a deleted row (see Missing
+            data in the class Notes). With the default
             ``time_allocation='start'``, an interval adds occupancy only when
-            both of its samples are inside the environment: one that starts or
-            ends outside, or at a sample with a NaN coordinate (missing; see
-            Missing data in the class Notes), adds none. This is the rule
+            both of its valid samples are inside the environment: one that
+            starts or ends outside adds none. This is the rule
             ``compute_spatial_rate`` applies to its spike counts and occupancy.
-            With ``time_allocation='linear'`` an interval with a NaN at either
-            end adds none, and an interval with an end outside the environment
-            adds only the time its straight path spends inside.
+            With ``time_allocation='linear'`` an interval with an end outside
+            the environment adds only the time its straight path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
             Instantaneous speed at each sample. If provided with min_speed,
             samples below threshold are excluded from occupancy calculation.
         min_speed : float, optional
             Minimum speed threshold in physical units per second. Requires
             speed parameter. Samples with speed < min_speed are excluded.
-        max_gap : float or None, default=0.5
-            Longest sampling interval (seconds) treated as continuous recording.
-            Longer intervals (dropped frames, pauses between sessions) are excluded
-            from occupancy and their spikes are not counted. ``None`` disables the
-            gap check.
-            A ``UserWarning`` names the cause when every interval is excluded,
-            or when the median sampling interval exceeds ``max_gap`` (usually
-            ``times`` that are not in seconds).
+        max_gap : float or None, default=1.0
+            Longest stretch of missing tracking, in seconds, to bridge: the time
+            between consecutive valid samples (a dropped frame and a NaN row are
+            the same missing sample). Longer gaps are excluded as tracking losses;
+            ``None`` bridges every gap. The default is calibrated for typical video
+            and DeepLabCut tracking; choose a value longer than routine dropped or
+            low-confidence frames and shorter than real tracking losses or pickups.
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -2050,7 +2054,7 @@ class Environment(Generic[_C]):
         *,
         dedup: bool = True,
         outside_value: int | None = -1,
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         epochs: Any = None,
         break_before: ArrayLike | None = None,
     ) -> NDArray[np.intp]:
@@ -2077,13 +2081,13 @@ class Environment(Generic[_C]):
             coordinate (missing; see Missing data in the class Notes).
             - If -1 (default), outside samples are marked with -1.
             - If None, outside samples are dropped from the sequence entirely.
-        max_gap : float or None, default=0.5
-            Longest sampling interval (seconds) treated as continuous recording.
-            Longer intervals (dropped frames, pauses between sessions) are excluded
-            from the analysis. ``None`` disables the gap check.
-            A ``UserWarning`` names the cause when every interval is excluded,
-            or when the median sampling interval exceeds ``max_gap`` (usually
-            ``times`` that are not in seconds).
+        max_gap : float or None, default=1.0
+            Longest stretch of missing tracking, in seconds, to bridge: the time
+            between consecutive valid samples (a dropped frame and a NaN row are
+            the same missing sample). Longer gaps are excluded as tracking losses;
+            ``None`` bridges every gap. The default is calibrated for typical video
+            and DeepLabCut tracking; choose a value longer than routine dropped or
+            low-confidence frames and shorter than real tracking losses or pickups.
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -2169,7 +2173,7 @@ class Environment(Generic[_C]):
         positions: NDArray[np.float64],
         *,
         outside_value: int | None = -1,
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         epochs: Any = None,
         break_before: ArrayLike | None = None,
     ) -> BinSequenceWithRuns:
@@ -2191,15 +2195,16 @@ class Environment(Generic[_C]):
             Bin index for samples outside environment bounds (see
             :meth:`bin_sequence`). With ``outside_value=None``, outside
             gaps split runs even when consecutive in-env samples land
-            in the same bin (so ``run_lengths.sum()`` equals the
-            post-filter count of in-env samples).
-        max_gap : float or None, default=0.5
-            Longest sampling interval (seconds) treated as continuous recording.
-            Longer intervals (dropped frames, pauses between sessions) are excluded
-            from the analysis. ``None`` disables the gap check.
-            A ``UserWarning`` names the cause when every interval is excluded,
-            or when the median sampling interval exceeds ``max_gap`` (usually
-            ``times`` that are not in seconds).
+            in the same bin. A run's length is its extent in the original
+            rows, including missing (NaN) rows bridged inside it, so
+            ``run_lengths.sum()`` can exceed the number of in-env samples.
+        max_gap : float or None, default=1.0
+            Longest stretch of missing tracking, in seconds, to bridge: the time
+            between consecutive valid samples (a dropped frame and a NaN row are
+            the same missing sample). Longer gaps are excluded as tracking losses;
+            ``None`` bridges every gap. The default is calibrated for typical video
+            and DeepLabCut tracking; choose a value longer than routine dropped or
+            low-confidence frames and shorter than real tracking losses or pickups.
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -4055,8 +4060,9 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole bins by strict center inclusion; use ``env.clip``
-            to change cell areas. When omitted, the supplied polygon defines
-            the physical footprint.
+            to change cell areas. When omitted, the supplied polygon's
+            outline is an opaque wall; for an elevated track or platform pass
+            ``arena=OpenArena(polygon, outline="drop")``.
         wall_fit : {'snap', 'split'}, default='snap'
             What to do with a bin that a wall of `arena` divides. ``'snap'``
             keeps every bin and moves the wall onto the bin edges between the
@@ -4169,8 +4175,9 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole bins by strict center inclusion. When omitted, the
-            mask defines the computational domain without asserting physical
-            walls or a measured footprint.
+            mask defines the computational domain without declaring its
+            outline a physical boundary; pass ``MaskArena(..., outline=...)``
+            to declare one.
         wall_fit : {'snap', 'split'}, default='snap'
             What to do with a bin that a wall of `arena` divides. ``'snap'``
             keeps every bin and moves the wall onto the bin edges between the
@@ -4278,8 +4285,8 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole pixels by strict center inclusion. When omitted, the
-            image mask defines a computational domain without asserting
-            physical walls or a measured footprint.
+            image mask defines a computational domain without declaring its
+            outline a physical boundary.
         wall_fit : {'snap', 'split'}, default='snap'
             What to do with a bin that a wall of `arena` divides. ``'snap'``
             keeps every bin and moves the wall onto the bin edges between the
@@ -6107,7 +6114,7 @@ class Environment(Generic[_C]):
         overlays: list[OverlayProtocol] | None = None,
         speed: float = 1.0,
         max_playback_fps: int = 60,
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         cmap: str = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -6161,10 +6168,13 @@ class Environment(Generic[_C]):
             sampling rate of ``frame_times`` times ``speed``; a file capped
             here keeps ``speed`` and skips rows between output frames, with a
             warning.
-        max_gap : float or None, default=0.5
-            Longest interval in seconds over which a row is held until the
-            next one. Pass None to hold every row until the next, for example
-            for one field per trial.
+        max_gap : float or None, default=1.0
+            Longest interval, in seconds, over which a field row is held until
+            the next one; across longer gaps the field shows as missing. Pass
+            None to hold every row until the next, for example for one field per
+            trial. The default is shared with the trajectory analyses, calibrated
+            for typical video and DeepLabCut tracking; choose a value longer than
+            the spacing of your rows and shorter than real pauses in the recording.
         cmap : str, default="viridis"
             Matplotlib colormap name.
         vmin, vmax : float, optional
@@ -7075,7 +7085,7 @@ class Environment(Generic[_C]):
         bandwidth: float | None = None,
         # Common parameters
         normalize: bool = True,
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         epochs: Any = None,
         break_before: ArrayLike | None = None,
     ) -> scipy.sparse.csr_matrix:
@@ -7125,13 +7135,13 @@ class Environment(Generic[_C]):
             If True, return row-stochastic matrix where each row sums to 1
             (representing transition probabilities).
             If False, return raw counts (empirical) or unnormalized weights (model).
-        max_gap : float or None, default=0.5
-            Longest sampling interval (seconds) treated as continuous recording.
-            Longer intervals (dropped frames, pauses between sessions) are excluded
-            from the analysis. ``None`` disables the gap check.
-            A ``UserWarning`` names the cause when every interval is excluded,
-            or when the median sampling interval exceeds ``max_gap`` (usually
-            ``times`` that are not in seconds).
+        max_gap : float or None, default=1.0
+            Longest stretch of missing tracking, in seconds, to bridge: the time
+            between consecutive valid samples (a dropped frame and a NaN row are
+            the same missing sample). Longer gaps are excluded as tracking losses;
+            ``None`` bridges every gap. The default is calibrated for typical video
+            and DeepLabCut tracking; choose a value longer than routine dropped or
+            low-confidence frames and shorter than real tracking losses or pickups.
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely

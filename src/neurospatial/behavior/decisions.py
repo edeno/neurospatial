@@ -72,9 +72,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import run_sample_bounds
+from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    as_intervals,
+    interval_valid_mask,
+    run_sample_bounds,
+)
 from neurospatial._observation import (
     ObservationSupport,
+    validate_break_before,
     validated_observations,
     validated_signals,
 )
@@ -404,7 +410,7 @@ def extract_pre_decision_window(
     entry_time: float,
     *,
     window_duration: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -422,10 +428,13 @@ def extract_pre_decision_window(
         Time of decision region entry (seconds).
     window_duration : float
         Duration of pre-decision window to extract (seconds).
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -469,24 +478,25 @@ def extract_pre_decision_window(
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import extract_pre_decision_window
-    >>> times = np.arange(10) / 2  # s
+    >>> times = np.arange(10) / 4  # s
     >>> positions = np.column_stack([10 * times, np.zeros(10)])  # cm
     >>> positions[6] = np.nan  # a lost frame
     >>> window_times, window_positions = extract_pre_decision_window(
-    ...     times, positions, entry_time=4.0, window_duration=2.0
+    ...     times, positions, entry_time=2.0, window_duration=1.0
     ... )
     >>> window_times.tolist()
-    [2.0, 2.5, 3.0, 3.5]
+    [1.0, 1.25, 1.5, 1.75]
     >>> window_positions[:, 0].tolist()
-    [20.0, 25.0, nan, 35.0]
+    [10.0, 12.5, nan, 17.5]
 
-    A new recording starting at 3.0 s ends the window there:
+    A new recording starting at 1.5 s ends the window there; its first
+    frame was lost, so the window starts at its first observed frame:
 
-    >>> break_before = times == 3.0
+    >>> break_before = times == 1.5
     >>> extract_pre_decision_window(
-    ...     times, positions, 4.0, window_duration=2.0, break_before=break_before
+    ...     times, positions, 2.0, window_duration=1.0, break_before=break_before
     ... )[0].tolist()
-    [3.0, 3.5]
+    [1.75]
     """
     times, positions, support = validated_observations(
         times,
@@ -529,7 +539,7 @@ def pre_decision_heading_stats(
     positions: NDArray[np.float64],
     *,
     min_speed: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> tuple[float, float, float]:
@@ -550,10 +560,13 @@ def pre_decision_heading_stats(
         cannot know the positions' unit.
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded from statistics.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -676,7 +689,7 @@ def pre_decision_speed_stats(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> tuple[float, float]:
@@ -691,10 +704,13 @@ def pre_decision_speed_stats(
         Position coordinates. A row with a non-finite coordinate (NaN, for a
         lost frame) is a missing sample: it has no speed, and no velocity is
         computed across it.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -781,7 +797,7 @@ def compute_pre_decision_metrics(
     *,
     window_duration: float,
     min_speed: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> PreDecisionMetrics:
@@ -804,10 +820,13 @@ def compute_pre_decision_metrics(
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
         Minimum speed for valid heading (units/s).
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1093,7 +1112,7 @@ def detect_boundary_crossings(
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> tuple[list[float], list[tuple[int, int]]]:
@@ -1109,10 +1128,13 @@ def detect_boundary_crossings(
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds; finite and strictly increasing (a repeated
         timestamp raises).
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1126,7 +1148,7 @@ def detect_boundary_crossings(
     -------
     crossing_times : list[float]
         Times when trajectory crossed a decision boundary: the midpoint of
-        the two samples on either side.
+        the two located samples on either side.
     crossing_directions : list[tuple[int, int]]
         (from_goal_idx, to_goal_idx) for each crossing.
 
@@ -1141,9 +1163,11 @@ def detect_boundary_crossings(
     -----
     Each time segment with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording; no
-    crossing spans a pause. A crossing needs two consecutive samples with
-    reachable labels, so a sample at bin -1 or with an unreachable label never
-    forms one.
+    crossing spans a pause. A sample at bin -1 is missing and skipped as if
+    its row were deleted, so a crossing across a bridged gap is timed at the
+    midpoint of the located samples on either side. A crossing needs two
+    consecutive located samples with reachable labels, so a sample with an
+    unreachable label never forms one.
 
     Examples
     --------
@@ -1173,7 +1197,7 @@ def detect_boundary_crossings(
             "Why: each trajectory sample needs its corresponding timestamp.\n"
             "Fix: pass one timestamp per position bin on the same clock."
         )
-    times, _, supports = validated_signals(
+    times, _, _ = validated_signals(
         times,
         position_bins,
         valid=None,
@@ -1184,7 +1208,14 @@ def detect_boundary_crossings(
         result="no boundary crossing was observed",
     )
     return _boundary_crossings(
-        position_bins, voronoi_labels, times, supports[0].interval_gates
+        position_bins,
+        voronoi_labels,
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=validate_break_before(
+            break_before, len(times), call="detect_boundary_crossings"
+        ),
     )
 
 
@@ -1192,13 +1223,29 @@ def _boundary_crossings(
     position_bins: NDArray[np.int64],
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
-    interval_gates: NDArray[np.bool_],
+    *,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: NDArray[np.bool_] | None,
 ) -> tuple[list[float], list[tuple[int, int]]]:
-    """Boundary crossings within each run of ``interval_gates``."""
+    """Boundary crossings within each run of located samples.
+
+    A sample outside every bin is missing and skipped as if its row were
+    deleted, so a crossing across it is timed between the located samples
+    on either side when the gap between them is bridged.
+    """
+    located = (position_bins >= 0) & (position_bins < voronoi_labels.shape[0])
+    mask = interval_valid_mask(
+        times,
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+        break_before=break_before,
+        sample_valid=located,
+    )
     crossing_times: list[float] = []
     crossing_directions: list[tuple[int, int]] = []
-    for first, last in run_sample_bounds(interval_gates):
-        run = slice(int(first), int(last) + 1)
+    for first, last in run_sample_bounds(mask):
+        run = first + np.flatnonzero(located[first : last + 1])
         run_times, run_directions = _detect_boundary_crossings_contiguous(
             position_bins[run], voronoi_labels, times[run]
         )
@@ -1253,7 +1300,7 @@ def compute_decision_analysis(
     goal_regions: list[str],
     pre_window: float = 1.0,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> DecisionAnalysisResult:
@@ -1280,10 +1327,13 @@ def compute_decision_analysis(
         ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
         units that are not a metric length, pass it explicitly.
         Minimum speed for valid heading (units/s).
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1425,7 +1475,14 @@ def compute_decision_analysis(
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
     boundary_distances = distance_to_decision_boundary(env, position_bins, goal_bins)
     crossing_times, crossing_directions = _boundary_crossings(
-        position_bins, voronoi_labels, times, support.interval_gates
+        position_bins,
+        voronoi_labels,
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=validate_break_before(
+            break_before, len(times), call="compute_decision_analysis"
+        ),
     )
 
     boundary = DecisionBoundaryMetrics(

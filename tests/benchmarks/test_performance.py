@@ -77,7 +77,9 @@ class TestFrameFamilyRates:
                 r.times,
                 r.positions,
                 r.headings,
+                gaze_model="fixed_distance",
                 view_distance=5.0,
+                boundary_source="analysis",
             )
         else:
             result = benchmark(
@@ -89,6 +91,7 @@ class TestFrameFamilyRates:
                 r.headings,
                 np.array([[50.0, 50.0]]),
                 distance_range=(0, 100),
+                distance_bin_size=5.0,
             )
         assert result.firing_rates.shape == (50, len(result.occupancy))
         assert 0 < result.occupancy.sum() <= 59.98 + 1e-6
@@ -391,7 +394,9 @@ class TestMetricComputationPerformance:
         """Benchmark place field detection."""
         firing_rate, _ = firing_rate_and_occupancy
 
-        result = benchmark(detect_place_fields, medium_env, firing_rate)
+        # Unsmoothed random rates: a bandwidth of one bin keeps the derived
+        # minimum field size at the map's resolution.
+        result = benchmark(detect_place_fields, medium_env, firing_rate, bandwidth=5.0)
 
         assert isinstance(result, PlaceFieldsResult)
 

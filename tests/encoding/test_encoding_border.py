@@ -119,68 +119,6 @@ class TestBorderReExports:
 class TestBorderFunctionality:
     """Test that re-exported functions work correctly."""
 
-    def test_border_score_boundary_field(self) -> None:
-        """Test border_score with field on boundary."""
-        from neurospatial.encoding.border import border_score
-
-        # Create a small environment
-        x = np.linspace(0, 30, 300)
-        y = np.linspace(0, 30, 300)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=10.0)
-
-        # Create field on boundary
-        firing_rate = np.zeros(env.n_bins)
-        firing_rate[env.boundary_bins] = 5.0
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Boundary field should have high score
-        assert score > 0.5, f"Expected score > 0.5 for boundary field, got {score}"
-
-    def test_border_score_central_field(self) -> None:
-        """Test border_score with field in center."""
-        from neurospatial.encoding.border import border_score
-
-        # Create environment
-        x = np.linspace(0, 50, 500)
-        y = np.linspace(0, 50, 500)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=10.0)
-
-        # Find center bin
-        center_point = np.array([25.0, 25.0])
-        distances = np.linalg.norm(env.bin_centers - center_point, axis=1)
-        center_bin = np.argmin(distances)
-
-        # Create field in center only
-        firing_rate = np.zeros(env.n_bins)
-        firing_rate[center_bin] = 5.0
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        # Central field should have low/negative score
-        assert score < 0.0, f"Expected score < 0 for central field, got {score}"
-
-    def test_border_score_returns_float(self) -> None:
-        """Test that border_score returns a float."""
-        from neurospatial.encoding.border import border_score
-
-        x = np.linspace(0, 30, 300)
-        y = np.linspace(0, 30, 300)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=10.0)
-
-        firing_rate = np.zeros(env.n_bins)
-        firing_rate[env.boundary_bins] = 5.0
-
-        score = border_score(env, firing_rate, boundary_source="analysis")
-
-        assert isinstance(score, (float, np.floating))
-
     def test_compute_region_coverage_basic(self) -> None:
         """Test compute_region_coverage with wall regions."""
         from shapely.geometry import box

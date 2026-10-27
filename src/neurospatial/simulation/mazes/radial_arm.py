@@ -23,6 +23,8 @@ The standard configuration has 8 arms (for rats), though 6 arms are common
 for mice. Each arm can be independently baited, allowing researchers to test
 different memory strategies and foraging behaviors.
 
+The maze is elevated, so its edges are drops (``arena.outline == "drop"``).
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.radial_arm import (
@@ -47,6 +49,7 @@ from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
+from neurospatial.arena import OpenArena
 from neurospatial.environment import Environment
 from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
@@ -263,6 +266,7 @@ def make_radial_arm_maze(
     env_2d = Environment.from_polygon(
         polygon=radial_polygon,
         bin_size=bin_size,
+        arena=OpenArena(radial_polygon, outline="drop"),
         name="radial_arm_maze",
         connect_diagonal_neighbors=True,
     )

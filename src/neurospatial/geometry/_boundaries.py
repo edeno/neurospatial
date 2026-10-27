@@ -13,10 +13,13 @@ from shapely.ops import unary_union
 from neurospatial._exceptions import CartesianOnlyError, _format_error
 from neurospatial._validation import validate_finite_scalar
 from neurospatial.geometry._arena import (
+    Blocking,
     _CombinedArena,
     _feature_cap,
     _TransformedArena,
+    blocks,
     mapped_geometry,
+    outline_declared,
 )
 from neurospatial.geometry._composition import CombinedLocator, iter_locators
 from neurospatial.geometry._locators import (
@@ -25,7 +28,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.geometry._lookup import locate
+from neurospatial.geometry._lookup import locate, locate_outline_points
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import (
     ClippedLocator,
@@ -46,13 +49,21 @@ _ANALYSIS_WALLS = "the boundary_source='analysis' wall search"
 
 
 def boundary_geometry(
-    binning: Binning, arena: Arena, source: BoundarySource
+    binning: Binning, arena: Arena, source: BoundarySource, *, blocking: Blocking
 ) -> shapely.Geometry:
-    """Return declared physical walls or explicitly selected analysis boundaries.
+    """Return declared physical boundaries or explicitly selected analysis ones.
 
-    Physical mode uses exact planar footprint rings and explicit internal walls.
-    It never infers physical walls from bins, sampling masks or unknown domains.
-    Analysis mode uses the exact union of retained planar analysis cells.
+    Physical mode uses exact planar footprint rings and named walls. It never
+    infers physical boundaries from bins, sampling masks or unknown domains.
+    Analysis mode uses the exact union of retained planar analysis cells, plus
+    the named walls.
+
+    ``blocking`` chooses the boundaries: ``"movement"`` keeps every physical
+    boundary (walls, transparent walls and drop edges), for analyses of
+    where the animal is relative to the edges it cannot cross; ``"gaze"``
+    keeps only opaque walls, for analyses of what the animal sees. An arena
+    whose physical boundaries are all transparent walls or drop edges has
+    no gaze boundary: the result is empty.
 
     Raises
     ------
@@ -80,11 +91,13 @@ def boundary_geometry(
             )
         )
     if source == "analysis":
-        return _analysis_boundary(binning, arena)
-    return physical_walls(arena)
+        return _analysis_boundary(binning, arena, blocking)
+    return physical_walls(arena, blocking=blocking)
 
 
-def _analysis_boundary(binning: Binning, arena: Arena) -> shapely.Geometry:
+def _analysis_boundary(
+    binning: Binning, arena: Arena, blocking: Blocking
+) -> shapely.Geometry:
     """Return retained cell edges restricted by the supplied planar domain."""
 
     try:
@@ -100,18 +113,26 @@ def _analysis_boundary(binning: Binning, arena: Arena) -> shapely.Geometry:
                 "boundary_source='physical'",
             )
         ) from exc
-    return _cells_boundary(cells, arena)
+    return _cells_boundary(cells, arena, blocking)
 
 
 def _cells_boundary(
-    cells: Sequence[shapely.Geometry], arena: Arena
+    cells: Sequence[shapely.Geometry], arena: Arena, blocking: Blocking
 ) -> shapely.Geometry:
-    """Edges of the union of ``cells`` within the arena domain, plus its walls."""
+    """Edges of the union of ``cells`` within the arena domain, plus its walls.
+
+    Only the walls that block ``blocking`` are added.
+    """
     domain = unary_union(cells)
     restriction = arena.polygonal_domain() if arena.domain_known else None
     if restriction is not None:
         domain = domain.intersection(restriction)
-    return unary_union([domain.boundary, *arena.walls])
+    walls = [
+        wall
+        for wall, kind in zip(arena.walls, arena.wall_kinds, strict=True)
+        if blocks(kind, blocking)
+    ]
+    return unary_union([domain.boundary, *walls])
 
 
 def _snap_onto_walls(
@@ -229,11 +250,13 @@ def wall_hit_bins(
     bins: NDArray[np.intp],
     source: BoundarySource,
 ) -> NDArray[np.intp]:
-    """Assign wall hits to observer-side bins using owned geometry.
+    """Assign gaze hits on walls to observer-side bins using owned geometry.
 
     ``hits`` and ``origins`` have shape ``(n_hits, 2)``. ``bins`` contains
     the caller's initial lookup of the observer-side limit, shape ``(n_hits,)``.
     Shared affine frames are resolved in their stored cell-owner coordinates.
+    The hits lie on the boundaries that block gaze (see
+    :func:`boundary_geometry`).
     """
 
     def source_locator(
@@ -279,10 +302,10 @@ def wall_hit_bins(
     indexes = CallIndexes()
     if frame is None:
         if source == "physical":
-            walls = physical_walls(arena)
+            walls = physical_walls(arena, blocking="gaze")
         else:
-            walls = _analysis_boundary(binning, arena)
-        return _resolve_wall_contacts(
+            walls = _analysis_boundary(binning, arena, "gaze")
+        resolved = _resolve_wall_contacts(
             locator,
             arena,
             materialize_cells(binning),
@@ -292,6 +315,7 @@ def wall_hit_bins(
             bins,
             indexes,
         )
+        return _sliver_owners(binning, arena, hits, origins, resolved)
     cells, _walls, _centers, _inverse, frames, _errors = frame
     query = np.vstack((hits, origins))
     error = None
@@ -299,7 +323,9 @@ def wall_hit_bins(
         query, error = arena.affine.project(query, error)
     base = frames[-1].base
     walls = (
-        physical_walls(base) if source == "physical" else _cells_boundary(cells, base)
+        physical_walls(base, blocking="gaze")
+        if source == "physical"
+        else _cells_boundary(cells, base, "gaze")
     )
     assert error is not None
     _snap_onto_walls(query[: len(hits)], error[: len(hits)], walls, base)
@@ -307,7 +333,7 @@ def wall_hit_bins(
     bins = locator.locate(inside, indexes)
     if base.domain_known:
         bins[~base.contains(inside)] = -1
-    return _resolve_wall_contacts(
+    resolved = _resolve_wall_contacts(
         locator,
         base,
         cells,
@@ -317,6 +343,31 @@ def wall_hit_bins(
         bins,
         indexes,
     )
+    return _sliver_owners(binning, arena, hits, origins, resolved)
+
+
+def _sliver_owners(
+    binning: Binning,
+    arena: Arena,
+    hits: NDArray[np.float64],
+    origins: NDArray[np.float64],
+    bins: NDArray[np.intp],
+) -> NDArray[np.intp]:
+    """Give hits in an outline sliver the bin that owns positions there.
+
+    A grid keeps the cells whose centers lie strictly inside the outline, so
+    a slanted or curved wall, or a wall through a row of cell centers, runs
+    through grid cells that are not bins. No retained cell touches a hit
+    there; like a wall piece in a border score, the hit belongs to the bin
+    that owns positions in that sliver (see :func:`locate_outline_points`).
+    ``hits``, ``origins`` have shape ``(n_hits, 2)``; ``bins`` is updated for
+    the hits still without a bin and returned.
+    """
+    missing = np.flatnonzero((bins < 0) & np.all(np.isfinite(hits), axis=1))
+    if len(missing) and arena.domain_known:
+        near = np.nextafter(hits[missing], origins[missing])
+        bins[missing] = locate_outline_points(binning, arena, near)
+    return bins
 
 
 def _physical_footprints(arena: Arena) -> list[shapely.Geometry]:
@@ -334,14 +385,42 @@ def _physical_footprints(arena: Arena) -> list[shapely.Geometry]:
             mapped_geometry(part, arena.forward)
             for part in _physical_footprints(arena.base)
         ]
-    if not arena.physical_footprint_known:
+    if arena.outline is None:
         return []
     domain = arena.polygonal_domain()
     if domain is None:
         raise NotImplementedError(
-            "Physical footprint has no exact planar polygon boundary; curved tracks require a separate wall representation. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
+            "Physical footprint has no exact planar polygon boundary. Supply explicit polygonal geometry or choose boundary_source='analysis' when supported."
         )
     return [domain]
+
+
+def _physical_boundaries(arena: Arena, blocking: Blocking) -> list[shapely.Geometry]:
+    """Physical boundary lines that block ``blocking``, component by component.
+
+    The outline of each footprint has its arena's ``outline`` kind, except
+    where a named wall lies on it and gives that stretch its own kind.
+    """
+    if isinstance(arena, _CombinedArena):
+        return [
+            part
+            for child in arena.children
+            for part in _physical_boundaries(child, blocking)
+        ]
+    if isinstance(arena, _TransformedArena):
+        return [
+            mapped_geometry(part, arena.forward)
+            for part in _physical_boundaries(arena.base, blocking)
+        ]
+    walls = list(zip(arena.walls, arena.wall_kinds, strict=True))
+    parts = [wall for wall, kind in walls if blocks(kind, blocking)]
+    if arena.outline is not None and blocks(arena.outline, blocking):
+        ring = unary_union([domain.boundary for domain in _physical_footprints(arena)])
+        open_walls = [wall for wall, kind in walls if not blocks(kind, blocking)]
+        if open_walls:
+            ring = ring.difference(unary_union(open_walls))
+        parts.append(ring)
+    return parts
 
 
 def physical_footprint_interior(arena: Arena) -> Interior | None:
@@ -368,23 +447,30 @@ def analysis_interior(
     )
 
 
-def physical_walls(arena: Arena) -> shapely.Geometry:
-    """Read asserted planar wall evidence independently of analysis bins."""
-    # A transformed or combined arena's walls are its components' walls,
-    # mapped, in order.
-    parts = [
-        *arena.walls,
-        *(footprint.boundary for footprint in _physical_footprints(arena)),
-    ]
-    if not parts:
+def physical_walls(arena: Arena, *, blocking: Blocking) -> shapely.Geometry:
+    """Declared physical boundaries that block ``blocking``, independent of bins.
+
+    ``"movement"`` keeps every physical boundary; ``"gaze"`` keeps only opaque
+    walls, so the result is empty for an arena bounded by drop edges or
+    transparent walls alone.
+
+    Raises
+    ------
+    NotImplementedError
+        If the arena declares no physical boundary at all: its outline is
+        not physical and it has no named walls.
+    """
+    if not arena.walls and not _physical_footprints(arena):
         raise NotImplementedError(
-            "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. "
-            "Supply measured geometry with Environment.from_polygon(...) or an asserted OpenArena or "
-            "MaskArena(physical_footprint_known=True). Wall-based rate maps also need bin support at the "
-            "measured walls; attaching an arena does not extend bins or supply missing observations. "
+            "Physical boundaries are unknown: this environment's outline was inferred from positions, "
+            "bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what "
+            "the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or "
+            "arena=OpenArena(outline, outline='drop') for an elevated track or platform "
+            "(MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the "
+            "measured boundaries; attaching an arena does not extend bins or supply missing observations. "
             "Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation."
         )
-    return unary_union(parts)
+    return unary_union(_physical_boundaries(arena, blocking))
 
 
 def valid_observers(
@@ -403,7 +489,7 @@ def valid_observers(
         valid[valid] = (
             locate(binning, arena, positions[valid], indexes, call=_ANALYSIS_WALLS) >= 0
         )
-    elif arena.physical_footprint_known:
+    elif outline_declared(arena):
         valid[valid] = arena.contains(positions[valid])
     return valid
 
@@ -565,7 +651,7 @@ def ray_hits(
 
 
 def _wall_frame(
-    arena: Arena, query: NDArray[np.float64]
+    arena: Arena, query: NDArray[np.float64], blocking: Blocking
 ) -> tuple[Arena, NDArray[np.float64], list[_TransformedArena]]:
     """Use stored projection errors for contact in a shared physical-wall frame."""
 
@@ -576,7 +662,7 @@ def _wall_frame(
         query, error = arena.affine.project(query, error)
         arena = arena.base
     if error is not None:
-        _snap_onto_walls(query, error, physical_walls(arena), arena)
+        _snap_onto_walls(query, error, physical_walls(arena, blocking=blocking), arena)
     return arena, query, frames
 
 
@@ -585,19 +671,25 @@ def physical_ray_hits(
     origins: NDArray[np.float64],
     angles: NDArray[np.float64],
     max_distance: float,
+    *,
+    blocking: Blocking,
 ) -> NDArray[np.float64]:
-    """Preserve first contacts through owned affine frames and bounded rounding."""
+    """Preserve first contacts through owned affine frames and bounded rounding.
+
+    Rays stop at the physical boundaries that block ``blocking`` (see
+    :func:`physical_walls`); a ray that meets none is NaN.
+    """
     origins = np.asarray(origins, dtype=np.float64)
     valid, starts, ends = _ray_segments(
         origins, np.asarray(angles, dtype=np.float64), max_distance
     )
-    base, query, frames = _wall_frame(arena, np.vstack((starts, ends)))
+    base, query, frames = _wall_frame(arena, np.vstack((starts, ends)), blocking)
     if not np.all(np.isfinite(query)):
         raise ValueError(
             "Ray projection exceeds coordinate precision; recenter or rescale positions."
         )
     hits = _segment_hits(
-        physical_walls(base),
+        physical_walls(base, blocking=blocking),
         query[: len(starts)],
         query[len(starts) :],
         physical_footprint_interior(base),
@@ -613,10 +705,16 @@ def physical_ray_hits(
 def physical_clear_segments(
     arena: Arena, observer: NDArray[np.float64], targets: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
-    """Keep on-wall cues visible under shared-frame inverse rounding."""
-    base, query, _frames = _wall_frame(arena, np.vstack((observer, targets)))
+    """Clear sight lines past every boundary but opaque walls.
+
+    Keeps on-wall cues visible under shared-frame inverse rounding.
+    """
+    base, query, _frames = _wall_frame(arena, np.vstack((observer, targets)), "gaze")
     return clear_segments(
-        physical_walls(base), query[0], query[1:], physical_footprint_interior(base)
+        physical_walls(base, blocking="gaze"),
+        query[0],
+        query[1:],
+        physical_footprint_interior(base),
     )
 
 
@@ -704,9 +802,15 @@ def clear_segments(
 
 
 def search_distance(walls: shapely.Geometry, positions: NDArray[np.float64]) -> float:
-    """Bound all observer-to-wall distances for automatic finite-domain searches."""
+    """Bound all observer-to-wall distances for automatic finite-domain searches.
+
+    Empty ``walls`` (nothing blocks the search) bound only the positions.
+    """
     finite = np.asarray(positions)[np.all(np.isfinite(positions), axis=1)]
-    coordinates = np.vstack((np.array(walls.bounds).reshape(2, 2), finite))
+    corners = np.empty((0, 2)) if walls.is_empty else np.reshape(walls.bounds, (2, 2))
+    coordinates = np.vstack((corners, finite))
+    if not len(coordinates):
+        return 1.0
     with np.errstate(over="ignore", invalid="ignore"):
         extent = float(
             np.hypot.reduce(coordinates.max(axis=0) - coordinates.min(axis=0))
@@ -726,8 +830,10 @@ def boundary_view(
     max_distance: float,
     boundary_source: BoundarySource,
     indexes: LookupIndexes,
+    *,
+    blocking: Blocking,
 ) -> NDArray[np.float64]:
-    """First wall each gaze ray reaches, shape (n_time, 2); NaN for none.
+    """First boundary each ray reaches, shape (n_time, 2); NaN for none.
 
     Parameters
     ----------
@@ -748,20 +854,27 @@ def boundary_view(
         Declared physical walls, or the boundaries of the analysis cells.
     indexes : LookupIndexes
         Keeps the locator's search structures for the computation.
+    blocking : {'movement', 'gaze'}
+        Which boundaries stop a ray (see :func:`boundary_geometry`):
+        ``"gaze"`` for what the animal sees, so a gaze passes transparent
+        walls and drop edges; ``"movement"`` for the distance to every edge
+        the animal cannot cross.
 
     Returns
     -------
     ndarray, shape (n_time, 2)
-        The first wall point on each gaze ray, or NaN.
+        The first boundary point on each ray, or NaN.
     """
 
-    walls = boundary_geometry(binning, arena, boundary_source)
+    walls = boundary_geometry(binning, arena, boundary_source, blocking=blocking)
     origins = positions.copy()
     origins[~valid_observers(binning, arena, positions, boundary_source, indexes)] = (
         np.nan
     )
     if boundary_source == "physical":
-        return physical_ray_hits(arena, origins, gaze_direction, max_distance)
+        return physical_ray_hits(
+            arena, origins, gaze_direction, max_distance, blocking=blocking
+        )
     return ray_hits(
         walls,
         origins,
@@ -803,8 +916,9 @@ def line_of_sight_clear(
     Returns
     -------
     bool
-        True if the segment from observer to target crosses no wall of the
-        chosen boundary source. False if it does, or if the observer is
+        True if the segment from observer to target crosses no opaque wall
+        of the chosen boundary source; transparent walls and drop edges do
+        not block a line of sight. False if it does, or if the observer is
         outside the region that source covers.
 
     Raises
@@ -863,8 +977,9 @@ def batch_line_of_sight_clear(
     -------
     NDArray[np.bool_], shape (n_targets,)
         True where the segment from the observer to the target crosses no
-        wall of the chosen boundary source. All False when the observer is
-        outside the region that source covers.
+        opaque wall of the chosen boundary source; transparent walls and
+        drop edges do not block a line of sight. All False when the observer
+        is outside the region that source covers.
 
     Raises
     ------
@@ -879,7 +994,7 @@ def batch_line_of_sight_clear(
         of occlusion, so callers keep such frames missing instead.
     """
 
-    walls = boundary_geometry(binning, arena, boundary_source)
+    walls = boundary_geometry(binning, arena, boundary_source, blocking="gaze")
     observer = np.asarray(observer, dtype=np.float64)
     targets = np.asarray(targets, dtype=np.float64)
     if observer.shape != (2,) or targets.ndim != 2 or targets.shape[1] != 2:

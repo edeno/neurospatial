@@ -127,7 +127,7 @@ from neurospatial.ops.transforms import AffineND
 mask = np.ones((3, 3), dtype=bool)
 mask[1, 1] = False
 source = Environment.from_pixel_mask(mask, pixel_size=1.0, units="cm")
-assert not source.arena.physical_footprint_known
+assert source.arena.outline is None
 assert not source.arena.walls
 
 landmarks = np.array([[0., 0.], [3., 0.], [0., 3.], [3., 3.]])
@@ -189,7 +189,7 @@ positions = np.column_stack((x, 2. + np.sin(x)))
 source = Environment.from_samples(positions, bin_size=.5, units="cm")
 reflection = AffineND(np.diag([1., -1., 1.]))
 aligned = source.apply_transform(reflection, frame="room")
-assert not aligned.arena.physical_footprint_known
+assert aligned.arena.outline is None
 assert not aligned.arena.walls
 np.testing.assert_array_equal(aligned.bin_at(reflection(source.bin_centers)), np.arange(source.n_bins))
 ```

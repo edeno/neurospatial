@@ -80,7 +80,7 @@ def test_rebin_selects_closed_domain_centers_and_preserves_holes(physical):
     assert parent.layout_type == "RegularGrid"
     child = parent.rebin(2)
     assert _arena_record(child.arena) == _arena_record(parent.arena)
-    assert child.arena.physical_footprint_known is physical
+    assert (child.arena.outline == "wall") is physical
     # Coarse centers on the hole's corners still hold three active fine bins.
     centers = np.arange(1.0, 6.0, 2.0)
     np.testing.assert_array_equal(
@@ -250,7 +250,7 @@ def test_rebin_arena_survives_subset_copy_and_dict_roundtrip():
     child = child.subset(mask=child.bin_centers[:, 1] < 4)
     restored = from_dict(to_dict(child))
     for variant in (child, copy.deepcopy(child), restored):
-        assert variant.arena.domain_known and variant.arena.physical_footprint_known
+        assert variant.arena.domain_known and variant.arena.outline == "wall"
         assert variant.arena.polygonal_domain().equals(box(0, 0, 6, 6))
         assert variant.arena.walls[0].equals(LineString([(2, 0), (2, 6)]))
         np.testing.assert_array_equal(

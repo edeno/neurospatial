@@ -37,7 +37,7 @@ def env() -> Environment:
 
 @pytest.fixture
 def make(env):
-    def make(rates, ids, occupancy=None, *, on=None, min_occupancy=None):
+    def make(rates, ids, occupancy=None, *, on=None, min_occupancy=0.0):
         on = env if on is None else on
         return SpatialRatesResult(
             firing_rates=np.asarray(rates, dtype=float),
@@ -46,9 +46,7 @@ def make(env):
             method="binned",
             bandwidth=5.0,
             unit_ids=None if ids is None else list(ids),
-            analysis_settings=(
-                None if min_occupancy is None else {"min_occupancy": min_occupancy}
-            ),
+            min_occupancy=min_occupancy,
         )
 
     return make
@@ -374,8 +372,8 @@ def test_different_estimator_settings_warn_as_in_compare_spatial_rates(env, maps
         population_vector_correlation(estimated(first, 5.0), estimated(second, 5.0))
 
 
-def test_results_exclude_smoothed_rates_in_unvisited_bins():
-    """Smoothing puts finite rates in unvisited bins; only support excludes them."""
+def test_rates_are_missing_outside_each_session_support():
+    """Smoothed rates stop at the visited bins, so bare arrays match results."""
     times = np.arange(3000) / 30.0
     positions = 50 + 40 * np.column_stack(
         [np.sin(2 * np.pi * times / 20), np.cos(2 * np.pi * times / 13)]
@@ -391,19 +389,16 @@ def test_results_exclude_smoothed_rates_in_unvisited_bins():
         for window in ([0.0, 50.0], [50.0, 100.0])
     )
     shared = first.spatial_support & second.spatial_support
-    smoothed_unvisited = ~shared & np.isfinite(
-        np.vstack([first.firing_rates, second.firing_rates])
-    ).all(axis=0)
-    assert smoothed_unvisited.any()  # the default estimator smooths into them
+    assert not shared.all()  # each half of the session misses some bins
+    for rates in (first, second):
+        visited = np.asarray(rates.occupancy) > 0
+        np.testing.assert_array_equal(
+            np.isfinite(np.asarray(rates.firing_rates)).all(axis=0), visited
+        )
 
     from_results = population_vector_correlation(first, second)
-    assert np.isnan(from_results[smoothed_unvisited]).all()
+    assert np.isnan(from_results[~shared]).all()
     np.testing.assert_array_equal(
         from_results,
-        population_vector_correlation(
-            first.firing_rates, second.firing_rates, spatial_support=shared
-        ),
+        population_vector_correlation(first.firing_rates, second.firing_rates),
     )
-    # Bare arrays without support compare bins the animal never visited.
-    bare = population_vector_correlation(first.firing_rates, second.firing_rates)
-    assert np.isfinite(bare[smoothed_unvisited]).any()

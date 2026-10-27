@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any
 
@@ -48,6 +49,46 @@ def rate_analysis_settings(
     }
 
 
+def spikes_outside_intervals(
+    spike_trains: Sequence[NDArray[np.float64]], support: TimeSupport
+) -> NDArray[np.int64]:
+    """Each unit's number of spikes outside the analyzed time intervals.
+
+    Parameters
+    ----------
+    spike_trains : sequence of ndarray, each shape (n_spikes_i,)
+        Spike times in seconds, one array per unit.
+    support : TimeSupport
+        The retained half-open intervals (``support.runs``), recorded as
+        ``analysis_settings["observed_intervals"]``.
+
+    Returns
+    -------
+    ndarray of int64, shape (n_units,)
+        Spikes before or after tracking, in gaps longer than ``max_gap``,
+        across declared breaks, outside ``epochs`` or ``spike_window``, or at
+        times the family did not analyze (slow movement below ``min_speed``,
+        an object or wall beyond ``distance_range``). They are in no rate.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from types import SimpleNamespace
+    >>> support = SimpleNamespace(runs=np.array([[0.0, 1.0], [2.0, 3.0]]))
+    >>> spikes_outside_intervals([np.array([0.5, 1.0, 1.5, 2.5, 3.0])], support)
+    array([3])
+    """
+    from neurospatial._intervals import times_in_intervals
+
+    return np.array(
+        [
+            len(train) - int(np.count_nonzero(times_in_intervals(support.runs, train)))
+            for train in spike_trains
+        ],
+        dtype=np.int64,
+    )
+
+
 def rate_xarray_attrs(result: Any) -> dict[str, Any]:
     """Build common, NetCDF-safe rate metadata in one place."""
     from neurospatial._results import env_fingerprint, software_version, units_attr
@@ -79,8 +120,8 @@ def occupancy_support(result: Any) -> NDArray[np.bool_]:
     Parameters
     ----------
     result : object
-        A rate result with ``occupancy`` ``(n_bins,)`` in seconds and
-        ``analysis_settings`` (``min_occupancy`` in seconds; ``None`` is 0).
+        A rate result with ``occupancy`` ``(n_bins,)`` and ``min_occupancy``,
+        both in seconds.
 
     Returns
     -------
@@ -93,16 +134,14 @@ def occupancy_support(result: Any) -> NDArray[np.bool_]:
     >>> import numpy as np
     >>> result = SimpleNamespace(
     ...     occupancy=np.array([0.0, 0.2, 1.0]),
-    ...     analysis_settings={"min_occupancy": 0.5},
+    ...     min_occupancy=0.5,
     ... )
     >>> occupancy_support(result).tolist()
     [False, False, True]
     """
-    settings = result.analysis_settings or {}
-    threshold = settings.get("min_occupancy") or 0.0
     occupancy = np.asarray(result.occupancy)
     support: NDArray[np.bool_] = np.asarray(
-        (occupancy > 0) & (occupancy >= threshold), dtype=bool
+        (occupancy > 0) & (occupancy >= result.min_occupancy), dtype=bool
     )
     return support
 

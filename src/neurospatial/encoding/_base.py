@@ -5,9 +5,9 @@ This module provides shared infrastructure for encoding result classes:
 - `_is_jax_array`: Check if an array is a JAX array
 - `_to_numpy`: Convert arrays (NumPy or JAX) to NumPy for host-only operations
 - `_get_array_module`: Detect array backend (numpy or jax.numpy) for backend-aware ops
-- `HasOccupancy`: Protocol for result classes with occupancy data
-- `HasEnvironment`: Protocol for result classes with spatial environment
-- `SpatialResultMixin`: Shared methods for spatial result classes
+- `SpatialResultMixin`: Shared methods of every rate result
+- `SingleUnitRateMixin` / `PopulationRateMixin`: Construction checks and unit
+  identity of single-unit and population rate results
 
 These utilities enable result classes to work transparently with both NumPy
 and JAX arrays, routing to the appropriate implementation based on input type.
@@ -15,17 +15,18 @@ and JAX arrays, routing to the appropriate implementation based on input type.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+import warnings
+from collections.abc import Iterator, Mapping
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, UnitSelectionMixin
 
 if TYPE_CHECKING:
     import pandas as pd
-
-    from neurospatial.environment import Environment
 
 
 def _is_jax_array(arr: ArrayLike) -> bool:
@@ -127,38 +128,6 @@ def _get_array_module(arr: ArrayLike) -> Any:
     return np
 
 
-@runtime_checkable
-class HasOccupancy(Protocol):
-    """Protocol for result classes with occupancy data.
-
-    This protocol is runtime-checkable, enabling isinstance() checks
-    for duck-typing validation.
-
-    Attributes
-    ----------
-    occupancy : ArrayLike
-        Time spent in each spatial bin (seconds). Shape is typically (n_bins,).
-    """
-
-    occupancy: ArrayLike
-
-
-@runtime_checkable
-class HasEnvironment(Protocol):
-    """Protocol for result classes with spatial environment.
-
-    This protocol is runtime-checkable, enabling isinstance() checks
-    for duck-typing validation.
-
-    Attributes
-    ----------
-    env : Environment
-        The spatial environment used for the computation.
-    """
-
-    env: Environment
-
-
 class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
     """Mixin providing common spatial result methods.
 
@@ -194,6 +163,20 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
     spike_window: NDArray[np.float64] | None = None
     analysis_settings: dict[str, Any] | None = None
 
+    if TYPE_CHECKING:
+        # Members every rate result provides, as fields or properties.
+        @property
+        def occupancy(self) -> Any: ...
+
+        @property
+        def method(self) -> str: ...
+
+        @property
+        def bandwidth(self) -> float | None: ...
+
+        min_occupancy: float
+        n_spikes_outside_intervals: Any
+
     @property
     def spatial_support(self) -> NDArray[np.bool_]:
         """Observed, sufficiently occupied bins with finite rates.
@@ -207,10 +190,14 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         return spatial_support(self)
 
     def _analysis_attrs(self) -> dict[str, Any]:
-        """Independent metadata for table exports and indexed results."""
+        """Independent estimator metadata for table exports and indexed results."""
         from copy import deepcopy
 
-        return {"analysis_settings": deepcopy(self.analysis_settings)}
+        return {
+            "method": self.method,
+            "bandwidth": self.bandwidth,
+            "analysis_settings": deepcopy(self.analysis_settings),
+        }
 
     @property
     def spike_window_assumed(self) -> bool:
@@ -294,14 +281,27 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         ArrayLike
             1D array for single neuron, 2D array (n_neurons, n_bins) for batch.
         """
-        if hasattr(self, "firing_rates"):
-            return self.firing_rates
-        return self.firing_rate  # type: ignore[attr-defined]
+        name = "firing_rates" if hasattr(self, "firing_rates") else "firing_rate"
+        return getattr(self, name)
+
+    def _observed_rates(self) -> NDArray[np.float64]:
+        """Host rates with every bin outside the occupancy support set to NaN.
+
+        A filled (``fill_value``) or model-extrapolated (``method="glm"``) rate
+        in a bin the animal never occupied is not an observation, so peaks
+        never land there.
+        """
+        from neurospatial.encoding._provenance import occupancy_support
+
+        rates = np.asarray(_to_numpy(self._get_rates()), dtype=np.float64)
+        return np.where(occupancy_support(self), rates, np.nan)
 
     def peak_location(self) -> NDArray[np.float64]:
         """Peak firing locations in the result's coordinate space.
 
-        Returns the bin-center coordinates of the maximum firing rate.
+        Returns the bin-center coordinates of the maximum firing rate over
+        the occupancy support (bins the animal occupied for at least
+        ``min_occupancy``).
 
         For single-neuron results, returns shape (n_dims,).
         For batch results, returns shape (n_neurons, n_dims).
@@ -314,33 +314,32 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         NDArray[np.float64]
             Coordinates of peak firing location(s).
             Shape is (n_dims,) for single neuron, (n_neurons, n_dims) for batch.
+            NaN for a unit with no supported rate or no positive rate: a
+            silent map has no peak.
         """
-        rates = _to_numpy(self._get_rates())
+        rates = np.atleast_2d(self._observed_rates())
         bin_centers = self._bin_centers
         n_dims = int(bin_centers.shape[1]) if bin_centers.ndim > 1 else 1
 
-        if rates.ndim == 1:
-            # A fully-NaN (dead) unit has no defined peak; np.nanargmax would
-            # raise "All-NaN slice encountered". Return NaN coordinates instead.
-            if not np.any(np.isfinite(rates)):
-                return np.full(n_dims, np.nan, dtype=np.float64)
-            peak_idx = int(np.nanargmax(rates))
-            result: NDArray[np.float64] = bin_centers[peak_idx]
-            return result
-
-        # Batch: guard each row so an all-NaN unit yields NaN coordinates
-        # rather than crashing the whole np.nanargmax call.
-        finite_mask = np.any(np.isfinite(rates), axis=1)
-        safe_rates = np.where(finite_mask[:, None], rates, 0.0)
-        peak_indices = np.nanargmax(safe_rates, axis=1)
-        result = bin_centers[peak_indices].astype(np.float64, copy=True)
-        result[~finite_mask] = np.nan
+        # A unit without a positive supported rate has no defined peak: an
+        # all-NaN row would make np.nanargmax raise, and an all-zero map would
+        # report its first bin.
+        filled = np.where(np.isnan(rates), -np.inf, rates)
+        peak_indices = np.argmax(filled, axis=1)
+        has_peak = filled[np.arange(len(filled)), peak_indices] > 0
+        centers = np.asarray(bin_centers, dtype=np.float64)
+        result: NDArray[np.float64] = centers[peak_indices].reshape(len(rates), n_dims)
+        result[~has_peak] = np.nan
+        if self._get_rates().ndim == 1:
+            single: NDArray[np.float64] = result[0]
+            return single
         return result
 
     def peak_firing_rate(self) -> NDArray[np.float64] | float:
         """Peak firing rate values.
 
-        Returns the maximum firing rate for each neuron.
+        Returns the maximum firing rate over the occupancy support for each
+        neuron (NaN when no bin is supported).
 
         For single-neuron results, returns a scalar (float).
         For batch results, returns shape (n_neurons,).
@@ -354,11 +353,12 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
             Peak firing rate(s).
             Scalar for single neuron, (n_neurons,) array for batch.
         """
-        rates = _to_numpy(self._get_rates())
-
-        if rates.ndim == 1:
-            return float(np.nanmax(rates))
-        result: NDArray[np.float64] = np.nanmax(rates, axis=1)
+        rates = np.atleast_2d(self._observed_rates())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN unit -> NaN
+            result: NDArray[np.float64] = np.nanmax(rates, axis=1)
+        if self._get_rates().ndim == 1:
+            return float(result[0])
         return result
 
     def summary(self) -> dict[str, Any]:
@@ -397,10 +397,10 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         ... )
         >>> s = result.summary()
         >>> sorted(s)
-        ['method', 'n_bins', 'peak_firing_rate', 'sparsity', 'spatial_info', 'spike_window', 'spike_window_assumed', 'total_occupancy']
+        ['method', 'n_bins', 'peak_firing_rate', 'sparsity', 'spatial_information', 'spike_window', 'spike_window_assumed', 'total_occupancy']
         """
         rates = _to_numpy(self._get_rates())
-        occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
+        occupancy = _to_numpy(self.occupancy)
 
         # An empty result (0 neurons in a batch, or 0 bins) has no firing-rate
         # values to reduce over. np.nanmax over a zero-size axis raises
@@ -425,11 +425,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         out["spike_window"] = (
             None if self.spike_window is None else self.spike_window.tolist()
         )
-        # Carry the estimator on result classes that record it (the spatial/view
-        # rate results); egocentric/directional/place-field results have no
-        # `method` field and are left unchanged.
-        if hasattr(self, "method"):
-            out["method"] = self.method
+        out["method"] = self.method
         if hasattr(self, "direction_frame"):
             out["direction_frame"] = self.direction_frame
         return out
@@ -486,7 +482,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         import pandas as pd
 
         rates = _to_numpy(self._get_rates())
-        occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
+        occupancy = _to_numpy(self.occupancy)
 
         rates_2d = rates[None, :] if rates.ndim == 1 else rates
         n_neurons, n_bins = rates_2d.shape
@@ -505,10 +501,8 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         # Occupancy is shared across neurons for batch spatial results.
         occ = np.asarray(occupancy).reshape(-1)
         data["occupancy"] = np.tile(occ, n_neurons)
-        # Carry the estimator (spatial/view rate results only); broadcasts to
-        # every row. Absent on results with no `method` field.
-        if hasattr(self, "method"):
-            data["method"] = self.method
+        # The estimator broadcasts to every row.
+        data["method"] = self.method
 
         frame = pd.DataFrame(data)
         coordinate_units = getattr(getattr(self, "env", None), "units", None)
@@ -571,10 +565,8 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
             np.atleast_2d(rates),
             self._row_unit_ids(),
             env=env,
-            bin_centers=None
-            if env is not None
-            else np.asarray(self.bin_centers, dtype=np.float64),  # type: ignore[attr-defined]
-            occupancy=np.asarray(_to_numpy(self.occupancy), dtype=np.float64),  # type: ignore[attr-defined]
+            bin_centers=None if env is not None else self._bin_centers,
+            occupancy=np.asarray(_to_numpy(self.occupancy), dtype=np.float64),
             attrs={**rate_xarray_attrs(self), **self._xarray_attrs()},
         )
         dataset["spatial_support"] = ("bin", self.spatial_support)
@@ -583,3 +575,331 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
     def _xarray_attrs(self) -> dict[str, Any]:
         """Family metadata; concrete rate results override this hook."""
         return {}
+
+
+_UnitT = TypeVar("_UnitT", bound="SingleUnitRateMixin")
+_UnitResultT = TypeVar("_UnitResultT", bound="SingleUnitRateMixin")
+
+
+BandwidthRule = Literal["none", "nonnegative", "positive"]
+"""What an estimator requires of ``bandwidth``: ``None``, ``>= 0`` or ``> 0``."""
+
+KERNEL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
+    {"diffusion_kde": "positive", "gaussian_kde": "positive"}
+)
+
+_BANDWIDTH_REQUIREMENT: Mapping[BandwidthRule, str] = MappingProxyType(
+    {
+        "none": "None",
+        "nonnegative": "a finite number >= 0 in the coordinates' units",
+        "positive": "a finite number > 0 in the coordinates' units",
+    }
+)
+
+
+def _as_result_array(value: Any) -> Any:
+    """``value`` as a NumPy array; a JAX array is kept as given."""
+    return value if _is_jax_array(value) else np.asarray(value)
+
+
+def _real_scalar(value: Any) -> float | None:
+    """``value`` as a float if it is one real number (not a bool), else None."""
+    if isinstance(value, bool | np.bool_) or np.ndim(value) != 0:
+        return None
+    try:
+        dtype = np.asarray(value).dtype
+    except (TypeError, ValueError):
+        return None
+    return float(value) if dtype.kind in "fiu" else None
+
+
+def _bandwidth_meets(bandwidth: float | None, rule: BandwidthRule) -> bool:
+    """Whether a (normalized) ``bandwidth`` satisfies an estimator's rule."""
+    if rule == "none" or bandwidth is None:
+        return rule == "none" and bandwidth is None
+    return bool(
+        np.isfinite(bandwidth)
+        and (bandwidth > 0 or (rule == "nonnegative" and bandwidth == 0))
+    )
+
+
+class _RateResultMixin(SpatialResultMixin):
+    """Construction shared by every rate result dataclass.
+
+    ``__post_init__`` checks the rates, occupancy, estimator and recording
+    windows (:meth:`_check_rate_fields`), runs the family's own checks
+    (:meth:`_check_family`), resolves unit identity (:meth:`_resolve_units`)
+    and finally takes read-only ownership of the arrays.
+
+    Subclasses set ``_RATES_FIELD`` / ``_RATES_NDIM`` (single-unit or
+    population) and the family sets ``_ESTIMATORS``, mapping each estimator
+    to what it requires of ``bandwidth``.
+    """
+
+    _RATES_FIELD: ClassVar[str]
+    _RATES_NDIM: ClassVar[int]
+    _ESTIMATORS: ClassVar[Mapping[str, BandwidthRule]]
+
+    def __post_init__(self) -> None:
+        self._check_rate_fields()
+        self._check_family()
+        self._resolve_units()
+        self._own_arrays()
+
+    def _n_bins(self) -> int:
+        """Number of bins the rates must cover (the environment's by default)."""
+        return int(np.shape(self._bin_centers)[0])
+
+    def _check_rate_fields(self) -> None:
+        """Refuse rates, occupancy, estimator or windows that do not agree.
+
+        Arrays are stored as NumPy arrays (JAX arrays are kept as given) so a
+        list cannot bypass read-only ownership.
+        """
+        from neurospatial._exceptions import _format_error
+        from neurospatial._intervals import as_intervals
+
+        kind = type(self).__name__
+        rates = _as_result_array(getattr(self, self._RATES_FIELD))
+        occupancy = _as_result_array(self.occupancy)
+        object.__setattr__(self, self._RATES_FIELD, rates)
+        object.__setattr__(self, "occupancy", occupancy)
+        n_bins = self._n_bins()
+        expected = "(n_bins,)" if self._RATES_NDIM == 1 else "(n_units, n_bins)"
+        why = (
+            "Why: each rate and occupancy value belongs to one bin, so both "
+            "must cover the result's bins in the same order."
+        )
+        fix = (
+            "build the result from the rates, occupancy and bins of one "
+            "computation, or use the family's compute_* function."
+        )
+        for name, array in ((self._RATES_FIELD, rates), ("occupancy", occupancy)):
+            if np.dtype(array.dtype).kind not in "fiu":
+                raise ValueError(
+                    _format_error(
+                        f"{kind}: {name} must hold numbers, got dtype {array.dtype}.",
+                        why=why,
+                        fix=fix,
+                    )
+                )
+        if np.ndim(rates) != self._RATES_NDIM or np.shape(rates)[-1] != n_bins:
+            raise ValueError(
+                _format_error(
+                    f"{kind}: {self._RATES_FIELD} has shape {np.shape(rates)}, "
+                    f"not {expected} over the result's {n_bins} bins.",
+                    why=why,
+                    fix=fix,
+                )
+            )
+        if np.shape(occupancy) != (n_bins,):
+            raise ValueError(
+                _format_error(
+                    f"{kind}: occupancy has shape {np.shape(occupancy)}, not "
+                    f"({n_bins},) to match the {n_bins} bins of the rates.",
+                    why=why,
+                    fix=fix,
+                )
+            )
+        method = self.method
+        if method not in self._ESTIMATORS:
+            raise ValueError(
+                _format_error(
+                    f"{kind}: method={method!r} is not an estimator of this "
+                    "result family.",
+                    why="Why: the estimator decides how the rates, occupancy "
+                    "and bandwidth are read.",
+                    fix=f"pass one of {sorted(self._ESTIMATORS)}.",
+                )
+            )
+        rule = self._ESTIMATORS[method]
+        bandwidth = None if self.bandwidth is None else _real_scalar(self.bandwidth)
+        if not _bandwidth_meets(bandwidth, rule) or (
+            bandwidth is None and self.bandwidth is not None
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{kind}: bandwidth={self.bandwidth!r} is not valid for "
+                    f"method={method!r}.",
+                    why=f"Why: method={method!r} needs a bandwidth of "
+                    f"{_BANDWIDTH_REQUIREMENT[rule]}.",
+                    fix="pass the bandwidth the rates were estimated with.",
+                )
+            )
+        object.__setattr__(self, "bandwidth", bandwidth)
+        object.__setattr__(self, "min_occupancy", self._checked_min_occupancy())
+        object.__setattr__(self, "n_spikes_outside_intervals", self._checked_counts())
+        object.__setattr__(
+            self, "spike_window", as_intervals(self.spike_window, name="spike_window")
+        )
+
+    def _checked_counts(self) -> Any:
+        """Spikes outside the analyzed intervals: one count per unit, or None."""
+        from neurospatial._exceptions import _format_error
+
+        counts = self.n_spikes_outside_intervals
+        if counts is None:
+            return None
+        array = np.asarray(counts)
+        shape = () if self._RATES_NDIM == 1 else np.shape(self._get_rates())[:1]
+        if array.shape != shape or array.dtype.kind not in "iu" or np.any(array < 0):
+            kind = type(self).__name__
+            raise ValueError(
+                _format_error(
+                    f"{kind}: n_spikes_outside_intervals={counts!r} is not one "
+                    f"spike count >= 0 per unit (shape {shape}).",
+                    why="Why: it counts each unit's spikes outside the analyzed "
+                    "time intervals.",
+                    fix="pass the counts of the computation, or None when unknown.",
+                )
+            )
+        return int(array) if self._RATES_NDIM == 1 else array.astype(np.int64)
+
+    def _accounting_columns(self) -> dict[str, Any]:
+        """Per-unit spike accounting for ``summary_table`` (NA when unknown)."""
+        import pandas as pd
+
+        n_units = 1 if self._RATES_NDIM == 1 else int(np.shape(self._get_rates())[0])
+        counts = self.n_spikes_outside_intervals
+        values = [pd.NA] * n_units if counts is None else np.atleast_1d(counts).tolist()
+        return {"n_spikes_outside_intervals": pd.array(values, dtype="Int64")}
+
+    def _checked_min_occupancy(self) -> float:
+        """``min_occupancy`` as seconds, agreeing with any recorded setting."""
+        from neurospatial._exceptions import _format_error
+
+        kind = type(self).__name__
+        value = _real_scalar(self.min_occupancy)
+        if value is None or not (np.isfinite(value) and value >= 0):
+            raise ValueError(
+                _format_error(
+                    f"{kind}: min_occupancy={self.min_occupancy!r} is not a "
+                    "finite number of seconds >= 0.",
+                    why="Why: bins occupied for less than min_occupancy seconds "
+                    "are outside spatial_support.",
+                    fix="pass the min_occupancy the rates were estimated with, or "
+                    "0.0 for no threshold.",
+                )
+            )
+        recorded = (self.analysis_settings or {}).get("min_occupancy")
+        if recorded is not None and recorded != value:
+            raise ValueError(
+                _format_error(
+                    f"{kind}: min_occupancy={value} disagrees with the recorded "
+                    f"analysis_settings['min_occupancy']={recorded!r}.",
+                    why="Why: spatial_support is derived from min_occupancy; the "
+                    "recorded settings only describe it.",
+                    fix=f"pass min_occupancy={recorded!r}, or drop the recorded "
+                    "value from analysis_settings.",
+                )
+            )
+        return value
+
+    def _check_family(self) -> None:
+        """Family-specific invariants; results override this hook."""
+
+    def _resolve_units(self) -> None:
+        """Record unit identity; single-unit and population results differ."""
+
+
+class SingleUnitRateMixin(_RateResultMixin):
+    """A rate result for one unit, labelled by ``unit_id``."""
+
+    _RATES_FIELD: ClassVar[str] = "firing_rate"
+    _RATES_NDIM: ClassVar[int] = 1
+
+    unit_id: int | str | None
+    _unit_ids_generated: bool
+
+    if TYPE_CHECKING:
+        # Each family's dataclass defines the constructor.
+        def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+
+    def _resolve_units(self) -> None:
+        # No label is a generated identity; a label from a population with
+        # generated labels arrives already marked.
+        if self.unit_id is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
+
+
+class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitResultT]):
+    """A rate result for several units sharing occupancy and bins.
+
+    Resolves ``unit_ids`` (default ``np.arange(n_units)``) and aligns
+    ``unit_table`` to them. ``len()``, ``[i]`` (by position), ``sel(unit_id=)``
+    and iteration give single-unit results that carry each unit's label and
+    the population's shared settings.
+    """
+
+    _RATES_FIELD: ClassVar[str] = "firing_rates"
+    _RATES_NDIM: ClassVar[int] = 2
+
+    unit_ids: Any
+    unit_table: pd.DataFrame | None
+    _unit_ids_generated: bool
+
+    def _resolve_units(self) -> None:
+        from neurospatial._results import align_unit_table, resolve_unit_ids
+
+        kind = type(self).__name__
+        # Generated labels keep positional pairing (e.g. with a decoder's
+        # spike input); dataclasses.replace carries the mark forward.
+        if self.unit_ids is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
+        object.__setattr__(
+            self, "unit_ids", resolve_unit_ids(self.unit_ids, len(self), context=kind)
+        )
+        object.__setattr__(
+            self,
+            "unit_table",
+            align_unit_table(self.unit_table, self.unit_ids, context=kind),
+        )
+
+    def __len__(self) -> int:
+        """Number of units (rows of ``firing_rates``)."""
+        return int(np.shape(self._get_rates())[0])
+
+    def __iter__(self) -> Iterator[_UnitResultT]:
+        """Each unit's single-unit result, in stored order."""
+        for i in range(len(self)):
+            yield self[i]
+
+    if TYPE_CHECKING:
+
+        def __getitem__(self, idx: int) -> _UnitResultT: ...
+
+    def _unit_result(self, unit_class: type[_UnitT], idx: int, **fields: Any) -> _UnitT:
+        """Build the single-unit result at position ``idx``.
+
+        Parameters
+        ----------
+        unit_class : type
+            The family's single-unit result class.
+        idx : int
+            Unit position; label lookups go through ``sel(unit_id=...)``.
+        **fields
+            Family fields of the single-unit result (environment, estimator,
+            per-unit diagnostics).
+
+        Returns
+        -------
+        object
+            The unit's result with its label, the shared occupancy, recording
+            windows and settings, and the population's unit-label provenance.
+        """
+        from neurospatial._results import label_at
+
+        position = self._unit_position(idx)
+        return unit_class(
+            firing_rate=self._get_rates()[position],
+            occupancy=self.occupancy,
+            unit_id=label_at(self.unit_ids, position),
+            min_occupancy=self.min_occupancy,
+            n_spikes_outside_intervals=None
+            if self.n_spikes_outside_intervals is None
+            else int(self.n_spikes_outside_intervals[position]),
+            spike_window=self.spike_window,
+            analysis_settings=self._analysis_attrs()["analysis_settings"],
+            _unit_ids_generated=self._unit_ids_generated,
+            **fields,
+        )

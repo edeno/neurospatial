@@ -71,15 +71,15 @@ argument; a tracking object cannot replace the timestamp array.
 numbers, then plot the map:
 
 ```python
-# Scalar headline metrics include peak_firing_rate, spatial_info and sparsity.
+# Scalar headline metrics include peak_firing_rate, spatial_information and sparsity.
 print(result.summary())
 # -> a dict of scalars, e.g. ~1378 bins, peak firing rate ~12 Hz,
-#    spatial_info in bits/spike and ~300 s shared occupancy (exact values vary).
+#    spatial_information in bits/spike and ~300 s shared occupancy (exact values vary).
 
 # Where the cell fires most, and how spatially informative it is.
 print("Peak firing location (cm):", result.peak_location())
 print("Spatial information (bits/spike):", result.spatial_information())
-print("Place candidate (information screen):", result.is_place_cell(criterion="spatial_info"))
+print("Place candidate (information screen):", result.is_place_cell(criterion="threshold"))
 print("Has a detected field:", result.has_place_field())
 
 # One-row table has the same columns as a population rate table.
@@ -98,9 +98,10 @@ The peak sits near `(50, 50)` cm — right where the place cell was tuned — an
 the map is a smooth bump over the arena. That is the core loop: **environment +
 spikes + trajectory → firing-rate map you can measure and plot.**
 
-Cell classification requires choosing a criterion: `"spatial_info"` is a fast
-screen biased upward at low spike counts; `"shuffle"` compares information with
-circularly shifted spike trains. Call
+Cell classification requires choosing a criterion: `"threshold"` compares
+spatial information, minus what an untuned cell shows by chance, with a
+cutoff, a fast screen; `"shuffle"` also requires the information to be
+significant against circularly shifted spike trains. Call
 `is_place_cell(env, spike_times, times, positions, criterion="shuffle", rng=0)`
 for that verdict using the raw arrays. It costs about 1000 map recomputes by
 default. Results offer screens and field detection; they keep no raw arrays.
@@ -158,8 +159,10 @@ center_bin = env.bin_at([[50.0, 50.0]])[0]
 print("Neighbors of the center bin:", env.neighbors(bins=center_bin))
 ```
 
-**Recording gaps and time windows.** Gaps longer than `max_gap=0.5` seconds
-are detected from `times` and excluded automatically. Use `epochs=` to select
+**Recording gaps and time windows.** A missing sample, whether a dropped
+frame or a NaN row, is skipped. A gap between tracked samples longer than
+`max_gap` (1.0 s by default, calibrated for typical video and DeepLabCut
+tracking) is excluded as a tracking loss; shorter gaps are bridged. Use `epochs=` to select
 analysis windows and `spike_window=` when ephys started late or stopped early.
 Without it, spikes are assumed recorded whenever position was;
 `result.spike_window_assumed` makes that assumption visible.

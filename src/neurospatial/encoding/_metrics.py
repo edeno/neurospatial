@@ -34,6 +34,7 @@ References
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -95,23 +96,15 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
         return int(self.scores.shape[0])
 
     def __getitem__(self, idx: Any) -> Any:
-        # Delegate to the ndarray's own __getitem__ so all forms of
-        # ndarray indexing work transparently: integer (-> scalar float),
-        # slice (-> 1-D ndarray), boolean mask (-> 1-D ndarray), array
-        # of indices (-> 1-D ndarray). The downstream code that used to
-        # write `scores[~np.isnan(scores)]` against a plain ndarray
-        # keeps working when `scores` is a BatchScoresResult.
+        # ndarray indexing: integer -> float, slice/mask/index array -> 1-D.
         return self.scores[idx]
 
     def __array__(
         self, dtype: Any = None, copy: bool | None = None
     ) -> NDArray[np.float64]:
-        # NumPy ufuncs (np.isnan, np.where, etc.) call __array__ when
-        # given a non-ndarray input. Returning the underlying scores
-        # array lets callers use BatchScoresResult anywhere they used
-        # to use a plain (n_neurons,) array of scores. The ``copy``
-        # keyword is required by NumPy 2's array protocol -- without it
-        # ``np.asarray(result, copy=False)`` raises in NumPy 2.
+        # NumPy functions (np.isnan, np.where, ...) call __array__ on a
+        # non-ndarray input, so the result works wherever an (n_neurons,)
+        # score array does. NumPy 2's array protocol passes ``copy``.
         #
         # We mirror plain ndarray semantics: copy=False with a dtype that
         # requires a cast must raise, because the request is impossible
@@ -137,12 +130,7 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
 
     @property
     def shape(self) -> tuple[int, ...]:
-        """Shape of the underlying scores array, ``(n_neurons,)``.
-
-        Pass-through to ``self.scores.shape`` so callers reading
-        ``result.shape`` can keep doing so when the function previously
-        returned a plain ndarray.
-        """
+        """Shape of the underlying scores array, ``(n_neurons,)``."""
         return self.scores.shape
 
     @property
@@ -202,7 +190,8 @@ def spatial_information(
     -------
     float | jax.Array
         Spatial information in bits per spike (if base=2.0).
-        Returns 0.0 if mean rate is zero or undefined.
+        NaN for a silent map (mean rate 0), an all-NaN map or zero total
+        occupancy: bits per spike are undefined without spikes.
         Returns float for NumPy input, JAX scalar for JAX input.
 
     Raises
@@ -307,7 +296,8 @@ def batch_spatial_information(
     Returns
     -------
     ndarray | jax.Array, shape (n_neurons,)
-        Spatial information in bits per spike for each neuron.
+        Spatial information in bits per spike for each neuron, NaN for a
+        silent or all-NaN map or zero total occupancy.
         Returns NumPy array for NumPy input, JAX array for JAX input.
 
     Raises
@@ -372,6 +362,301 @@ def batch_spatial_information(
     return _np_si(firing_rates_arr, occupancy_arr, base=base)
 
 
+# Unit-count probes are pushed through a rate estimator this many map entries
+# at a time. It bounds memory (32 MiB of float64), not the computed value.
+_PROBE_BLOCK_ELEMENTS = 1 << 22
+
+
+def _untuned_rate_variance(
+    count_to_rate: Callable[[NDArray[np.float64]], ArrayLike],
+    occupancy: NDArray[np.float64],
+    support: NDArray[np.bool_],
+) -> float:
+    """Spread of an untuned cell's rate map, per unit of its true rate.
+
+    For a rate estimator that is linear in spike counts at fixed occupancy,
+    ``r = A n``, and an untuned Poisson cell, ``n_j ~ Poisson(lam * t_j)``,
+    the expected occupancy-weighted variance of the map about its mean is
+    ``lam * V`` with
+
+    ``V = sum_j t_j * (sum_i p_i A_ij**2 - (sum_i p_i A_ij)**2)``,
+
+    the occupancy-weighted variance of each bin's one-spike footprint
+    ``A[:, j]``, summed with the bin's dwell time ``t_j``. Each column of
+    ``A`` is the estimator's response to one spike in bin ``j``.
+
+    Parameters
+    ----------
+    count_to_rate : callable
+        The rate estimator at this occupancy, mapping spike counts
+        ``(n_maps, n_bins)`` to rates ``(n_maps, n_bins)``.
+    occupancy : ndarray, shape (n_bins,)
+        Seconds in each bin.
+    support : ndarray of bool, shape (n_bins,)
+        Bins the information sums over, with weights ``p = t / sum(t)``.
+
+    Returns
+    -------
+    float
+        ``V`` in 1/seconds; NaN when no bin is supported.
+    """
+    sources = np.flatnonzero(occupancy > 0)
+    if not support.any() or sources.size == 0:
+        return float("nan")
+    p = occupancy[support] / occupancy[support].sum()
+    n_bins = occupancy.size
+    block = max(1, _PROBE_BLOCK_ELEMENTS // n_bins)
+    total = 0.0
+    for start in range(0, sources.size, block):
+        columns = sources[start : start + block]
+        probe = np.zeros((columns.size, n_bins))
+        probe[np.arange(columns.size), columns] = 1.0
+        footprint = np.asarray(count_to_rate(probe), dtype=np.float64)[:, support]
+        spread = footprint**2 @ p - (footprint @ p) ** 2
+        total += float(occupancy[columns] @ spread)
+    return total
+
+
+def _glm_untuned_rate_variance(
+    result: Any, mean_rates: NDArray[np.float64], support: NDArray[np.bool_]
+) -> NDArray[np.float64]:
+    """``V`` of :func:`_untuned_rate_variance` for the penalized-Poisson GAM.
+
+    The GAM is not linear in the counts, so its response to one spike is
+    taken at an untuned fit, a constant rate ``lam``. There the penalized
+    Newton step gives ``delta_beta = H^{-1} B^T delta_n`` with
+    ``H = lam B^T T B + diag(penalty * d)``, and ``delta_r = lam B delta_beta``,
+    so ``A = lam B H^{-1} B^T``. Without a penalty ``A`` is the occupancy-
+    weighted projection onto the basis and ``V * sum(t) = rank - 1``. The
+    penalty is held at its fitted value.
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        ``V`` for each unit, evaluated at its mean rate.
+    """
+    occupancy = np.asarray(result.occupancy, dtype=np.float64)
+    basis = result.env.get_mrf_basis(occupancy, rank=result.rank)
+    basis_matrix = np.asarray(basis.B, dtype=np.float64)
+    live = np.asarray(basis.live_bins, dtype=np.intp)
+    t = occupancy[live]
+    rows = support[live]
+    p = t[rows] / t[rows].sum()
+    gram = basis_matrix.T @ (t[:, None] * basis_matrix)  # (rank, rank)
+    weighted = basis_matrix[rows].T @ (
+        p[:, None] * basis_matrix[rows]
+    )  # sum_i p_i b_i b_i^T
+    mean_basis = basis_matrix[rows].T @ p  # sum_i p_i b_i
+    penalty_diag = np.asarray(result.penalty, dtype=np.float64)[..., None] * (
+        np.asarray(result.penalty_weights, dtype=np.float64)
+    )
+    penalty_diag = np.broadcast_to(
+        penalty_diag, (mean_rates.size, basis_matrix.shape[1])
+    )
+    variance = np.full(mean_rates.size, np.nan)
+    for k, lam in enumerate(mean_rates):
+        if not lam > 0:
+            continue
+        hessian = lam * gram + np.diag(penalty_diag[k])
+        inverse = np.linalg.solve(hessian, np.eye(basis_matrix.shape[1]))
+        sandwich = lam**2 * (inverse @ gram @ inverse)
+        variance[k] = float(
+            np.sum(sandwich * weighted) - mean_basis @ sandwich @ mean_basis
+        )
+    return variance
+
+
+def _count_to_rate(
+    result: Any,
+) -> Callable[[NDArray[np.float64]], ArrayLike]:
+    """The result's own rate estimator at its occupancy, linear in counts."""
+    occupancy = np.asarray(result.occupancy, dtype=np.float64)
+    if result.method == "binned" and result.bandwidth is None:
+        # Polar ``binned``: the raw bin rate, with no smoothing.
+        valid = (occupancy > 0) & (occupancy >= result.min_occupancy)
+        safe = np.where(valid, occupancy, 1.0)
+        return lambda counts: np.where(valid, counts / safe, np.nan)
+
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+
+    return lambda counts: smooth_rate_maps_batch(
+        result.env,
+        counts,
+        occupancy,
+        method=result.method,
+        bandwidth=result.bandwidth,
+        min_occupancy=result.min_occupancy,
+    )
+
+
+# Private attribute that keeps ``V`` on the result that owns it. Results are
+# immutable, so ``V`` cannot go stale; it is not a dataclass field, so it is
+# outside equality, repr and ``dataclasses.replace``.
+_VARIANCE_CACHE = "_untuned_rate_variance"
+
+
+def _cached_variance(
+    result: Any, mean_rates: NDArray[np.float64], support: NDArray[np.bool_]
+) -> NDArray[np.float64]:
+    """Per-unit ``V`` of ``result``, probed once and then reused.
+
+    The probe pass costs about one rate computation per occupied bin, so the
+    screens (``classify``, ``label_cell_types``, ``summary_table``) share it.
+    """
+    cached: NDArray[np.float64] | None = vars(result).get(_VARIANCE_CACHE)
+    if cached is not None:
+        return cached
+    if result.method == "glm":
+        variance = _glm_untuned_rate_variance(result, mean_rates, support)
+    else:
+        variance = np.full(
+            mean_rates.size,
+            _untuned_rate_variance(
+                _count_to_rate(result),
+                np.asarray(result.occupancy, dtype=np.float64),
+                support,
+            ),
+        )
+    variance.flags.writeable = False
+    vars(result)[_VARIANCE_CACHE] = variance
+    return variance
+
+
+def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
+    """Expected plug-in Skaggs information of an untuned cell, per unit.
+
+    The derivation is in the Notes of the result classes'
+    ``spatial_information_bias``. Units with fewer spikes than the map has
+    effectively independent bins get NaN, with one warning naming how many.
+
+    Parameters
+    ----------
+    result : rate result
+        A spatial, view or object-vector rate result, single or population.
+    base : float, default=2.0
+        Logarithm base of the information (2 for bits per spike).
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        Expected information in bits per spike of an untuned Poisson cell
+        with each unit's mean rate, on this result's occupancy and estimator.
+        NaN for a silent unit and where the expansion does not hold.
+    """
+    from neurospatial._stacklevel import _external_stacklevel
+    from neurospatial.encoding._base import _to_numpy
+
+    rates = np.atleast_2d(np.asarray(_to_numpy(result._get_rates()), np.float64))
+    occupancy = np.asarray(_to_numpy(result.occupancy), dtype=np.float64)
+    support = np.asarray(result.spatial_support, dtype=bool)
+    if not support.any():
+        return np.full(len(rates), np.nan)
+    dwell = occupancy[support]
+    mean_rates = rates[:, support] @ dwell / dwell.sum()
+    variance = _cached_variance(result, mean_rates, support)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        bias = variance / (2.0 * mean_rates * np.log(base))
+    spiking = mean_rates > 0
+    # The expansion parameter is the relative variance of a bin's rate,
+    # ``V / lam`` on average. The second-order bias breaks down once it
+    # reaches 1: fewer spikes than independent bins.
+    too_few = spiking & ~(variance <= mean_rates)
+    if too_few.any():
+        total = occupancy[occupancy > 0].sum()
+        effective_bins = float(np.nanmax(variance[too_few]) * total)
+        warnings.warn(
+            f"{int(too_few.sum())} of {len(rates)} units have fewer spikes than "
+            f"their rate maps have independent bins (about {effective_bins:.0f}), "
+            "so their information bias is NaN and they fail the information "
+            "screen.\n"
+            "Why: the bias of plug-in information is an expansion in "
+            "independent bins per spike; with fewer spikes than independent "
+            "bins it breaks down, so the information an untuned cell would "
+            "show is unknown and the cutoff cannot be applied.\n"
+            "Fix: record longer, or use coarser bins or a larger bandwidth "
+            "(fewer independent bins). The family's shuffle test "
+            "(*_significance) still gives these units a p-value, but its cell "
+            "verdict needs the same bias.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    return np.where(spiking & ~too_few, bias, np.nan)
+
+
+def _debiased_information(
+    result: Any, bias: NDArray[np.float64] | None = None
+) -> NDArray[np.float64]:
+    """Skaggs information minus the untuned-cell bias, per unit (bits/spike).
+
+    The value every information screen compares with its threshold. NaN for
+    silent units and units with too few spikes (see :func:`_information_bias`).
+    ``bias`` is :func:`_information_bias` of ``result`` when the caller
+    already has it, so its warning is not repeated.
+    """
+    from neurospatial.encoding._base import _to_numpy
+
+    information = np.atleast_1d(
+        np.asarray(_to_numpy(result.spatial_information()), dtype=np.float64)
+    )
+    return information - (_information_bias(result) if bias is None else bias)
+
+
+def _warn_unknown_bias(
+    significant: NDArray[np.bool_], debiased: NDArray[np.float64], *, kind: str
+) -> None:
+    """Warn about significant units whose bias-corrected information is unknown.
+
+    The shuffle verdict of an information-tuned cell type needs a significant
+    information test and bias-corrected information at or above a cutoff. A
+    unit with fewer spikes than independent bins has a NaN bias, so it is
+    never that cell type; this says so, in terms of the verdict.
+
+    Parameters
+    ----------
+    significant : ndarray of bool, shape (n_units,)
+        Whether each unit's information test passed.
+    debiased : ndarray, shape (n_units,)
+        Information minus the untuned-cell bias (bits/spike).
+    kind : str
+        Cell type of the verdict, such as ``"place"``.
+    """
+    from neurospatial._stacklevel import _external_stacklevel
+
+    unknown = significant & np.isnan(debiased)
+    if unknown.any():
+        warnings.warn(
+            f"{int(unknown.sum())} of {len(significant)} units have significant "
+            "information but fewer spikes than their rate maps have independent "
+            "bins, so their information bias is unknown and they are not called "
+            f"{kind} cells.\n"
+            f"Why: a {kind} verdict needs information beyond what an untuned "
+            "cell shows on the same map, and with fewer spikes than independent "
+            "bins that amount cannot be estimated.\n"
+            "Fix: record longer, or use coarser bins or a larger bandwidth "
+            "(fewer independent bins).",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
+def _beyond_bias(result: Any, min_info: float, *, kind: str) -> bool:
+    """Whether a unit with a significant information test is a ``kind`` cell.
+
+    The shuffle verdict of an information-tuned cell type, as the shuffle
+    labels apply it: the significant unit is that cell type when the
+    bias-corrected information of its rate map (``result``) is at or above
+    ``min_info``. An unknown bias fails, with the warning of
+    :func:`_warn_unknown_bias`.
+    """
+    with warnings.catch_warnings():
+        # An unknown bias is reported below, in terms of the verdict.
+        warnings.simplefilter("ignore", UserWarning)
+        bias = _information_bias(result)
+    debiased = _debiased_information(result, bias)
+    _warn_unknown_bias(np.array([True]), debiased, kind=kind)
+    return bool(debiased[0] >= min_info)
+
+
 def sparsity(
     firing_rate: ArrayLike,
     occupancy: ArrayLike,
@@ -395,7 +680,7 @@ def sparsity(
     -------
     float | jax.Array
         Sparsity value in range [0, 1]. Lower values indicate sparser firing.
-        Returns 0.0 if denominator is zero or undefined.
+        NaN for a silent map, an all-NaN map or zero total occupancy.
         Returns float for NumPy input, JAX scalar for JAX input.
 
     Raises
@@ -494,7 +779,8 @@ def batch_sparsity(
     Returns
     -------
     ndarray | jax.Array, shape (n_neurons,)
-        Sparsity values in range [0, 1] for each neuron.
+        Sparsity values in range [0, 1] for each neuron, NaN for a silent or
+        all-NaN map or zero total occupancy.
         Returns NumPy array for NumPy input, JAX array for JAX input.
 
     Raises
@@ -561,9 +847,6 @@ def batch_sparsity(
 def batch_grid_scores(
     env: Environment,
     firing_rates: NDArray[np.float64],
-    *,
-    inner_radius_fraction: float = 0.2,
-    outer_radius_fraction: float = 0.5,
 ) -> BatchScoresResult:
     """Compute grid scores for multiple neurons.
 
@@ -574,25 +857,20 @@ def batch_grid_scores(
     Parameters
     ----------
     env : Environment
-        Spatial environment containing bin centers and connectivity.
-        Must be a regular 2D grid for FFT-based autocorrelation.
+        Environment with a regular 2D grid of rectangular cells, as
+        :func:`~neurospatial.encoding.grid.spatial_autocorrelation` requires.
     firing_rates : ndarray, shape (n_neurons, n_bins)
         Firing rate maps for each neuron in Hz.
-    inner_radius_fraction : float, default=0.2
-        Inner radius of annular region as fraction of autocorrelogram semi-axis.
-        See :func:`~neurospatial.encoding.grid.grid_score` for details.
-    outer_radius_fraction : float, default=0.5
-        Outer radius of annular region as fraction of autocorrelogram semi-axis.
-        See :func:`~neurospatial.encoding.grid.grid_score` for details.
 
     Returns
     -------
     BatchScoresResult
         Container with two parallel arrays of length ``n_neurons``:
 
-        - ``scores``: grid scores in range [-2, 2]. NaN where grid score
-          cannot be computed (constant firing, invalid autocorrelation,
-          non-regular grid environment, or a caught exception).
+        - ``scores``: grid scores in range [-2, 2]. NaN where the grid
+          score is undefined for that map (all-NaN or constant firing, no
+          central autocorrelogram peak bounded inside the map) or where a
+          caught exception occurred.
         - ``failures``: boolean mask, ``True`` for neurons whose
           computation raised an exception that was caught and converted
           to NaN. Use this to distinguish "score is NaN for legitimate
@@ -607,6 +885,13 @@ def batch_grid_scores(
     ValueError
         If firing_rates is not 2D.
         If firing_rates.shape[1] != env.n_bins.
+    NotImplementedError
+        If ``env`` has no regular 2D grid of rectangular cells (hexagonal,
+        mesh, track or 3D layouts, or uneven cells), exactly as
+        :func:`~neurospatial.encoding.grid.spatial_autocorrelation` refuses
+        it.
+    CartesianOnlyError
+        If ``env`` is polar.
 
     Notes
     -----
@@ -615,16 +900,13 @@ def batch_grid_scores(
     1. Computes spatial autocorrelation using :func:`spatial_autocorrelation`
     2. Computes grid score using :func:`grid_score`
 
-    **Interpretation**:
-
-    - **score > 0.4**: Strong hexagonal grid (typical threshold for grid cells)
-    - **score ≈ 0**: No hexagonal structure (place cells, non-spatial cells)
-    - **score < 0**: Anti-hexagonal structure (rare)
-
-    **Environment requirements**:
-
-    Grid score computation requires a regular 2D grid environment for FFT-based
-    autocorrelation. For irregular environments, the function returns NaN.
+    **Interpretation**: a higher score means stronger sixfold rotational
+    symmetry; about 0 means none (place cells, untuned cells) and below 0
+    another symmetry. 0.4 is a common screening convention for grid cells,
+    not a verdict: on circularly time-shifted spike trains of simulated grid,
+    place and untuned cells, 1-8% of the shuffled maps scored 0.4 or more.
+    Calling a cell a grid cell needs a null distribution from your own
+    recording: the scores of its spike train circularly shifted in time.
 
     Examples
     --------
@@ -636,7 +918,7 @@ def batch_grid_scores(
     >>> x = np.linspace(-50, 50, 51)
     >>> xx, yy = np.meshgrid(x, x)
     >>> positions = np.column_stack([xx.ravel(), yy.ravel()])
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     >>> # Random firing patterns (5 neurons)
     >>> rng = np.random.default_rng(42)
@@ -668,37 +950,16 @@ def batch_grid_scores(
             f"env has {env.n_bins} bins"
         )
 
-    # API-level validation: invalid radius fractions are programmer
-    # errors, not per-neuron failures. Raise once before the loop so the
-    # ValueError reaches the caller rather than being swallowed into
-    # ``failures=True`` for every neuron. Mirrors the validation
-    # ``grid_score`` does internally.
-    if not (0 < inner_radius_fraction < 1):
-        raise ValueError(
-            f"inner_radius_fraction must be in (0, 1), got {inner_radius_fraction}"
-        )
-    if not (inner_radius_fraction < outer_radius_fraction <= 1):
-        raise ValueError(
-            f"outer_radius_fraction must be in (inner_radius_fraction, 1], "
-            f"got {outer_radius_fraction} with inner={inner_radius_fraction}"
-        )
-
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
     failures = np.zeros(n_neurons, dtype=np.bool_)
 
-    # Environment-level legitimate-NaN: grid score requires a regular 2D
-    # grid (the FFT autocorrelation path). On irregular topologies we
-    # short-circuit every neuron to NaN with failures=False rather than
-    # spending O(n_neurons) computation re-deriving the same env-level
-    # ValueError. Callers who want a 1D distance-correlation profile
-    # should use `spatial_autocorrelation_radial` directly and feed the
-    # result into `periodicity_score`.
-    from neurospatial.encoding.grid import _detect_grid_method
+    # The environment either has a rectangular lag grid or has no grid score
+    # at all; refuse once, as spatial_autocorrelation does, rather than
+    # returning NaN scores that read as "not a grid cell".
+    from neurospatial.encoding.grid import _require_rectangular_grid
 
-    if _detect_grid_method(env) != "fft":
-        scores.fill(np.nan)
-        return BatchScoresResult(scores=scores, failures=failures)
+    _require_rectangular_grid(env, "batch_grid_scores()")
 
     for i in range(n_neurons):
         firing_rate = firing_rates[i]
@@ -720,11 +981,7 @@ def batch_grid_scores(
 
         try:
             autocorr = spatial_autocorrelation(env, firing_rate)
-            scores[i] = grid_score(
-                autocorr,
-                inner_radius_fraction=inner_radius_fraction,
-                outer_radius_fraction=outer_radius_fraction,
-            )
+            scores[i] = grid_score(autocorr)
         except (ValueError, RuntimeError):
             # Caught exception: record both NaN and the failure flag so
             # the caller can distinguish this from a legitimate-NaN.
@@ -750,15 +1007,15 @@ def batch_border_scores(
     firing_rates: NDArray[np.float64],
     *,
     threshold: float = 0.3,
-    min_area: float = 0.0,
+    min_area: float | None = None,
     metric: str = "geodesic",
     boundary_source: BoundarySource = "physical",
 ) -> BatchScoresResult:
     """Compute border scores for multiple neurons.
 
-    Computes border score (boundary proximity tuning) for each neuron's firing
-    rate map. Border score quantifies how much a cell's firing field is aligned
-    with environmental boundaries.
+    Computes the border score of Solstad et al. (2008) for each neuron's
+    firing rate map; see :func:`~neurospatial.encoding.border.border_score`
+    for the definition.
 
     Parameters
     ----------
@@ -769,23 +1026,23 @@ def batch_border_scores(
     threshold : float, default=0.3
         Fraction of peak firing rate used to segment the field.
         Follows Solstad et al. (2008). Must be in (0, 1).
-    min_area : float, default=0.0
-        Minimum field area (in physical units) to compute border score.
-        Fields smaller than this return NaN. For rat hippocampal data,
-        Solstad et al. (2008) used 200 cm². Adjust based on bin size
-        and environment scale.
+    min_area : float, optional
+        Smallest area of one field, in squared position units (for example
+        cm²). Smaller fields are ignored. The default, None, is the 200 cm² of
+        Solstad et al. (2008) in the environment's units, or at least 9 bins
+        (the BNT/opexebo default) when the units are not a metric length.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric for computing distance from field bins to boundary bins.
-        - "geodesic": Graph shortest path distance. Respects environment
-          connectivity, appropriate for irregular environments or those with obstacles.
-        - "euclidean": Straight-line distance in physical space. Generally faster
-          for large environments.
+        Distance from field bins to the nearest wall.
+        - "geodesic": center-to-wall length at the wall plus the shortest path
+          through the connectivity graph. Respects obstacles.
+        - "euclidean": straight-line distance to the nearest wall.
 
     boundary_source : {'physical', 'analysis'}, default='physical'
-        Declared walls, or the explicitly requested legacy boundary-bin
-        approximation. Missing physical geometry, retained wall cells or finite
-        wall firing rates raise NotImplementedError rather than being converted
-        to per-unit computation failures.
+        The measured arena walls, or the explicitly requested outline of the
+        retained bins. Missing wall geometry, or walls outside every bin,
+        raise NotImplementedError rather than being converted to per-unit
+        computation failures. Unvisited wall bins do not: each unit's
+        coverage uses the observed part of each wall.
 
     Returns
     -------
@@ -793,8 +1050,8 @@ def batch_border_scores(
         Container with two parallel arrays of length ``n_neurons``:
 
         - ``scores``: border scores in range [-1, 1]. NaN where border
-          score cannot be computed (zero firing, invalid field, no
-          field bins, or a caught exception).
+          score cannot be computed (no positive peak, no field of the
+          minimum size, no observed wall, or a caught exception).
         - ``failures``: boolean mask, ``True`` for neurons whose
           ``border_score`` call raised ``ValueError`` or
           ``RuntimeError`` and was caught. A ``UserWarning`` is also
@@ -803,21 +1060,21 @@ def batch_border_scores(
     Raises
     ------
     ValueError
-        If firing_rates is not 2D.
-        If firing_rates.shape[1] != env.n_bins.
+        If firing_rates is not 2D, if firing_rates.shape[1] != env.n_bins,
+        or if an argument is invalid.
     NotImplementedError
-        If physical wall coverage or observations are unavailable for any unit.
+        If the walls are unavailable (see
+        :func:`~neurospatial.encoding.border.border_score`).
 
     Notes
     -----
     For each neuron, this function delegates to
     :func:`~neurospatial.encoding.border.border_score`.
 
-    **Interpretation**:
-
-    - **score > 0.5**: Strong border cell (field aligned with boundary)
-    - **score ≈ 0**: No boundary preference (uniform or mixed)
-    - **score < 0**: Anti-border (field in center, far from boundaries)
+    A field along one whole wall scores near 1 and a central field -1. A
+    uniform map also scores about 0.5 on a square (its one field covers every
+    wall; see :func:`~neurospatial.encoding.border.untuned_border_score`), so
+    combine the score with spatial information or a shuffle test.
 
     References
     ----------
@@ -835,7 +1092,7 @@ def batch_border_scores(
     >>> x = np.linspace(-50, 50, 51)
     >>> xx, yy = np.meshgrid(x, x)
     >>> positions = np.column_stack([xx.ravel(), yy.ravel()])
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     >>> # Random firing patterns (5 neurons)
     >>> rng = np.random.default_rng(42)
@@ -848,7 +1105,8 @@ def batch_border_scores(
     --------
     neurospatial.encoding.border.border_score : Single-neuron border score
     """
-    from neurospatial.encoding.border import border_score
+    from neurospatial.encoding._physical_border import border_geometry
+    from neurospatial.encoding.border import _validate_border_arguments, border_score
 
     firing_rates = np.asarray(firing_rates)
 
@@ -864,27 +1122,10 @@ def batch_border_scores(
             f"env has {env.n_bins} bins"
         )
 
-    # API-level validation: invalid global parameters are programmer
-    # errors, not per-neuron failures. Raise once before the loop so the
-    # ValueError reaches the caller rather than being swallowed into
-    # ``failures=True`` for every neuron. Mirrors the validation
-    # ``border_score`` does internally.
-    if not (0 < threshold < 1):
-        raise ValueError(
-            f"threshold must be in (0, 1), got {threshold}. "
-            "Typically 0.3 (30% of peak)."
-        )
-    if min_area < 0:
-        raise ValueError(f"min_area must be non-negative, got {min_area}")
-    if metric not in ("geodesic", "euclidean"):
-        raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
-
-    from neurospatial.geometry import boundary_geometry
-
-    if boundary_source not in ("physical", "analysis"):
-        raise ValueError("boundary_source must be 'physical' or 'analysis'.")
-    if boundary_source == "physical":
-        boundary_geometry(env.binning, env.arena, "physical")
+    # Invalid arguments and unavailable walls concern every neuron, so raise
+    # them once here instead of recording a per-neuron failure.
+    _validate_border_arguments(threshold, min_area, metric, boundary_source)
+    border_geometry(env, boundary_source)
 
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
@@ -1201,8 +1442,8 @@ def mutual_information(
     migration = (
         "mutual_information requires a 2-D joint position-response histogram. "
         "Mean firing rates and occupancy do not determine mutual information. "
-        "Use information_per_second(firing_rate, occupancy) for the previous "
-        "Skaggs calculation in bits/second."
+        "For a rate map, use information_per_second(firing_rate, occupancy) "
+        "for the Skaggs information rate in bits/second."
     )
     if occupancy is not None:
         raise ValueError(migration)
@@ -1256,8 +1497,8 @@ def spatial_coverage_single_cell(
     Returns
     -------
     float
-        Fraction of bins with firing rate > threshold, in range [0, 1].
-        Returns NaN if all firing rates are NaN.
+        Fraction of observed (finite-rate) bins with firing rate > threshold,
+        in range [0, 1]. NaN if every rate is NaN.
 
     Notes
     -----
@@ -1268,7 +1509,7 @@ def spatial_coverage_single_cell(
         C = \\frac{\\sum_i \\mathbb{1}[r_i > \\theta]}{N}
 
     where :math:`r_i` is firing rate in bin :math:`i`, :math:`\\theta` is
-    the threshold, and :math:`N` is the total number of bins.
+    the threshold, and :math:`N` is the number of bins with a finite rate.
 
     **Interpretation**:
 
@@ -1282,8 +1523,10 @@ def spatial_coverage_single_cell(
     - Inverse of selectivity: high coverage -> low selectivity
     - Complementary to sparsity: both measure spatial specificity
 
-    **NaN handling**: NaN values in firing_rate are treated as bins with
-    zero firing (below threshold).
+    **NaN handling**: NaN bins (unvisited, or below the occupancy threshold)
+    were not observed. They are excluded from both the count and the total,
+    so a cell is not called selective because part of the arena went
+    unsampled.
 
     Examples
     --------
@@ -1308,19 +1551,7 @@ def spatial_coverage_single_cell(
            the spatial firing of hippocampal complex-spike cells. J Neurosci 7(7).
     """
     firing_rate = np.asarray(firing_rate)
-
-    # Handle NaN values (treat as below threshold)
-    valid_mask = np.isfinite(firing_rate)
-
-    if not np.any(valid_mask):
+    observed = firing_rate[np.isfinite(firing_rate)]
+    if observed.size == 0:
         return np.nan
-
-    # Count bins above threshold
-    n_above = np.sum(firing_rate[valid_mask] > threshold)
-
-    # Total number of bins (including NaN bins as zeros)
-    n_total = len(firing_rate)
-
-    coverage = n_above / n_total
-
-    return float(coverage)
+    return float(np.mean(observed > threshold))

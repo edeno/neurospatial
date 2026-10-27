@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._validation import validate_finite
 from neurospatial.simulation.models.base import NeuralModel
 
@@ -239,7 +240,7 @@ def generate_population_spikes(
     Parameters
     ----------
     models : list[NeuralModel]
-        List of neural models (PlaceCellModel, BoundaryCellModel, GridCellModel, etc.).
+        List of neural models (PlaceCellModel, BorderCellModel, GridCellModel, etc.).
         Each model must implement the NeuralModel protocol.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds (must be uniformly spaced).
@@ -369,7 +370,7 @@ def generate_population_spikes(
     --------
     generate_poisson_spikes : Generate spikes for single neuron
     PlaceCellModel : Place cell firing rate model
-    BoundaryCellModel : Boundary cell firing rate model
+    BorderCellModel : Border cell firing rate model
     GridCellModel : Grid cell firing rate model
 
     Notes
@@ -542,8 +543,8 @@ def _held_movement_heading(
     ------
     ValueError
         If a recording never has a movement direction: it never moves, or
-        every interval between its samples is longer than the default
-        ``max_gap`` (0.5 s).
+        every gap between its samples is longer than the default
+        ``max_gap`` (1.0 s).
 
     Examples
     --------
@@ -597,8 +598,8 @@ def _held_movement_heading(
                 f"movement direction is defined in recording {r + 1} (samples "
                 f"{starts[r]} to {ends[r] - 1}, {first_t:g} to {last_t:g} s), "
                 "because it never moves or no interval between its samples is "
-                "short enough to use (intervals longer than max_gap=0.5 s are "
-                "not used).",
+                "short enough to use (gaps longer than "
+                f"max_gap={DEFAULT_MAX_GAP} s are not used).",
                 why="without headings=, the simulated heading is the direction "
                 "of the velocity, held within each recording.",
                 fix="pass headings= with one angle in radians per sample, "

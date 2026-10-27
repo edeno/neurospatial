@@ -3,11 +3,13 @@
 Shared validation of times, positions and signals, and resolution of observed
 samples, intervals and runs, used by the behavior, event, animation and
 encoding analyses. A sample is valid when
-every coordinate is finite. Interval ``k`` (samples ``k`` and ``k + 1``) is
-usable when both samples are valid, the elapsed time passes the ``max_gap`` and
-``epochs`` gates, and no recording break is declared before sample ``k + 1``.
-Runs are maximal sequences of consecutive usable intervals. Nothing here
-depends on an ``Environment``.
+every coordinate is finite. A missing sample is treated exactly like a deleted
+row: interval ``k`` (samples ``k`` and ``k + 1``) belongs to the gap between
+the last valid sample at or before ``k`` and the first valid sample after it,
+and is usable when that gap passes the ``max_gap`` and ``epochs`` gates and no
+recording break is declared inside it. Runs are maximal sequences of
+consecutive usable intervals; they start and end at valid samples. Nothing
+here depends on an ``Environment``.
 """
 
 from __future__ import annotations
@@ -22,6 +24,9 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    as_intervals,
+    gap_endpoints,
+    interval_valid_mask,
     observed_interval_mask,
     ragged_arange,
     run_sample_bounds,
@@ -45,19 +50,29 @@ class ObservationSupport(ReadOnlyArraysMixin):
     sample_valid : ndarray of bool, shape (n_samples,)
         True where every coordinate is finite.
     interval_gates : ndarray of bool, shape (max(n_samples - 1, 0),)
-        True for intervals that pass ``max_gap``, ``epochs`` and
-        ``break_before``, whatever the validity of their samples. Use it to
-        tell a declared boundary (False) from a missing observation:
-        ``interval_mask == interval_gates & sample_valid[:-1] & sample_valid[1:]``.
+        True for intervals whose gap passes ``max_gap``, ``epochs`` and
+        ``break_before``. The gap runs between the valid samples on either
+        side; an interval with no valid sample on one side is gated on its
+        own samples. False marks a boundary: a tracking loss longer than
+        ``max_gap``, an epoch edge or a declared break.
     interval_mask : ndarray of bool, shape (max(n_samples - 1, 0),)
-        True for usable intervals.
+        True for usable intervals: gated and with a valid sample on both
+        sides, so intervals inside a bridged stretch of missing samples are
+        usable.
     run_ids : ndarray of intp, shape (n_samples,)
-        Run index ``0..n_runs-1`` in time order; -1 for samples that touch no
-        usable interval.
+        Run index ``0..n_runs-1`` in time order of each valid sample; -1 for
+        missing samples and valid samples that touch no usable interval.
     run_sample_bounds : ndarray of intp, shape (n_runs, 2)
-        Inclusive ``(first, last)`` original sample indices of each run.
+        Inclusive ``(first, last)`` original sample indices of each run; both
+        are valid samples, and missing samples between them are bridged.
     run_time_bounds : ndarray of float64, shape (n_runs, 2)
         ``times`` at those indices, in seconds.
+    max_gap : float or None
+        The gap gate the support was resolved with.
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        Normalized epoch windows the support was resolved with.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Validated declared breaks the support was resolved with.
     """
 
     sample_valid: NDArray[np.bool_]
@@ -66,15 +81,84 @@ class ObservationSupport(ReadOnlyArraysMixin):
     run_ids: NDArray[np.intp]
     run_sample_bounds: NDArray[np.intp]
     run_time_bounds: NDArray[np.float64]
+    max_gap: float | None
+    epochs: NDArray[np.float64] | None
+    break_before: NDArray[np.bool_] | None
 
     def __post_init__(self) -> None:
         self._own_arrays()
+
+    def restricted(
+        self, times: NDArray[np.float64], defined: NDArray[np.bool_]
+    ) -> ObservationSupport:
+        """The support of a quantity that is also missing where ``defined`` is False.
+
+        A quantity derived from the positions can be undefined at a finite
+        position, such as the geodesic distance of a position outside the
+        environment. Such a sample is missing for that quantity, and like a
+        deleted row its gap is gated again by the same ``max_gap``,
+        ``epochs`` and ``break_before``, so the quantity is never bridged
+        across a long gap or a declared break hidden in it. No warning is
+        repeated.
+
+        Parameters
+        ----------
+        times : ndarray, shape (n_samples,)
+            The times this support was resolved from, in seconds.
+        defined : ndarray of bool, shape (n_samples,)
+            False where the derived quantity is undefined.
+
+        Returns
+        -------
+        ObservationSupport
+            Support with ``sample_valid & defined`` as the valid samples.
+
+        Examples
+        --------
+        A sample with no derived value inside a 0.2 s gap, at ``max_gap=0.15``:
+
+        >>> import numpy as np
+        >>> times = np.arange(5) * 0.1
+        >>> support = resolve_sample_support(
+        ...     times,
+        ...     np.ones(5, dtype=bool),
+        ...     max_gap=0.15,
+        ...     epochs=None,
+        ...     break_before=None,
+        ...     result="the result is empty",
+        ... )
+        >>> support.restricted(
+        ...     times, np.array([1, 1, 0, 1, 1], dtype=bool)
+        ... ).interval_mask
+        array([ True, False, False,  True])
+        """
+        raw_gates = interval_valid_mask(
+            times,
+            max_gap=self.max_gap,
+            epochs=self.epochs,
+            break_before=self.break_before,
+        )
+        return _support_from_gates(
+            times,
+            self.sample_valid & np.asarray(defined, dtype=bool),
+            raw_gates,
+            max_gap=self.max_gap,
+            epochs=self.epochs,
+            break_before=self.break_before,
+        )
 
     @property
     def isolated(self) -> NDArray[np.bool_]:
         """Valid samples that touch no usable interval, shape (n_samples,)."""
         isolated: NDArray[np.bool_] = self.sample_valid & (self.run_ids == -1)
         return isolated
+
+    def run_samples(self) -> list[NDArray[np.intp]]:
+        """Indices of the valid samples of each run, in time order."""
+        return [
+            first + np.flatnonzero(self.sample_valid[first : last + 1])
+            for first, last in self.run_sample_bounds
+        ]
 
 
 def validate_break_before(
@@ -106,23 +190,45 @@ def validate_break_before(
 def _support_from_gates(
     times: NDArray[np.float64],
     sample_valid: NDArray[np.bool_],
-    gates: NDArray[np.bool_],
+    raw_gates: NDArray[np.bool_],
+    *,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    break_before: NDArray[np.bool_] | None,
 ) -> ObservationSupport:
-    """Resolve intervals and runs for one sample-validity vector under ``gates``."""
+    """Resolve intervals and runs for one sample-validity vector.
+
+    Missing samples are bridged like deleted rows: the gates are evaluated on
+    the gap between consecutive valid samples (``interval_valid_mask`` with
+    ``sample_valid``). ``raw_gates`` are the gates of each interval's own
+    samples, used for intervals with no valid sample on one side.
+    """
     n_samples = times.size
-    interval_mask = gates & sample_valid[:-1] & sample_valid[1:]
+    interval_mask = interval_valid_mask(
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        sample_valid=sample_valid,
+    )
+    _, _, linked = gap_endpoints(sample_valid)
+    interval_gates = np.where(linked, interval_mask, raw_gates)
     bounds = run_sample_bounds(interval_mask)
     run_ids = np.full(n_samples, -1, dtype=np.intp)
     lengths = bounds[:, 1] - bounds[:, 0] + 1
     samples = np.repeat(bounds[:, 0], lengths) + ragged_arange(lengths)
     run_ids[samples] = np.repeat(np.arange(lengths.size, dtype=np.intp), lengths)
+    run_ids[~sample_valid] = -1
     return ObservationSupport(
         sample_valid=sample_valid,
-        interval_gates=gates,
+        interval_gates=interval_gates,
         interval_mask=interval_mask,
         run_ids=run_ids,
         run_sample_bounds=bounds,
         run_time_bounds=times[bounds],
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
     )
 
 
@@ -187,22 +293,35 @@ def resolve_sample_support(
 
     Examples
     --------
+    The missing sample sits in a 0.2 s gap, bridged at ``max_gap=0.5``
+    and a tracking loss at ``max_gap=0.15``:
+
     >>> import numpy as np
-    >>> support = resolve_sample_support(
-    ...     np.arange(5) * 0.1,
-    ...     np.array([True, True, False, True, True]),
-    ...     max_gap=0.5,
-    ...     epochs=None,
-    ...     break_before=None,
-    ...     result="the result is empty",
-    ... )
-    >>> support.interval_mask
-    array([ True, False, False,  True])
+    >>> valid = np.array([True, True, False, True, True])
+    >>> for max_gap in (0.5, 0.15):
+    ...     support = resolve_sample_support(
+    ...         np.arange(5) * 0.1,
+    ...         valid,
+    ...         max_gap=max_gap,
+    ...         epochs=None,
+    ...         break_before=None,
+    ...         result="the result is empty",
+    ...     )
+    ...     print(support.interval_mask)
+    [ True  True  True  True]
+    [ True False False  True]
     """
-    gates = observed_interval_mask(
+    raw_gates = observed_interval_mask(
         times, max_gap=max_gap, epochs=epochs, break_before=break_before, result=result
     )
-    return _support_from_gates(times, sample_valid, gates)
+    return _support_from_gates(
+        times,
+        sample_valid,
+        raw_gates,
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+        break_before=break_before,
+    )
 
 
 def label_codes(
@@ -558,11 +677,19 @@ def validated_signals(
     sample_valid = np.isfinite(sig)
     if flags is not None:
         sample_valid = sample_valid & flags
-    gates = observed_interval_mask(
+    raw_gates = observed_interval_mask(
         t, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
     )
+    resolved_epochs = as_intervals(epochs, name="epochs")
     supports = tuple(
-        _support_from_gates(t, np.ascontiguousarray(sample_valid[:, f]), gates)
+        _support_from_gates(
+            t,
+            np.ascontiguousarray(sample_valid[:, f]),
+            raw_gates,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            break_before=breaks,
+        )
         for f in range(sig.shape[1])
     )
     return t, sig, supports

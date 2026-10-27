@@ -28,6 +28,11 @@ barrier sets are allowed:
   triangle, the outer side of its port hex, which is the vertex where the
   paper places it.
 
+The floor's outline is modeled as opaque walls (``arena.outline ==
+"wall"``). Krausz et al. (2023) describe the barriers as columns and do not
+say what bounds the platform's edge; the ``hexmaze`` package places half
+barriers "along the walls".
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.hex_small import (
@@ -57,6 +62,7 @@ from dataclasses import dataclass, field
 import networkx as nx
 import numpy as np
 import shapely
+from shapely.affinity import affine_transform
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
@@ -222,29 +228,53 @@ def _hex_centroids(corner_to_corner: float) -> dict[int, np.ndarray]:
     return centroids
 
 
-def _hexagon(center: np.ndarray, side: float) -> Polygon:
-    """Flat-topped regular hexagon with the given centre and side length."""
-    angles = np.arange(6) * np.pi / 3
-    return Polygon(
-        np.column_stack(
-            [center[0] + side * np.cos(angles), center[1] + side * np.sin(angles)]
-        )
-    )
+# Corners of a flat-topped hexagon around its centre, counterclockwise from
+# the right, in lattice units of half a side across and one apothem up.
+_HEXAGON_CORNERS = np.array([(2, 0), (1, 1), (-1, 1), (-2, 0), (-1, -1), (1, -1)])
 
 
-def _platform(centroids: dict[int, np.ndarray], side: float) -> Polygon:
+def _hex_lattice(side: float) -> tuple[dict[int, np.ndarray], list[float]]:
+    """Hex centres in lattice units, and the map from lattice units to cm.
+
+    Hex centres and corners lie on a lattice half a hex side across and one
+    apothem up, so in those units every corner is a pair of integers.
+    Geometry built there shares corners exactly between neighbouring hexes.
+
+    Returns
+    -------
+    centroids : dict of int to ndarray, shape (2,)
+        Each hex's centre in lattice units.
+    to_cm : list of float
+        ``shapely.affinity.affine_transform`` coefficients that scale lattice
+        units to cm and put the centre of the three port hexes at the origin.
+    """
+    unit = np.array([side / 2.0, math.sqrt(3) / 2.0 * side])
+    lattice = {h: np.rint(c / unit) for h, c in _hex_centroids(2.0 * side).items()}
+    middle = np.mean([lattice[h] for h in _PORTS.values()], axis=0) * unit
+    return lattice, [unit[0], 0.0, 0.0, unit[1], -middle[0], -middle[1]]
+
+
+def _lattice_hexagon(center: np.ndarray) -> Polygon:
+    """Flat-topped regular hexagon around a lattice-unit centre."""
+    return Polygon(center + _HEXAGON_CORNERS)
+
+
+def _platform(centroids: dict[int, np.ndarray], to_cm: list[float]) -> Polygon:
     """Triangular platform with each corner cut at its port hex's outer edge.
 
     Hexmaze ``plotting.get_maze_bounding_box``: the two corners of each port
-    hex farthest from the maze centre are the platform's corners.
+    hex farthest from the maze centre, measured in cm, are the platform's
+    corners. ``centroids`` and the platform are in lattice units; ``to_cm``
+    is the map from :func:`_hex_lattice`.
     """
+    scale = np.array([to_cm[0], to_cm[3]])
     middle = np.mean([centroids[h] for h in _PORTS.values()], axis=0)
     corners: list[np.ndarray] = []
     for hex_id in _PORTS.values():
-        outward = centroids[hex_id] - middle
-        vertices = np.asarray(_hexagon(centroids[hex_id], side).exterior.coords)[:-1]
-        corners.extend(vertices[np.argsort(vertices @ outward)[-2:]])
-    corners_arr = np.asarray(corners)
+        outward = (centroids[hex_id] - middle) * scale
+        vertices = centroids[hex_id] + _HEXAGON_CORNERS
+        corners.extend(vertices[np.argsort((vertices - middle) * scale @ outward)[-2:]])
+    corners_arr = np.asarray(corners, dtype=np.float64)
     angle = np.arctan2(*(corners_arr - corners_arr.mean(axis=0)).T[::-1])
     return Polygon(corners_arr[np.argsort(angle)])
 
@@ -356,27 +386,27 @@ def make_small_hex_maze(
         dims = SmallHexDims()
 
     side = dims.hex_side
-    centroids = _hex_centroids(2.0 * side)
-    middle = np.mean([centroids[h] for h in _PORTS.values()], axis=0)
-    centroids = {h: c - middle for h, c in centroids.items()}
+    # Built in lattice units, neighbouring hexes share their corners exactly,
+    # so cutting out wall hexes leaves no zero-width slits of floor between
+    # them; the floor is then mapped to cm.
+    lattice, to_cm = _hex_lattice(side)
+    centroids = {
+        h: np.asarray(affine_transform(shapely.Point(c), to_cm).coords[0])
+        for h, c in lattice.items()
+    }
 
     walls = [
-        centroids[top] + centroids[bottom] - centroids[mid]
+        lattice[top] + lattice[bottom] - lattice[mid]
         for top, mid, bottom in _PERMANENT_BARRIER_PARALLELOGRAMS
     ]
-    walls.extend(centroids[h] for h in dims.barriers)
-    platform = _platform(centroids, side)
-    # Rounding leaves zero-area slivers where wall hexes meet; drop them.
-    pieces = [
-        piece
-        for piece in shapely.get_parts(
-            platform.difference(unary_union([_hexagon(c, side) for c in walls]))
-        )
-        if piece.area > 1e-9 * platform.area
-    ]
-    if len(pieces) != 1:  # SmallHexDims refuses barriers that cut off hexes
+    walls.extend(lattice[h] for h in dims.barriers)
+    floor_lattice = _platform(lattice, to_cm).difference(
+        unary_union([_lattice_hexagon(c) for c in walls])
+    )
+    if not isinstance(floor_lattice, Polygon):
+        # SmallHexDims refuses barriers that cut off hexes.
         raise RuntimeError("the hex maze floor is not one connected piece")
-    floor = pieces[0]
+    floor = affine_transform(floor_lattice, to_cm)
 
     env_2d = Environment.from_polygon(
         polygon=floor,
@@ -391,7 +421,9 @@ def make_small_hex_maze(
     landmarks = []
     for name, hex_id in _PORTS.items():
         center = centroids[hex_id]
-        regions.add(name, polygon=_hexagon(center, side))
+        regions.add(
+            name, polygon=affine_transform(_lattice_hexagon(lattice[hex_id]), to_cm)
+        )
         landmarks.append(
             Landmark(
                 name,

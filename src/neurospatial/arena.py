@@ -6,6 +6,7 @@ public import path.
 
 from neurospatial.geometry import (
     Arena,
+    BoundaryKind,
     EgocentricSurround,
     MaskArena,
     OpenArena,
@@ -15,6 +16,7 @@ from neurospatial.geometry import (
 
 __all__ = [
     "Arena",
+    "BoundaryKind",
     "EgocentricSurround",
     "MaskArena",
     "OpenArena",

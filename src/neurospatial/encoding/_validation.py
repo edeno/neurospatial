@@ -1,19 +1,15 @@
 """Shared input validation helpers for encoding compute functions.
 
-The four public ``compute_*_rate(s)`` entry points
-(``compute_spatial_rate``, ``compute_directional_rate``,
-``compute_egocentric_rate``, ``compute_view_rate`` and their plural
-variants) had drifted on input validation: only ``compute_view_rate`` and
-``compute_egocentric_rate`` length-checked their trajectory inputs, and
-each surfaced length errors with a slightly different message style.
+The public ``compute_*_rate(s)`` entry points and cell predicates share:
 
-This module centralizes:
-
-- ``_validate_times`` — monotonic-non-decreasing + min-length check on a
-  timestamp array (previously duplicated byte-for-byte in
-  ``_view_counts.py`` and ``_egocentric_counts.py``).
-- ``validate_trajectory`` — joint length + dimensionality check on
-  ``(times, positions?, headings?)``.
+- ``_validate_times`` — finite, non-decreasing timestamps with at least two
+  samples.
+- ``validate_trajectory`` — joint length and dimensionality checks on
+  ``(times, positions?, headings?)``, plus a warning for headings that look
+  like degrees.
+- ``warn_if_angles_look_like_degrees`` — the degree check for any angle
+  input read as radians.
+- ``validate_spike_times`` / ``validate_spike_trains`` — spike timestamps.
 
 The smoothing-method validator lives in
 ``neurospatial.encoding._smoothing._validate_smoothing_parameters`` and
@@ -23,12 +19,15 @@ directly.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     format_times_positions_error,
     times_positions_problems,
@@ -44,6 +43,7 @@ __all__ = [
     "validate_spike_times",
     "validate_spike_trains",
     "validate_trajectory",
+    "warn_if_angles_look_like_degrees",
 ]
 
 
@@ -241,6 +241,73 @@ def validate_spike_trains(
         validate_spike_times(spike_times, context=f"{context} (neuron {i})")
 
 
+def warn_if_angles_look_like_degrees(
+    angles: NDArray[np.float64],
+    *,
+    name: str,
+    context: str,
+    angle_unit_keyword: bool = False,
+) -> None:
+    """Warn when angles read as radians look like degrees.
+
+    Radians beyond ±2π are legitimate (unwrapped angles), so this warns
+    instead of raising. It fires when the largest finite magnitude exceeds
+    2π, every finite value lies within ±360, and some pair of consecutive
+    finite values differs by more than π.
+
+    The last condition separates degrees from unwrapped radians. Unwrapped
+    radians are continuous: :func:`numpy.unwrap` never leaves a step larger
+    than π, and a sampled heading that turned more than half a circle
+    between samples could not be unwrapped at all. Degree headings step by
+    more than π (3.14°) whenever the head turns faster than about 94° per
+    second at 30 Hz, and wrapped degrees (in [0, 360) or (-180, 180]) jump
+    by nearly 360 at every crossing of the seam. Degree data in which every
+    step is below 3.14° and the seam is never crossed is not detected.
+
+    Parameters
+    ----------
+    angles : ndarray
+        Angles that will be read as radians, in sample (or event) order.
+        Non-finite values are ignored.
+    name : str
+        Argument name shown in the message, e.g. ``"headings"``.
+    context : str
+        Name of the calling public function.
+    angle_unit_keyword : bool, default False
+        Whether the caller accepts ``angle_unit="deg"``, so the message can
+        offer it.
+
+    Warns
+    -----
+    UserWarning
+        When the finite angles look like degrees.
+    """
+    angles = np.asarray(angles, dtype=np.float64).ravel()
+    finite = np.isfinite(angles)
+    if not finite.any():
+        return
+    largest = float(np.abs(angles[finite]).max())
+    if not (2 * np.pi + 1e-6 < largest <= 360.0):
+        return
+    both_finite = finite[1:] & finite[:-1]
+    steps = np.abs(np.diff(angles))[both_finite]
+    if not np.any(steps > np.pi):
+        return
+    largest_step = float(steps.max())
+    fix = f"convert with np.radians({name})"
+    if angle_unit_keyword:
+        fix += ' or pass angle_unit="deg"'
+    warnings.warn(
+        f"{context}: {name} look like degrees (largest magnitude {largest:.4g}, "
+        f"all within ±360, and consecutive values differ by up to "
+        f"{largest_step:.4g}, more than the π a continuous radian angle can "
+        f"step) but are read as radians, which wraps them into meaningless "
+        f"directions. {fix[0].upper()}{fix[1:]}.",
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+
+
 def validate_trajectory(
     times: NDArray[np.float64],
     positions: NDArray[np.float64] | None = None,
@@ -248,11 +315,14 @@ def validate_trajectory(
     *,
     context: str,
     n_dims: int | None = None,
+    heading_unit: Literal["rad", "deg"] | None = None,
 ) -> None:
     """Check trajectory shapes, aligned sample rows and timestamp validity.
 
     All detected problems are reported together. Non-finite positions and
     headings remain valid missing observations for the binning layer to drop.
+    Headings read as radians that look like degrees warn
+    (:func:`warn_if_angles_look_like_degrees`).
 
     Parameters
     ----------
@@ -267,11 +337,19 @@ def validate_trajectory(
         Name of the calling function, used in the error message.
     n_dims : int, optional
         Expected coordinate dimension of the environment.
+    heading_unit : {"rad", "deg"} or None, optional
+        The caller's ``angle_unit``, or None when the caller only accepts
+        radians. Headings are checked for degrees unless it is ``"deg"``.
 
     Raises
     ------
     ValueError
         If timestamp validity, shapes, coordinate dimensions or lengths disagree.
+
+    Warns
+    -----
+    UserWarning
+        When headings read as radians look like degrees.
     """
     looks_swapped = False
     if positions is None:
@@ -295,6 +373,13 @@ def validate_trajectory(
     if problems:
         raise ValueError(
             format_times_positions_error(problems, looks_swapped, call=context)
+        )
+    if headings is not None and heading_unit != "deg":
+        warn_if_angles_look_like_degrees(
+            headings,
+            name="headings",
+            context=context,
+            angle_unit_keyword=heading_unit is not None,
         )
 
 

@@ -81,11 +81,7 @@ from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import (
-    observed_interval_mask,
-    observed_runs,
-    run_sample_bounds,
-)
+from neurospatial._intervals import DEFAULT_MAX_GAP, observed_runs
 from neurospatial._observation import validate_break_before
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
@@ -139,6 +135,17 @@ def _safe_gather(
     gathered: NDArray = values[safe_idx]
     gathered[~in_bounds] = fill
     return gathered
+
+
+def _located(position_bins: NDArray[np.int64], env: Environment) -> NDArray[np.bool_]:
+    """True for samples in a bin of ``env``; any other sample is missing.
+
+    Missing samples are skipped as if their rows were deleted, and the gap
+    around them is bridged when it is no longer than ``max_gap``.
+    """
+    bins = np.asarray(position_bins)
+    located: NDArray[np.bool_] = (bins >= 0) & (bins < env.n_bins)
+    return located
 
 
 def _positive_dt(
@@ -340,7 +347,7 @@ def detect_region_crossings(
     *,
     region_name: str,
     direction: Literal["both", "entry", "exit"] = "both",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Crossing]:
@@ -369,10 +376,13 @@ def detect_region_crossings(
         - 'both': detect entries and exits (default)
         - 'entry': only detect entries
         - 'exit': only detect exits
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -418,10 +428,8 @@ def detect_region_crossings(
     >>> from shapely.geometry import Point
     >>> import numpy as np
     >>> # Create 2D environment and add region
-    >>> x = np.linspace(0, 100, 100)
-    >>> y = np.linspace(0, 100, 100)
-    >>> positions = np.column_stack([x, y])
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> x, y = np.meshgrid(np.linspace(0, 100, 101), np.linspace(0, 100, 101))
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=5.0)
     >>> from neurospatial.regions import Regions
     >>> regions = Regions(env.regions.values())
     >>> _ = regions.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
@@ -462,7 +470,11 @@ def detect_region_crossings(
     )
     results: list[Crossing] = []
     for run in observed_runs(
-        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        sample_valid=_located(position_bins, env),
     ):
         results.extend(
             _detect_region_crossings_contiguous(
@@ -537,7 +549,7 @@ def detect_runs_between_regions(
     min_duration: float = 0.5,
     max_duration: float = 10.0,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Run]:
@@ -575,10 +587,13 @@ def detect_runs_between_regions(
         positions, so the value is bin-quantized; pre-filter on
         continuous positions if you need true sub-bin precision.
         If None, no velocity filtering is applied. Default: None.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -708,7 +723,11 @@ def detect_runs_between_regions(
     )
     results: list[Run] = []
     for run in observed_runs(
-        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        sample_valid=_located(position_bins, env),
     ):
         results.extend(
             _detect_runs_between_regions_contiguous(
@@ -849,7 +868,7 @@ def segment_by_velocity(
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
     smooth_window: float = DEFAULT_SPEED_SMOOTHING,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Run]:
@@ -883,10 +902,13 @@ def segment_by_velocity(
         velocity vector before its magnitude is thresholded, as in
         :func:`compute_speed`, so tracking jitter at rest is not movement.
         0 thresholds the unsmoothed central-difference speed.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -987,7 +1009,11 @@ def segment_by_velocity(
 
     results: list[Run] = []
     for run in observed_runs(
-        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
     ):
         results.extend(
             _segment_by_velocity_contiguous(
@@ -1163,7 +1189,7 @@ def detect_laps(
     direction: Literal["both", "clockwise", "counter-clockwise"] = "both",
     reference_lap: NDArray[np.int64] | None = None,
     start_region: str | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Lap]:
@@ -1200,10 +1226,13 @@ def detect_laps(
     start_region : str | None, optional
         Name of start region for 'region' method.
         Required when method='region'.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1250,7 +1279,8 @@ def detect_laps(
 
     Region entries are paired within each recording. Reference and auto
     searches stay within it. The auto template still uses the first 10%
-    of the whole input, before any recording splits.
+    of the whole input, before any recording splits; samples outside the
+    environment are left out of it as if their rows were deleted.
 
     **Lap Detection Methods:**
 
@@ -1414,7 +1444,13 @@ def detect_laps(
     position_bins = np.asarray(position_bins, dtype=np.int64)
     times = np.asarray(times, dtype=np.float64)
     breaks = validate_break_before(break_before, len(times), call="detect_laps")
-    runs = observed_runs(times, max_gap=max_gap, epochs=epochs, break_before=breaks)
+    runs = observed_runs(
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        sample_valid=_located(position_bins, env),
+    )
     laps: list[Lap] = []
     if method == "region":
         assert start_region is not None
@@ -1430,14 +1466,20 @@ def detect_laps(
             )
         return laps
     if method == "auto":
-        template_size = max(1, len(position_bins) // 10)
-        template = position_bins[:template_size]
+        # The first 10% of the located samples, as if missing rows were
+        # deleted; the search starts after the template's last sample.
+        located = np.flatnonzero(_located(position_bins, env))
+        template_samples = located[: max(1, located.size // 10)]
+        template = position_bins[template_samples]
+        template_stop = int(template_samples[-1]) + 1 if template_samples.size else 0
     else:
         assert reference_lap is not None
         template = reference_lap
-        template_size = 0
+        template_stop = 0
     for run in runs:
-        search_start = max(0, template_size - run.start) if method == "auto" else 0
+        # Runs hold sample indices with missing samples removed, so the
+        # template's end is located by index, not by subtraction.
+        search_start = int(np.searchsorted(run, template_stop))
         laps.extend(
             _detect_laps_search_contiguous(
                 position_bins[run],
@@ -1732,7 +1774,7 @@ def running_direction_labels(
     max_duration: float = 10.0,
     min_speed: float | None = None,
     successful_only: bool = True,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.object_]:
@@ -1781,10 +1823,13 @@ def running_direction_labels(
         If True (default), only runs that reached their target contribute
         labels; timed-out runs stay ``None``. If False, timed-out runs are
         labeled by their attempted direction.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1935,7 +1980,7 @@ def segment_trials(
     end_regions: list[str],
     min_duration: float = 1.0,
     max_duration: float = 15.0,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Trial]:
@@ -1957,8 +2002,9 @@ def segment_trials(
          emitted as a failed trial when it lasted at least min_duration)
 
     Samples outside every bin (``-1``, such as lost tracking while the animal
-    waits at a well) keep the region of the last located sample, so a tracking
-    dropout is not a departure or a return.
+    waits at a well) are missing: a dropout no longer than ``max_gap`` is
+    bridged, so it is not a departure or a return, and a longer one ends the
+    recording as any tracking loss does.
 
     Parameters
     ----------
@@ -1979,10 +2025,13 @@ def segment_trials(
     max_duration : float, optional
         Maximum trial duration in seconds. Default: 15.0.
         Trials exceeding this are marked as failed (timeout).
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2178,7 +2227,11 @@ def segment_trials(
     breaks = validate_break_before(break_before, len(times), call="segment_trials")
     results: list[Trial] = []
     for run in observed_runs(
-        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        sample_valid=_located(position_bins, env),
     ):
         results.extend(
             _segment_trials_contiguous(
@@ -2192,28 +2245,6 @@ def segment_trials(
             )
         )
     return results
-
-
-def _hold_through_unlocated(
-    in_region: NDArray[np.bool_], located: NDArray[np.bool_]
-) -> NDArray[np.bool_]:
-    """Carry each sample's region membership forward over unlocated samples.
-
-    Parameters
-    ----------
-    in_region : NDArray[np.bool_], shape (n_samples,)
-        Region membership of each sample; False where the sample is unlocated.
-    located : NDArray[np.bool_], shape (n_samples,)
-        True where the sample maps to a bin.
-
-    Returns
-    -------
-    NDArray[np.bool_], shape (n_samples,)
-        Membership of the last located sample at or before each sample; False
-        before the first located sample.
-    """
-    last_located = np.maximum.accumulate(np.where(located, np.arange(len(located)), -1))
-    return np.where(last_located >= 0, in_region[np.maximum(last_located, 0)], False)
 
 
 def _segment_trials_contiguous(
@@ -2233,23 +2264,17 @@ def _segment_trials_contiguous(
     start_mask = regions_to_mask(env, [start_region])
     end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}
 
-    # Check which trajectory samples are in which regions. A sample outside
-    # every bin (bin -1, e.g. lost tracking at a reward well) keeps the region
-    # state of the last located sample: losing the animal is not leaving.
+    # Check which trajectory samples are in which regions. Unlocated samples
+    # were removed by the caller and the gaps around them bridged.
     position_bins = np.asarray(position_bins, dtype=np.int64)
-    located = position_bins >= 0
-    in_start = _hold_through_unlocated(
-        _safe_gather(start_mask, position_bins, fill=False), located
-    )
+    in_start = _safe_gather(start_mask, position_bins, fill=False)
     in_end_regions = {
-        region: _hold_through_unlocated(
-            _safe_gather(mask, position_bins, fill=False), located
-        )
+        region: _safe_gather(mask, position_bins, fill=False)
         for region, mask in end_masks.items()
     }
 
     # Segment into trials. A trial starts when the animal leaves the start
-    # region, at the last located sample inside it, so time spent waiting at
+    # region, at the last sample inside it, so time spent waiting at
     # the start does not count toward the trial.
     trials: list[Trial] = []
     trial_start_idx: int | None = None
@@ -2258,8 +2283,7 @@ def _segment_trials_contiguous(
 
     for i in range(len(position_bins)):
         if in_start[i]:
-            if located[i]:
-                last_start_time = times[i]
+            last_start_time = times[i]
             if i > 0 and not in_start[i - 1] and trial_start_time is not None:
                 # The animal came back to the start region before reaching an
                 # end region: emit the aborted trial as failed (subject to
@@ -2648,7 +2672,7 @@ def detect_goal_directed_runs(
     goal_region: str,
     directedness_threshold: float = 0.7,
     min_progress: float = 20.0,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Run]:
@@ -2675,10 +2699,13 @@ def detect_goal_directed_runs(
     min_progress : float, optional
         Minimum distance progress toward goal (physical units). Filters out
         short runs with minimal displacement. Default is 20.0.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2718,8 +2745,8 @@ def detect_goal_directed_runs(
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
     no segment spans a pause. A sample
-    outside the environment (bin ``-1``) also ends a recording, since the
-    animal's path to the goal is unknown there.
+    outside the environment (bin ``-1``) is missing and skipped as if its row
+    were deleted; the gap around it counts toward ``max_gap``.
 
     Each recording supplies one candidate spanning its complete observed
     sample run; this function does not split repeated approaches into separate
@@ -2832,19 +2859,16 @@ def detect_goal_directed_runs(
     distances_to_goal = distance_field(
         env.connectivity, list(goal_bin_indices), weight="distance"
     )
-    # A recording continues across valid intervals between samples inside the
+    # A recording continues across bridged gaps between samples inside the
     # environment.
-    in_environment = position_bins >= 0
-    interval_mask = (
-        observed_interval_mask(
-            times, max_gap=max_gap, epochs=epochs, break_before=breaks
-        )
-        & in_environment[:-1]
-        & in_environment[1:]
-    )
     results: list[Run] = []
-    for first, last in run_sample_bounds(interval_mask):
-        run = slice(int(first), int(last) + 1)
+    for run in observed_runs(
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        sample_valid=_located(position_bins, env),
+    ):
         results.extend(
             _detect_goal_directed_runs_contiguous(
                 position_bins[run],

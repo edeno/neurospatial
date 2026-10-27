@@ -30,6 +30,7 @@ from neurospatial.geometry import (
     encode,
     materialize_cells,
 )
+from neurospatial.geometry._arena import outline_domains
 from neurospatial.geometry._codecs import same_encoded_arena
 
 if TYPE_CHECKING:
@@ -696,6 +697,17 @@ def _same_weighted_edges(first: nx.Graph, second: nx.Graph) -> bool:
     )
 
 
+def _walls_of(arena: Arena, kind: str) -> Any:
+    """The union of the arena's walls of one kind."""
+    return unary_union(
+        [
+            wall
+            for wall, wall_kind in zip(arena.walls, arena.wall_kinds, strict=True)
+            if wall_kind == kind
+        ]
+    )
+
+
 def _same_arena(first: Arena, second: Arena) -> bool:
     """Compare continuous meaning independently of polygon ring storage order."""
     if first is second:
@@ -706,17 +718,34 @@ def _same_arena(first: Arena, second: Arena) -> bool:
             "n_dims",
             "coordinate_kind",
             "domain_known",
-            "physical_footprint_known",
+            "outline",
         )
     ):
         return False
     first_domain, second_domain = first.polygonal_domain(), second.polygonal_domain()
     if first_domain is not None or second_domain is not None:
+        # A combined arena's outline is None when its components differ, so
+        # compare where each outline kind applies.
+        first_outlines, second_outlines = (
+            outline_domains(first),
+            outline_domains(second),
+        )
         return (
             first_domain is not None
             and second_domain is not None
             and first_domain.equals(second_domain)
-            and unary_union(first.walls).equals(unary_union(second.walls))
+            and first_outlines is not None
+            and second_outlines is not None
+            and first_outlines.keys() == second_outlines.keys()
+            and all(
+                domain.equals(second_outlines[kind])
+                for kind, domain in first_outlines.items()
+            )
+            and set(first.wall_kinds) == set(second.wall_kinds)
+            and all(
+                _walls_of(first, kind).equals(_walls_of(second, kind))
+                for kind in set(first.wall_kinds)
+            )
         )
     try:
         return same_encoded_arena(first, second)

@@ -85,8 +85,8 @@ def test_sixty_one_direction_rate_peak_matches_the_firing_object_bearing():
         np.zeros(2),
         np.array([[5.0, 0.0]]),
         distance_range=(0.0, 10.0),
-        n_distance_bins=1,
-        n_direction_bins=61,
+        distance_bin_size=10.0,
+        direction_bin_size=2 * np.pi / 61,
         method="binned",
     )
     assert result.env.n_bins == result.firing_rate.size == 61

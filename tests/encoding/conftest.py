@@ -101,14 +101,14 @@ def obj():
 def ou_env(ou_10min):
     from neurospatial import Environment
 
-    return Environment.from_samples(ou_10min[1], bin_size=5.0)
+    return Environment.from_samples(ou_10min[1], bin_size=5.0, units="cm")
 
 
 @pytest.fixture(scope="session")
 def ou_2min_env(ou_2min):
     from neurospatial import Environment
 
-    return Environment.from_samples(ou_2min[1], bin_size=5.0)
+    return Environment.from_samples(ou_2min[1], bin_size=5.0, units="cm")
 
 
 @pytest.fixture(scope="session")
@@ -152,18 +152,19 @@ def strong_field_spikes(ou_2min_env, ou_2min, obj):
 def significance_recording():
     from types import SimpleNamespace
 
+    from shapely.geometry import box
+
     from neurospatial import Environment
 
     rng = np.random.default_rng(7)
     times = np.arange(0, 60, 0.1)
-    xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
     return SimpleNamespace(
-        env=Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5),
+        env=Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm"),
         times=times,
         positions=np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)],
         headings=np.sin(times / 5),
         objects=np.array([[50.0, 50.0]]),
-        trains=[np.sort(rng.uniform(0, 59.9, count)) for count in [40, 55, 65]],
+        trains=[np.sort(rng.uniform(0, 59.9, count)) for count in [55, 65, 75]],
         speed=np.full(len(times), 5.0),
         gaze_offsets=np.zeros(len(times)),
     )
@@ -222,9 +223,13 @@ def significance_family(request):
         function=getattr(module, significance_name),
         compute=getattr(module, compute_name),
         compute_name=compute_name,
-        # The rate function each significance null calls; view and
-        # object-vector nulls reuse trajectory geometry through private ones.
+        # The function each significance null calls; every family reuses its
+        # trajectory binning or geometry through a private one, and the
+        # head-direction null counts spikes without estimating the
+        # spike-count dispersion.
         statistic_name={
+            "place": "_spatial_scores",
+            "head_direction": "_count_directional",
             "view": "_compute_view_rates",
             "object_vector": "_object_vector_rates",
             "egocentric_object_vector": "_object_vector_rates",
@@ -272,9 +277,18 @@ def frame_family(request):
     )
     kernel_defaults = {}
     if name == "view":
-        defaults["view_distance"] = kernel_defaults["view_distance"] = 5.0
+        # Gaze geometry is not under test here: a short fixed gaze that stops
+        # at the edge of the binned area.
+        gaze = {
+            "gaze_model": "fixed_distance",
+            "view_distance": 5.0,
+            "boundary_source": "analysis",
+        }
+        defaults.update(gaze)
+        kernel_defaults.update(gaze)
     if name == "egocentric":
         defaults["distance_range"] = kernel_defaults["distance_range"] = (0, 100)
+        kernel_defaults.update(n_distance_bins=20, n_direction_bins=12)
     return SimpleNamespace(
         name=name,
         module=module,
@@ -845,7 +859,7 @@ def ovc_session() -> tuple[
     headings = (theta + np.pi / 2) % (2 * np.pi)
     headings = np.arctan2(np.sin(headings), np.cos(headings))
 
-    env = Environment.from_samples(positions, bin_size=2.0)
+    env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 
     # Concentrate spikes over short bursts at regular phase intervals so the
     # egocentric polar rate map has a clear, informative peak.
@@ -856,3 +870,55 @@ def ovc_session() -> tuple[
     )
 
     return env, spike_times, times, positions, headings, object_positions
+
+
+@pytest.fixture(scope="session")
+def grid_and_hexless():
+    """A grid cell and a cell whose grid score passes 0.4 without a hexagonal ring.
+
+    100 cm box, 2.5 cm bins, 10 minutes. The second cell fires on a
+    smoothed-noise map: its rate map scores 0.50 but its autocorrelogram has
+    no hexagonal first ring of peaks, so it has no grid spacing.
+    """
+    from types import SimpleNamespace
+
+    import shapely
+    from scipy.ndimage import gaussian_filter
+
+    from neurospatial import Environment
+    from neurospatial.simulation import (
+        GridCellModel,
+        generate_poisson_spikes,
+        simulate_trajectory_ou,
+    )
+
+    env = Environment.from_polygon(
+        shapely.box(0, 0, 100, 100), bin_size=2.5, units="cm"
+    )
+    positions, times = simulate_trajectory_ou(
+        env,
+        duration=600.0,
+        dt=1 / 30,
+        speed_units="cm",
+        speed_mean=15.0,
+        speed_std=7.5,
+        seed=1,
+    )
+    grid = GridCellModel(
+        env, grid_spacing=45.0, max_rate=10.0, baseline_rate=1.0
+    ).firing_rate(positions)
+    rng = np.random.default_rng(0)
+    noise = [rng.normal(size=(40, 40)) for _ in range(3)][2]
+    noise = gaussian_filter(noise, 4.0, mode="wrap")
+    noise = (noise - noise.min()) / np.ptp(noise)
+    cell = np.clip((positions / 2.5).astype(int), 0, 39)
+    hexless = 0.2 + 8 * noise[cell[:, 0], cell[:, 1]] ** 3
+    return SimpleNamespace(
+        env=env,
+        times=times,
+        positions=positions,
+        trains=[
+            generate_poisson_spikes(grid, times, seed=21),
+            generate_poisson_spikes(hexless, times, seed=102),
+        ],
+    )

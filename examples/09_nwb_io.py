@@ -211,10 +211,10 @@ rates = compute_spatial_rates(
     min_occupancy=0.1,
 )
 peak_summary = rates.summary_table(include_classification=False)[
-    ["peak_rate", "peak_x", "peak_y"]
+    ["peak_firing_rate", "peak_x", "peak_y"]
 ].rename(
     columns={
-        "peak_rate": "Peak rate (Hz)",
+        "peak_firing_rate": "Peak rate (Hz)",
         "peak_x": f"Peak x ({pos.units})",
         "peak_y": f"Peak y ({pos.units})",
     }

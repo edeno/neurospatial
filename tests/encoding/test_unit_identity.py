@@ -35,7 +35,7 @@ def trajectory() -> tuple[Environment, np.ndarray, np.ndarray, np.ndarray]:
     """Return (env, times, positions, headings) for a small seeded session."""
     rng = np.random.default_rng(0)
     positions = rng.uniform(0, 50, (500, 2))
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     times = np.linspace(0, 50, 500)
     headings = rng.uniform(-np.pi, np.pi, 500)
     return env, times, positions, headings
@@ -64,6 +64,7 @@ def _compute(name, env, times, positions, headings, trains, **kwargs):
             times,
             positions,
             headings,
+            gaze_model="fixed_distance",
             view_distance=10.0,
             **kwargs,
             boundary_source="analysis",
@@ -71,7 +72,15 @@ def _compute(name, env, times, positions, headings, trains, **kwargs):
     if name == "egocentric":
         obj = np.array([[25.0, 25.0]])
         return compute_egocentric_rates(
-            None, trains, times, positions, headings, obj, **kwargs
+            None,
+            trains,
+            times,
+            positions,
+            headings,
+            obj,
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
+            **kwargs,
         )
     raise ValueError(name)
 
@@ -355,7 +364,7 @@ def test_all_nan_unit_summary_table_and_peaks_no_crash(trajectory, spike_trains)
     table = dead.summary_table()
     peak_cols = [c for c in table.columns if c.startswith("peak_")]
     # The dead unit's peak coordinates must be NaN, others finite.
-    assert table.iloc[0][[c for c in peak_cols if c != "peak_rate"]].isna().all()
+    assert table.iloc[0][[c for c in peak_cols if c != "peak_firing_rate"]].isna().all()
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +546,7 @@ def test_indexing_population_keeps_mixed_label_types(family):
     times = np.arange(0, 60, 0.05)
     positions = np.c_[50 + 30 * np.sin(times / 5), 50 + 30 * np.cos(times / 7)]
     headings = np.sin(times / 5)
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     trains = [np.sort(np.random.default_rng(0).uniform(0, 59, 100))] * 2
     options = {"unit_ids": [1, "u"]}
     rates = {

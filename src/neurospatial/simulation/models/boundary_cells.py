@@ -1,411 +1,481 @@
-"""Boundary cell models for simulating boundary-distance tuned firing patterns."""
+"""Border and boundary-vector cell models: firing driven by the walls.
 
-from typing import Any
+``BorderCellModel`` fires as a function of the distance to the nearest wall,
+the simple wall-hugging cell that border scores look for.
+``BoundaryVectorCellModel`` is the boundary vector cell of Hartley et al.
+(2000) and Barry et al. (2006): every piece of wall the animal can see adds
+firing according to its distance and allocentric direction.
+
+Both measure the walls themselves (the arena's declared outline and internal
+walls), not the edges of the bins, so a rate depends on the animal's exact
+position and not on the bin size. Every physical boundary counts, whatever
+its kind: opaque and transparent walls, and the drop edges of an elevated
+track or platform. Boundary-vector cells respond to drops as to walls (Lever
+et al., 2009), and most border cells keep their fields when the walls are
+removed and only a drop edge confines the animal (van Wijngaarden et al.,
+2020).
+
+References
+----------
+Hartley, T., Burgess, N., Lever, C., Cacucci, F., & O'Keefe, J. (2000).
+    Modeling place fields in terms of the cortical inputs to the
+    hippocampus. Hippocampus, 10, 369-379.
+Barry, C., Lever, C., Hayman, R., Hartley, T., Burton, S., O'Keefe, J.,
+    Jeffery, K., & Burgess, N. (2006). The boundary vector cell model of
+    place cell firing and spatial memory. Reviews in the Neurosciences, 17,
+    71-97.
+Lever, C., Burton, S., Jeewajee, A., O'Keefe, J., & Burgess, N. (2009).
+    Boundary vector cells in the subiculum of the hippocampal formation.
+    Journal of Neuroscience, 29(31), 9771-9777.
+van Wijngaarden, J. B. G., Babl, S. S., & Ito, H. T. (2020).
+    Entorhinal-retrosplenial circuits for allocentric-egocentric
+    transformation of boundary coding. eLife, 9, e59816.
+Høydal, Ø. A., Skytøen, E. R., Andersson, S. O., Moser, M.-B., & Moser,
+    E. I. (2019). Object-vector coding in the medial entorhinal cortex.
+    Nature, 568, 400-404.
+George, T. M., Rastogi, M., de Cothi, W., Clopath, C., Stachenfeld, K., &
+    Barry, C. (2024). RatInABox, a toolkit for modelling locomotion and
+    neuronal activity in continuous environments. eLife, 13, e85274.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.stats import vonmises
 
-from neurospatial.environment import Environment
-from neurospatial.geometry import require_cartesian
-from neurospatial.ops._types import DistanceMetric
-from neurospatial.ops.distance import distance_field
+from neurospatial._exceptions import _format_error
+from neurospatial.geometry import (
+    boundary_geometry,
+    require_cartesian,
+    require_position_columns,
+    valid_observers,
+)
+from neurospatial.ops.boundary_vectors import boundary_directions, nearest_boundary
+from neurospatial.simulation._walls import Walls
+from neurospatial.simulation.models.base import default_length
+
+if TYPE_CHECKING:
+    from neurospatial.environment import Environment
+    from neurospatial.geometry._boundaries import BoundarySource
+
+__all__ = ["BorderCellModel", "BoundaryVectorCellModel"]
+
+#: Default border-cell distance tolerance in centimeters, derived from the
+#: border-field centers of Høydal et al. (2019); see ``BorderCellModel`` Notes.
+BORDER_DISTANCE_TOLERANCE_CM = 9.8
+
+#: Default boundary-vector preferred distance in centimeters: illustrative,
+#: the middle of RatInABox's 5-30 cm tuning-distance range.
+BVC_PREFERRED_DISTANCE_CM = 17.5
+
+# Rays per turn summed by BoundaryVectorCellModel: one every 2 degrees, the
+# angular resolution (``dtheta``) RatInABox's BoundaryVectorCells integrate
+# over (George et al. 2023).
+_N_RAYS = 180
 
 
-class BoundaryCellModel:
-    """Distance-to-boundary tuned firing model.
+def _check_rates(max_rate: float, baseline_rate: float) -> None:
+    if not (np.isfinite(max_rate) and max_rate > 0):
+        raise ValueError(f"max_rate must be positive (got {max_rate})")
+    if not (np.isfinite(baseline_rate) and baseline_rate >= 0):
+        raise ValueError(f"baseline_rate must be non-negative (got {baseline_rate})")
+    if baseline_rate >= max_rate:
+        raise ValueError(
+            f"baseline_rate ({baseline_rate}) must be less than max_rate ({max_rate})"
+        )
 
-    Models boundary vector cells (BVCs) or border cells that fire at specific
-    distances from environment boundaries, optionally with directional tuning.
+
+def _check_positive(name: str, value: float, *, allow_zero: bool = False) -> None:
+    ok = np.isfinite(value) and (value >= 0 if allow_zero else value > 0)
+    if not ok:
+        bound = "non-negative" if allow_zero else "positive"
+        raise ValueError(
+            _format_error(
+                f"{name} must be finite and {bound}, got {value!r}.",
+                fix=f"pass a finite {bound} {name} in the environment's units",
+            )
+        )
+
+
+def _require_walls(
+    env: Environment, boundary_source: BoundarySource, call: str
+) -> None:
+    """Refuse an environment whose walls are unknown, before any rate is asked."""
+    require_cartesian(
+        env.coordinate_system,
+        call,
+        why="It models firing from the distance and direction to walls, from "
+        "the animal's allocentric Cartesian position.",
+        fix="simulate on the allocentric environment the animal moves in",
+    )
+    boundary_geometry(env.binning, env.arena, boundary_source, blocking="movement")
+
+
+class BorderCellModel:
+    """Firing as a function of the distance to the nearest wall.
+
+    The rate is a Gaussian of the straight-line distance ``d`` from the
+    animal to the closest wall point:
+
+    ``rate = baseline_rate + (max_rate - baseline_rate) * exp(-(d - preferred_distance)² / (2 distance_tolerance²))``
+
+    The closest wall point is always in view: a wall in the way would itself
+    be closer.
 
     Parameters
     ----------
     env : Environment
-        The spatial environment.
-    preferred_distance : float, optional
-        Preferred distance from boundary in environment units (default: 5.0).
+        2-D environment whose arena declares the walls (for example
+        ``Environment.from_polygon``).
     distance_tolerance : float, optional
-        Tuning width (standard deviation) around preferred distance (default: 3.0).
-    preferred_direction : float | None, optional
-        Preferred allocentric direction in radians (2D only).
-        If None, responds to all directions (classic border cell).
-        If specified, responds to boundaries in that direction (BVC).
-        Convention: 0 = East, π/2 = North, π = West, -π/2 = South
-    direction_tolerance : float, optional
-        Direction tuning width in radians, interpreted as the half-width at
-        half-maximum (HWHM) of the von Mises directional response (default:
-        π/4). The von Mises concentration is derived as
-        ``kappa = log(2) / (1 - cos(direction_tolerance))`` so the normalized
-        directional response is exactly 0.5 at this angular offset. Smaller
-        values = sharper tuning.
-    max_rate : float, optional
-        Peak firing rate in Hz (default: 15.0).
-    baseline_rate : float, optional
-        Baseline firing rate away from preferred distance (default: 0.01 Hz).
-    metric : {'geodesic', 'euclidean'}, optional
-        Distance calculation method (default: 'geodesic').
+        Standard deviation of the distance tuning, in environment units. If
+        None, 9.8 cm expressed in ``env.units`` (see Notes). An environment
+        without metric length units needs an explicit value.
+    preferred_distance : float, default=0.0
+        Distance from the wall at which the cell fires most, in environment
+        units. 0 is a border cell, which fires along the walls.
+    max_rate : float, default=15.0
+        Peak firing rate in Hz. An illustrative value; it is not taken from a
+        published measurement.
+    baseline_rate : float, default=0.01
+        Firing rate far from the preferred distance, in Hz. An illustrative
+        value.
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        The arena's declared walls, or the edges of the environment's bins.
 
-        - 'geodesic': Path distance through environment connectivity graph.
-          Biologically accurate for complex environments.
-        - 'euclidean': Straight-line distance. Faster but ignores barriers.
-
-    Attributes
-    ----------
-    env : Environment
-        The spatial environment.
-    preferred_distance : float
-        Preferred distance from boundary.
-    distance_tolerance : float
-        Distance tuning width.
-    preferred_direction : float | None
-        Preferred direction (radians) or None for omnidirectional.
-    direction_tolerance : float
-        Direction tuning width (radians), the half-width at half-maximum of the
-        von Mises directional response.
-    max_rate : float
-        Peak firing rate in Hz.
-    baseline_rate : float
-        Baseline firing rate in Hz.
-    metric : str
-        Distance metric used ('geodesic' or 'euclidean').
-
-    Examples
-    --------
-    Classic border cell (fires at 5 cm from any wall):
-
-    >>> from neurospatial import Environment
-    >>> from neurospatial.simulation import BoundaryCellModel, simulate_trajectory_ou
-    >>> import numpy as np
-    >>>
-    >>> # Create environment
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env = env.with_metadata(units="cm")
-    >>>
-    >>> # Create omnidirectional boundary cell
-    >>> bc = BoundaryCellModel(env, preferred_distance=5.0, distance_tolerance=3.0)
-    >>>
-    >>> # Generate trajectory and compute firing rates
-    >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=10.0, seed=42, speed_units="cm"
-    ... )
-    >>> rates = bc.firing_rate(positions)
-    >>> rates.shape[0] == len(times)
-    True
-    >>> bool(rates.max() > 0.0)  # Should have some firing
-    True
-
-    Boundary vector cell (prefers south wall):
-
-    >>> # BVC tuned to south wall (negative y direction)
-    >>> bvc_south = BoundaryCellModel(
-    ...     env,
-    ...     preferred_distance=10.0,
-    ...     preferred_direction=-np.pi / 2,  # South
-    ...     direction_tolerance=np.pi / 6,  # ±30 degrees
-    ... )
-    >>> rates_directional = bvc_south.firing_rate(positions)
-
-    See Also
-    --------
-    PlaceCellModel : Gaussian place fields
-    GridCellModel : Hexagonal grid patterns
-    simulate_trajectory_ou : Generate realistic trajectories
-    generate_poisson_spikes : Convert rates to spike times
+    Raises
+    ------
+    ValueError
+        If a distance or rate is not finite, or ``baseline_rate >= max_rate``.
+    NotImplementedError
+        If the arena declares no physical boundary and
+        ``boundary_source='physical'`` (bins inferred from positions).
 
     Notes
     -----
-    **Boundary Detection**: Uses ``env.boundary_bins()`` to identify boundary
-    locations, then precomputes distance field from all boundary bins.
+    The default ``distance_tolerance`` is derived from Høydal et al. (2019),
+    whose mouse border-cell fields, defined as the area above 20% of the
+    peak rate, had centers 6-14 cm from the wall (mean 8.8 cm). With
+    ``preferred_distance=0`` the field above 20% of peak spans the walls out
+    to ``σ √(2 ln 5)``, so its center lies at ``σ √(2 ln 5) / 2`` and the
+    mean gives ``σ = 2 · 8.8 / √(2 ln 5) = 9.8 cm``.
 
-    **Gaussian Distance Tuning**: Firing rate follows Gaussian around
-    preferred_distance:
+    See Also
+    --------
+    BoundaryVectorCellModel : Firing from walls at a distance and direction.
+    neurospatial.ops.nearest_boundary : Distance to the closest wall.
 
-    .. math::
-
-        r_{dist}(d) = \\exp\\left(-\\frac{(d - d_{pref})^2}{2 \\sigma_d^2}\\right)
-
-    where :math:`d` is distance to nearest boundary, :math:`d_{pref}` is
-    preferred_distance, and :math:`\\sigma_d` is distance_tolerance.
-
-    **Directional Tuning**: For BVCs (when preferred_direction is specified),
-    applies von Mises (circular Gaussian) tuning around preferred direction:
-
-    .. math::
-
-        r_{dir}(\\theta) = \\exp(\\kappa \\cos(\\theta - \\theta_{pref}))
-
-    where :math:`\\theta` is direction to boundary, :math:`\\theta_{pref}` is
-    preferred_direction, and :math:`\\kappa` is the direction concentration,
-    derived from ``direction_tolerance`` (the half-width at half-maximum) as
-    :math:`\\kappa = \\log(2) / (1 - \\cos(\\text{direction\\_tolerance}))`.
-
-    **Final Rate**: Combines distance and directional tuning:
-
-    .. math::
-
-        r(x) = r_{base} + (r_{max} - r_{base}) \\cdot r_{dist}(d) \\cdot r_{dir}(\\theta)
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Environment
+    >>> from neurospatial.simulation import BorderCellModel
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+    >>> cell = BorderCellModel(env, distance_tolerance=4.0, baseline_rate=0.0)
+    >>> cell.firing_rate(np.array([[0.5, 50.0], [4.0, 50.0], [50.0, 50.0]])).round(2)
+    array([14.88,  9.1 ,  0.  ])
     """
 
     def __init__(
         self,
         env: Environment,
         *,
-        preferred_distance: float = 5.0,
-        distance_tolerance: float = 3.0,
-        preferred_direction: float | None = None,
-        direction_tolerance: float = np.pi / 4,
+        distance_tolerance: float | None = None,
+        preferred_distance: float = 0.0,
         max_rate: float = 15.0,
         baseline_rate: float = 0.01,
-        metric: DistanceMetric = "geodesic",
+        boundary_source: BoundarySource = "physical",
     ) -> None:
-        require_cartesian(
-            env.coordinate_system,
-            "BoundaryCellModel()",
-            why=(
-                "It models firing from the distance and direction to walls, "
-                "from the animal's allocentric Cartesian position."
-            ),
-            fix="simulate on the allocentric environment the animal moves in",
-        )
-        # Validate parameters
-        if preferred_distance < 0:
-            msg = f"preferred_distance must be non-negative (got {preferred_distance})"
-            raise ValueError(msg)
-
-        if distance_tolerance <= 0:
-            msg = f"distance_tolerance must be positive (got {distance_tolerance})"
-            raise ValueError(msg)
-
-        if max_rate <= 0:
-            msg = f"max_rate must be positive (got {max_rate})"
-            raise ValueError(msg)
-
-        if baseline_rate < 0:
-            msg = f"baseline_rate must be non-negative (got {baseline_rate})"
-            raise ValueError(msg)
-
-        if baseline_rate >= max_rate:
-            msg = f"baseline_rate ({baseline_rate}) must be less than max_rate ({max_rate})"
-            raise ValueError(msg)
-
-        if direction_tolerance <= 0:
-            msg = f"direction_tolerance must be positive (got {direction_tolerance})"
-            raise ValueError(msg)
-
-        self.env = env
-        self.preferred_distance = preferred_distance
-        self.distance_tolerance = distance_tolerance
-        self.preferred_direction = preferred_direction
-        self.direction_tolerance = direction_tolerance
-        self.max_rate = max_rate
-        self.baseline_rate = baseline_rate
-        self.metric = metric
-
-        # Precompute boundary bins
-        self._boundary_bins = env.boundary_bins
-
-        if len(self._boundary_bins) == 0:
-            msg = "No boundary bins found in environment"
-            raise ValueError(msg)
-
-        # Precompute distance field from all boundary bins (type annotation for mypy)
-        self._distance_field: NDArray[np.float64] | None
-        if metric == "geodesic":
-            # Geodesic distance through graph
-            self._distance_field = distance_field(
-                env.connectivity,
-                sources=self._boundary_bins.tolist(),
+        if distance_tolerance is None:
+            distance_tolerance = default_length(
+                env,
+                BORDER_DISTANCE_TOLERANCE_CM,
+                name="distance_tolerance",
+                call="BorderCellModel()",
             )
-        else:
-            # Will compute Euclidean distances on-the-fly in firing_rate()
-            self._distance_field = None
+        _check_positive("distance_tolerance", distance_tolerance)
+        _check_positive("preferred_distance", preferred_distance, allow_zero=True)
+        _check_rates(max_rate, baseline_rate)
+        _require_walls(env, boundary_source, "BorderCellModel()")
+        self.env = env
+        self.preferred_distance = float(preferred_distance)
+        self.distance_tolerance = float(distance_tolerance)
+        self.max_rate = float(max_rate)
+        self.baseline_rate = float(baseline_rate)
+        self.boundary_source = boundary_source
 
     def firing_rate(
         self,
         positions: NDArray[np.float64],
         times: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
-        """Compute boundary-tuned firing rate.
+        """Firing rate at each position.
 
         Parameters
         ----------
-        positions : NDArray[np.float64], shape (n_time, n_dims)
-            Position coordinates in the same units as the environment.
+        positions : NDArray[np.float64], shape (n_time, 2)
+            Positions in the environment's coordinates.
         times : NDArray[np.float64], shape (n_time,), optional
-            Time points in seconds (not used, for API compatibility).
+            Unused; accepted for the ``NeuralModel`` protocol.
 
         Returns
         -------
-        firing_rate : NDArray[np.float64], shape (n_time,)
-            Firing rate in Hz at each position/time point.
-
-        Notes
-        -----
-        Implementation:
-
-        1. **Compute distance to nearest boundary** for each position:
-
-           - For geodesic: lookup from precomputed distance field
-           - For euclidean: compute minimum distance to all boundary centers
-
-        2. **Apply Gaussian distance tuning** around preferred_distance:
-
-           .. math::
-
-               g_d = \\exp\\left(-\\frac{(d - d_{pref})^2}{2 \\sigma_d^2}\\right)
-
-        3. **If directional**, compute direction to nearest boundary and apply
-           von Mises directional tuning around preferred_direction.
-
-        4. **Scale and add baseline**:
-
-           .. math::
-
-               r = r_{base} + (r_{max} - r_{base}) \\cdot g_d \\cdot g_{dir}
+        NDArray[np.float64], shape (n_time,)
+            Rate in Hz; NaN for a position outside the walls, where the cell
+            has no defined input.
         """
-        # Precompute boundary centers (used in multiple paths)
-        boundary_centers = self.env.bin_centers[self._boundary_bins]
-
-        # Compute distances to boundary
-        if self.metric == "geodesic":
-            # Map positions to bins and lookup distances - vectorized for efficiency
-            # contains() returns ndarray, so we can use it directly for batch check
-            inside_mask = self.env.contains(positions)
-            bin_indices = np.empty(len(positions), dtype=np.int_)
-
-            # For points inside environment, use bin_at
-            if inside_mask.any():
-                bin_indices[inside_mask] = self.env.bin_at(positions[inside_mask])
-
-            # For points outside, use vectorized nearest neighbor
-            if not inside_mask.all():
-                outside_positions = positions[~inside_mask]
-                # Vectorized distance computation: (n_outside, n_bins)
-                distances_to_bins = np.linalg.norm(
-                    self.env.bin_centers[None, :, :] - outside_positions[:, None, :],
-                    axis=2,
-                )
-                bin_indices[~inside_mask] = np.argmin(distances_to_bins, axis=1)
-
-            # Lookup distances from precomputed field
-            if self._distance_field is None:
-                raise RuntimeError(
-                    "Distance field not initialized for geodesic metric. "
-                    "This is an internal error - please report this bug."
-                )
-            distances = self._distance_field[bin_indices]
-
-        else:  # euclidean
-            # Compute minimum Euclidean distance to any boundary bin center
-            # Shape: (n_positions, n_boundary_bins)
-            dists_to_boundaries = np.linalg.norm(
-                positions[:, np.newaxis, :] - boundary_centers[np.newaxis, :, :],
-                axis=2,
-            )
-            # Minimum distance for each position
-            distances = np.min(dists_to_boundaries, axis=1)
-
-        # Apply Gaussian distance tuning around preferred_distance
-        # g_d = exp(-(d - d_pref)^2 / (2 * sigma^2))
-        distance_diff = distances - self.preferred_distance
-        distance_tuning = np.exp(-0.5 * (distance_diff / self.distance_tolerance) ** 2)
-
-        # Apply directional tuning if preferred_direction is specified
-        if self.preferred_direction is not None:
-            # Compute direction to nearest boundary for each position
-            # For geodesic metric, use Euclidean distance for direction
-            # (direction is inherently geometric, not path-based)
-            if self.metric == "geodesic":
-                # Recompute Euclidean distances for directional tuning
-                dists_to_boundaries = np.linalg.norm(
-                    positions[:, np.newaxis, :] - boundary_centers[np.newaxis, :, :],
-                    axis=2,
-                )
-
-            # Now both paths have dists_to_boundaries defined
-            nearest_boundary_idx = np.argmin(dists_to_boundaries, axis=1)
-            nearest_boundary_centers = boundary_centers[nearest_boundary_idx]
-
-            # Compute direction vectors from positions to nearest boundaries
-            direction_vectors = nearest_boundary_centers - positions
-
-            # Compute angles (only works for 2D environments)
-            if positions.shape[1] == 2:
-                angles = np.arctan2(direction_vectors[:, 1], direction_vectors[:, 0])
-
-                # Apply von Mises directional tuning.
-                # The normalized response is exp(kappa * (cos(angle_diff) - 1)),
-                # which equals 0.5 when angle_diff is the half-width at
-                # half-maximum (HWHM). Treating ``direction_tolerance`` as that
-                # HWHM and solving exp(kappa * (cos(tol) - 1)) = 1/2 gives
-                #     kappa = log(2) / (1 - cos(direction_tolerance)).
-                # The previous mapping kappa = 1 / direction_tolerance treated
-                # the tolerance like a linear standard deviation and produced an
-                # HWHM that was ~40% too narrow/wide depending on the angle.
-                kappa = np.log(2.0) / (1.0 - np.cos(self.direction_tolerance))
-
-                # Compute angle difference (wrapped to [-π, π])
-                angle_diff = np.angle(np.exp(1j * (angles - self.preferred_direction)))
-                directional_tuning = vonmises.pdf(angle_diff, kappa, loc=0.0)
-
-                # Normalize von Mises to have max = 1.0
-                directional_tuning = directional_tuning / vonmises.pdf(
-                    0.0, kappa, loc=0.0
-                )
-            else:
-                # For non-2D environments, ignore directional tuning
-                directional_tuning = 1.0
-        else:
-            # Omnidirectional (no directional preference)
-            directional_tuning = 1.0
-
-        # Combine distance and directional tuning
-        combined_tuning = distance_tuning * directional_tuning
-
-        # Scale by max_rate and add baseline
-        rates: NDArray[np.float64] = (
-            self.baseline_rate + (self.max_rate - self.baseline_rate) * combined_tuning
+        distances, _directions = nearest_boundary(
+            self.env, positions, boundary_source=self.boundary_source
         )
-
+        tuning = np.exp(
+            -0.5
+            * ((distances - self.preferred_distance) / self.distance_tolerance) ** 2
+        )
+        rates: NDArray[np.float64] = (
+            self.baseline_rate + (self.max_rate - self.baseline_rate) * tuning
+        )
         return rates
 
     @property
     def ground_truth(self) -> dict[str, Any]:
-        """Return ground truth parameters for validation.
+        """The model's parameters.
 
         Returns
         -------
-        parameters : dict[str, Any]
-            Dictionary with keys:
-
-            - 'preferred_distance': float - preferred distance from boundary
-            - 'distance_tolerance': float - distance tuning width
-            - 'preferred_direction': float | None - preferred direction (radians)
-            - 'direction_tolerance': float - direction tuning width (radians)
-            - 'max_rate': float - peak firing rate in Hz
-            - 'baseline_rate': float - baseline firing rate in Hz
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from neurospatial.simulation import BoundaryCellModel
-        >>> samples = np.random.uniform(0, 100, (100, 2))
-        >>> env = Environment.from_samples(samples, bin_size=2.0)
-        >>> env = env.with_metadata(units="cm")
-        >>> bc = BoundaryCellModel(env, preferred_distance=5.0, distance_tolerance=3.0)
-        >>> bc.ground_truth["preferred_distance"]
-        5.0
-        >>> bc.ground_truth["distance_tolerance"]
-        3.0
-        >>> bc.ground_truth["preferred_direction"] is None
-        True
+        dict
+            ``preferred_distance``, ``distance_tolerance``, ``max_rate`` and
+            ``baseline_rate``.
         """
         return {
             "preferred_distance": self.preferred_distance,
             "distance_tolerance": self.distance_tolerance,
+            "max_rate": self.max_rate,
+            "baseline_rate": self.baseline_rate,
+        }
+
+
+class BoundaryVectorCellModel:
+    """Boundary vector cell: walls at a preferred distance and direction.
+
+    Following Barry et al. (2006, eqs. 1-2), each piece of wall seen at
+    distance ``r`` in allocentric direction ``θ``, subtending angle ``δθ``,
+    adds ``g(r, θ) δθ`` to the cell's drive, with
+
+    ``g(r, θ) = exp(-(r - preferred_distance)² / (2 distance_tolerance²)) · exp(κ (cos(θ - preferred_direction) - 1))``,
+
+    and the drive sums over every direction. As in RatInABox's
+    ``BoundaryVectorCells``, the sum casts a ray every 2° and takes the first
+    wall along it, and the angular tuning is a von Mises function. The drive
+    is scaled so that a straight wall at ``preferred_distance``, square to
+    ``preferred_direction``, gives ``max_rate``. Because every visible wall
+    contributes, two walls in the preferred direction (a corner) drive the
+    cell above ``max_rate``, and a barrier inside the arena gives the cell a
+    second field beside the barrier.
+
+    Parameters
+    ----------
+    env : Environment
+        2-D environment whose arena declares the walls.
+    preferred_distance : float, optional
+        Distance to the wall that drives the cell most, in environment units.
+        If None, 17.5 cm expressed in ``env.units``: an illustrative value,
+        the middle of the 5-30 cm range RatInABox's ``BoundaryVectorCells``
+        draw tuning distances from.
+    preferred_direction : float, optional
+        Allocentric direction of that wall in radians (0 = East, +pi/2 =
+        North). If None, drawn uniformly from [-pi, pi) with ``seed``, as
+        every direction is equally likely.
+    distance_tolerance : float, optional
+        Standard deviation of the distance tuning, in environment units.
+        Hartley et al. (2000) let it grow linearly with the preferred
+        distance, so a far-tuned cell needs a wider tolerance. If None,
+        ``preferred_distance / 12 + 8 cm``, the linear relationship
+        (inverse slope 12, offset 8 cm) of RatInABox's default
+        ``sigma_distance=(0.08, 12)`` for this model.
+    direction_tolerance : float, default=pi/6
+        Half-width at half-maximum of the angular tuning, in radians. The
+        von Mises concentration is ``κ = ln 2 / (1 - cos(direction_tolerance))``.
+        The 30° default is an illustrative value.
+    max_rate : float, default=15.0
+        Rate in Hz next to a straight wall at the preferred distance and
+        direction. An illustrative value; it is not taken from a published
+        measurement.
+    baseline_rate : float, default=0.01
+        Rate in Hz with no wall near the preferred distance and direction. An
+        illustrative value.
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        The arena's declared walls, or the edges of the environment's bins.
+    seed : int or None, optional
+        Seed for the random ``preferred_direction``.
+
+    Raises
+    ------
+    ValueError
+        If a distance, angle or rate is not finite, or
+        ``baseline_rate >= max_rate``, or a length default is needed and
+        the environment has no metric length units.
+    NotImplementedError
+        If the arena declares no physical boundary and
+        ``boundary_source='physical'``.
+
+    See Also
+    --------
+    BorderCellModel : Firing from the distance to the nearest wall.
+    neurospatial.encoding.compute_boundary_vector_rate : The matching rate map.
+
+    Examples
+    --------
+    A cell for a wall 10 cm to the west:
+
+    >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Environment
+    >>> from neurospatial.simulation import BoundaryVectorCellModel
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+    >>> cell = BoundaryVectorCellModel(
+    ...     env,
+    ...     preferred_distance=10.0,
+    ...     preferred_direction=np.pi,
+    ...     distance_tolerance=4.0,
+    ...     direction_tolerance=np.pi / 6,
+    ...     baseline_rate=0.0,
+    ... )
+    >>> cell.firing_rate(np.array([[10.0, 50.0], [90.0, 50.0]])).round(1)
+    array([15.,  0.])
+    """
+
+    def __init__(
+        self,
+        env: Environment,
+        *,
+        preferred_distance: float | None = None,
+        preferred_direction: float | None = None,
+        distance_tolerance: float | None = None,
+        direction_tolerance: float = np.pi / 6,
+        max_rate: float = 15.0,
+        baseline_rate: float = 0.01,
+        boundary_source: BoundarySource = "physical",
+        seed: int | None = None,
+    ) -> None:
+        call = "BoundaryVectorCellModel()"
+        if preferred_distance is None:
+            preferred_distance = default_length(
+                env, BVC_PREFERRED_DISTANCE_CM, name="preferred_distance", call=call
+            )
+        if distance_tolerance is None:
+            distance_tolerance = preferred_distance / 12.0 + default_length(
+                env, 8.0, name="distance_tolerance", call=call
+            )
+        if preferred_direction is None:
+            preferred_direction = float(
+                np.random.default_rng(seed).uniform(-np.pi, np.pi)
+            )
+        _check_positive("preferred_distance", preferred_distance, allow_zero=True)
+        _check_positive("distance_tolerance", distance_tolerance)
+        if not np.isfinite(preferred_direction):
+            raise ValueError(
+                f"preferred_direction must be a finite angle in radians, got "
+                f"{preferred_direction!r}."
+            )
+        if not (np.isfinite(direction_tolerance) and 0 < direction_tolerance <= np.pi):
+            raise ValueError(
+                _format_error(
+                    "direction_tolerance must be a half-width in (0, pi] radians, "
+                    f"got {direction_tolerance!r}.",
+                    fix="pass the angle at which the tuning falls to half, e.g. "
+                    "np.pi / 6 for 30 degrees",
+                )
+            )
+        _check_rates(max_rate, baseline_rate)
+        _require_walls(env, boundary_source, "BoundaryVectorCellModel()")
+        self.env = env
+        self.preferred_distance = float(preferred_distance)
+        self.preferred_direction = float(np.angle(np.exp(1j * preferred_direction)))
+        self.distance_tolerance = float(distance_tolerance)
+        self.direction_tolerance = float(direction_tolerance)
+        self.max_rate = float(max_rate)
+        self.baseline_rate = float(baseline_rate)
+        self.boundary_source = boundary_source
+        self._walls = Walls.from_geometry(
+            boundary_geometry(
+                env.binning, env.arena, boundary_source, blocking="movement"
+            )
+        )
+        self._directions = boundary_directions(n_directions=_N_RAYS)
+        # von Mises concentration with half-maximum at direction_tolerance.
+        kappa = np.log(2.0) / (1.0 - np.cos(self.direction_tolerance))
+        self._angular = np.exp(
+            kappa * (np.cos(self._directions - self.preferred_direction) - 1.0)
+        )
+        # A straight wall at the preferred distance, square to the preferred
+        # direction, lies at r = d / cos(θ - φ) along every ray toward it.
+        facing = np.cos(self._directions - self.preferred_direction)
+        with np.errstate(divide="ignore"):
+            reference = np.where(facing > 0, self.preferred_distance / facing, np.inf)
+        self._reference_drive = float(np.sum(self._drive_terms(reference)))
+
+    def _drive_terms(self, distances: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Each ray's term ``g(r, θ)``, shape like ``distances`` (..., n_rays)."""
+        radial = np.exp(
+            -0.5
+            * ((distances - self.preferred_distance) / self.distance_tolerance) ** 2
+        )
+        terms: NDArray[np.float64] = radial * self._angular
+        return terms
+
+    def firing_rate(
+        self,
+        positions: NDArray[np.float64],
+        times: NDArray[np.float64] | None = None,
+    ) -> NDArray[np.float64]:
+        """Firing rate at each position.
+
+        Parameters
+        ----------
+        positions : NDArray[np.float64], shape (n_time, 2)
+            Positions in the environment's coordinates.
+        times : NDArray[np.float64], shape (n_time,), optional
+            Unused; accepted for the ``NeuralModel`` protocol.
+
+        Returns
+        -------
+        NDArray[np.float64], shape (n_time,)
+            Rate in Hz; NaN for a position outside the walls.
+        """
+        positions = np.asarray(positions, dtype=np.float64)
+        require_position_columns(
+            positions, 2, call="BoundaryVectorCellModel.firing_rate"
+        )
+        observed = valid_observers(
+            self.env.binning, self.env.arena, positions, self.boundary_source
+        )
+        drive = np.full(len(positions), np.nan)
+        if observed.any():
+            distances = self._walls.ray_distances(positions[observed], self._directions)
+            drive[observed] = self._drive_terms(distances).sum(axis=1)
+        rates: NDArray[np.float64] = self.baseline_rate + (
+            self.max_rate - self.baseline_rate
+        ) * (drive / self._reference_drive)
+        return rates
+
+    @property
+    def ground_truth(self) -> dict[str, Any]:
+        """The model's parameters.
+
+        Returns
+        -------
+        dict
+            ``preferred_distance``, ``preferred_direction`` (radians),
+            ``distance_tolerance``, ``direction_tolerance`` (radians),
+            ``max_rate`` and ``baseline_rate``.
+        """
+        return {
+            "preferred_distance": self.preferred_distance,
             "preferred_direction": self.preferred_direction,
+            "distance_tolerance": self.distance_tolerance,
             "direction_tolerance": self.direction_tolerance,
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
