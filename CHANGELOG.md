@@ -601,9 +601,9 @@ Breaking API changes:
   (firing by distance to the nearest wall), measured against the declared
   walls. Both default their tuning (see above); `BoundaryVectorCellModel`
   draws a random preferred direction from a new `seed`.
-  `boundary_cell_session` becomes `border_cell_session` with a required
-  `n_border_cells`, and `simulate_session`'s `cell_type="boundary"` becomes
-  `"border"`.
+  `boundary_cell_session` becomes `border_cell_session` (`n_boundary_cells`
+  becomes `n_border_cells`), and `simulate_session`'s
+  `cell_type="boundary"` becomes `"border"`.
 - `grid_cell_session(grid_spacing=)` defaults to 41.0 (was 50.0), and
   `linear_track_session` passes extra keyword arguments to its place cells.
 
