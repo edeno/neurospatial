@@ -64,6 +64,7 @@ from neurospatial._intervals import (
     interval_valid_mask,
     resolve_time_windows,
     run_time_bounds,
+    start_allocated_occupancy,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
@@ -2173,6 +2174,65 @@ def _object_vector_grid(
     return (low, high), max(1, round((high - low) / width)), n_direction_bins
 
 
+def _warn_if_directions_unsampled(
+    occupancy: ArrayLike,
+    *,
+    n_distance_bins: int,
+    n_direction_bins: int,
+    direction_frame: str,
+    units: str | None,
+    extended_landmarks: bool,
+    context: str,
+) -> None:
+    """Warn when some directions to the object were never sampled at any distance.
+
+    A mean resultant length over part of the circle reads even flat firing
+    as directional, so an arc with no occupancy biases direction tuning
+    whatever the cell does. Line and polygon landmarks, such as a monitor on
+    a wall, are seen from one side by construction and are not checked.
+    """
+    if extended_landmarks:
+        return
+    occupancy = np.asarray(_to_numpy(occupancy), dtype=np.float64).reshape(
+        n_distance_bins, n_direction_bins
+    )
+    sampled: NDArray[np.bool_] = np.asarray((occupancy > 0).any(axis=0))
+    if sampled.all() or not sampled.any():
+        return
+    # Contiguous unsampled arcs, starting just after a sampled bin so an arc
+    # across the +/-180 degree seam is reported once.
+    width = 360.0 / n_direction_bins
+    first = int(np.flatnonzero(sampled)[0])
+    order = np.roll(np.arange(n_direction_bins), -first)
+    arcs: list[str] = []
+    start: int | None = None
+    for k in [*order.tolist(), first]:
+        if not sampled[k] and start is None:
+            start = k
+        elif sampled[k] and start is not None:
+            low = -180.0 + width * start
+            high = -180.0 + width * k if k > start else 180.0 + width * k
+            arcs.append(f"[{low:g}, {high:g})")
+            start = None
+    warnings.warn(
+        _format_error(
+            f"{context}: no time was spent with the nearest object in the "
+            f"{direction_frame} directions {', '.join(arcs)} degrees, at any "
+            "distance.",
+            why="Why: direction tuning then covers only the sampled arc, "
+            "preferred_direction is pulled toward it, and object_vector_score "
+            "is NaN. This happens when the object lies outside the arena or "
+            "against its wall, or when object_positions are not in the frame "
+            "and units of positions",
+            fix=f"check object_positions against the arena (units={units!r}); "
+            "for an object that really is at the edge, read direction tuning "
+            "over the sampled arc only",
+        ),
+        UserWarning,
+        stacklevel=3,
+    )
+
+
 def _warn_if_peak_at_range_edge(
     firing_rates: ArrayLike,
     *,
@@ -2482,6 +2542,15 @@ def _object_vector_rate(
         backend=resolved_backend,
     )
 
+    _warn_if_directions_unsampled(
+        counts.occupancy,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        direction_frame="allocentric" if headings is None else "egocentric",
+        units=units,
+        extended_landmarks=object_names is not None and object_positions.ndim == 3,
+        context=context,
+    )
     _warn_if_peak_at_range_edge(
         firing_rate,
         n_distance_bins=n_distance_bins,
@@ -3294,6 +3363,17 @@ def _object_vector_rates(
         )
 
     if diagnose:
+        _warn_if_directions_unsampled(
+            counts.occupancy,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
+            direction_frame="allocentric" if headings is None else "egocentric",
+            units=units,
+            extended_landmarks=(
+                object_names is not None and object_positions.ndim == 3
+            ),
+            context=context,
+        )
         _warn_if_peak_at_range_edge(
             firing_rates,
             n_distance_bins=n_distance_bins,
@@ -4281,7 +4361,7 @@ def _object_vector_significance(
     _validate_object_vector_metric(env, metric, context=context)
     units = env.units if env is not None else None
     require_known_bandwidth(units, bandwidth, method, context=context)
-    object_positions, _ = resolve_object_positions(
+    object_positions, object_names = resolve_object_positions(
         object_positions, env=env, positions=positions, metric=metric
     )
     distance_range, n_distance_bins, n_direction_bins = _object_vector_grid(
@@ -4318,6 +4398,17 @@ def _object_vector_significance(
         break_before=options["break_before"],
     )
     windows = run_time_bounds(times, mask)
+    _warn_if_directions_unsampled(
+        start_allocated_occupancy(
+            frame_bins, np.diff(times), mask, n_distance_bins * n_direction_bins
+        ),
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        direction_frame=direction_frame,
+        units=units,
+        extended_landmarks=object_names is not None and object_positions.ndim == 3,
+        context=context,
+    )
 
     # The polar grid and each frame's polar bin depend only on the trajectory,
     # so every shuffle reuses them instead of rebuilding them.

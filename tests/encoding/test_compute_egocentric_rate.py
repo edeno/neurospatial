@@ -436,6 +436,54 @@ class TestObjectVectorRangeCoverage:
             compute_object_vector_rate(env, spikes, times, positions, obj)
 
 
+class TestUnsampledObjectDirections:
+    """An object outside the arena leaves directions unsampled; say so."""
+
+    @pytest.mark.parametrize("call", ["single", "population", "significance"])
+    def test_object_outside_the_arena_warns(self, call: str) -> None:
+        from neurospatial.encoding import (
+            compute_object_vector_rate,
+            compute_object_vector_rates,
+            object_vector_cell_significance,
+        )
+
+        env, spikes, times, positions, _ = _far_object_vector_cell(30.0)
+        outside = np.array([[175.0, 75.0]])  # 25 cm east of the 150 cm box
+        with pytest.warns(UserWarning, match="no time was spent") as record:
+            if call == "single":
+                result = compute_object_vector_rate(
+                    env, spikes, times, positions, outside
+                )
+            elif call == "population":
+                result = compute_object_vector_rates(
+                    env, [spikes], times, positions, outside
+                )[0]
+            else:
+                object_vector_cell_significance(
+                    env, [spikes], times, positions, outside, n_shuffles=3, rng=0
+                )
+        unsampled = [w for w in record if "no time was spent" in str(w.message)]
+        assert len(unsampled) == 1  # once per call, not once per shuffle
+        # Seen from the animal, the object is always within 72 degrees of due
+        # east, so the directions from north through west to south are empty.
+        assert "directions [90, 270) degrees" in str(unsampled[0].message)
+        if call != "significance":
+            occupancy = np.asarray(result.occupancy).reshape(
+                result.n_distance_bins, result.n_direction_bins
+            )
+            assert not (occupancy > 0).any(axis=0).all()
+
+    def test_object_inside_the_arena_does_not_warn(self) -> None:
+        import warnings
+
+        from neurospatial.encoding import compute_object_vector_rate
+
+        env, spikes, times, positions, obj = _far_object_vector_cell(30.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compute_object_vector_rate(env, spikes, times, positions, obj)
+
+
 class TestComputeEgocentricRateBinCounts:
     """Test n_distance_bins and n_direction_bins parameters."""
 
