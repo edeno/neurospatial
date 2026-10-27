@@ -14,9 +14,12 @@ are in :mod:`neurospatial.behavior`.
 
 from __future__ import annotations
 
-import numpy as np
-from numpy.typing import NDArray
+from typing import Any, overload
 
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
+from neurospatial._intervals import as_intervals, intervals_contain
 from neurospatial._time_bins import _time_bin_rounding
 from neurospatial.events._core import _finite_times, _validate_window
 
@@ -45,11 +48,12 @@ def _share_coincident_edges(
 
 
 def time_to_nearest_event(
-    sample_times: NDArray[np.float64],
+    times: NDArray[np.float64],
     event_times: NDArray[np.float64],
     *,
     signed: bool = True,
     max_time: float | None = None,
+    epochs: Any = None,
 ) -> NDArray[np.float64]:
     """
     Compute time to nearest event for each sample.
@@ -60,7 +64,7 @@ def time_to_nearest_event(
 
     Parameters
     ----------
-    sample_times : NDArray[np.float64], shape (n_samples,)
+    times : NDArray[np.float64], shape (n_samples,)
         Times at which to compute regressor (seconds).
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps (seconds).
@@ -72,6 +76,12 @@ def time_to_nearest_event(
         clipped to it; no sample is removed.
         For signed=True, clips to [-max_time, +max_time].
         For signed=False, clips to [0, max_time].
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        When events were recorded: half-open [start, stop) windows in seconds
+        on the same clock as ``times``. A value ``d`` is known only if no
+        unseen event could be closer, so it is NaN unless ``(t - d, t + d)``
+        lies inside one window. ``None`` (default) treats all time as
+        recorded.
 
     Returns
     -------
@@ -79,13 +89,14 @@ def time_to_nearest_event(
         Time to nearest event (seconds).
         - signed=True: Negative before event, positive after, zero at event.
         - signed=False: Absolute distance to nearest event.
-        - NaN when no events are provided.
+        - NaN when no events are provided, and with ``epochs`` where an
+          unrecorded event could be nearer.
 
     Raises
     ------
     ValueError
-        If sample_times or event_times are not 1-D or contain NaN or Inf
-        values. If max_time is negative or NaN.
+        If times or event_times are not 1-D or contain NaN or Inf
+        values. If max_time is negative or NaN, or epochs is invalid.
 
     Notes
     -----
@@ -116,24 +127,30 @@ def time_to_nearest_event(
 
     Basic usage - PSTH-like time axis:
 
-    >>> sample_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     >>> event_times = np.array([2.0])
-    >>> time_to_nearest_event(sample_times, event_times)
+    >>> time_to_nearest_event(times, event_times)
     array([-2., -1.,  0.,  1.,  2.])
 
     Filter to peri-event window:
 
-    >>> times = time_to_nearest_event(sample_times, event_times)
-    >>> peri_event_mask = np.abs(times) <= 1.5  # +/- 1.5s window
-    >>> sample_times[peri_event_mask]
+    >>> offsets = time_to_nearest_event(times, event_times)
+    >>> peri_event_mask = np.abs(offsets) <= 1.5  # +/- 1.5s window
+    >>> times[peri_event_mask]
     array([1., 2., 3.])
 
     Clip to maximum time (for GLM design matrix):
 
-    >>> time_to_nearest_event(sample_times, event_times, max_time=1.0)
+    >>> time_to_nearest_event(times, event_times, max_time=1.0)
     array([-1., -1.,  0.,  1.,  1.])
+
+    With recording from 1 s on, an unseen event before 1 s could be nearer
+    than the one at 2 s to the samples at 0 s and 1 s:
+
+    >>> time_to_nearest_event(times, event_times, epochs=(1.0, 10.0))
+    array([nan, nan,  0.,  1.,  2.])
     """
-    sample_times = _finite_times(sample_times, "sample_times")
+    times = _finite_times(times, "times")
     event_times = _finite_times(event_times, "event_times")
 
     if max_time is not None and not max_time >= 0:
@@ -143,27 +160,29 @@ def time_to_nearest_event(
             "  Fix: Use max_time >= 0 or None for no clipping."
         )
 
-    # Handle empty sample_times
-    if len(sample_times) == 0:
+    recorded = as_intervals(epochs, name="epochs")
+
+    # Handle empty times
+    if len(times) == 0:
         return np.array([], dtype=np.float64)
 
     # Handle empty events
     if len(event_times) == 0:
-        return np.full(len(sample_times), np.nan, dtype=np.float64)
+        return np.full(len(times), np.nan, dtype=np.float64)
 
     # Sort events (handles unsorted input)
     sorted_events = np.sort(event_times)
 
     # Find indices of surrounding events using searchsorted
-    # idx_right: index of first event >= sample_time (or len if none)
-    idx_right = np.searchsorted(sorted_events, sample_times, side="left")
+    # idx_right: index of first event >= sample time (or len if none)
+    idx_right = np.searchsorted(sorted_events, times, side="left")
 
-    # idx_left: index of last event < sample_time (or -1 if none)
+    # idx_left: index of last event < sample time (or -1 if none)
     idx_left = idx_right - 1
 
     # Compute distances to left and right events
     n_events = len(sorted_events)
-    n_samples = len(sample_times)
+    n_samples = len(times)
 
     # Initialize with large values
     dist_left = np.full(n_samples, np.inf, dtype=np.float64)
@@ -171,13 +190,11 @@ def time_to_nearest_event(
 
     # Distance to left event (if exists)
     has_left = idx_left >= 0
-    dist_left[has_left] = sample_times[has_left] - sorted_events[idx_left[has_left]]
+    dist_left[has_left] = times[has_left] - sorted_events[idx_left[has_left]]
 
     # Distance to right event (if exists)
     has_right = idx_right < n_events
-    dist_right[has_right] = (
-        sorted_events[idx_right[has_right]] - sample_times[has_right]
-    )
+    dist_right[has_right] = sorted_events[idx_right[has_right]] - times[has_right]
 
     # Select nearest event
     # For ties (dist_left == dist_right), prefer left (earlier) event
@@ -199,15 +216,40 @@ def time_to_nearest_event(
     if max_time is not None:
         result = np.clip(result, -max_time if signed else 0.0, max_time)
 
+    if recorded is not None:
+        # The value is known when no unseen event could be nearer: the open
+        # interval (t - d, t + d) is recorded, which holds trivially at d = 0.
+        reach = np.abs(result)
+        known = (reach == 0) | intervals_contain(recorded, times - reach, times + reach)
+        result[~known] = np.nan
     return result
 
 
+@overload
 def event_count_in_window(
-    sample_times: NDArray[np.float64],
+    times: NDArray[np.float64],
     event_times: NDArray[np.float64],
-    *,
     window: tuple[float, float],
-) -> NDArray[np.int64]:
+    *,
+    epochs: None = None,
+) -> NDArray[np.int64]: ...
+@overload
+def event_count_in_window(
+    times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    *,
+    epochs: ArrayLike,
+) -> NDArray[np.float64]: ...
+
+
+def event_count_in_window(
+    times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    *,
+    epochs: Any = None,
+) -> NDArray[np.int64] | NDArray[np.float64]:
     """
     Count events within time window around each sample.
 
@@ -217,30 +259,36 @@ def event_count_in_window(
 
     Parameters
     ----------
-    sample_times : NDArray[np.float64], shape (n_samples,)
+    times : NDArray[np.float64], shape (n_samples,)
         Times at which to compute count (seconds).
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps (seconds).
     window : tuple[float, float]
-        Time window (start, end) relative to sample_time, in seconds.
+        Time window (start, end) relative to each sample time, in seconds.
         E.g., (-1.0, 0.0) counts events in previous 1 second.
         E.g., (0.0, 1.0) counts events in next 1 second.
         E.g., (-0.5, 0.5) counts events within +/- 0.5 seconds.
-        Half-open: ``[sample_time + start, sample_time + stop)``.
+        Half-open: ``[time + start, time + stop)``.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        When events were recorded: half-open [start, stop) windows in seconds
+        on the same clock as ``times``. A sample whose window is not inside
+        one of them is NaN, because an event there would have gone unseen.
+        ``None`` (default) treats all time as recorded.
 
     Returns
     -------
-    NDArray[np.int64], shape (n_samples,)
-        Number of events within window of each sample.
-        Always non-negative integers.
+    NDArray[np.int64] or NDArray[np.float64], shape (n_samples,)
+        Number of events within window of each sample, non-negative. Integers
+        without ``epochs``; with ``epochs``, floats that are NaN where the
+        window is not inside one recorded window.
 
     Raises
     ------
     ValueError
-        If sample_times or event_times are not 1-D or contain NaN or Inf
+        If times or event_times are not 1-D or contain NaN or Inf
         values. If a window bound is not finite, or window start >= window
         stop. If the window is too narrow to resolve in float64 at these
-        timestamps.
+        timestamps. If epochs is invalid.
 
     Notes
     -----
@@ -251,7 +299,7 @@ def event_count_in_window(
     - Count spikes in a +/- 0.5 s window around each sample:
       ``window=(-0.5, 0.5)``
 
-    Windows are half-open, ``[sample_time + start, sample_time + stop)``: an
+    Windows are half-open, ``[time + start, time + stop)``: an
     event exactly at the start is counted and one exactly at the stop is not.
     Window edges that agree up to float rounding are treated as one instant,
     so windows of samples ``bin_size`` apart with ``window=(-bin_size / 2,
@@ -266,53 +314,79 @@ def event_count_in_window(
 
     Count rewards in previous 5 seconds:
 
-    >>> sample_times = np.array([0.0, 3.0, 6.0, 10.0])
+    >>> times = np.array([0.0, 3.0, 6.0, 10.0])
     >>> reward_times = np.array([1.0, 2.0, 5.0])
-    >>> event_count_in_window(sample_times, reward_times, window=(-5.0, 0.0))
+    >>> event_count_in_window(times, reward_times, window=(-5.0, 0.0))
     array([0, 2, 3, 1])
 
     Count events in symmetric window:
 
-    >>> event_count_in_window(sample_times, reward_times, window=(-1.5, 1.5))
+    >>> event_count_in_window(times, reward_times, window=(-1.5, 1.5))
     array([1, 1, 1, 0])
+
+    Recording started at 0 s, so the 5 s history of the first two samples
+    reaches unrecorded time:
+
+    >>> event_count_in_window(times, reward_times, (-5.0, 0.0), epochs=(0.0, 20.0))
+    array([nan, nan,  3.,  1.])
     """
-    sample_times = _finite_times(sample_times, "sample_times")
+    times = _finite_times(times, "times")
     event_times = _finite_times(event_times, "event_times")
     window_start, window_end = _validate_window(
         window, context="event_count_in_window", warn_wide=False
     )
 
-    if len(sample_times) == 0:
-        return np.array([], dtype=np.int64)
-    if len(event_times) == 0:
-        return np.zeros(len(sample_times), dtype=np.int64)
+    recorded = as_intervals(epochs, name="epochs")
 
-    starts = sample_times + window_start
-    stops = sample_times + window_end
-    # Refuse windows too narrow for float64 at these timestamps; below that,
-    # sharing coincident edges could also merge a window's own two edges.
-    _time_bin_rounding(
-        np.array([[starts.min(), stops.max()]]),
-        window_end - window_start,
-        context="event_count_in_window windows",
-        width_name="window width",
-    )
-    starts, stops = _share_coincident_edges(starts, stops)
+    counts = np.zeros(len(times), dtype=np.int64)
+    starts, stops = times + window_start, times + window_end
+    if len(times) and len(event_times):
+        # Refuse windows too narrow for float64 at these timestamps; below
+        # that, sharing coincident edges could also merge a window's own edges.
+        _time_bin_rounding(
+            np.array([[starts.min(), stops.max()]]),
+            window_end - window_start,
+            context="event_count_in_window windows",
+            width_name="window width",
+        )
+        starts, stops = _share_coincident_edges(starts, stops)
+        # Count = number of events in [start, stop)
+        sorted_events = np.sort(event_times)
+        counts = np.searchsorted(sorted_events, stops, side="left") - np.searchsorted(
+            sorted_events, starts, side="left"
+        )
+    if recorded is None:
+        return counts.astype(np.int64)
+    observed = counts.astype(np.float64)
+    observed[~intervals_contain(recorded, starts, stops)] = np.nan
+    return observed
 
-    # Count = number of events in [start, stop)
-    sorted_events = np.sort(event_times)
-    counts = np.searchsorted(sorted_events, stops, side="left") - np.searchsorted(
-        sorted_events, starts, side="left"
-    )
-    return counts.astype(np.int64)
+
+@overload
+def event_indicator(
+    times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    *,
+    epochs: None = None,
+) -> NDArray[np.bool_]: ...
+@overload
+def event_indicator(
+    times: NDArray[np.float64],
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    *,
+    epochs: ArrayLike,
+) -> NDArray[np.float64]: ...
 
 
 def event_indicator(
-    sample_times: NDArray[np.float64],
+    times: NDArray[np.float64],
     event_times: NDArray[np.float64],
-    *,
     window: tuple[float, float],
-) -> NDArray[np.bool_]:
+    *,
+    epochs: Any = None,
+) -> NDArray[np.bool_] | NDArray[np.float64]:
     """
     Binary indicator of whether an event occurs near each sample time.
 
@@ -322,21 +396,28 @@ def event_indicator(
 
     Parameters
     ----------
-    sample_times : NDArray[np.float64], shape (n_samples,)
+    times : NDArray[np.float64], shape (n_samples,)
         Sample timestamps (seconds).
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps (seconds).
     window : tuple[float, float]
-        Time window (start, stop) relative to sample_time (seconds), half-open
-        ``[sample_time + start, sample_time + stop)``. Required: no window is
+        Time window (start, stop) relative to each sample time (seconds), half-open
+        ``[time + start, time + stop)``. Required: no window is
         right for every sampling rate. For time-binned samples ``bin_size``
         apart, ``(-bin_size / 2, bin_size / 2)`` marks each event at exactly
         one sample. E.g., (-1.0, 0.0) matches events in the previous 1 second.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        When events were recorded: half-open [start, stop) windows in seconds
+        on the same clock as ``times``. A sample whose window is not inside
+        one of them is NaN, because an event there would have gone unseen.
+        ``None`` (default) treats all time as recorded.
 
     Returns
     -------
-    NDArray[np.bool_], shape (n_samples,)
-        True if event occurs within window of sample, False otherwise.
+    NDArray[np.bool_] or NDArray[np.float64], shape (n_samples,)
+        True if event occurs within window of sample, False otherwise. With
+        ``epochs``, floats 1.0 / 0.0, NaN where the window is not inside one
+        recorded window.
 
     Raises
     ------
@@ -351,13 +432,12 @@ def event_indicator(
       marks each event at the one sample whose bin holds it
     - Event presence detection: ``window=(-0.1, 0.1)`` for events within 100ms
 
-    Windows are half-open, so an event exactly at ``sample_time + start`` is
-    included and one exactly at ``sample_time + stop`` is not.
+    Windows are half-open, so an event exactly at ``time + start`` is
+    included and one exactly at ``time + stop`` is not.
 
     This function is semantically clearer than ``event_count_in_window() > 0``
-    for creating binary indicators and returns bool dtype directly. It shares
-    the same keyword-only ``window=(start, end)`` contract as
-    ``event_count_in_window``.
+    for creating binary indicators and returns bool dtype directly. It takes
+    the same ``window=(start, end)`` as ``event_count_in_window``.
 
     Examples
     --------
@@ -366,16 +446,18 @@ def event_indicator(
 
     Mark each event at the sample whose 1 s bin holds it:
 
-    >>> sample_times = np.array([0.0, 1.0, 2.0, 3.0])
+    >>> times = np.array([0.0, 1.0, 2.0, 3.0])
     >>> event_times = np.array([1.0, 3.0])
-    >>> event_indicator(sample_times, event_times, window=(-0.5, 0.5))
+    >>> event_indicator(times, event_times, window=(-0.5, 0.5))
     array([False,  True, False,  True])
 
     Create GLM design matrix column:
 
-    >>> indicator = event_indicator(sample_times, event_times, window=(-0.1, 0.1))
+    >>> indicator = event_indicator(times, event_times, window=(-0.1, 0.1))
     >>> X = indicator.astype(float)  # Convert to float for design matrix
     """
-    counts = event_count_in_window(sample_times, event_times, window=window)
-    indicator: NDArray[np.bool_] = counts > 0
-    return indicator
+    counts = event_count_in_window(times, event_times, window, epochs=epochs)
+    if epochs is None:
+        indicator: NDArray[np.bool_] = counts > 0
+        return indicator
+    return np.where(np.isnan(counts), np.nan, (counts > 0).astype(np.float64))

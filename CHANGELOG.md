@@ -6,6 +6,10 @@
 
 Breaking:
 
+- `time_to_nearest_event`, `event_count_in_window` and `event_indicator` name
+  their first argument `times`, not `sample_times`, like every other
+  per-sample function. `window` may be passed by position, in the canonical
+  events order `f(times, event_times, window)`; `window=` still works.
 - `events_to_intervals` raises when an interval stops before it starts; it
   warned and kept the negative-duration row, which also passed any
   `max_duration` filter. Sequential pairing (`match_by=None`) also raises
@@ -51,6 +55,14 @@ Results that change:
 
 Added:
 
+- `epochs=` on `time_to_nearest_event`, `event_count_in_window` and
+  `event_indicator`: when events were recorded. A sample whose value depends
+  on unrecorded time is NaN instead of counting the unseen stretch as "no
+  event": a 5 s reward-history window at the first second of a recording
+  reported 0 rewards. With `epochs`, counts and the indicator are float64
+  (the indicator 1.0 / 0.0 / NaN); without it they keep their int64 and bool
+  dtypes. A time to the nearest event is NaN when an unrecorded event could
+  be nearer.
 - `PeriEventResult.summary_table()`, with the same columns as the
   population result's. PSTH `summary_table()` and `to_dataframe()` record
   `window`, `bin_size`, `n_events` and `n_events_dropped` in `df.attrs`, and
