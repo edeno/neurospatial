@@ -106,12 +106,35 @@ def _approach(strip):
     return strip.bin_at(positions), np.linspace(0, 10, 40)
 
 
-def test_goal_directed_run_ends_at_an_outside_sample(strip):
+def test_goal_directed_run_skips_an_outside_sample_like_a_deleted_row(strip):
+    position_bins, times = _approach(strip)
+    position_bins[20] = -1
+    kept = np.delete(np.arange(len(times)), 20)
+
+    runs = detect_goal_directed_runs(
+        position_bins, times, strip, goal_region="goal", min_progress=10.0
+    )
+    deleted = detect_goal_directed_runs(
+        position_bins[kept], times[kept], strip, goal_region="goal", min_progress=10.0
+    )
+
+    assert [(run.start_time, run.end_time) for run in runs] == [
+        (run.start_time, run.end_time) for run in deleted
+    ]
+    assert all((run.bins >= 0).all() for run in runs)
+
+
+def test_goal_directed_run_ends_at_an_outside_sample_beyond_max_gap(strip):
     position_bins, times = _approach(strip)
     position_bins[20] = -1
 
     runs = detect_goal_directed_runs(
-        position_bins, times, strip, goal_region="goal", min_progress=10.0
+        position_bins,
+        times,
+        strip,
+        goal_region="goal",
+        min_progress=10.0,
+        max_gap=1.5 * (times[1] - times[0]),
     )
 
     assert [(run.start_time, run.end_time) for run in runs] == [

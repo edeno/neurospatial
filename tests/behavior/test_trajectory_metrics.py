@@ -583,10 +583,28 @@ class TestCurvatureObservationSupport:
             ]
         )
 
-        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
+        curvature = compute_trajectory_curvature(
+            times, positions, smooth_window=None, max_gap=0.15
+        )
 
         assert_allclose(
             curvature, [0, 0, np.pi / 2, 0, np.nan, 0, 0], rtol=0, atol=1e-15
+        )
+
+    def test_missing_row_is_bridged_like_a_deleted_row(self):
+        times = np.arange(20) * 0.1
+        positions = np.column_stack([np.arange(20.0), np.sin(np.arange(20.0))])
+        positions[10] = np.nan
+        kept = np.delete(np.arange(20), 10)
+
+        curvature = compute_trajectory_curvature(times, positions)
+
+        assert np.isnan(curvature[10])
+        assert_allclose(
+            curvature[kept],
+            compute_trajectory_curvature(times[kept], positions[kept]),
+            rtol=1e-12,
+            atol=0,
         )
 
     def test_missing_row_does_not_spread_through_smoothing(self):
@@ -594,7 +612,7 @@ class TestCurvatureObservationSupport:
         positions = np.column_stack([np.arange(20.0), np.sin(np.arange(20.0))])
         positions[10] = np.nan
 
-        curvature = compute_trajectory_curvature(times, positions)
+        curvature = compute_trajectory_curvature(times, positions, max_gap=0.15)
 
         assert np.isnan(curvature[10])
         assert np.isfinite(np.delete(curvature, 10)).all()

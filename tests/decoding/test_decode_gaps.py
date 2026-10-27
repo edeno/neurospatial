@@ -108,11 +108,11 @@ def test_decode_bounds_do_not_restrict_observed_runs(gap_population):
 
 @pytest.fixture
 def dropout_session():
-    """30 Hz tracking with a 1 s dropout after every 0.7 s of observation."""
+    """30 Hz tracking with a 1.5 s dropout after every 0.7 s of observation."""
     from neurospatial import Environment
 
     run = np.arange(22) / 30.0  # 0.7 s observed
-    times = np.concatenate([run + 1.7 * k for k in range(40)])
+    times = np.concatenate([run + 2.2 * k for k in range(40)])
     x = 50.0 + 45.0 * np.sin(2 * np.pi * times / 20.0)
     positions = np.column_stack([x, np.zeros_like(x)])
     env = Environment.from_samples(positions, bin_size=10.0)

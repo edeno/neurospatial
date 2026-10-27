@@ -34,6 +34,8 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
 )
@@ -59,22 +61,34 @@ __all__ = [
 
 def _view_observation_mask(
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    gaze_offsets: NDArray[np.float64] | None,
     *,
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None = None,
-) -> NDArray[np.bool_]:
-    """Resolve selected exposure before requiring bins at physical wall hits."""
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Resolve selected exposure before requiring bins at physical wall hits.
+
+    A sample with a non-finite position, heading or gaze offset is missing
+    and is bridged like a deleted row. Returns the interval mask, shape
+    ``(n_samples - 1,)``, and the observed samples, shape ``(n_samples,)``.
+    """
+    observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
+    if gaze_offsets is not None:
+        observed &= np.isfinite(gaze_offsets)
     mask = interval_valid_mask(
         times,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
+        sample_valid=observed,
     )
     mask &= np.diff(times) > 0
-    return mask
+    return mask, observed
 
 
 def require_allocentric_view(env: Environment, operation: str) -> None:
@@ -228,7 +242,7 @@ def compute_occupancy(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     boundary_source: BoundarySource = "physical",
@@ -263,11 +277,13 @@ def compute_occupancy(
         Offset from heading to gaze direction (e.g., from eye tracking).
         If None, gaze is aligned with heading.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -376,8 +392,14 @@ def compute_occupancy(
                 f"times length ({n_samples})"
             )
 
-    mask = _view_observation_mask(
-        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    mask, observed = _view_observation_mask(
+        times,
+        positions,
+        headings,
+        gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
     )
     view_bins = _precompute_view_bins(
         env,
@@ -389,6 +411,7 @@ def compute_occupancy(
         boundary_source=boundary_source,
         interval_mask=mask,
     )
+    view_bins = hold_last_valid(view_bins, observed, fill=-1)
     mask &= view_bins[:-1] >= 0
     return start_allocated_occupancy(view_bins, np.diff(times), mask, env.n_bins)
 
@@ -403,7 +426,7 @@ def bin_view_spike_train(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     boundary_source: BoundarySource = "physical",
@@ -434,11 +457,13 @@ def bin_view_spike_train(
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -521,8 +546,14 @@ def bin_view_spike_train(
     # Validate times (minimum samples and monotonicity)
     _validate_times(times, context="bin_view_spike_train")
 
-    mask = _view_observation_mask(
-        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    mask, observed = _view_observation_mask(
+        times,
+        positions,
+        headings,
+        gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
     )
     view_bins = _precompute_view_bins(
         env,
@@ -534,6 +565,7 @@ def bin_view_spike_train(
         boundary_source=boundary_source,
         interval_mask=mask,
     )
+    view_bins = hold_last_valid(view_bins, observed, fill=-1)
     mask &= view_bins[:-1] >= 0
     return count_spikes_by_frame(spike_times, times, view_bins, mask, env.n_bins)
 
@@ -547,7 +579,7 @@ def prepare_view_binning(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     view_bins: NDArray[np.intp] | None = None,
@@ -569,8 +601,11 @@ def prepare_view_binning(
     # Precompute view bins ONCE (shared across all neurons) unless the caller
     # already holds them for these exact samples and gaze settings.
     # This is the expensive computation - computed once instead of per-neuron
-    mask = _view_observation_mask(
+    mask, observed = _view_observation_mask(
         times,
+        positions,
+        headings,
+        None if gaze_offsets is None else np.asarray(gaze_offsets, dtype=np.float64),
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
@@ -588,7 +623,7 @@ def prepare_view_binning(
             interval_mask=mask,
         )
 
-    mask &= view_bins[:-1] >= 0
+    mask &= hold_last_valid(view_bins, observed, fill=-1)[:-1] >= 0
     n_bins = env.n_bins
     prepared = prepare_frame_binning(
         times,
@@ -599,6 +634,7 @@ def prepare_view_binning(
         spike_window=spike_window,
         interval_mask=mask,
         break_before=break_before,
+        sample_valid=observed,
     )
     return prepared
 
@@ -613,7 +649,7 @@ def bin_view_spike_trains(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
@@ -648,11 +684,13 @@ def bin_view_spike_trains(
         required by it and unused by ray_cast.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

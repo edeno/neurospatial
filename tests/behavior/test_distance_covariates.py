@@ -495,7 +495,7 @@ class TestDistanceToRewardSupport:
         [
             ("gap", "in a gap longer than max_gap"),
             ("break", "across a declared break"),
-            ("missing", "next to a missing"),
+            ("missing", "before the first or after the last observed position"),
         ],
     )
     def test_reward_in_an_unusable_interval_has_unknown_location(
@@ -512,7 +512,7 @@ class TestDistanceToRewardSupport:
         elif change == "break":
             kwargs["break_before"] = np.arange(10) == 6
         else:
-            positions[6] = np.nan
+            positions[6:] = np.nan
 
         with pytest.warns(UserWarning, match=rf"1 of 2 reward[\s\S]*1 {reason}"):
             result = self._distance(
@@ -523,6 +523,23 @@ class TestDistanceToRewardSupport:
         assert np.isfinite(result[:2]).all()
         # Samples 2..5 select the second reward, whose location is unknown.
         assert np.isnan(result[2:6]).all()
+
+    def test_reward_in_a_bridged_gap_is_interpolated_across_missing_samples(
+        self, simple_grid_env, run
+    ):
+        times, positions = run
+        positions = positions.copy()
+        positions[5:7] = np.nan  # x = 4 at 0.4 s, then x = 7 at 0.7 s
+        kept = np.delete(np.arange(10), [5, 6])
+        reward_times = np.array([0.55])
+
+        result = self._distance(simple_grid_env, times, positions, reward_times)
+        deleted = self._distance(
+            simple_grid_env, times[kept], positions[kept], reward_times
+        )
+
+        assert_array_equal(result[kept], deleted)
+        assert np.isfinite(deleted).all()
 
     def test_unknown_reward_is_not_replaced_by_a_known_one(self, simple_grid_env, run):
         times, positions = run

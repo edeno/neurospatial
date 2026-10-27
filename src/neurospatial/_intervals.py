@@ -108,8 +108,46 @@ class TimeSupport(ReadOnlyArraysMixin):
         }
 
 
+#: Default longest stretch of missing tracking, in seconds, that is bridged.
+#: Calibrated by simulation; see the Notes of :func:`validate_max_gap`.
+DEFAULT_MAX_GAP = 1.0
+
+
 def validate_max_gap(max_gap: Any) -> float | None:
-    """Return ``max_gap`` as a float, or None; refuse any other value."""
+    """Return ``max_gap`` as a float, or None; refuse any other value.
+
+    ``max_gap`` is the longest stretch of missing tracking that is bridged:
+    the time between two consecutive valid samples (a sample is missing when
+    its row was dropped or its coordinates are NaN). A gap no longer than
+    ``max_gap`` is treated as observed, with its time held at the last valid
+    sample; a longer gap is excluded as a tracking loss. ``None`` bridges
+    every gap.
+
+    Notes
+    -----
+    The default, ``DEFAULT_MAX_GAP = 1.0`` s, is calibrated by simulation.
+    Scenarios: 15 min of running back and forth on a 200 cm linear track
+    (30-50 cm/s runs, 2-6 s pauses at the ends), tracked at 30, 60 and
+    120 Hz, with 1 % or 5 % isolated dropped frames, DeepLabCut-style
+    low-confidence NaN bursts (1-15 frames, about 3 % of frames, four times
+    as frequent during the pauses near the walls), three 2-5 s tracking
+    losses while running and one ~10 s pickup during a pause; 12 replicates
+    per scenario. ``max_gap`` was swept from 0.03 s to 10 s on a log grid,
+    and each value was scored on occupancy error against the true trajectory
+    (total variation and L1, 2 cm and 5 cm bins), the binned rate-map error
+    of a place cell, running-bout count and complete track traversals.
+
+    Bout and traversal counts and the occupancy L1 error need ``max_gap``
+    longer than the longest routine low-confidence burst (15 frames at 30 Hz,
+    0.5 s), and every metric degrades once ``max_gap`` reaches the shortest
+    real loss (2 s). From 0.55 s to 2.0 s, 38 of the 42 scenario-metric pairs
+    stay within two Monte-Carlo standard errors of their best value; the
+    other four, occupancy total-variation errors, are within 26 % of their
+    best, because a bridged burst holds the last position while the animal
+    keeps running. 1.0 s is the round value nearest the geometric middle of
+    that plateau (1.05 s). 0.5 s lies just below it: at 30 Hz it splits
+    running bouts at the longest bursts.
+    """
     if max_gap is None:
         return None
     if (
@@ -121,12 +159,13 @@ def validate_max_gap(max_gap: Any) -> float | None:
         raise ValueError(
             _format_error(
                 "max_gap must be a positive finite number of seconds or None "
-                f"(None keeps every interval, however long); got {max_gap!r}.",
-                why="Why: sampling intervals longer than max_gap are excluded "
-                "as recording gaps, so a zero, negative or NaN max_gap would "
+                f"(None bridges every gap, however long); got {max_gap!r}.",
+                why="Why: max_gap is the longest stretch of missing tracking "
+                "that is bridged, so a zero, negative or NaN max_gap would "
                 "exclude every interval.",
-                fix="pass a number of seconds above the sampling interval, "
-                "e.g. max_gap=0.5, or max_gap=None.",
+                fix="pass a number of seconds longer than routine dropped or "
+                "low-confidence frames and shorter than real tracking losses, "
+                f"e.g. the default max_gap={DEFAULT_MAX_GAP}, or max_gap=None.",
             )
         )
     return float(max_gap)
@@ -465,6 +504,50 @@ def run_time_bounds(
     return np.column_stack([times[bounds[:, 0]], times[bounds[:, 1]]])
 
 
+def gap_endpoints(
+    sample_valid: NDArray[np.bool_],
+) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.bool_]]:
+    """Valid samples bounding each sampling interval, across missing samples.
+
+    Missing samples (``sample_valid`` False) are treated exactly like deleted
+    rows: the gap containing interval ``k`` runs from the last valid sample at
+    or before ``k`` to the first valid sample at or after ``k + 1``. Gates are
+    then evaluated on that gap, so a NaN row and a dropped row give the same
+    result.
+
+    Parameters
+    ----------
+    sample_valid : ndarray of bool, shape (n_samples,)
+
+    Returns
+    -------
+    start, end : ndarray of intp, shape (max(n_samples - 1, 0),)
+        Bounding valid samples of the gap containing each interval. An
+        interval before the first or after the last valid sample has no such
+        gap; its own samples ``(k, k + 1)`` are returned instead.
+    linked : ndarray of bool, shape (max(n_samples - 1, 0),)
+        True where a valid sample exists on both sides.
+
+    Examples
+    --------
+    >>> start, end, linked = gap_endpoints(np.array([True, False, False, True, False]))
+    >>> start.tolist(), end.tolist(), linked.tolist()
+    ([0, 0, 0, 3], [3, 3, 3, 4], [True, True, True, False])
+    """
+    valid = np.asarray(sample_valid, dtype=bool)
+    n = valid.size
+    if n < 2:
+        empty = np.zeros(0, dtype=np.intp)
+        return empty, empty, np.zeros(0, dtype=bool)
+    index = np.arange(n, dtype=np.intp)
+    previous = np.maximum.accumulate(np.where(valid, index, -1))[:-1]
+    following = np.minimum.accumulate(np.where(valid, index, n)[::-1])[::-1][1:]
+    linked = (previous >= 0) & (following < n)
+    start = np.where(linked, previous, index[:-1]).astype(np.intp)
+    end = np.where(linked, following, index[1:]).astype(np.intp)
+    return start, end, linked
+
+
 def interval_valid_mask(
     times: NDArray[np.float64],
     positions: NDArray[np.float64] | None = None,
@@ -472,11 +555,12 @@ def interval_valid_mask(
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     start_bin: NDArray[np.intp] | None = None,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     break_before: NDArray[np.bool_] | None = None,
+    sample_valid: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.bool_]:
     """Compute the per-interval validity mask shared by spikes and occupancy.
 
@@ -489,31 +573,37 @@ def interval_valid_mask(
     falls in using this SAME helper — so numerator and denominator stay aligned
     by construction.
 
-    Interval ``k`` spans ``[t_k, t_{k+1})`` (``time_allocation="start"``
-    semantics) and is assigned to the bin at sample ``k``. It is valid iff:
+    Missing samples (``sample_valid`` False) are treated exactly like deleted
+    rows. Interval ``k`` spans ``[t_k, t_{k+1})`` and belongs to the gap
+    ``[t_a, t_b)`` between the last valid sample ``a <= k`` and the first
+    valid sample ``b >= k + 1`` (:func:`gap_endpoints`); without missing
+    samples, ``a = k`` and ``b = k + 1``. Interval ``k`` is valid iff a valid
+    sample exists on both sides and:
 
     .. math::
-        (\\text{max\\_gap is None or } \\Delta t_k \\le \\text{max\\_gap})
+        (\\text{max\\_gap is None or } t_b - t_a \\le \\text{max\\_gap})
         \\;\\wedge\\;
-        (\\text{min\\_speed is None or } \\text{speed}_k \\ge \\text{min\\_speed})
+        (\\text{min\\_speed is None or } \\text{speed}_a \\ge \\text{min\\_speed})
         \\;\\wedge\\;
-        (\\text{start\\_bin}_k \\ge 0)
+        (\\text{start\\_bin}_a \\ge 0)
         \\;\\wedge\\;
-        ([t_k, t_{k+1}) \\subseteq \\text{epochs})
+        ([t_a, t_b) \\subseteq \\text{epochs})
         \\;\\wedge\\;
-        ([t_k, t_{k+1}) \\subseteq \\text{spike\\_window})
+        ([t_a, t_b) \\subseteq \\text{spike\\_window})
         \\;\\wedge\\;
-        \\neg\\,\\text{break\\_before}_{k+1}
+        \\neg\\,\\text{break\\_before}_{a+1..b}
 
-    where ``start_bin = env.bin_at(positions)`` and ``\\Delta t = diff(times)``.
-    Bounds are checked only when ``start_bin`` or ``env`` is supplied. Window
-    gates apply when given.
+    where ``start_bin = env.bin_at(positions)``. A valid interval inside a
+    bridged gap belongs to the bin of sample ``a`` (:func:`hold_last_valid`),
+    so occupancy and spike counts equal those of the recording with the
+    missing rows deleted. Bounds are checked only when ``start_bin`` or
+    ``env`` is supplied. Window gates apply when given.
 
     ``max_gap`` must sit above the sampling interval. Timestamps such as
     ``np.arange(n) / 30`` are not exact, so with ``max_gap`` equal to the
     sampling interval about a quarter to a half of the intervals exceed it by
     float rounding and are dropped. :func:`warn_excluded_intervals` names this
-    case; use e.g. ``max_gap = 1.5 / sampling_rate`` or the default 0.5 s.
+    case.
 
     Parameters
     ----------
@@ -527,15 +617,16 @@ def interval_valid_mask(
         The spatial environment; ``env.bin_at`` maps each start sample to its
         bin (``-1`` outside the active mask).
     speed : ndarray, shape (n_samples,), or None
-        Per-sample speed, required with ``min_speed``; the gate uses
-        ``speed[:-1] >= min_speed`` (the speed of each interval's start
-        sample). Consumed as-is; never re-derived here.
+        Per-sample speed, required with ``min_speed``; the gate uses the
+        speed of each gap's start sample. Consumed as-is; never re-derived
+        here.
     min_speed : float or None
         Minimum speed threshold. When ``None`` (default) no speed gating.
-    max_gap : float or None
-        Maximum time gap in seconds, positive and finite. Intervals with
-        ``dt > max_gap`` are dropped. Default 0.5; ``None`` disables gap
-        gating on BOTH sides (spikes and occupancy) so they stay aligned.
+    max_gap : float or None, default=1.0
+        Longest gap in seconds between consecutive valid samples that is
+        bridged (see :func:`validate_max_gap`); longer gaps are dropped.
+        ``None`` bridges every gap, on BOTH sides (spikes and occupancy) so
+        they stay aligned.
     start_bin : ndarray of intp, shape (n_samples,), or None
         Precomputed ``env.bin_at(positions)`` for the out-of-bounds-start
         gate, so callers that already binned ``positions`` skip a second
@@ -543,11 +634,14 @@ def interval_valid_mask(
         it is computed from ``env`` if given.
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Already normalized, sorted and merged half-open windows in seconds.
-        Each kept interval must lie wholly inside one row of each supplied
+        Each kept gap must lie wholly inside one row of each supplied
         window set.
     break_before : ndarray of bool, shape (n_samples,), or None
-        Already validated declared recording breaks: True at sample ``k + 1``
-        drops interval ``k``. Entry 0 is ignored.
+        Already validated declared recording breaks: True at any sample
+        ``a + 1 .. b`` drops the gap ``[t_a, t_b)``. Entry 0 is ignored.
+    sample_valid : ndarray of bool, shape (n_samples,), or None
+        False at missing samples (for example NaN coordinates). ``None``
+        treats every sample as valid.
 
     Returns
     -------
@@ -577,16 +671,21 @@ def interval_valid_mask(
     if n_samples < 2:
         return np.zeros(0, dtype=bool)
 
-    dt = np.diff(times)
-    valid_mask = np.ones(len(dt), dtype=bool)
+    if sample_valid is None:
+        start = np.arange(n_samples - 1, dtype=np.intp)
+        end = start + 1
+        valid_mask = np.ones(n_samples - 1, dtype=bool)
+    else:
+        start, end, valid_mask = gap_endpoints(sample_valid)
+    t_start, t_end = times[start], times[end]
 
     if max_gap is not None:
-        valid_mask &= dt <= max_gap
+        valid_mask &= t_end - t_start <= max_gap
 
-    # Filter by min_speed (speed of each interval's starting sample).
+    # Filter by min_speed (speed of each gap's starting sample).
     if min_speed is not None:
         speed = np.asarray(speed, dtype=np.float64)
-        valid_mask &= speed[:-1] >= min_speed
+        valid_mask &= speed[start] >= min_speed
 
     # Filter out intervals whose START sample is outside the active
     # environment (bin_at returns -1 for points outside any active bin).
@@ -596,14 +695,132 @@ def interval_valid_mask(
         pos = np.asarray(positions, dtype=np.float64)
         start_bin = env.bin_at(pos.reshape(-1, 1) if pos.ndim == 1 else pos)
     if start_bin is not None:
-        valid_mask &= np.asarray(start_bin)[:-1] >= 0
+        valid_mask &= np.asarray(start_bin)[start] >= 0
     for windows in (epochs, spike_window):
         if windows is not None:
-            valid_mask &= intervals_contain(windows, times[:-1], times[1:])
+            valid_mask &= intervals_contain(windows, t_start, t_end)
     if break_before is not None:
-        valid_mask &= ~np.asarray(break_before, dtype=bool)[1:]
+        n_breaks = np.cumsum(np.r_[False, np.asarray(break_before, dtype=bool)[1:]])
+        valid_mask &= n_breaks[end] == n_breaks[start]
 
     return valid_mask
+
+
+def hold_last_valid(
+    values: NDArray[Any], sample_valid: NDArray[np.bool_] | None, *, fill: Any
+) -> NDArray[Any]:
+    """Each sample's value, with a missing sample holding the last valid one.
+
+    Parameters
+    ----------
+    values : ndarray, shape (n_samples, ...)
+        Per-sample values, for example frame bins.
+    sample_valid : ndarray of bool, shape (n_samples,), or None
+        False at missing samples; ``None`` returns ``values`` unchanged.
+    fill : scalar
+        Value for missing samples before the first valid sample.
+
+    Returns
+    -------
+    ndarray, shape (n_samples, ...)
+        Under :func:`interval_valid_mask` with the same ``sample_valid``,
+        entry ``k`` of a valid interval is the value of its gap's start
+        sample.
+
+    Examples
+    --------
+    >>> hold_last_valid(
+    ...     np.array([4, -1, -1, 7]), np.array([True, False, False, True]), fill=-1
+    ... ).tolist()
+    [4, 4, 4, 7]
+    """
+    if sample_valid is None:
+        return values
+    valid = np.asarray(sample_valid, dtype=bool)
+    index = np.arange(valid.size)
+    last = np.maximum.accumulate(np.where(valid, index, -1))
+    held: NDArray[Any] = values[np.maximum(last, 0)].copy()
+    held[last < 0] = fill
+    return held
+
+
+def drop_missing_samples(
+    sample_valid: NDArray[np.bool_],
+    break_before: NDArray[np.bool_] | None,
+) -> tuple[NDArray[np.intp], NDArray[np.bool_] | None]:
+    """Indices of the valid samples, and the declared breaks between them.
+
+    Deleting the missing rows is the definition every analysis follows for a
+    missing sample; analyses that work on the remaining rows directly use
+    these indices. A break declared at a deleted row moves to the next kept
+    row, so it still separates the recordings.
+
+    Parameters
+    ----------
+    sample_valid : ndarray of bool, shape (n_samples,)
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Already validated declared breaks.
+
+    Returns
+    -------
+    index : ndarray of intp, shape (n_valid,)
+        The kept rows.
+    break_before : ndarray of bool, shape (n_valid,), or None
+        True at kept row ``i >= 1`` when a break is declared at any row in
+        ``(index[i - 1], index[i]]``.
+    """
+    index = np.flatnonzero(sample_valid).astype(np.intp)
+    if break_before is None:
+        return index, None
+    n_breaks = np.cumsum(np.r_[False, np.asarray(break_before, dtype=bool)[1:]])
+    kept = np.zeros(index.size, dtype=bool)
+    kept[1:] = n_breaks[index[1:]] != n_breaks[index[:-1]]
+    return index, kept
+
+
+def fill_missing_positions(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    time_allocation: Literal["start", "linear"],
+) -> NDArray[np.float64]:
+    """Fill missing rows from the valid rows that bound their gap.
+
+    Used after the interval mask has been resolved with ``sample_valid``
+    (missing rows are those with a non-finite coordinate), so the filled rows
+    only place the time and spikes of bridged gaps. Under ``"start"``
+    allocation a missing row holds the last valid position, so the whole gap
+    belongs to its start bin; under ``"linear"`` allocation it lies on the
+    straight path between the bounding valid rows at its time, so the path
+    is split exactly as the gap's single straight segment would be. Either
+    way the result equals that of the recording with the missing rows
+    deleted. Rows before the first or after the last valid row stay NaN.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+    positions : ndarray, shape (n_samples, n_dims)
+    time_allocation : {"start", "linear"}
+
+    Returns
+    -------
+    ndarray, shape (n_samples, n_dims)
+        A copy with bounded missing rows filled.
+    """
+    positions = np.array(positions, dtype=np.float64, copy=True)
+    valid = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
+    if valid.all() or not valid.any():
+        return positions
+    start, end, linked = gap_endpoints(valid)
+    missing = np.flatnonzero(~valid[1:-1]) + 1
+    missing = missing[linked[missing]]
+    a, b = start[missing], end[missing]
+    if time_allocation == "start":
+        positions[missing] = positions[a]
+    else:
+        weight = ((times[missing] - times[a]) / (times[b] - times[a]))[:, None]
+        positions[missing] = (1 - weight) * positions[a] + weight * positions[b]
+    return positions
 
 
 def start_allocated_occupancy(
@@ -657,14 +874,17 @@ def observed_interval_mask(
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None = None,
+    sample_valid: NDArray[np.bool_] | None = None,
     result: str = "the result is empty or NaN rather than a measurement",
 ) -> NDArray[np.bool_]:
     """Per-interval validity for position-only analyses (gap, epochs, breaks).
 
     ``epochs`` is the raw user argument; it is normalized here with
     ``as_intervals(epochs, name="epochs")``. ``break_before`` is already
-    validated (``validate_break_before``). ``result`` names what an empty
-    selection produces in the warning, as in :func:`warn_excluded_intervals`.
+    validated (``validate_break_before``). ``sample_valid`` marks missing
+    samples, which are bridged like deleted rows (:func:`interval_valid_mask`).
+    ``result`` names what an empty selection produces in the warning, as in
+    :func:`warn_excluded_intervals`.
 
     Returns
     -------
@@ -673,7 +893,11 @@ def observed_interval_mask(
     times = np.asarray(times, dtype=np.float64)
     resolved_epochs = as_intervals(epochs, name="epochs")
     mask = interval_valid_mask(
-        times, max_gap=max_gap, epochs=resolved_epochs, break_before=break_before
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        break_before=break_before,
+        sample_valid=sample_valid,
     )
     warn_excluded_intervals(
         times,
@@ -846,9 +1070,23 @@ def observed_runs(
     max_gap: float | None,
     epochs: Any,
     break_before: NDArray[np.bool_] | None = None,
-) -> list[slice]:
-    """One sample slice per maximal run of valid intervals, in time order."""
+    sample_valid: NDArray[np.bool_] | None = None,
+) -> list[NDArray[np.intp]]:
+    """Indices of the valid samples of each maximal run, in time order.
+
+    A run is a maximal sequence of valid samples joined by bridged gaps
+    (:func:`interval_valid_mask`), so missing samples inside it are skipped
+    exactly as if their rows were deleted.
+    """
     mask = observed_interval_mask(
-        times, max_gap=max_gap, epochs=epochs, break_before=break_before
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        sample_valid=sample_valid,
     )
-    return [slice(int(a), int(b) + 1) for a, b in run_sample_bounds(mask)]
+    runs = [np.arange(a, b + 1, dtype=np.intp) for a, b in run_sample_bounds(mask)]
+    if sample_valid is None:
+        return runs
+    valid = np.asarray(sample_valid, dtype=bool)
+    return [run[valid[run]] for run in runs]

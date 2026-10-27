@@ -35,10 +35,19 @@ class TestHeadingDirectionLabels:
         labels = heading_direction_labels(_times(10), np.zeros((10, 2)), min_speed=0.0)
         assert labels.tolist() == ["stationary"] * 10
 
-    def test_nan_row_splits_runs(self):
+    def test_nan_row_is_bridged_like_a_deleted_row(self):
         times, positions = _times(20), _east_run(20, 2.0)  # 20 cm/s East
         positions[10] = np.nan
+        kept = np.delete(np.arange(20), 10)
         labels = heading_direction_labels(times, positions, min_speed=1.0)
+        deleted = heading_direction_labels(times[kept], positions[kept], min_speed=1.0)
+        assert labels[10] is None
+        np.testing.assert_array_equal(labels[kept], deleted)
+
+    def test_nan_row_beyond_max_gap_splits_runs(self):
+        times, positions = _times(20), _east_run(20, 2.0)  # 20 cm/s East
+        positions[10] = np.nan
+        labels = heading_direction_labels(times, positions, min_speed=1.0, max_gap=0.15)
         before = heading_direction_labels(times[:10], positions[:10], min_speed=1.0)
         after = heading_direction_labels(times[11:], positions[11:], min_speed=1.0)
         assert labels[10] is None
@@ -49,7 +58,7 @@ class TestHeadingDirectionLabels:
     def test_isolated_sample_is_not_observed(self):
         times, positions = _times(20), _east_run(20, 2.0)
         positions[[9, 11]] = np.nan
-        labels = heading_direction_labels(times, positions, min_speed=1.0)
+        labels = heading_direction_labels(times, positions, min_speed=1.0, max_gap=0.15)
         assert labels[9:12].tolist() == [None, None, None]
 
     def test_one_sample_is_not_observed(self):

@@ -866,15 +866,13 @@ class TestNonFiniteHeadingMasking:
         occ_clean, _ = compute_directional_occupancy(
             d["times_clean"], d["headings_clean"], bin_size=np.pi / 30
         )
-        # Bin 0 is not inflated by the non-finite block.
-        assert occ_bad[0] == pytest.approx(occ_clean[0], abs=1e-9)
-
-        # Total occupancy equals the time on finite frames only: the masked
-        # frames' own time deltas are dropped, not folded into a bin.
+        # Non-finite frames are treated exactly like deleted rows: bin 0 is
+        # not inflated, and the 3.3 s block (longer than max_gap) adds no time.
+        np.testing.assert_allclose(occ_bad, occ_clean, rtol=0, atol=1e-9)
         times = d["times"]
-        finite = np.isfinite(d["headings"][:-1])
-        expected_total = np.diff(times)[finite].sum()
-        assert occ_bad.sum() == pytest.approx(expected_total, abs=1e-9)
+        assert occ_bad.sum() == pytest.approx(
+            times[-1] - times[0] - (times[600] - times[499]), abs=1e-9
+        )
 
     def test_nan_heading_spikes_excluded(self, nan_block_heading_trajectory) -> None:
         from neurospatial.encoding._directional_counts import (

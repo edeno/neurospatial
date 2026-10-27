@@ -3,7 +3,9 @@
 An overlay's support is resolved once, when it is converted: a sample is valid
 when every coordinate is finite and nothing rejected it, and an interval is
 valid when both of its samples are valid and no gap or break lies between
-them (:func:`resolve_support`). Sampling and moving rows onto another clock
+them (:func:`resolve_support`). An overlay's missing rows are bridged as in
+trajectory analyses: one inside a gap that passes ``max_gap`` is filled from
+the rows that bound the gap (:func:`observed_rows`). Sampling and moving rows onto another clock
 then trust those masks (:func:`sample_at_times`, :func:`resample`).
 """
 
@@ -16,24 +18,60 @@ from numpy.typing import NDArray
 
 from neurospatial._intervals import validate_max_gap
 from neurospatial._observation import (
-    ObservationSupport,
     resolve_sample_support,
     validate_break_before,
 )
 
 
-def observation_support(
+def observed_rows(
     times: NDArray[np.float64],
     values: NDArray[np.float64],
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None,
     break_before: NDArray[np.bool_] | None = None,
-) -> ObservationSupport:
-    """Resolve the same observed intervals used by trajectory analyses."""
+    interp: Literal["linear", "nearest"],
+    circular: bool = False,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_]]:
+    """Resolve an overlay's observed rows the way trajectory analyses do.
+
+    A row with a non-finite value is missing. As in every analysis, a missing
+    row is treated like a deleted one: when the gap between the valid rows
+    around it passes ``max_gap`` and ``break_before``, it is filled from
+    those rows the way the views sample between two rows (linearly in time,
+    along the shorter arc for ``circular`` angles, or from the nearer row for
+    ``interp="nearest"``), so drawing and sampling bridge the gap exactly.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Times of the rows, in seconds.
+    values : ndarray, shape (n_samples,) or (n_samples, n_dims)
+        The rows; NaN marks a missing value.
+    max_gap : float or None
+        Longest gap between valid rows that is bridged.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Declared recording breaks.
+    interp : {"linear", "nearest"}
+        How the views sample between rows.
+    circular : bool, default=False
+        The rows are angles in radians.
+
+    Returns
+    -------
+    values : ndarray of float64, same shape as ``values``
+        A copy with bridged rows filled.
+    sample_valid : ndarray of bool, shape (n_samples,)
+        Valid and filled rows.
+    interval_valid : ndarray of bool, shape (n_samples - 1,)
+        Intervals that may be crossed.
+    """
+    from neurospatial._intervals import gap_endpoints
+
     validate_max_gap(max_gap)
     breaks = validate_break_before(break_before, len(times), call="overlay")
-    valid = np.asarray(np.isfinite(values.reshape(len(times), -1)).all(axis=1))
-    return resolve_sample_support(
+    owned = np.array(values, dtype=np.float64, copy=True)
+    valid = np.asarray(np.isfinite(owned.reshape(len(times), -1)).all(axis=1))
+    support = resolve_sample_support(
         times,
         valid,
         max_gap=max_gap,
@@ -41,6 +79,25 @@ def observation_support(
         break_before=breaks,
         result="overlay interpolation is unavailable between samples",
     )
+    bridged = np.array(support.interval_mask, copy=True)
+    valid = valid.copy()
+    if len(owned) > 2:
+        start, end, _ = gap_endpoints(valid)
+        inner = np.flatnonzero(~valid[1:-1]) + 1
+        filled = inner[bridged[inner - 1] & bridged[inner]]
+        a, b = start[filled], end[filled]
+        fraction = (times[filled] - times[a]) / (times[b] - times[a])
+        if interp == "nearest":
+            owned[filled] = owned[np.where(fraction > 0.5, b, a)]
+        elif circular:
+            cosine = (1 - fraction) * np.cos(owned[a]) + fraction * np.cos(owned[b])
+            sine = (1 - fraction) * np.sin(owned[a]) + fraction * np.sin(owned[b])
+            owned[filled] = np.arctan2(sine, cosine)
+        else:
+            weight = fraction.reshape((-1,) + (1,) * (owned.ndim - 1))
+            owned[filled] = (1 - weight) * owned[a] + weight * owned[b]
+        valid[filled] = True
+    return owned, valid, bridged
 
 
 def resolve_support(

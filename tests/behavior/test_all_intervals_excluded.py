@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from neurospatial import Environment, Regions
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.behavior import heading_from_velocity
 from neurospatial.behavior.decisions import (
     compute_decision_analysis,
@@ -38,9 +39,9 @@ from neurospatial.events import add_positions
 
 @pytest.fixture(scope="module")
 def coarse_track():
-    """1 Hz back-and-forth track: every interval exceeds the default max_gap."""
-    times = np.arange(0.0, 100.0, 1.0)
-    x = np.abs((times % 40) - 20) * 4 + 5
+    """0.5 Hz back-and-forth track: every interval exceeds the default max_gap."""
+    times = np.arange(0.0, 200.0, 2.0)
+    x = np.abs(((times / 2) % 40) - 20) * 4 + 5
     positions = np.column_stack([x, np.full_like(x, 5.0)])
     env = Environment.from_samples(
         np.vstack([positions, positions + np.array([0.0, 5.0])]), bin_size=2.0
@@ -69,7 +70,7 @@ def _vte_session(env, times, positions, **kwargs):
         "window_duration": 10.0,
         "min_speed": 1.0,
     }
-    if kwargs.get("max_gap", 0.5) is None:
+    if kwargs.get("max_gap", DEFAULT_MAX_GAP) is None:
         result = compute_vte_session(env, times, positions, **options, **kwargs)
         assert len(result.trial_results) == 2
         return result
@@ -130,7 +131,9 @@ CALLS = {
 @pytest.mark.parametrize("name", sorted(CALLS))
 def test_coarse_sampling_warns_at_call_site(coarse_track, name):
     env, times, positions = coarse_track
-    with pytest.warns(UserWarning, match=r"excluded ALL.*max_gap=0\.5") as record:
+    with pytest.warns(
+        UserWarning, match=rf"excluded ALL.*max_gap={DEFAULT_MAX_GAP}"
+    ) as record:
         CALLS[name](env, times, positions)
     messages = [w for w in record if "excluded ALL" in str(w.message)]
     assert len(messages) == 1

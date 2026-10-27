@@ -285,8 +285,22 @@ class TestHeadSweepFromPositions:
         )
         assert np.isnan(result)
 
-    def test_nan_row_splits_runs(self):
-        """A lost frame is a missing sample: no heading change spans it."""
+    def test_nan_row_is_bridged_like_a_deleted_row(self):
+        """A lost frame inside max_gap is skipped as if its row were deleted."""
+        from neurospatial.behavior.vte import head_sweep_from_positions
+
+        times, positions = _zigzag(41)
+        positions[20] = np.nan
+        kept = np.delete(np.arange(41), 20)
+        expected = head_sweep_from_positions(
+            times[kept], positions[kept], min_speed=0.1
+        )
+        actual = head_sweep_from_positions(times, positions, min_speed=0.1)
+        assert expected > 0
+        assert_allclose(actual, expected, rtol=1e-12)
+
+    def test_nan_row_beyond_max_gap_splits_runs(self):
+        """A lost frame longer than max_gap: no heading change spans it."""
         from neurospatial.behavior.vte import head_sweep_from_positions
 
         times, positions = _zigzag(41)
@@ -294,7 +308,9 @@ class TestHeadSweepFromPositions:
         expected = head_sweep_from_positions(
             times[:20], positions[:20], min_speed=0.1
         ) + head_sweep_from_positions(times[21:], positions[21:], min_speed=0.1)
-        actual = head_sweep_from_positions(times, positions, min_speed=0.1)
+        actual = head_sweep_from_positions(
+            times, positions, min_speed=0.1, max_gap=0.15
+        )
         assert expected > 0
         assert_allclose(actual, expected, rtol=1e-12)
 

@@ -36,7 +36,7 @@ def occupancy(
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = 1.0,
     epochs: Any = None,
     bandwidth: float | None = None,
     time_allocation: Literal["start", "linear"] = "start",
@@ -57,10 +57,11 @@ def occupancy(
     min_speed : float, optional
         Minimum speed threshold (physical units/second). Requires speed
         parameter. Samples with speed < min_speed are excluded.
-    max_gap : float, optional
-        Maximum time gap in seconds. Intervals with Δt > max_gap are not
-        counted toward occupancy. Default: 0.5 seconds. Set to None to
-        count all intervals.
+    max_gap : float or None, default 1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded from occupancy;
+        ``None`` bridges every gap.
     epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows
         (seconds, same clock as ``times``). An interval counts only if it
@@ -167,7 +168,7 @@ def bin_sequence(
     *,
     dedup: bool = True,
     outside_value: int | None = -1,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = 1.0,
     epochs: Any = None,
 ) -> NDArray[np.int32]:
     """Map a trajectory to a sequence of bin indices.
@@ -183,10 +184,10 @@ def bin_sequence(
     outside_value : int or None, default -1
         Bin index for samples outside active bins. ``None`` drops
         them from the returned sequence.
-    max_gap : float or None, default 0.5
-        Longest sampling interval (seconds) treated as continuous
-        recording. Longer intervals (dropped frames, pauses between
-        sessions) are excluded. ``None`` disables the gap check.
+    max_gap : float or None, default 1.0
+        Longest stretch of missing tracking, in seconds, to bridge.
+        Longer gaps (tracking losses, pauses between sessions) are
+        excluded. ``None`` bridges every gap.
     epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
         Restrict the sequence to these half-open [start, stop) windows
         (seconds, same clock as ``times``).
@@ -206,7 +207,7 @@ def bin_sequence_with_runs(
     positions: NDArray[np.float64],
     *,
     outside_value: int | None = -1,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = 1.0,
     epochs: Any = None,
 ) -> BinSequenceWithRuns:
     """Same mapping as ``bin_sequence`` plus per-run boundaries.
@@ -341,7 +342,7 @@ def transitions(
     bandwidth: float | None = None,
     # Common
     normalize: bool = True,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = 1.0,
     epochs: Any = None,
 ) -> scipy.sparse.csr_matrix:
     """
@@ -379,10 +380,10 @@ def transitions(
     normalize : bool, optional
         If True, normalize rows to sum to 1 (probabilities).
         If False, return raw counts. Default is True.
-    max_gap : float or None, default 0.5
-        Longest sampling interval (seconds) treated as continuous
-        recording (empirical mode with times). Transitions across longer
-        intervals are not counted. ``None`` disables the gap check.
+    max_gap : float or None, default 1.0
+        Longest stretch of missing tracking, in seconds, to bridge
+        (empirical mode with times). Transitions across longer gaps are
+        not counted. ``None`` bridges every gap.
     epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
         Count only transitions inside these half-open [start, stop)
         windows (seconds, same clock as ``times``).

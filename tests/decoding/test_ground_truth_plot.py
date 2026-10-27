@@ -78,11 +78,12 @@ def test_missing_truth_and_source_gaps_have_nan_errors_and_no_overlay(env):
     result = delta_result(env, times, np.zeros(len(times), dtype=int))
     true_times = np.array([0, 0.1, 0.2, 1, 1.1, 1.2])
     true_positions = np.array([[0.0], [10.0], [np.nan], [30.0], [40.0], [50.0]])
-    errors = result.error_against(true_times, true_positions)
+    # Shorter than the 0.9 s gap around the missing truth sample.
+    errors = result.error_against(true_times, true_positions, max_gap=0.5)
     np.testing.assert_allclose(
         errors, [np.nan, 0, 5, np.nan, np.nan, np.nan, 35, 50, np.nan]
     )
-    ax = result.plot(true_times=true_times, true_positions=true_positions)
+    ax = result.plot(true_times=true_times, true_positions=true_positions, max_gap=0.5)
     try:
         truth = ax.lines[0]
         # Recording breaks insert additional NaNs, but every observed truth
@@ -99,13 +100,20 @@ def test_gap_limit_can_be_disabled_without_extrapolating_or_filling_nan(env):
     result = delta_result(env, times, np.zeros(len(times), dtype=int))
     truth = np.array([[0.0], [100.0]])
     np.testing.assert_allclose(
-        result.error_against([0, 1], truth), [np.nan, 0, np.nan, 100, np.nan]
+        result.error_against([0, 1], truth, max_gap=0.5),
+        [np.nan, 0, np.nan, 100, np.nan],
     )
     np.testing.assert_allclose(
         result.error_against([0, 1], truth, max_gap=None), [np.nan, 0, 50, 100, np.nan]
     )
+    # A missing true position is bridged like a deleted row when the gap
+    # passes max_gap, and not otherwise.
     source = np.array([[0.0], [np.nan], [100.0]])
-    assert np.isnan(result.error_against([0, 0.5, 1], source, max_gap=None)[2])
+    np.testing.assert_allclose(
+        result.error_against([0, 0.5, 1], source, max_gap=None),
+        result.error_against([0, 1], truth, max_gap=None),
+    )
+    assert np.isnan(result.error_against([0, 0.5, 1], source, max_gap=0.75)[2])
 
 
 def test_truth_line_never_joins_distinct_runs_even_with_only_two_decode_rows(env):

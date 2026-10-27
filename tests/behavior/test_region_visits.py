@@ -96,12 +96,32 @@ def test_reentries_preserved_and_last_source_entry_is_paired(region_env):
 
 
 @pytest.mark.parametrize("invalid_bin", [-1, -10, 6, 999])
-def test_invalid_bins_censor_instead_of_fabricating_crossings(region_env, invalid_bin):
+def test_invalid_bins_are_bridged_like_deleted_rows(region_env, invalid_bin):
+    bins = np.array([1, 0, invalid_bin, 0, 1, 3])
+    times = np.arange(6) / 10
+    visits = detect_region_visits(bins, times, region_env, region_names=["A", "B"])
+    kept = [0, 1, 3, 4, 5]
+    deleted = detect_region_visits(
+        bins[kept], times[kept], region_env, region_names=["A", "B"]
+    )
+    as_times = [(v.region_name, v.start_time, v.end_time) for v in visits]
+    assert as_times == [(v.region_name, v.start_time, v.end_time) for v in deleted]
+    # The invalid sample is not an exit: one visit spans it.
+    assert visits[0].region_name == "A"
+    assert (visits[0].start_index, visits[0].stop_index) == (1, 4)
+    assert visits[0].entry_observed and visits[0].exit_observed
+
+
+@pytest.mark.parametrize("invalid_bin", [-1, -10, 6, 999])
+def test_invalid_bins_beyond_max_gap_censor_instead_of_fabricating_crossings(
+    region_env, invalid_bin
+):
     visits = detect_region_visits(
         np.array([1, 0, invalid_bin, 0, 1, 3]),
         np.arange(6) / 10,
         region_env,
         region_names=["A", "B"],
+        max_gap=0.15,
     )
     assert [(v.run_id, v.region_name) for v in visits] == [(0, "A"), (1, "A"), (1, "B")]
     assert not visits[0].exit_observed and visits[0].end_time == 0.1

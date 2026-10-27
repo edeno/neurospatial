@@ -30,7 +30,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     TimeSupport,
+    fill_missing_positions,
+    gap_endpoints,
+    hold_last_valid,
     interval_valid_mask,
     resolve_time_windows,
     run_time_bounds,
@@ -82,7 +86,7 @@ def prepare_linear_spatial_intervals(
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     spike_window: Any = None,
     interval_mask: NDArray[np.bool_] | None = None,
@@ -151,6 +155,7 @@ def prepare_linear_spatial_intervals(
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
             break_before=break_before,
+            sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
         )
     else:
         mask = np.array(interval_mask, dtype=bool, copy=True)
@@ -158,6 +163,8 @@ def prepare_linear_spatial_intervals(
             raise ValueError(
                 "interval_mask must contain one value per observation interval."
             )
+    # A bridged gap is one straight segment between its valid samples.
+    positions = fill_missing_positions(times, positions, time_allocation="linear")
     finite = np.all(np.isfinite(positions), axis=1)
     mask &= finite[:-1] & finite[1:] & (np.diff(times) > 0)
     pieces, occupancy = _polygon_linear_occupancy(
@@ -257,8 +264,12 @@ def resolve_speed(
         ``times`` (the message names ``speed``).
 
     max_gap : float or None
-        Longest sampling interval treated as continuous; the derived speed is
-        smoothed separately within each run between longer gaps.
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     break_before : ndarray of bool, shape (n_samples,), or None
         Already validated declared recording breaks; the derived speed is
         never smoothed across one.
@@ -307,7 +318,11 @@ def resolve_speed(
         # consistently excludes the (non-existent) intervals on both sides.
         return np.zeros(len(times), dtype=np.float64)
     mask = interval_valid_mask(
-        times, max_gap=max_gap, epochs=None, break_before=break_before
+        times,
+        max_gap=max_gap,
+        epochs=None,
+        break_before=break_before,
+        sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
     )
     return smoothed_speed(times, positions, mask, smooth_window=DEFAULT_SPEED_SMOOTHING)
 
@@ -442,7 +457,8 @@ def _bin_spike_train_with_stats(
         n_after_time = len(spike_times_valid)
         if n_after_time == 0:
             return spike_counts, n_time_dropped, 0, n_total, 0
-        spike_bins = env.bin_at(positions[spike_interval])
+        held = fill_missing_positions(times, positions, time_allocation="start")
+        spike_bins = env.bin_at(held[spike_interval])
     else:
         runs = linear_intervals.support.runs
         if len(runs) == 0:
@@ -458,9 +474,12 @@ def _bin_spike_train_with_stats(
         # straight segment between its samples, so spikes take the bin of
         # their interpolated position.
         n_dims = positions.shape[1]
+        observed = np.isfinite(positions).all(axis=1)
         spike_positions = np.empty((n_after_time, n_dims), dtype=np.float64)
         for d in range(n_dims):
-            spike_positions[:, d] = np.interp(spike_times_valid, times, positions[:, d])
+            spike_positions[:, d] = np.interp(
+                spike_times_valid, times[observed], positions[observed, d]
+            )
         spike_bins = env.bin_at(spike_positions)
 
     valid_bins = spike_bins[spike_bins >= 0]
@@ -542,13 +561,18 @@ def prepare_frame_binning(
     interval_mask: NDArray[np.bool_] | None = None,
     break_before: NDArray[np.bool_] | None = None,
     samples: Literal["positions", "headings"] = "positions",
+    sample_valid: NDArray[np.bool_] | None = None,
 ) -> FrameBinning:
     """Resolve frame support once for counting and result provenance.
 
     A supplied ``interval_mask`` already includes temporal and bin validity
-    (including ``break_before``); geometry consumers can share that gate
-    without evaluating windows again. ``break_before`` is already validated.
-    ``samples`` names what ``frame_bins`` bins, for the empty-support warning.
+    (including ``break_before`` and ``sample_valid``); geometry consumers can
+    share that gate without evaluating windows again. ``break_before`` is
+    already validated. ``samples`` names what ``frame_bins`` bins, for the
+    empty-support warning. ``sample_valid`` (False at missing samples, such
+    as NaN coordinates or headings) bridges missing samples like deleted
+    rows: each missing frame holds the bin of the last valid frame, so a
+    bridged gap's time and spikes go to the bin where it started.
     """
     if interval_mask is None:
         mask = interval_valid_mask(
@@ -558,6 +582,7 @@ def prepare_frame_binning(
             epochs=epochs,
             spike_window=spike_window,
             break_before=break_before,
+            sample_valid=sample_valid,
         )
     else:
         # Geometry consumers may already have resolved the shared gate.
@@ -570,7 +595,8 @@ def prepare_frame_binning(
         max_gap=max_gap,
         break_before=break_before,
     )
-    return FrameBinning(times, frame_bins, n_bins, support, break_before, samples)
+    held = hold_last_valid(frame_bins, sample_valid, fill=-1)
+    return FrameBinning(times, held, n_bins, support, break_before, samples)
 
 
 def count_frames_and_occupancy(
@@ -665,7 +691,12 @@ def _spatial_interval_mask(
     min_speed : float or None
         Speed threshold.
     max_gap : float or None
-        Maximum interval gap in seconds.
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
 
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Normalized analysis and acquisition windows applied to each complete
@@ -682,6 +713,7 @@ def _spatial_interval_mask(
     from neurospatial._intervals import interval_valid_mask
 
     sample_bins = env.bin_at(positions)
+    valid = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
     mask = interval_valid_mask(
         times,
         positions,
@@ -693,12 +725,15 @@ def _spatial_interval_mask(
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
+        sample_valid=valid,
     )
-    # Complete-case rule: an interval counts only when both of its samples are
-    # tracked inside the environment. One whose end sample is a dropout (NaN)
-    # or outside is left out of the spike counts and the occupancy alike,
-    # rather than imputing where the animal was.
-    return mask & (sample_bins[1:] >= 0)
+    # A missing (NaN) sample is bridged like a deleted row: the gap runs
+    # between the valid samples on either side. Complete-case rule: a gap
+    # counts only when both of those samples are inside the environment; one
+    # that ends outside is left out of the spike counts and the occupancy
+    # alike, rather than imputing where the animal was.
+    _, end, _ = gap_endpoints(valid)
+    return mask & (sample_bins[end] >= 0)
 
 
 def _resolve_spatial_time_support(
@@ -958,7 +993,7 @@ def bin_spike_train(
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     spike_window: Any = None,
     interval_mask: NDArray[np.bool_] | None = None,
@@ -994,11 +1029,13 @@ def bin_spike_train(
         ``speed[searchsorted(times, t, "right") - 1] >= min_speed`` — the same
         per-interval gate ``env.occupancy`` applies to the denominator. When
         ``None`` (default) no speed filtering happens.
-    max_gap : float or None
-        Maximum time gap in seconds. Spikes inside intervals with
-        ``dt > max_gap`` are excluded from the count, matching
-        ``env.occupancy`` excluding that interval's time from the denominator
-        (default 0.5). ``None`` disables gap gating on both sides.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     context : str, optional
         Label used in error messages to identify the calling function.
     warn_on_drop : bool, default=True
@@ -1153,7 +1190,7 @@ def compute_occupancy(
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     spike_window: Any = None,
     interval_mask: NDArray[np.bool_] | None = None,
@@ -1181,10 +1218,13 @@ def compute_occupancy(
     min_speed : float or None
         Minimum speed threshold. When ``None`` (default), no speed filtering
         is applied.
-    max_gap : float or None
-        Maximum time gap in seconds (default
-        0.5, matching ``env.occupancy``'s own default). ``None`` disables gap
-        gating.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
 
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict complete sampling intervals to these half-open windows in
@@ -1286,7 +1326,7 @@ def compute_occupancy(
             spike_window=resolved_spike_window,
         )
     return start_allocated_occupancy(
-        env.bin_at(positions),
+        env.bin_at(fill_missing_positions(times, positions, time_allocation="start")),
         np.diff(times),
         interval_mask,
         env.n_bins,
@@ -1301,7 +1341,7 @@ def bin_spike_trains(
     *,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     spike_window: Any = None,
     interval_mask: NDArray[np.bool_] | None = None,
@@ -1340,10 +1380,13 @@ def bin_spike_trains(
         Minimum speed threshold (physical units / second). When ``None``
         (default) no speed filtering happens. When set, low-speed intervals are excluded from BOTH
         occupancy and spike counts.
-    max_gap : float or None
-        Maximum time gap in seconds. Intervals with ``dt > max_gap`` are
-        excluded from BOTH occupancy and every per-neuron spike count
-        (default 0.5). ``None`` disables gap gating on both sides.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).

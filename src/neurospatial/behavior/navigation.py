@@ -119,6 +119,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     break_sample_times,
     recording_index,
     times_in_intervals,
@@ -861,7 +862,7 @@ def distance_to_reward(
     *,
     metric: DistanceMetric = "geodesic",
     mode: Literal["nearest", "last", "next"] = "nearest",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -905,11 +906,13 @@ def distance_to_reward(
         - 'nearest': Distance to temporally closest reward (before or after).
         - 'last': Distance to most recent reward. NaN before first reward.
         - 'next': Distance to next upcoming reward. NaN after last reward.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        A reward location is never interpolated across a longer interval
-        (dropped frames, pauses between sessions). ``None`` disables the gap
-        check. It does not change which reward a sample uses.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). Samples outside every window get NaN.
@@ -1284,10 +1287,10 @@ def _infer_reward_positions(
     """Read each reward location from the tracked positions at its time.
 
     A reward exactly at an observed sample time uses that sample. Otherwise
-    it is interpolated within the sampling interval around it, only when that
-    interval passes ``max_gap`` and ``break_before`` and both its samples are
-    observed; ``epochs`` restrict the analyzed samples, not where a reward
-    was. Any other reward has an unknown (NaN) location, and one
+    it is interpolated between the observed samples on either side, only when
+    the gap between them passes ``max_gap`` and ``break_before`` (missing
+    samples in between are skipped as if deleted); ``epochs`` restrict the
+    analyzed samples, not where a reward was. Any other reward has an unknown (NaN) location, and one
     ``UserWarning`` says how many and why.
 
     Parameters
@@ -1308,52 +1311,55 @@ def _infer_reward_positions(
     """
     import warnings
 
-    from neurospatial._intervals import interval_valid_mask
+    from neurospatial._intervals import gap_endpoints, interval_valid_mask
     from neurospatial._stacklevel import _external_stacklevel
 
     n_samples, n_dims = positions.shape
     observed: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
     in_span = (reward_times >= times[0]) & (reward_times <= times[-1])
     # Last sample at or before each reward; the interval it starts holds the
-    # reward when the reward is not exactly on it.
+    # reward when the reward is not on an observed sample.
     k = np.clip(np.searchsorted(times, reward_times, side="right") - 1, 0, None)
-    exact = in_span & (times[k] == reward_times)
-    interior = in_span & ~exact
-    known = exact & observed[k]
-    reasons = {
-        "outside the recorded span": ~in_span,
-        "at a missing (NaN) position": exact & ~observed[k],
-    }
+    on_sample = in_span & (times[k] == reward_times) & observed[k]
+    between = in_span & ~on_sample
+    known = on_sample.copy()
+    reasons = {"outside the recorded span": ~in_span}
     if n_samples > 1:
-        gates = interval_valid_mask(times, max_gap=max_gap, break_before=break_before)
-        usable = gates & observed[:-1] & observed[1:]
-        j = np.clip(k, 0, n_samples - 2)
-        known |= interior & usable[j]
-        crossed = (
-            np.zeros(len(j), dtype=bool)
-            if break_before is None
-            else break_before[j + 1]
+        usable = interval_valid_mask(
+            times, max_gap=max_gap, break_before=break_before, sample_valid=observed
         )
+        start, end, linked = gap_endpoints(observed)
+        j = np.clip(k, 0, n_samples - 2)
+        known |= between & usable[j]
+        n_breaks = np.cumsum(
+            np.r_[False, np.zeros(n_samples - 1, dtype=bool)]
+            if break_before is None
+            else np.r_[False, break_before[1:]]
+        )
+        crossed = n_breaks[end[j]] != n_breaks[start[j]]
         long_gap = (
             np.zeros(len(j), dtype=bool)
             if max_gap is None
-            else np.diff(times)[j] > max_gap
+            else times[end[j]] - times[start[j]] > max_gap
         )
-        blocked = interior & ~usable[j]
-        reasons["across a declared break"] = blocked & crossed
+        blocked = between & ~usable[j]
+        reasons["across a declared break"] = blocked & linked[j] & crossed
         reasons[f"in a gap longer than max_gap={max_gap} s"] = (
-            blocked & ~crossed & long_gap
+            blocked & linked[j] & ~crossed & long_gap
         )
-        reasons["next to a missing (NaN) position"] = blocked & ~crossed & ~long_gap
+        reasons["before the first or after the last observed position"] = (
+            blocked & ~linked[j]
+        )
+    else:
+        reasons["at a missing (NaN) position"] = between
 
     located = np.full((len(reward_times), n_dims), np.nan)
     located[known] = np.column_stack(
         [
-            np.interp(reward_times[known], times, positions[:, dim])
+            np.interp(reward_times[known], times[observed], positions[observed, dim])
             for dim in range(n_dims)
         ]
     )
-    on_sample = known & exact
     located[on_sample] = positions[k[on_sample]]
 
     n_unknown = int(np.count_nonzero(~known))
@@ -1369,8 +1375,8 @@ def _infer_reward_positions(
             f"[{times[0]:g}, {times[-1]:g}] s), so samples whose selected "
             "reward is one of them get NaN distance. A reward location is "
             "read from the sample at the reward time, or interpolated only "
-            "within a sampling interval no longer than max_gap, not crossed "
-            "by a declared break and observed at both ends. Fix: pass reward_positions explicitly (for example the "
+            "between observed samples no more than max_gap apart and not "
+            "separated by a declared break. Fix: pass reward_positions explicitly (for example the "
             "reward port's coordinates); check that reward_times are on the "
             "same clock as times; if the long intervals are continuous "
             "tracking, raise max_gap.",
@@ -2065,7 +2071,7 @@ def heading_direction_labels(
     heading: NDArray[np.float64] | None = None,
     n_directions: int = 8,
     min_speed: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.object_]:
@@ -2096,10 +2102,13 @@ def heading_direction_labels(
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit. Observed samples slower than this,
         or not moving at all, are labeled "stationary".
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2132,8 +2141,8 @@ def heading_direction_labels(
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) ends
-    a run.
+    no velocity or heading spans a pause. A missing position (a NaN row) is
+    skipped as if its row were deleted.
 
     In trajectory mode, speed and heading come from the Gaussian-smoothed
     velocity of :func:`compute_speed`, so tracking jitter at rest is
@@ -2389,9 +2398,12 @@ def _observed_path_length(
     Returns
     -------
     length : float
-        Sum of the counted interval lengths; ``nan`` when none counted.
+        Sum of the counted step lengths between consecutive valid samples
+        (missing samples are skipped as if deleted); ``nan`` when none
+        counted.
     complete : bool
-        True when there is at least one interval and every interval counted.
+        True when there is at least one interval, every interval is usable
+        and every step counted.
     """
     from neurospatial.behavior.trajectory import (
         _observed_cumulative,
@@ -2400,12 +2412,22 @@ def _observed_path_length(
 
     if metric == "euclidean":
         steps, _ = _observed_cumulative(positions, support)
-        counted = support.interval_mask
     else:
-        with np.errstate(invalid="ignore"):
-            steps = compute_step_lengths(positions, metric="geodesic", env=env)
-        counted = support.interval_mask & ~np.isnan(steps)
-    complete = bool(counted.size and counted.all())
+        valid = np.flatnonzero(support.sample_valid)
+        steps = np.full(support.interval_mask.size, np.nan)
+        if valid.size > 1:
+            with np.errstate(invalid="ignore"):
+                steps[valid[1:] - 1] = compute_step_lengths(
+                    positions[valid], metric="geodesic", env=env
+                )
+    # The step of a gap sits on the interval ending at its next valid sample.
+    gap_ends = support.interval_mask & support.sample_valid[1:]
+    counted = gap_ends & ~np.isnan(steps)
+    complete = bool(
+        support.interval_mask.size
+        and support.interval_mask.all()
+        and np.array_equal(counted, gap_ends)
+    )
     if not counted.any():
         return float("nan"), complete
     return float(steps[counted].sum()), complete
@@ -2417,17 +2439,18 @@ def traveled_path_length(
     *,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> float:
     """Compute the distance traveled over observed intervals.
 
-    Distance is added only over usable intervals: both samples have finite
-    coordinates, the time between them is at most ``max_gap``, they fall inside
-    one of ``epochs`` and no break is declared between them. Distance between
-    recordings is never counted, and a missing sample splits the path instead
-    of turning the total into NaN. A break must be declared by a time gap above
+    Distance is added between consecutive valid samples (finite
+    coordinates) when the time between them is at most ``max_gap``, they fall
+    inside one of ``epochs`` and no break is declared between them; missing
+    samples in between are skipped as if their rows were deleted. Distance
+    between recordings is never counted, and a longer gap splits the path
+    instead of turning the total into NaN. A break must be declared by a time gap above
     ``max_gap``, by ``break_before`` or by ``epochs``; an undeclared jump on a
     continuous clock is counted as movement.
 
@@ -2445,9 +2468,13 @@ def traveled_path_length(
         Required when metric="geodesic". An interval with an endpoint outside
         the environment has no geodesic length and is left out; an interval
         between disconnected bins contributes ``inf``.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        ``None`` keeps every interval.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
@@ -2803,7 +2830,7 @@ def compute_path_efficiency(
     *,
     metric: DistanceMetric = "geodesic",
     reference_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> PathEfficiencyResult:
@@ -2828,9 +2855,13 @@ def compute_path_efficiency(
         such a step has ``traveled_length=inf`` and ``efficiency=0.0``).
     reference_speed : float, optional
         Reference speed for time efficiency.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        ``None`` keeps every interval.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
@@ -2861,17 +2892,19 @@ def compute_path_efficiency(
     Notes
     -----
     ``traveled_length`` is the distance over usable intervals, as returned by
-    ``traveled_path_length`` with the same arguments: a lost frame, a gap
-    longer than ``max_gap``, a declared break or an interval outside ``epochs``
-    is left out, and it is ``nan`` when nothing was observed (including a
-    single sample). ``efficiency`` and ``angular_efficiency`` compare the whole
-    route with the shortest one, so they are ``nan`` unless every interval from
-    the first to the last sample was observed; with a missing stretch the
-    observed length underestimates the route and the ratio would be biased
-    upward. ``shortest_length`` and the wall-clock ``time_efficiency`` keep
-    their meanings. When one low-confidence frame makes a trial's efficiency
-    ``nan``, report its ``traveled_length`` instead, or restrict the analysis
-    to completely observed trials.
+    ``traveled_path_length`` with the same arguments: a lost frame is bridged
+    by the straight step between its neighbours when they are no more than
+    ``max_gap`` apart, while a longer gap, a declared break or an interval
+    outside ``epochs`` is left out, and it is ``nan`` when nothing was
+    observed (including a single sample). ``efficiency`` and
+    ``angular_efficiency`` compare the whole route with the shortest one, so
+    they are ``nan`` unless every interval from the first to the last sample
+    is usable; with an unbridged stretch the observed length underestimates
+    the route and the ratio would be biased upward. ``shortest_length`` and
+    the wall-clock ``time_efficiency`` keep their meanings. When a long
+    tracking loss makes a trial's efficiency ``nan``, report its
+    ``traveled_length`` instead, or restrict the analysis to completely
+    observed trials.
 
     Examples
     --------
@@ -2887,11 +2920,16 @@ def compute_path_efficiency(
     ... )
     >>> result.traveled_length, result.efficiency
     (10.0, 1.0)
-    >>> positions[5] = np.nan  # one lost frame
+    >>> positions[5] = np.nan  # one lost frame, bridged
     >>> result = compute_path_efficiency(
     ...     env, times, positions, goal, metric="euclidean"
     ... )
-    >>> result.traveled_length  # the observed travel
+    >>> result.traveled_length, result.efficiency
+    (10.0, 1.0)
+    >>> result = compute_path_efficiency(
+    ...     env, times, positions, goal, metric="euclidean", max_gap=0.15
+    ... )
+    >>> result.traveled_length  # the 0.2 s gap is a tracking loss here
     8.0
     >>> bool(np.isnan(result.efficiency))  # the route is incomplete
     True
@@ -2930,7 +2968,11 @@ def compute_path_efficiency(
             optimal_distance=shortest,
         )
 
-    ang_eff = angular_efficiency(positions_arr, goal) if complete else np.nan
+    ang_eff = (
+        angular_efficiency(positions_arr[support.sample_valid], goal)
+        if complete
+        else np.nan
+    )
 
     return PathEfficiencyResult(
         traveled_length=traveled,
@@ -3046,7 +3088,7 @@ def instantaneous_goal_alignment(
     goal: NDArray[np.float64],
     *,
     min_speed: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -3065,10 +3107,13 @@ def instantaneous_goal_alignment(
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
         Minimum speed threshold in environment units per second.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -3098,8 +3143,8 @@ def instantaneous_goal_alignment(
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) ends
-    a run.
+    no velocity or heading spans a pause. A missing position (a NaN row) is
+    skipped as if its row were deleted.
 
     The direction of movement exists only where the animal moves, the rule of
     :func:`heading_from_velocity`.
@@ -3199,7 +3244,7 @@ def goal_bias(
     goal: NDArray[np.float64],
     *,
     min_speed: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> float:
@@ -3219,10 +3264,13 @@ def goal_bias(
         cannot know the positions' unit.
         Speed threshold in position units per second. Samples slower than this
         are excluded from the mean.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -3251,8 +3299,8 @@ def goal_bias(
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) ends
-    a run.
+    no velocity or heading spans a pause. A missing position (a NaN row) is
+    skipped as if its row were deleted.
 
     Interpretation:
     - > 0.5: Strong goal-directed navigation
@@ -3306,18 +3354,19 @@ def approach_rate(
     *,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
     """Compute rate of distance change toward goal.
 
-    The rate at sample ``k`` is the change in distance to the goal over the
-    interval from sample ``k - 1`` to ``k``, divided by its duration. It is
-    measured only over usable intervals: both samples have finite coordinates,
-    the time between them is at most ``max_gap``, they fall inside one of
-    ``epochs`` and no break is declared between them. Every other sample is
-    NaN, so no rate is measured across a missing position or between
+    The rate at a valid sample ``k`` is the change in distance to the goal
+    since the previous valid sample, divided by the time between them.
+    Missing samples (non-finite coordinates) are skipped as if their rows
+    were deleted, and are NaN. The rate is measured only when the time
+    between the two valid samples is at most ``max_gap``, they fall inside
+    one of ``epochs`` and no break is declared between them; otherwise it is
+    NaN, so no rate is measured across a tracking loss or between
     recordings.
 
     Parameters
@@ -3332,10 +3381,13 @@ def approach_rate(
         Distance metric. Geodesic requires env parameter.
     env : Environment, optional
         Required when metric="geodesic".
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -3381,11 +3433,11 @@ def approach_rate(
     >>> approach_rate(times, positions, goal, break_before=new_recording).tolist()
     [nan, -8.0, -8.0, nan, -8.0, -8.0]
 
-    A missing position gives no rate into or out of it:
+    A missing position has no rate; the rate after it spans the bridged gap:
 
     >>> positions[1] = np.nan
     >>> approach_rate(times, positions, goal).tolist()
-    [nan, nan, nan, -384.0, -8.0, -8.0]
+    [nan, nan, -8.0, -384.0, -8.0, -8.0]
     """
     from neurospatial._observation import validated_observations
 
@@ -3483,6 +3535,8 @@ def _approach_rate(
     velocity = interval_velocity(times, distances[:, None], support.interval_mask)
     rates = np.full(len(positions), np.nan)
     rates[1:] = velocity[:, 0]
+    # A bridged gap's rate belongs to the valid sample that ends it.
+    rates[~np.isfinite(distances)] = np.nan
 
     return rates
 
@@ -3496,7 +3550,7 @@ def compute_goal_directed_metrics(
     metric: DistanceMetric = "euclidean",
     min_speed: float | None = None,
     goal_radius: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> GoalDirectedMetrics:
@@ -3521,10 +3575,13 @@ def compute_goal_directed_metrics(
         Minimum speed for valid heading (units/s).
     goal_radius : float, optional
         Radius for goal arrival detection.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -3558,8 +3615,8 @@ def compute_goal_directed_metrics(
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause. A missing position (a NaN row) ends
-    a run.
+    no velocity or heading spans a pause. A missing position (a NaN row) is
+    skipped as if its row were deleted.
 
     Heading alignment and approach-rate averages use observed intervals; the
     direction of movement exists only where the animal moves, the rule of

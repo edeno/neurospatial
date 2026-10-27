@@ -16,6 +16,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial import Environment
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.decoding import DecodingResult, bin_spikes_in_time, decode_position
 from neurospatial.decoding.session import (
     _decode_with_models,
@@ -762,11 +763,12 @@ class TestDecodeSessionMaxGap:
     """decode_session / decode_session_summary forward max_gap to the encoder."""
 
     def _gap_session(self):
-        """1D track with one >0.5 s tracking gap and a spike inside that gap.
+        """1D track with one 2 s tracking gap and a spike inside that gap.
 
         Returns (env, spike_times, times, positions, t_gap). The lone gap
-        interval is dropped by default (max_gap=0.5) but kept under
-        max_gap=None, so the encoding firing-rate maps differ between the two.
+        interval is dropped by default (longer than the default max_gap) but
+        kept under max_gap=None, so the encoding firing-rate maps differ
+        between the two.
         """
         env = Environment.from_samples(
             np.linspace(0, 100, 101).reshape(-1, 1), bin_size=10.0
@@ -777,14 +779,14 @@ class TestDecodeSessionMaxGap:
         xb = 13.0 + np.arange(n_b) * 0.1
         positions = np.concatenate([xa, xb]).reshape(-1, 1)
         ta = np.arange(n_a) * dt
-        tb = ta[-1] + 1.0 + np.arange(n_b) * dt  # 1.0 s gap
+        tb = ta[-1] + 2.0 + np.arange(n_b) * dt  # 2.0 s gap
         times = np.concatenate([ta, tb])
         gap_interval = n_a - 1
         t_gap = 0.5 * (times[gap_interval] + times[gap_interval + 1])
         # Two neurons; neuron 0 fires inside the gap, plus some valid spikes.
         spike_times = [
-            np.array([0.5, 1.2, t_gap, 4.5]),
-            np.array([1.0, 2.0, 5.0]),
+            np.array([0.5, 1.2, t_gap, 5.5]),
+            np.array([1.0, 2.0, 6.0]),
         ]
         return env, spike_times, times, positions, t_gap
 
@@ -808,7 +810,7 @@ class TestDecodeSessionMaxGap:
         assert seen["max_gap"] is None
 
         decode_session(env, spike_times, times, positions, dt=0.1)
-        assert seen["max_gap"] == 0.5
+        assert seen["max_gap"] == DEFAULT_MAX_GAP
 
     def test_max_gap_none_changes_encoding(self, monkeypatch) -> None:
         """Keeping a gap changes encoding models and restores decode bins."""

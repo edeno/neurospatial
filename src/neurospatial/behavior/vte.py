@@ -77,7 +77,7 @@ if TYPE_CHECKING:
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
 
-from neurospatial._intervals import run_sample_bounds
+from neurospatial._intervals import DEFAULT_MAX_GAP, run_sample_bounds
 from neurospatial._observation import ObservationSupport, validated_observations
 from neurospatial._results import ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
@@ -437,7 +437,7 @@ def head_sweep_from_positions(
     positions: NDArray[np.float64],
     *,
     min_speed: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> float:
@@ -459,10 +459,13 @@ def head_sweep_from_positions(
         cannot know the positions' unit.
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -753,7 +756,7 @@ def compute_vte_trial(
     *,
     window_duration: float,
     min_speed: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> VTETrialResult:
@@ -777,10 +780,13 @@ def compute_vte_trial(
         with positions in cm): this function sees no environment, so it
         cannot know the positions' unit.
         Minimum speed for valid heading (units/s).
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -928,7 +934,7 @@ def compute_vte_session(
     min_speed: float | None = None,
     alpha: float = 0.5,
     vte_threshold: float = 0.5,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> VTESessionResult:
@@ -964,10 +970,13 @@ def compute_vte_session(
     vte_threshold : float, default=0.5
         Threshold for VTE classification.
         Trial is VTE if vte_index > threshold.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

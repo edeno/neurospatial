@@ -134,15 +134,16 @@ irregular or interrupted clocks are shown at their true times.
 
 **`max_gap` hides fields across gaps.** A row of `fields` is shown from its
 time until the next row, as long as the two are at most `max_gap` seconds
-apart (default 0.5 s). Across a longer interval, such as a tracking dropout,
+apart (default 1.0 s). Across a longer interval, such as a tracking dropout,
 a pause in the recording or the gap between two decoded ripples, the field is
 shown as missing instead of holding a stale posterior on the screen. Rows
 farther apart than `max_gap` are shown only at their exact times, and a
 warning says so when that is true of every row. Pass `max_gap=None` when
 every row should stay up until the next one, for example one rate map per lap
 or per trial. Position, pose and
-heading overlays have their own `max_gap` (default 0.5 s) and do not
-interpolate across longer intervals.
+heading overlays have their own `max_gap` (default 1.0 s): a missing sample
+inside a shorter gap is drawn interpolated between the samples around it, as
+the analyses bridge it, and nothing is drawn across a longer gap.
 
 **`speed` sets recording seconds per playback second.** `speed=1` plays in
 real time; `speed=0.1` plays a 150 ms replay event over 1.5 s. The frame rate
@@ -741,8 +742,9 @@ recording gap.
 Position, pose, heading and object-vector overlays preserve NaN observations.
 When an overlay omits `times`, its samples inherit `frame_times` and retain
 the same gap and missing-sample rules as an explicit clock.
-Their default `max_gap=0.5` seconds and optional `break_before` match analysis
-support: interpolation stays inside observed intervals, with no extrapolation.
+Their default `max_gap` of 1.0 s and optional `break_before` match analysis
+support: a gap that the analyses bridge is drawn bridged, nothing is drawn
+across a longer one, and nothing is extrapolated.
 Set `max_gap=None` deliberately for sparsely sampled continuous observations.
 Trajectory-based `EventOverlay` locations use the same rules. An event inside
 a tracking gap keeps its time but has an unknown position, so no spatial marker

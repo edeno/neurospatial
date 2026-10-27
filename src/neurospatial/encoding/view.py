@@ -92,6 +92,8 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    hold_last_valid,
     resolve_time_windows,
     run_time_bounds,
 )
@@ -1386,7 +1388,12 @@ def _count_views(
     gaze_model, view_distance, gaze_offsets, boundary_source
         Validated gaze settings.
     max_gap : float or None
-        Maximum timestamp gap, in seconds, bridged within a tracked run.
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs, spike_window
         Resolved time windows.
     method, bandwidth, min_occupancy, backend
@@ -1458,7 +1465,7 @@ def compute_view_rate(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -1517,11 +1524,13 @@ def compute_view_rate(
         If None (default), gaze is aligned with head direction.
         Use this for eye-tracking data in primate spatial view cell studies
         where gaze direction differs from head direction.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1775,7 +1784,7 @@ def compute_view_rates(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -1846,11 +1855,13 @@ def compute_view_rates(
         If None (default), gaze is aligned with head direction.
         Use this for eye-tracking data in primate spatial view cell studies
         where gaze direction differs from head direction.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2068,7 +2079,7 @@ def _compute_view_rates(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -2236,7 +2247,7 @@ def is_spatial_view_cell(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -2290,11 +2301,13 @@ def is_spatial_view_cell(
         If None (default), gaze is aligned with head direction.
         Use this for eye-tracking data in primate spatial view cell studies
         where gaze direction differs from head direction.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2504,7 +2517,7 @@ def spatial_view_cell_significance(
     gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
     view_distance: float | None = None,
     gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -2586,11 +2599,13 @@ def spatial_view_cell_significance(
         If None (default), gaze is aligned with head direction.
         Use this for eye-tracking data in primate spatial view cell studies
         where gaze direction differs from head direction.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2754,8 +2769,12 @@ def spatial_view_cell_significance(
         break_before, len(times), call="spatial_view_cell_significance"
     )
     options["break_before"] = breaks
-    mask = _view_observation_mask(
+    gaze_offsets = options["gaze_offsets"]
+    mask, observed_frames = _view_observation_mask(
         times,
+        positions,
+        headings,
+        None if gaze_offsets is None else np.asarray(gaze_offsets, dtype=np.float64),
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
@@ -2771,7 +2790,7 @@ def spatial_view_cell_significance(
         boundary_source=boundary_source,
         interval_mask=mask,
     )
-    mask &= frame_bins[:-1] >= 0
+    mask &= hold_last_valid(frame_bins, observed_frames, fill=-1)[:-1] >= 0
     windows = run_time_bounds(times, mask)
 
     # The gaze geometry depends only on the trajectory, so every shuffle

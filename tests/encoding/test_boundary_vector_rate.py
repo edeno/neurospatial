@@ -158,7 +158,10 @@ def test_vectorized_counts_equal_the_ray_by_ray_counts(env, session):
         n_distance_bins=8,
         n_direction_bins=12,
     )
-    mask = observed[:-1] & (np.diff(times) <= 0.5)
+    # The 1 s dropout is longer than max_gap: by hand, delete the missing rows
+    # and drop the long gap.
+    times, frame_bins = times[observed], frame_bins[observed]
+    mask = np.diff(times) <= 0.5
     n_bins = result.env.n_bins
     rays = range(frame_bins.shape[1])
     occupancy = sum(

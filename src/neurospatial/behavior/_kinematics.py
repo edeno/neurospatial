@@ -15,30 +15,41 @@ def interval_velocity(
 ) -> NDArray[np.float64]:
     """Velocity of each interval, NaN where the interval is invalid.
 
-    A zero-length interval (duplicate timestamps) has no defined velocity and
-    is NaN, like an unobserved interval, rather than infinite.
+    A sample with a non-finite coordinate is missing and is bridged like a
+    deleted row: every usable interval inside the gap between two valid
+    samples gets that gap's velocity, its displacement over its elapsed
+    time. A zero-length gap (duplicate timestamps) has no defined velocity
+    and is NaN, like an unobserved interval, rather than infinite.
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
     positions : ndarray, shape (n_samples, n_dims) or (n_samples,)
     interval_mask : ndarray of bool, shape (n_samples - 1,)
-        ``observed_interval_mask`` output.
+        Usable intervals with missing samples bridged
+        (``ObservationSupport.interval_mask``).
 
     Returns
     -------
     ndarray, shape (n_samples - 1, n_dims)
     """
+    from neurospatial._intervals import gap_endpoints
+
     # 1-D positions (a linear track) are one coordinate per sample.
     positions = np.asarray(positions)
     if positions.ndim == 1:
         positions = positions[:, np.newaxis]
-    dt = np.diff(times)
-    defined = interval_mask & (dt > 0)
+    start, end, linked = gap_endpoints(
+        np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
+    )
+    dt = times[end] - times[start]
+    defined = interval_mask & linked & (dt > 0)
     velocity: NDArray[np.float64] = np.full(
         (dt.size, positions.shape[1]), np.nan, dtype=np.float64
     )
-    velocity[defined] = np.diff(positions, axis=0)[defined] / dt[defined, np.newaxis]
+    velocity[defined] = (positions[end] - positions[start])[defined] / dt[
+        defined, np.newaxis
+    ]
     return velocity
 
 

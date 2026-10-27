@@ -50,8 +50,8 @@ def test_event_with_no_observed_runs_gets_nan():
     # The only interval is longer than max_gap, so nothing is observed.
     with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
         result = add_positions(
-            pd.DataFrame({"timestamp": [0.0, 0.5, 1.0, np.nan]}),
-            times=np.array([0.0, 1.0]),
+            pd.DataFrame({"timestamp": [0.0, 1.0, 2.0, np.nan]}),
+            times=np.array([0.0, 2.0]),
             positions=np.array([[1.0, 2.0], [3.0, 4.0]]),
         )
     assert np.isnan(result[["x", "y"]].to_numpy()).all()

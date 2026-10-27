@@ -163,14 +163,24 @@ def _trajectory(env: Environment) -> tuple[np.ndarray, np.ndarray]:
     return times, np.asarray(env.bin_centers[walk], dtype=float)
 
 
-def test_occupancy_gives_a_missing_sample_no_time(cartesian_env):
+def test_occupancy_bridges_a_missing_sample_like_a_deleted_row(cartesian_env):
     times, positions = _trajectory(cartesian_env)
     with_missing = positions.copy()
     with_missing[[10, 30]] = np.nan
+    kept = np.setdiff1d(np.arange(len(times)), [10, 30])
     occupancy = cartesian_env.occupancy(times, with_missing)
+    deleted = cartesian_env.occupancy(times[kept], positions[kept])
+    np.testing.assert_allclose(occupancy, deleted)
+    np.testing.assert_allclose(occupancy.sum(), times[-1] - times[0])
 
-    # The intervals that start or end at the missing samples are the only
-    # time lost.
+
+def test_occupancy_gives_a_missing_sample_beyond_max_gap_no_time(cartesian_env):
+    times, positions = _trajectory(cartesian_env)
+    with_missing = positions.copy()
+    with_missing[[10, 30]] = np.nan
+    occupancy = cartesian_env.occupancy(times, with_missing, max_gap=1.5 / 30)
+
+    # The gaps around the missing samples are the only time lost.
     dt = np.diff(times)
     lost = [9, 10, 29, 30]
     np.testing.assert_allclose(occupancy.sum(), dt.sum() - dt[lost].sum())
@@ -180,21 +190,26 @@ def test_occupancy_gives_a_missing_sample_no_time(cartesian_env):
     np.testing.assert_allclose(occupancy, expected)
 
 
-def test_bin_sequence_marks_or_drops_a_missing_sample(cartesian_env):
+def test_bin_sequence_skips_a_missing_sample_and_marks_or_drops_outside(
+    cartesian_env,
+):
     times, positions = _trajectory(cartesian_env)
     positions[10] = np.nan
+    positions[20] = cartesian_env.bin_centers.max(axis=0) + 100.0
     bins = cartesian_env.bin_at(positions)
     marked = cartesian_env.bin_sequence(times, positions, dedup=False)
     dropped = cartesian_env.bin_sequence(
         times, positions, dedup=False, outside_value=None
     )
-    np.testing.assert_array_equal(marked, bins)
-    assert marked[10] == -1
-    np.testing.assert_array_equal(dropped, np.delete(bins, 10))
+    np.testing.assert_array_equal(marked, np.delete(bins, 10))
+    assert marked[19] == -1
+    np.testing.assert_array_equal(dropped, np.delete(bins, [10, 20]))
 
 
 @pytest.mark.parametrize("lag", [1, 2])
-def test_transitions_skip_pairs_with_a_missing_or_outside_sample(cartesian_env, lag):
+def test_transitions_skip_a_missing_sample_and_pairs_with_an_outside_one(
+    cartesian_env, lag
+):
     times, positions = _trajectory(cartesian_env)
     positions[10] = np.nan
     positions[20] = cartesian_env.bin_centers.max(axis=0) + 100.0
@@ -202,16 +217,14 @@ def test_transitions_skip_pairs_with_a_missing_or_outside_sample(cartesian_env, 
         times=times, positions=positions, lag=lag, normalize=False, allow_teleports=True
     )
 
-    # Count the pairs whose two samples are both inside, by hand.
-    bins = cartesian_env.bin_at(positions)
+    # The missing sample is deleted; pairs with the outside sample are skipped.
+    bins = np.delete(cartesian_env.bin_at(positions), 10)
     expected = np.zeros((cartesian_env.n_bins, cartesian_env.n_bins))
     for source, target in zip(bins[:-lag], bins[lag:], strict=True):
         if source >= 0 and target >= 0:
             expected[source, target] += 1
     np.testing.assert_array_equal(counts.toarray(), expected)
-    # The missing sample removes the pair it starts and the one it ends.
-    assert bins[10] == -1
-    assert counts.sum() <= len(bins) - lag - 2
+    assert counts.sum() == len(bins) - lag - 2
 
 
 def test_a_precomputed_sequence_with_minus_one_is_still_refused(cartesian_env):
@@ -458,5 +471,8 @@ def test_occupancy_with_no_usable_sample_warns(
     with pytest.warns(
         UserWarning, match="excluded ALL.*so occupancy is zero in every bin"
     ):
-        occupancy = env.occupancy(times, positions, time_allocation=allocation)
+        # Below two frames, so each missing sample's gap is a tracking loss.
+        occupancy = env.occupancy(
+            times, positions, time_allocation=allocation, max_gap=1.5 / 30
+        )
     np.testing.assert_array_equal(occupancy, 0.0)

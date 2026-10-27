@@ -70,7 +70,10 @@ def test_position_marker_lands_at_the_animals_position_and_hides_when_missing(
     path = _export(
         arena,
         tmp_path / "positions.html",
-        overlays=[PositionOverlay(positions, TIMES, color="red", size=12)],
+        # Below two frames, so the dropout is a tracking loss, not bridged.
+        overlays=[
+            PositionOverlay(positions, TIMES, color="red", size=12, max_gap=0.15)
+        ],
     )
     # The whole recording is exported: one frame per row, through the last.
     frames = _frames(path)

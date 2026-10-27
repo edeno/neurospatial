@@ -54,6 +54,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import validate_break_before
 from neurospatial._results import (
     ReadOnlyArraysMixin,
@@ -3524,7 +3525,7 @@ def compute_spatial_rate(
     pooled: bool = True,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     time_allocation: Literal["start", "linear"] = "start",
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3669,11 +3670,13 @@ default="diffusion_kde"
         the track ends. No speed suits every recording: place maps are
         usually built from running, so pick the threshold from your animal's
         speed distribution, between the resting and running modes.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     time_allocation : {"start", "linear"}, default="start"
         How trajectory intervals contribute dwell time. ``"start"`` assigns
         each eligible interval, and the spikes in it, to its starting bin and
@@ -4052,7 +4055,7 @@ def compute_spatial_rates(
     pooled: bool = True,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     time_allocation: Literal["start", "linear"] = "start",
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -4170,11 +4173,13 @@ default="diffusion_kde"
         the track ends. No speed suits every recording: place maps are
         usually built from running, so pick the threshold from your animal's
         speed distribution, between the resting and running modes.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     time_allocation : {"start", "linear"}, default="start"
         How trajectory intervals contribute dwell time. ``"start"`` assigns
         each eligible interval, and the spikes in it, to its starting bin and
@@ -5180,7 +5185,7 @@ def compute_directional_place_fields(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float = 0.0,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -5222,11 +5227,13 @@ def compute_directional_place_fields(
         Minimum occupancy threshold in seconds. Bins below this threshold are
         set to NaN.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -5682,7 +5689,7 @@ def has_place_field(
     *,
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -5730,11 +5737,13 @@ def has_place_field(
         Smoothing bandwidth in environment units.
         None uses 5 cm in declared metric units, or 2.5 median graph-edge
         lengths for unspecified/custom units.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -5960,7 +5969,7 @@ def is_place_cell(
     pooled: bool = True,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -6123,11 +6132,13 @@ def is_place_cell(
         the track ends. No speed suits every recording: place maps are
         usually built from running, so pick the threshold from your animal's
         speed distribution, between the resting and running modes.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -6418,7 +6429,7 @@ def place_cell_significance(
     pooled: bool = True,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -6518,11 +6529,13 @@ def place_cell_significance(
         the track ends. No speed suits every recording: place maps are
         usually built from running, so pick the threshold from your animal's
         speed distribution, between the resting and running modes.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -7216,7 +7229,7 @@ def spatial_cell_type_significance(
     min_occupancy: float | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -7270,8 +7283,13 @@ def spatial_cell_type_significance(
     min_speed : float or None, default=None
         Exclude intervals slower than this (environment units per second)
         from spikes and occupancy alike. None applies no speed gate.
-    max_gap : float or None, default=0.5
-        Longest sampling interval, in seconds, treated as continuous.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Analyze only these half-open windows, in seconds.
     break_before : ArrayLike of bool, shape (n_samples,), optional

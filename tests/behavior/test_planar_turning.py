@@ -116,12 +116,27 @@ def test_scaling_times_changes_nothing(function, uniform_circle):
     )
 
 
+@pytest.mark.parametrize("function", SUPPORTED)
+def test_missing_sample_equals_deleted_row(function, uniform_circle):
+    times, positions = uniform_circle[0][:20], uniform_circle[1][:20].copy()
+    positions[5] = np.nan
+    values = function(times, positions)
+    kept = np.delete(np.arange(20), 5)
+    assert np.isnan(values[5])
+    np.testing.assert_allclose(
+        values[kept], function(times[kept], positions[kept]), rtol=1e-12
+    )
+    assert np.isfinite(values[[4, 6]]).all()
+
+
 @pytest.mark.parametrize("function", PLANAR)
-def test_missing_sample_blanks_it_and_its_neighbours(function, uniform_circle):
+def test_missing_sample_beyond_max_gap_blanks_it_and_its_neighbours(
+    function, uniform_circle
+):
     times, positions = uniform_circle[0][:20], uniform_circle[1][:20].copy()
     complete = function(times, positions)
     positions[5] = np.nan
-    values = function(times, positions)
+    values = function(times, positions, max_gap=1.5 / 30)
     assert np.isnan(values[[4, 5, 6]]).all()
     keep = np.setdiff1d(np.arange(20), [4, 5, 6])
     np.testing.assert_array_equal(values[keep], complete[keep])
@@ -277,7 +292,7 @@ def test_angular_velocity_is_nan_exactly_where_the_turn_angle_is(uniform_circle)
     positions[12] = positions[11]  # stationary
     break_before = np.zeros(20, dtype=bool)
     break_before[16] = True
-    kwargs = {"break_before": break_before}
+    kwargs = {"break_before": break_before, "max_gap": 1.5 / 30}
     omega = compute_movement_angular_velocity(times, positions, **kwargs)
     turns = compute_planar_turn_angles(times, positions, **kwargs)
     np.testing.assert_array_equal(np.isnan(omega), np.isnan(turns))

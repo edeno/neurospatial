@@ -62,6 +62,8 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    hold_last_valid,
     interval_valid_mask,
     resolve_time_windows,
     run_time_bounds,
@@ -1545,7 +1547,7 @@ def compute_egocentric_rate(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -1620,11 +1622,13 @@ def compute_egocentric_rate(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1806,7 +1810,7 @@ def compute_object_vector_rate(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -1875,11 +1879,13 @@ def compute_object_vector_rate(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2375,7 +2381,12 @@ def _count_object_vectors(
     distance_range, n_distance_bins, n_direction_bins, metric
         Polar binning settings.
     max_gap : float or None
-        Maximum timestamp gap, in seconds, bridged within a tracked run.
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs, spike_window
         Resolved time windows.
     method, bandwidth, min_occupancy, backend
@@ -2474,7 +2485,7 @@ def _object_vector_rate(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -2635,7 +2646,7 @@ def compute_egocentric_rates(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -2722,11 +2733,13 @@ def compute_egocentric_rates(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2973,7 +2986,7 @@ def compute_object_vector_rates(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -3054,11 +3067,13 @@ def compute_object_vector_rates(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -3245,7 +3260,7 @@ def _object_vector_rates(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -3619,7 +3634,7 @@ def is_object_vector_cell(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -3683,11 +3698,13 @@ def is_object_vector_cell(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -3913,7 +3930,7 @@ def is_egocentric_object_vector_cell(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -3983,11 +4000,13 @@ def is_egocentric_object_vector_cell(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -4367,6 +4386,7 @@ def _object_vector_significance(
     from neurospatial.encoding._egocentric_counts import (
         _create_egocentric_environment,
         object_frame_bins,
+        observed_frames,
         resolve_object_positions,
     )
     from neurospatial.encoding._significance import (
@@ -4461,6 +4481,7 @@ def _object_vector_significance(
         metric=metric,
         env=env,
     )
+    tracked = observed_frames(positions, headings, object_positions)
     mask = interval_valid_mask(
         times,
         start_bin=frame_bins,
@@ -4468,11 +4489,15 @@ def _object_vector_significance(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         break_before=options["break_before"],
+        sample_valid=tracked,
     )
     windows = run_time_bounds(times, mask)
     _warn_if_directions_unsampled(
         start_allocated_occupancy(
-            frame_bins, np.diff(times), mask, n_distance_bins * n_direction_bins
+            hold_last_valid(frame_bins, tracked, fill=-1),
+            np.diff(times),
+            mask,
+            n_distance_bins * n_direction_bins,
         ),
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
@@ -4530,7 +4555,7 @@ def object_vector_cell_significance(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -4621,11 +4646,13 @@ def object_vector_cell_significance(
         - **euclidean**: Straight-line distance.
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -4762,7 +4789,7 @@ def egocentric_object_vector_cell_significance(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -4859,11 +4886,13 @@ def egocentric_object_vector_cell_significance(
         - **euclidean**: Straight-line distance.
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

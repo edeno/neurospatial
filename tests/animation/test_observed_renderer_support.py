@@ -120,7 +120,8 @@ def test_rendered_heading_is_hidden_while_its_animal_is_missing(env):
     field = AnimationField(
         np.zeros((6, env.n_bins)), TIMES, cmap="Greys", vmin=0.0, vmax=1.0
     )
-    position = PositionOverlay(path, TIMES, color="blue")
+    # Below two frames, so the dropout is a tracking loss, not bridged.
+    position = PositionOverlay(path, TIMES, color="blue", max_gap=0.15)
     with Animation(env, {"field": field}, overlays=[position, heading]) as scene:
         assert len(_red_pixels(scene.render_frame(TIMES[1], dpi=40))) == 0
         assert len(_red_pixels(scene.render_frame(TIMES[2], dpi=40))) > 0
