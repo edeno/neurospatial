@@ -13,7 +13,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 
 from neurospatial.encoding._base import KERNEL_ESTIMATORS, BandwidthRule, _to_numpy
 
@@ -199,79 +199,6 @@ def resolve_polar_grid(
             f"0 <= min < max, got {distance_range!r}."
         )
     return (low, high), max(1, round((high - low) / width)), n_direction_bins
-
-
-def warn_if_peak_at_range_edge(
-    firing_rates: ArrayLike,
-    *,
-    n_distance_bins: int,
-    n_direction_bins: int,
-    distance_range: tuple[float, float],
-    time_beyond: float | NDArray[np.float64],
-    time_in_range: float | NDArray[np.float64],
-    unit_ids: Sequence[Any],
-    units: str | None,
-    subject: str,
-    fix: str,
-    context: str,
-) -> None:
-    """Warn when a unit peaks in the outermost ring and the range cut time off.
-
-    A rate map's peak is a local maximum only away from the domain's edge. A
-    peak in the last ring, while ``subject`` also lay beyond it, cannot be
-    told from a field that continues past ``distance_range``.
-
-    Parameters
-    ----------
-    time_beyond, time_in_range : float or NDArray[np.float64], shape (n_direction_bins,)
-        Seconds ``subject`` lay beyond and within ``distance_range``, for the
-        whole map or per direction bin.
-    subject : str
-        What lay beyond the range, for the message (``"the nearest object"``).
-    fix : str
-        How to fix it, for the message.
-    """
-    import warnings
-
-    from neurospatial._exceptions import _format_error
-
-    beyond = np.broadcast_to(
-        np.asarray(time_beyond, dtype=np.float64), n_direction_bins
-    )
-    within = np.broadcast_to(
-        np.asarray(time_in_range, dtype=np.float64), n_direction_bins
-    )
-    if not (beyond > 0).any():
-        return
-    rates = np.atleast_2d(np.asarray(_to_numpy(firing_rates), dtype=np.float64))
-    observed = np.isfinite(rates).any(axis=1)
-    if not observed.any():
-        return
-    peak_bin = np.full(len(rates), -1)
-    peak_bin[observed] = np.nanargmax(rates[observed], axis=1)
-    ring, column = np.divmod(peak_bin, n_direction_bins)
-    edge = np.flatnonzero(
-        observed & (ring == n_distance_bins - 1) & (beyond[column] > 0)
-    )
-    if edge.size == 0:
-        return
-    labels = [unit_ids[i] for i in edge[:5]]
-    more = f" and {edge.size - 5} more" if edge.size > 5 else ""
-    columns = column[edge]
-    share = float(np.max(beyond[columns] / (beyond[columns] + within[columns])))
-    warnings.warn(
-        _format_error(
-            f"{context}: unit(s) {labels}{more} peak in the outermost ring of "
-            f"distance_range={distance_range} {units or ''}, and {subject} lay "
-            f"beyond {distance_range[1]:g} for up to {share:.0%} of the "
-            "analyzed time.",
-            why="Why: a field cut off by the range looks the same as a peak at "
-            "its edge, so preferred_distance may be wrong",
-            fix=fix,
-        ),
-        UserWarning,
-        stacklevel=3,
-    )
 
 
 def require_known_bandwidth(

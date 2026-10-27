@@ -80,7 +80,6 @@ from neurospatial.encoding._polar_results import (
     polar_summary_frame,
     require_known_bandwidth,
     resolve_polar_grid,
-    warn_if_peak_at_range_edge,
 )
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
@@ -2267,6 +2266,53 @@ def _warn_if_directions_unsampled(
     )
 
 
+def _warn_if_peak_at_range_edge(
+    firing_rates: ArrayLike,
+    *,
+    n_distance_bins: int,
+    n_direction_bins: int,
+    distance_range: tuple[float, float],
+    time_beyond: float,
+    time_in_range: float,
+    unit_ids: Sequence[Any],
+    units: str | None,
+    context: str,
+) -> None:
+    """Warn when a unit peaks in the outermost ring and the range cut time off.
+
+    A rate map's peak is a local maximum only away from the domain's edge. A
+    peak in the last ring, while the animal also spent time beyond it, cannot
+    be told from a field that continues past ``distance_range``.
+    """
+    if time_beyond <= 0:
+        return
+    rates = np.atleast_2d(np.asarray(_to_numpy(firing_rates), dtype=np.float64))
+    observed = np.isfinite(rates).any(axis=1)
+    if not observed.any():
+        return
+    peak_ring = np.full(len(rates), -1)
+    peak_ring[observed] = np.nanargmax(rates[observed], axis=1) // n_direction_bins
+    edge = np.flatnonzero(peak_ring == n_distance_bins - 1)
+    if edge.size == 0:
+        return
+    labels = [unit_ids[i] for i in edge[:5]]
+    more = f" and {edge.size - 5} more" if edge.size > 5 else ""
+    share = time_beyond / (time_beyond + time_in_range)
+    warnings.warn(
+        _format_error(
+            f"{context}: unit(s) {labels}{more} peak in the outermost ring of "
+            f"distance_range={distance_range} {units or ''}, and the nearest "
+            f"object was beyond {distance_range[1]:g} for {time_beyond:.1f} s "
+            f"({share:.0%} of the analyzed time).",
+            why="Why: a field cut off by the range looks the same as a peak at "
+            "its edge, so preferred_distance may be wrong",
+            fix="widen distance_range (the default covers the whole environment)",
+        ),
+        UserWarning,
+        stacklevel=3,
+    )
+
+
 class _ObjectVectorCounts(NamedTuple):
     """Unsmoothed object-vector counts with the geometry and provenance used."""
 
@@ -2538,7 +2584,7 @@ def _object_vector_rate(
         extended_landmarks=object_names is not None and object_positions.ndim == 3,
         context=context,
     )
-    warn_if_peak_at_range_edge(
+    _warn_if_peak_at_range_edge(
         firing_rate,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
@@ -2547,8 +2593,6 @@ def _object_vector_rate(
         time_in_range=float(counts.occupancy.sum()),
         unit_ids=[0],
         units=units,
-        subject="the nearest object",
-        fix="widen distance_range (the default covers the whole environment)",
         context=context,
     )
 
@@ -3363,7 +3407,7 @@ def _object_vector_rates(
             ),
             context=context,
         )
-        warn_if_peak_at_range_edge(
+        _warn_if_peak_at_range_edge(
             firing_rates,
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
@@ -3372,8 +3416,6 @@ def _object_vector_rates(
             time_in_range=float(counts.occupancy.sum()),
             unit_ids=list(resolved_unit_ids),
             units=units,
-            subject="the nearest object",
-            fix="widen distance_range (the default covers the whole environment)",
             context=context,
         )
 

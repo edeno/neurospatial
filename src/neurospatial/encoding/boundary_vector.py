@@ -67,7 +67,6 @@ from neurospatial.encoding._polar_results import (
     polar_summary_frame,
     require_known_bandwidth,
     resolve_polar_grid,
-    warn_if_peak_at_range_edge,
 )
 
 if TYPE_CHECKING:
@@ -602,7 +601,7 @@ def _count_boundary_events(
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], TimeSupport]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], float, TimeSupport]:
     """Spike counts and boundary occupancy summed over every ray.
 
     An interval counts when its start sample was observed and it passes the
@@ -614,9 +613,9 @@ def _count_boundary_events(
     -------
     spike_counts : NDArray[np.float64], shape (n_units, n_bins)
     occupancy : NDArray[np.float64], shape (n_bins,)
-    time_beyond : NDArray[np.float64], shape (n_rays,)
-        Seconds of the same intervals in which each ray's wall lay at or
-        beyond the range.
+    time_beyond : float
+        Seconds of the same intervals, summed over rays, in which a ray's
+        wall lay at or beyond the range.
     support : TimeSupport
         The retained intervals, for the result's analysis settings.
     """
@@ -651,7 +650,7 @@ def _count_boundary_events(
     occupancy = np.bincount(
         starts[hit], weights=durations[hit], minlength=n_bins
     ).astype(np.float64)
-    time_beyond = np.where(starts == BEYOND_RANGE, durations, 0.0).sum(axis=0)
+    time_beyond = float(durations[starts == BEYOND_RANGE].sum())
 
     spike_counts = np.zeros((len(spike_trains), n_bins), dtype=np.float64)
     for unit, spikes in enumerate(spike_trains):
@@ -718,9 +717,7 @@ def compute_boundary_vector_rates(
         seconds, summed over rays like the occupancy, in which a ray's wall
         lay beyond the range, and
         ``analysis_settings["fraction_of_time_in_distance_range"]`` the
-        share of that ray time the map covers. A unit whose peak lies in the
-        outermost ring while a wall in that direction lay beyond the range
-        raises a warning.
+        share of that ray time the map covers (see Notes).
     distance_bin_size : float or None, default=None
         Width of each distance ring, in the environment's units. None uses
         5 cm converted to ``env.units``; pass it when the units are unknown.
@@ -803,6 +800,16 @@ def compute_boundary_vector_rates(
     of allocentric cells' preferred direction more than 45 degrees off,
     usually on the opposite wall: in a box, firing tied to one wall is
     equally tied to the wall across from it.
+
+    A field can still continue past the range. Unlike object-vector maps, no
+    warning flags a peak in the outermost ring: with walls beyond 50 cm in most
+    directions, untuned cells peak there by chance (16% of flat, 31% of
+    head-direction and 6% of place cells in the simulations above, against none
+    of the boundary cells). ``analysis_settings["time_beyond_distance_range"]``
+    and ``analysis_settings["fraction_of_time_in_distance_range"]`` record how
+    much ray time the range left out; for a cell whose preferred distance is in
+    the last ring, widen ``distance_range`` and check that the peak stays on the
+    near wall.
 
     Examples
     --------
@@ -1067,27 +1074,12 @@ def _boundary_vector_rates(
         distance_range=[float(value) for value in distance_range],
         n_distance_bins=int(n_distance_bins),
         n_direction_bins=int(n_direction_bins),
-        time_beyond_distance_range=float(time_beyond.sum()),
+        time_beyond_distance_range=time_beyond,
         fraction_of_time_in_distance_range=(
-            time_in_range / (time_in_range + float(time_beyond.sum()))
-            if time_in_range + time_beyond.sum() > 0
+            time_in_range / (time_in_range + time_beyond)
+            if time_in_range + time_beyond > 0
             else float("nan")
         ),
-    )
-    warn_if_peak_at_range_edge(
-        firing_rates,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
-        distance_range=distance_range,
-        time_beyond=time_beyond,
-        time_in_range=occupancy.reshape(n_distance_bins, n_direction_bins).sum(axis=0),
-        unit_ids=list(resolved_unit_ids),
-        units=env.units,
-        subject="the wall in the peak direction",
-        fix="for a cell that may be tuned to a farther wall, widen "
-        "distance_range; past half the arena's width the same firing also "
-        "appears at the opposite wall",
-        context=context,
     )
     return BoundaryVectorRatesResult(
         min_occupancy=min_occupancy,

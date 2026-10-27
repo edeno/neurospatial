@@ -525,9 +525,9 @@ used, in 5 cm rings and 30° direction bins. It does not reach the far side of
 the arena on purpose: in a box, a cell firing 15 cm from the East wall is
 also firing 85 cm from the West wall, and a map out to the far walls lets the
 peak jump there. `analysis_settings["fraction_of_time_in_distance_range"]`
-records the share of ray time the map covers, and a unit whose peak lies in
-the outermost ring raises a warning, because its field may continue beyond the
-range. Widen `distance_range=` for a cell that may be tuned to a farther wall.
+records the share of ray time the map covers. A field may continue beyond the
+range: for a cell whose preferred distance is in the last ring, widen
+`distance_range=` and check that the peak stays on the near wall.
 
 This example simulates an egocentric boundary cell that fires when a wall is
 about 15 cm to the animal's left:

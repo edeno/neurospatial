@@ -370,21 +370,20 @@ def test_a_near_wall_cell_is_not_read_as_tuned_to_the_opposite_wall(env, session
     assert 10.0 <= result.preferred_distance() <= 20.0
 
 
-def test_the_range_records_the_time_beyond_it_and_warns_at_its_edge(env, session):
-    """A range that ends inside a field reports what it cut off."""
+def test_the_range_records_the_ray_time_beyond_it(env, session):
+    """A range that ends inside a field reports how much ray time it left out."""
     times, positions, _ = session
     east = _wall_distance(positions, np.zeros(len(positions)))
     spikes = _tuned_spikes(times, east, preferred=30.0, width=6.0)
 
-    with pytest.warns(UserWarning, match="outermost ring"):
-        result = compute_boundary_vector_rate(
-            env,
-            spikes,
-            times,
-            positions,
-            direction_frame="allocentric",
-            distance_range=(0.0, 25.0),
-        )
+    result = compute_boundary_vector_rate(
+        env,
+        spikes,
+        times,
+        positions,
+        direction_frame="allocentric",
+        distance_range=(0.0, 25.0),
+    )
 
     # Every ray from inside the box meets a wall, within the range or beyond.
     duration = times[-1] - times[0]
