@@ -1685,8 +1685,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     ) -> dict[str, float]:
         """Coverage of each spatial region by the firing field.
 
-        Computes what fraction of each region's bins are covered by the
-        firing field (bins where firing_rate >= threshold * peak).
+        Computes what fraction of each region's area is covered by the
+        firing field (bins where firing_rate >= threshold * peak), weighting
+        each bin by its measure (``env.bin_sizes``).
 
         Parameters
         ----------
@@ -1702,7 +1703,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         dict[str, float]
             Mapping from region name to coverage fraction [0, 1], NaN for
             every region when the map has no positive rate.
-            Coverage = (region bins in field) / (total region bins).
+            Coverage = area(region in field) / area(region); on a regular
+            grid, the fraction of the region's bins.
 
         Notes
         -----

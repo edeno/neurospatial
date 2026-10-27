@@ -547,9 +547,10 @@ def compute_region_coverage(
     Returns
     -------
     coverage : dict[str, float]
-        Dictionary mapping region name to coverage fraction [0, 1]:
-        (number of region bins in field) / (total number of region bins).
-        NaN for a region that contains no bins.
+        Dictionary mapping region name to coverage fraction [0, 1]: the
+        area of the region's bins in the field over the area of all the
+        region's bins (lengths on a track, volumes in 3-D). NaN for a region
+        that contains no bins.
 
     Examples
     --------
@@ -597,9 +598,12 @@ def compute_region_coverage(
     - **Task-relevant regions**: Check if fields overlap with reward zones, start boxes, etc.
     - **Multi-zone analysis**: Quantify field distribution across spatial zones
 
-    Coverage is the fraction of the region's bins that lie in the field,
-    ``|region ∩ field| / |region|``. It is not symmetric: a field larger than
-    the region can still cover it completely.
+    Coverage is the fraction of the region's area that lies in the field,
+    ``area(region ∩ field) / area(region)``, summing each bin's measure
+    (``env.bin_sizes``), so it does not depend on how finely the region is
+    binned. On a regular grid it is the fraction of the region's bins. It is
+    not symmetric: a field larger than the region can still cover it
+    completely.
     """
     # Get region names to analyze
     if regions is None:
@@ -615,7 +619,12 @@ def compute_region_coverage(
                 in_list=True,
             )
 
-    # Compute coverage for each region
+    # Compute coverage for each region, weighting bins by their measures
+    from neurospatial.encoding._field_metrics import _relative_measures
+
+    measures = _relative_measures(env.bin_sizes)
+    in_field = np.zeros(env.n_bins, dtype=bool)
+    in_field[field_bins] = True
     coverage = {}
     for region_name in regions:
         # Get bins in this region
@@ -626,9 +635,9 @@ def compute_region_coverage(
             # No bins to cover: the fraction is undefined, not zero.
             coverage[region_name] = np.nan
         else:
-            # Compute fraction of region bins that are in field
+            region_measures = measures[region_bins]
             coverage[region_name] = float(
-                np.sum(np.isin(region_bins, field_bins)) / len(region_bins)
+                np.sum(region_measures[in_field[region_bins]]) / np.sum(region_measures)
             )
 
     return coverage

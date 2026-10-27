@@ -43,6 +43,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.encoding._base import _is_jax_array
+from neurospatial.encoding._field_metrics import _relative_measures
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -1476,6 +1477,7 @@ def mutual_information(
 
 
 def spatial_coverage_single_cell(
+    env: Environment,
     firing_rate: ArrayLike,
     *,
     threshold: float = 0.1,
@@ -1488,6 +1490,9 @@ def spatial_coverage_single_cell(
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment of the rate map. Its bin measures
+        (``env.bin_sizes``) make the coverage a fraction of space.
     firing_rate : ArrayLike, shape (n_bins,)
         Firing rate map (Hz or spikes/second).
     threshold : float, default=0.1
@@ -1497,8 +1502,14 @@ def spatial_coverage_single_cell(
     Returns
     -------
     float
-        Fraction of observed (finite-rate) bins with firing rate > threshold,
-        in range [0, 1]. NaN if every rate is NaN.
+        Fraction of the observed (finite-rate) area, length or volume where
+        the firing rate is above ``threshold``, in range [0, 1]. NaN if every
+        rate is NaN.
+
+    Raises
+    ------
+    ValueError
+        If ``firing_rate`` does not have one rate per bin of ``env``.
 
     Notes
     -----
@@ -1506,10 +1517,13 @@ def spatial_coverage_single_cell(
 
     .. math::
 
-        C = \\frac{\\sum_i \\mathbb{1}[r_i > \\theta]}{N}
+        C = \\frac{\\sum_i \\mu_i \\, \\mathbb{1}[r_i > \\theta]}{\\sum_i \\mu_i}
 
-    where :math:`r_i` is firing rate in bin :math:`i`, :math:`\\theta` is
-    the threshold, and :math:`N` is the number of bins with a finite rate.
+    where :math:`r_i` is firing rate in bin :math:`i`, :math:`\\mu_i` its
+    measure (``env.bin_sizes``: area, length or volume), :math:`\\theta` is
+    the threshold, and both sums run over bins with a finite rate. On a
+    regular grid every bin has the same measure and :math:`C` is the fraction
+    of observed bins.
 
     **Interpretation**:
 
@@ -1531,12 +1545,17 @@ def spatial_coverage_single_cell(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.encoding._metrics import spatial_coverage_single_cell
 
-    >>> # Highly selective cell (fires in 10% of bins)
-    >>> firing_rate = np.zeros(100)
+    >>> # A 100 cm track in 1 cm bins
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones(100, dtype=bool), grid_edges=(np.arange(101.0),), units="cm"
+    ... )
+    >>> # Highly selective cell (fires in 10% of the track)
+    >>> firing_rate = np.zeros(env.n_bins)
     >>> firing_rate[40:50] = 5.0
-    >>> coverage = spatial_coverage_single_cell(firing_rate, threshold=0.1)
+    >>> coverage = spatial_coverage_single_cell(env, firing_rate, threshold=0.1)
     >>> abs(coverage - 0.10) < 1e-6
     True
 
@@ -1551,7 +1570,16 @@ def spatial_coverage_single_cell(
            the spatial firing of hippocampal complex-spike cells. J Neurosci 7(7).
     """
     firing_rate = np.asarray(firing_rate)
-    observed = firing_rate[np.isfinite(firing_rate)]
-    if observed.size == 0:
+    if firing_rate.shape != (env.n_bins,):
+        raise ValueError(
+            f"firing_rate has shape {firing_rate.shape}, but env has "
+            f"{env.n_bins} bins.\nWhy: each bin's coverage is weighted by its "
+            "measure, so the map must be estimated on env.\nFix: pass the "
+            "environment the rate map was computed on (rates.env)."
+        )
+    observed = np.isfinite(firing_rate)
+    if not observed.any():
         return np.nan
-    return float(np.mean(observed > threshold))
+    measures = _relative_measures(env.bin_sizes)[observed]
+    covered = firing_rate[observed] > threshold
+    return float(np.sum(measures[covered]) / np.sum(measures))

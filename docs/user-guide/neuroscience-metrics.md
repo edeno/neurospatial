@@ -242,7 +242,7 @@ ax = plot_population_coverage(env, result, show_field_count=True)
 
 The `PopulationCoverageResult` object contains:
 
-- `coverage_fraction`: Fraction of observed bins covered (0.0-1.0)
+- `coverage_fraction`: Fraction of the observed area covered (0.0-1.0)
 - `uncovered_bins`: Indices of gaps (observed bins outside every field)
 - `uncovered_positions`: Coordinates of gaps
 - `field_count`: Number of place fields per bin
@@ -258,9 +258,9 @@ default `fill_value=None` so these bins stay NaN.
 
 - `place_cell_fraction`: n_place_cells / n_neurons (typical CA1: 0.3-0.5)
 - `fields_per_place_cell`: n_fields / n_place_cells (typical: 1.0-2.0)
-- `mean_redundancy`: Average fields per covered bin (Wilson & McNaughton 1993)
+- `mean_redundancy`: Average number of fields over the covered area (Wilson & McNaughton 1993)
 
-Coverage is the fraction of observed bins contained in at least one place field. High coverage (>0.8) indicates the population represents most of the environment.
+Coverage is the fraction of the observed area (length on a track) inside at least one place field. Each bin counts by its size, so the answer does not depend on how the environment was binned; on a regular grid it is the fraction of observed bins. High coverage (>0.8) indicates the population represents most of the environment.
 
 ### Field Density Map
 
@@ -283,15 +283,18 @@ Measure the spatial overlap between two fields using the Jaccard index:
 from neurospatial.encoding import field_overlap
 
 # Compare fields from two cells
-overlap = field_overlap(field_bins_cell1, field_bins_cell2)
+overlap = field_overlap(env, field_bins_cell1, field_bins_cell2)
 # Returns: Jaccard coefficient in [0, 1]
 ```
 
 **Formula:**
 
 $$
-J(A, B) = \frac{|A \cap B|}{|A \cup B|}
+J(A, B) = \frac{\text{area}(A \cap B)}{\text{area}(A \cup B)}
 $$
+
+Each bin counts by its size (`env.bin_sizes`), so on a regular grid this is
+the ratio of bin counts.
 
 **Interpretation:**
 - **0**: No overlap (fields completely disjoint)
