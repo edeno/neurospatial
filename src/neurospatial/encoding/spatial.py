@@ -3735,6 +3735,64 @@ def _spatial_rate_maps(
     return maps(firing_rates, occupancy, None)
 
 
+def _spatial_rates_result(
+    env: Environment, maps: _SpatialRateMaps, *, method: str, unit_table: Any
+) -> SpatialRatesResult:
+    """Wrap population rate maps from :func:`_spatial_rate_maps` as a result.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment the maps were estimated on.
+    maps : _SpatialRateMaps
+        Rates and provenance of every unit.
+    method : str
+        Estimator that produced the maps.
+    unit_table : object or None
+        Unit metadata carried by a labelled spike group, else None.
+    """
+    common: dict[str, Any] = {
+        "n_spikes_outside_intervals": spikes_outside_intervals(
+            maps.spike_times, maps.support.time_support
+        ),
+        "analysis_settings": maps.support.analysis_settings,
+        "unit_table": unit_table,
+        "spike_window": maps.support.time_support.spike_window,
+        "firing_rates": maps.firing_rates,
+        "occupancy": maps.occupancy,
+        "env": env,
+        "method": method,
+        "unit_ids": maps.unit_ids,
+    }
+    fit = maps.fit
+    if fit is None:
+        return SpatialRatesResult(
+            **common, min_occupancy=maps.min_occupancy, bandwidth=maps.bandwidth
+        )
+    # The per-unit lambda fields (``penalty`` / ``reml_objective`` /
+    # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
+    # straight through from the fit; they are scalar/None under pooled=True.
+    # dtype governs the (n_units, n_bins) rate-map storage only. The GLM
+    # diagnostics are the float64 fit result and are kept float64 -- so
+    # they do not lose precision (deviance/coefficients) and rates[i]
+    # matches compute_spatial_rate, whose diagnostics are always float64.
+    return SpatialRatesResult(
+        **common,
+        bandwidth=None,
+        coefficients=fit.coefficients,
+        penalty=fit.penalty,
+        penalty_weights=fit.penalty_weights,
+        rank=fit.rank,
+        deviance=fit.deviance,
+        converged=fit.converged,
+        n_iter=fit.n_iter,
+        reml_objective=fit.reml_objective,
+        reml_at_boundary=fit.reml_at_boundary,
+        penalty_selected_by_reml=fit.penalty_selected_by_reml,
+        pooled=fit.pooled,
+    )
+
+
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -4508,45 +4566,8 @@ default="diffusion_kde"
         context="compute_spatial_rates",
         single_unit=False,
     )
-    common: dict[str, Any] = {
-        "n_spikes_outside_intervals": spikes_outside_intervals(
-            maps.spike_times, maps.support.time_support
-        ),
-        "analysis_settings": maps.support.analysis_settings,
-        "unit_table": getattr(spike_times, "unit_table", None),
-        "spike_window": maps.support.time_support.spike_window,
-        "firing_rates": maps.firing_rates,
-        "occupancy": maps.occupancy,
-        "env": env,
-        "method": method,
-        "unit_ids": maps.unit_ids,
-    }
-    fit = maps.fit
-    if fit is None:
-        return SpatialRatesResult(
-            **common, min_occupancy=maps.min_occupancy, bandwidth=maps.bandwidth
-        )
-    # The per-unit lambda fields (``penalty`` / ``reml_objective`` /
-    # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
-    # straight through from the fit; they are scalar/None under pooled=True.
-    # dtype governs the (n_units, n_bins) rate-map storage only. The GLM
-    # diagnostics are the float64 fit result and are kept float64 -- so
-    # they do not lose precision (deviance/coefficients) and rates[i]
-    # matches compute_spatial_rate, whose diagnostics are always float64.
-    return SpatialRatesResult(
-        **common,
-        bandwidth=None,
-        coefficients=fit.coefficients,
-        penalty=fit.penalty,
-        penalty_weights=fit.penalty_weights,
-        rank=fit.rank,
-        deviance=fit.deviance,
-        converged=fit.converged,
-        n_iter=fit.n_iter,
-        reml_objective=fit.reml_objective,
-        reml_at_boundary=fit.reml_at_boundary,
-        penalty_selected_by_reml=fit.penalty_selected_by_reml,
-        pooled=fit.pooled,
+    return _spatial_rates_result(
+        env, maps, method=method, unit_table=getattr(spike_times, "unit_table", None)
     )
 
 
@@ -7611,11 +7632,11 @@ def _spatial_shuffle(
 ) -> _ShuffleScores:
     """Circularly shift each unit's spikes and rescore its rate map.
 
-    The trajectory is binned once: the analyzed intervals, occupancy and
-    smoothing settings of the observed map are reused for every shifted
-    train, and each shift keeps the unit's spike count on the analyzed clock
-    without entering recording gaps. Every requested statistic is computed
-    from the same shifted trains.
+    The trajectory is binned once: the analyzed intervals, frame bins,
+    occupancy and smoothing settings of the observed map are reused for every
+    shifted train, and each shift keeps the unit's spike count on the
+    analyzed clock without entering recording gaps. Every requested statistic
+    is computed from the same shifted trains.
 
     Returns
     -------
@@ -7624,7 +7645,6 @@ def _spatial_shuffle(
         ``(n_shuffles, n_units, len(statistics))``, NaN for statistics that
         cannot be scored, with the reasons (see ``_cell_type_score``).
     """
-    from neurospatial._intervals import run_time_bounds
     from neurospatial.encoding._backend import validate_and_resolve_backend
     from neurospatial.encoding._provenance import occupancy_support
     from neurospatial.encoding._significance import (
@@ -7633,10 +7653,8 @@ def _spatial_shuffle(
         snapshot_options,
     )
     from neurospatial.encoding._spatial_counts import (
-        _spatial_interval_mask,
         _spike_track,
         require_allocentric,
-        resolve_speed,
     )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
@@ -7691,31 +7709,30 @@ def _spatial_shuffle(
     validate_spike_trains(trains, context=call)
     options["break_before"] = validate_break_before(break_before, len(times), call=call)
     positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
-    mask = _spatial_interval_mask(
+    # The observed map resolves the estimator defaults, the analyzed
+    # intervals, its occupancy and the caller's data-quality warnings once;
+    # every shifted map reuses them.
+    rate_maps = _spatial_rate_maps(
         env,
+        trains,
         times,
-        positions_2d,
-        speed=resolve_speed(
-            times,
-            positions,
-            options["speed"],
-            min_speed,
-            max_gap=max_gap,
-            break_before=options["break_before"],
-        ),
-        min_speed=min_speed,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        break_before=options["break_before"],
+        positions,
+        **options,
+        time_allocation="start",
+        n_jobs=1,
+        context="compute_spatial_rates",
+        single_unit=False,
     )
-    # The observed map resolves the estimator defaults, its occupancy and the
-    # caller's data-quality warnings once; every shifted map reuses them.
-    reference = compute_spatial_rates(env, trains, times, positions, **options)
+    reference = _spatial_rates_result(env, rate_maps, method=method, unit_table=None)
+    time_support = rate_maps.support.time_support
     occupancy = np.asarray(reference.occupancy, dtype=np.float64)
     maps = _ShuffleMaps(
         track=_spike_track(
-            env, times, positions_2d, interval_mask=mask, linear_intervals=None
+            env,
+            times,
+            positions_2d,
+            interval_mask=time_support.mask,
+            linear_intervals=None,
         ),
         occupancy=occupancy,
         occupied=occupancy_support(reference),
@@ -7726,13 +7743,14 @@ def _spatial_shuffle(
         backend=validate_and_resolve_backend(backend),
         dtype=options["dtype"],
     )
-    observed_rates = _shuffle_rate_maps(env, trains, maps)
+    # The observed maps decide which statistics can be scored; the observed
+    # scores are recomputed, with their warnings, by the shuffle test below.
+    observed_rates = np.asarray(reference._supported_rates(), dtype=np.float64)
     unavailable: dict[str, str] = {}
     inapplicable: list[str] = []
     for name in statistics:
         if name == "spatial_information":
             continue
-        # The observed scores are recomputed, with their warnings, below.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             _, reason, applies = _cell_type_score(
@@ -7750,7 +7768,7 @@ def _spatial_shuffle(
     observed_scored, null_scored = run_shuffle_test(
         statistic,
         trains,
-        run_time_bounds(times, mask),
+        time_support.runs,
         ids,
         n_shuffles=n_shuffles,
         min_shift=min_shift,
