@@ -60,7 +60,7 @@ def test_analysis_crop_does_not_create_walls_or_supply_missing_wall_rates():
     field = (env.bin_centers[:, 0] == 3.5).astype(float)
     keep = env.bin_centers[:, 0] < 4
     cropped = env.subset(mask=keep)
-    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+    with pytest.raises(NotImplementedError, match="lies outside every bin"):
         border_score(cropped, field[keep], metric="euclidean")
     # The crop's east edge is a wall of the analysis outline: the field covers
     # it fully, half a cell from it, in a 4-wide crop (inscribed radius 2).
@@ -87,7 +87,7 @@ def test_no_represented_wall_coverage_is_not_silently_scored():
         & (physical().bin_centers[:, 1] < 6)
     )
     for metric in ("geodesic", "euclidean"):
-        with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+        with pytest.raises(NotImplementedError, match="lies outside every bin"):
             border_score(env, np.ones(env.n_bins), metric=metric)
 
 
@@ -248,129 +248,141 @@ def test_position_footprint_inset_from_measured_walls_is_unavailable(metric):
         arena=OpenArena(box(0, 0, 100, 100)),
     )
     field = (env.bin_centers[:, 0] < 10).astype(float)
-    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
+    with pytest.raises(NotImplementedError) as error:
         border_score(env, field, metric=metric)
+    message = str(error.value)
+    # What failed, how much and where, and how to fix it.
+    assert "400 position units of wall" in message
+    assert "Environment.from_polygon(outline, bin_size)" in message
+    assert "boundary_source='analysis'" in message
     assert border_score(env, field, boundary_source="analysis") > 0.8
 
 
 def test_rebuilt_rotated_arena_owns_its_whole_wall():
     """An axis-aligned grid on a rotated square leaves slivers along every wall;
     their wall pieces belong to the neighboring bins, so a field over the whole
-    arena covers the whole wall instead of reporting partial coverage."""
+    arena covers the whole of each wall instead of reporting partial coverage."""
     from shapely.affinity import rotate
-    from shapely.ops import unary_union
 
-    from neurospatial.encoding._physical_border import border_geometry
+    from neurospatial.encoding._physical_border import _wall_coverage, border_geometry
 
     env = Environment.from_polygon(
         rotate(box(0, 0, 10, 10), 45, origin=(5, 5)), bin_size=0.2
     )
     geometry = border_geometry(env, "physical")
     assert len(geometry.wall_lengths) == 4
-    for (_owners, pieces), length in zip(
-        geometry.contact, geometry.wall_lengths, strict=True
-    ):
-        assert unary_union(pieces).length == pytest.approx(length, rel=1e-9)
-    assert np.isfinite(border_score(env, np.ones(env.n_bins)))
+    assert (np.asarray(geometry.atom_owners.sum(axis=1)) > 0).all()
+    everywhere = np.ones(env.n_bins)
+    for wall in range(4):
+        atoms = geometry.atom_wall == wall
+        assert geometry.atom_length[atoms].sum() == pytest.approx(10.0, rel=1e-9)
+    assert _wall_coverage(geometry, [np.arange(env.n_bins)], everywhere) == (
+        pytest.approx(1.0, rel=1e-9)
+    )
+
+
+def _west_strip(env):
+    return np.where(env.bin_centers[:, 0] < 1, 10.0, 0.1)
 
 
 @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
-def test_unobserved_wall_rates_are_unavailable_but_observed_zero_rates_are_valid(
-    metric,
-):
+def test_unvisited_wall_bins_are_missing_not_uncovered(metric):
+    """A strip along the whole west wall whose three northern bins were never
+    visited covers the whole observed wall, so it scores as if fully observed.
+    Counting the unvisited wall as uncovered would give coverage 0.7."""
+    from neurospatial.encoding import observed_wall_fraction
+
     env = physical()
-    field = (
+    full = _west_strip(env)
+    gap = full.copy()
+    gap[(env.bin_centers[:, 0] < 1) & (env.bin_centers[:, 1] > 7)] = np.nan
+    # Every center is half a cell from the wall; the inscribed radius is 5.
+    distance = 0.5 / 5
+    expected = (1 - distance) / (1 + distance)
+    np.testing.assert_allclose(border_score(env, full, metric=metric), expected)
+    np.testing.assert_allclose(border_score(env, gap, metric=metric), expected)
+    # Three cells of the west wall and the corner cell's cell of the north
+    # wall are unobserved.
+    assert observed_wall_fraction(env, gap) == pytest.approx(36 / 40)
+
+
+def test_observed_zero_rates_are_firing_not_missing():
+    env = physical()
+    center = (
         (env.bin_centers[:, 0] > 4)
         & (env.bin_centers[:, 0] < 6)
         & (env.bin_centers[:, 1] > 4)
         & (env.bin_centers[:, 1] < 6)
     ).astype(float)
-    assert border_score(env, field, metric=metric) == -1.0
-    field[env.bin_centers[:, 0] < 1] = np.nan
-    with pytest.raises(NotImplementedError, match="finite firing rates"):
-        border_score(env, field, metric=metric)
+    assert border_score(env, center) == -1.0
 
 
-def test_all_missing_wall_rates_refuse_before_field_detection():
+def test_a_map_that_never_reaches_a_wall_has_no_border_score():
+    from neurospatial.encoding import observed_wall_fraction
+
     env = physical()
-    with pytest.raises(NotImplementedError, match="finite firing rates"):
-        border_score(env, np.full(env.n_bins, np.nan))
+    inner = np.where(
+        np.all((env.bin_centers > 1) & (env.bin_centers < 9), axis=1), 1.0, np.nan
+    )
+    inner[np.argmin(np.hypot(*(env.bin_centers - 5.5).T))] = 5.0
+    assert observed_wall_fraction(env, inner) == 0.0
+    assert np.isnan(border_score(env, inner))
+    assert np.isnan(border_score(env, np.full(env.n_bins, np.nan)))
 
 
-def test_missing_wall_rate_support_is_reported_in_result_summary():
+def test_result_summary_reports_the_observed_wall_fraction():
     from neurospatial.encoding.spatial import SpatialRateResult
 
-    env = physical()
-    rates = np.ones(env.n_bins)
-    rates[env.bin_centers[:, 0] < 1] = np.nan
-    result = SpatialRateResult(
-        rates, np.ones(env.n_bins), env, method="binned", bandwidth=0.0
-    )
+    env = physical().with_metadata(units="m")
+    unvisited = env.bin_centers[:, 0] < 1
+    rates = np.where(unvisited, np.nan, 1.0)
+    occupancy = np.where(unvisited, 0.0, 1.0)
+    result = SpatialRateResult(rates, occupancy, env, method="binned", bandwidth=0.0)
     table = result.summary_table(include_classification=False)
-    assert np.isnan(table["border_score"].iloc[0])
-    assert "finite firing rates" in table.attrs["unavailable_metrics"]["border_score"]
+    assert np.isfinite(table["border_score"].iloc[0])
+    assert "unavailable_metrics" not in table.attrs
+    # The west wall and one cell each of the north and south walls.
+    assert table.attrs["border_observed_wall_fraction"] == pytest.approx(28 / 40)
+    # A map firing everywhere observed, scored on the same walls.
+    assert table.attrs["border_score_untuned"] == pytest.approx(
+        border_score(env, rates)
+    )
 
 
-def test_batch_missing_wall_rate_support_raises_instead_of_hiding_as_numeric_failure():
+def test_batch_scores_each_unit_on_its_own_observed_walls():
     from neurospatial.encoding._metrics import batch_border_scores
 
     env = physical()
-    rates = np.ones((2, env.n_bins))
-    rates[1, env.bin_centers[:, 0] < 1] = np.nan
-    with pytest.raises(NotImplementedError, match="finite firing rates"):
-        batch_border_scores(env, rates)
+    rates = np.stack([_west_strip(env), _west_strip(env)])
+    rates[1, env.bin_centers[:, 0] > 9] = np.nan
+    batch = batch_border_scores(env, rates)
+    np.testing.assert_allclose(
+        batch.scores, [border_score(env, rate) for rate in rates]
+    )
+    assert np.isfinite(batch.scores).all()
+    assert not batch.failures.any()
 
 
-def test_observed_internal_wall_side_does_not_supply_the_other_sides_missing_rates():
-    env = physical(wall=True)
-    rates = np.ones(env.n_bins)
-    rates[env.bin_centers[:, 0] == 4.5] = np.nan
-    with pytest.raises(NotImplementedError, match="finite firing rates"):
-        border_score(env, rates)
+def test_an_unvisited_wall_does_not_hide_a_border_cell_on_another_wall():
+    """The east wall was never visited. The west-wall cell is still a border
+    cell, and the untuned cell is still unclassified."""
+    from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
 
-
-def _wall_cell_with_unobserved_wall():
-    """A west-wall field in a room whose east-wall cells were never observed.
-
-    Meters, so the default 200 cm² field minimum is defined and met.
-    """
+    # Meters, so the default 200 cm² field minimum is defined and met.
     env = physical().with_metadata(units="m")
     rates = np.where(env.bin_centers[:, 0] < 1, 10.0, 0.1)
     rates[env.bin_centers[:, 0] > 9] = np.nan
-    return env, rates
-
-
-def test_summary_does_not_call_a_wall_cell_place_when_border_is_unavailable():
-    from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
-
-    env, rates = _wall_cell_with_unobserved_wall()
     untuned = np.where(np.isnan(rates), np.nan, 1.0)
     occupancy = np.ones(env.n_bins)
     single = SpatialRateResult(rates, occupancy, env, method="binned", bandwidth=0.0)
     population = SpatialRatesResult(
         np.stack([rates, untuned]), occupancy, env, method="binned", bandwidth=0.0
     )
-    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
-        single.border_score()
-    with pytest.warns(UserWarning, match="Physical-wall coverage"):
-        labels = population.label_cell_types()
-
-    single_table = single.summary_table()
-    population_table = population.summary_table()
-    # Without the border score either cell could be a border cell, whatever
-    # its spatial information, so neither label is known.
-    assert single_table["cell_type"].tolist() == ["undetermined"]
-    assert population_table["cell_type"].tolist() == ["undetermined"] * 2
-    assert labels.tolist() == population_table["cell_type"].tolist()
-    assert population_table["passes_border_score"].isna().all()
-    for table in (single_table, population_table):
-        assert np.isnan(table["border_score"]).all()
-        assert "border_score" in table.attrs["unavailable_metrics"]
-    # The cell's field is on the observed west wall; the analysis boundary
-    # scores it and the label follows the score.
-    assert population.summary_table(boundary_source="analysis")[
-        "cell_type"
-    ].tolist() == ["border", "unclassified"]
+    assert single.border_score() > 0.8
+    assert single.summary_table()["cell_type"].tolist() == ["border"]
+    table = population.summary_table()
+    assert table["cell_type"].tolist() == ["border", "unclassified"]
+    assert "unavailable_metrics" not in table.attrs
 
 
 @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])

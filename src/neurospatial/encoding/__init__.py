@@ -55,6 +55,8 @@ from neurospatial.encoding._validation import _validate_times as _validate_times
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
+    observed_wall_fraction,
+    untuned_border_score,
 )
 
 # Directional rate (head direction cells)
@@ -165,6 +167,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
+    "observed_wall_fraction",
+    "untuned_border_score",
     # Boundary-vector rate (boundary-vector and egocentric boundary cells)
     "BoundaryVectorRateResult",
     "BoundaryVectorRatesResult",

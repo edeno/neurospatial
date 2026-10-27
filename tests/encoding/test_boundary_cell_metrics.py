@@ -243,16 +243,132 @@ class TestBorderWalls:
                 ),
                 6,
             ),
-            (shapely.Point(50, 50).buffer(50, quad_segs=2), 1),
+            (shapely.Point(50, 50).buffer(50, quad_segs=2), 8),
             (shapely.Point(50, 50).buffer(50, quad_segs=32), 1),
+            (shapely.Polygon([(0, 0), (100, -10), (120, 90), (10, 100)]), 4),
         ],
-        ids=["rectangle", "triangle", "hexagon", "octagon", "circle"],
+        ids=["rectangle", "triangle", "hexagon", "octagon", "circle", "kite"],
     )
     def test_corners_split_outlines_into_walls(self, polygon, n_walls):
+        """A polygon's vertices are its corners; a sampled curve has none."""
         from neurospatial.encoding._physical_border import border_geometry
 
         env = Environment.from_polygon(polygon, bin_size=2.5, units="cm")
-        assert len(border_geometry(env, "physical").wall_lengths) == n_walls
+        geometry = border_geometry(env, "physical")
+        assert len(geometry.wall_lengths) == n_walls
+        assert geometry.closed.all() == (n_walls == 1)
+
+    @pytest.mark.parametrize("bin_size", [1.0, 2.5, 5.0])
+    def test_a_box_with_rounded_corners_has_four_walls_at_any_bin_size(self, bin_size):
+        from neurospatial.encoding._physical_border import border_geometry
+
+        rounded = shapely.box(10, 10, 90, 90).buffer(10, quad_segs=16)
+        env = Environment.from_polygon(rounded, bin_size=bin_size, units="cm")
+        lengths = border_geometry(env, "physical").wall_lengths
+        # Each wall is a side plus half of each rounded corner beside it.
+        np.testing.assert_allclose(lengths, rounded.length / 4, rtol=0.05)
+
+    def test_a_hand_traced_square_has_four_walls_and_scores_like_the_square(self):
+        """A trace sampled every 2 cm with 0.5 cm jitter, at 1 cm bins: its
+        jitter is not corners, so a place field near a wall is not a border
+        field on the trace either."""
+        from neurospatial.encoding import border_score
+        from neurospatial.encoding._physical_border import border_geometry
+
+        rng = np.random.default_rng(0)
+        along = np.arange(0, 400, 2.0)
+        side, offset = (along // 100).astype(int), along % 100
+        corner_x = np.choose(
+            side, [offset, np.full_like(offset, 100), 100 - offset, 0 * offset]
+        )
+        corner_y = np.choose(
+            side, [0 * offset, offset, np.full_like(offset, 100), 100 - offset]
+        )
+        trace = shapely.Polygon(
+            np.c_[corner_x, corner_y] + rng.normal(0, 0.5, (len(along), 2))
+        )
+        assert trace.is_valid
+        traced = Environment.from_polygon(trace, bin_size=1.0, units="cm")
+        exact = Environment.from_polygon(
+            shapely.box(0, 0, 100, 100), bin_size=1.0, units="cm"
+        )
+        assert len(border_geometry(traced, "physical").wall_lengths) == 4
+
+        def place_near_west_wall(env):
+            x, y = env.bin_centers.T
+            return 0.2 + 15 * np.exp(-((x - 8) ** 2 + (y - 50) ** 2) / (2 * 8.0**2))
+
+        exact_score = border_score(exact, place_near_west_wall(exact))
+        assert exact_score < 0.3
+        assert border_score(traced, place_near_west_wall(traced)) == pytest.approx(
+            exact_score, abs=0.05
+        )
+
+    def test_a_pixel_mask_has_the_walls_of_its_polygon(self):
+        """A hexagon given as a pixel mask has six walls, like the polygon, and
+        a cell along one side scores alike on both."""
+        from neurospatial.arena import MaskArena
+        from neurospatial.encoding import border_score
+        from neurospatial.encoding._physical_border import border_geometry
+
+        angle = np.arange(6) * np.pi / 3
+        hexagon = shapely.Polygon(
+            np.c_[65 + 60 * np.cos(angle), 65 + 60 * np.sin(angle)]
+        )
+        edges = (np.arange(0, 132.5, 2.5),) * 2
+        x, y = np.meshgrid(*[(e[:-1] + e[1:]) / 2 for e in edges], indexing="ij")
+        mask = shapely.contains_xy(hexagon, x, y)
+        pixels = Environment.from_grid_mask(
+            mask,
+            edges,
+            units="cm",
+            arena=MaskArena(edges, mask, physical_footprint_known=True),
+        )
+        polygon = Environment.from_polygon(hexagon, bin_size=2.5, units="cm")
+        side = shapely.LineString([(35, 65 - 60 * np.sin(np.pi / 3)), (5, 65)])
+        scores = []
+        for env in (pixels, polygon):
+            assert len(border_geometry(env, "physical").wall_lengths) == 6
+            to_side = shapely.distance(shapely.points(env.bin_centers), side)
+            scores.append(
+                border_score(env, 0.2 + 15 * np.exp(-0.5 * (to_side / 5) ** 2))
+            )
+        assert scores[0] == pytest.approx(scores[1], abs=0.02)
+        assert min(scores) > 0.85
+
+    def test_one_side_of_an_octagon_is_a_whole_wall(self):
+        """A cell along one side of an octagon covers that wall, as on a square
+        (0.53 when the octagon was scored as one ring-shaped wall)."""
+        from neurospatial.encoding import border_score
+
+        angle = np.arange(8) * np.pi / 4 + np.pi / 8
+        octagon = shapely.Polygon(np.c_[55 * np.cos(angle), 55 * np.sin(angle)])
+        env = Environment.from_polygon(octagon, bin_size=2.5, units="cm")
+        side = shapely.LineString(
+            [(55 * np.cos(a), 55 * np.sin(a)) for a in (7 * np.pi / 8, 9 * np.pi / 8)]
+        )
+        to_side = shapely.distance(shapely.points(env.bin_centers), side)
+        assert border_score(env, 0.2 + 15 * np.exp(-0.5 * (to_side / 5) ** 2)) > 0.85
+
+    def test_declared_walls_on_the_outline_replace_its_pieces(self):
+        """Walls can be declared by hand: two halves of a circular arena, each
+        an ordinary wall, instead of one ring."""
+        from neurospatial.arena import OpenArena
+        from neurospatial.encoding._physical_border import border_geometry
+
+        circle = shapely.Point(0, 0).buffer(50, quad_segs=32)
+        ring = shapely.LineString(circle.exterior.coords)
+        vertices = shapely.get_coordinates(ring)  # 128 vertices, closed
+        halves = {
+            "north": shapely.LineString(vertices[:65]),
+            "south": shapely.LineString(vertices[64:]),
+        }
+        env = Environment.from_polygon(
+            circle, bin_size=2.5, units="cm", arena=OpenArena(circle, walls=halves)
+        )
+        geometry = border_geometry(env, "physical")
+        np.testing.assert_allclose(geometry.wall_lengths, [ring.length / 2] * 2)
+        assert not geometry.closed.any()
 
     def test_pixel_staircase_of_a_circle_is_one_analysis_wall(self):
         from neurospatial.encoding._physical_border import border_geometry

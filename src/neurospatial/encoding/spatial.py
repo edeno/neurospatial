@@ -763,6 +763,32 @@ def _glm_summary_columns(
     return data
 
 
+def _border_baseline(
+    result: SpatialRateResult | SpatialRatesResult, boundary_source: BoundarySource
+) -> dict[str, float]:
+    """How much wall the occupancy observes, and the untuned border score.
+
+    Both depend on the environment and the occupancy support only, so they
+    are the same for every unit of a summary table.
+    """
+    from neurospatial.encoding._provenance import occupancy_support
+    from neurospatial.encoding.border import (
+        observed_wall_fraction,
+        untuned_border_score,
+    )
+
+    support = np.asarray(occupancy_support(result), dtype=bool)
+    observed = np.where(support, 1.0, np.nan)
+    return {
+        "border_observed_wall_fraction": observed_wall_fraction(
+            result.env, observed, boundary_source=boundary_source
+        ),
+        "border_score_untuned": untuned_border_score(
+            result.env, support=support, boundary_source=boundary_source
+        ),
+    }
+
+
 def _spatial_summary_frame(
     result: SpatialRateResult | SpatialRatesResult,
     *,
@@ -781,6 +807,11 @@ def _spatial_summary_frame(
     peaks = np.atleast_2d(result.peak_location())
     scores, unavailable, inapplicable = _screen_scores(
         result, boundary_source=boundary_source
+    )
+    border_attrs = (
+        {}
+        if "border_score" in unavailable
+        else _border_baseline(result, boundary_source)
     )
     columns: dict[str, Any] = {
         "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
@@ -808,6 +839,7 @@ def _spatial_summary_frame(
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["border_boundary_source"] = boundary_source
     df.attrs["border_field_minimum"] = _border_field_minimum(result.env)
+    df.attrs.update(border_attrs)
     if unavailable:
         df.attrs["unavailable_metrics"] = unavailable
     df.attrs["units"] = {
@@ -1019,11 +1051,16 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Notes
         -----
         The ``passes_*`` columns and ``cell_type`` are a fixed-threshold
-        screen with known false positives; see
-        :meth:`SpatialRatesResult.label_cell_types`. For a verdict, call
+        screen with known false positives; see :meth:`SpatialRatesResult.label_cell_types` for the cutoffs, their
+        provenance and measured false-positive rates. The cutoffs are in
+        ``df.attrs["classification_thresholds"]``. For a verdict, call
         :func:`spatial_cell_type_significance` with the raw arrays.
         Physical units are in ``df.attrs["units"]``; the estimator is in
         ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
+        The border score's baseline is ``df.attrs["border_score_untuned"]``,
+        the score of a map that fires everywhere the animal was (0.5 in a
+        convex arena), and ``df.attrs["border_observed_wall_fraction"]`` is the
+        fraction of the walls' length that was observed.
 
         Examples
         --------
@@ -2573,7 +2610,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             so it is a screen, not a verdict; use
             :func:`spatial_cell_type_significance` for a verdict.
         min_border_score : float or None, default=None
-            Inclusive border-score cutoff; None is 0.5.
+            Inclusive border-score cutoff; None is 0.5. A uniform map scores
+            about 0.5 in a convex arena but differently on other shapes (see
+            ``untuned_border_score``).
         grid_scores : ndarray of shape (n_neurons,), optional
             Precomputed grid scores, one per neuron, used instead of
             recomputing :meth:`grid_scores`.
@@ -2853,13 +2892,16 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         Notes
         -----
         The ``passes_*`` columns and ``cell_type`` are a fixed-threshold
-        screen with known false positives; see :meth:`label_cell_types` for
-        the cutoffs, their provenance and measured false-positive rates. The
-        cutoffs are in ``df.attrs["classification_thresholds"]``. For a
-        verdict, call :func:`spatial_cell_type_significance` with the raw
-        arrays.
+        screen with known false positives; see :meth:`label_cell_types` for the cutoffs, their
+        provenance and measured false-positive rates. The cutoffs are in
+        ``df.attrs["classification_thresholds"]``. For a verdict, call
+        :func:`spatial_cell_type_significance` with the raw arrays.
         Physical units are in ``df.attrs["units"]``; the estimator is in
         ``df.attrs["method"]`` and its bandwidth in ``df.attrs["bandwidth"]``.
+        The border score's baseline is ``df.attrs["border_score_untuned"]``,
+        the score of a map that fires everywhere the animal was (0.5 in a
+        convex arena), and ``df.attrs["border_observed_wall_fraction"]`` is the
+        fraction of the walls' length that was observed.
 
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the

@@ -104,10 +104,13 @@ def test_result_layout_and_table(significance_recording):
         table["cell_type"], result.label_cell_types(alpha=0.1)
     )
     assert result[1].keys() == set(STATISTICS)
-    assert (
-        result[1]["border_score"].p_value
-        == result.sel(unit_id="b")["border_score"].p_value
-    )
+    # The path never reaches a wall, so the border p-value is NaN; position
+    # and label selection must still agree on every statistic.
+    for name in STATISTICS:
+        np.testing.assert_equal(
+            result[1][name].p_value, result.sel(unit_id="b")[name].p_value
+        )
+    assert np.isfinite(result[1]["spatial_information"].p_value)
     summary = result.summary()
     labels = result.label_cell_types()
     assert summary["n_units"] == 3 and summary["n_shuffles"] == 20
