@@ -96,6 +96,7 @@ def plot_peri_event_response(
 
     Examples
     --------
+    >>> import numpy as np
     >>> from neurospatial.events import (
     ...     peri_event_histogram,
     ...     plot_peri_event_response,

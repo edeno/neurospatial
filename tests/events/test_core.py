@@ -9,7 +9,6 @@ from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
     _validate_events_dataframe,
-    _validate_spatial_columns,
     plot_peri_event_histogram,
 )
 
@@ -25,18 +24,6 @@ def valid_events_df():
         {
             "timestamp": [1.0, 2.0, 3.0, 4.0, 5.0],
             "label": ["a", "b", "a", "b", "a"],
-        }
-    )
-
-
-@pytest.fixture
-def valid_spatial_events_df():
-    """Valid events DataFrame with spatial columns."""
-    return pd.DataFrame(
-        {
-            "timestamp": [1.0, 2.0, 3.0],
-            "x": [10.0, 20.0, 30.0],
-            "y": [15.0, 25.0, 35.0],
         }
     )
 
@@ -248,47 +235,6 @@ class TestValidateEventsDataframe:
             _validate_events_dataframe(df)
 
 
-class TestValidateSpatialColumns:
-    """Tests for _validate_spatial_columns function."""
-
-    def test_returns_true_when_present(self, valid_spatial_events_df):
-        """Should return True when x, y columns present."""
-        assert _validate_spatial_columns(valid_spatial_events_df) is True
-
-    def test_returns_false_when_missing(self, valid_events_df):
-        """Should return False when x, y columns missing."""
-        assert _validate_spatial_columns(valid_events_df) is False
-
-    def test_returns_false_with_only_x(self):
-        """Should return False when only x column present."""
-        df = pd.DataFrame({"timestamp": [1.0], "x": [10.0]})
-        assert _validate_spatial_columns(df) is False
-
-    def test_returns_false_with_only_y(self):
-        """Should return False when only y column present."""
-        df = pd.DataFrame({"timestamp": [1.0], "y": [10.0]})
-        assert _validate_spatial_columns(df) is False
-
-    def test_require_positions_raises_when_missing(self, valid_events_df):
-        """Should raise ValueError when require_positions=True and missing."""
-        with pytest.raises(ValueError, match="missing spatial columns"):
-            _validate_spatial_columns(valid_events_df, require_positions=True)
-
-    def test_context_in_error_message(self, valid_events_df):
-        """Context should appear in error message."""
-        with pytest.raises(ValueError, match="spatial_event_rate"):
-            _validate_spatial_columns(
-                valid_events_df,
-                require_positions=True,
-                context="spatial_event_rate",
-            )
-
-    def test_error_message_suggests_add_positions(self, valid_events_df):
-        """Error message should suggest using add_positions."""
-        with pytest.raises(ValueError, match="add_positions"):
-            _validate_spatial_columns(valid_events_df, require_positions=True)
-
-
 # =============================================================================
 # Test plot_peri_event_histogram
 # =============================================================================
@@ -344,7 +290,6 @@ class TestEdgeCases:
             }
         )
         _validate_events_dataframe(df)
-        assert _validate_spatial_columns(df) is True
 
     def test_peri_event_result_with_single_bin(self):
         """PeriEventResult with single bin should work."""
