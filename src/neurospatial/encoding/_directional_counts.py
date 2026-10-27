@@ -33,6 +33,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
@@ -86,7 +87,7 @@ def compute_directional_occupancy(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -109,11 +110,13 @@ def compute_directional_occupancy(
         - 'rad': headings in radians, bin_size in radians
         - 'deg': headings in degrees, bin_size in degrees
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -254,7 +257,7 @@ def bin_directional_spike_train(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
@@ -277,11 +280,13 @@ def bin_directional_spike_train(
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings`` and ``bin_size``.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -361,7 +366,7 @@ def prepare_directional_binning(
     bin_size: float | None,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     break_before: NDArray[np.bool_] | None = None,
@@ -399,7 +404,7 @@ def bin_directional_spike_trains(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
@@ -425,11 +430,13 @@ def bin_directional_spike_trains(
         Width of angular bins. Units match ``angle_unit``.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings`` and ``bin_size``.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

@@ -81,7 +81,7 @@ from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import observed_runs
+from neurospatial._intervals import DEFAULT_MAX_GAP, observed_runs
 from neurospatial._observation import validate_break_before
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
@@ -347,7 +347,7 @@ def detect_region_crossings(
     *,
     region_name: str,
     direction: Literal["both", "entry", "exit"] = "both",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Crossing]:
@@ -376,10 +376,13 @@ def detect_region_crossings(
         - 'both': detect entries and exits (default)
         - 'entry': only detect entries
         - 'exit': only detect exits
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -546,7 +549,7 @@ def detect_runs_between_regions(
     min_duration: float = 0.5,
     max_duration: float = 10.0,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Run]:
@@ -584,10 +587,13 @@ def detect_runs_between_regions(
         positions, so the value is bin-quantized; pre-filter on
         continuous positions if you need true sub-bin precision.
         If None, no velocity filtering is applied. Default: None.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -862,7 +868,7 @@ def segment_by_velocity(
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
     smooth_window: float = DEFAULT_SPEED_SMOOTHING,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Run]:
@@ -896,10 +902,13 @@ def segment_by_velocity(
         velocity vector before its magnitude is thresholded, as in
         :func:`compute_speed`, so tracking jitter at rest is not movement.
         0 thresholds the unsmoothed central-difference speed.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1180,7 +1189,7 @@ def detect_laps(
     direction: Literal["both", "clockwise", "counter-clockwise"] = "both",
     reference_lap: NDArray[np.int64] | None = None,
     start_region: str | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Lap]:
@@ -1217,10 +1226,13 @@ def detect_laps(
     start_region : str | None, optional
         Name of start region for 'region' method.
         Required when method='region'.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1755,7 +1767,7 @@ def running_direction_labels(
     max_duration: float = 10.0,
     min_speed: float | None = None,
     successful_only: bool = True,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.object_]:
@@ -1804,10 +1816,13 @@ def running_direction_labels(
         If True (default), only runs that reached their target contribute
         labels; timed-out runs stay ``None``. If False, timed-out runs are
         labeled by their attempted direction.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -1958,7 +1973,7 @@ def segment_trials(
     end_regions: list[str],
     min_duration: float = 1.0,
     max_duration: float = 15.0,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Trial]:
@@ -2003,10 +2018,13 @@ def segment_trials(
     max_duration : float, optional
         Maximum trial duration in seconds. Default: 15.0.
         Trials exceeding this are marked as failed (timeout).
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2647,7 +2665,7 @@ def detect_goal_directed_runs(
     goal_region: str,
     directedness_threshold: float = 0.7,
     min_progress: float = 20.0,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[Run]:
@@ -2674,10 +2692,13 @@ def detect_goal_directed_runs(
     min_progress : float, optional
         Minimum distance progress toward goal (physical units). Filters out
         short runs with minimal displacement. Default is 20.0.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

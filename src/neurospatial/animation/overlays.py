@@ -51,6 +51,7 @@ from matplotlib.colors import to_hex
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._units import same_coordinate_declaration
 from neurospatial._validation import validate_finite
 from neurospatial.animation._resources import _OwnedReaders
@@ -247,10 +248,15 @@ class PositionOverlay(_Overlay):
         "linear" (default) for smooth trajectories.
         "nearest" for discrete/categorical data or to preserve exact samples.
 
-    max_gap : float or None, default=0.5
-        Largest observed interval in seconds for interpolation. None disables
-        duration gating. NaN samples and declared recording breaks remain gaps.
-        Both interpolation methods preserve exact finite samples beside gaps.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, that the overlay
+        bridges, as the trajectory analyses do: a missing row inside a shorter
+        gap is drawn interpolated between the rows around it, and nothing is
+        drawn across a longer gap. ``None`` bridges every gap; declared
+        recording breaks are never bridged.
+        The default is calibrated for typical video and DeepLabCut tracking;
+        choose a value longer than routine dropped or low-confidence frames and
+        shorter than real tracking losses or pickups.
     break_before : ndarray of bool, shape (n_samples,), optional
         True at sample k forbids interpolation between samples k-1 and k.
         Entry zero is ignored. NaN denotes missing tracking; Inf is rejected.
@@ -327,7 +333,7 @@ class PositionOverlay(_Overlay):
     trail_length: int | None = None
     interp: Literal["linear", "nearest"] = "linear"
     _: KW_ONLY
-    max_gap: float | None = 0.5
+    max_gap: float | None = DEFAULT_MAX_GAP
     break_before: NDArray[np.bool_] | None = None
     units: str | None = None
     frame: str | None = None
@@ -430,10 +436,15 @@ class BodypartOverlay(_Overlay):
         "linear" (default) for smooth trajectories.
         "nearest" for discrete/categorical data or to preserve exact samples.
 
-    max_gap : float or None, default=0.5
-        Largest observed interval in seconds for interpolation. None disables
-        duration gating. NaN samples and declared recording breaks remain gaps.
-        Both interpolation methods preserve exact finite samples beside gaps.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, that the overlay
+        bridges, as the trajectory analyses do: a missing row inside a shorter
+        gap is drawn interpolated between the rows around it, and nothing is
+        drawn across a longer gap. ``None`` bridges every gap; declared
+        recording breaks are never bridged.
+        The default is calibrated for typical video and DeepLabCut tracking;
+        choose a value longer than routine dropped or low-confidence frames and
+        shorter than real tracking losses or pickups.
     break_before : ndarray of bool, shape (n_samples,), optional
         True at sample k forbids interpolation between samples k-1 and k.
         Entry zero is ignored. NaN denotes missing tracking; Inf is rejected.
@@ -527,7 +538,7 @@ class BodypartOverlay(_Overlay):
     colors: dict[str, str] | None = None
     interp: Literal["linear", "nearest"] = "linear"
     _: KW_ONLY
-    max_gap: float | None = 0.5
+    max_gap: float | None = DEFAULT_MAX_GAP
     break_before: NDArray[np.bool_] | None = None
     units: str | None = None
     frame: str | None = None
@@ -668,10 +679,15 @@ class HeadDirectionOverlay(_Overlay):
         "linear" (default) for smooth trajectories.
         "nearest" for discrete/categorical data or to preserve exact samples.
 
-    max_gap : float or None, default=0.5
-        Largest observed interval in seconds for interpolation. None disables
-        duration gating. NaN samples and declared recording breaks remain gaps.
-        Both interpolation methods preserve exact finite samples beside gaps.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, that the overlay
+        bridges, as the trajectory analyses do: a missing row inside a shorter
+        gap is drawn interpolated between the rows around it, and nothing is
+        drawn across a longer gap. ``None`` bridges every gap; declared
+        recording breaks are never bridged.
+        The default is calibrated for typical video and DeepLabCut tracking;
+        choose a value longer than routine dropped or low-confidence frames and
+        shorter than real tracking losses or pickups.
     break_before : ndarray of bool, shape (n_samples,), optional
         True at sample k forbids interpolation between samples k-1 and k.
         Entry zero is ignored. NaN denotes missing tracking; Inf is rejected.
@@ -751,7 +767,7 @@ class HeadDirectionOverlay(_Overlay):
     width: float = 3.0
     interp: Literal["linear", "nearest"] = "linear"
     _: KW_ONLY
-    max_gap: float | None = 0.5
+    max_gap: float | None = DEFAULT_MAX_GAP
     break_before: NDArray[np.bool_] | None = None
 
     def convert_to_data(
@@ -861,9 +877,14 @@ class EventOverlay(_Overlay):
         Interpolation for position lookup at event times. "linear" for smooth
         trajectory-based positions, "nearest" to snap to exact samples.
         Only used with ``positions``/``position_times`` mode. Default is "linear".
-    max_gap : float or None, default=0.5
-        Largest trajectory interval in seconds for locating events. None disables
-        duration gating. Missing samples and recording breaks remain gaps.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, across which an
+        event's position is interpolated from the trajectory; an event inside
+        a longer gap has no position. ``None`` bridges every gap; recording
+        breaks are never bridged.
+        The default is calibrated for typical video and DeepLabCut tracking;
+        choose a value longer than routine dropped or low-confidence frames and
+        shorter than real tracking losses or pickups.
     break_before : ndarray of bool, shape (n_samples,), optional
         True at sample k forbids interpolation between samples k-1 and k.
         Exact finite observations remain available beside gaps and breaks.
@@ -1053,7 +1074,7 @@ class EventOverlay(_Overlay):
     border_width: float = 0.05  # Fraction of point size (napari convention)
 
     _: KW_ONLY
-    max_gap: float | None = 0.5
+    max_gap: float | None = DEFAULT_MAX_GAP
     break_before: NDArray[np.bool_] | None = None
 
     _owned_arrays: ClassVar[tuple[str, ...]] = ("position_times", "break_before")
@@ -1271,7 +1292,7 @@ class EventOverlay(_Overlay):
         position_times: NDArray[np.float64],
         *,
         interp: Literal["linear", "nearest"] = "linear",
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         break_before: NDArray[np.bool_] | None = None,
         colors: str | dict[str, str] | None = None,
         size: float = 8.0,
@@ -1305,9 +1326,14 @@ class EventOverlay(_Overlay):
             Interpolation for position lookup at event times. "linear" for smooth
             trajectory-based positions, "nearest" to snap to exact samples.
             Default is "linear".
-        max_gap : float or None, default=0.5
-            Largest trajectory interval in seconds for locating events. None
-            disables duration gating; NaNs and recording breaks remain gaps.
+        max_gap : float or None, default=1.0
+            Longest stretch of missing tracking, in seconds, across which an
+            event's position is interpolated from the trajectory; an event inside
+            a longer gap has no position. ``None`` bridges every gap; recording
+            breaks are never bridged.
+            The default is calibrated for typical video and DeepLabCut tracking;
+            choose a value longer than routine dropped or low-confidence frames and
+            shorter than real tracking losses or pickups.
         break_before : ndarray of bool, shape (n_samples,), optional
             True at sample k forbids interpolation from sample k-1 to k.
             Exact finite samples survive; unsupported event positions are NaN.
@@ -2274,10 +2300,15 @@ class ObjectVectorOverlay(_Overlay):
         "linear" (default) for smooth trajectories.
         "nearest" for discrete/categorical data or to preserve exact samples.
 
-    max_gap : float or None, default=0.5
-        Largest observed interval in seconds for interpolation. None disables
-        duration gating. NaN samples and declared recording breaks remain gaps.
-        Both interpolation methods preserve exact finite samples beside gaps.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, that the overlay
+        bridges, as the trajectory analyses do: a missing row inside a shorter
+        gap is drawn interpolated between the rows around it, and nothing is
+        drawn across a longer gap. ``None`` bridges every gap; declared
+        recording breaks are never bridged.
+        The default is calibrated for typical video and DeepLabCut tracking;
+        choose a value longer than routine dropped or low-confidence frames and
+        shorter than real tracking losses or pickups.
     break_before : ndarray of bool, shape (n_samples,), optional
         True at sample k forbids interpolation between samples k-1 and k.
         Entry zero is ignored. NaN denotes missing tracking; Inf is rejected.
@@ -2366,7 +2397,7 @@ class ObjectVectorOverlay(_Overlay):
     object_size: float = 15.0
     interp: Literal["linear", "nearest"] = "linear"
     _: KW_ONLY
-    max_gap: float | None = 0.5
+    max_gap: float | None = DEFAULT_MAX_GAP
     break_before: NDArray[np.bool_] | None = None
 
     def convert_to_data(

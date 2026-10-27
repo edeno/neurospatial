@@ -425,9 +425,9 @@ class TestHeadingFromBodyOrientation:
     def test_long_gap_is_nan(self):
         from neurospatial.behavior import heading_from_body_orientation
 
-        times = np.arange(10) * 0.1
+        times = np.arange(10) * 0.2
         nose, tail = _facing(np.zeros(10))
-        nose[2:8] = np.nan  # anchors 1 and 8 are 0.7 s apart
+        nose[2:8] = np.nan  # anchors 1 and 8 are 1.4 s apart
         headings = heading_from_body_orientation(times, nose, tail)
         assert np.isnan(headings[2:8]).all()
         assert np.isfinite(headings[[0, 1, 8, 9]]).all()
@@ -517,12 +517,12 @@ class TestHeadingFromBodyOrientation:
         assert np.isnan(headings).all()
 
     def test_all_intervals_excluded_keeps_observed_headings(self):
-        """At 1 Hz every interval exceeds max_gap: no fill, observed frames kept."""
+        """At 0.5 Hz every interval exceeds max_gap: no fill, observed frames kept."""
         from neurospatial.behavior import heading_from_body_orientation
 
         nose, tail = _facing(np.linspace(-1.0, 1.0, 10))
         with pytest.warns(UserWarning) as record:
-            headings = heading_from_body_orientation(np.arange(10.0), nose, tail)
+            headings = heading_from_body_orientation(2 * np.arange(10.0), nose, tail)
         message = str(record[0].message)
         assert "so no missing frame is filled" in message
         assert "heading is NaN" not in message
@@ -530,7 +530,7 @@ class TestHeadingFromBodyOrientation:
 
         nose[4] = np.nan
         with pytest.warns(UserWarning, match="no missing frame is filled"):
-            headings = heading_from_body_orientation(np.arange(10.0), nose, tail)
+            headings = heading_from_body_orientation(2 * np.arange(10.0), nose, tail)
         assert np.isnan(headings[4])
         assert np.isfinite(np.delete(headings, 4)).all()
 

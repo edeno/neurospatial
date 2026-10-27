@@ -20,7 +20,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals
+from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_signals
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, as_label_array
 from neurospatial.events._continuous import (
@@ -650,7 +650,7 @@ def align_continuous_to_events(
     category_labels: Mapping[Any, Mapping[int, str]] | None = None,
     interpolation: Mapping[Any, str] | None = None,
     resultant_threshold: float = 1e-12,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     valid: ArrayLike | None = None,
     break_before: ArrayLike | None = None,
@@ -720,9 +720,13 @@ def align_continuous_to_events(
     resultant_threshold : float, default=1e-12
         Circular means are undefined (NaN, ``"undefined_direction"``) where
         the mean resultant length is at or below this value, in ``[0, 1]``.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        ``None`` keeps every interval.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window to be used.

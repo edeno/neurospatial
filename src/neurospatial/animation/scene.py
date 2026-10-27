@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     as_intervals,
     intersect_intervals,
     times_in_intervals,
@@ -61,8 +62,11 @@ class AnimationField:
         Matplotlib colormap.
     vmin, vmax : float or None
         Fixed display limits; omitted limits use a bounded sample of rows.
-    max_gap : float or None, default=0.5
-        Largest supported interval in seconds; None disables this gate.
+    max_gap : float or None, default=1.0
+        Longest interval, in seconds, over which a field row is held until
+        the next one; across longer gaps the field shows as missing. ``None``
+        holds every row until the next. The default is shared with the
+        trajectory analyses.
     break_before : array-like of bool or None
         True at a sample starts a new recording segment.
     epochs : interval-like or None
@@ -98,7 +102,7 @@ class AnimationField:
         cmap: str = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         break_before: Any = None,
         epochs: Any = None,
         label: str | None = None,

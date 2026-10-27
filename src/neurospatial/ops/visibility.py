@@ -75,6 +75,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
     CallIndexes,
@@ -1413,7 +1414,7 @@ def visibility_occupancy(
     *,
     fov: FieldOfView | float | None = None,
     boundary_source: BoundarySource = "physical",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -1446,13 +1447,13 @@ def visibility_occupancy(
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
         bins do not occlude a physical ray.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) add no
-        viewing time. ``None`` disables the gap check.
-        A ``UserWarning`` names the cause when every interval is excluded,
-        or when the median sampling interval exceeds ``max_gap`` (usually
-        ``times`` that are not in seconds).
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

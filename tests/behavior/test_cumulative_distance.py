@@ -7,6 +7,7 @@ import warnings
 import numpy as np
 import pytest
 
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.behavior import compute_cumulative_distance, compute_step_lengths
 
 T4 = np.array([0.0, 0.1, 0.2, 0.3])
@@ -138,7 +139,7 @@ def test_epochs_gate_and_normalized_storage():
     result = compute_cumulative_distance(times, positions, epochs=[(0.0, 0.25)])
     np.testing.assert_allclose(result.epochs, [[0.0, 0.25]])
     assert result.total_distance == 2.0
-    assert result.max_gap == 0.5
+    assert result.max_gap == DEFAULT_MAX_GAP
 
 
 def test_arrays_read_only_and_summary_scalars():

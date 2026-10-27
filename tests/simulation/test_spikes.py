@@ -501,7 +501,7 @@ class TestGeneratePopulationSpikes:
     def test_head_direction_model_coarse_sampling_needs_headings(self):
         """A moving path sampled coarser than max_gap has no usable interval."""
         model = HeadDirectionCellModel(preferred_direction=0.0)
-        times = np.arange(20, dtype=float)  # 1 Hz
+        times = 2 * np.arange(20, dtype=float)  # 0.5 Hz
         positions = np.column_stack([times * 10.0, np.zeros(20)])
 
         with pytest.raises(ValueError, match="max_gap") as caught:

@@ -159,8 +159,10 @@ center_bin = env.bin_at([[50.0, 50.0]])[0]
 print("Neighbors of the center bin:", env.neighbors(bins=center_bin))
 ```
 
-**Recording gaps and time windows.** Gaps longer than `max_gap=0.5` seconds
-are detected from `times` and excluded automatically. Use `epochs=` to select
+**Recording gaps and time windows.** A missing sample, whether a dropped
+frame or a NaN row, is skipped. A gap between tracked samples longer than
+`max_gap` (1.0 s by default, calibrated for typical video and DeepLabCut
+tracking) is excluded as a tracking loss; shorter gaps are bridged. Use `epochs=` to select
 analysis windows and `spike_window=` when ephys started late or stopped early.
 Without it, spikes are assumed recorded whenever position was;
 `result.spike_window_assumed` makes that assumption visible.

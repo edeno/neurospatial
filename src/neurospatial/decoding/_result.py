@@ -16,6 +16,7 @@ import pandas as pd
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -475,7 +476,7 @@ class DecodingResult(ResultMixin):
         *,
         true_times: NDArray[np.float64] | None = None,
         true_positions: NDArray[np.float64] | None = None,
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         break_before: ArrayLike | None = None,
         colorbar: bool = False,
         show_map: bool = False,
@@ -498,10 +499,14 @@ class DecodingResult(ResultMixin):
             Sample-aligned actual positions in the environment's coordinates
             and units. Converted to spatial-bin coordinates internally after
             alignment to this result's times. NaN marks missing tracking.
-        max_gap : float or None, default=0.5
-            Maximum ground-truth sampling interval, in seconds, over which to
-            interpolate. Missing tracking, longer gaps and times outside the
-            tracked span remain missing. ``None`` disables only the gap limit.
+        max_gap : float or None, default=1.0
+            Longest stretch of missing ground-truth tracking, in seconds, across
+            which the true position is interpolated; missing samples inside a
+            shorter gap are skipped as if deleted. Longer gaps and times outside
+            the tracked span stay missing. ``None`` bridges every gap.
+            The default is calibrated for typical video and DeepLabCut tracking;
+            choose a value longer than routine dropped or low-confidence frames and
+            shorter than real tracking losses or pickups.
         break_before : ArrayLike of bool, shape (n_samples,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -990,7 +995,7 @@ class DecodingResult(ResultMixin):
         true_positions: NDArray[np.float64],
         *,
         metric: DistanceMetric = "geodesic",
-        max_gap: float | None = 0.5,
+        max_gap: float | None = DEFAULT_MAX_GAP,
         break_before: ArrayLike | None = None,
     ) -> NDArray[np.float64]:
         """Per-time-bin decode error against externally sampled ground truth.
@@ -1014,10 +1019,14 @@ class DecodingResult(ResultMixin):
             measures along this result's :attr:`env` connectivity graph, so a
             decode in the wrong arm of a maze counts the path between the
             arms; ``"euclidean"`` gives the straight-line distance.
-        max_gap : float or None, default=0.5
-            Largest ground-truth sampling interval (seconds) over which to
-            interpolate. Longer gaps, NaN tracking and times outside the tracked
-            span produce NaN errors. ``None`` disables only the gap limit.
+        max_gap : float or None, default=1.0
+            Longest stretch of missing ground-truth tracking, in seconds, across
+            which the true position is interpolated; missing samples inside a
+            shorter gap are skipped as if deleted. Longer gaps, and times outside
+            the tracked span, give NaN errors. ``None`` bridges every gap.
+            The default is calibrated for typical video and DeepLabCut tracking;
+            choose a value longer than routine dropped or low-confidence frames and
+            shorter than real tracking losses or pickups.
         break_before : ArrayLike of bool, shape (n_true,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed

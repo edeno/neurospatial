@@ -53,6 +53,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
 from neurospatial.encoding._base import (
@@ -677,7 +678,7 @@ def compute_boundary_vector_rates(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     boundary_source: BoundarySource = "physical",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -735,8 +736,13 @@ def compute_boundary_vector_rates(
     boundary_source : {"physical", "analysis"}, default="physical"
         ``"physical"`` stops rays at the arena's declared outline and walls;
         ``"analysis"`` at the edge of the environment's bins.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open windows (seconds).
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -868,7 +874,7 @@ def compute_boundary_vector_rate(
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     boundary_source: BoundarySource = "physical",
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,

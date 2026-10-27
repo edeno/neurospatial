@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import DEFAULT_MAX_GAP
+
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
 
@@ -151,13 +153,13 @@ class BayesianDecoder:
     rank : int or None, default=None
         ``method="glm"`` requested basis rank cap; ``None`` uses the encoder
         default.
-    max_gap : float or None, default=0.5
-        Maximum trajectory time gap (seconds) forwarded to fitting and prediction.
-        Intervals longer than ``max_gap`` are dropped from both the spike
-        numerator and the occupancy denominator. Matches
-        :func:`~neurospatial.decoding.decode_session`'s default. Pass ``None`` to
-        count all intervals regardless of gap.
-        Replacing this on a fitted decoder changes prediction support only.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     dtype : {np.float32, np.float64}, default=np.float64
         Working dtype for the encoding models and the posterior. ``np.float32``
         halves the working set; ``np.float64`` (default) is byte-for-byte the
@@ -251,7 +253,7 @@ warn_on_drop
     min_occupancy: float | None = None
     penalty: float | None = None
     rank: int | None = None
-    max_gap: float | None = 0.5
+    max_gap: float | None = DEFAULT_MAX_GAP
     dtype: type[np.float32] | type[np.float64] = np.float64
     warn_on_drop: bool = True
     # Fitted state; ``None`` marks an unfitted decoder. Built by fit,

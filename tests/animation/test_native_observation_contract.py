@@ -46,7 +46,7 @@ def native(layer, scene, item):
 def test_inherited_native_clock_honors_interpolation_and_recording_gap(
     env, interp, expected
 ):
-    times = np.array([0.0, 0.1, 1.0, 1.1])
+    times = np.array([0.0, 0.1, 2.0, 2.1])
     positions = np.array([[0, 0], [1, 1], [0, 1], [1, 0]], dtype=float)
     with Animation(
         env,

@@ -27,6 +27,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     as_intervals,
     gap_endpoints,
     observed_interval_mask,
@@ -162,7 +163,7 @@ def compute_speed(
     positions: ArrayLike,
     *,
     smooth_window: float = DEFAULT_SPEED_SMOOTHING,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -194,9 +195,13 @@ def compute_speed(
         Standard deviation, in seconds, of the Gaussian smoothing applied to
         each velocity component (the default of spyglass's position
         pipeline). 0 gives the unsmoothed centered-difference speed.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Each run is smoothed separately. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows
         (seconds, same clock as ``times``). ``None`` (default) means
@@ -269,7 +274,7 @@ def heading_from_velocity(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     min_speed: float = 0.0,
@@ -286,10 +291,13 @@ def heading_from_velocity(
         Animal positions over time, in environment units (e.g. cm). A row with
         a non-finite coordinate (NaN, for a lost frame) is a missing sample:
         it has no heading, and no velocity is computed across it.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -517,7 +525,7 @@ def heading_from_body_orientation(
     nose: ArrayLike,
     tail: ArrayLike,
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -538,11 +546,13 @@ def heading_from_body_orientation(
         a lost or low-likelihood keypoint) is missing.
     tail : array-like, shape (n_time, n_dims)
         Tail-base keypoint positions, in the same units and shape as ``nose``.
-    max_gap : float or None, default=0.5
-        Longest gap, in seconds, that is filled: the time between the observed
-        frames on either side of the missing frames. It is also the longest
-        sampling interval treated as continuous recording. ``None`` fills gaps
-        of any length inside one recording and epoch.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing frames, in seconds, to fill: the time
+        between the observed frames on either side. Longer gaps stay NaN;
+        ``None`` fills gaps of any length inside one recording and epoch.
+        The default is calibrated for typical video and DeepLabCut tracking;
+        choose a value longer than routine dropped or low-confidence frames and
+        shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). Frames outside every window are NaN, and no
@@ -969,7 +979,7 @@ def compute_planar_turn_angles(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -990,9 +1000,13 @@ def compute_planar_turn_angles(
     positions : ArrayLike, shape (n_samples, 2)
         x, y positions in physical units. Rows with a non-finite coordinate are
         missing. Exactly two columns are required.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        ``None`` keeps every interval.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
@@ -1079,7 +1093,7 @@ def compute_planar_curvature(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -1101,9 +1115,13 @@ def compute_planar_curvature(
     positions : ArrayLike, shape (n_samples, 2)
         x, y positions in physical units. Rows with a non-finite coordinate are
         missing. Exactly two columns are required.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        ``None`` keeps every interval.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
@@ -1208,7 +1226,7 @@ def compute_movement_angular_velocity(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -1233,9 +1251,13 @@ def compute_movement_angular_velocity(
     positions : ArrayLike, shape (n_samples, 2)
         x, y positions in physical units. Rows with a non-finite coordinate are
         missing. Exactly two columns are required.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        ``None`` keeps every interval.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
@@ -1518,7 +1540,7 @@ def compute_cumulative_distance(
     times: ArrayLike,
     positions: ArrayLike,
     *,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> CumulativeDistanceResult:
@@ -1539,9 +1561,13 @@ def compute_cumulative_distance(
     positions : ArrayLike, shape (n_samples,) or (n_samples, n_dims)
         Positions in physical units. A 1-D array is one coordinate (for example
         a linearized track). Rows with a non-finite coordinate are missing.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        ``None`` keeps every interval.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.
@@ -1658,7 +1684,7 @@ def compute_home_range(
     *,
     times: NDArray[np.float64] | None = None,
     percentile: float = 95.0,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.int_]:
@@ -1688,10 +1714,13 @@ def compute_home_range(
         - 50%: core area (most frequently used)
         - 95%: standard home range
         - 100%: all visited bins
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -2130,7 +2159,7 @@ def compute_trajectory_curvature(
     positions: ArrayLike,
     *,
     smooth_window: float | None = 0.2,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
@@ -2159,10 +2188,13 @@ def compute_trajectory_curvature(
         **Important**: For high-speed tracking (120+ Hz) or fast-moving animals,
         use shorter windows (0.05-0.1s) or disable smoothing (smooth_window=None)
         to preserve rapid turns.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

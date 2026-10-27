@@ -15,6 +15,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     as_intervals,
     drop_missing_samples,
     interval_valid_mask,
@@ -132,7 +133,7 @@ def detect_region_visits(
     env: Environment,
     *,
     region_names: Sequence[str],
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> list[RegionVisit]:
@@ -155,10 +156,13 @@ def detect_region_visits(
         ``regions_to_mask`` with boundaries included. Selected regions may
         not share active bins; ambiguous membership raises rather than using
         the order of names as a priority rule.
-    max_gap : float or None, default=0.5
-        Maximum gap in seconds between consecutive valid samples treated as
-        continuous. Equality passes. None disables the gap threshold, but not
-        epoch breaks or declared breaks.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), or None
         Half-open event windows on the same clock as ``times``. IntervalSet-like
         inputs are also accepted. Only fully contained sampling intervals

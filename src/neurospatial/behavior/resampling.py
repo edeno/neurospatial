@@ -15,7 +15,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals
+from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import validated_observations
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior.trajectory import _observed_cumulative
@@ -241,7 +241,7 @@ def resample_by_distance(
     *,
     spacing: float,
     include_endpoint: bool = False,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> ResampledPathResult:
@@ -275,9 +275,13 @@ def resample_by_distance(
     include_endpoint : bool, default=False
         Also keep the last sample of each run whose length is not a multiple
         of ``spacing``, marked in ``off_grid_endpoint``.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        ``None`` keeps every interval.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
         Half-open ``[start, stop)`` windows in seconds, on the clock of
         ``times``. An interval must lie inside one window.

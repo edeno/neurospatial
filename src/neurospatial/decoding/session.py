@@ -16,7 +16,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import resolve_time_windows
+from neurospatial._intervals import DEFAULT_MAX_GAP, resolve_time_windows
 from neurospatial._observation import validate_break_before
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._time_bins import _count_spikes_in_time_bins
@@ -154,7 +154,7 @@ def decode_session(
     rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -224,10 +224,13 @@ def decode_session(
         set, low-speed periods are excluded from BOTH the spike numerator and
         the occupancy denominator of the encoding model via one shared gate.
         When ``None`` (default) no speed filtering is applied (unchanged).
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals are excluded from encoding and decoding.
-        ``None`` disables the gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -455,7 +458,7 @@ def _prepare_session_decode(
     encoding_models: NDArray[np.float64],
     *,
     dt: float,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     break_before: ArrayLike | None = None,
     spike_window: NDArray[np.float64] | None = None,
@@ -565,7 +568,7 @@ def _fit_encoding_model(
     rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     break_before: ArrayLike | None = None,
     spike_window: NDArray[np.float64] | None = None,
@@ -675,7 +678,7 @@ def _build_encoding_model(
     rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     break_before: ArrayLike | None = None,
     spike_window: NDArray[np.float64] | None = None,
@@ -738,7 +741,7 @@ def _decode_with_models(
     encoding_models: NDArray[np.float64],
     *,
     dt: float = 0.025,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -804,7 +807,7 @@ def decode_session_summary(
     rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
@@ -974,7 +977,7 @@ def _decode_with_models_summary(
     encoding_models: NDArray[np.float64],
     *,
     dt: float = 0.025,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,

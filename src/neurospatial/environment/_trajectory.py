@@ -24,6 +24,7 @@ import scipy.sparse
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     as_intervals,
     drop_missing_samples,
     fill_missing_positions,
@@ -116,7 +117,7 @@ def _occupancy(
     cache: AnalysisCache,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: Any = None,
     bandwidth: float | None = None,
@@ -314,7 +315,7 @@ def _bin_sequence(
     dedup: bool,
     outside_value: int | None,
     gap_splits_runs: bool,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: Any = None,
 ) -> BinSequenceWithRuns:
@@ -438,7 +439,7 @@ def _transitions(
     bandwidth: float | None = None,
     # Common parameters
     normalize: bool = True,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: Any = None,
 ) -> scipy.sparse.csr_matrix:
@@ -527,7 +528,7 @@ def _empirical_transitions(
     lag: int = 1,
     normalize: bool = True,
     allow_teleports: bool = False,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: Any = None,
 ) -> scipy.sparse.csr_matrix:

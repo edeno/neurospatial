@@ -54,6 +54,7 @@ from numpy.typing import NDArray
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     hold_last_valid,
     interval_valid_mask,
     start_allocated_occupancy,
@@ -587,7 +588,7 @@ def compute_egocentric_occupancy(
     n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], PolarEnvironment]:
@@ -621,11 +622,13 @@ def compute_egocentric_occupancy(
         The allocentric environment. Required when metric="geodesic"; when
         given, samples outside its bins add no occupancy.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -764,7 +767,7 @@ def bin_egocentric_spike_train(
     n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], PolarEnvironment]:
@@ -797,11 +800,13 @@ def bin_egocentric_spike_train(
         Required when metric="geodesic"; when given, samples outside its
         bins are dropped.
 
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
@@ -930,7 +935,7 @@ def prepare_egocentric_binning(
     n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     frame_bins: NDArray[np.int64] | None = None,
@@ -1035,7 +1040,7 @@ def bin_egocentric_spike_trains(
     n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
@@ -1074,11 +1079,13 @@ def bin_egocentric_spike_trains(
     env : Environment, optional
         Required when metric="geodesic"; when given, samples outside its
         bins are dropped.
-    max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from occupancy and their spikes are not counted. ``None`` disables the
-        gap check.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : ndarray of shape (n, 2), or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely

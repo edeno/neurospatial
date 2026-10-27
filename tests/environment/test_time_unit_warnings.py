@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.encoding import compute_spatial_rate
 
 _TIMES = np.arange(600) / 30.0
@@ -61,20 +62,23 @@ def test_milliseconds_warn_that_every_interval_was_excluded(env, name):
     assert caught[0].category is UserWarning
     assert caught[0].filename == __file__
     assert "excluded ALL trajectory intervals" in message
-    assert "max_gap=0.5" in message
+    assert f"max_gap={DEFAULT_MAX_GAP}" in message
     assert "33.33 s" in message
     assert "max_gap=None" in message
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))
 def test_a_median_interval_above_max_gap_warns_even_when_some_survive(env, name):
-    # Two of every three intervals are 0.9 s long, one is 0.1 s.
-    times = np.cumsum(np.where(np.arange(600) % 3 == 0, 0.1, 0.9))
+    # Two of every three intervals are 1.9 s long, one is 0.1 s.
+    times = np.cumsum(np.where(np.arange(600) % 3 == 0, 0.1, 1.9))
     caught = _clock_warnings(_run(CALLS[name], env, times))
     assert len(caught) == 1
     message = str(caught[0].message)
     assert caught[0].filename == __file__
-    assert "400 of 599 sampling intervals are longer than max_gap=0.5 s" in message
+    assert (
+        f"400 of 599 sampling intervals are longer than max_gap={DEFAULT_MAX_GAP} s"
+        in message
+    )
     assert "excluded ALL" not in message
 
 
@@ -87,7 +91,7 @@ def test_seconds_or_no_gap_gate_are_silent(env, name, kwargs):
 
 
 def test_the_warning_reads_the_same_for_occupancy_and_rate_maps(env):
-    times = np.cumsum(np.where(np.arange(600) % 3 == 0, 0.1, 0.9))
+    times = np.cumsum(np.where(np.arange(600) % 3 == 0, 0.1, 1.9))
     occupancy = str(_clock_warnings(_run(CALLS["occupancy"], env, times))[0].message)
     rate = str(
         _clock_warnings(_run(CALLS["compute_spatial_rate"], env, times))[0].message

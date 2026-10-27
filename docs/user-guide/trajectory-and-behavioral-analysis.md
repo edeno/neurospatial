@@ -165,7 +165,7 @@ Without `break_before` the totals are 872.1 and 1873.4 cm. The clock runs
 straight from one file into the next, so nothing marks the join, and the
 27.3 cm and 65.1 cm jumps to where the animal was put back are counted as
 running. A break is seen only when you declare it: a time gap longer than
-`max_gap` (0.5 s by default), `break_before`, or `epochs`.
+`max_gap` (1.0 s by default), `break_before`, or `epochs`.
 
 Now resample both sessions every 2 cm and compare them. The spacing sets the
 distance scale of the comparison: choose it larger than your tracking jitter

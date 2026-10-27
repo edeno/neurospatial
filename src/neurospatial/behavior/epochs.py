@@ -48,6 +48,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
     as_intervals,
     hold_last_valid,
     intervals_contain,
@@ -688,7 +689,7 @@ def labels_to_epochs(
     *,
     valid: Any = None,
     break_before: Any = None,
-    max_gap: float | None = 0.5,
+    max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     missing_label: Hashable | None = None,
 ) -> LabelEpochsResult:
@@ -723,10 +724,13 @@ def labels_to_epochs(
     break_before : array-like of bool, shape (n_samples,), optional
         True at sample ``k`` declares a recording break between samples
         ``k - 1`` and ``k``; entry 0 is ignored.
-    max_gap : float or None, default=0.5
-        Longest interval, in seconds, that counts as continuous observation.
-        Use the same value as the analysis you pass the epochs to. None keeps
-        every interval, however long.
+    max_gap : float or None, default=1.0
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Half-open windows in seconds; only intervals entirely inside one
         window are kept.

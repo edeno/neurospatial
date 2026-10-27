@@ -601,12 +601,16 @@ measurement of where the head or eyes point.
 Keep the same analysis epochs and known spike-recording window across related
 maps. Each snippet assumes spikes were recorded throughout the tracked span;
 replace its `spike_window` with the actual electrophysiology recording
-intervals. The default `max_gap=0.5` excludes longer sampling intervals. NaNs
-and gaps remain missing observations, and each domain has its own support.
-If you set `max_gap` yourself, keep it above the sampling interval, for example
-`max_gap=1.5 / sampling_rate`. Timestamps such as `np.arange(n) / 30` carry
-float rounding, so with `max_gap` equal to the sampling interval a quarter to a
-half of the intervals count as gaps; a warning says when this happens.
+intervals. A NaN row is a missing sample, treated exactly like a dropped
+frame, and each domain has its own support. `max_gap` is the longest stretch
+of missing tracking that is bridged; the default, 1.0 s, is calibrated for
+typical video and DeepLabCut tracking, and longer gaps are excluded as
+tracking losses. To choose another value, make it longer than your routine
+dropped or low-confidence frames and shorter than real tracking losses or
+pickups. Keep it above the sampling interval: timestamps such as
+`np.arange(n) / 30` carry float rounding, so with `max_gap` equal to the
+sampling interval a quarter to a half of the intervals count as gaps; a
+warning says when this happens.
 
 ### Spatial maps conditioned on movement direction
 
