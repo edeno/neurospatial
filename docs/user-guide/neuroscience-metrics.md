@@ -283,15 +283,18 @@ Measure the spatial overlap between two fields using the Jaccard index:
 from neurospatial.encoding import field_overlap
 
 # Compare fields from two cells
-overlap = field_overlap(field_bins_cell1, field_bins_cell2)
+overlap = field_overlap(env, field_bins_cell1, field_bins_cell2)
 # Returns: Jaccard coefficient in [0, 1]
 ```
 
 **Formula:**
 
 $$
-J(A, B) = \frac{|A \cap B|}{|A \cup B|}
+J(A, B) = \frac{\text{area}(A \cap B)}{\text{area}(A \cup B)}
 $$
+
+Each bin counts by its size (`env.bin_sizes`), so on a regular grid this is
+the ratio of bin counts.
 
 **Interpretation:**
 - **0**: No overlap (fields completely disjoint)

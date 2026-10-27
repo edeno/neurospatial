@@ -274,7 +274,7 @@ arena, `part.bin_mapping_from(env).pairs` builds it (see
 [Carry values to a subset or a coarser grid](environments.md#bin-mapping)).
 
 `field_overlap` asks the same question with field boundaries instead of rates:
-the Jaccard index of the bins inside a cell's fields in the two conditions
+the Jaccard index of the area inside a cell's fields in the two conditions
 (1 = same bins, 0 = no shared bin). Only bins with occupancy in both
 conditions (`shared`) count, because a bin one condition never visited cannot
 show whether a field is there. A cell with no field bin on shared bins in
@@ -301,7 +301,7 @@ def shared_field_overlap(a, b, shared):
     """
     bins_a = np.intersect1d(field_bins(a), np.flatnonzero(shared))
     bins_b = np.intersect1d(field_bins(b), np.flatnonzero(shared))
-    return field_overlap(bins_a, bins_b)
+    return field_overlap(env, bins_a, bins_b)
 
 
 # Identical fields, but the second condition visited fewer bins: overlap is 1.

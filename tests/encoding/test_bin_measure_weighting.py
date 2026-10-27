@@ -380,3 +380,13 @@ def test_population_coverage_on_equal_bins_counts_bins(grid) -> None:
     covered = result.covered_bins
     assert result.coverage_fraction == covered.size / result.is_observed.sum()
     assert result.mean_redundancy == result.field_count[covered].mean()
+
+
+def test_field_overlap_is_a_ratio_of_areas(square, square_split) -> None:
+    from neurospatial.encoding import field_overlap
+
+    # The fields share the 80 cm^2 strip out of a 90 cm^2 union.
+    overlap = field_overlap(square, np.array([2]), np.array([1, 2]))
+    split = field_overlap(square_split, np.array([2, 3]), np.array([1, 2, 3]))
+    assert overlap == pytest.approx(80.0 / 90.0, abs=1e-12)
+    assert split == pytest.approx(80.0 / 90.0, abs=1e-12)

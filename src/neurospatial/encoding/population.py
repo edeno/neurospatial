@@ -783,16 +783,22 @@ def count_place_cells(
 
 
 def field_overlap(
-    field_bins_i: NDArray[np.int64], field_bins_j: NDArray[np.int64]
+    env: Environment,
+    field_bins_i: NDArray[np.int64],
+    field_bins_j: NDArray[np.int64],
 ) -> float:
     """
     Compute Jaccard similarity between two place fields.
 
-    Measures spatial overlap as the ratio of intersection to union (Jaccard
-    coefficient). Used to quantify remapping and field stability.
+    Measures spatial overlap as the area of the intersection over the area of
+    the union (Jaccard coefficient). Used to quantify remapping and field
+    stability.
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment of the fields. Its bin measures
+        (``env.bin_sizes``) make the overlap a ratio of areas.
     field_bins_i : array
         Bin indices in first field.
     field_bins_j : array
@@ -801,7 +807,8 @@ def field_overlap(
     Returns
     -------
     overlap : float
-        Jaccard coefficient = |intersection| / |union|. Range [0, 1].
+        Jaccard coefficient = area(intersection) / area(union), with lengths
+        on a track and volumes in 3-D. Range [0, 1].
         0.0 if exactly one field is empty: a field in one set and none in the
         other is a real absence of overlap. NaN if both are empty: with no
         field bin in either set there is nothing to compare, which is not the
@@ -810,27 +817,32 @@ def field_overlap(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.encoding.population import field_overlap
+    >>> # A 10 cm track in 1 cm bins
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones(10, dtype=bool), grid_edges=(np.arange(11.0),), units="cm"
+    ... )
     >>> # Identical fields (perfect overlap)
     >>> field1 = np.array([0, 1, 2, 3])
     >>> field2 = np.array([0, 1, 2, 3])
-    >>> overlap = field_overlap(field1, field2)
+    >>> overlap = field_overlap(env, field1, field2)
     >>> print(f"{overlap:.2f}")
     1.00
 
     >>> # Partial overlap
     >>> field1 = np.array([0, 1, 2, 3])
     >>> field2 = np.array([2, 3, 4, 5])
-    >>> overlap = field_overlap(field1, field2)
+    >>> overlap = field_overlap(env, field1, field2)
     >>> # Intersection: {2, 3}, Union: {0,1,2,3,4,5}
     >>> print(f"{overlap:.2f}")  # 2/6 = 0.33
     0.33
 
     >>> # No field in either set: undefined, not zero overlap
     >>> empty = np.array([], dtype=np.int64)
-    >>> field_overlap(field1, empty)
+    >>> field_overlap(env, field1, empty)
     0.0
-    >>> field_overlap(empty, empty)
+    >>> field_overlap(env, empty, empty)
     nan
 
     See Also
@@ -855,6 +867,10 @@ def field_overlap(
     The Jaccard index is preferred over correlation for sparse binary fields
     because it's invariant to the number of non-field bins.
 
+    Each bin counts by its measure (``env.bin_sizes``: area, length or
+    volume), so the overlap does not depend on how finely the fields are
+    binned. On a regular grid it is the ratio of bin counts.
+
     When comparing conditions, restrict both field bin sets to bins observed
     in both conditions first; a bin one condition never visited cannot show
     whether a field is there.
@@ -865,13 +881,13 @@ def field_overlap(
            the environment on the spatial firing of hippocampal complex-spike
            cells. Journal of Neuroscience, 7(7), 1951-1968.
     """
-    set_i = set(field_bins_i.tolist())
-    set_j = set(field_bins_j.tolist())
-    union = set_i | set_j
-    if not union:
+    union = np.union1d(field_bins_i, field_bins_j).astype(np.intp)
+    if union.size == 0:
         # No field bin in either set: nothing to compare.
         return np.nan
-    return len(set_i & set_j) / len(union)
+    intersection = np.intersect1d(field_bins_i, field_bins_j).astype(np.intp)
+    measures = _relative_measures(env.bin_sizes)
+    return float(np.sum(measures[intersection]) / np.sum(measures[union]))
 
 
 def rate_map_correlations(

@@ -623,6 +623,12 @@ class TestCountPlaceCells:
             count_place_cells(np.array([0.8, 1.2]))  # type: ignore[arg-type]
 
 
+# A 20 cm track in 1 cm bins.
+TRACK_20 = Environment.from_grid_mask(
+    np.ones(20, dtype=bool), grid_edges=(np.arange(21.0),), units="cm"
+)
+
+
 class TestFieldOverlap:
     """Test field_overlap function."""
 
@@ -630,21 +636,21 @@ class TestFieldOverlap:
         """Test overlap of identical fields (Jaccard = 1.0)."""
         field1 = np.array([0, 1, 2, 3])
         field2 = np.array([0, 1, 2, 3])
-        overlap = field_overlap(field1, field2)
+        overlap = field_overlap(TRACK_20, field1, field2)
         assert overlap == pytest.approx(1.0)
 
     def test_field_overlap_disjoint(self) -> None:
         """Test overlap of completely disjoint fields (Jaccard = 0.0)."""
         field1 = np.array([0, 1, 2])
         field2 = np.array([10, 11, 12])
-        overlap = field_overlap(field1, field2)
+        overlap = field_overlap(TRACK_20, field1, field2)
         assert overlap == pytest.approx(0.0)
 
     def test_field_overlap_partial(self) -> None:
         """Test partial overlap between fields."""
         field1 = np.array([0, 1, 2, 3])
         field2 = np.array([2, 3, 4, 5])
-        overlap = field_overlap(field1, field2)
+        overlap = field_overlap(TRACK_20, field1, field2)
         # Intersection: {2, 3} = 2 bins
         # Union: {0, 1, 2, 3, 4, 5} = 6 bins
         # Jaccard: 2/6 = 0.333...
@@ -654,7 +660,7 @@ class TestFieldOverlap:
         """Test when one field is subset of another."""
         field1 = np.array([1, 2])
         field2 = np.array([0, 1, 2, 3, 4])
-        overlap = field_overlap(field1, field2)
+        overlap = field_overlap(TRACK_20, field1, field2)
         # Intersection: {1, 2} = 2
         # Union: {0, 1, 2, 3, 4} = 5
         # Jaccard: 2/5 = 0.4
@@ -664,7 +670,7 @@ class TestFieldOverlap:
         """Test overlap when one or both fields are empty."""
         field1 = np.array([0, 1, 2])
         field2 = np.array([], dtype=np.int64)
-        overlap = field_overlap(field1, field2)
+        overlap = field_overlap(TRACK_20, field1, field2)
         # Empty intersection and union = field1
         # By convention, Jaccard = 0 when one set is empty
         assert overlap == pytest.approx(0.0)
@@ -673,7 +679,7 @@ class TestFieldOverlap:
         """No field bins in either set: nothing to compare, so NaN, not 0."""
         field1 = np.array([], dtype=np.int64)
         field2 = np.array([], dtype=np.int64)
-        overlap = field_overlap(field1, field2)
+        overlap = field_overlap(TRACK_20, field1, field2)
         assert np.isnan(overlap)
 
 
