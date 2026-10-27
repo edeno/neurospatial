@@ -2005,6 +2005,28 @@ def _check_object_vector_env(
         )
 
 
+def _require_planar_positions(
+    env: Environment | None, positions: NDArray[np.float64], *, context: str
+) -> None:
+    """Without an environment, require (x, y) positions like the objects.
+
+    With ``env`` the shared trajectory check compares the columns with
+    ``env.n_dims``; without one nothing else does, and a wrong column count
+    would fail later as a NumPy broadcasting error.
+    """
+    if env is not None or (positions.ndim == 2 and positions.shape[1] == 2):
+        return
+    raise ValueError(
+        _format_error(
+            f"{context}: got positions with shape {positions.shape}; object "
+            "positions are 2-D (x, y), so positions needs shape (n_positions, 2).",
+            why="distance and direction to the nearest object are measured in "
+            "the plane of the objects.",
+            fix="pass the animal's (x, y) coordinates, one row per timestamp.",
+        )
+    )
+
+
 def _largest_object_distance(
     env: Environment,
     object_positions: NDArray[np.float64],
@@ -3150,6 +3172,7 @@ def _object_vector_rates(
         context=context,
         n_dims=env.n_dims if env is not None else None,
     )
+    _require_planar_positions(env, positions, context=context)
     # Coordinates, or each named landmark's nearest point at every sample.
     object_positions, object_names = resolve_object_positions(
         object_positions, env=env, positions=positions, metric=metric
@@ -4407,6 +4430,7 @@ def _object_vector_significance(
         context=context,
         n_dims=env.n_dims if env is not None else None,
     )
+    _require_planar_positions(env, positions, context=context)
     validate_spike_trains(trains, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
     _validate_object_vector_metric(env, metric, context=context)

@@ -65,3 +65,32 @@ def test_significance_reports_the_shared_clause(env, trajectory, significance):
             env, [np.array([1.0, 2.0])], times, *args, n_shuffles=2, rng=0
         )
     assert CLAUSE in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "function",
+    [
+        "compute_object_vector_rates",
+        "object_vector_cell_significance",
+    ],
+)
+def test_object_vectors_without_env_need_planar_positions(trajectory, function):
+    import neurospatial.encoding as encoding
+
+    times, positions = trajectory
+    kwargs = {"n_shuffles": 2, "rng": 0} if "significance" in function else {}
+    with pytest.raises(ValueError, match=r"positions with shape \(100, 3\)") as error:
+        getattr(encoding, function)(
+            None,
+            [np.array([1.0, 2.0])],
+            times,
+            positions,
+            np.array([[25.0, 25.0]]),
+            bandwidth=5.0,
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
+            **kwargs,
+        )
+    message = str(error.value)
+    assert "(n_positions, 2)" in message and "Fix:" in message
+    assert "environment's bins" not in message
