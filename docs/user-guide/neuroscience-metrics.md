@@ -279,29 +279,22 @@ $$
 
 ### Count Place-Cell Candidates
 
-Count cells at or above a spatial information threshold (inclusive):
+Count the units that pass the place-cell information screen. The screen
+subtracts the information an untuned cell shows by chance on the same maps
+before it compares with the cutoff, so it needs the rate result, not bare
+information values:
 
 ```python
-from neurospatial.encoding import count_place_cells
+from neurospatial.encoding import compute_spatial_rates, count_place_cells
 
-# Compute spatial information for all cells
-spatial_info = [
-    spatial_information(rate_map1, occupancy),
-    spatial_information(rate_map2, occupancy),
-    spatial_information(rate_map3, occupancy),
-]
-
-# Count candidates at or above the selected information screen
-n_place_cells = count_place_cells(
-    spatial_info,
-    threshold=0.5  # bits/spike
-)
-# Returns: integer count
+rates = compute_spatial_rates(env, all_spike_trains, times, positions)
+n_place_cells = count_place_cells(rates, min_info=0.5)  # bits/spike, inclusive
+# Equivalent: int(rates.classify(min_info=0.5).sum())
 ```
 
 The 0.5 bits/spike cutoff is a screening choice, not a universal significance
-threshold. Information depends on sample size, occupancy, binning and smoothing;
-see [information bias and cell verdicts](#information-bias-and-cell-verdicts).
+threshold; see
+[information bias and cell verdicts](#information-bias-and-cell-verdicts).
 
 ### Rate-map correlations
 
@@ -843,7 +836,7 @@ least as many spikes as independent bins.
 
 Every information screen subtracts this bias before it applies its cutoff:
 `is_place_cell(criterion="spatial_info")`, `classify()`, `label_cell_types()`,
-`summary_table()` labels, `is_object_vector_cell()` and
+`summary_table()` labels, `count_place_cells`, `is_object_vector_cell()` and
 `is_spatial_view_cell()`. `spatial_information()` itself still returns the
 plug-in value. The expansion behind the bias needs at least as many spikes as
 independent bins. A unit with fewer spikes gets a NaN bias and fails the
