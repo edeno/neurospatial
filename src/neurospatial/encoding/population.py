@@ -956,6 +956,12 @@ def rate_map_correlations(
     population_vector_correlation : Correlation across cells at each location
     field_stability : Correlation between one cell's maps in two conditions
     field_overlap : Jaccard-based overlap of place fields
+
+    Notes
+    -----
+    Every bin counts once, the per-pixel convention of rate-map correlations
+    in remapping studies. On environments with unequal bins (clipped grids,
+    meshes) small bins therefore weigh as much as large ones.
     """
     maps = np.atleast_2d(np.asarray(firing_rates, dtype=np.float64))
     if maps.shape[1] == 0:

@@ -331,6 +331,10 @@ def field_stability(
     **Pearson vs Spearman**: Pearson measures linear correlation of firing
     rates. Spearman measures rank correlation and is robust to outliers.
 
+    **Bin weights**: every bin counts once, the per-pixel convention of
+    rate-map correlations. On environments with unequal bins (clipped grids,
+    meshes) small bins therefore weigh as much as large ones.
+
     Examples
     --------
     >>> import numpy as np
@@ -428,6 +432,9 @@ def rate_map_coherence(
     grid, the neighborhood of a grid built with diagonal connectivity (the
     ``Environment.from_samples`` default). Bins with an unsampled (NaN)
     neighbor are left out rather than treating the missing rate as zero.
+    Every bin enters the correlation once, as each pixel does in Muller &
+    Kubie (1989); on environments with unequal bins small bins therefore
+    weigh as much as large ones.
 
     References
     ----------
