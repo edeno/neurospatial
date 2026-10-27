@@ -513,6 +513,7 @@ def rate_map_coherence(
 
 
 def in_out_field_ratio(
+    env: Environment,
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
 ) -> float:
@@ -524,6 +525,9 @@ def in_out_field_ratio(
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment of the rate map. Its bin measures
+        (``env.bin_sizes``) weight each bin by the space it covers.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate map (Hz or spikes/second).
     field_bins : NDArray[np.int64], shape (n_field_bins,)
@@ -537,16 +541,26 @@ def in_out_field_ratio(
         - NaN if out-of-field rate is zero and in-field rate is also zero
         - inf if out-of-field rate is zero but in-field rate is positive
 
+    Raises
+    ------
+    ValueError
+        If ``firing_rate`` does not have one rate per bin of ``env``.
+
     Notes
     -----
     **Formula**:
 
     .. math::
 
-        R = \\frac{\\bar{r}_{\\text{in}}}{\\bar{r}_{\\text{out}}}
+        R = \\frac{\\bar{r}_{\\text{in}}}{\\bar{r}_{\\text{out}}}, \\qquad
+        \\bar{r} = \\frac{\\sum_i r_i \\mu_i}{\\sum_i \\mu_i}
 
     where :math:`\\bar{r}_{\\text{in}}` is the mean firing rate inside the
-    field and :math:`\\bar{r}_{\\text{out}}` is the mean rate outside.
+    field and :math:`\\bar{r}_{\\text{out}}` is the mean rate outside. Each
+    mean is over space: bin :math:`i` is weighted by its measure
+    :math:`\\mu_i` (``env.bin_sizes``: area, length or volume), so it does
+    not depend on how finely a region is binned. On a regular grid every bin
+    has the same measure and the means are plain bin averages.
 
     **Interpretation**:
 
@@ -560,14 +574,17 @@ def in_out_field_ratio(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.encoding._field_metrics import in_out_field_ratio
     >>>
+    >>> # A 100 cm track in 1 cm bins
+    >>> env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=1.0)
     >>> # Strong place field (10x ratio)
-    >>> firing_rate = np.ones(100) * 1.0
+    >>> firing_rate = np.ones(env.n_bins)
     >>> firing_rate[40:50] = 10.0  # Field bins have 10 Hz
     >>> field_bins = np.arange(40, 50)
-    >>> ratio = in_out_field_ratio(firing_rate, field_bins)
-    >>> print(f"Ratio: {ratio:.1f}")  # doctest: +SKIP
+    >>> ratio = in_out_field_ratio(env, firing_rate, field_bins)
+    >>> print(f"Ratio: {ratio:.1f}")
     Ratio: 10.0
 
     See Also
@@ -579,6 +596,15 @@ def in_out_field_ratio(
     .. [1] Jung et al. (1994). Comparison of spatial firing characteristics of
            units in dorsal and ventral hippocampus of the rat. J Neurosci 14(12).
     """
+    firing_rate = np.asarray(firing_rate, dtype=np.float64)
+    if firing_rate.shape != (env.n_bins,):
+        raise ValueError(
+            f"firing_rate has shape {firing_rate.shape}, but env has "
+            f"{env.n_bins} bins.\nWhy: each rate is weighted by its bin's "
+            "measure, so the map must be estimated on env.\nFix: pass the "
+            "environment the rate map was computed on (rates.env)."
+        )
+
     # Validate field_bins
     if len(field_bins) == 0:
         return np.nan
@@ -602,9 +628,11 @@ def in_out_field_ratio(
     if not np.any(in_valid) or not np.any(out_valid):
         return np.nan
 
-    # Compute mean rates
-    in_field_rate = np.mean(firing_rate[in_valid])
-    out_field_rate = np.mean(firing_rate[out_valid])
+    # Mean rates over space: each bin weighs its measure, so a large bin
+    # counts as much as the small bins that would tile it.
+    measures = _relative_measures(env.bin_sizes)
+    in_field_rate = np.average(firing_rate[in_valid], weights=measures[in_valid])
+    out_field_rate = np.average(firing_rate[out_valid], weights=measures[out_valid])
 
     # Handle division by zero
     if out_field_rate == 0:

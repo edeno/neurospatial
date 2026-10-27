@@ -12,6 +12,11 @@ from numpy.testing import assert_allclose
 
 from neurospatial import Environment
 
+# A 100 cm track in 1 cm bins, for metrics that need one bin per rate.
+TRACK_100 = Environment.from_grid_mask(
+    np.ones(100, dtype=bool), grid_edges=(np.arange(101.0),), units="cm"
+)
+
 # =============================================================================
 # Integration Test (tests multiple functions together)
 # =============================================================================
@@ -1228,7 +1233,7 @@ class TestInOutFieldRatio:
 
         from neurospatial.encoding._field_metrics import in_out_field_ratio
 
-        ratio = in_out_field_ratio(firing_rate, field_bins)
+        ratio = in_out_field_ratio(TRACK_100, firing_rate, field_bins)
 
         # Should be ~10.0
         assert_allclose(ratio, 10.0, rtol=0.1)
@@ -1240,7 +1245,7 @@ class TestInOutFieldRatio:
 
         from neurospatial.encoding._field_metrics import in_out_field_ratio
 
-        ratio = in_out_field_ratio(firing_rate, field_bins)
+        ratio = in_out_field_ratio(TRACK_100, firing_rate, field_bins)
 
         # Should be ~1.0 (no selectivity)
         assert_allclose(ratio, 1.0, rtol=0.01)
@@ -1253,7 +1258,7 @@ class TestInOutFieldRatio:
 
         from neurospatial.encoding._field_metrics import in_out_field_ratio
 
-        ratio = in_out_field_ratio(firing_rate, field_bins)
+        ratio = in_out_field_ratio(TRACK_100, firing_rate, field_bins)
 
         assert np.isnan(ratio)
 
@@ -2286,7 +2291,7 @@ class TestInOutFieldRatioEdgeCases:
         firing_rate = rng.random(100) * 5.0
         field_bins = np.arange(100)  # All bins
 
-        result = in_out_field_ratio(firing_rate, field_bins)
+        result = in_out_field_ratio(TRACK_100, firing_rate, field_bins)
         assert np.isnan(result)
 
     def test_in_out_field_ratio_no_valid_bins(self):
@@ -2297,7 +2302,7 @@ class TestInOutFieldRatioEdgeCases:
         firing_rate = np.full(100, np.nan)
         field_bins = np.array([10, 20, 30])
 
-        result = in_out_field_ratio(firing_rate, field_bins)
+        result = in_out_field_ratio(TRACK_100, firing_rate, field_bins)
         assert np.isnan(result)
 
     def test_in_out_field_ratio_zero_out_field_positive_in_field(self):
@@ -2309,7 +2314,7 @@ class TestInOutFieldRatioEdgeCases:
         field_bins = np.array([10, 20, 30])
         firing_rate[field_bins] = 5.0
 
-        result = in_out_field_ratio(firing_rate, field_bins)
+        result = in_out_field_ratio(TRACK_100, firing_rate, field_bins)
         assert np.isinf(result)
 
     def test_in_out_field_ratio_zero_both(self):
@@ -2320,7 +2325,7 @@ class TestInOutFieldRatioEdgeCases:
         firing_rate = np.zeros(100)
         field_bins = np.array([10, 20, 30])
 
-        result = in_out_field_ratio(firing_rate, field_bins)
+        result = in_out_field_ratio(TRACK_100, firing_rate, field_bins)
         assert np.isnan(result)
 
 

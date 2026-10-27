@@ -250,3 +250,39 @@ def test_unnormalized_emd_moves_rate_times_measure(square) -> None:
     unnormalized = compute_field_emd(square, uniform, strip, normalize=False)
     normalized = compute_field_emd(square, uniform, strip)
     assert unnormalized == pytest.approx(100.0 * normalized, rel=1e-9)
+
+
+# --- in_out_field_ratio ---------------------------------------------------------
+
+
+def test_in_out_ratio_is_unchanged_by_splitting_a_bin(square, square_split) -> None:
+    from neurospatial.encoding import in_out_field_ratio
+
+    # Field in the left strip at 10 Hz; outside, 1 Hz on 10 cm^2 and 2 Hz on
+    # 80 cm^2, a mean of 170 / 90 Hz over the space outside the field.
+    ratio = in_out_field_ratio(square, np.array([10.0, 1.0, 2.0]), np.array([0]))
+    split_ratio = in_out_field_ratio(
+        square_split, np.array([10.0, 1.0, 2.0, 2.0]), np.array([0])
+    )
+    assert ratio == pytest.approx(10.0 / (170.0 / 90.0), rel=1e-12)
+    assert split_ratio == pytest.approx(ratio, rel=1e-12)
+
+
+def test_in_out_ratio_on_equal_bins_is_the_ratio_of_bin_means(grid) -> None:
+    from neurospatial.encoding import in_out_field_ratio
+
+    rng = np.random.default_rng(7)
+    rates = rng.uniform(0, 5, grid.n_bins)
+    rates[::7] = np.nan
+    field = np.arange(10, 40)
+    inside = np.zeros(grid.n_bins, dtype=bool)
+    inside[field] = True
+    expected = np.nanmean(rates[inside]) / np.nanmean(rates[~inside])
+    assert in_out_field_ratio(grid, rates, field) == pytest.approx(expected, rel=1e-12)
+
+
+def test_in_out_ratio_refuses_a_map_from_another_environment(square) -> None:
+    from neurospatial.encoding import in_out_field_ratio
+
+    with pytest.raises(ValueError, match=r"env has 3 bins(.|\n)*rates\.env"):
+        in_out_field_ratio(square, np.ones(4), np.array([0]))
