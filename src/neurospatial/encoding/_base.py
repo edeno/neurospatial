@@ -15,6 +15,7 @@ and JAX arrays, routing to the appropriate implementation based on input type.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, TypeVar
@@ -283,10 +284,24 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         name = "firing_rates" if hasattr(self, "firing_rates") else "firing_rate"
         return getattr(self, name)
 
+    def _observed_rates(self) -> NDArray[np.float64]:
+        """Host rates with every bin outside the occupancy support set to NaN.
+
+        A filled (``fill_value``) or model-extrapolated (``method="glm"``) rate
+        in a bin the animal never occupied is not an observation, so peaks
+        never land there.
+        """
+        from neurospatial.encoding._provenance import occupancy_support
+
+        rates = np.asarray(_to_numpy(self._get_rates()), dtype=np.float64)
+        return np.where(occupancy_support(self), rates, np.nan)
+
     def peak_location(self) -> NDArray[np.float64]:
         """Peak firing locations in the result's coordinate space.
 
-        Returns the bin-center coordinates of the maximum firing rate.
+        Returns the bin-center coordinates of the maximum firing rate over
+        the occupancy support (bins the animal occupied for at least
+        ``min_occupancy``).
 
         For single-neuron results, returns shape (n_dims,).
         For batch results, returns shape (n_neurons, n_dims).
@@ -299,33 +314,32 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         NDArray[np.float64]
             Coordinates of peak firing location(s).
             Shape is (n_dims,) for single neuron, (n_neurons, n_dims) for batch.
+            NaN for a unit with no supported rate or no positive rate: a
+            silent map has no peak.
         """
-        rates = _to_numpy(self._get_rates())
+        rates = np.atleast_2d(self._observed_rates())
         bin_centers = self._bin_centers
         n_dims = int(bin_centers.shape[1]) if bin_centers.ndim > 1 else 1
 
-        if rates.ndim == 1:
-            # A fully-NaN (dead) unit has no defined peak; np.nanargmax would
-            # raise "All-NaN slice encountered". Return NaN coordinates instead.
-            if not np.any(np.isfinite(rates)):
-                return np.full(n_dims, np.nan, dtype=np.float64)
-            peak_idx = int(np.nanargmax(rates))
-            result: NDArray[np.float64] = bin_centers[peak_idx]
-            return result
-
-        # Batch: guard each row so an all-NaN unit yields NaN coordinates
-        # rather than crashing the whole np.nanargmax call.
-        finite_mask = np.any(np.isfinite(rates), axis=1)
-        safe_rates = np.where(finite_mask[:, None], rates, 0.0)
-        peak_indices = np.nanargmax(safe_rates, axis=1)
-        result = bin_centers[peak_indices].astype(np.float64, copy=True)
-        result[~finite_mask] = np.nan
+        # A unit without a positive supported rate has no defined peak: an
+        # all-NaN row would make np.nanargmax raise, and an all-zero map would
+        # report its first bin.
+        filled = np.where(np.isnan(rates), -np.inf, rates)
+        peak_indices = np.argmax(filled, axis=1)
+        has_peak = filled[np.arange(len(filled)), peak_indices] > 0
+        centers = np.asarray(bin_centers, dtype=np.float64)
+        result: NDArray[np.float64] = centers[peak_indices].reshape(len(rates), n_dims)
+        result[~has_peak] = np.nan
+        if self._get_rates().ndim == 1:
+            single: NDArray[np.float64] = result[0]
+            return single
         return result
 
     def peak_firing_rate(self) -> NDArray[np.float64] | float:
         """Peak firing rate values.
 
-        Returns the maximum firing rate for each neuron.
+        Returns the maximum firing rate over the occupancy support for each
+        neuron (NaN when no bin is supported).
 
         For single-neuron results, returns a scalar (float).
         For batch results, returns shape (n_neurons,).
@@ -339,11 +353,12 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
             Peak firing rate(s).
             Scalar for single neuron, (n_neurons,) array for batch.
         """
-        rates = _to_numpy(self._get_rates())
-
-        if rates.ndim == 1:
-            return float(np.nanmax(rates))
-        result: NDArray[np.float64] = np.nanmax(rates, axis=1)
+        rates = np.atleast_2d(self._observed_rates())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN unit -> NaN
+            result: NDArray[np.float64] = np.nanmax(rates, axis=1)
+        if self._get_rates().ndim == 1:
+            return float(result[0])
         return result
 
     def summary(self) -> dict[str, Any]:

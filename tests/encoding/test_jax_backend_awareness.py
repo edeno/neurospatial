@@ -123,6 +123,7 @@ class TestSpatialResultMixinWithJax:
             firing_rate: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         firing_rate_np = np.zeros(n_bins)
@@ -154,6 +155,7 @@ class TestSpatialResultMixinWithJax:
             firing_rates: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         n_neurons = 3
@@ -187,6 +189,7 @@ class TestSpatialResultMixinWithJax:
             firing_rate: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         firing_rate_np = np.zeros(n_bins)
@@ -217,6 +220,7 @@ class TestSpatialResultMixinWithJax:
             firing_rates: NDArray[np.float64]
             occupancy: NDArray[np.float64]
             env: Environment
+            min_occupancy: float = 0.0
 
         n_bins = simple_env.n_bins
         n_neurons = 3
