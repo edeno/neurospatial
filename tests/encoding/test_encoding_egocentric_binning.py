@@ -1,10 +1,11 @@
 """Tests for egocentric binning layer.
 
 This module tests the binning layer for egocentric (object-vector) encoding,
-which computes:
+through the path the encoders use: ``prepare_egocentric_binning`` followed by
+``FrameBinning.count``. It computes:
 1. Egocentric occupancy (time spent at each distance/direction from objects)
 2. Spike counts binned by egocentric coordinates at spike time
-3. Batch processing of multiple neurons
+3. Populations of neurons sharing one occupancy
 
 The egocentric binning differs from spatial binning in that:
 - Spatial binning: bins by *where the animal was*
@@ -15,6 +16,32 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.encoding._egocentric_counts import prepare_egocentric_binning
+from neurospatial.encoding.egocentric import compute_egocentric_rate
+
+GRID = {"distance_range": (0.0, 50.0), "n_distance_bins": 10, "n_direction_bins": 12}
+"""A 10 x 12 polar grid out to 50 units."""
+
+
+def _bin(
+    spike_trains, times, positions, headings, object_positions, *, n_jobs=1, **kwargs
+):
+    """Counts ``(n_neurons, n_bins)``, occupancy ``(n_bins,)`` and the polar env."""
+    prepared, polar_env, _ = prepare_egocentric_binning(
+        times, positions, headings, object_positions, **kwargs
+    )
+    counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
+    return counts, occupancy, polar_env
+
+
+def _counts(spikes, times, positions, headings, object_positions, **kwargs):
+    """One neuron's spike counts, shape ``(n_bins,)``."""
+    return _bin([spikes], times, positions, headings, object_positions, **kwargs)[0][0]
+
+
+def _trajectory(data):
+    return data["times"], data["positions"], data["headings"]
+
 
 # =============================================================================
 # Test Fixtures
@@ -71,93 +98,41 @@ def spike_times_list() -> list[np.ndarray]:
 
 
 # =============================================================================
-# Test compute_egocentric_occupancy
+# Occupancy
 # =============================================================================
 
 
-class TestComputeEgocentricOccupancy:
-    """Tests for compute_egocentric_occupancy function."""
+class TestEgocentricOccupancy:
+    """Time spent at each distance and direction from the nearest object."""
 
-    def test_import(self):
-        """Function can be imported from _egocentric_binning module."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
-        assert callable(compute_egocentric_occupancy)
-
-    def test_returns_array(
+    def test_returns_polar_env(
         self,
-        env: Environment,
         trajectory_data: dict,
         object_positions: np.ndarray,
     ):
-        """Function returns numpy array."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
+        """Binning builds an egocentric polar environment."""
+        _, _, polar_env = _bin(
+            [], *_trajectory(trajectory_data), object_positions, **GRID
         )
-
-        occupancy, _env = compute_egocentric_occupancy(
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-        assert isinstance(occupancy, np.ndarray)
-
-    def test_returns_env(
-        self,
-        env: Environment,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-    ):
-        """Function returns egocentric polar environment."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
-        _occupancy, env = compute_egocentric_occupancy(
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-        from neurospatial import Environment
 
         # Egocentric occupancy builds a distinct polar environment type.
-        assert isinstance(env, Environment)
-        assert env.coordinate_kind == "polar"
+        assert isinstance(polar_env, Environment)
+        assert polar_env.coordinate_kind == "polar"
 
-    def test_occupancy_shape(
+    def test_occupancy_shape_and_dtype(
         self,
         trajectory_data: dict,
         object_positions: np.ndarray,
     ):
-        """Occupancy shape matches env.n_bins."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
+        """Occupancy is float64 with one value per polar bin."""
+        _, occupancy, polar_env = _bin(
+            [], *_trajectory(trajectory_data), object_positions, **GRID
         )
-
-        n_distance_bins = 10
-        n_direction_bins = 12
-        occupancy, env = compute_egocentric_occupancy(
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
-        )
-        expected_n_bins = n_distance_bins * n_direction_bins
+        expected_n_bins = GRID["n_distance_bins"] * GRID["n_direction_bins"]
+        assert isinstance(occupancy, np.ndarray)
+        assert occupancy.dtype == np.float64
         assert occupancy.shape == (expected_n_bins,)
-        assert len(occupancy) == env.n_bins
+        assert len(occupancy) == polar_env.n_bins
 
     def test_occupancy_non_negative(
         self,
@@ -165,41 +140,10 @@ class TestComputeEgocentricOccupancy:
         object_positions: np.ndarray,
     ):
         """Occupancy values are non-negative."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
-        occupancy, _ = compute_egocentric_occupancy(
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+        _, occupancy, _ = _bin(
+            [], *_trajectory(trajectory_data), object_positions, **GRID
         )
         assert np.all(occupancy >= 0)
-
-    def test_occupancy_dtype(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-    ):
-        """Occupancy has float64 dtype."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
-        occupancy, _ = compute_egocentric_occupancy(
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-        assert occupancy.dtype == np.float64
 
     def test_total_occupancy_approximates_duration(
         self,
@@ -207,18 +151,13 @@ class TestComputeEgocentricOccupancy:
         object_positions: np.ndarray,
     ):
         """Total occupancy approximates recording duration."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
         times = trajectory_data["times"]
         duration = times[-1] - times[0]
 
         # Use large distance range to capture all samples
-        occupancy, _ = compute_egocentric_occupancy(
-            times,
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+        _, occupancy, _ = _bin(
+            [],
+            *_trajectory(trajectory_data),
             object_positions,
             distance_range=(0.0, 200.0),  # Large range to capture all
             n_distance_bins=20,
@@ -228,30 +167,22 @@ class TestComputeEgocentricOccupancy:
         assert abs(np.sum(occupancy) - duration) < duration * 0.1
 
 
-class TestComputeEgocentricOccupancyDistanceMetric:
+class TestEgocentricDistanceMetric:
     """Tests for metric parameter."""
 
     def test_euclidean_default(
         self,
         trajectory_data: dict,
         object_positions: np.ndarray,
+        spike_times: np.ndarray,
     ):
-        """Euclidean is the default distance metric."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
+        """Euclidean is the default distance metric and needs no env."""
+        counts, occupancy, polar_env = _bin(
+            [spike_times], *_trajectory(trajectory_data), object_positions, **GRID
         )
-
-        # Should work without env
-        occupancy, _ = compute_egocentric_occupancy(
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-        assert occupancy.shape[0] > 0
+        assert counts.shape == (1, polar_env.n_bins)
+        assert occupancy.shape == (polar_env.n_bins,)
+        assert occupancy.sum() > 0
 
     def test_geodesic_requires_env(
         self,
@@ -259,19 +190,11 @@ class TestComputeEgocentricOccupancyDistanceMetric:
         object_positions: np.ndarray,
     ):
         """Geodesic distance metric requires env parameter."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
         with pytest.raises(ValueError, match=r"geodesic.*requires.*env"):
-            compute_egocentric_occupancy(
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
+            prepare_egocentric_binning(
+                *_trajectory(trajectory_data),
                 object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
+                **GRID,
                 metric="geodesic",
             )
 
@@ -280,24 +203,19 @@ class TestComputeEgocentricOccupancyDistanceMetric:
         env: Environment,
         trajectory_data: dict,
         object_positions: np.ndarray,
+        spike_times_list: list[np.ndarray],
     ):
         """Geodesic distance works when env is provided."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
-        occupancy, _ = compute_egocentric_occupancy(
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+        counts, occupancy, polar_env = _bin(
+            spike_times_list,
+            *_trajectory(trajectory_data),
             object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            **GRID,
             metric="geodesic",
             env=env,
         )
-        assert occupancy.shape[0] > 0
+        assert counts.shape == (len(spike_times_list), polar_env.n_bins)
+        assert occupancy.shape == (polar_env.n_bins,)
 
     def test_invalid_metric_raises(
         self,
@@ -305,170 +223,99 @@ class TestComputeEgocentricOccupancyDistanceMetric:
         object_positions: np.ndarray,
     ):
         """Invalid distance metric raises ValueError."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
         with pytest.raises(ValueError, match=r"invalid|Invalid"):
-            compute_egocentric_occupancy(
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
+            prepare_egocentric_binning(
+                *_trajectory(trajectory_data),
                 object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
-                metric="manhattan",  # Invalid
+                **GRID,
+                metric="manhattan",  # type: ignore[arg-type]
             )
 
 
-class TestComputeEgocentricOccupancyInputValidation:
-    """Tests for input validation in compute_egocentric_occupancy."""
+class TestEgocentricInputValidation:
+    """Misaligned or malformed samples are refused."""
 
     def test_mismatched_times_positions_raises(self, object_positions: np.ndarray):
         """Mismatched times and positions lengths raise error."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
         times = np.linspace(0, 10, 100)
         positions = np.random.rand(90, 2)  # Wrong length
         headings = np.random.rand(100)
 
         with pytest.raises(ValueError, match=r"times.*positions"):
-            compute_egocentric_occupancy(
+            compute_egocentric_rate(
+                None,
+                np.array([1.0]),
                 times,
                 positions,
                 headings,
                 object_positions,
                 distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
             )
 
     def test_mismatched_times_headings_raises(self, object_positions: np.ndarray):
         """Mismatched times and headings lengths raise error."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
         times = np.linspace(0, 10, 100)
         positions = np.random.rand(100, 2)
         headings = np.random.rand(90)  # Wrong length
 
         with pytest.raises(ValueError, match=r"times.*headings"):
-            compute_egocentric_occupancy(
+            compute_egocentric_rate(
+                None,
+                np.array([1.0]),
                 times,
                 positions,
                 headings,
                 object_positions,
                 distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
             )
 
     def test_insufficient_samples_raises(self, object_positions: np.ndarray):
         """Fewer than 2 samples raises error."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
         times = np.array([0.0])  # Only 1 sample
         positions = np.array([[50.0, 50.0]])
         headings = np.array([0.0])
 
-        with pytest.raises(ValueError, match=r"2.*samples"):
-            compute_egocentric_occupancy(
-                times,
-                positions,
-                headings,
-                object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
+        with pytest.raises(ValueError, match="At least 2 samples"):
+            prepare_egocentric_binning(
+                times, positions, headings, object_positions, **GRID
             )
 
     def test_unsorted_times_raises(self, object_positions: np.ndarray):
         """Non-monotonic times raise error."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not sorted
         positions = np.random.rand(4, 2)
         headings = np.random.rand(4)
 
-        with pytest.raises(ValueError, match="monotonic"):
-            compute_egocentric_occupancy(
-                times,
-                positions,
-                headings,
-                object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
+        with pytest.raises(ValueError, match="monotonically non-decreasing"):
+            prepare_egocentric_binning(
+                times, positions, headings, object_positions, **GRID
             )
 
 
 # =============================================================================
-# Test bin_egocentric_spike_train
+# Spike counts
 # =============================================================================
 
 
-class TestBinEgocentricSpikeTrain:
-    """Tests for bin_egocentric_spike_train function."""
+class TestEgocentricSpikeCounts:
+    """One neuron's spike counts per polar bin."""
 
-    def test_import(self):
-        """Function can be imported from _egocentric_binning module."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        assert callable(bin_egocentric_spike_train)
-
-    def test_returns_array(
+    def test_spike_counts_shape_and_dtype(
         self,
         trajectory_data: dict,
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ):
-        """Function returns numpy array."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        spike_counts, _env = bin_egocentric_spike_train(
-            spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+        """Spike counts are float64 (for smoothing) with one value per bin."""
+        counts, _, polar_env = _bin(
+            [spike_times], *_trajectory(trajectory_data), object_positions, **GRID
         )
+        spike_counts = counts[0]
+        expected_n_bins = GRID["n_distance_bins"] * GRID["n_direction_bins"]
         assert isinstance(spike_counts, np.ndarray)
-
-    def test_spike_counts_shape(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times: np.ndarray,
-    ):
-        """Spike counts shape matches env.n_bins."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        n_distance_bins = 10
-        n_direction_bins = 12
-        spike_counts, env = bin_egocentric_spike_train(
-            spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
-        )
-        expected_n_bins = n_distance_bins * n_direction_bins
+        assert spike_counts.dtype == np.float64
         assert spike_counts.shape == (expected_n_bins,)
-        assert len(spike_counts) == env.n_bins
+        assert len(spike_counts) == polar_env.n_bins
 
     def test_spike_counts_non_negative(
         self,
@@ -477,40 +324,10 @@ class TestBinEgocentricSpikeTrain:
         spike_times: np.ndarray,
     ):
         """Spike counts are non-negative."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        spike_counts, _ = bin_egocentric_spike_train(
-            spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+        spike_counts = _counts(
+            spike_times, *_trajectory(trajectory_data), object_positions, **GRID
         )
         assert np.all(spike_counts >= 0)
-
-    def test_spike_counts_dtype(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times: np.ndarray,
-    ):
-        """Spike counts have float64 dtype (for smoothing compatibility)."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        spike_counts, _ = bin_egocentric_spike_train(
-            spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-        assert spike_counts.dtype == np.float64
 
     def test_total_spike_count_reasonable(
         self,
@@ -519,14 +336,10 @@ class TestBinEgocentricSpikeTrain:
         spike_times: np.ndarray,
     ):
         """Total spike count is at most number of input spikes."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
         # Use large distance range to capture all spikes
-        spike_counts, _ = bin_egocentric_spike_train(
+        spike_counts = _counts(
             spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             object_positions,
             distance_range=(0.0, 200.0),  # Large range
             n_distance_bins=20,
@@ -540,311 +353,57 @@ class TestBinEgocentricSpikeTrain:
         object_positions: np.ndarray,
     ):
         """Empty spike train returns zeros."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        spike_times = np.array([])
-        spike_counts, env = bin_egocentric_spike_train(
-            spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+        counts, _, polar_env = _bin(
+            [np.array([])], *_trajectory(trajectory_data), object_positions, **GRID
         )
-        assert np.sum(spike_counts) == 0
-        assert spike_counts.shape == (env.n_bins,)
-
-
-class TestBinEgocentricSpikeTrainValidation:
-    """Tests for input validation in bin_egocentric_spike_train (single neuron)."""
-
-    def test_unsorted_times_raises_error(
-        self,
-        object_positions: np.ndarray,
-    ) -> None:
-        """bin_egocentric_spike_train should reject unsorted times.
-
-        This matches the validation behavior of bin_egocentric_spike_trains (batch version).
-        """
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
-        positions = np.random.rand(4, 2)
-        headings = np.random.rand(4)
-        spike_times = np.array([0.5, 1.5])
-
-        with pytest.raises(ValueError, match="monotonically non-decreasing"):
-            bin_egocentric_spike_train(
-                spike_times,
-                times,
-                positions,
-                headings,
-                object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
-            )
-
-    def test_insufficient_samples_raises_error(
-        self,
-        object_positions: np.ndarray,
-    ) -> None:
-        """bin_egocentric_spike_train should reject fewer than 2 samples.
-
-        This matches the validation behavior of bin_egocentric_spike_trains (batch version).
-        """
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        times = np.array([0.0])  # Only 1 sample
-        positions = np.array([[50, 50]])
-        headings = np.array([0.0])
-        spike_times = np.array([0.5])
-
-        with pytest.raises(ValueError, match="At least 2 samples"):
-            bin_egocentric_spike_train(
-                spike_times,
-                times,
-                positions,
-                headings,
-                object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
-            )
-
-
-class TestBinEgocentricSpikeTrainDistanceMetric:
-    """Tests for metric parameter in spike train binning."""
-
-    def test_euclidean_default(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times: np.ndarray,
-    ):
-        """Euclidean is the default distance metric."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        spike_counts, _ = bin_egocentric_spike_train(
-            spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-        assert spike_counts.shape[0] > 0
-
-    def test_geodesic_requires_env(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times: np.ndarray,
-    ):
-        """Geodesic distance metric requires env parameter."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        with pytest.raises(ValueError, match=r"geodesic.*requires.*env"):
-            bin_egocentric_spike_train(
-                spike_times,
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
-                object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
-                metric="geodesic",
-            )
-
-    def test_geodesic_with_env(
-        self,
-        env: Environment,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times: np.ndarray,
-    ):
-        """Geodesic distance works when env is provided."""
-        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
-
-        spike_counts, _ = bin_egocentric_spike_train(
-            spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-            metric="geodesic",
-            env=env,
-        )
-        assert spike_counts.shape[0] > 0
+        assert np.sum(counts) == 0
+        assert counts[0].shape == (polar_env.n_bins,)
 
 
 # =============================================================================
-# Test bin_egocentric_spike_trains (batch)
+# Populations
 # =============================================================================
 
 
-class TestBinEgocentricSpikeTrains:
-    """Tests for bin_egocentric_spike_trains function (batch version)."""
+class TestEgocentricPopulationCounts:
+    """Spike counts for several neurons sharing one occupancy."""
 
-    def test_import(self):
-        """Function can be imported from _egocentric_binning module."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
-        assert callable(bin_egocentric_spike_trains)
-
-    def test_returns_tuple(
+    def test_population_shapes_and_dtypes(
         self,
         trajectory_data: dict,
         object_positions: np.ndarray,
         spike_times_list: list[np.ndarray],
     ):
-        """Function returns tuple of (spike_counts, occupancy, env)."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
-        result = bin_egocentric_spike_trains(
-            spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-        assert isinstance(result, tuple)
-        assert len(result) == 3
-
-    def test_spike_counts_shape(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times_list: list[np.ndarray],
-    ):
-        """Spike counts shape is (n_neurons, n_bins)."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
+        """Counts are (n_neurons, n_bins); occupancy is (n_bins,); both float64."""
         n_neurons = len(spike_times_list)
-        n_distance_bins = 10
-        n_direction_bins = 12
-        expected_n_bins = n_distance_bins * n_direction_bins
+        expected_n_bins = GRID["n_distance_bins"] * GRID["n_direction_bins"]
 
-        spike_counts, _occupancy, env = bin_egocentric_spike_trains(
-            spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
+        spike_counts, occupancy, polar_env = _bin(
+            spike_times_list, *_trajectory(trajectory_data), object_positions, **GRID
         )
         assert spike_counts.shape == (n_neurons, expected_n_bins)
-        assert spike_counts.shape[1] == env.n_bins
-
-    def test_occupancy_shape(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times_list: list[np.ndarray],
-    ):
-        """Occupancy shape is (n_bins,) - shared across neurons."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
-        n_distance_bins = 10
-        n_direction_bins = 12
-        expected_n_bins = n_distance_bins * n_direction_bins
-
-        _spike_counts, occupancy, env = bin_egocentric_spike_trains(
-            spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
-        )
+        assert spike_counts.shape[1] == polar_env.n_bins
         assert occupancy.shape == (expected_n_bins,)
-        assert len(occupancy) == env.n_bins
-
-    def test_dtypes(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times_list: list[np.ndarray],
-    ):
-        """Both outputs have float64 dtype."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
-        spike_counts, occupancy, _ = bin_egocentric_spike_trains(
-            spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
         assert spike_counts.dtype == np.float64
         assert occupancy.dtype == np.float64
 
-    def test_consistency_with_single(
+    def test_each_row_matches_the_neuron_alone(
         self,
         trajectory_data: dict,
         object_positions: np.ndarray,
         spike_times_list: list[np.ndarray],
     ):
-        """Batch results match single-neuron results."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_train,
-            bin_egocentric_spike_trains,
+        """A neuron's counts do not depend on the other neurons counted with it."""
+        spike_counts_population, _, _ = _bin(
+            spike_times_list, *_trajectory(trajectory_data), object_positions, **GRID
         )
 
-        # Batch
-        spike_counts_batch, _occupancy_batch, _env_batch = bin_egocentric_spike_trains(
-            spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-
-        # Single
         for i, spike_times in enumerate(spike_times_list):
-            spike_counts_single, _env_single = bin_egocentric_spike_train(
-                spike_times,
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
-                object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
+            spike_counts_single = _counts(
+                spike_times, *_trajectory(trajectory_data), object_positions, **GRID
             )
-            np.testing.assert_array_almost_equal(
-                spike_counts_batch[i], spike_counts_single
+            np.testing.assert_array_equal(
+                spike_counts_population[i], spike_counts_single
             )
 
     def test_empty_neuron_list(
@@ -853,24 +412,10 @@ class TestBinEgocentricSpikeTrains:
         object_positions: np.ndarray,
     ):
         """Empty neuron list returns correct shapes."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
+        expected_n_bins = GRID["n_distance_bins"] * GRID["n_direction_bins"]
 
-        spike_times_list: list[np.ndarray] = []
-        n_distance_bins = 10
-        n_direction_bins = 12
-        expected_n_bins = n_distance_bins * n_direction_bins
-
-        spike_counts, occupancy, _env = bin_egocentric_spike_trains(
-            spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
+        spike_counts, occupancy, _ = _bin(
+            [], *_trajectory(trajectory_data), object_positions, **GRID
         )
         assert spike_counts.shape == (0, expected_n_bins)
         assert occupancy.shape == (expected_n_bins,)
@@ -881,121 +426,23 @@ class TestBinEgocentricSpikeTrains:
         object_positions: np.ndarray,
         spike_times_list: list[np.ndarray],
     ):
-        """n_jobs parameter is accepted."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
-        # Sequential
-        spike_counts_seq, _, _ = bin_egocentric_spike_trains(
+        """n_jobs parameter does not change the counts."""
+        spike_counts_seq, _, _ = _bin(
             spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            **GRID,
             n_jobs=1,
         )
-
-        # Parallel
-        spike_counts_par, _, _ = bin_egocentric_spike_trains(
+        spike_counts_par, _, _ = _bin(
             spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
+            *_trajectory(trajectory_data),
             object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            **GRID,
             n_jobs=2,
         )
 
-        np.testing.assert_array_almost_equal(spike_counts_seq, spike_counts_par)
-
-    def test_accepts_2d_nan_padded_array(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times_list: list[np.ndarray],
-    ):
-        """Accepts 2D NaN-padded array format for spike times."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
-        # Convert list to 2D NaN-padded array
-        max_spikes = max(len(s) for s in spike_times_list)
-        spike_times_2d = np.full((len(spike_times_list), max_spikes), np.nan)
-        for i, s in enumerate(spike_times_list):
-            spike_times_2d[i, : len(s)] = s
-
-        spike_counts, _occupancy, _env = bin_egocentric_spike_trains(
-            spike_times_2d,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-        assert spike_counts.shape[0] == len(spike_times_list)
-
-
-class TestBinEgocentricSpikeTrainsDistanceMetric:
-    """Tests for metric parameter in batch spike train binning."""
-
-    def test_geodesic_requires_env(
-        self,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times_list: list[np.ndarray],
-    ):
-        """Geodesic distance metric requires env parameter."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
-        with pytest.raises(ValueError, match=r"geodesic.*requires.*env"):
-            bin_egocentric_spike_trains(
-                spike_times_list,
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
-                object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
-                metric="geodesic",
-            )
-
-    def test_geodesic_with_env(
-        self,
-        env: Environment,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times_list: list[np.ndarray],
-    ):
-        """Geodesic distance works when env is provided."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_trains,
-        )
-
-        spike_counts, _occupancy, _env = bin_egocentric_spike_trains(
-            spike_times_list,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-            metric="geodesic",
-            env=env,
-        )
-        assert spike_counts.shape[0] == len(spike_times_list)
+        np.testing.assert_array_equal(spike_counts_seq, spike_counts_par)
 
 
 # =============================================================================
@@ -1341,10 +788,6 @@ class TestEgocentricNaNHandling:
 
     def test_occupancy_with_nan_distances(self, env_with_hole: Environment):
         """Occupancy computation should handle NaN distances gracefully."""
-        from neurospatial.encoding._egocentric_counts import (
-            compute_egocentric_occupancy,
-        )
-
         n_time = 100
         rng = np.random.default_rng(42)
         # Some positions inside, some outside
@@ -1358,14 +801,13 @@ class TestEgocentricNaNHandling:
         object_positions = np.array([[75.0, 75.0]])
 
         # Should not raise an error
-        occupancy, _env = compute_egocentric_occupancy(
+        _, occupancy, _env = _bin(
+            [],
             times,
             positions,
             headings,
             object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            **GRID,
             metric="geodesic",
             env=env_with_hole,
         )
@@ -1376,10 +818,6 @@ class TestEgocentricNaNHandling:
 
     def test_spike_binning_with_nan_distances(self, env_with_hole: Environment):
         """Spike binning should handle NaN distances gracefully."""
-        from neurospatial.encoding._egocentric_counts import (
-            bin_egocentric_spike_train,
-        )
-
         n_time = 100
         rng = np.random.default_rng(42)
         positions = rng.uniform(10, 40, (n_time, 2))  # All inside env
@@ -1396,15 +834,13 @@ class TestEgocentricNaNHandling:
         )
 
         # Should not raise an error
-        spike_counts, _env = bin_egocentric_spike_train(
+        spike_counts = _counts(
             spike_times,
             times,
             positions,
             headings,
             object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            **GRID,
             metric="geodesic",
             env=env_with_hole,
         )
