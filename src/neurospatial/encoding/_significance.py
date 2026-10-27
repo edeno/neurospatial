@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import warnings
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Sequence
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import plain_value
+from neurospatial._intervals import resolve_time_windows
+from neurospatial._results import plain_value, resolve_unit_ids
+from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.stats import _validate_circular_shift_settings
 from neurospatial.stats.shuffle import ShuffleTestResult, shuffle_spike_times_circular
@@ -49,6 +51,72 @@ def resolve_shuffle_settings(
         else n_shuffles,
         "min_shift": _SHUFFLE_DEFAULTS["min_shift"] if min_shift is None else min_shift,
     }
+
+
+class ShuffleInputs(NamedTuple):
+    """A shuffle test's own copies of its inputs, with labels and windows resolved."""
+
+    trains: list[NDArray[np.float64]]
+    """One spike-time array per unit, seconds."""
+    times: NDArray[np.float64]
+    """Sample times, seconds, shape (n_time,)."""
+    copies: tuple[NDArray[np.float64], ...]
+    """The per-sample arrays passed as ``copies`` (positions, headings)."""
+    unit_ids: NDArray[Any]
+    """One label per unit."""
+    epochs: NDArray[np.float64] | None
+    """Resolved ``epochs`` intervals."""
+    spike_window: NDArray[np.float64] | None
+    """Resolved ``spike_window`` interval."""
+
+
+def shuffle_inputs(
+    spike_times: Any,
+    times: ArrayLike,
+    copies: Sequence[ArrayLike] = (),
+    *,
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    epochs: Any,
+    spike_window: Any,
+    call: str,
+) -> ShuffleInputs:
+    """Copy a shuffle test's inputs and resolve its unit labels and windows.
+
+    The test reads its inputs once per shuffle, so it works on float64
+    copies: caller mutation during the shuffles cannot change the null.
+
+    Parameters
+    ----------
+    spike_times : spike trains
+        Any spike input the ``*_significance`` functions accept.
+    times : array_like, shape (n_time,)
+        Sample times, seconds.
+    copies : sequence of array_like, default=()
+        Further per-sample arrays to copy, such as positions and headings.
+    unit_ids : sequence or None
+        Caller labels; ``None`` uses the labels the spike input carries, or
+        ``0..n_units-1``.
+    epochs, spike_window : interval-like or None
+        As the ``*_significance`` functions accept them.
+    call : str
+        Public function name for error messages.
+
+    Returns
+    -------
+    ShuffleInputs
+    """
+    trains, input_ids = _as_spike_trains_with_ids(spike_times)
+    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
+    times = np.array(times, dtype=np.float64, copy=True)
+    copied = tuple(np.array(x, dtype=np.float64, copy=True) for x in copies)
+    ids = np.array(
+        resolve_unit_ids(unit_ids, len(trains), input_ids=input_ids, context=call),
+        copy=True,
+    )
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    return ShuffleInputs(
+        trains, times, copied, ids, resolved_epochs, resolved_spike_window
+    )
 
 
 def snapshot_options(options: dict[str, Any], **fixed: Any) -> dict[str, Any]:

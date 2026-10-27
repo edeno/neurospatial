@@ -4333,14 +4333,6 @@ def _object_vector_significance(
                 ),
             )
         )
-    arguments = (
-        "spike_times, times, positions, headings, object_positions"
-        if egocentric
-        else "spike_times, times, positions, object_positions"
-    )
-    from neurospatial._intervals import resolve_time_windows
-    from neurospatial._results import resolve_unit_ids
-    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._egocentric_counts import (
         _create_egocentric_environment,
         object_frame_bins,
@@ -4349,31 +4341,29 @@ def _object_vector_significance(
     )
     from neurospatial.encoding._significance import (
         run_shuffle_test,
+        shuffle_inputs,
         snapshot_options,
         to_shuffle_results,
     )
     from neurospatial.encoding._validation import (
-        _validate_env_argument,
-        validate_spike_times,
+        validate_spike_trains,
         validate_trajectory,
     )
 
-    trains, input_ids = _as_spike_trains_with_ids(spike_times)
-    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
-    times = np.array(times, dtype=np.float64, copy=True)
-    positions = np.array(positions, dtype=np.float64, copy=True)
-    if egocentric:
-        headings = np.array(headings, dtype=np.float64, copy=True)
-    ids = np.array(
-        resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=input_ids,
-            context=context,
-        ),
-        copy=True,
+    inputs = shuffle_inputs(
+        spike_times,
+        times,
+        (positions,) if headings is None else (positions, headings),
+        unit_ids=unit_ids,
+        epochs=epochs,
+        spike_window=spike_window,
+        call=context,
     )
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    trains, times, ids = inputs.trains, inputs.times, inputs.unit_ids
+    positions = inputs.copies[0]
+    if headings is not None:
+        headings = inputs.copies[1]
+    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
     options: dict[str, Any] = {
         "distance_range": distance_range,
         "distance_bin_size": distance_bin_size,
@@ -4392,20 +4382,9 @@ def _object_vector_significance(
         spike_window=resolved_spike_window,
         unit_ids=ids,
     )
-    if env is not None:
-        _validate_env_argument(
-            env,
-            context=context,
-            arguments=arguments,
-        )
-        _require_planar_env(
-            env,
-            f"{context}()",
-            measures="distance and direction to the nearest object",
-        )
+    _check_object_vector_env(env, headings, context=context)
     validate_trajectory(times, positions=positions, headings=headings, context=context)
-    for train in trains:
-        validate_spike_times(train, context=context)
+    validate_spike_trains(trains, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
     options["break_before"] = breaks
     _validate_object_vector_metric(env, metric, context=context)

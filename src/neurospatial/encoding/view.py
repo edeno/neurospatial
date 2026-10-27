@@ -2672,40 +2672,33 @@ def spatial_view_cell_significance(
     >>> results[0].n_shuffles
     20
     """
-    from neurospatial._intervals import resolve_time_windows
-    from neurospatial._results import resolve_unit_ids
-    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._significance import (
         run_shuffle_test,
+        shuffle_inputs,
         snapshot_options,
         to_shuffle_results,
     )
     from neurospatial.encoding._validation import (
-        _validate_env_argument,
-        validate_spike_times,
+        validate_spike_trains,
         validate_trajectory,
     )
     from neurospatial.encoding._view_counts import (
         _precompute_view_bins,
         _view_observation_mask,
-        require_allocentric_view,
     )
 
-    trains, input_ids = _as_spike_trains_with_ids(spike_times)
-    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
-    times = np.array(times, dtype=np.float64, copy=True)
-    positions = np.array(positions, dtype=np.float64, copy=True)
-    headings = np.array(headings, dtype=np.float64, copy=True)
-    ids = np.array(
-        resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=input_ids,
-            context="spatial_view_cell_significance",
-        ),
-        copy=True,
+    inputs = shuffle_inputs(
+        spike_times,
+        times,
+        (positions, headings),
+        unit_ids=unit_ids,
+        epochs=epochs,
+        spike_window=spike_window,
+        call="spatial_view_cell_significance",
     )
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    trains, times, ids = inputs.trains, inputs.times, inputs.unit_ids
+    positions, headings = inputs.copies
+    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
     options: dict[str, Any] = {
         "gaze_model": gaze_model,
         "boundary_source": boundary_source,
@@ -2724,12 +2717,7 @@ def spatial_view_cell_significance(
         spike_window=resolved_spike_window,
         unit_ids=ids,
     )
-    _validate_env_argument(
-        env,
-        context="spatial_view_cell_significance",
-        arguments="spike_times, times, positions, headings",
-    )
-    require_allocentric_view(env, "spatial_view_cell_significance()")
+    _check_view_env(env, context="spatial_view_cell_significance")
     _validate_gaze_model(gaze_model)
     options["view_distance"] = _resolve_view_distance(
         env, gaze_model, view_distance, context="spatial_view_cell_significance"
@@ -2740,8 +2728,7 @@ def spatial_view_cell_significance(
         headings=headings,
         context="spatial_view_cell_significance",
     )
-    for train in trains:
-        validate_spike_times(train, context="spatial_view_cell_significance")
+    validate_spike_trains(trains, context="spatial_view_cell_significance")
     breaks = validate_break_before(
         break_before, len(times), call="spatial_view_cell_significance"
     )

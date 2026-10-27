@@ -7651,12 +7651,14 @@ def _spatial_shuffle(
         ``(n_shuffles, n_units, len(statistics))``, NaN for statistics that
         cannot be scored, with the reasons (see ``_cell_type_score``).
     """
-    from neurospatial._intervals import resolve_time_windows, run_time_bounds
-    from neurospatial._results import resolve_unit_ids
-    from neurospatial._spikes import _as_spike_trains_with_ids
+    from neurospatial._intervals import run_time_bounds
     from neurospatial.encoding._backend import validate_and_resolve_backend
     from neurospatial.encoding._provenance import occupancy_support
-    from neurospatial.encoding._significance import run_shuffle_test, snapshot_options
+    from neurospatial.encoding._significance import (
+        run_shuffle_test,
+        shuffle_inputs,
+        snapshot_options,
+    )
     from neurospatial.encoding._spatial_counts import (
         _spatial_interval_mask,
         require_allocentric,
@@ -7664,7 +7666,7 @@ def _spatial_shuffle(
     )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
-        validate_spike_times,
+        validate_spike_trains,
         validate_trajectory,
     )
 
@@ -7676,15 +7678,18 @@ def _spatial_shuffle(
                 fix="pass method='diffusion_kde', 'gaussian_kde' or 'binned'",
             )
         )
-    trains, input_ids = _as_spike_trains_with_ids(spike_times)
-    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
-    times = np.array(times, dtype=np.float64, copy=True)
-    positions = np.array(positions, dtype=np.float64, copy=True)
-    ids = np.array(
-        resolve_unit_ids(unit_ids, len(trains), input_ids=input_ids, context=call),
-        copy=True,
+    inputs = shuffle_inputs(
+        spike_times,
+        times,
+        (positions,),
+        unit_ids=unit_ids,
+        epochs=epochs,
+        spike_window=spike_window,
+        call=call,
     )
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    trains, times, ids = inputs.trains, inputs.times, inputs.unit_ids
+    (positions,) = inputs.copies
+    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
     options: dict[str, Any] = {
         "method": method,
         "bandwidth": bandwidth,
@@ -7709,8 +7714,7 @@ def _spatial_shuffle(
     _validate_env_argument(env, context=call, arguments="spike_times, times, positions")
     require_allocentric(env, f"{call}()")
     validate_trajectory(times, positions=positions, context=call, n_dims=env.n_dims)
-    for train in trains:
-        validate_spike_times(train, context=call)
+    validate_spike_trains(trains, context=call)
     options["break_before"] = validate_break_before(break_before, len(times), call=call)
     positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
     mask = _spatial_interval_mask(

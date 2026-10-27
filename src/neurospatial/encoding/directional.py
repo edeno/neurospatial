@@ -3499,35 +3499,31 @@ def head_direction_cell_significance(
     >>> results[0].n_shuffles
     20
     """
-    from neurospatial._intervals import resolve_time_windows
-    from neurospatial._results import resolve_unit_ids
-    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._backend import validate_and_resolve_backend
     from neurospatial.encoding._directional_counts import directional_frame_bins
     from neurospatial.encoding._significance import (
         run_shuffle_test,
+        shuffle_inputs,
         snapshot_options,
         to_shuffle_results,
     )
     from neurospatial.encoding._validation import (
-        validate_spike_times,
+        validate_spike_trains,
         validate_trajectory,
     )
 
-    trains, input_ids = _as_spike_trains_with_ids(spike_times)
-    trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
-    times = np.array(times, dtype=np.float64, copy=True)
-    headings = np.array(headings, dtype=np.float64, copy=True)
-    ids = np.array(
-        resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=input_ids,
-            context="head_direction_cell_significance",
-        ),
-        copy=True,
+    inputs = shuffle_inputs(
+        spike_times,
+        times,
+        (headings,),
+        unit_ids=unit_ids,
+        epochs=epochs,
+        spike_window=spike_window,
+        call="head_direction_cell_significance",
     )
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    trains, times, ids = inputs.trains, inputs.times, inputs.unit_ids
+    (headings,) = inputs.copies
+    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
     # Raises for unknown backends; the statistic itself only needs NumPy.
     validate_and_resolve_backend(backend)
     # Copies, so caller mutation during the shuffles cannot change the null.
@@ -3542,8 +3538,7 @@ def head_direction_cell_significance(
         context="head_direction_cell_significance",
         heading_unit=angle_unit,
     )
-    for train in trains:
-        validate_spike_times(train, context="head_direction_cell_significance")
+    validate_spike_trains(trains, context="head_direction_cell_significance")
     breaks = validate_break_before(
         break_before, len(times), call="head_direction_cell_significance"
     )
