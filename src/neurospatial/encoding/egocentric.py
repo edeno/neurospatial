@@ -2067,22 +2067,15 @@ def _require_planar_env(env: Environment, operation: str, *, measures: str) -> N
     ValueError
         If ``env`` is not two-dimensional.
     """
-    from neurospatial.geometry import require_cartesian
+    from neurospatial.encoding._validation import require_planar
 
-    require_cartesian(
-        env.coordinate_system,
+    require_planar(
+        env,
         operation,
         why=f"It measures {measures} from the animal's allocentric positions.",
         fix="pass the allocentric environment the positions were recorded in",
+        plane_why=f"{measures} are measured in the plane, from (x, y) positions",
     )
-    if env.n_dims != 2:
-        raise ValueError(
-            _format_error(
-                f"{operation} needs a 2-D environment; got a {env.n_dims}-D one.",
-                why=f"Why: {measures} are measured in the plane, from (x, y) positions",
-                fix="build the environment from the animal's 2-D (x, y) positions",
-            )
-        )
 
 
 def _check_object_vector_env(

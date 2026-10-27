@@ -34,11 +34,12 @@ from neurospatial._validation import (
     validate_finite,
 )
 from neurospatial.environment import Environment
-from neurospatial.geometry import wrong_position_columns
+from neurospatial.geometry import require_cartesian, wrong_position_columns
 
 __all__ = [
     "_validate_env_argument",
     "_validate_times",
+    "require_planar",
     "validate_classifier_trajectory",
     "validate_spike_times",
     "validate_spike_trains",
@@ -82,6 +83,42 @@ def _validate_env_argument(env: object, *, context: str, arguments: str) -> None
                 f"{context}() expects an Environment as its first argument, got {description}.",
                 why="Why: spatial analysis needs the environment's geometry and bins.",
                 fix=f"build one with env = Environment.from_samples(positions, bin_size=2.0), then call {context}(env, {arguments}).",
+            )
+        )
+
+
+def require_planar(
+    env: Environment, operation: str, *, why: str, fix: str, plane_why: str
+) -> None:
+    """Refuse a polar, 1-D or 3-D environment for a map built in the (x, y) plane.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment passed with the positions.
+    operation : str
+        The refused call, e.g. ``"compute_view_rate()"``.
+    why : str
+        Why the operation needs Cartesian coordinates, for the polar refusal.
+    fix : str
+        How to fix the polar refusal.
+    plane_why : str
+        Why the operation needs the plane, for the 1-D or 3-D refusal.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    ValueError
+        If ``env`` is not two-dimensional.
+    """
+    require_cartesian(env.coordinate_system, operation, why=why, fix=fix)
+    if env.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"{operation} needs a 2-D environment; got a {env.n_dims}-D one.",
+                why=f"Why: {plane_why}",
+                fix="build the environment from the animal's 2-D (x, y) positions",
             )
         )
 

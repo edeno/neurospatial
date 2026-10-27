@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     hold_last_valid,
@@ -41,7 +40,8 @@ from neurospatial._intervals import (
 )
 from neurospatial.encoding._spatial_counts import FrameBinning, prepare_frame_binning
 from neurospatial.encoding._validation import _validate_times as _validate_times
-from neurospatial.geometry import require_cartesian, wall_hit_bins
+from neurospatial.encoding._validation import require_planar
+from neurospatial.geometry import wall_hit_bins
 from neurospatial.ops.visibility import gaze_points
 
 if TYPE_CHECKING:
@@ -103,22 +103,15 @@ def require_allocentric_view(env: Environment, operation: str) -> None:
     ValueError
         If ``env`` is not two-dimensional.
     """
-    require_cartesian(
-        env.coordinate_system,
+    require_planar(
+        env,
         operation,
         why="It casts gaze from the animal's allocentric positions and headings "
         "and bins the viewed Cartesian locations.",
         fix="compute view rates on the allocentric environment the positions "
         "were recorded in",
+        plane_why="gaze is cast in the plane from (x, y) positions and headings",
     )
-    if env.n_dims != 2:
-        raise ValueError(
-            _format_error(
-                f"{operation} needs a 2-D environment; got a {env.n_dims}-D one.",
-                why="Why: gaze is cast in the plane from (x, y) positions and headings",
-                fix="build the environment from the animal's 2-D (x, y) positions",
-            )
-        )
 
 
 def _precompute_view_bins(
