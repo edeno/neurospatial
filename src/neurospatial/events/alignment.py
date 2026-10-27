@@ -17,100 +17,23 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain, resolve_time_windows
 from neurospatial._spikes import _as_spike_trains_with_ids
 from neurospatial._time_bins import (
     _count_spikes_in_time_bins,
     _time_bin_rounding,
-    _time_bins_in_windows,
 )
-from neurospatial.events._core import PeriEventResult, PopulationPeriEventResult
+from neurospatial.events._core import (
+    PeriEventResult,
+    PopulationPeriEventResult,
+    _make_bin_edges,
+    _validate_window,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
 
     from neurospatial._typing import SpikeTrainsLike
-
-
-def _validate_window(window: tuple[float, float], *, context: str) -> None:
-    """Validate a peri-event window expressed in seconds."""
-    try:
-        if np.asarray(window).dtype.kind not in "biuf":
-            raise TypeError("window bounds must be real numbers")
-        bounds = np.asarray(window, dtype=np.float64)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            _format_error(
-                f"{context}: window must contain two numeric bounds, got {window!r}.",
-                why="Why: peri-event windows are expressed in seconds relative to each event.",
-                fix="pass window=(-0.5, 1.0)",
-            )
-        ) from exc
-    if bounds.shape != (2,) or not np.all(np.isfinite(bounds)):
-        raise ValueError(
-            _format_error(
-                f"{context}: window must contain two finite bounds, got {window!r} with shape {bounds.shape}.",
-                why="Why: peri-event windows need a finite start and stop in seconds.",
-                fix="pass window=(-0.5, 1.0)",
-            )
-        )
-    if window[0] >= window[1]:
-        raise ValueError(
-            _format_error(
-                f"{context}: Window start ({window[0]}) must be before its stop ({window[1]}).",
-                why="Why: a peri-event window is the half-open range [start, stop) "
-                "relative to each event, so a window with stop <= start holds no time.",
-                fix="pass window=(-0.5, 1.0), with start < stop, in seconds",
-            )
-        )
-    if bounds[1] - bounds[0] > 60:
-        warnings.warn(
-            _format_error(
-                f"{context}: window={window!r} spans {bounds[1] - bounds[0]:g} seconds, more than 60 seconds.",
-                why="Why: an unusually wide peri-event window may be specified in milliseconds instead of seconds.",
-                fix="use window=(-0.5, 1.0) if you meant milliseconds",
-            ),
-            UserWarning,
-            stacklevel=3,
-        )
-
-
-def _make_bin_edges(
-    window: tuple[float, float], bin_size: float
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Build PSTH bin edges and centers that stay within the window.
-
-    When ``window_duration`` is not an integer multiple of ``bin_size``,
-    the trailing partial bin is dropped rather than appended. This keeps
-    every edge (and therefore every center) inside ``[window[0],
-    window[1]]``; otherwise the final bin would extend past ``window[1]``
-    and silently absorb spikes that fall outside the requested window.
-
-    Every bin is half-open: a spike at the final whole-bin edge or at the
-    window stop is excluded. Edges are clamped to the window stop using
-    timestamp-relative rounding rather than an absolute epsilon.
-
-    Parameters
-    ----------
-    window : tuple[float, float]
-        Time window ``(start, end)`` relative to each event, in seconds.
-    bin_size : float
-        Width of each time bin in seconds.
-
-    Returns
-    -------
-    bin_edges : NDArray[np.float64], shape (n_bins + 1,)
-        Bin edges from ``window[0]`` up to ``window[0] + n_bins * bin_size``,
-        which never exceeds ``window[1]``.
-    bin_centers : NDArray[np.float64], shape (n_bins,)
-        Centers of each full bin; all lie within ``[window[0], window[1]]``.
-    """
-    left, right = _time_bins_in_windows(
-        np.asarray([window], dtype=np.float64), bin_size
-    )
-    edges = np.r_[left, right[-1]] if left.size else np.array([window[0]])
-    return edges, left + bin_size / 2
 
 
 def align_spikes_to_events(

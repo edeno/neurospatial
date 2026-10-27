@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.events._core import PeriEventResult
-from neurospatial.events.alignment import _iter_peri_event_bin_edges, _make_bin_edges
+from neurospatial.events._core import PeriEventResult, _make_bin_edges
+from neurospatial.events.alignment import _iter_peri_event_bin_edges
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes

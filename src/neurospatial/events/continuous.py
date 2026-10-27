@@ -36,7 +36,7 @@ from neurospatial.events._continuous import (
     _Summaries,
     _window_status,
 )
-from neurospatial.events.alignment import _validate_window
+from neurospatial.events._core import _validate_window
 
 if TYPE_CHECKING:
     import pandas as pd
