@@ -160,10 +160,14 @@ def border_score(
        Høydal et al. (2018), whose border cells in a circular arena cover
        about half of it: a field along half of a circular arena covers its
        whole wall.
-    4. *Distance* ``dm``: the firing-rate-weighted mean distance from the bins
-       of all fields to the nearest wall, divided by the radius of the
-       largest circle that fits in the arena without crossing a wall (half
-       the shorter side of a rectangle).
+    4. *Distance* ``dm``: the mean distance from the bins of all fields to
+       the nearest wall, each bin weighted by its firing rate times its area
+       (``env.bin_sizes``), divided by the radius of the largest circle that
+       fits in the arena without crossing a wall (half the shorter side of a
+       rectangle). With equal bins this is the firing-rate-weighted mean of
+       Solstad et al. (2008); weighting by area keeps it independent of how
+       a field is cut into bins where bins differ in size (bins clipped at an
+       outline, a mesh or polygon cells).
 
     **Interpretation.** A field covering one whole wall with all its firing
     against that wall scores near 1; a field in the middle of the arena
@@ -270,7 +274,7 @@ def border_score(
     fields = _border_fields(env, firing_rate, threshold, min_area)
     if not fields:
         return np.nan
-    return _border_score(fields, firing_rate, metric, geometry)
+    return _border_score(fields, firing_rate, env.bin_sizes, metric, geometry)
 
 
 def observed_wall_fraction(

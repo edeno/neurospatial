@@ -446,9 +446,11 @@ score = border_score(
    wall whose bins were never visited counts as not covered, so missing data
    can lower coverage but never raise it. `observed_wall_fraction` reports how
    much of the walls was observed.
-4. *Distance* `dm`: the firing-rate-weighted mean distance from the bins of all
-   fields to the nearest wall, divided by the radius of the largest circle that
-   fits in the arena (half the shorter side of a rectangle).
+4. *Distance* `dm`: the mean distance from the bins of all fields to the
+   nearest wall, each bin weighted by its firing rate times its area (so bins
+   clipped at the outline count for their area), divided by the radius of the
+   largest circle that fits in the arena (half the shorter side of a
+   rectangle).
 5. Border score: `(cM - dm) / (cM + dm)`, in [-1, 1].
 
 **Interpretation:**

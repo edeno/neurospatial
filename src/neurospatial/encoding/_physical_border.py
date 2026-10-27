@@ -893,17 +893,20 @@ def _half_ring_cover(
 def _border_score(
     fields: list[NDArray[np.intp]],
     firing_rate: NDArray[np.float64],
+    bin_sizes: NDArray[np.float64],
     metric: DistanceMetric,
     geometry: _BorderGeometry,
 ) -> float:
     """Solstad border score of the fields, with these walls.
 
     Coverage is the largest fraction of one wall's length that one field
-    covers (on a ring, of its best half); unobserved wall is not covered. Distance is the
-    firing-rate-weighted mean distance from all field bins to the nearest
-    wall, over the inscribed radius. Geodesic distances include a
-    center-to-wall seed length and then paths through the retained navigation
-    graph; any unreachable field bin makes the score NaN.
+    covers (on a ring, of its best half); unobserved wall is not covered.
+    Distance is the mean distance from the fields to the nearest wall,
+    weighting each field bin by its rate times its area (``bin_sizes``), so
+    it does not depend on how a field is cut into bins; over the inscribed
+    radius. Geodesic distances include a center-to-wall seed length and then
+    paths through the retained navigation graph; any unreachable field bin
+    makes the score NaN.
     """
     coverage = _wall_coverage(geometry, fields, firing_rate)
     if np.isnan(coverage):
@@ -915,7 +918,7 @@ def _border_score(
         distances = geometry.geodesic[bins]
         if not np.all(np.isfinite(distances)):
             return float("nan")
-    weights = firing_rate[bins]
+    weights = firing_rate[bins] * bin_sizes[bins]
     distance = float(np.sum(weights * distances) / np.sum(weights)) / geometry.radius
     denominator = coverage + distance
     if denominator == 0:

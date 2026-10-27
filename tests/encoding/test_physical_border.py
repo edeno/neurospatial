@@ -56,6 +56,35 @@ def test_physical_score_matches_independent_wall_length_and_distance_oracle():
         np.testing.assert_allclose(border_score(env, field, metric=metric), expected)
 
 
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+def test_distance_weights_each_bin_by_its_area(metric):
+    """The distance term is the mean over the field's area, not over its bins.
+
+    Clipping a 5 cm grid to a 32 cm wide box leaves an east column 7 cm wide.
+    A uniform band over the last two columns has its mean distance to the
+    walls weighted by area; counting bins would weigh the 25 cm² cells as
+    much as the 35 cm² cells, so the score would change with how the band
+    happens to be cut into bins."""
+    env = Environment.from_grid_mask(
+        np.ones((7, 6), dtype=bool),
+        grid_edges=(np.arange(0, 36, 5.0), np.arange(0, 31, 5.0)),
+        arena=OpenArena(box(0, 0, 32, 30)),
+        units="cm",
+    ).clip(box(0, 0, 32, 30))
+    x, y = env.bin_centers.T
+    band = x > 20
+    assert np.unique(env.bin_sizes[band]).tolist() == [25.0, 35.0]
+    # Each center's distance to the nearest of the four walls.
+    to_wall = np.minimum.reduce([x, 32 - x, y, 30 - y])[band]
+    area = env.bin_sizes[band]
+    # The band covers the whole east wall; the inscribed radius is 15 cm.
+    distance = np.sum(area * to_wall) / np.sum(area) / 15
+    np.testing.assert_allclose(
+        border_score(env, np.where(band, 10.0, 0.0), metric=metric),
+        (1 - distance) / (1 + distance),
+    )
+
+
 def test_analysis_crop_does_not_create_walls_or_supply_missing_wall_rates():
     env = physical(wall=True)
     field = (env.bin_centers[:, 0] == 3.5).astype(float)
