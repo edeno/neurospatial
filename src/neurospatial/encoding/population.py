@@ -49,6 +49,9 @@ from neurospatial.encoding.spatial import (
     PlaceFieldsResult,
     SpatialRateResult,
     SpatialRatesResult,
+    _check_place_field_arguments,
+    _keep_place_fields,
+    _search_place_fields,
     detect_place_fields,
 )
 from neurospatial.environment import Environment
@@ -461,19 +464,28 @@ def population_coverage(
     n_neurons = firing_rates.shape[0]
 
     if n_jobs == 1:
-        all_fields: list[PlaceFieldsResult] = []
-        for neuron_idx in range(n_neurons):
-            fields = detect_place_fields(
-                env,
-                firing_rates[neuron_idx],
+        # detect_place_fields for each map, with the smallest-field test of
+        # every map's peaks diffused in one batch.
+        if n_neurons:
+            _check_place_field_arguments(
+                threshold=threshold,
+                min_peak_rate=min_peak_rate,
+                min_secondary_peak_fraction=min_secondary_peak_fraction,
                 bandwidth=bandwidth,
+            )
+        searches = [
+            _search_place_fields(
+                env,
+                np.asarray(firing_rates[neuron_idx], dtype=np.float64),
                 threshold=threshold,
                 min_peak_rate=min_peak_rate,
                 min_secondary_peak_fraction=min_secondary_peak_fraction,
                 max_mean_rate=max_mean_rate,
                 detect_subfields=detect_subfields,
             )
-            all_fields.append(fields)
+            for neuron_idx in range(n_neurons)
+        ]
+        all_fields = _keep_place_fields(env, searches, bandwidth, threshold)
     else:
         from joblib import Parallel, delayed
 

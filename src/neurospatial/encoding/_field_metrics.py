@@ -111,7 +111,7 @@ def _component_labels(env: Environment, mask: NDArray[np.bool_]) -> NDArray[np.i
     """Connected-component label of every bin, joining masked bins by open pairs.
 
     Two bins in ``mask`` share a label when a path of open neighbor pairs
-    (``env.binning.connections.pairs``, the edges of ``env.connectivity``)
+    (``env.edge_pairs``, the edges of ``env.connectivity``)
     joins them through bins in ``mask``. Walls close pairs, so they separate
     components; a bin outside ``mask`` is a component of its own.
 
@@ -130,7 +130,7 @@ def _component_labels(env: Environment, mask: NDArray[np.bool_]) -> NDArray[np.i
     from scipy.sparse import coo_array
     from scipy.sparse.csgraph import connected_components
 
-    pairs = env.binning.connections.pairs
+    pairs = env.edge_pairs
     linked = pairs[mask[pairs[:, 0]] & mask[pairs[:, 1]]]
     graph = coo_array(
         (np.ones(len(linked)), (linked[:, 0], linked[:, 1])),

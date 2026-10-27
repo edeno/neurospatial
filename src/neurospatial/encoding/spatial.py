@@ -5519,7 +5519,32 @@ def detect_place_fields(
             f"firing_rate shape {firing_rate.shape} does not match "
             f"env.n_bins ({env.n_bins})"
         )
+    _check_place_field_arguments(
+        threshold=threshold,
+        min_peak_rate=min_peak_rate,
+        min_secondary_peak_fraction=min_secondary_peak_fraction,
+        bandwidth=bandwidth,
+    )
+    search = _search_place_fields(
+        env,
+        firing_rate,
+        threshold=threshold,
+        min_peak_rate=min_peak_rate,
+        min_secondary_peak_fraction=min_secondary_peak_fraction,
+        max_mean_rate=max_mean_rate,
+        detect_subfields=detect_subfields,
+    )
+    return _keep_place_fields(env, [search], bandwidth, threshold)[0]
 
+
+def _check_place_field_arguments(
+    *,
+    threshold: float,
+    min_peak_rate: float,
+    min_secondary_peak_fraction: float,
+    bandwidth: float,
+) -> None:
+    """Refuse invalid :func:`detect_place_fields` arguments."""
     if not 0 < threshold < 1:
         raise ValueError(f"threshold must be in (0, 1), got {threshold}")
     if not (np.isfinite(min_peak_rate) and min_peak_rate >= 0):
@@ -5551,9 +5576,37 @@ def detect_place_fields(
             )
         )
 
+
+class _FieldSearch(NamedTuple):
+    """Candidate fields of one rate map, before the smallest-field test.
+
+    ``peaks[i]`` is the peak bin of ``candidates[i]``; ``observed`` marks the
+    map's finite bins. ``excluded_reason`` is set when the map-mean filter
+    excluded the whole map.
+    """
+
+    peaks: list[int]
+    candidates: list[NDArray[np.int64]]
+    observed: NDArray[np.bool_]
+    excluded_reason: Literal["mean_rate_above_threshold"] | None = None
+
+
+def _search_place_fields(
+    env: Environment,
+    firing_rate: NDArray[np.float64],
+    *,
+    threshold: float,
+    min_peak_rate: float,
+    min_secondary_peak_fraction: float,
+    max_mean_rate: float,
+    detect_subfields: bool,
+) -> _FieldSearch:
+    """Segment one validated rate map into candidate fields around its peaks."""
+    from neurospatial._stacklevel import _external_stacklevel
+
     finite = np.isfinite(firing_rate)
     if not np.any(finite):
-        return PlaceFieldsResult(fields=[])
+        return _FieldSearch([], [], finite)
 
     # A finite cutoff is an explicit map-level filter, independent of cell type.
     if np.isfinite(max_mean_rate):
@@ -5566,11 +5619,9 @@ def detect_place_fields(
                 "a recording-time mean or a cell-type verdict. Pass "
                 "max_mean_rate=np.inf to disable the filter.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=_external_stacklevel(),
             )
-            return PlaceFieldsResult(
-                fields=[], excluded_reason="mean_rate_above_threshold"
-            )
+            return _FieldSearch([], [], finite, "mean_rate_above_threshold")
 
     min_peak = max(
         min_peak_rate, min_secondary_peak_fraction * float(np.max(firing_rate[finite]))
@@ -5578,7 +5629,8 @@ def detect_place_fields(
     measures = np.asarray(env.binning.bins.sizes, dtype=np.float64)
     # Unassigned bins keep their rate; assigned and missing bins are NaN.
     remaining = np.where(finite, firing_rate, np.nan)
-    fields: list[NDArray[np.int64]] = []
+    peaks: list[int] = []
+    candidates: list[NDArray[np.int64]] = []
     while np.any(np.isfinite(remaining)):
         peak_idx = int(np.nanargmax(remaining))
         peak_rate = float(remaining[peak_idx])
@@ -5597,13 +5649,50 @@ def detect_place_fields(
         remaining[field_bins] = np.nan
         if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
             continue
-        smallest = _smoothed_bin_measure(
-            env, peak_idx, bandwidth, threshold, finite, measures
-        )
-        if measures[field_bins].sum() > smallest:
-            fields.append(field_bins)
+        peaks.append(peak_idx)
+        candidates.append(field_bins)
+    return _FieldSearch(peaks, candidates, finite)
 
-    return PlaceFieldsResult(fields=fields)
+
+def _keep_place_fields(
+    env: Environment,
+    searches: Sequence[_FieldSearch],
+    bandwidth: float,
+    threshold: float,
+) -> list[PlaceFieldsResult]:
+    """Keep each map's candidates larger than the field one noisy bin makes.
+
+    The peaks of every map are tested together, so a population shares one
+    batch of impulse diffusions (see :func:`_smoothed_bin_measures`).
+    """
+    measures = np.asarray(env.binning.bins.sizes, dtype=np.float64)
+    peaks = np.array(
+        [peak for search in searches for peak in search.peaks], dtype=np.int64
+    )
+    owners = np.repeat(np.arange(len(searches)), [len(s.peaks) for s in searches])
+    observed = np.zeros((env.n_bins, len(searches)), dtype=bool)
+    for column, search in enumerate(searches):
+        observed[:, column] = search.observed
+    smallest = _smoothed_bin_measures(
+        env, peaks, owners, observed, bandwidth, threshold, measures
+    )
+    results = []
+    start = 0
+    for search in searches:
+        if search.excluded_reason is not None:
+            results.append(
+                PlaceFieldsResult(fields=[], excluded_reason=search.excluded_reason)
+            )
+            continue
+        minima = smallest[start : start + len(search.candidates)]
+        start += len(search.candidates)
+        fields = [
+            field_bins
+            for field_bins, minimum in zip(search.candidates, minima, strict=True)
+            if measures[field_bins].sum() > minimum
+        ]
+        results.append(PlaceFieldsResult(fields=fields))
+    return results
 
 
 def has_place_field(
@@ -6257,28 +6346,65 @@ def _rises_toward_a_neighbor(
     return bool(np.any(firing_rate[neighbors] > peak_rate))
 
 
-def _smoothed_bin_measure(
+# Impulses are diffused this many map entries at a time. It bounds memory
+# (32 MiB of float64 per array), not the computed value.
+_IMPULSE_BLOCK_ELEMENTS = 1 << 22
+
+
+def _smoothed_bin_measures(
     env: Environment,
-    peak_idx: int,
+    peaks: NDArray[np.int64],
+    owners: NDArray[np.intp],
+    observed: NDArray[np.bool_],
     bandwidth: float,
     threshold: float,
-    observed: NDArray[np.bool_],
     measures: NDArray[np.float64],
-) -> float:
-    """Measure of the field one noisy bin at ``peak_idx`` makes after smoothing.
+) -> NDArray[np.float64]:
+    """Measure of the field one noisy bin at each peak makes after smoothing.
 
-    The connected observed bins where one unit diffused from ``peak_idx``
-    stays at or above ``threshold`` times its maximum; the peak bin alone for
-    an unsmoothed map. See :func:`detect_place_fields`, Notes.
+    For each peak, the connected observed bins of its map where one unit
+    diffused from the peak stays at or above ``threshold`` times its maximum;
+    the peak bin alone for an unsmoothed map. The impulses diffuse together,
+    as the columns of a few batches. See :func:`detect_place_fields`, Notes.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment of the maps.
+    peaks : ndarray of int64, shape (n_peaks,)
+        Peak bins.
+    owners : ndarray of intp, shape (n_peaks,)
+        Column of ``observed`` that holds each peak's map.
+    observed : ndarray of bool, shape (n_bins, n_maps)
+        Finite bins of each map.
+    bandwidth : float
+        Smoothing bandwidth of the maps; 0 for unsmoothed maps.
+    threshold : float
+        Fraction of the peak that bounds a field.
+    measures : ndarray of float64, shape (n_bins,)
+        Measure of each bin.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_peaks,)
+        The smallest field measure for each peak.
     """
-    if bandwidth == 0:
-        return float(measures[peak_idx])
-    impulse = np.zeros(env.n_bins)
-    impulse[peak_idx] = 1.0
-    spread = np.asarray(env.diffuse(impulse, bandwidth=bandwidth, mode="density"))
-    above = observed & (spread >= threshold * spread.max())
-    region = _seed_component(peak_idx, above, env)
-    return float(measures[region].sum())
+    if bandwidth == 0 or len(peaks) == 0:
+        return measures[peaks]
+    smallest = np.empty(len(peaks))
+    block = max(1, _IMPULSE_BLOCK_ELEMENTS // env.n_bins)
+    for start in range(0, len(peaks), block):
+        stop = min(start + block, len(peaks))
+        impulses = np.zeros((env.n_bins, stop - start))
+        impulses[peaks[start:stop], np.arange(stop - start)] = 1.0
+        spreads = np.asarray(env.diffuse(impulses, bandwidth=bandwidth, mode="density"))
+        above = observed[:, owners[start:stop]] & (
+            spreads >= threshold * spreads.max(axis=0)
+        )
+        for column, peak in enumerate(peaks[start:stop]):
+            region = _seed_component(int(peak), above[:, column], env)
+            smallest[start + column] = measures[region].sum()
+    return smallest
 
 
 def place_cell_significance(
