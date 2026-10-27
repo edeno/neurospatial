@@ -215,7 +215,7 @@ REQUIRED_DATA_NAMES = {
     *("field_bins", "field_bins_1", "field_bins_2", "field_bins_i", "field_bins_j"),
     *("encoding_models", "models", "pattern", "posterior", "log_likelihood"),
     *("source_probs", "decoded_positions", "actual_positions", "actual_bins"),
-    *("template_correlations", "match_correlations", "spatial_information"),
+    *("template_correlations", "match_correlations", "rates"),
     *("observed", "null_scores", "beta_sin", "beta_cos", "cov_matrix"),
     *("vte_index", "z_head_sweep", "z_speed_inv", "head_sweeps"),
     *("result", "expected_bins"),

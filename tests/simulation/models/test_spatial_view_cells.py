@@ -1003,6 +1003,7 @@ class TestGazeStopsAtWalls:
             preferred_view_location=np.array([48.0, 30.0]),
             view_field_width=10.0,
             gaze_model=gaze_model,
+            view_distance=20.0 if gaze_model == "fixed_distance" else None,
             max_rate=20.0,
             baseline_rate=0.0,
         )
