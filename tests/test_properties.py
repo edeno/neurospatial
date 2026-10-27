@@ -24,6 +24,7 @@ Performance Notes:
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import track_for
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
@@ -2089,7 +2090,7 @@ class TestShufflePreservationProperties:
 
         per_neuron_totals = encoding_models.sum(axis=1)
         for shuffled in shuffle_place_fields_circular(
-            encoding_models, n_shuffles=n_shuffles, rng=seed
+            track_for(encoding_models), encoding_models, n_shuffles=n_shuffles, rng=seed
         ):
             assert shuffled.shape == encoding_models.shape
             assert shuffled.dtype == encoding_models.dtype
@@ -2131,7 +2132,7 @@ class TestShufflePreservationProperties:
         posterior = raw_posterior / raw_posterior.sum(axis=1, keepdims=True)
         row_sums_before = posterior.sum(axis=1)
         for shuffled in shuffle_posterior_circular(
-            posterior, n_shuffles=n_shuffles, rng=seed
+            track_for(posterior), posterior, n_shuffles=n_shuffles, rng=seed
         ):
             assert shuffled.shape == posterior.shape
             assert shuffled.dtype == posterior.dtype

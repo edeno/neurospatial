@@ -17,6 +17,7 @@ New functions:
 
 import numpy as np
 import pytest
+from environment_helpers import track_for
 from numpy.testing import assert_allclose
 
 # Test imports from new location (stats/shuffle.py)
@@ -105,7 +106,7 @@ class TestStatsShuffleBasicFunctionality:
         encoding_models = np.array([[1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0]])
 
         for shuffled in shuffle_place_fields_circular(
-            encoding_models, n_shuffles=5, rng=42
+            track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
         ):
             assert shuffled.shape == encoding_models.shape
             # Each row should have same values, just shifted
@@ -122,7 +123,9 @@ class TestStatsShuffleBasicFunctionality:
             ]
         )
 
-        for shuffled in shuffle_posterior_circular(raw, n_shuffles=5, rng=42):
+        for shuffled in shuffle_posterior_circular(
+            track_for(raw), raw, n_shuffles=5, rng=42
+        ):
             assert_allclose(shuffled.sum(axis=1), 1.0)
 
     def test_shuffle_posterior_weighted_circular_preserves_normalization(self):
@@ -131,7 +134,7 @@ class TestStatsShuffleBasicFunctionality:
         posterior = raw / raw.sum(axis=1, keepdims=True)
 
         for shuffled in shuffle_posterior_weighted_circular(
-            posterior, edge_buffer=2, n_shuffles=5, rng=42
+            track_for(posterior), posterior, edge_buffer=2, n_shuffles=5, rng=42
         ):
             assert_allclose(shuffled.sum(axis=1), 1.0)
 

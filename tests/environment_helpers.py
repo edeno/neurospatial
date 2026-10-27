@@ -331,6 +331,14 @@ def strips_1d(edges, *, units="cm"):
     )
 
 
+def track_for(values):
+    """A straight track with one 1 cm bin per column of ``values``, in order."""
+    n_bins = np.shape(values)[-1]
+    return Environment.linear_track(
+        endpoints=[[0.0, 0.0], [float(n_bins), 0.0]], bin_size=1.0, units="cm"
+    )
+
+
 def renumbered(env, order, distances=None, *, max_distance=5.0):
     """Publish ``env``'s bins and open connections in a new bin order.
 

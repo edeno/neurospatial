@@ -486,7 +486,53 @@ def shuffle_cell_identity(
         yield spike_counts[:, perm].copy(), encoding_models
 
 
+def _track_order(
+    env: Environment, values: NDArray[np.float64], operation: str, alternative: str
+) -> NDArray[np.intp]:
+    """Bin numbers in order along a track, after checking ``values`` fits ``env``.
+
+    Parameters
+    ----------
+    env : Environment
+        A 1-D environment or a linearized track.
+    values : NDArray[np.float64], shape (n_rows, n_bins)
+        Per-bin values, one column per bin of ``env``.
+    operation : str
+        The calling function, for error messages.
+    alternative : str
+        What works on other environments.
+
+    Returns
+    -------
+    NDArray[np.intp], shape (n_bins,)
+        ``order[k]`` is the bin ``k``-th along the track. A stable sort keeps
+        bins already numbered along the track in place.
+
+    Raises
+    ------
+    ValueError
+        If ``env`` is neither 1-D nor a linearized track, or ``values`` is not
+        2-D with one column per bin.
+    """
+    from neurospatial.environment._queries import require_track_extents
+
+    starts, _ = require_track_extents(env, operation, alternative=alternative)
+    if values.ndim != 2 or values.shape[1] != env.n_bins:
+        raise ValueError(
+            _format_error(
+                f"{operation} got an array of shape {values.shape}, but the "
+                f"environment has {env.n_bins} bins.",
+                why="each row is shifted along the track, one value per bin",
+                fix="pass an array shaped (n_rows, env.n_bins), computed on "
+                "this environment",
+            )
+        )
+    order: NDArray[np.intp] = np.argsort(starts, kind="stable")
+    return order
+
+
 def shuffle_place_fields_circular(
+    env: Environment,
     encoding_models: NDArray[np.float64],
     *,
     n_shuffles: int = 1000,
@@ -498,12 +544,16 @@ def shuffle_place_fields_circular(
     properties and local place field structure while disrupting spatial
     relationships between neurons.
 
-    Each neuron's place field is independently shifted by a random amount
-    along the position axis. This preserves the shape of each place field
-    but destroys the spatial relationships between neurons.
+    Each neuron's place field is independently shifted by a random number
+    of bins along the track, wrapping from one end to the other. This
+    preserves the shape of each place field but destroys the spatial
+    relationships between neurons.
 
     Parameters
     ----------
+    env : Environment
+        The environment the fields were computed on: a 1-D environment or a
+        linearized track.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
         Firing rate maps (place fields) for each neuron.
     n_shuffles : int, default=1000
@@ -520,19 +570,38 @@ def shuffle_place_fields_circular(
     shuffled_models : NDArray[np.float64], shape (n_neurons, n_bins)
         Place fields with each row circularly shifted by a random amount.
 
+    Raises
+    ------
+    ValueError
+        If ``env`` is neither 1-D nor a linearized track, or
+        ``encoding_models`` does not have one column per bin.
+
     Notes
     -----
     - Each neuron's place field is shifted independently
     - Preserves the shape of each place field
     - Destroys spatial relationships between neurons
     - More conservative than cell identity shuffle
-    - For 2D environments: consider ``shuffle_place_fields_circular_2d``
+    - A 2-D arena has no single axis to shift along: on a full rectangular
+      grid use ``shuffle_place_fields_circular_2d``; otherwise shift spike
+      times with ``shuffle_spike_times_circular``
+
+    A shift moves values by a whole number of bins in track order: bins are
+    ordered by their position along the track (linear position on a
+    linearized track, the coordinate in a 1-D environment), not by bin
+    number, and the gap between two track segments is skipped. With bins of
+    one length this moves a field rigidly. With bins of unequal length each
+    value keeps its own bin's worth of track, so a field is stretched or
+    compressed where it lands on bins of a different length; use bins of
+    one length when a field's extent in centimeters must be kept.
 
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
+    >>> env = Environment.linear_track(endpoints=[[0.0, 0.0], [8.0, 0.0]], bin_size=2.0)
     >>> encoding_models = np.array(
     ...     [
     ...         [1.0, 2.0, 3.0, 4.0],
@@ -540,7 +609,7 @@ def shuffle_place_fields_circular(
     ...     ]
     ... )
     >>> for i, shuffled in enumerate(
-    ...     shuffle_place_fields_circular(encoding_models, n_shuffles=3, rng=42)
+    ...     shuffle_place_fields_circular(env, encoding_models, n_shuffles=3, rng=42)
     ... ):
     ...     print(f"Shuffle {i}: shape={shuffled.shape}")
     Shuffle 0: shape=(2, 4)
@@ -552,23 +621,47 @@ def shuffle_place_fields_circular(
     shuffle_place_fields_circular_2d : 2D circular shift for 2D environments
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping
     """
-    generator = _ensure_rng(rng)
-    n_neurons, n_bins = encoding_models.shape
+    encoding_models = np.asarray(encoding_models)
+    order = _track_order(
+        env,
+        encoding_models,
+        "shuffle_place_fields_circular()",
+        "on a full rectangular 2-D grid use shuffle_place_fields_circular_2d; "
+        "otherwise shift spike times with shuffle_spike_times_circular",
+    )
+    return _roll_rows_along_track(encoding_models, order, n_shuffles, _ensure_rng(rng))
 
-    # Pre-compute column indices for vectorized roll
+
+def _roll_rows_along_track(
+    values: NDArray[np.float64],
+    order: NDArray[np.intp],
+    n_shuffles: int,
+    generator: np.random.Generator,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Roll each row by its own random number of bins, in track order."""
+    n_rows, n_bins = values.shape
+    along = values[:, order]
     col_indices = np.arange(n_bins)
+    rows = np.arange(n_rows)[:, np.newaxis]
 
     for _ in range(n_shuffles):
-        # Generate random shift amounts for each neuron
-        shifts = np.asarray(generator.integers(0, n_bins, size=n_neurons))
+        # Generate random shift amounts for each row
+        shifts = np.asarray(generator.integers(0, n_bins, size=n_rows))
 
-        # Vectorized circular shift using advanced indexing
-        # For each row i, we want columns (col_indices - shifts[i]) % n_bins
-        # Shape: (n_neurons, n_bins)
+        # For each row i, take columns (col_indices - shifts[i]) % n_bins
         shifted_indices = (col_indices - shifts[:, np.newaxis]) % n_bins
-        shuffled = encoding_models[np.arange(n_neurons)[:, np.newaxis], shifted_indices]
+        shuffled = np.empty_like(values)
+        shuffled[:, order] = along[rows, shifted_indices]
 
         yield shuffled
+
+
+_NO_2D_FIELD_SHUFFLE = (
+    "there is no field-preserving shuffle for this arena; shift each "
+    "neuron's spike times with shuffle_spike_times_circular, the null used "
+    "by place_cell_significance and the other *_significance functions, and "
+    "recompute the rate maps"
+)
 
 
 def shuffle_place_fields_circular_2d(
@@ -609,7 +702,10 @@ def shuffle_place_fields_circular_2d(
     Raises
     ------
     ValueError
-        If environment is not 2D or doesn't have grid layout.
+        If environment is not 2D or doesn't have grid layout, or if the grid
+        has cells outside the arena (a masked grid): no field-preserving
+        shuffle exists there, so shift spike times with
+        ``shuffle_spike_times_circular`` instead.
 
     Examples
     --------
@@ -632,7 +728,8 @@ def shuffle_place_fields_circular_2d(
 
     See Also
     --------
-    shuffle_place_fields_circular : 1D circular shift
+    shuffle_place_fields_circular : Circular shift along a 1-D track
+    shuffle_spike_times_circular : Spike-time shift, for any arena
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping
     """
     # Validate 2D environment
@@ -652,8 +749,11 @@ def shuffle_place_fields_circular_2d(
     grid_shape = env.grid_shape
     if len(grid_shape) != 2:
         raise ValueError(
-            "shuffle_place_fields_circular_2d requires a world-aligned 2D grid; "
-            "use shuffle_place_fields_circular for framed or non-grid environments."
+            _format_error(
+                "shuffle_place_fields_circular_2d() needs a world-aligned 2-D grid.",
+                why="it rolls each field along the grid's rows and columns",
+                fix=_NO_2D_FIELD_SHUFFLE,
+            )
         )
 
     # Verify encoding models match expected size
@@ -661,11 +761,14 @@ def shuffle_place_fields_circular_2d(
     actual_bins = encoding_models.shape[1]
     if actual_bins != expected_bins:
         raise ValueError(
-            f"shuffle_place_fields_circular_2d requires encoding models with "
-            f"{expected_bins} bins (matching grid_shape {grid_shape}), but got "
-            f"{actual_bins} bins. This may occur if the environment has inactive "
-            f"bins (masked grid). Consider using shuffle_place_fields_circular "
-            f"for masked environments."
+            _format_error(
+                f"shuffle_place_fields_circular_2d() needs one value per cell of "
+                f"the full {grid_shape} grid ({expected_bins} bins), but got "
+                f"{actual_bins} bins, so the grid has cells outside the arena.",
+                why="rolling a field across a masked grid would move rates into "
+                "cells outside the arena and break fields at the mask edges",
+                fix=_NO_2D_FIELD_SHUFFLE,
+            )
         )
     generator = _ensure_rng(rng)
     n_neurons = encoding_models.shape[0]
@@ -710,7 +813,15 @@ def shuffle_place_fields_circular_2d(
 # =============================================================================
 
 
+_POSTERIOR_SHUFFLE_ALTERNATIVE = (
+    "a 2-D arena has no single axis to shift along; shuffle the data that "
+    "produced the posterior instead, with shuffle_time_bins or "
+    "shuffle_cell_identity"
+)
+
+
 def shuffle_posterior_circular(
+    env: Environment,
     posterior: NDArray[np.float64],
     *,
     n_shuffles: int = 1000,
@@ -720,11 +831,14 @@ def shuffle_posterior_circular(
 
     Controls for chance linear alignment of position estimates by disrupting
     trajectory progression while preserving local smoothness. Each time bin's
-    posterior is independently shifted by a random amount along the position
-    axis.
+    posterior is independently shifted by a random number of bins along the
+    track, wrapping from one end to the other.
 
     Parameters
     ----------
+    env : Environment
+        The environment the posterior was decoded on: a 1-D environment or a
+        linearized track.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution from decoding. Each row should
         sum to 1.0.
@@ -751,10 +865,24 @@ def shuffle_posterior_circular(
       original data (edge effects near track boundaries)
     - Normalization is preserved (each row still sums to 1.0)
 
+    A shift moves values by a whole number of bins in track order: bins are
+    ordered by their position along the track (linear position on a
+    linearized track, the coordinate in a 1-D environment), not by bin
+    number, and the gap between two track segments is skipped. With bins of
+    one length this moves a field rigidly. With bins of unequal length each
+    value keeps its own bin's worth of track, so a field is stretched or
+    compressed where it lands on bins of a different length; use bins of
+    one length when a field's extent in centimeters must be kept.
+
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.stats.shuffle import shuffle_posterior_circular
+
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [10.0, 0.0]], bin_size=2.0
+    ... )
 
     >>> # Create a normalized posterior (3 time bins, 5 spatial bins)
     >>> raw = np.array(
@@ -765,7 +893,7 @@ def shuffle_posterior_circular(
     ...     ]
     ... )
     >>> for i, shuffled in enumerate(
-    ...     shuffle_posterior_circular(raw, n_shuffles=3, rng=42)
+    ...     shuffle_posterior_circular(env, raw, n_shuffles=3, rng=42)
     ... ):
     ...     print(
     ...         f"Shuffle {i}: shape={shuffled.shape}, sums to 1={np.allclose(shuffled.sum(axis=1), 1.0)}"
@@ -780,26 +908,15 @@ def shuffle_posterior_circular(
         effect mitigation
     shuffle_place_fields_circular : Circular shift of place fields
     """
-    generator = _ensure_rng(rng)
-    n_time_bins, n_bins = posterior.shape
-
-    # Pre-compute column indices for vectorized roll
-    col_indices = np.arange(n_bins)
-
-    for _ in range(n_shuffles):
-        # Generate random shift amounts for each time bin
-        shifts = np.asarray(generator.integers(0, n_bins, size=n_time_bins))
-
-        # Vectorized circular shift using advanced indexing
-        # For each row i, we want columns (col_indices - shifts[i]) % n_bins
-        # Shape: (n_time_bins, n_bins)
-        shifted_indices = (col_indices - shifts[:, np.newaxis]) % n_bins
-        shuffled = posterior[np.arange(n_time_bins)[:, np.newaxis], shifted_indices]
-
-        yield shuffled
+    posterior = np.asarray(posterior)
+    order = _track_order(
+        env, posterior, "shuffle_posterior_circular()", _POSTERIOR_SHUFFLE_ALTERNATIVE
+    )
+    return _roll_rows_along_track(posterior, order, n_shuffles, _ensure_rng(rng))
 
 
 def shuffle_posterior_weighted_circular(
+    env: Environment,
     posterior: NDArray[np.float64],
     *,
     edge_buffer: int = 5,
@@ -814,6 +931,10 @@ def shuffle_posterior_weighted_circular(
 
     Parameters
     ----------
+    env : Environment
+        The environment the posterior was decoded on: a 1-D environment or a
+        linearized track. Track ends are the first and last bins along the
+        track.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution from decoding. Each row should
         sum to 1.0.
@@ -833,8 +954,8 @@ def shuffle_posterior_weighted_circular(
         - Long tracks (>2m): edge_buffer = 10-15 bins
         - Adaptive: edge_buffer = max(5, n_bins // 20)
 
-        For 2D environments or circular tracks, use ``shuffle_posterior_circular``
-        instead (no edge restriction needed).
+        For circular tracks, use ``shuffle_posterior_circular`` instead (no
+        edge restriction needed).
     n_shuffles : int, default=1000
         Number of shuffled versions to generate.
     rng : np.random.Generator | int | None, default=None
@@ -870,17 +991,30 @@ def shuffle_posterior_weighted_circular(
     - MAP at bin 17 (near right): shift limited to [-7, 3) so MAP stays in [10, 19]
     - MAP at bin 10 (center): full circular shift [0, 20)
 
+    Bin positions here count along the track. A shift moves values by a whole number of bins in track order: bins are
+    ordered by their position along the track (linear position on a
+    linearized track, the coordinate in a 1-D environment), not by bin
+    number, and the gap between two track segments is skipped. With bins of
+    one length this moves a field rigidly. With bins of unequal length each
+    value keeps its own bin's worth of track, so a field is stretched or
+    compressed where it lands on bins of a different length; use bins of
+    one length when a field's extent in centimeters must be kept.
+
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
-    >>> # Create a normalized posterior (3 time bins, 10 spatial bins)
+    >>> # A 1-D track of 10 bins and a normalized posterior (3 time bins)
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [20.0, 0.0]], bin_size=2.0
+    ... )
     >>> raw = np.random.default_rng(42).random((3, 10))
     >>> posterior = raw / raw.sum(axis=1, keepdims=True)
     >>> for i, shuffled in enumerate(
     ...     shuffle_posterior_weighted_circular(
-    ...         posterior, edge_buffer=2, n_shuffles=3, rng=42
+    ...         env, posterior, edge_buffer=2, n_shuffles=3, rng=42
     ...     )
     ... ):
     ...     print(f"Shuffle {i}: sums to 1={np.allclose(shuffled.sum(axis=1), 1.0)}")
@@ -893,7 +1027,24 @@ def shuffle_posterior_weighted_circular(
     shuffle_posterior_circular : Standard circular shift without edge restriction
     shuffle_place_fields_circular : Circular shift of place fields
     """
-    generator = _ensure_rng(rng)
+    posterior = np.asarray(posterior)
+    order = _track_order(
+        env,
+        posterior,
+        "shuffle_posterior_weighted_circular()",
+        _POSTERIOR_SHUFFLE_ALTERNATIVE,
+    )
+    return _weighted_rolls(posterior, order, edge_buffer, n_shuffles, _ensure_rng(rng))
+
+
+def _weighted_rolls(
+    posterior: NDArray[np.float64],
+    order: NDArray[np.intp],
+    edge_buffer: int,
+    n_shuffles: int,
+    generator: np.random.Generator,
+) -> Generator[NDArray[np.float64], None, None]:
+    """Edge-restricted rolls of each posterior row, in track order."""
     n_time_bins, n_bins = posterior.shape
 
     # Handle empty posterior
@@ -902,8 +1053,9 @@ def shuffle_posterior_weighted_circular(
             yield posterior.copy()
         return
 
-    # Compute MAP positions for each time bin (used to determine shift restrictions)
-    map_positions = np.argmax(posterior, axis=1)
+    along = posterior[:, order]
+    # MAP positions along the track (used to determine shift restrictions)
+    map_positions = np.argmax(along, axis=1)
 
     # NOTE: the per-time-bin loop below is intentionally not vectorized. Each
     # iteration draws exactly one integer from ``generator`` in time order,
@@ -915,7 +1067,7 @@ def shuffle_posterior_weighted_circular(
     # n_time_bins (a single candidate event, typically tens of bins), so
     # vectorizing buys little. Left as a loop deliberately.
     for _ in range(n_shuffles):
-        shuffled = np.empty_like(posterior)
+        shuffled_along = np.empty_like(along)
         for i in range(n_time_bins):
             map_pos = map_positions[i]
 
@@ -948,7 +1100,9 @@ def shuffle_posterior_weighted_circular(
                 # Not near edge: allow full circular shift
                 shift_amount = generator.integers(0, n_bins)
 
-            shuffled[i, :] = np.roll(posterior[i, :], shift_amount)
+            shuffled_along[i, :] = np.roll(along[i, :], shift_amount)
+        shuffled = np.empty_like(posterior)
+        shuffled[:, order] = shuffled_along
         yield shuffled
 
 
