@@ -300,8 +300,9 @@ def heading_from_velocity(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted. Windows that
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted. Windows that
         touch merge into one, so to keep recordings joined on one clock apart
         use ``break_before``.
     break_before : ArrayLike of bool, shape (n_time,), optional
@@ -1723,8 +1724,9 @@ def compute_home_range(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -2197,8 +2199,9 @@ def compute_trajectory_curvature(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

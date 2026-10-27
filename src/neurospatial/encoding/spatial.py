@@ -3924,8 +3924,9 @@ default="diffusion_kde"
         resolution or subtract a common time origin from all time arrays.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -4279,8 +4280,9 @@ default="diffusion_kde"
         or subtract a common time origin from all time arrays.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -5026,8 +5028,9 @@ def compute_directional_place_fields(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_timepoints,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -5624,8 +5627,9 @@ def has_place_field(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -6001,8 +6005,9 @@ def is_place_cell(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -6366,8 +6371,9 @@ def place_cell_significance(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as ``times``). The interval between two consecutive samples
+        counts only if it lies entirely inside one window. ``None`` (default)
+        means unrestricted.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed

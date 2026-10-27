@@ -106,8 +106,9 @@ def bin_spikes_in_time(
         explicitly, must be strictly greater than ``t_start``.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as the spike times). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        same clock as the spike times). Time bins are tiled inside each
+        window, so no bin spans two windows. ``None`` (default) means
+        unrestricted.
         Cannot be combined with ``t_start`` or ``t_stop``.
     orient : {"time_x_neuron", "neuron_x_time"}, optional
         Axis order of the returned ``counts`` matrix. ``"time_x_neuron"``

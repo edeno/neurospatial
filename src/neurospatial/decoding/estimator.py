@@ -625,8 +625,9 @@ warn_on_drop
             occupancy denominator of the encoding model.
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
-            same clock as ``times``). An interval counts only if it lies entirely
-            inside one window. ``None`` (default) means unrestricted.
+            same clock as ``times``). The interval between two consecutive samples
+            counts only if it lies entirely inside one window. ``None`` (default)
+            means unrestricted.
         break_before : ArrayLike of bool, shape (n_frames,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -795,8 +796,9 @@ warn_on_drop
             ``times=np.arange(t0, t1, dt)``. For pynapple, pass ``tsd.t``.
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
-            same clock as ``times``). An interval counts only if it lies entirely
-            inside one window. ``None`` (default) means unrestricted.
+            same clock as ``times``). The interval between two consecutive samples
+            counts only if it lies entirely inside one window. ``None`` (default)
+            means unrestricted.
         break_before : ArrayLike of bool, shape (n_frames,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -889,8 +891,9 @@ warn_on_drop
 
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
-            same clock as ``times``). An interval counts only if it lies entirely
-            inside one window. ``None`` (default) means unrestricted.
+            same clock as ``times``). The interval between two consecutive samples
+            counts only if it lies entirely inside one window. ``None`` (default)
+            means unrestricted.
         break_before : ArrayLike of bool, shape (n_frames,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
@@ -1006,8 +1009,9 @@ warn_on_drop
 
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
-            same clock as ``times``). An interval counts only if it lies entirely
-            inside one window. ``None`` (default) means unrestricted.
+            same clock as ``times``). The interval between two consecutive samples
+            counts only if it lies entirely inside one window. ``None`` (default)
+            means unrestricted.
         break_before : ArrayLike of bool, shape (n_frames,), optional
             ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
             ``k`` (for example where a new recording starts), whatever the elapsed
