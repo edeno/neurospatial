@@ -161,9 +161,11 @@ def test_trajectory_reports_time_and_heading_problems_together():
         )
     message = str(caught.value)
     assert "compute_directional_rate" in message
+    # Ordering is checked once the timestamps are finite, as for every
+    # (times, positions) pair.
+    assert "monotonically non-decreasing" not in message
     for problem in [
-        "finite",
-        "monotonically non-decreasing",
+        "non-finite",
         "headings must be 1D",
         "headings length (2)",
     ]:

@@ -139,44 +139,11 @@ def _raise_input_problems(context: str, problems: list[tuple[str, str]]) -> None
     )
 
 
-def _time_problems(times: NDArray[np.float64]) -> list[tuple[str, str]]:
-    """Collect timestamp-shape, finite-value and ordering problems."""
-    problems = []
-    if times.ndim != 1:
-        return [
-            (
-                f"times must be 1D, got shape {times.shape}",
-                "pass times as a 1-D array of timestamps in seconds",
-            )
-        ]
-    if len(times) < 2:
-        problems.append(
-            (
-                f"At least 2 samples required, got {len(times)}",
-                "pass at least two timestamped position samples",
-            )
-        )
-    if not np.all(np.isfinite(times)):
-        n_bad = int(np.sum(~np.isfinite(times)))
-        problems.append(
-            (
-                f"times must be finite; got {n_bad} NaN/inf entries",
-                "remove non-finite timestamps and the corresponding sample rows",
-            )
-        )
-    decreasing = np.flatnonzero(np.diff(times) < 0)
-    if decreasing.size:
-        problems.append(
-            (
-                f"times must be monotonically non-decreasing (sorted); found {decreasing.size} decreasing interval(s) at indices {decreasing[:5].tolist()}",
-                "sort times and all corresponding sample rows with order = np.argsort(times)",
-            )
-        )
-    return problems
-
-
 def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
     """Check finite, non-decreasing timestamps with at least two samples.
+
+    The same check, and the same messages, as :func:`validate_trajectory`
+    without positions or headings.
 
     Parameters
     ----------
@@ -190,7 +157,7 @@ def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
     ValueError
         If the shape, sample count, finite values or ordering is invalid.
     """
-    _raise_input_problems(context, _time_problems(times))
+    validate_trajectory(times, context=context)
 
 
 def validate_spike_times(
@@ -386,18 +353,20 @@ def validate_trajectory(
     UserWarning
         When headings read as radians look like degrees.
     """
-    looks_swapped = False
-    if positions is None:
-        problems = [what for what, _ in _time_problems(times)]
-    else:
-        problems, looks_swapped = times_positions_problems(times, positions)
-        if times.ndim == 1 and len(times) < 2:
-            problems.append(f"At least 2 samples required, got {len(times)}.")
-        if n_dims is not None and (
+    problems, looks_swapped = times_positions_problems(times, positions)
+    # Without positions there is no argument to have swapped times with.
+    looks_swapped = looks_swapped and positions is not None
+    if times.ndim == 1 and len(times) < 2:
+        problems.append(f"At least 2 samples required, got {len(times)}.")
+    if (
+        positions is not None
+        and n_dims is not None
+        and (
             (positions.ndim == 1 and n_dims > 1)
             or (positions.ndim == 2 and positions.shape[1] != n_dims)
-        ):
-            problems.append(f"Got {wrong_position_columns(positions.shape, n_dims)}.")
+        )
+    ):
+        problems.append(f"Got {wrong_position_columns(positions.shape, n_dims)}.")
     if headings is not None:
         if headings.ndim != 1:
             problems.append(f"headings must be 1D, got shape {headings.shape}.")
