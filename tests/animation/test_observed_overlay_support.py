@@ -122,6 +122,239 @@ def test_object_vectors_follow_missing_position_and_declared_break(env):
     )
 
 
+TIMES = np.arange(40) / 10
+MAX_GAP = 0.35
+# Row 5 alone and rows 11-12 are bridged (0.2 s and 0.3 s gaps); rows 20-26
+# leave a 0.8 s tracking loss; missing row 32 carries a declared break.
+LOST = np.isin(np.arange(40), [5, 11, 12, *range(20, 27), 32])
+BREAKS = np.arange(40) == 32
+
+
+def _deleted(lost):
+    """The kept rows, with each lost row's break moved to the next kept row."""
+    kept = np.flatnonzero(~lost)
+    crossed = np.cumsum(BREAKS)[kept]
+    return kept, np.r_[False, crossed[1:] > crossed[:-1]]
+
+
+def _missing_and_deleted(make, rows, lost):
+    """``make(rows, times, break_before)`` with NaN rows, and with them deleted."""
+    kept, breaks = _deleted(lost)
+    with_nan = np.array(rows, dtype=float)
+    with_nan[lost] = np.nan
+    return make(with_nan, TIMES, BREAKS), make(rows[kept], TIMES[kept], breaks)
+
+
+@pytest.fixture(scope="module")
+def recording():
+    rng = np.random.default_rng(139)
+    angles = np.angle(np.exp(1j * np.cumsum(rng.normal(0, 0.8, 40))))
+    return {
+        "positions": rng.uniform(1, 9, (40, 2)),
+        "tail": rng.uniform(1, 9, (40, 2)),
+        "angles": angles,
+        "vectors": np.column_stack([np.cos(angles), np.sin(angles)]),
+        "rates": rng.uniform(0, 20, 40),
+        # Inside the recording, at missing rows' times, and between rows.
+        "queries": np.unique(np.r_[TIMES, np.arange(-5, 400) * 0.01 + 0.004]),
+    }
+
+
+@pytest.mark.parametrize("interp", ["linear", "nearest"])
+@pytest.mark.parametrize(
+    ("kind", "attribute"),
+    [
+        ("position", "data"),
+        ("angles", "data"),
+        ("vectors", "data"),
+        ("object", "animal_positions"),
+    ],
+)
+def test_missing_rows_are_sampled_like_deleted_rows(
+    env, recording, interp, kind, attribute
+):
+    """Every view samples the valid observations around a missing row."""
+    from neurospatial.animation import Animation
+    from neurospatial.animation._prepared import PreparedScene
+
+    options = {"interp": interp, "max_gap": MAX_GAP}
+    makers = {
+        "position": lambda rows, times, breaks: PositionOverlay(
+            rows, times, trail_length=5, break_before=breaks, **options
+        ),
+        "angles": lambda rows, times, breaks: HeadDirectionOverlay(
+            rows, times, break_before=breaks, **options
+        ),
+        "vectors": lambda rows, times, breaks: HeadDirectionOverlay(
+            rows, times, break_before=breaks, **options
+        ),
+        "object": lambda rows, times, breaks: ObjectVectorOverlay(
+            np.array([[5.0, 5.0]]), rows, times, break_before=breaks, **options
+        ),
+    }
+    rows = recording["positions" if kind in ("position", "object") else kind]
+    queries = recording["queries"]
+    frames = TIMES
+    sampled = []
+    for overlay in _missing_and_deleted(makers[kind], rows, LOST):
+        data = overlay.convert_to_data(frames, len(frames), env)
+        on_clock = getattr(data.on_clock(queries), attribute)
+        with Animation(
+            env,
+            np.zeros((len(frames), env.n_bins)),
+            frame_times=frames,
+            overlays=[overlay],
+        ) as scene:
+            item = next(scene._overlay_data.sampled())
+            prepared = PreparedScene(scene)
+            values = getattr(item, attribute)
+            circular = kind == "angles"
+            views = np.stack(
+                [prepared.sample(item, values, t, circular=circular) for t in queries]
+            )
+            trails = (
+                [prepared.trail(item, t) for t in queries] if kind == "position" else []
+            )
+        sampled.append((on_clock, views, trails))
+    (
+        (missing, missing_views, missing_trails),
+        (deleted, deleted_views, deleted_trails),
+    ) = sampled
+    np.testing.assert_array_equal(missing, deleted)
+    np.testing.assert_array_equal(missing_views, deleted_views)
+    np.testing.assert_array_equal(missing, missing_views)
+    for (segments, alphas), (expected, expected_alphas) in zip(
+        missing_trails, deleted_trails, strict=True
+    ):
+        np.testing.assert_array_equal(segments, expected)
+        np.testing.assert_array_equal(alphas, expected_alphas)
+    if kind == "position":
+        # Trails join the observations on either side of a bridged gap.
+        across = rows[[4, 6]]
+        assert any(
+            (segments == across).all(axis=(1, 2)).any()
+            for segments, _ in missing_trails
+        )
+    # The 0.8 s tracking loss and the declared break stay unsampled.
+    unsupported = ((queries > 1.9) & (queries < 2.7)) | (
+        (queries > 3.1) & (queries < 3.3)
+    )
+    assert np.isnan(missing[unsupported]).all()
+    assert np.isfinite(missing[(queries >= 0) & (queries <= 3.9) & ~unsupported]).all()
+
+
+@pytest.mark.parametrize("interp", ["linear", "nearest"])
+def test_missing_pose_and_rate_rows_are_sampled_like_deleted_rows(
+    env, recording, interp
+):
+    """Each body part and an object-vector rate skip only their own missing rows."""
+    from neurospatial.animation import Animation, Skeleton
+    from neurospatial.animation._prepared import PreparedScene
+
+    queries = recording["queries"]
+    options = {"interp": interp, "max_gap": MAX_GAP}
+    tail_lost = np.isin(np.arange(40), [3, 4, 15, 32])
+    skeleton = Skeleton(name="rat", nodes=("nose", "tail"), edges=(("nose", "tail"),))
+    nose, tail = recording["positions"].copy(), recording["tail"].copy()
+    nose[LOST], tail[tail_lost] = np.nan, np.nan
+    body = BodypartOverlay(
+        {"nose": nose, "tail": tail},
+        TIMES,
+        skeleton=skeleton,
+        break_before=BREAKS,
+        **options,
+    )
+    with Animation(
+        env, np.zeros((40, env.n_bins)), frame_times=TIMES, overlays=[body]
+    ) as scene:
+        prepared = PreparedScene(scene)
+        poses = [
+            prepared.pose(scene._overlay_data.bodypart_sets[0], t) for t in queries
+        ]
+    on_clock = body.convert_to_data(TIMES, 40, env).on_clock(queries).bodyparts
+    for part, lost in (("nose", LOST), ("tail", tail_lost)):
+        kept, breaks = _deleted(lost)
+        expected = (
+            BodypartOverlay(
+                {part: recording["positions" if part == "nose" else "tail"][kept]},
+                TIMES[kept],
+                break_before=breaks,
+                **options,
+            )
+            .convert_to_data(TIMES, 40, env)
+            .on_clock(queries)
+            .bodyparts[part]
+        )
+        index = 0 if part == "nose" else 1
+        np.testing.assert_array_equal(on_clock[part], expected)
+        np.testing.assert_array_equal(
+            np.stack([pose.points[index] for pose in poses]), expected
+        )
+
+    # A rate is usable where its own row and the position row are observed.
+    rates = recording["rates"].copy()
+    rates[tail_lost] = np.nan
+    vectors = ObjectVectorOverlay(
+        np.array([[5.0, 5.0]]),
+        recording["positions"],
+        TIMES,
+        firing_rates=rates,
+        break_before=BREAKS,
+        **options,
+    )
+    kept, breaks = _deleted(tail_lost)
+    deleted = ObjectVectorOverlay(
+        np.array([[5.0, 5.0]]),
+        recording["positions"][kept],
+        TIMES[kept],
+        firing_rates=recording["rates"][kept],
+        break_before=breaks,
+        **options,
+    )
+    actual, expected = (
+        overlay.convert_to_data(TIMES, 40, env).on_clock(queries).firing_rates
+        for overlay in (vectors, deleted)
+    )
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("interp", ["linear", "nearest"])
+def test_events_on_a_path_with_missing_rows_match_deleted_rows(env, recording, interp):
+    from neurospatial.animation.overlays import EventOverlay
+
+    queries = recording["queries"]
+    events = queries[(queries >= 0) & (queries <= 3.9)][::3]
+    located = [
+        EventOverlay(
+            event_times=events,
+            positions=rows,
+            position_times=times,
+            interp=interp,
+            max_gap=MAX_GAP,
+            break_before=breaks,
+        )
+        .convert_to_data(TIMES, 40, env)
+        .event_positions
+        for rows, times, breaks in _missing_and_deleted(
+            lambda *args: args, recording["positions"], LOST
+        )
+    ]
+    np.testing.assert_array_equal(located[0]["event"], located[1]["event"])
+
+
+def test_nearest_position_across_a_missing_row_is_the_nearer_observation(env):
+    """Between observations at 0 and 0.8 s, 0.5 s is nearer the later one."""
+    times = np.array([0.0, 0.4, 0.8])
+    positions = np.array([[0.0, 0.0], [np.nan, np.nan], [10.0, 10.0]])
+    data = PositionOverlay(positions, times, interp="nearest").convert_to_data(
+        times, 3, env
+    )
+    np.testing.assert_array_equal(
+        data.on_clock(np.array([0.3, 0.4, 0.5])).data,
+        [[0.0, 0.0], [0.0, 0.0], [10.0, 10.0]],
+    )
+
+
 @pytest.mark.parametrize(
     "bad", [np.array([np.nan]), np.array([np.inf]), np.ones((2, 1)), np.array(1.0)]
 )
