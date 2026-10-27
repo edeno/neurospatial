@@ -161,8 +161,10 @@ def smooth_rate_map(
           Respects environment boundaries (walls, obstacles). Uses diffusion
           kernel computed from environment graph. Order: smooth → normalize.
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
-          on Euclidean distance between bin centers. Ignores boundaries (mass
-          can "bleed through" walls). Order: smooth → normalize.
+          on Euclidean distance between bin centers, so it smooths through
+          walls (21-60% of a field's peak 10 cm away across a thin wall at 5-10 cm
+          bandwidths in a simulated maze); prefer ``diffusion_kde`` or
+          ``binned`` in walled mazes. Order: smooth → normalize.
         - **binned**: Bin-then-smooth method. Computes raw rate first, then smooths.
           Order: normalize → smooth. Can introduce discretization artifacts.
 

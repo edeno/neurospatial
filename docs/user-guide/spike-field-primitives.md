@@ -104,6 +104,13 @@ Use `method="binned", bandwidth=0.0` for an unsmoothed count/occupancy map.
 With positive bandwidth, `binned` smooths the rate after division; KDE methods
 smooth the numerator and denominator separately.
 
+`gaussian_kde` weighs bins by straight-line distance, so it smooths through
+walls. In a simulated maze, 10 cm from a field's center but across a thin
+wall, the rate reached 21% of the field's peak at a 5 cm bandwidth and 60% at
+10 cm, enough to be detected as a second field. `diffusion_kde` (the default)
+and `binned` smooth along the environment's connectivity and leaked 0-0.3%; use
+one of them in any maze with walls.
+
 ### Running Only: `min_speed`
 
 By default every sample counts, including time at rest at reward sites and
