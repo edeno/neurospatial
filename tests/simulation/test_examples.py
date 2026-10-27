@@ -144,6 +144,20 @@ class TestOpenFieldSession:
 class TestLinearTrackSession:
     """Tests for linear_track_session() convenience function."""
 
+    def test_place_cell_parameters_reach_every_cell(self):
+        """Field width and rates passed to the helper are the cells' own."""
+        session = linear_track_session(
+            duration=5.0,
+            n_place_cells=3,
+            n_laps=2,
+            width=7.0,
+            max_rate=9.0,
+            baseline_rate=0.2,
+            seed=0,
+        )
+        for model in session.models:
+            assert (model.width, model.max_rate, model.baseline_rate) == (7.0, 9.0, 0.2)
+
     def test_linear_track_session_creates_1d_environment(self):
         """linear_track_session() should create 1D track environment."""
         track_length = 200.0

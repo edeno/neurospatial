@@ -10,7 +10,12 @@ from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
-from neurospatial.simulation.models.base import geodesic_lookup_bins
+from neurospatial.simulation.models.base import default_length, geodesic_lookup_bins
+
+#: Default place field width (Gaussian standard deviation) in centimeters,
+#: derived from the median rat CA1 open-field field size of Mizuseki et al.
+#: (2012); see ``PlaceCellModel`` Notes.
+PLACE_FIELD_WIDTH_CM = 11.1
 
 
 class PlaceCellModel:
@@ -28,17 +33,19 @@ class PlaceCellModel:
         Place field center in continuous coordinates.
         If None, randomly chosen from env.bin_centers.
     width : float | NDArray[np.float64], optional
-        Place field width (standard deviation of Gaussian).
-        Can be scalar (isotropic) or array (anisotropic per dimension).
-        If None, defaults to 3 × bin spacing (median distance between
-        neighbouring bin centres, or the median bin length on a track; equals
-        ``bin_size`` on a regular grid). With
-        anisotropic bins this is set by the smaller spacing; pass an array
-        ``width`` for a per-dimension default.
+        Place field width (standard deviation of Gaussian), in environment
+        units. Can be scalar (isotropic) or array (anisotropic per dimension).
+        If None, 11.1 cm expressed in ``env.units``: the size of a median
+        rat CA1 open-field place field (see Notes). It does not depend on the
+        environment's bins. An environment without metric length units
+        needs an explicit ``width``.
     max_rate : float, optional
-        Peak firing rate in Hz (default: 20.0).
+        Peak firing rate in Hz (default: 12.4, the peak rate of rat CA1
+        place cells in the open field; Mizuseki et al. 2012).
     baseline_rate : float, optional
-        Baseline firing rate outside field (default: 0.01 Hz).
+        Firing rate far from the field, in Hz (default: 0.01). An
+        illustrative value for a cell that is nearly silent outside its
+        field; it is not taken from a published measurement.
     metric : {'euclidean', 'geodesic'}, optional
         Method for computing distance from positions to field center.
 
@@ -165,6 +172,16 @@ class PlaceCellModel:
 
     Notes
     -----
+    **Default field**: Mizuseki et al. (2012) report, for rat CA1 pyramidal
+    cells in a 180 × 180 cm open field, a peak firing rate of 12.4 Hz and a
+    median place field size of 1,775 cm², a field being the region where the
+    rate exceeds 10% of its peak. A Gaussian field exceeds 10% of its peak
+    inside a disk of radius ``σ √(2 ln 10)``, of area ``2π ln(10) σ²``, so
+    that median area gives ``σ = √(1775 / (2π ln 10)) = 11.1 cm``. On their
+    250 cm linear track the same cells had longer fields (75 cm above 10% of
+    peak, ``σ = 75 / (2 √(2 ln 10)) = 17.5 cm``) and a 14.5 Hz peak; pass
+    those values to model a track.
+
     **Geodesic Distance**: For geodesic metric, the distance field is precomputed
     in ``__init__`` using graph shortest paths. This makes subsequent firing rate
     computations fast (O(1) lookup per position) but adds initialization cost.
@@ -172,6 +189,12 @@ class PlaceCellModel:
     **Condition Function**: The condition function receives the full trajectory
     and should return a boolean mask. It's called once per firing_rate() invocation,
     so it can use temporal information (e.g., velocity, acceleration).
+
+    References
+    ----------
+    Mizuseki, K., Royer, S., Diba, K., & Buzsáki, G. (2012). Activity dynamics
+        and behavioral correlates of CA3 and CA1 hippocampal pyramidal neurons.
+        Hippocampus, 22(8), 1659-1680.
     """
 
     def __init__(
@@ -180,7 +203,7 @@ class PlaceCellModel:
         *,
         center: NDArray[np.float64] | None = None,
         width: float | NDArray[np.float64] | None = None,
-        max_rate: float = 20.0,
+        max_rate: float = 12.4,
         baseline_rate: float = 0.01,
         metric: DistanceMetric = "euclidean",
         condition: Callable[
@@ -212,20 +235,14 @@ class PlaceCellModel:
         self._center_place = self._embed(self.center[None, :])[0]
         polar = env.coordinate_kind == "polar"
 
-        # Set width
-        if width is None:
-            # 3 bin spacings, measured between places like the field itself.
-            spacing = env.bin_spacing
-            if not np.isfinite(spacing):
-                raise ValueError(
-                    f"Cannot choose a default place-field width: the environment "
-                    f"has {env.n_bins} bin, so there is no bin spacing to scale "
-                    "the width by.\n"
-                    "Fix: pass width=<sigma in environment units>."
-                )
-            self.width: float | NDArray[np.float64] = 3.0 * spacing
-        else:
-            self.width = width
+        # A field's size belongs to the cell, not to the analysis bins.
+        self.width: float | NDArray[np.float64] = (
+            default_length(
+                env, PLACE_FIELD_WIDTH_CM, name="width", call="PlaceCellModel()"
+            )
+            if width is None
+            else width
+        )
 
         # Reject non-positive width: width is the Gaussian standard deviation,
         # so width <= 0 makes the field undefined (0/0 -> NaN at the center,

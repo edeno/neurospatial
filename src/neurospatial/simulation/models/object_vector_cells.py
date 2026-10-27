@@ -40,7 +40,7 @@ Create a simple object-vector cell:
 >>> # Define object positions
 >>> objects = np.array([[25.0, 50.0], [75.0, 50.0]])
 >>>
->>> # Create OVC that fires 10 units from nearest object
+>>> # Create OVC that fires 10 units from every object
 >>> ovc = ObjectVectorCellModel(
 ...     env=env,
 ...     object_positions=objects,
@@ -127,14 +127,21 @@ class ObjectVectorCellModel:
         headings in ``firing_rate()``. The reverse object-to-animal vector
         has preferred direction plus pi, wrapped to [-pi, pi].
     direction_kappa : float, optional
-        Direction tuning concentration parameter (default: 4.0).
-        Higher values = sharper tuning. κ=4 ≈ 30° half-width at half-max.
+        Direction tuning concentration parameter (default: 4.0, a 34°
+        half-width at half-maximum, ``arccos(1 - ln(2)/κ)``). Higher values =
+        sharper tuning. An illustrative value; it is not taken from a
+        published measurement.
     max_rate : float, optional
-        Peak firing rate in Hz (default: 20.0).
+        Peak firing rate in Hz (default: 20.0). An illustrative value; it is
+        not taken from a published measurement.
     baseline_rate : float, optional
-        Baseline firing rate outside tuned region (default: 0.01 Hz).
+        Firing rate outside the tuned region, in Hz (default: 0.01). An
+        illustrative value for a cell nearly silent away from its fields.
     object_selectivity : {'any', 'nearest', 'specific'}, optional
-        How to aggregate responses across objects (default: 'nearest').
+        How to aggregate responses across objects (default: 'any', a field
+        at the preferred vector from every object). Høydal et al. (2019)
+        tested object-vector cells with 2-6 objects at once and found similar
+        vector fields for each object.
 
         - 'any': Maximum response across all objects
         - 'nearest': Response to nearest object only
@@ -238,7 +245,7 @@ class ObjectVectorCellModel:
         direction_kappa: float = 4.0,
         max_rate: float = 20.0,
         baseline_rate: float = 0.01,
-        object_selectivity: Literal["any", "nearest", "specific"] = "nearest",
+        object_selectivity: Literal["any", "nearest", "specific"] = "any",
         specific_object_index: int | None = None,
         metric: DistanceMetric = "euclidean",
     ) -> None:

@@ -7,8 +7,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.simulation.models.base import default_length
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+
+
+#: Default grid spacing in centimeters: the middle of the 39.1-43.0 cm spacing
+#: of dorsal-most rat grid cells in Hafting et al. (2005).
+GRID_SPACING_CM = 41.0
 
 
 class GridCellModel:
@@ -21,9 +28,12 @@ class GridCellModel:
     ----------
     env : Environment
         The spatial environment (must be 2D).
-    grid_spacing : float
-        Distance between grid peaks in environment units (default: 50.0 cm).
-        This is the characteristic spatial scale of the grid pattern.
+    grid_spacing : float, optional
+        Distance between grid peaks in environment units. This is the
+        characteristic spatial scale of the grid pattern. If None, 41 cm
+        expressed in ``env.units``: the middle of the 39.1-43.0 cm spacing of
+        the dorsal-most grid cells in Hafting et al. (2005). An environment
+        without metric length units needs an explicit ``grid_spacing``.
     grid_orientation : float, optional
         Orientation of the field lattice in radians (default: 0.0): the
         direction from a firing field to a neighboring field, from +x (East)
@@ -37,9 +47,11 @@ class GridCellModel:
         Controls the position of grid vertices. Different phase offsets
         create complementary grid representations.
     max_rate : float, optional
-        Peak firing rate in Hz (default: 20.0).
+        Peak firing rate in Hz (default: 20.0). An illustrative value; it is
+        not taken from a published measurement.
     baseline_rate : float, optional
-        Baseline firing rate outside peaks (default: 0.01 Hz).
+        Firing rate between the fields, in Hz (default: 0.01). An
+        illustrative value for a cell nearly silent between its fields.
 
     Attributes
     ----------
@@ -75,12 +87,11 @@ class GridCellModel:
 
     This produces hexagonal symmetry with peaks at grid vertices.
 
-    **Grid Spacing Selection**: Choose grid_spacing based on environment size
-    and analysis goals:
-
-    - Small arenas (< 1m): Use 10-30 cm spacing
-    - Medium arenas (1-2m): Use 30-60 cm spacing
-    - Large arenas (> 2m): Use 60-100 cm spacing
+    **Grid Spacing Selection**: Hafting et al. (2005) measured spacings of
+    39 to 73 cm across rat grid cells, increasing from dorsal to ventral
+    medial entorhinal cortex; dorsal-most cells were spaced 39.1-43.0 cm
+    apart. The arena must span several spacings for the hexagonal pattern
+    to show.
 
     Grid cells typically have multiple scales (modules) in biological systems.
     For realistic populations, create multiple GridCellModel instances with
@@ -139,7 +150,7 @@ class GridCellModel:
         self,
         env: Environment,
         *,
-        grid_spacing: float = 50.0,
+        grid_spacing: float | None = None,
         grid_orientation: float = 0.0,
         phase_offset: NDArray[np.float64] | None = None,
         max_rate: float = 20.0,
@@ -153,6 +164,11 @@ class GridCellModel:
                 f"Got {env.n_dims}D environment. "
                 f"Grid cells exhibit hexagonal spatial periodicity that "
                 f"requires exactly 2 spatial dimensions."
+            )
+
+        if grid_spacing is None:
+            grid_spacing = default_length(
+                env, GRID_SPACING_CM, name="grid_spacing", call="GridCellModel()"
             )
 
         # Validate parameters

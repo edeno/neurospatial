@@ -250,11 +250,10 @@ def simulate_session(
 
         **Place cell parameters** (cell_type='place' or 'mixed'):
 
-        - max_rate : float - Peak firing rate in Hz (default: 20.0)
+        - max_rate : float - Peak firing rate in Hz (default: 12.4, see
+          ``PlaceCellModel``)
         - width : float | NDArray - Field width in environment units (default:
-          3 × bin spacing, the median distance between neighbouring bin centres,
-          or the median bin length on a track; equals ``bin_size`` on a
-          regular grid)
+          11.1 cm in ``env.units``, see ``PlaceCellModel``)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
         - metric : {'euclidean', 'geodesic'} - Distance computation method
         - condition : Callable - Optional conditional firing function
@@ -270,7 +269,8 @@ def simulate_session(
 
         **Grid cell parameters** (cell_type='grid' or 'mixed'):
 
-        - spacing : float - Grid spacing in environment units (maps to grid_spacing)
+        - spacing : float - Grid spacing in environment units (maps to
+          grid_spacing; default 41 cm in ``env.units``, see ``GridCellModel``)
         - orientation : float - Field lattice angle in radians from +x, modulo pi/3 (maps to grid_orientation)
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
@@ -333,7 +333,7 @@ def simulate_session(
     ...     duration=2.0,
     ...     n_cells=5,
     ...     cell_type="place",
-    ...     max_rate=50.0,  # Increased from default 20.0 Hz
+    ...     max_rate=50.0,  # peak rate, Hz
     ...     width=8.0,  # Custom field width
     ...     show_progress=False,
     ... )

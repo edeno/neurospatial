@@ -39,10 +39,10 @@ def open_field_session(
         Random seed for reproducibility (default: None).
     **kwargs : Any
         Additional parameters passed to PlaceCellModel. Common options:
-        - max_rate : float - Peak firing rate in Hz (default: 20.0)
-        - width : float - Place field width in cm (default: 3 × bin spacing,
-          the median distance between neighbouring bin centres, or the median
-          bin length on a track; equals ``bin_size`` on a regular grid)
+        - max_rate : float - Peak firing rate in Hz (default: 12.4, see
+          ``PlaceCellModel``)
+        - width : float - Place field width in cm (default: 11.1, see
+          ``PlaceCellModel``)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
 
     Returns
@@ -185,6 +185,7 @@ def linear_track_session(
     n_place_cells: int = 40,
     n_laps: int = 20,
     seed: int | None = None,
+    **kwargs: Any,
 ) -> SimulationSession:
     """Generate linear track simulation with lap-based running.
 
@@ -209,6 +210,10 @@ def linear_track_session(
         inbound starting outbound. Two traversals form one out-and-back cycle.
     seed : int | None, optional
         Random seed for reproducibility (default: None).
+    **kwargs : Any
+        Place cell parameters passed to ``PlaceCellModel``: ``width`` (cm),
+        ``max_rate`` and ``baseline_rate`` (Hz), ``metric``. Their defaults
+        are ``PlaceCellModel``'s.
 
     Returns
     -------
@@ -253,8 +258,14 @@ def linear_track_session(
     ...     duration=60.0, n_place_cells=3, n_laps=6, seed=42
     ... )
     >>> report = validate_simulation(session)
-    >>> print(f"Validation: {report['passed']}")
-    Validation: True
+    >>> report["center_errors"]  # cm between true and detected field peaks
+    array([4., 2., 0.])
+    >>> bool((report["correlations"] > 0.9).all())  # map shapes recovered
+    True
+
+    The default center-error threshold (2 bins, 2 cm here) fails the first
+    cell; pass ``max_center_error=`` suited to your session's field size and
+    duration.
 
     See Also
     --------
@@ -342,6 +353,7 @@ def linear_track_session(
         n_laps=n_laps,
         seed=seed,
         show_progress=False,  # Disable progress bar for convenience function
+        **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
 
     return session
@@ -795,7 +807,7 @@ def grid_cell_session(
     *,
     duration: float = 300.0,
     arena_size: float = 150.0,
-    grid_spacing: float = 50.0,
+    grid_spacing: float = 41.0,
     n_grid_cells: int = 40,
     seed: int | None = None,
 ) -> SimulationSession:
@@ -814,7 +826,8 @@ def grid_cell_session(
     arena_size : float, optional
         Square arena side length in cm (default: 150.0).
     grid_spacing : float, optional
-        Grid spacing (distance between firing fields) in cm (default: 50.0).
+        Grid spacing (distance between firing fields) in cm (default: 41.0,
+        dorsal-most rat grid cells; see ``GridCellModel``).
     n_grid_cells : int, optional
         Number of grid cells (default: 40).
     seed : int | None, optional
@@ -883,7 +896,7 @@ def grid_cell_session(
 
     - Duration: 300 seconds (5 minutes) - sufficient for spatial coverage
     - Arena size: 150 cm × 150 cm - larger arena to show grid structure
-    - Grid spacing: 50 cm - typical grid scale for medial entorhinal cortex
+    - Grid spacing: 41 cm - dorsal-most rat grid cells (Hafting et al. 2005)
     - Number of cells: 40 - realistic grid cell recording
 
     **Grid Cell Model**:

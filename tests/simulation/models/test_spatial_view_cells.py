@@ -68,8 +68,9 @@ class TestSpatialViewCellModelCreation:
             boundary_source="analysis",
         )
 
-        # Default view field width
-        assert model.view_field_width > 0
+        # Default view field width: 10 cm in the environment's units
+        assert env.units == "cm"
+        assert model.view_field_width == pytest.approx(10.0)
 
         # Default rates
         assert model.max_rate > 0
@@ -936,6 +937,7 @@ def test_firing_rate_builds_the_mesh_lookup_once_per_call(gaze_model, monkeypatc
     model = SpatialViewCellModel(
         env,
         preferred_view_location=np.array([10.0, 10.0]),
+        view_field_width=10.0,
         gaze_model=gaze_model,
         view_distance=5.0 if gaze_model == "fixed_distance" else None,
         require_visibility=True,

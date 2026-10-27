@@ -93,6 +93,7 @@ from neurospatial.geometry import (
     require_cartesian,
 )
 from neurospatial.ops.visibility import FieldOfView, gaze_points
+from neurospatial.simulation.models.base import default_length
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -114,8 +115,11 @@ class SpatialViewCellModel:
     preferred_view_location : NDArray[np.float64], shape (2,)
         Location in allocentric coordinates that triggers peak firing when viewed.
     view_field_width : float, optional
-        Width of Gaussian tuning around preferred location (default: 10.0).
-        Larger values produce broader spatial tuning.
+        Standard deviation of the Gaussian tuning around the preferred
+        location, in environment units. Larger values produce broader spatial
+        tuning. If None, 10 cm expressed in ``env.units``: an illustrative
+        value, not taken from a published measurement. An environment without
+        metric length units needs an explicit ``view_field_width``.
     view_distance : float or None, optional
         Gaze distance for ``gaze_model='fixed_distance'``, in environment
         units. None (the default) uses 10 cm, as ``compute_view_rate`` does,
@@ -136,9 +140,11 @@ class SpatialViewCellModel:
         Declared physical walls or explicitly selected analysis boundaries for
         the gaze and line of sight. Unknown physical walls refuse.
     max_rate : float, optional
-        Peak firing rate in Hz (default: 20.0).
+        Peak firing rate in Hz (default: 20.0). An illustrative value; it is
+        not taken from a published measurement.
     baseline_rate : float, optional
-        Baseline firing rate when not viewing preferred location (default: 0.01 Hz).
+        Firing rate when the preferred location is not viewed, in Hz
+        (default: 0.01). An illustrative value.
     require_visibility : bool, optional
         If True, returns baseline rate when view is blocked (default: False).
     fov : FieldOfView | None, optional
@@ -229,7 +235,7 @@ class SpatialViewCellModel:
         env: Environment,
         *,
         preferred_view_location: NDArray[np.float64],
-        view_field_width: float = 10.0,
+        view_field_width: float | None = None,
         view_distance: float | None = None,
         gaze_model: Literal["ray_cast", "fixed_distance"] = "ray_cast",
         max_rate: float = 20.0,
@@ -256,6 +262,10 @@ class SpatialViewCellModel:
             )
             raise ValueError(msg)
 
+        if view_field_width is None:
+            view_field_width = default_length(
+                env, 10.0, name="view_field_width", call="SpatialViewCellModel()"
+            )
         # Validate view_field_width
         if view_field_width <= 0:
             msg = f"view_field_width must be positive, got {view_field_width}"

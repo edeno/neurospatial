@@ -20,7 +20,11 @@ class HeadDirectionCellModel:
         π = West, -π/2 = South (standard mathematical convention).
     concentration : float, optional
         Von Mises concentration parameter (κ). Higher values = sharper tuning.
-        Default is 2.0.
+        Default is 9.1, a 22.5° half-width at half-maximum: Taube et al.
+        (1990) found that postsubicular head-direction cells fire over a
+        range of about 90°, falling off roughly linearly on either side of
+        the preferred direction, and a triangle 90° wide at its base is half
+        its height 22.5° from the peak, so ``κ = ln 2 / (1 - cos 22.5°)``.
 
         The half-width at half-maximum of the rate above baseline solves
         ``exp(κ (cos Δ - 1)) = 1/2``, so ``HWHM = arccos(1 - ln(2)/κ)``
@@ -31,9 +35,13 @@ class HeadDirectionCellModel:
         - κ = 5: Sharp tuning (31° half-width)
         - κ = 10: Very sharp tuning (21° half-width)
     max_rate : float, optional
-        Peak firing rate in Hz (default: 40.0). Typical HD cells fire 20-100 Hz.
+        Peak firing rate in Hz (default: 35.0, the mean peak rate of the
+        head-direction cells of Taube et al. (1990), whose peak rates ranged
+        from 5 to 115 Hz).
     baseline_rate : float, optional
-        Baseline firing rate outside preferred direction (default: 0.01 Hz).
+        Firing rate facing away from the preferred direction, in Hz (default:
+        0.01). An illustrative value: Taube et al. (1990) report little
+        firing outside the directional range but no single rate.
     seed : int | None, optional
         Random seed for reproducible random direction selection.
 
@@ -154,8 +162,8 @@ class HeadDirectionCellModel:
         self,
         *,
         preferred_direction: float | None = None,
-        concentration: float = 2.0,
-        max_rate: float = 40.0,
+        concentration: float = 9.1,
+        max_rate: float = 35.0,
         baseline_rate: float = 0.01,
         seed: int | None = None,
     ) -> None:

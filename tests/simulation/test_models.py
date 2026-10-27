@@ -67,57 +67,32 @@ class TestPlaceCellModel:
         assert min_dist < 1e-10  # Essentially zero
 
     @pytest.mark.parametrize("bin_size", [1.0, 2.0, 5.0])
-    def test_default_width_is_three_bin_spacings(self, bin_size):
-        """The default width is 3 bin spacings, a length (not 3 bin areas)."""
-        from neurospatial import Environment
+    def test_default_width_is_physical_not_a_bin_multiple(self, bin_size):
+        """The default field is 11.1 cm whatever the analysis bins."""
+        from shapely.geometry import box
 
-        grid = np.linspace(0, 100, 201)
-        xx, yy = np.meshgrid(grid, grid)
-        env = Environment.from_samples(
-            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=bin_size
+        env = Environment.from_polygon(
+            box(0, 0, 100, 100), bin_size=bin_size, units="cm"
         )
-
         pc = PlaceCellModel(env, center=[50.0, 50.0])
+        assert pc.width == pytest.approx(11.1)
+        assert pc.max_rate == 12.4
 
-        spacing = np.diff(env.grid_edges[0])[0]
-        np.testing.assert_allclose(pc.width, 3 * spacing, rtol=1e-12)
-        np.testing.assert_allclose(pc.width, 3 * bin_size, rtol=0.05)
+    def test_default_width_follows_the_length_unit(self):
+        from shapely.geometry import box
 
-    def test_default_width_on_track_uses_bin_length(self):
-        """On a linearized track the spacing is the bin length along the track."""
-        from neurospatial import Environment
+        env = Environment.from_polygon(box(0, 0, 1, 1), bin_size=0.02, units="m")
+        assert PlaceCellModel(env, center=[0.5, 0.5]).width == pytest.approx(0.111)
 
-        nodes = {
-            "bl": (0, 0),
-            "bm": (50, 0),
-            "br": (100, 0),
-            "al": (0, 50),
-            "am": (50, 50),
-            "ar": (100, 50),
-        }
-        env = Environment.maze(kind="w", node_positions=nodes, bin_size=5.0)
+    def test_default_width_needs_known_length_units(self):
+        """Without metric units the cm default has no value; say how to fix it."""
+        from shapely.geometry import box
 
-        pc = PlaceCellModel(env, center=[50.0, 0.0])
-
-        np.testing.assert_allclose(pc.width, 15.0, rtol=1e-9)
-
-    def test_default_width_on_hairpin_follows_the_track(self, hairpin_track_env):
-        """Bins on the opposite arm are close in space, not along the track."""
-        pc = PlaceCellModel(hairpin_track_env, center=[50.0, 0.0])
-
-        np.testing.assert_allclose(pc.width, 15.0, rtol=1e-12)
-
-    def test_default_width_single_bin_raises(self):
-        """A one-bin environment has no bin spacing to scale the width by."""
-        from neurospatial import Environment
-
-        env = Environment.from_grid_mask(
-            np.ones((1, 1), dtype=bool),
-            grid_edges=(np.array([0.0, 10.0]), np.array([0.0, 10.0])),
-        )
-
-        with pytest.raises(ValueError, match="Fix: pass width="):
-            PlaceCellModel(env, center=[5.0, 5.0])
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0)
+        with pytest.raises(ValueError, match="needs width") as raised:
+            PlaceCellModel(env, center=[50.0, 50.0])
+        assert "Fix: pass width=" in str(raised.value)
+        assert PlaceCellModel(env, center=[50.0, 50.0], width=8.0).width == 8.0
 
     def test_peak_firing_at_center(self, simple_2d_env):
         """Test that firing rate peaks at field center."""
@@ -814,6 +789,23 @@ class TestGridCellModel:
 
         np.testing.assert_array_equal(gc.phase_offset, np.array([0.0, 0.0]))
 
+    @pytest.mark.parametrize(("units", "expected"), [("cm", 41.0), ("m", 0.41)])
+    def test_default_spacing_is_the_dorsal_module_in_physical_units(
+        self, units, expected
+    ):
+        from shapely.geometry import box
+
+        from neurospatial.simulation.models import GridCellModel
+
+        side = 100.0 if units == "cm" else 1.0
+        env = Environment.from_polygon(
+            box(0, 0, side, side), bin_size=side / 50, units=units
+        )
+        assert GridCellModel(env).grid_spacing == pytest.approx(expected)
+        unitless = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0)
+        with pytest.raises(ValueError, match="needs grid_spacing"):
+            GridCellModel(unitless)
+
     def test_rejects_negative_grid_spacing(self, simple_2d_env):
         """Test that negative grid_spacing raises ValueError."""
         import pytest
@@ -952,22 +944,17 @@ class TestPolarPlaceCellModel:
 
     def test_rate_falls_off_with_the_distance_between_places(self, surround):
         pc = PlaceCellModel(
-            surround, center=np.array([10.0, 0.0]), width=5.0, baseline_rate=0.0
+            surround,
+            center=np.array([10.0, 0.0]),
+            width=5.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
         )
         rows = np.array([[10.0, 0.0], [10.0, 2 * np.pi], [10.0, np.pi], [5.0, 0.0]])
         # 10 cm ahead, the same place a turn later, 10 cm behind (20 cm away),
         # and 5 cm ahead (5 cm away).
         expected = 20.0 * np.exp(-0.5 * (np.array([0.0, 0.0, 20.0, 5.0]) / 5.0) ** 2)
         np.testing.assert_allclose(pc.firing_rate(rows), expected, atol=1e-9)
-
-    def test_default_width_is_three_bin_spacings_in_length_units(self, surround):
-        pc = PlaceCellModel(surround, center=np.array([10.0, 0.0]))
-        # Innermost-ring neighbours are 2.5 * 2 * sin(pi/16) apart; the median
-        # nearest-neighbour spacing of the placed centers is a length in cm.
-        places = surround.bin_centers[:, 0] * np.exp(1j * surround.bin_centers[:, 1])
-        gaps = np.abs(places[:, None] - places[None])
-        np.fill_diagonal(gaps, np.inf)
-        assert pc.width == pytest.approx(3.0 * np.median(gaps.min(axis=1)))
 
     def test_per_axis_width_is_refused_with_a_working_alternative(self, surround):
         import neurospatial

@@ -82,13 +82,8 @@ class TestObjectVectorCellModelCreation:
         # Default direction tuning (None = omnidirectional)
         assert model.preferred_direction is None
 
-        # Default rates
-        assert model.max_rate > 0
-        assert model.baseline_rate >= 0
-        assert model.baseline_rate < model.max_rate
-
-        # Default object selectivity
-        assert model.object_selectivity == "nearest"
+        # Default object selectivity: a field at every object
+        assert model.object_selectivity == "any"
 
         # Default distance metric
         assert model.metric == "euclidean"
@@ -629,6 +624,27 @@ class TestObjectSelectivity:
     def two_objects(self):
         """Two objects at different positions."""
         return np.array([[25.0, 50.0], [75.0, 50.0]])
+
+    def test_default_fires_at_the_same_vector_from_every_object(self, env):
+        """Each object gets a field at the preferred vector, not just the nearest."""
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        model = ObjectVectorCellModel(
+            env,
+            object_positions=np.array([[40.0, 50.0], [60.0, 50.0]]),
+            preferred_distance=15.0,
+            distance_width=3.0,
+            preferred_direction=0.0,  # the object is East of the animal
+            baseline_rate=0.0,
+        )
+        # 15 cm West of the first object, 15 cm West of the second (whose
+        # nearest object is the first, 5 cm away), and far from both fields.
+        positions = np.array([[25.0, 50.0], [45.0, 50.0], [50.0, 90.0]])
+        rates = model.firing_rate(positions)
+        np.testing.assert_allclose(rates[:2], model.max_rate)
+        assert rates[2] < 1e-6
 
     def test_selectivity_nearest(self, env, two_objects):
         """selectivity='nearest' responds to nearest object only."""

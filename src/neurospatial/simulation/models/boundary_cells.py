@@ -109,9 +109,11 @@ class BorderCellModel:
         Distance from the wall at which the cell fires most, in environment
         units. 0 is a border cell, which fires along the walls.
     max_rate : float, default=15.0
-        Peak firing rate in Hz.
+        Peak firing rate in Hz. An illustrative value; it is not taken from a
+        published measurement.
     baseline_rate : float, default=0.01
-        Firing rate far from the preferred distance, in Hz.
+        Firing rate far from the preferred distance, in Hz. An illustrative
+        value.
     boundary_source : {'physical', 'analysis'}, default='physical'
         The arena's declared walls, or the edges of the environment's bins.
 
@@ -247,9 +249,11 @@ class BoundaryVectorCellModel:
         von Mises concentration is ``κ = ln 2 / (1 - cos(direction_tolerance))``.
     max_rate : float, default=15.0
         Rate in Hz next to a straight wall at the preferred distance and
-        direction.
+        direction. An illustrative value; it is not taken from a published
+        measurement.
     baseline_rate : float, default=0.01
-        Rate in Hz with no wall near the preferred distance and direction.
+        Rate in Hz with no wall near the preferred distance and direction. An
+        illustrative value.
     boundary_source : {'physical', 'analysis'}, default='physical'
         The arena's declared walls, or the edges of the environment's bins.
 
