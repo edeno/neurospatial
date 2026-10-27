@@ -2632,28 +2632,11 @@ def compute_directional_rate(
     bandwidth_rad = counts.bandwidth
     settings = counts.analysis_settings
 
-    # Apply smoothing if requested
-    if bandwidth_rad is not None:
-        from scipy.ndimage import gaussian_filter1d
-
-        # Convert bandwidth to number of bins
-        sigma_bins = bandwidth_rad / actual_bin_size_rad
-
-        # Apply circular Gaussian smoothing
-        # Use mode='wrap' for circular boundary conditions
-        spike_counts_smooth = gaussian_filter1d(
-            spike_counts, sigma=sigma_bins, mode="wrap"
-        )
-        occupancy_smooth = gaussian_filter1d(occupancy, sigma=sigma_bins, mode="wrap")
-    else:
-        spike_counts_smooth = spike_counts
-        occupancy_smooth = occupancy
-
-    # Compute firing rate (handle division by zero)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        firing_rate = spike_counts_smooth / occupancy_smooth
-        # Unvisited headings are unobserved, even where smoothing reaches them.
-        firing_rate[occupancy == 0] = np.nan
+    # Rates from the unsmoothed counts; the counts stay unsmoothed for the
+    # tuning test.
+    firing_rate = _smoothed_directional_rates(
+        spike_counts[None], occupancy, bandwidth_rad, actual_bin_size_rad
+    )[0]
 
     return DirectionalRateResult(
         firing_rate=_to_backend(firing_rate, resolved_backend),
