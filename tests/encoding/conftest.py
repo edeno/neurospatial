@@ -224,8 +224,11 @@ def significance_family(request):
         compute=getattr(module, compute_name),
         compute_name=compute_name,
         # The rate function each significance null calls; view and
-        # object-vector nulls reuse trajectory geometry through private ones.
+        # object-vector nulls reuse trajectory geometry through private ones,
+        # and the head-direction null counts spikes without estimating the
+        # spike-count dispersion.
         statistic_name={
+            "head_direction": "_count_directional",
             "view": "_compute_view_rates",
             "object_vector": "_object_vector_rates",
             "egocentric_object_vector": "_object_vector_rates",
