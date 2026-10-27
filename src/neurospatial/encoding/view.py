@@ -562,8 +562,8 @@ class ViewRateResult(SingleUnitRateMixin):
         or is_spatial_view_cell(..., criterion="shuffle") with the raw
         arrays; a result does not keep the arrays it was computed from.
 
-        Unlike head direction cells which use both mean vector length and
-        Rayleigh test, view cell classification is typically based solely
+        Unlike head direction cells, which use both mean vector length and
+        an occupancy-corrected tuning test, view cell classification is typically based solely
         on spatial information because view fields don't have the circular
         structure of directional tuning.
 

@@ -633,9 +633,14 @@ print("Rate-weighted mean vector length:", hd.mean_vector_length())
 Inspect angular occupancy as well as rates. Mean vector length describes the
 estimated tuning curve. A fixed cutoff is a screen. `hd.tuning_pvalue()` tests
 for one preferred direction given how long the animal faced each heading, so
-uneven heading dwell time alone does not make a cell look tuned; it assumes
-spikes are independent given heading, and bursting or slow rate drift make
-its p-value too small. Mean vector length uses only visited headings, so check
+uneven heading dwell time alone does not make a cell look tuned. Real cells
+fire in bursts and drift in rate, so their spike counts vary more than
+independent spikes would; the test estimates that extra variability from spike
+counts in time windows (`hd.spike_count_dispersion`, 1 for independent spikes,
+about 2b - 1 for bursts of b spikes) and divides its statistic by it. It needs
+at least 50 spikes and returns NaN below that. A result you build yourself
+from tuning curves has no dispersion, so its test is NaN until you pass
+`spike_count_dispersion` (1.0 assumes independent spikes). Mean vector length uses only visited headings, so check
 `hd.largest_unvisited_arc()`: when the animal never faced an arc wider than
 90°, untuned cells get inflated MVLs and the screen warns. A circular-shift
 test on the raw recording is the verdict when its stationarity assumptions fit
@@ -658,6 +663,20 @@ hd_shift_verdict = is_head_direction_cell(
 The selected analyzed span must be long enough for the minimum shift. Report
 the null, estimator, seed and number of shuffles; a small p-value establishes
 association against that null rather than independence from position or speed.
+
+**Heading and position are confounded on tracks and mazes.** On a linear
+track, T-maze or W-maze the animal faces one direction on each arm and run,
+so a place cell that fires on only one running direction has a sharp heading
+tuning curve. Both the screen and the circular-shift test flag such cells (in
+simulation, 83-100% of one-direction place cells on tracks and T/W mazes),
+because shifting spikes in time keeps the cell's position-locked firing. A
+head-direction claim needs a control that holds position fixed: compare the
+cell's spatial maps for each running direction with
+`compute_directional_place_fields` (a place-by-direction cell has a field in
+one direction only, while a head-direction cell fires everywhere the animal
+faces its preferred direction), fit a model in which the rate is the product
+of a position map and a direction tuning curve and ask which factor explains
+the firing, or use a shuffle that keeps each spike's position.
 
 ### Grid periodicity on a regular 2D arena
 
@@ -953,10 +972,10 @@ counts flagged by the screen, not cells with ground-truth tuning.
 
 The allocentric object-vector information screen also flagged 20/20 in the
 10-minute fixture. HD's screen combines the rate-weighted mean vector length
-with an occupancy-corrected test of one preferred direction (a Poisson score
-test with heading occupancy as exposure), which keeps its false-positive rate
-near `alpha` for untuned cells under uneven heading sampling when spikes are
-independent given heading.
+with an occupancy-corrected test of one preferred direction (a score test with
+heading occupancy as exposure, divided by the estimated spike-count
+dispersion), which keeps its false-positive rate near `alpha` for untuned
+cells under uneven heading sampling, including bursting cells.
 
 `has_place_field()` preserves field detection. `is_place_cell()` requires
 `criterion="spatial_info"` (screen) or `"shuffle"` (circular-shift verdict).

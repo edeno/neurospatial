@@ -164,7 +164,7 @@ def significance_recording():
         positions=np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)],
         headings=np.sin(times / 5),
         objects=np.array([[50.0, 50.0]]),
-        trains=[np.sort(rng.uniform(0, 59.9, count)) for count in [40, 55, 65]],
+        trains=[np.sort(rng.uniform(0, 59.9, count)) for count in [55, 65, 75]],
         speed=np.full(len(times), 5.0),
         gaze_offsets=np.zeros(len(times)),
     )
@@ -224,8 +224,11 @@ def significance_family(request):
         compute=getattr(module, compute_name),
         compute_name=compute_name,
         # The rate function each significance null calls; view and
-        # object-vector nulls reuse trajectory geometry through private ones.
+        # object-vector nulls reuse trajectory geometry through private ones,
+        # and the head-direction null counts spikes without estimating the
+        # spike-count dispersion.
         statistic_name={
+            "head_direction": "_count_directional",
             "view": "_compute_view_rates",
             "object_vector": "_object_vector_rates",
             "egocentric_object_vector": "_object_vector_rates",

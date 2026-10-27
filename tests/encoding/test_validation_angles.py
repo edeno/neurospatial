@@ -48,6 +48,47 @@ def test_degree_ranges_warn(angles) -> None:
         warn_if_angles_look_like_degrees(angles, name="headings", context="f")
 
 
+@pytest.fixture(scope="module")
+def turning_headings() -> np.ndarray:
+    """Ten minutes at 30 Hz of a head turning at about 100° per second.
+
+    Unwrapped, the heading wanders over several turns; wrapped, it crosses
+    the ±π seam many times.
+    """
+    steps = np.random.default_rng(4).normal(0.0, np.radians(100.0) / 30, 18000)
+    return np.cumsum(steps)
+
+
+def test_unwrapped_radians_do_not_warn(turning_headings) -> None:
+    """Unwrapped radians stay continuous: no step between samples exceeds π."""
+    from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
+
+    assert 2 * np.pi < np.abs(turning_headings).max() <= 360.0
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        warn_if_angles_look_like_degrees(turning_headings, name="headings", context="f")
+
+
+@pytest.mark.parametrize(
+    "to_degrees",
+    [
+        lambda h: np.degrees(h) % 360.0,  # [0, 360)
+        lambda h: np.degrees(np.angle(np.exp(1j * h))),  # (-180, 180]
+        # Confined to 20°-340° at the same turning speed: never crosses 0°.
+        lambda h: np.degrees(np.pi + 2.8 * np.sin(h / 2.8)),
+    ],
+    ids=["zero-to-360", "signed-180", "no-wrap"],
+)
+def test_degree_sessions_warn(turning_headings, to_degrees) -> None:
+    """Degree headings jump by more than π between samples, wrapped or not."""
+    from neurospatial.encoding._validation import warn_if_angles_look_like_degrees
+
+    with pytest.warns(UserWarning, match="look like degrees"):
+        warn_if_angles_look_like_degrees(
+            to_degrees(turning_headings), name="headings", context="f"
+        )
+
+
 def test_directional_rate_warns_for_degrees_read_as_radians(session) -> None:
     """Degrees read as radians wrap into a meaningless map; the call says so."""
     from neurospatial.encoding import compute_directional_rate
@@ -88,3 +129,15 @@ def test_shuffle_warns_once_for_degree_headings(session) -> None:
         )
     messages = [str(w.message) for w in caught if "look like degrees" in str(w.message)]
     assert len(messages) == 1
+
+
+def test_all_nan_headings_warning_names_headings(session) -> None:
+    """With no finite heading, the fix concerns headings, not positions."""
+    from neurospatial.encoding import compute_directional_rate
+
+    times, _, headings, spikes = session
+    with pytest.warns(UserWarning, match="excluded ALL") as caught:
+        compute_directional_rate(spikes, times, np.full_like(headings, np.nan))
+    message = next(str(w.message) for w in caught if "excluded ALL" in str(w.message))
+    assert "NaN headings" in message
+    assert "positions" not in message

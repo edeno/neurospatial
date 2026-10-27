@@ -160,6 +160,12 @@ def _half_max_halfwidth(
     return float(np.nan)
 
 
+# Screening conventions, not calibrated cutoffs. MVL >= 0.4 is a common
+# head-direction screen; a von Mises tuning curve exp(κ cos θ) without
+# baseline firing reaches it at κ ≈ 0.87 (half-width at half-maximum ≈ 78°),
+# and baseline firing lowers MVL, so broadly tuned cells fail it even when
+# the tuning test and the shuffle detect them. alpha = 0.05 is the
+# conventional test level.
 HEAD_DIRECTION_THRESHOLDS = MappingProxyType({"min_mvl": 0.4, "alpha": 0.05})
 
 
@@ -231,6 +237,51 @@ def _check_spike_counts(result: DirectionalRateResult | DirectionalRatesResult) 
         )
 
 
+def _check_dispersion(result: DirectionalRateResult | DirectionalRatesResult) -> None:
+    """Refuse a dispersion that is not one value >= 0 per unit, or a bad dof."""
+    kind = type(result).__name__
+    dispersion, dof = result.spike_count_dispersion, result.dispersion_dof
+    single = isinstance(result, DirectionalRateResult)
+    if dispersion is not None:
+        shape = () if single else np.shape(result._get_rates())[:1]
+        array = np.asarray(dispersion)
+        if array.shape != shape or array.dtype.kind not in "fiu" or np.any(array < 0):
+            raise ValueError(
+                _format_error(
+                    f"{kind}: spike_count_dispersion={dispersion!r} is not one "
+                    f"value >= 0 (or NaN) per unit (shape {shape}).",
+                    why="Why: the tuning test divides each unit's statistic by "
+                    "its spike-count variance-to-mean ratio.",
+                    fix="pass the spike_count_dispersion of the computation, or "
+                    "np.ones(n_units) to assume Poisson spiking.",
+                )
+            )
+        object.__setattr__(
+            result,
+            "spike_count_dispersion",
+            float(array) if single else array.astype(np.float64),
+        )
+    if dof is None:
+        return
+    if (
+        dispersion is None
+        or isinstance(dof, bool | np.bool_)
+        or not isinstance(dof, int | np.integer)
+        or dof < 1
+    ):
+        raise ValueError(
+            _format_error(
+                f"{kind}: dispersion_dof={dof!r} is not a whole number >= 1 "
+                "of degrees of freedom for a given spike_count_dispersion.",
+                why="Why: it sets the F reference distribution of the tuning "
+                "test with an estimated dispersion.",
+                fix="pass the dispersion_dof of the computation together with "
+                "spike_count_dispersion, or None for a known dispersion.",
+            )
+        )
+    object.__setattr__(result, "dispersion_dof", int(dof))
+
+
 def _directional_preferred_direction(rates: NDArray, centers: NDArray) -> float:
     """Shared circular metric with the existing valid-bin/count rules."""
     from neurospatial.stats.circular import circular_mean
@@ -261,11 +312,25 @@ def _directional_mean_vector_length(rates: NDArray, centers: NDArray) -> float:
     return mean_resultant_length(centers[valid_mask], weights=rates[valid_mask])
 
 
-_MIN_TUNING_TEST_SPIKES = 3
+# Fewest spikes for which the tuning test returns a p-value. Calibrated by
+# simulation of untuned cells (10-minute open-field and 50-lap linear-track
+# headings, 800 cells per session type, spike count and firing pattern): with
+# 50 spikes the dispersion-corrected test rejected 3.8-6.5% of Poisson cells
+# and of cells firing geometric bursts of mean 1.5-4 spikes at alpha = 0.05
+# (0.4-1.4% at alpha = 0.01). With 10-30 spikes, cells firing bursts of mean
+# 4 spikes were rejected 7-20% of the time: a few bursts are too few
+# independent events to estimate the dispersion or to trust the reference
+# distribution.
+_MIN_TUNING_TEST_SPIKES = 50
 
 
 def _tuning_pvalues(
-    rates: NDArray, occupancy: NDArray, centers: NDArray, spike_counts: NDArray | None
+    rates: NDArray,
+    occupancy: NDArray,
+    centers: NDArray,
+    spike_counts: NDArray | None,
+    dispersion: NDArray | None = None,
+    dispersion_dof: int | None = None,
 ) -> NDArray[np.float64]:
     """Occupancy-corrected test of one preferred direction, one p-value per unit.
 
@@ -275,9 +340,20 @@ def _tuning_pvalues(
     ``O = Σ o_i``, ``N = Σ c_i``, ``λ = N / O`` and ``m = Σ o_i u_i``:
 
     ``S = Σ c_i u_i - λ m``, ``V = λ (Σ o_i u_i u_iᵀ - m mᵀ / O)`` and
-    ``T = Sᵀ V⁻¹ S``, which is χ² with 2 degrees of freedom under the null,
-    so ``p = exp(-T / 2)``. With uniform occupancy, ``T = 2 N R²`` (``R``
-    the count-weighted mean resultant length): the large-sample Rayleigh test.
+    ``T = Sᵀ V⁻¹ S``. With uniform occupancy, ``T = 2 N R²`` (``R`` the
+    count-weighted mean resultant length): the large-sample Rayleigh test.
+
+    Spikes that are not independent given heading inflate the score's
+    variance by a factor ``φ``. With an estimated ``φ`` on ``dof`` degrees of
+    freedom, ``T / (2 max(φ, 1))`` is F-distributed with (2, dof) degrees of
+    freedom under the null (the quasi-Poisson test), so
+    ``p = (1 + T / (max(φ, 1) dof))^(-dof / 2)``. Flooring ``φ`` at 1 keeps
+    the Poisson variance as the least the test assumes, so estimation noise
+    in ``φ`` for Poisson cells, or underdispersed (regular) spiking, cannot
+    make it reject more often. With a known ``φ`` (``dispersion_dof`` None)
+    the reference is χ² with 2 degrees of freedom, ``p = exp(-T / (2φ))``.
+    Without ``dispersion`` the p-values are NaN: the Poisson test alone
+    rejects far too often for bursting cells.
 
     Parameters
     ----------
@@ -290,13 +366,18 @@ def _tuning_pvalues(
         Bin centers in radians.
     spike_counts : ndarray of shape (n_units, n_bins) or None
         Unsmoothed spike counts. None rebuilds them as ``rates * occupancy``.
+    dispersion : ndarray of shape (n_units,) or None
+        Estimated spike-count dispersion per unit; None gives NaN p-values.
+    dispersion_dof : int or None
+        Degrees of freedom of ``dispersion``; None treats it as known.
 
     Returns
     -------
     ndarray of shape (n_units,)
-        P-values; NaN when fewer than three spikes fall in occupied bins or
-        the occupied headings cannot separate a cosine from a sine term
-        (fewer than three distinct directions).
+        P-values; NaN when fewer than ``_MIN_TUNING_TEST_SPIKES`` spikes fall
+        in occupied bins, the occupied headings cannot separate a cosine from
+        a sine term (fewer than three distinct directions), or the unit's
+        dispersion is NaN or not given.
     """
     rates = np.atleast_2d(np.asarray(rates, dtype=np.float64))
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -330,14 +411,46 @@ def _tuning_pvalues(
             - 2.0 * cov[:, 0, 1] * score[:, 0] * score[:, 1]
             + cov[:, 0, 0] * score[:, 1] ** 2
         ) / det
-        statistic = quad / lam
+        statistic = np.maximum(quad / lam, 0.0)
+    phi = (
+        np.full(len(counts), np.nan)
+        if dispersion is None
+        else np.maximum(np.asarray(dispersion, dtype=np.float64).reshape(-1), 1.0)
+    )
     scale = np.trace(cov, axis1=1, axis2=2) ** 2
     valid = (
-        (n_spikes >= _MIN_TUNING_TEST_SPIKES) & (total_time > 0) & (det > 1e-12 * scale)
+        (n_spikes >= _MIN_TUNING_TEST_SPIKES)
+        & (total_time > 0)
+        & (det > 1e-12 * scale)
+        & np.isfinite(phi)
     )
+    corrected = statistic[valid] / phi[valid]
     pvalues = np.full(len(counts), np.nan)
-    pvalues[valid] = np.exp(-0.5 * np.maximum(statistic[valid], 0.0))
+    if dispersion_dof is None:
+        pvalues[valid] = np.exp(-0.5 * corrected)
+    else:
+        pvalues[valid] = (1.0 + corrected / dispersion_dof) ** (-0.5 * dispersion_dof)
     return pvalues
+
+
+def _tuning_inputs(
+    result: DirectionalRateResult | DirectionalRatesResult,
+) -> dict[str, Any]:
+    """Arrays of a single or population result for the tuning test, 2-D by unit."""
+    counts = result.spike_counts
+    dispersion = result.spike_count_dispersion
+    return {
+        "rates": np.atleast_2d(np.asarray(result._get_rates(), dtype=np.float64)),
+        "occupancy": np.asarray(result.occupancy, dtype=np.float64),
+        "centers": np.asarray(result.bin_centers, dtype=np.float64),
+        "spike_counts": None
+        if counts is None
+        else np.atleast_2d(np.asarray(counts, dtype=np.float64)),
+        "dispersion": None
+        if dispersion is None
+        else np.atleast_1d(np.asarray(dispersion, dtype=np.float64)),
+        "dispersion_dof": result.dispersion_dof,
+    }
 
 
 def _directional_tuning_width(rates: NDArray, bin_size: float) -> float:
@@ -423,20 +536,21 @@ def _warn_if_headings_incomplete(occupancy: ArrayLike) -> None:
 
 
 def _head_direction_classify(
-    rates: NDArray,
-    occupancy: NDArray,
-    bin_centers: NDArray,
-    spike_counts: NDArray | None,
+    result: DirectionalRateResult | DirectionalRatesResult,
     *,
     min_mvl: float,
     alpha: float,
 ) -> NDArray[np.bool_]:
     """The shared MVL and occupancy-corrected tuning-test screen."""
-    _warn_if_headings_incomplete(occupancy)
+    inputs = _tuning_inputs(result)
+    _warn_if_headings_incomplete(inputs["occupancy"])
     mvls = np.array(
-        [_directional_mean_vector_length(row, bin_centers) for row in rates]
+        [
+            _directional_mean_vector_length(row, inputs["centers"])
+            for row in inputs["rates"]
+        ]
     )
-    pvalues = _tuning_pvalues(rates, occupancy, bin_centers, spike_counts)
+    pvalues = _tuning_pvalues(**inputs)
     # NaN MVLs or p-values compare False, so an untestable unit is not flagged.
     return np.asarray((mvls >= min_mvl) & (pvalues < alpha), dtype=np.bool_)
 
@@ -447,14 +561,13 @@ def _directional_summary_frame(
     """Build identical circular metric columns for one or many units."""
     import pandas as pd
 
-    rates = np.atleast_2d(np.asarray(result._get_rates(), dtype=np.float64))
-    occupancy = np.asarray(result.occupancy, dtype=np.float64)
-    centers = np.asarray(result.bin_centers, dtype=np.float64)
-    counts = (
-        None
-        if result.spike_counts is None
-        else np.atleast_2d(np.asarray(result.spike_counts, dtype=np.float64))
+    inputs = _tuning_inputs(result)
+    rates, occupancy, centers = (
+        inputs["rates"],
+        inputs["occupancy"],
+        inputs["centers"],
     )
+    dispersion = inputs["dispersion"]
     directions = np.array(
         [_directional_preferred_direction(row, centers) for row in rates]
     )
@@ -469,10 +582,13 @@ def _directional_summary_frame(
         "tuning_width_deg": np.degrees(widths),
         "preferred_direction": directions,
         "tuning_width": widths,
-        "tuning_pvalue": _tuning_pvalues(rates, occupancy, centers, counts),
+        "tuning_pvalue": _tuning_pvalues(**inputs),
+        "spike_count_dispersion": np.full(len(rates), np.nan)
+        if dispersion is None
+        else dispersion,
         **result._accounting_columns(),
         "is_head_direction_cell": _head_direction_classify(
-            rates, occupancy, centers, counts, **HEAD_DIRECTION_THRESHOLDS
+            result, **HEAD_DIRECTION_THRESHOLDS
         ),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
@@ -484,6 +600,7 @@ def _directional_summary_frame(
         "tuning_width": "rad",
         "tuning_width_deg": "deg",
         "tuning_pvalue": "",
+        "spike_count_dispersion": "",
         "largest_unvisited_arc": "rad",
     }
     df.attrs["classification_thresholds"] = dict(HEAD_DIRECTION_THRESHOLDS)
@@ -522,6 +639,17 @@ class DirectionalRateResult(SingleUnitRateMixin):
         (e.g. from external tuning curves), in which case counts are rebuilt
         as ``firing_rate * occupancy``, which is exact only for unsmoothed
         rates.
+    spike_count_dispersion : float or None, optional
+        Keyword-only. How much more the spike counts vary than Poisson
+        counts, beyond what heading explains (variance / mean of counts in
+        time windows; 1 for Poisson spiking, larger for bursting or drifting
+        cells). :meth:`tuning_pvalue` divides its statistic by it.
+        :func:`compute_directional_rate` estimates it. None (a result built
+        without spike times) leaves the tuning test undefined (NaN); pass
+        1.0 to assume Poisson spiking explicitly.
+    dispersion_dof : int or None, optional
+        Keyword-only. Degrees of freedom of ``spike_count_dispersion`` (time
+        windows minus three); None treats the dispersion as known.
 
     Attributes
     ----------
@@ -538,6 +666,10 @@ class DirectionalRateResult(SingleUnitRateMixin):
     spike_counts : ArrayLike or None
         Raw (unsmoothed) spike count per angular bin, shape (n_bins,), or
         None if the result was built without counts.
+    spike_count_dispersion : float or None
+        Estimated spike-count dispersion, or None.
+    dispersion_dof : int or None
+        Degrees of freedom of the dispersion estimate, or None.
     unit_id : int or str or None
         Identifier for this unit. Set automatically when indexing/iterating a
         population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
@@ -622,6 +754,8 @@ class DirectionalRateResult(SingleUnitRateMixin):
     spike_counts: ArrayLike | None = None
     unit_id: int | str | None = None
     direction_frame: ClassVar[Literal["allocentric"]] = "allocentric"
+    spike_count_dispersion: float | None = field(default=None, kw_only=True)
+    dispersion_dof: int | None = field(default=None, kw_only=True)
 
     min_occupancy: float = field(default=0.0, kw_only=True)
     n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
@@ -650,6 +784,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
 
     def _check_family(self) -> None:
         _check_spike_counts(self)
+        _check_dispersion(self)
 
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
@@ -946,8 +1081,13 @@ class DirectionalRateResult(SingleUnitRateMixin):
         the animal faced a limited range of headings has an inflated MVL
         (about 0.3 when 270° are visited, 0.4 when 240° are). Check
         :meth:`largest_unvisited_arc`. The cutoff of 0.4 used by
-        :meth:`is_head_direction_cell` is a common screening convention;
-        check it against the MVL distribution of your own recordings.
+        :meth:`is_head_direction_cell` is a common screening convention, not
+        a calibrated threshold. A von Mises tuning curve
+        ``exp(κ cos(θ - θ₀))`` without baseline firing reaches it at
+        ``κ ≈ 0.87`` (half-width at half-maximum ≈ 78°); baseline firing
+        lowers MVL, so broadly tuned cells with baseline firing fail the
+        cutoff even when :meth:`tuning_pvalue` and the shuffle test detect
+        them. Check it against the MVL distribution of your own recordings.
 
         Examples
         --------
@@ -1122,8 +1262,10 @@ class DirectionalRateResult(SingleUnitRateMixin):
         -------
         float
             P-value in [0, 1]; small values indicate directional tuning.
-            NaN when fewer than 3 spikes fall in visited bins, or when the
-            visited headings span fewer than three distinct directions.
+            NaN when fewer than 50 spikes fall in visited bins, when the
+            visited headings span fewer than three distinct directions, or
+            when the spike-count dispersion is missing or could not be
+            estimated.
 
         Notes
         -----
@@ -1135,20 +1277,50 @@ class DirectionalRateResult(SingleUnitRateMixin):
 
             S = Σ c_i u_i - λ m
             V = λ (Σ o_i u_i u_iᵀ - m mᵀ / O)
-            T = Sᵀ V⁻¹ S,   p = P(χ²₂ > T) = exp(-T / 2)
+            T = Sᵀ V⁻¹ S
 
         With uniform occupancy ``T = 2 N R²``, where ``R`` is the mean
-        resultant length of the spike headings, so the test reduces to the
-        large-sample Rayleigh test.
+        resultant length of the spike headings: the large-sample Rayleigh
+        test. For independent (Poisson) spikes, ``T`` is χ² with 2 degrees
+        of freedom under the null.
 
-        **Assumptions.** Spikes are independent given heading. Bursting and
-        slow drifts in rate or heading (common in real recordings) make the
-        p-value too small, so treat it as a screen. For a verdict, use
+        **Bursts and drift.** Real cells fire in bursts and drift in rate,
+        so their counts vary more than Poisson counts and ``T`` alone rejects
+        far too often (in simulation, about half of untuned cells firing
+        bursts of 2.5 spikes). The test is therefore quasi-Poisson: it
+        divides ``T`` by the cell's :attr:`spike_count_dispersion` ``φ``
+        (floored at 1) and compares ``T / (2φ)`` with an F distribution on
+        (2, :attr:`dispersion_dof`) degrees of freedom:
+
+            p = (1 + T / (φ dof))^(-dof / 2)
+
+        ``φ`` is the Pearson dispersion of spike counts in time windows
+        around the fitted cosine model. The window lasts as long as headings
+        stay correlated (the integrated autocorrelation time of the heading,
+        recorded as ``analysis_settings["dispersion_window"]``, about 2 s
+        for a freely moving rat), because that is the time scale on which
+        correlated spikes inflate the test statistic. A result built by hand
+        has no dispersion and returns NaN: pass ``spike_count_dispersion``
+        (1.0 assumes Poisson spiking) to test it, and ``dispersion_dof`` None
+        compares ``T / φ`` with χ² on 2 degrees of freedom.
+
+        In simulated 10-minute open-field and 50-lap linear-track sessions,
+        untuned cells were rejected at α = 0.05 in 4-5% of Poisson cells,
+        4-6% of cells firing geometric bursts of mean 1.5-4 spikes (13-69%
+        without the correction) and 0-1% of cells whose rate drifts on a
+        30-120 s time scale (6-25% without, so the correction is conservative
+        for drift). Detection of tuned cells (κ = 0.5-2, bursting or not)
+        was unchanged. Below 50 spikes a few bursts are too few independent
+        events to estimate ``φ``, so the p-value is NaN.
+
+        **Remaining assumptions.** The test targets one preferred direction
+        and has little power for bimodal tuning. With many spikes even weak
+        tuning is significant; check :meth:`mean_vector_length` as well.
+        Heading is confounded with position on tracks and mazes: a place
+        cell active on one running direction passes this test and the
+        shuffle. For a verdict on freely moving data, use
         ``is_head_direction_cell(..., criterion="shuffle")`` or
-        :func:`head_direction_cell_significance` on the raw arrays. The test
-        targets one preferred direction and has little power for bimodal
-        tuning. With many spikes even weak tuning is significant; check
-        :meth:`mean_vector_length` as well.
+        :func:`head_direction_cell_significance` on the raw arrays.
 
         Counts come from ``spike_counts``; when it is None they are rebuilt
         as ``firing_rate * occupancy``, which is exact only for unsmoothed
@@ -1170,6 +1342,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ...     spike_counts=np.round(firing_rate * occupancy),
+        ...     spike_count_dispersion=1.0,  # assume Poisson spiking
         ... )
         >>> bool(result.tuning_pvalue() < 0.05)
         True
@@ -1180,16 +1353,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
         is_head_direction_cell : Screen combining MVL and this p-value
         head_direction_cell_significance : Circular-shift test on raw arrays
         """
-        return float(
-            _tuning_pvalues(
-                np.asarray(self.firing_rate, dtype=np.float64),
-                np.asarray(self.occupancy, dtype=np.float64),
-                np.asarray(self.bin_centers, dtype=np.float64),
-                None
-                if self.spike_counts is None
-                else np.asarray(self.spike_counts, dtype=np.float64),
-            )[0]
-        )
+        return float(_tuning_pvalues(**_tuning_inputs(self))[0])
 
     def is_head_direction_cell(
         self, *, min_mvl: float | None = None, alpha: float | None = None
@@ -1236,6 +1400,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
+        ...     spike_count_dispersion=1.0,  # assume Poisson spiking
         ... )
         >>> result.is_head_direction_cell()  # Sharply tuned neuron should be classified as HD cell
         True
@@ -1249,27 +1414,16 @@ class DirectionalRateResult(SingleUnitRateMixin):
         Notes
         -----
         This is a threshold screen, not a verdict. :meth:`tuning_pvalue`
-        tests one preferred direction given heading occupancy and assumes
-        spikes are independent given heading; bursting and slow drifts in rate
-        make its p-value too small. For a verdict, call
+        tests one preferred direction given heading occupancy, corrected for
+        bursting and slow rate drift by the estimated spike-count dispersion.
+        For a verdict, call
         head_direction_cell_significance(...) or
         is_head_direction_cell(..., criterion="shuffle") with the raw arrays;
         a result does not keep the arrays it was computed from.
         """
         min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
         alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
-        return bool(
-            _head_direction_classify(
-                np.atleast_2d(np.asarray(self.firing_rate, dtype=np.float64)),
-                np.asarray(self.occupancy, dtype=np.float64),
-                np.asarray(self.bin_centers, dtype=np.float64),
-                None
-                if self.spike_counts is None
-                else np.atleast_2d(np.asarray(self.spike_counts, dtype=np.float64)),
-                min_mvl=min_mvl,
-                alpha=alpha,
-            )[0]
-        )
+        return bool(_head_direction_classify(self, min_mvl=min_mvl, alpha=alpha)[0])
 
     def interpretation(self, min_mvl: float | None = None) -> str:
         """Human-readable interpretation of head direction metrics.
@@ -1364,8 +1518,9 @@ class DirectionalRateResult(SingleUnitRateMixin):
                 )
             if np.isnan(pval):
                 lines.append(
-                    "  - Tuning test undefined: fewer than 3 spikes or fewer "
-                    "than 3 visited heading directions"
+                    "  - Tuning test undefined: fewer than "
+                    f"{_MIN_TUNING_TEST_SPIKES} spikes, fewer than 3 visited "
+                    "heading directions, or spike-count dispersion not estimated"
                 )
             elif pval >= alpha:
                 lines.append(
@@ -1405,6 +1560,15 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         (n_neurons, n_bins), used by :meth:`tuning_pvalues` and forwarded to
         each per-neuron result. None if the batch was built without counts;
         counts are then rebuilt as ``firing_rates * occupancy``.
+    spike_count_dispersion : ArrayLike or None, optional
+        Keyword-only. Spike-count dispersion per neuron, shape (n_neurons,),
+        used by :meth:`tuning_pvalues`; see
+        :class:`DirectionalRateResult`. None leaves the tuning test
+        undefined (NaN); pass ``np.ones(n_neurons)`` to assume Poisson
+        spiking explicitly.
+    dispersion_dof : int or None, optional
+        Keyword-only. Degrees of freedom of ``spike_count_dispersion``,
+        shared by all neurons; None treats the dispersion as known.
 
     Attributes
     ----------
@@ -1421,6 +1585,10 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     spike_counts : ArrayLike or None
         Raw (unsmoothed) spike counts per angular bin, shape
         (n_neurons, n_bins), or None.
+    spike_count_dispersion : ArrayLike or None
+        Spike-count dispersion per neuron, shape (n_neurons,), or None.
+    dispersion_dof : int or None
+        Degrees of freedom of the dispersion estimates, or None.
     unit_ids : NDArray, shape (n_units,)
         Identifier for each unit (row), e.g. from ``read_units`` or passed via
         ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
@@ -1526,6 +1694,8 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     direction_frame: ClassVar[Literal["allocentric"]] = "allocentric"
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+    spike_count_dispersion: ArrayLike | None = field(default=None, kw_only=True)
+    dispersion_dof: int | None = field(default=None, kw_only=True)
 
     min_occupancy: float = field(default=0.0, kw_only=True)
     n_spikes_outside_intervals: NDArray[np.int64] | None = field(
@@ -1556,6 +1726,7 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
 
     def _check_family(self) -> None:
         _check_spike_counts(self)
+        _check_dispersion(self)
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -1610,6 +1781,12 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
             bin_size=self.bin_size,
             bandwidth=self.bandwidth,
             spike_counts=(None if counts is None else np.asarray(counts)[idx]),
+            spike_count_dispersion=(
+                None
+                if self.spike_count_dispersion is None
+                else float(np.asarray(self.spike_count_dispersion)[idx])
+            ),
+            dispersion_dof=self.dispersion_dof,
         )
 
     def plot(
@@ -1849,14 +2026,7 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         --------
         DirectionalRateResult.tuning_pvalue : Single-neuron method
         """
-        return _tuning_pvalues(
-            np.asarray(self.firing_rates, dtype=np.float64),
-            np.asarray(self.occupancy, dtype=np.float64),
-            np.asarray(self.bin_centers, dtype=np.float64),
-            None
-            if self.spike_counts is None
-            else np.asarray(self.spike_counts, dtype=np.float64),
-        )
+        return _tuning_pvalues(**_tuning_inputs(self))
 
     def classify(
         self, *, min_mvl: float | None = None, alpha: float | None = None
@@ -1917,25 +2087,16 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
         Notes
         -----
         This is a threshold screen, not a verdict. The tuning test checks one
-        preferred direction given heading occupancy and assumes spikes are
-        independent given heading; bursting and slow drifts in rate make its
-        p-value too small. For a verdict, call
+        preferred direction given heading occupancy, corrected for bursting
+        and slow rate drift by the estimated spike-count dispersion. For a
+        verdict, call
         head_direction_cell_significance(...) with the raw arrays; a result
         does not keep the arrays it was computed from.
         None thresholds resolve through HEAD_DIRECTION_THRESHOLDS.
         """
         min_mvl = HEAD_DIRECTION_THRESHOLDS["min_mvl"] if min_mvl is None else min_mvl
         alpha = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
-        return _head_direction_classify(
-            np.asarray(self.firing_rates, dtype=np.float64),
-            np.asarray(self.occupancy, dtype=np.float64),
-            np.asarray(self.bin_centers, dtype=np.float64),
-            None
-            if self.spike_counts is None
-            else np.asarray(self.spike_counts, dtype=np.float64),
-            min_mvl=min_mvl,
-            alpha=alpha,
-        )
+        return _head_direction_classify(self, min_mvl=min_mvl, alpha=alpha)
 
     def summary_table(
         self,
@@ -2062,6 +2223,8 @@ class _DirectionalCounts(NamedTuple):
     bandwidth: float | None  # radians
     analysis_settings: dict[str, Any]
     n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
+    dispersion: NDArray[np.float64]  # (n_units,) spike-count dispersion
+    dispersion_dof: int | None
 
 
 def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
@@ -2083,6 +2246,42 @@ def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
         )
 
 
+def _smoothed_directional_rates(
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    bandwidth: float | None,
+    bin_size: float,
+) -> NDArray[np.float64]:
+    """Firing rates from counts and occupancy, each smoothed around the circle.
+
+    Parameters
+    ----------
+    spike_counts : ndarray of shape (n_units, n_bins)
+        Unsmoothed spike counts.
+    occupancy : ndarray of shape (n_bins,)
+        Unsmoothed occupancy, seconds.
+    bandwidth : float or None
+        Circular Gaussian bandwidth in radians; None for no smoothing.
+    bin_size : float
+        Angular bin width in radians.
+
+    Returns
+    -------
+    ndarray of shape (n_units, n_bins)
+        Rates in Hz; NaN where the (smoothed) occupancy is zero.
+    """
+    if bandwidth is not None:
+        from scipy.ndimage import gaussian_filter1d
+
+        sigma_bins = bandwidth / bin_size
+        spike_counts = gaussian_filter1d(spike_counts, sigma_bins, axis=-1, mode="wrap")
+        occupancy = gaussian_filter1d(occupancy, sigma_bins, mode="wrap")
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rates: NDArray[np.float64] = spike_counts / occupancy
+    rates[:, occupancy == 0] = np.nan
+    return rates
+
+
 def _count_directional(
     spike_trains: Sequence[NDArray[np.float64]],
     times: NDArray[np.float64],
@@ -2097,6 +2296,7 @@ def _count_directional(
     backend: str,
     n_jobs: int = 1,
     break_before: NDArray[np.bool_] | None = None,
+    estimate_dispersion: bool = True,
 ) -> _DirectionalCounts:
     """Bin headings, count spikes and build provenance for directional rates.
 
@@ -2125,6 +2325,9 @@ def _count_directional(
         Parallel jobs for spike counting.
     break_before : ndarray of bool, shape (n_time,), or None
         Validated declared recording breaks.
+    estimate_dispersion : bool, default=True
+        Estimate each unit's spike-count dispersion for the tuning test.
+        False (NaN dispersion) for callers that only need the rates.
 
     Returns
     -------
@@ -2134,6 +2337,9 @@ def _count_directional(
     """
     from neurospatial.encoding._directional_counts import (
         prepare_directional_binning,
+    )
+    from neurospatial.encoding._directional_dispersion import (
+        spike_count_dispersion,
     )
     from neurospatial.encoding._provenance import (
         rate_analysis_settings,
@@ -2153,6 +2359,13 @@ def _count_directional(
         break_before=break_before,
     )
     spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
+    if estimate_dispersion:
+        dispersion, dispersion_window, dispersion_dof = spike_count_dispersion(
+            spike_trains, prepared, spike_counts, occupancy, bin_centers
+        )
+    else:
+        dispersion = np.full(len(spike_trains), np.nan)
+        dispersion_window, dispersion_dof = None, None
 
     # Compute actual bin_size from bin_centers (handles non-divisible bin_size)
     # The binning layer rounds n_bins = int(round(2π / bin_size)), so the actual
@@ -2174,6 +2387,9 @@ def _count_directional(
         bin_size=float(actual_bin_size_rad),
         angle_unit="rad",
         input_angle_unit=angle_unit,
+        dispersion_window=None
+        if dispersion_window is None
+        else float(dispersion_window),
     )
     return _DirectionalCounts(
         spike_counts=spike_counts,
@@ -2185,6 +2401,8 @@ def _count_directional(
         n_spikes_outside_intervals=spikes_outside_intervals(
             spike_trains, prepared.support
         ),
+        dispersion=dispersion,
+        dispersion_dof=dispersion_dof,
     )
 
 
@@ -2443,6 +2661,8 @@ def compute_directional_rate(
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts,
         n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
+        spike_count_dispersion=float(counts.dispersion[0]),
+        dispersion_dof=counts.dispersion_dof,
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )
@@ -2710,17 +2930,6 @@ def compute_directional_rates(
     bandwidth_rad = counts.bandwidth
     settings = counts.analysis_settings
 
-    # Precompute smoothed occupancy once (instead of per-neuron)
-    if bandwidth_rad is not None:
-        from scipy.ndimage import gaussian_filter1d
-
-        sigma_bins = bandwidth_rad / actual_bin_size_rad
-        occupancy_smooth: NDArray[np.float64] = gaussian_filter1d(
-            occupancy, sigma=sigma_bins, mode="wrap"
-        )
-    else:
-        occupancy_smooth = occupancy
-
     # Handle empty neuron list
     if n_neurons == 0:
         empty_rates: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
@@ -2743,42 +2952,18 @@ def compute_directional_rates(
             unit_ids=resolved_unit_ids if labels_supplied else None,
             unit_table=getattr(spike_times, "unit_table", None),
             n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
+            spike_count_dispersion=counts.dispersion,
+            dispersion_dof=counts.dispersion_dof,
             spike_window=resolved_spike_window,
             analysis_settings=settings,
         )
 
-    # Helper function to process a single neuron's spike train
-    def _process_neuron(
-        spike_counts: NDArray[np.float64],
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Compute (firing_rate, spike_counts) from shared-mask counts."""
-
-        # Apply smoothing if requested
-        if bandwidth_rad is not None:
-            from scipy.ndimage import gaussian_filter1d
-
-            spike_counts_smooth: NDArray[np.float64] = gaussian_filter1d(
-                spike_counts, sigma=sigma_bins, mode="wrap"
-            )
-        else:
-            spike_counts_smooth = spike_counts
-
-        # Compute firing rate (handle division by zero)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            firing_rate: NDArray[np.float64] = spike_counts_smooth / occupancy_smooth
-            # Set unvisited bins to NaN
-            firing_rate[occupancy_smooth == 0] = np.nan
-
-        # Return the unsmoothed counts for the tuning test.
-        return firing_rate, spike_counts
-
-    # Spike counting already honors n_jobs in the shared binning path.
-    processed = [_process_neuron(counts) for counts in spike_counts_batch]
-
-    firing_rates = np.array([rate for rate, _ in processed], dtype=np.float64)
-    spike_counts_all: ArrayLike = np.array(
-        [counts for _, counts in processed], dtype=np.float64
+    # Rates from the unsmoothed counts; the counts stay unsmoothed for the
+    # tuning test.
+    firing_rates = _smoothed_directional_rates(
+        spike_counts_batch, occupancy, bandwidth_rad, actual_bin_size_rad
     )
+    spike_counts_all: ArrayLike = np.asarray(spike_counts_batch, dtype=np.float64)
 
     # Convert to JAX arrays if JAX backend is selected
     firing_rates_out: ArrayLike = firing_rates
@@ -2801,6 +2986,8 @@ def compute_directional_rates(
         unit_ids=resolved_unit_ids if labels_supplied else None,
         unit_table=getattr(spike_times, "unit_table", None),
         n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
+        spike_count_dispersion=counts.dispersion,
+        dispersion_dof=counts.dispersion_dof,
         spike_window=resolved_spike_window,
         analysis_settings=settings,
     )
@@ -2936,10 +3123,11 @@ def is_head_direction_cell(
     The threshold screen requires MVL >= min_mvl and
     ``DirectionalRateResult.tuning_pvalue() < alpha``. The MVL cutoff of 0.4
     is a common screening convention; check it against your own recordings.
-    The tuning test checks one preferred direction given heading occupancy and
-    assumes spikes are independent given heading; bursting and slow drifts
-    in rate make its p-value too small. For publication, report the
-    circular-shift test (``criterion="shuffle"``) and its assumptions.
+    The tuning test checks one preferred direction given heading occupancy,
+    corrected for bursting and slow rate drift by the estimated spike-count
+    dispersion (see ``DirectionalRateResult.tuning_pvalue``). For
+    publication, report the circular-shift test (``criterion="shuffle"``)
+    and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
     Its null assumes stable firing statistics on the joined analyzed clock;
@@ -3324,6 +3512,7 @@ def head_direction_cell_significance(
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
     from neurospatial._spikes import _as_spike_trains_with_ids
+    from neurospatial.encoding._backend import validate_and_resolve_backend
     from neurospatial.encoding._directional_counts import directional_frame_bins
     from neurospatial.encoding._significance import (
         run_shuffle_test,
@@ -3349,19 +3538,13 @@ def head_direction_cell_significance(
         copy=True,
     )
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    options: dict[str, Any] = {
-        "bin_size": bin_size,
-        "bandwidth": bandwidth,
-        "angle_unit": angle_unit,
-        "max_gap": max_gap,
-        "n_jobs": n_jobs,
-        "backend": backend,
-    }
+    # Raises for unknown backends; the statistic itself only needs NumPy.
+    validate_and_resolve_backend(backend)
+    # Copies, so caller mutation during the shuffles cannot change the null.
     options = snapshot_options(
-        options,
+        {"bin_size": bin_size, "bandwidth": bandwidth, "max_gap": max_gap},
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-        unit_ids=ids,
     )
     validate_trajectory(
         times,
@@ -3374,7 +3557,6 @@ def head_direction_cell_significance(
     breaks = validate_break_before(
         break_before, len(times), call="head_direction_cell_significance"
     )
-    options["break_before"] = breaks
     frame_bins, _ = directional_frame_bins(headings, bin_size, angle_unit=angle_unit)
     mask = interval_valid_mask(
         times,
@@ -3382,19 +3564,38 @@ def head_direction_cell_significance(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-        break_before=options["break_before"],
+        break_before=breaks,
     )
     windows = run_time_bounds(times, mask)
 
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        # The heading-unit check already ran once above; do not repeat it for
-        # every shuffle.
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message=".*look like degrees", category=UserWarning
-            )
-            rates = compute_directional_rates(shifted, times, headings, **options)
-        return rates.mean_vector_lengths()
+        # The inputs were validated once above. The statistic is the MVL of
+        # the tuning curve, so the spike-count dispersion is not estimated.
+        counts = _count_directional(
+            shifted,
+            times,
+            headings,
+            bin_size=options["bin_size"],
+            bandwidth=options["bandwidth"],
+            angle_unit=angle_unit,
+            max_gap=options["max_gap"],
+            epochs=options["epochs"],
+            spike_window=options["spike_window"],
+            backend="numpy",
+            n_jobs=n_jobs,
+            break_before=breaks,
+            estimate_dispersion=False,
+        )
+        rates = _smoothed_directional_rates(
+            counts.spike_counts, counts.occupancy, counts.bandwidth, counts.bin_size
+        )
+        return DirectionalRatesResult(
+            firing_rates=rates,
+            occupancy=counts.occupancy,
+            bin_centers=counts.bin_centers,
+            bin_size=counts.bin_size,
+            bandwidth=counts.bandwidth,
+        ).mean_vector_lengths()
 
     observed, null = run_shuffle_test(
         statistic,

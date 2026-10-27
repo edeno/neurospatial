@@ -251,13 +251,24 @@ def warn_if_angles_look_like_degrees(
     """Warn when angles read as radians look like degrees.
 
     Radians beyond ±2π are legitimate (unwrapped angles), so this warns
-    instead of raising. It fires when the largest finite magnitude exceeds 2π
-    but every finite value lies within ±360, the signature of degrees.
+    instead of raising. It fires when the largest finite magnitude exceeds
+    2π, every finite value lies within ±360, and some pair of consecutive
+    finite values differs by more than π.
+
+    The last condition separates degrees from unwrapped radians. Unwrapped
+    radians are continuous: :func:`numpy.unwrap` never leaves a step larger
+    than π, and a sampled heading that turned more than half a circle
+    between samples could not be unwrapped at all. Degree headings step by
+    more than π (3.14°) whenever the head turns faster than about 94° per
+    second at 30 Hz, and wrapped degrees (in [0, 360) or (-180, 180]) jump
+    by nearly 360 at every crossing of the seam. Degree data in which every
+    step is below 3.14° and the seam is never crossed is not detected.
 
     Parameters
     ----------
     angles : ndarray
-        Angles that will be read as radians. Non-finite values are ignored.
+        Angles that will be read as radians, in sample (or event) order.
+        Non-finite values are ignored.
     name : str
         Argument name shown in the message, e.g. ``"headings"``.
     context : str
@@ -271,21 +282,27 @@ def warn_if_angles_look_like_degrees(
     UserWarning
         When the finite angles look like degrees.
     """
-    finite = np.abs(angles[np.isfinite(angles)])
-    if finite.size == 0:
+    angles = np.asarray(angles, dtype=np.float64).ravel()
+    finite = np.isfinite(angles)
+    if not finite.any():
         return
-    largest = float(finite.max())
+    largest = float(np.abs(angles[finite]).max())
     if not (2 * np.pi + 1e-6 < largest <= 360.0):
         return
+    both_finite = finite[1:] & finite[:-1]
+    steps = np.abs(np.diff(angles))[both_finite]
+    if not np.any(steps > np.pi):
+        return
+    largest_step = float(steps.max())
     fix = f"convert with np.radians({name})"
     if angle_unit_keyword:
         fix += ' or pass angle_unit="deg"'
     warnings.warn(
         f"{context}: {name} look like degrees (largest magnitude {largest:.4g}, "
-        f"all within ±360) but are read as radians, which wraps them into "
-        f"meaningless directions. {fix[0].upper()}{fix[1:]}. If they are "
-        f"unwrapped radians, wrap them with np.angle(np.exp(1j * {name})) "
-        "to silence this warning.",
+        f"all within ±360, and consecutive values differ by up to "
+        f"{largest_step:.4g}, more than the π a continuous radian angle can "
+        f"step) but are read as radians, which wraps them into meaningless "
+        f"directions. {fix[0].upper()}{fix[1:]}.",
         UserWarning,
         stacklevel=_external_stacklevel(),
     )

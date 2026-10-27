@@ -379,6 +379,7 @@ def prepare_directional_binning(
         epochs=epochs,
         spike_window=spike_window,
         break_before=break_before,
+        samples="headings",
     )
     return prepared, bin_centers
 

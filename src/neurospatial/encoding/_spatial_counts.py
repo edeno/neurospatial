@@ -522,6 +522,7 @@ class FrameBinning:
     n_bins: int
     support: TimeSupport
     break_before: NDArray[np.bool_] | None = None
+    samples: Literal["positions", "headings"] = "positions"
 
     def count(
         self, spike_times: Sequence[NDArray[np.float64]], *, n_jobs: int = 1
@@ -540,12 +541,14 @@ def prepare_frame_binning(
     spike_window: NDArray[np.float64] | None,
     interval_mask: NDArray[np.bool_] | None = None,
     break_before: NDArray[np.bool_] | None = None,
+    samples: Literal["positions", "headings"] = "positions",
 ) -> FrameBinning:
     """Resolve frame support once for counting and result provenance.
 
     A supplied ``interval_mask`` already includes temporal and bin validity
     (including ``break_before``); geometry consumers can share that gate
     without evaluating windows again. ``break_before`` is already validated.
+    ``samples`` names what ``frame_bins`` bins, for the empty-support warning.
     """
     if interval_mask is None:
         mask = interval_valid_mask(
@@ -567,7 +570,7 @@ def prepare_frame_binning(
         max_gap=max_gap,
         break_before=break_before,
     )
-    return FrameBinning(times, frame_bins, n_bins, support, break_before)
+    return FrameBinning(times, frame_bins, n_bins, support, break_before, samples)
 
 
 def count_frames_and_occupancy(
@@ -587,6 +590,7 @@ def count_frames_and_occupancy(
         epochs=support.epochs,
         spike_window=support.spike_window,
         start_bin_gate=True,
+        samples=prepared.samples,
         break_before=prepared.break_before,
         result="the rate map is empty",
     )
