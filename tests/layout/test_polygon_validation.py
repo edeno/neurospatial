@@ -161,3 +161,34 @@ def test_stored_zero_face_cannot_opt_out_of_positive_opening_validation():
     changed = KnownFaces(source.faces.faces._replace(A=np.array([0.0])))
     with pytest.raises(ValueError, match=r"faces\.A"):
         _publish(replace(source, faces=changed))
+
+
+def _over_grid(polygons, parents, active):
+    """Polygon cells over a 3x1 grid of unit cells with ``active`` kept."""
+    cells = PolygonCells(tuple(polygons))
+    base = RectilinearLocator(
+        (np.arange(4.0), np.array([0.0, 1.0])), (3, 1), np.array(active)[:, None]
+    )
+    centers = np.array([_representative(polygon) for polygon in polygons])
+    return Binning(
+        "fixture",
+        SpatialBins(centers, np.array([p.area for p in polygons]), 2),
+        BinConnections.from_arrays(np.empty((0, 2), int), np.empty(0)),
+        ClippedLocator(base, cells, ClipMapping(np.array(parents), sum(active))),
+        MissingFaces("fixture"),
+        shapes=cells,
+    )
+
+
+def test_a_cell_may_take_unbinned_space_next_to_its_parent():
+    # Splitting at walls gives a bin the arena of a grid cell dropped next to
+    # it; space another bin holds, or space farther away, is refused.
+    _publish(_over_grid([box(0, 0, 1.5, 1)], [0], [True, False, False]))
+    with pytest.raises(ValueError, match="outside its source parent"):
+        _publish(
+            _over_grid(
+                [box(0, 0, 1.5, 1), box(1.5, 0, 2, 1)], [0, 1], [True, True, False]
+            )
+        )
+    with pytest.raises(ValueError, match="outside its source parent"):
+        _publish(_over_grid([box(0, 0, 2.5, 1)], [0], [True, False, False]))

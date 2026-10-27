@@ -254,7 +254,10 @@ def fit_walls(
     side, so the walls stay where they were measured. Exact polygon cells
     cover only the arena, so when it splits, every other cell is also
     clipped to the arena outline, as :meth:`Environment.clip` does; this
-    changes only cells that stick out past a slanted or curved outline.
+    changes only cells that stick out past a slanted or curved outline. A
+    grid cell dropped at such an outline still holds arena that lookup gives
+    to neighboring bins; those bins' cells take that arena, so the split
+    bins cover every position the grid's bins did.
     ``"snap"`` keeps the cells and moves each wall onto the cell edges that
     separate the bins it divides, warning how far it moved. When no wall
     divides a cell, both modes return the bins and walls unchanged.
@@ -267,9 +270,13 @@ def fit_walls(
     if not any(_divides(cell, walls, domain) for cell in cells):
         return binning, arena
     if mode == "split":
+        from neurospatial.geometry._lookup import outline_sliver_regions
         from neurospatial.geometry._polygon import split_binning
 
-        return split_binning(binning, (walls,), domain=domain)[0], arena
+        slivers = outline_sliver_regions(binning, arena)
+        return split_binning(binning, (walls,), domain=domain, slivers=slivers)[
+            0
+        ], arena
     if not isinstance(arena, OpenArena):
         raise ValueError(
             _format_error(

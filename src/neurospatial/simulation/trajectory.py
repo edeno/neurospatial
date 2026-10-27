@@ -96,7 +96,9 @@ def simulate_trajectory_ou(
     dt : float, optional
         Time step in seconds (default: 0.01 = 10ms).
     start_position : NDArray[np.float64], shape (n_dims,), optional
-        Starting position. If None, randomly chosen from bin centers.
+        Starting position, inside the environment: ``env.contains`` is True
+        for it, or it lies on the outline within rounding. If None, randomly
+        chosen from bin centers.
     speed_mean : float, optional
         Mean running speed in ``speed_units`` per second (default: 8.0).
     speed_std : float, optional
@@ -140,6 +142,9 @@ def simulate_trajectory_ou(
     ValueError
         If speed_units differs from env.units, or a speed or time constant is
         not finite and positive (``speed_std`` may be 0).
+    ValueError
+        If ``start_position`` is not one point of ``env.n_dims`` coordinates
+        inside the environment.
 
     Notes
     -----
@@ -287,6 +292,29 @@ def simulate_trajectory_ou(
     else:
         position = np.asarray(start_position, dtype=np.float64).copy()
 
+    walls = (
+        Walls.enclosing(env) if n_dims == 2 and boundary_mode != "periodic" else None
+    )
+    if start_position is not None and not (
+        position.shape == (n_dims,)
+        and (
+            env.contains(position[None])[0]
+            # A start computed onto a slanted wall may round outside it.
+            or (walls is not None and walls.distance(position) <= walls.tolerance)
+        )
+    ):
+        raise ValueError(
+            _format_error(
+                f"start_position {start_position!r} is not a point inside the "
+                "environment.",
+                why=f"Why: the walk starts there, so it must be one point of "
+                f"{n_dims} coordinates that a bin holds; from outside, the walls "
+                "would keep the animal outside.",
+                fix="pass a point where env.contains(start_position) is True, "
+                "such as one of env.bin_centers, or None for a random bin center",
+            )
+        )
+
     speeds = _ou_speeds(n_steps, dt, speed_mean, speed_std, coherence_time, rng)
     if n_dims == 2:
         turning = _ou_series(
@@ -309,10 +337,6 @@ def simulate_trajectory_ou(
             heading_noise = rng.standard_normal((n_steps, n_dims)) * np.sqrt(
                 2 * dt / ((n_dims - 1) * rotational_velocity_coherence_time)
             )
-
-    walls = (
-        Walls.enclosing(env) if n_dims == 2 and boundary_mode != "periodic" else None
-    )
 
     positions = np.zeros((n_steps, n_dims), dtype=np.float64)
     positions[0] = position

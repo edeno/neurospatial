@@ -3288,8 +3288,11 @@ class Environment(Generic[_C]):
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
             measures. Bins no wall divides are the same either way, except
-            that ``'split'`` clips bins sticking out past a slanted or curved
-            outline to the arena, since polygon bins cover only the arena.
+            that, along a slanted or curved outline, ``'split'`` makes the
+            bins exact polygons that cover the arena: a bin sticking out past
+            the outline is clipped to it, and a bin next to a grid cell dropped
+            there takes the part of that cell inside the arena, whose
+            positions it already held.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``, as a LayoutType member or a
             case-insensitive string. For "Hexagonal", `bin_size` is the
@@ -3512,8 +3515,11 @@ class Environment(Generic[_C]):
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
             measures. Bins no wall divides are the same either way, except
-            that ``'split'`` clips bins sticking out past a slanted or curved
-            outline to the arena, since polygon bins cover only the arena.
+            that, along a slanted or curved outline, ``'split'`` makes the
+            bins exact polygons that cover the arena: a bin sticking out past
+            the outline is clipped to it, and a bin next to a grid cell dropped
+            there takes the part of that cell inside the arena, whose
+            positions it already held.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``. See :meth:`from_samples`.
         dimension_ranges : sequence of (float, float), optional
@@ -4073,8 +4079,11 @@ class Environment(Generic[_C]):
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
             measures. Bins no wall divides are the same either way, except
-            that ``'split'`` clips bins sticking out past a slanted or curved
-            outline to the arena, since polygon bins cover only the arena.
+            that, along a slanted or curved outline, ``'split'`` makes the
+            bins exact polygons that cover the arena: a bin sticking out past
+            the outline is clipped to it, and a bin next to a grid cell dropped
+            there takes the part of that cell inside the arena, whose
+            positions it already held.
 
         Returns
         -------
@@ -4188,8 +4197,11 @@ class Environment(Generic[_C]):
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
             measures. Bins no wall divides are the same either way, except
-            that ``'split'`` clips bins sticking out past a slanted or curved
-            outline to the arena, since polygon bins cover only the arena.
+            that, along a slanted or curved outline, ``'split'`` makes the
+            bins exact polygons that cover the arena: a bin sticking out past
+            the outline is clipped to it, and a bin next to a grid cell dropped
+            there takes the part of that cell inside the arena, whose
+            positions it already held.
 
         Returns
         -------
@@ -4297,8 +4309,11 @@ class Environment(Generic[_C]):
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
             measures. Bins no wall divides are the same either way, except
-            that ``'split'`` clips bins sticking out past a slanted or curved
-            outline to the arena, since polygon bins cover only the arena.
+            that, along a slanted or curved outline, ``'split'`` makes the
+            bins exact polygons that cover the arena: a bin sticking out past
+            the outline is clipped to it, and a bin next to a grid cell dropped
+            there takes the part of that cell inside the arena, whose
+            positions it already held.
 
         Returns
         -------
@@ -4401,8 +4416,11 @@ class Environment(Generic[_C]):
             operations refuse a split bin next to a wall's end or a diagonal
             wall, so use it with ``method='binned'`` rates or wall-distance
             measures. Bins no wall divides are the same either way, except
-            that ``'split'`` clips bins sticking out past a slanted or curved
-            outline to the arena, since polygon bins cover only the arena.
+            that, along a slanted or curved outline, ``'split'`` makes the
+            bins exact polygons that cover the arena: a bin sticking out past
+            the outline is clipped to it, and a bin next to a grid cell dropped
+            there takes the part of that cell inside the arena, whose
+            positions it already held.
 
         Returns
         -------

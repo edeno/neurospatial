@@ -206,7 +206,10 @@ class ClippedLocator:
 
         The parent's owner is found within the error, and a clipped cell of
         that parent within the error of the point holds it; of several, the
-        lowest-numbered.
+        lowest-numbered. A point in no parent is held by a cell whose part
+        beyond its own parent is within the error of it: splitting the bins
+        at walls gives cells the arena of grid cells dropped at the outline
+        (see :func:`~neurospatial.geometry._lookup.outline_sliver_regions`).
         """
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
         if query.ndim != 2 or query.shape[1] != 2:
@@ -235,11 +238,33 @@ class ClippedLocator:
                 shapely.points(query[rows]), predicate="covered_by"
             )
         matching = self.mapping.parent_bin_indices[child_ids] == parents[point_ids]
+        unparented = parents[point_ids] < 0
+        if np.any(unparented):
+            # Only where a cell reaches past its parent; a point a removed
+            # owner held stays outside.
+            beyond = _lookup_index((self, "beyond"), indexes, self._beyond_parents)
+            matching[unparented] = shapely.dwithin(
+                beyond[child_ids[unparented]],
+                shapely.points(query[rows][point_ids[unparented]]),
+                radius[point_ids[unparented]],
+            )
         local = np.full(len(rows), len(self.cells.polygons), dtype=np.intp)
         np.minimum.at(local, point_ids[matching], child_ids[matching])
         local[local == len(self.cells.polygons)] = -1
         result[rows] = local
         return result
+
+    def _beyond_parents(self) -> NDArray[np.object_]:
+        """Each cell's part outside its parent's cell, shape (n_cells,)."""
+        from neurospatial.geometry._polygon import cells_from_locator
+
+        parents = _geometry_array(cells_from_locator(self.base))
+        return np.asarray(
+            shapely.difference(
+                _geometry_array(self.cells.polygons),
+                parents[self.mapping.parent_bin_indices],
+            )
+        )
 
 
 # Locators that wrap one ``base`` locator: they select, move or clip its bins.
