@@ -662,15 +662,45 @@ class TestGridMetricsOnHexagonalMaps:
 
     @pytest.mark.parametrize("n_cells", [10, 11])
     def test_rotation_keeps_the_zero_lag_pixel_in_place(self, n_cells) -> None:
-        from neurospatial.encoding.grid import _zero_lag_centered
+        from neurospatial.encoding.grid import (
+            _rotations_about_zero_lag,
+            _zero_lag_centered,
+        )
 
         lags = np.zeros((n_cells, n_cells))
         lags[n_cells // 2, n_cells // 2] = 1.0  # zero lag, as fftshift places it
         centered = _zero_lag_centered(lags)
-        rotated = ndimage.rotate(centered, 180, reshape=False, order=1)
+        rotated, _ = _rotations_about_zero_lag(centered)
 
         assert centered.shape[0] % 2 == 1
-        np.testing.assert_allclose(rotated, centered, atol=1e-12)
+        middle = centered.shape[0] // 2
+        for each in rotated:
+            assert each[middle, middle] == pytest.approx(1.0, abs=1e-12)
+            assert np.unravel_index(each.argmax(), each.shape) == (middle, middle)
+
+    @pytest.mark.parametrize("shape", [(5, 5), (7, 9), (41, 57), (79, 79)])
+    def test_rotations_match_ndimage_rotate(self, shape) -> None:
+        """The precomputed rotations are ndimage.rotate's bilinear rotations."""
+        from neurospatial.encoding.grid import (
+            _ROTATION_ANGLES,
+            _rotations_about_zero_lag,
+        )
+
+        rng = np.random.default_rng(0)
+        centered = rng.normal(size=shape)
+        centered[rng.random(shape) < 0.1] = np.nan  # undefined lags
+        rotated, defined = _rotations_about_zero_lag(centered)
+
+        valid = np.isfinite(centered)
+        for k, angle in enumerate(_ROTATION_ANGLES):
+            expected = ndimage.rotate(
+                np.where(valid, centered, 0.0), angle, reshape=False, order=1
+            )
+            coverage = ndimage.rotate(
+                valid.astype(float), angle, reshape=False, order=1
+            )
+            np.testing.assert_allclose(rotated[k], expected, rtol=0, atol=1e-12)
+            np.testing.assert_array_equal(defined[k], coverage > 1.0 - 1e-9)
 
 
 class TestGridOrientationInEnvironmentFrame:

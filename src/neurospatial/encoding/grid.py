@@ -63,7 +63,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import fft, ndimage
+from scipy import fft, ndimage, special
+from scipy.sparse import coo_array, csr_array
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
@@ -928,11 +929,8 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     edge = (min(centered.shape) - 1) // 2
     distance = _lag_distance(centered.shape)
     used = np.isfinite(centered) & (distance > central_radius) & (distance <= edge)
-    rotations = []
-    for angle in _ROTATION_ANGLES:
-        rotated, defined = _rotate_about_zero_lag(centered, angle)
-        rotations.append(rotated)
-        used &= defined
+    rotations, defined = _rotations_about_zero_lag(centered)
+    used &= defined.all(axis=0)
     if not used.any():
         return np.nan
     # The annulus grows only as far as the lags that are defined in the map
@@ -1059,34 +1057,89 @@ def _central_peak_radius(centered: NDArray[np.float64]) -> float:
     return float(np.sqrt(np.count_nonzero(region) / np.pi))
 
 
-def _rotate_about_zero_lag(
-    centered: NDArray[np.float64], angle: float
+def _rotations_about_zero_lag(
+    centered: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
-    """Rotate a zero-lag-centered map, marking lags the rotation leaves undefined.
+    """Rotate a zero-lag-centered map by each of ``_ROTATION_ANGLES``.
 
     Parameters
     ----------
     centered : ndarray of float64, shape (n_x, n_y)
         Map with odd axes and zero lag at the middle index; NaN where
         undefined.
-    angle : float
-        Rotation in degrees.
 
     Returns
     -------
-    rotated : ndarray of float64, shape (n_x, n_y)
-        Bilinear rotation about the zero-lag pixel.
-    defined : ndarray of bool, shape (n_x, n_y)
+    rotated : ndarray of float64, shape (n_angles, n_x, n_y)
+        Bilinear rotation about the zero-lag pixel by each angle.
+    defined : ndarray of bool, shape (n_angles, n_x, n_y)
         Lags whose interpolated value uses only defined lags inside the map.
     """
     valid = np.isfinite(centered)
-    rotated = ndimage.rotate(
-        np.where(valid, centered, 0.0), angle, reshape=False, order=1, cval=0.0
+    columns = np.column_stack(
+        [np.where(valid, centered, 0.0).ravel(), valid.ravel().astype(np.float64)]
     )
-    coverage = ndimage.rotate(
-        valid.astype(np.float64), angle, reshape=False, order=1, cval=0.0
-    )
-    return np.asarray(rotated, dtype=np.float64), coverage > 1.0 - 1e-9
+    rotated_columns = _rotation_operator(centered.shape) @ columns
+    shape = (len(_ROTATION_ANGLES), *centered.shape)
+    rotated = rotated_columns[:, 0].reshape(shape)
+    coverage = rotated_columns[:, 1].reshape(shape)
+    return rotated, coverage > 1.0 - 1e-9
+
+
+@lru_cache(maxsize=8)
+def _rotation_operator(shape: tuple[int, ...]) -> csr_array:
+    """Bilinear rotations of a map of ``shape`` about its center, as a matrix.
+
+    The rotation is ``ndimage.rotate(map, angle, reshape=False, order=1,
+    cval=0.0)``, which is linear in the map: each rotated lag is a weighted
+    sum of the four lags around the point it samples, and a point outside
+    the map takes the value 0 (``mode="constant"`` does not interpolate
+    toward the edge). Building the weights once per shape turns the five
+    rotations of every map of that shape into one sparse product, equal to
+    ``ndimage.rotate`` up to rounding.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Map shape ``(n_x, n_y)``.
+
+    Returns
+    -------
+    scipy.sparse.csr_array, shape (n_angles * n_x * n_y, n_x * n_y)
+        Row ``k * n_x * n_y + p`` holds the weights of the flattened lags in
+        lag ``p`` of the rotation by ``_ROTATION_ANGLES[k]``.
+    """
+    n_lags = shape[0] * shape[1]
+    extent = np.asarray(shape, dtype=np.float64)[:, None] - 1.0
+    center = extent / 2
+    lags = np.indices(shape).reshape(2, -1).astype(np.float64)
+    rows, columns, weights = [], [], []
+    for k, angle in enumerate(_ROTATION_ANGLES):
+        # ndimage.rotate reads output lag ``q`` from ``matrix @ (q - c) + c``.
+        cos, sin = special.cosdg(angle), special.sindg(angle)
+        matrix = np.array([[cos, sin], [-sin, cos]])
+        source = matrix @ lags + (center - matrix @ center)
+        inside = np.flatnonzero(np.all((source >= 0) & (source <= extent), axis=0))
+        low = np.floor(source[:, inside])
+        fraction = source[:, inside] - low
+        low = low.astype(np.intp)
+        for step_x in (0, 1):
+            for step_y in (0, 1):
+                # A point on the far edge has fraction 0 toward the next lag.
+                x = np.minimum(low[0] + step_x, shape[0] - 1)
+                y = np.minimum(low[1] + step_y, shape[1] - 1)
+                weight_x = fraction[0] if step_x else 1.0 - fraction[0]
+                weight_y = fraction[1] if step_y else 1.0 - fraction[1]
+                rows.append(k * n_lags + inside)
+                columns.append(x * shape[1] + y)
+                weights.append(weight_x * weight_y)
+    operator = coo_array(
+        (np.concatenate(weights), (np.concatenate(rows), np.concatenate(columns))),
+        shape=(len(_ROTATION_ANGLES) * n_lags, n_lags),
+    ).tocsr()
+    for array in (operator.data, operator.indices, operator.indptr):
+        array.setflags(write=False)
+    return operator
 
 
 def _find_autocorr_peaks(

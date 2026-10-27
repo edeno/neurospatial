@@ -7273,7 +7273,7 @@ def spatial_cell_type_significance(
     A grid whose spacing exceeds about 0.6 of a square arena's side has no
     ring inside the autocorrelogram and is not labeled grid.
     Scoring all three statistics for 50 units with 200 shuffles in that box
-    took about 25 s on one core, against 3 s for spatial information alone.
+    took about 16 s on one core, against 2 s for spatial information alone.
 
     See Also
     --------
