@@ -824,28 +824,56 @@ the remaining differences from BNT and opexebo.
 
 ## Information bias and cell verdicts
 
-Plug-in information has approximate upward finite-count bias
-`(n_bins - 1) / (2 ln(2) N_spikes)`. This approximation describes independent
-multinomial sampling; occupancy imbalance, smoothing and temporal dependence
-change its magnitude. A fixed cutoff is a screening heuristic, and raw binning
-is not universally lower or more conservative than smoothed estimation.
+Plug-in Skaggs information is positive even for a cell that fires at the same
+rate everywhere: Poisson noise makes its rate map uneven. On average, an
+untuned cell shows `K / (2 ln(2) N)` bits/spike, where `N` is its number of
+spikes and `K` is the number of effectively independent bins of the map.
+`spatial_information_bias()` on spatial, view and object-vector rate results
+returns this value for each unit. For an unsmoothed map, `K` is the number of
+occupied bins minus one: the Miller (1955) and Treves & Panzeri (1995) bias.
+Smoothing makes neighboring bins share spikes, so `K` is much smaller than the
+number of bins. It is derived from the estimator itself (each spike's
+footprint on the map, weighted by occupancy). For a 1 m box with 5 cm bins and
+a 5 cm kernel, `K` is about 46 for 441 bins. With a 10 cm kernel it is about
+11. The derivation is in the Notes of
+`SpatialRateResult.spatial_information_bias`. In simulations of untuned cells
+across arena sizes, bin sizes, bandwidths and estimators, it matched the mean
+information to within 10% (16% for `method="binned"`) whenever the units had at
+least as many spikes as independent bins.
+
+Every information screen subtracts this bias before it applies its cutoff:
+`is_place_cell(criterion="spatial_info")`, `classify()`, `label_cell_types()`,
+`summary_table()` labels, `is_object_vector_cell()` and
+`is_spatial_view_cell()`. `spatial_information()` itself still returns the
+plug-in value. The expansion behind the bias needs at least as many spikes as
+independent bins. A unit with fewer spikes gets a NaN bias and fails the
+screen with a warning. Record longer, use coarser bins or a larger bandwidth,
+or run the shuffle test for such units.
 
 Measured on 20 independent untuned 0.5 Hz Poisson units with a 30 Hz OU
 trajectory in a 100 x 100 cm arena (trajectory seed 0, spikes seed 1):
 place/view maps used 5 cm bins and diffusion KDE with bandwidth 5;
 egocentric maps used the default binned 10 x 12 polar grid. Entries are
-counts flagged by the screen, not cells with ground-truth tuning.
+counts flagged by the screen, not cells with ground-truth tuning. "Raw" is the
+uncorrected plug-in information against the same cutoff.
 
-| Minutes (approximate spikes) | Egocentric information median / flags (0.3) | Place information median / flags (0.5) | Detected fields | View flags (0.5) | HD flags |
+| Minutes (approximate spikes) | Egocentric information median / raw flags / screen flags (0.3) | Place information median / raw flags / screen flags (0.5) | Detected fields | View raw / screen flags (0.5) | HD flags |
 | --- | --- | --- | --- | --- | --- |
-| 1 (30) | 2.12 / 20/20 | 0.86 / 19/20 | 11/20 | 19/20 | 0/20 |
-| 2 (60) | 1.41 / 20/20 | 0.54 / 14/20 | 11/20 | 19/20 | 0/20 |
-| 5 (150) | 0.70 / 20/20 | 0.22 / 0/20 | 20/20 | 0/20 | 0/20 |
-| 10 (300) | 0.41 / 20/20 | 0.11 / 0/20 | 20/20 | 0/20 | 0/20 |
-| 20 (600) | 0.21 / 0/20 | 0.05 / 0/20 | 16/20 | 0/20 | 0/20 |
+| 1 (29) | 2.09 / 20/20 / 0/20 | 0.86 / 19/20 / 0/20 | 11/20 | 20/20 / 0/20 | 0/20 |
+| 2 (59) | 1.37 / 20/20 / 0/20 | 0.54 / 14/20 / 0/20 | 11/20 | 20/20 / 0/20 | 0/20 |
+| 5 (148) | 0.72 / 20/20 / 0/20 | 0.22 / 0/20 / 0/20 | 20/20 | 0/20 / 0/20 | 0/20 |
+| 10 (298) | 0.42 / 20/20 / 0/20 | 0.11 / 0/20 / 0/20 | 20/20 | 0/20 / 0/20 | 0/20 |
+| 20 (598) | 0.21 / 0/20 / 0/20 | 0.05 / 0/20 / 0/20 | 16/20 | 0/20 / 0/20 | 0/20 |
 
-The allocentric object-vector information screen also flagged 20/20 in the
-10-minute fixture. HD's screen combines the rate-weighted mean vector length
+The allocentric object-vector screen behaves like the egocentric one: raw
+information flagged 20/20 up to 10 minutes, the corrected screen none. The
+correction costs power at low counts. Place cells with a 2 Hz peak in this
+arena passed the corrected screen at 10 minutes (about 110 spikes) but were
+refused at 2 minutes (about 18 spikes, fewer than the 46 independent bins).
+Object-vector cells with a 2 Hz peak fired about 80 spikes in 10 minutes,
+fewer than the 120 polar bins. The shuffle test has no such floor.
+
+HD's screen combines the rate-weighted mean vector length
 with an occupancy-corrected test of one preferred direction (a Poisson score
 test with heading occupancy as exposure), which keeps its false-positive rate
 near `alpha` for untuned cells under uneven heading sampling when spikes are
@@ -910,7 +938,7 @@ sparse = sparsity(firing_rate, occupancy)
 print(f"Spatial information: {info:.3f} bits/spike")
 print(f"Sparsity: {sparse:.3f}")
 
-# 5. Explicit fast screen (biased at low counts)
+# 5. Explicit fast screen (subtracts the untuned-cell information bias)
 from neurospatial.encoding import is_place_cell
 candidate = is_place_cell(env, spike_times, times, positions, criterion="spatial_info")
 print(f"Place candidate: {candidate}")

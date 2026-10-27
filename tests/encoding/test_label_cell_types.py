@@ -46,8 +46,8 @@ def test_label_cell_types_short_recording_bias(ou_2min_env, ou_2min, noise_train
         ou_2min_env, noise_trains(120), times, positions, bandwidth=5
     )
     labels = rates.label_cell_types(boundary_source="analysis")
-    tuned = rates.spatial_information() >= 0.5
-    # Information bias in a short recording gives untuned cells a spatial
-    # label; the label follows the information gate alone.
-    assert tuned.any()
-    np.testing.assert_array_equal(labels != "unclassified", tuned)
+    # Untuned 0.5 Hz units in a 2-minute recording: their uncorrected
+    # information passes the 0.5 bits/spike gate by chance, but the gate
+    # subtracts the untuned-cell bias, so none gets a spatial label.
+    assert (rates.spatial_information() >= 0.5).sum() >= 10
+    assert (labels == "unclassified").all()

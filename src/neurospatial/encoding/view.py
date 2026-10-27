@@ -182,12 +182,12 @@ def _check_gaze_fields(result: ViewRateResult | ViewRatesResult) -> None:
 
 
 def _view_classify(
-    rates: NDArray, occupancy: NDArray, *, min_info: float
+    result: ViewRateResult | ViewRatesResult, *, min_info: float
 ) -> NDArray[np.bool_]:
-    """The shared information-threshold rule for this rate family."""
-    from neurospatial.encoding._metrics import batch_spatial_information
+    """The shared rule: bias-corrected information at or above ``min_info``."""
+    from neurospatial.encoding._metrics import _debiased_information
 
-    return np.asarray(batch_spatial_information(rates, occupancy)) >= min_info
+    return _debiased_information(result) >= min_info
 
 
 def _view_summary_frame(
@@ -207,7 +207,7 @@ def _view_summary_frame(
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **result._accounting_columns(),
-        "is_spatial_view_cell": _view_classify(rates, occupancy, **VIEW_THRESHOLDS),
+        "is_spatial_view_cell": _view_classify(result, **VIEW_THRESHOLDS),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["units"] = {
@@ -527,11 +527,33 @@ class ViewRateResult(SingleUnitRateMixin):
             _to_numpy(self.firing_rate), _to_numpy(self.occupancy)
         )
 
+    def spatial_information_bias(self) -> float:
+        """Expected spatial information of an untuned cell (bits/spike).
+
+        The information a cell firing at this unit's mean rate in every bin is
+        expected to show on this occupancy with this estimator, from Poisson
+        noise alone. ``spatial_information() - spatial_information_bias()``
+        is what the spatial-view screen compares with its cutoff. The derivation
+        and its validation are in
+        :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`.
+
+        Returns
+        -------
+        float
+            Expected untuned information in bits/spike. NaN for a silent unit
+            and, with a ``UserWarning``, when the unit has fewer spikes than
+            the map has effectively independent bins.
+        """
+        from neurospatial.encoding._metrics import _information_bias
+
+        return float(_information_bias(self)[0])
+
     def is_spatial_view_cell(self, *, min_info: float | None = None) -> bool:
         """Classify as spatial view cell based on view spatial information.
 
         A neuron is classified as a spatial view cell if its view spatial
-        information meets or exceeds the minimum threshold. Spatial view cells fire
+        information, minus its untuned-cell bias, meets or exceeds the
+        minimum threshold. Spatial view cells fire
         when the animal *looks at* a specific location, regardless of where
         the animal is positioned.
 
@@ -546,16 +568,23 @@ class ViewRateResult(SingleUnitRateMixin):
         Returns
         -------
         bool
-            True if spatial_information() >= min_info, False otherwise.
+            True if spatial_information() - spatial_information_bias()
+            >= min_info, False otherwise.
 
         Notes
         -----
-        Plug-in information is biased upward by approximately
-        (n_bins - 1) / (2 ln(2) N_spikes). The 0.5 bits/spike cutoff is a
-        screening heuristic. For 20 untuned 0.5 Hz Poisson units with 5 cm
-        bins and diffusion KDE (bandwidth 5), it flagged 19/20 at 1 and 2
-        minutes (about 30 and 60 spikes), and 0/20 at 5, 10 and 20 minutes
-        (about 150, 300 and 600 spikes). False positives grow at low counts.
+        The 0.5 bits/spike cutoff is a screening convention. The screen
+        compares bias-corrected information, ``spatial_information() -
+        spatial_information_bias()``, with it: the information an untuned cell
+        shows from Poisson noise alone is subtracted first (derivation in
+        :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`).
+        Units with fewer spikes than the view map has effectively independent
+        bins fail, with a warning. In 40 untuned Poisson units per spike count
+        in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
+        bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
+        5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
+        none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
+        2 minutes (about 24 spikes) and all 20 in 10 minutes.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
@@ -604,13 +633,7 @@ class ViewRateResult(SingleUnitRateMixin):
         peak_location : Get location of peak view response
         """
         min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-        return bool(
-            _view_classify(
-                np.atleast_2d(_to_numpy(self.firing_rate)),
-                _to_numpy(self.occupancy),
-                min_info=min_info,
-            )[0]
-        )
+        return bool(_view_classify(self, min_info=min_info)[0])
 
 
 @_copy_unit_table
@@ -984,11 +1007,33 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
             _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
         )
 
+    def spatial_information_bias(self) -> NDArray[np.float64]:
+        """Expected spatial information of an untuned cell, per unit (bits/spike).
+
+        The information a cell firing at each unit's mean rate in every bin is
+        expected to show on this occupancy with this estimator, from Poisson
+        noise alone. ``spatial_information() - spatial_information_bias()``
+        is what :meth:`classify` compares with its cutoff. The derivation and
+        its validation are in
+        :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Expected untuned information in bits/spike. NaN for silent units
+            and, with one ``UserWarning``, for units with fewer spikes than
+            the maps have effectively independent bins.
+        """
+        from neurospatial.encoding._metrics import _information_bias
+
+        return _information_bias(self)
+
     def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as spatial view cells.
 
         A neuron is classified as a spatial view cell if its view spatial
-        information meets or exceeds the minimum threshold. This is the single-type
+        information, minus its untuned-cell bias, meets or exceeds the
+        minimum threshold. This is the single-type
         boolean predicate ("is this a view cell") for the batch result.
 
         Parameters
@@ -1005,12 +1050,18 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
 
         Notes
         -----
-        Plug-in information is biased upward by approximately
-        (n_bins - 1) / (2 ln(2) N_spikes). The 0.5 bits/spike cutoff is a
-        screening heuristic. For 20 untuned 0.5 Hz Poisson units with 5 cm
-        bins and diffusion KDE (bandwidth 5), it flagged 19/20 at 1 and 2
-        minutes (about 30 and 60 spikes), and 0/20 at 5, 10 and 20 minutes
-        (about 150, 300 and 600 spikes). False positives grow at low counts.
+        The 0.5 bits/spike cutoff is a screening convention. The screen
+        compares bias-corrected information, ``spatial_information() -
+        spatial_information_bias()``, with it: the information an untuned cell
+        shows from Poisson noise alone is subtracted first (derivation in
+        :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`).
+        Units with fewer spikes than the view map has effectively independent
+        bins fail, with a warning. In 40 untuned Poisson units per spike count
+        in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
+        bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
+        5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
+        none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
+        2 minutes (about 24 spikes) and all 20 in 10 minutes.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
@@ -1048,9 +1099,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         spatial_information : The metric used for classification
         """
         min_info = VIEW_THRESHOLDS["min_info"] if min_info is None else min_info
-        return _view_classify(
-            _to_numpy(self.firing_rates), _to_numpy(self.occupancy), min_info=min_info
-        )
+        return _view_classify(self, min_info=min_info)
 
     def summary_table(
         self,
@@ -2305,12 +2354,18 @@ def is_spatial_view_cell(
 
     Notes
     -----
-    Plug-in information is biased upward by approximately
-    (n_bins - 1) / (2 ln(2) N_spikes). The 0.5 bits/spike cutoff is a
-    screening heuristic. For 20 untuned 0.5 Hz Poisson units with 5 cm
-    bins and diffusion KDE (bandwidth 5), it flagged 19/20 at 1 and 2
-    minutes (about 30 and 60 spikes), and 0/20 at 5, 10 and 20 minutes
-    (about 150, 300 and 600 spikes). False positives grow at low counts.
+    The 0.5 bits/spike cutoff is a screening convention. The screen
+    compares bias-corrected information, ``spatial_information() -
+    spatial_information_bias()``, with it: the information an untuned cell
+    shows from Poisson noise alone is subtracted first (derivation in
+    :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`).
+    Units with fewer spikes than the view map has effectively independent
+    bins fail, with a warning. In 40 untuned Poisson units per spike count
+    in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
+    bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
+    5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
+    none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
+    2 minutes (about 24 spikes) and all 20 in 10 minutes.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.

@@ -137,12 +137,12 @@ def _check_direction_frame(direction_frame: str, *, context: str) -> None:
 
 
 def _object_vector_classify(
-    rates: NDArray, occupancy: NDArray, *, min_info: float
+    result: ObjectVectorRateResult | ObjectVectorRatesResult, *, min_info: float
 ) -> NDArray[np.bool_]:
-    """The shared information-threshold rule for this rate family."""
-    from neurospatial.encoding._metrics import batch_spatial_information
+    """The shared rule: bias-corrected information at or above ``min_info``."""
+    from neurospatial.encoding._metrics import _debiased_information
 
-    return np.asarray(batch_spatial_information(rates, occupancy)) >= min_info
+    return _debiased_information(result) >= min_info
 
 
 def _object_vector_summary_frame(
@@ -151,15 +151,13 @@ def _object_vector_summary_frame(
     index: Sequence[Hashable],
 ) -> pd.DataFrame:
     """Build identical metric columns for single and population results."""
-    rates = np.atleast_2d(_to_numpy(result._get_rates()))
-    occupancy = _to_numpy(result.occupancy)
     return polar_summary_frame(
         result,
         index=index,
         extra={},
         classification={
             "is_object_vector_cell": _object_vector_classify(
-                rates, occupancy, **OBJECT_VECTOR_THRESHOLDS
+                result, **OBJECT_VECTOR_THRESHOLDS
             )
         },
         extra_units={},
@@ -573,13 +571,35 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         occupancy = _to_numpy(self.occupancy)
         return spatial_information(firing_rate, occupancy)
 
+    def spatial_information_bias(self) -> float:
+        """Expected spatial information of an untuned cell (bits/spike).
+
+        The information a cell firing at this unit's mean rate in every bin is
+        expected to show on this occupancy with this estimator, from Poisson
+        noise alone. ``spatial_information() - spatial_information_bias()``
+        is what the object-vector screen compares with its cutoff. The derivation
+        and its validation are in
+        :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`.
+
+        Returns
+        -------
+        float
+            Expected untuned information in bits/spike. NaN for a silent unit
+            and, with a ``UserWarning``, when the unit has fewer spikes than
+            the map has effectively independent bins.
+        """
+        from neurospatial.encoding._metrics import _information_bias
+
+        return float(_information_bias(self)[0])
+
     def is_object_vector_cell(self, *, min_info: float | None = None) -> bool:
         """Classify as object-vector cell based on spatial information in the recorded frame.
 
         Tests object-vector tuning in ``result.direction_frame``.
 
         A neuron is classified as a candidate in the recorded frame if its
-        spatial information meets or exceeds the minimum threshold. OVCs fire when the
+        bias-corrected spatial information meets or exceeds the minimum
+        threshold. OVCs fire when the
         animal is at a specific distance and direction from an object.
 
         Parameters
@@ -591,18 +611,25 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         Returns
         -------
         bool
-            True if spatial_information() >= min_info, False otherwise.
+            True if spatial_information() - spatial_information_bias()
+            >= min_info, False otherwise.
 
         Notes
         -----
-        The 0.3 bits/spike default is this library's screening heuristic.
-        Plug-in information is biased upward by approximately
-        (n_bins - 1) / (2 ln(2) N_spikes). In 20 untuned 0.5 Hz Poisson units,
-        egocentric 10 x 12 polar maps had median information 2.12, 1.41, 0.70,
-        0.41 and 0.21 bits/spike at 1, 2, 5, 10 and 20 minutes (about 30, 60,
-        150, 300 and 600 spikes). The screen flagged 20/20 at 1-10 minutes
-        and 0/20 at 20 minutes. The allocentric screen also flagged 20/20
-        in the seeded 10-minute fixture. Low counts can resemble tuning.
+        The 0.3 bits/spike default is a screening convention. The screen
+        compares bias-corrected information, ``spatial_information() -
+        spatial_information_bias()``, with it: the information an untuned cell
+        shows from Poisson noise alone is subtracted first (derivation in
+        :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
+        ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
+        polar bins, and units with fewer spikes than K fail, with a warning:
+        about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
+        units per spike count in a 100 x 100 cm box (10-minute sessions,
+        allocentric and egocentric), uncorrected information passed 0.3
+        bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
+        at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
+        fired about 80 spikes in those 10 minutes, too few for the screen; use
+        fewer bins or the shuffle test.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
@@ -649,14 +676,19 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         ...     object_positions,
         ...     distance_range=(0.0, 50.0),
         ... )
-        >>> result.is_object_vector_cell()
+        >>> bool(result.spatial_information() >= 0.3)
         True
-        >>> result.is_object_vector_cell(min_info=0.5)
-        True
+        >>> import warnings
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")
+        ...     result.is_object_vector_cell()
+        False
 
-        Uniform random spikes passing this screen illustrate finite-count
-        information bias, rather than an object-vector cell identity.
-        The allocentric circular-shift verdict tests the same untuned train:
+        These uniform random spikes pass the uncorrected 0.3 bits/spike
+        cutoff from finite-count bias alone. The screen fails them: 100
+        spikes are fewer than the map's roughly 110 independent bins, so it
+        warns and refuses. The allocentric circular-shift verdict tests the
+        same untuned train:
 
         >>> from neurospatial.encoding import is_object_vector_cell
         >>> is_object_vector_cell(
@@ -679,13 +711,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         min_info = (
             OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
         )
-        return bool(
-            _object_vector_classify(
-                np.atleast_2d(_to_numpy(self.firing_rate)),
-                _to_numpy(self.occupancy),
-                min_info=min_info,
-            )[0]
-        )
+        return bool(_object_vector_classify(self, min_info=min_info)[0])
 
 
 @_copy_unit_table
@@ -1115,13 +1141,35 @@ class ObjectVectorRatesResult(
             _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
         )
 
+    def spatial_information_bias(self) -> NDArray[np.float64]:
+        """Expected spatial information of an untuned cell, per unit (bits/spike).
+
+        The information a cell firing at each unit's mean rate in every bin is
+        expected to show on this occupancy with this estimator, from Poisson
+        noise alone. ``spatial_information() - spatial_information_bias()``
+        is what :meth:`classify` compares with its cutoff. The derivation and
+        its validation are in
+        :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Expected untuned information in bits/spike. NaN for silent units
+            and, with one ``UserWarning``, for units with fewer spikes than
+            the maps have effectively independent bins.
+        """
+        from neurospatial.encoding._metrics import _information_bias
+
+        return _information_bias(self)
+
     def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as object-vector cells.
 
         Tests object-vector tuning in ``result.direction_frame``.
 
         A neuron is classified as a candidate in the recorded frame if its
-        spatial information meets or exceeds the minimum threshold. This is the
+        bias-corrected spatial information meets or exceeds the minimum
+        threshold. This is the
         single-type boolean predicate ("is this an OVC") for the batch result.
 
         Parameters
@@ -1138,14 +1186,20 @@ class ObjectVectorRatesResult(
 
         Notes
         -----
-        The 0.3 bits/spike default is this library's screening heuristic.
-        Plug-in information is biased upward by approximately
-        (n_bins - 1) / (2 ln(2) N_spikes). In 20 untuned 0.5 Hz Poisson units,
-        egocentric 10 x 12 polar maps had median information 2.12, 1.41, 0.70,
-        0.41 and 0.21 bits/spike at 1, 2, 5, 10 and 20 minutes (about 30, 60,
-        150, 300 and 600 spikes). The screen flagged 20/20 at 1-10 minutes
-        and 0/20 at 20 minutes. The allocentric screen also flagged 20/20
-        in the seeded 10-minute fixture. Low counts can resemble tuning.
+        The 0.3 bits/spike default is a screening convention. The screen
+        compares bias-corrected information, ``spatial_information() -
+        spatial_information_bias()``, with it: the information an untuned cell
+        shows from Poisson noise alone is subtracted first (derivation in
+        :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
+        ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
+        polar bins, and units with fewer spikes than K fail, with a warning:
+        about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
+        units per spike count in a 100 x 100 cm box (10-minute sessions,
+        allocentric and egocentric), uncorrected information passed 0.3
+        bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
+        at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
+        fired about 80 spikes in those 10 minutes, too few for the screen; use
+        fewer bins or the shuffle test.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
@@ -1179,9 +1233,9 @@ class ObjectVectorRatesResult(
         ...     object_positions,
         ...     distance_range=(0.0, 50.0),
         ... )
-        >>> is_object_vector_cell = result.classify()
+        >>> is_object_vector_cell = result.classify()  # untuned: warns, none pass
         >>> print(f"Found {is_object_vector_cell.sum()} OVCs")
-        Found 3 OVCs
+        Found 0 OVCs
 
         >>> # Use stricter threshold
         >>> is_object_vector_cell = result.classify(min_info=0.5)
@@ -1194,9 +1248,7 @@ class ObjectVectorRatesResult(
         min_info = (
             OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
         )
-        return _object_vector_classify(
-            _to_numpy(self.firing_rates), _to_numpy(self.occupancy), min_info=min_info
-        )
+        return _object_vector_classify(self, min_info=min_info)
 
     def summary_table(
         self,
@@ -3346,14 +3398,20 @@ def is_object_vector_cell(
 
     Notes
     -----
-    The 0.3 bits/spike default is this library's screening heuristic.
-    Plug-in information is biased upward by approximately
-    (n_bins - 1) / (2 ln(2) N_spikes). In 20 untuned 0.5 Hz Poisson units,
-    egocentric 10 x 12 polar maps had median information 2.12, 1.41, 0.70,
-    0.41 and 0.21 bits/spike at 1, 2, 5, 10 and 20 minutes (about 30, 60,
-    150, 300 and 600 spikes). The screen flagged 20/20 at 1-10 minutes
-    and 0/20 at 20 minutes. The allocentric screen also flagged 20/20
-    in the seeded 10-minute fixture. Low counts can resemble tuning.
+    The 0.3 bits/spike default is a screening convention. The screen
+    compares bias-corrected information, ``spatial_information() -
+    spatial_information_bias()``, with it: the information an untuned cell
+    shows from Poisson noise alone is subtracted first (derivation in
+    :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
+    ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
+    polar bins, and units with fewer spikes than K fail, with a warning:
+    about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
+    units per spike count in a 100 x 100 cm box (10-minute sessions,
+    allocentric and egocentric), uncorrected information passed 0.3
+    bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
+    at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
+    fired about 80 spikes in those 10 minutes, too few for the screen; use
+    fewer bins or the shuffle test.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
@@ -3605,14 +3663,20 @@ def is_egocentric_object_vector_cell(
 
     Notes
     -----
-    The 0.3 bits/spike default is this library's screening heuristic.
-    Plug-in information is biased upward by approximately
-    (n_bins - 1) / (2 ln(2) N_spikes). In 20 untuned 0.5 Hz Poisson units,
-    egocentric 10 x 12 polar maps had median information 2.12, 1.41, 0.70,
-    0.41 and 0.21 bits/spike at 1, 2, 5, 10 and 20 minutes (about 30, 60,
-    150, 300 and 600 spikes). The screen flagged 20/20 at 1-10 minutes
-    and 0/20 at 20 minutes. The allocentric screen also flagged 20/20
-    in the seeded 10-minute fixture. Low counts can resemble tuning.
+    The 0.3 bits/spike default is a screening convention. The screen
+    compares bias-corrected information, ``spatial_information() -
+    spatial_information_bias()``, with it: the information an untuned cell
+    shows from Poisson noise alone is subtracted first (derivation in
+    :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
+    ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
+    polar bins, and units with fewer spikes than K fail, with a warning:
+    about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
+    units per spike count in a 100 x 100 cm box (10-minute sessions,
+    allocentric and egocentric), uncorrected information passed 0.3
+    bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
+    at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
+    fired about 80 spikes in those 10 minutes, too few for the screen; use
+    fewer bins or the shuffle test.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.

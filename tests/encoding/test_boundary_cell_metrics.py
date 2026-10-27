@@ -173,8 +173,14 @@ class TestBorderScore:
                 shapely.box(0, 0, 100, 100), bin_size=2.5, units=units
             )
             wall = _maps(env, 100, 100)["west strip"]
+            # 1000 s per bin: enough spikes for the information gate's bias
+            # correction on 1600 unsmoothed bins.
             result = SpatialRatesResult(
-                wall[None], np.ones(env.n_bins), env, method="binned", bandwidth=0.0
+                wall[None],
+                np.full(env.n_bins, 1000.0),
+                env,
+                method="binned",
+                bandwidth=0.0,
             )
             table = result.summary_table()
             assert table.attrs["border_field_minimum"].startswith(rule)

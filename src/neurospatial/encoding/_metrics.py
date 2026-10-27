@@ -34,6 +34,7 @@ References
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -359,6 +360,213 @@ def batch_spatial_information(
     from neurospatial.encoding._core_numpy import spatial_information_batch as _np_si
 
     return _np_si(firing_rates_arr, occupancy_arr, base=base)
+
+
+# Unit-count probes are pushed through a rate estimator this many map entries
+# at a time. It bounds memory (32 MiB of float64), not the computed value.
+_PROBE_BLOCK_ELEMENTS = 1 << 22
+
+
+def _untuned_rate_variance(
+    count_to_rate: Callable[[NDArray[np.float64]], ArrayLike],
+    occupancy: NDArray[np.float64],
+    support: NDArray[np.bool_],
+) -> float:
+    """Spread of an untuned cell's rate map, per unit of its true rate.
+
+    For a rate estimator that is linear in spike counts at fixed occupancy,
+    ``r = A n``, and an untuned Poisson cell, ``n_j ~ Poisson(lam * t_j)``,
+    the expected occupancy-weighted variance of the map about its mean is
+    ``lam * V`` with
+
+    ``V = sum_j t_j * (sum_i p_i A_ij**2 - (sum_i p_i A_ij)**2)``,
+
+    the occupancy-weighted variance of each bin's one-spike footprint
+    ``A[:, j]``, summed with the bin's dwell time ``t_j``. Each column of
+    ``A`` is the estimator's response to one spike in bin ``j``.
+
+    Parameters
+    ----------
+    count_to_rate : callable
+        The rate estimator at this occupancy, mapping spike counts
+        ``(n_maps, n_bins)`` to rates ``(n_maps, n_bins)``.
+    occupancy : ndarray, shape (n_bins,)
+        Seconds in each bin.
+    support : ndarray of bool, shape (n_bins,)
+        Bins the information sums over, with weights ``p = t / sum(t)``.
+
+    Returns
+    -------
+    float
+        ``V`` in 1/seconds; NaN when no bin is supported.
+    """
+    sources = np.flatnonzero(occupancy > 0)
+    if not support.any() or sources.size == 0:
+        return float("nan")
+    p = occupancy[support] / occupancy[support].sum()
+    n_bins = occupancy.size
+    block = max(1, _PROBE_BLOCK_ELEMENTS // n_bins)
+    total = 0.0
+    for start in range(0, sources.size, block):
+        columns = sources[start : start + block]
+        probe = np.zeros((columns.size, n_bins))
+        probe[np.arange(columns.size), columns] = 1.0
+        footprint = np.asarray(count_to_rate(probe), dtype=np.float64)[:, support]
+        spread = footprint**2 @ p - (footprint @ p) ** 2
+        total += float(occupancy[columns] @ spread)
+    return total
+
+
+def _glm_untuned_rate_variance(
+    result: Any, mean_rates: NDArray[np.float64], support: NDArray[np.bool_]
+) -> NDArray[np.float64]:
+    """``V`` of :func:`_untuned_rate_variance` for the penalized-Poisson GAM.
+
+    The GAM is not linear in the counts, so its response to one spike is
+    taken at an untuned fit, a constant rate ``lam``. There the penalized
+    Newton step gives ``delta_beta = H^{-1} B^T delta_n`` with
+    ``H = lam B^T T B + diag(penalty * d)``, and ``delta_r = lam B delta_beta``,
+    so ``A = lam B H^{-1} B^T``. Without a penalty ``A`` is the occupancy-
+    weighted projection onto the basis and ``V * sum(t) = rank - 1``. The
+    penalty is held at its fitted value.
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        ``V`` for each unit, evaluated at its mean rate.
+    """
+    occupancy = np.asarray(result.occupancy, dtype=np.float64)
+    basis = result.env.get_mrf_basis(occupancy, rank=result.rank)
+    basis_matrix = np.asarray(basis.B, dtype=np.float64)
+    live = np.asarray(basis.live_bins, dtype=np.intp)
+    t = occupancy[live]
+    rows = support[live]
+    p = t[rows] / t[rows].sum()
+    gram = basis_matrix.T @ (t[:, None] * basis_matrix)  # (rank, rank)
+    weighted = basis_matrix[rows].T @ (
+        p[:, None] * basis_matrix[rows]
+    )  # sum_i p_i b_i b_i^T
+    mean_basis = basis_matrix[rows].T @ p  # sum_i p_i b_i
+    penalty_diag = np.asarray(result.penalty, dtype=np.float64)[..., None] * (
+        np.asarray(result.penalty_weights, dtype=np.float64)
+    )
+    penalty_diag = np.broadcast_to(
+        penalty_diag, (mean_rates.size, basis_matrix.shape[1])
+    )
+    variance = np.full(mean_rates.size, np.nan)
+    for k, lam in enumerate(mean_rates):
+        if not lam > 0:
+            continue
+        hessian = lam * gram + np.diag(penalty_diag[k])
+        inverse = np.linalg.solve(hessian, np.eye(basis_matrix.shape[1]))
+        sandwich = lam**2 * (inverse @ gram @ inverse)
+        variance[k] = float(
+            np.sum(sandwich * weighted) - mean_basis @ sandwich @ mean_basis
+        )
+    return variance
+
+
+def _count_to_rate(
+    result: Any,
+) -> Callable[[NDArray[np.float64]], ArrayLike]:
+    """The result's own rate estimator at its occupancy, linear in counts."""
+    occupancy = np.asarray(result.occupancy, dtype=np.float64)
+    if result.method == "binned" and result.bandwidth is None:
+        # Polar ``binned``: the raw bin rate, with no smoothing.
+        valid = (occupancy > 0) & (occupancy >= result.min_occupancy)
+        safe = np.where(valid, occupancy, 1.0)
+        return lambda counts: np.where(valid, counts / safe, np.nan)
+
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+
+    return lambda counts: smooth_rate_maps_batch(
+        result.env,
+        counts,
+        occupancy,
+        method=result.method,
+        bandwidth=result.bandwidth,
+        min_occupancy=result.min_occupancy,
+    )
+
+
+def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
+    """Expected plug-in Skaggs information of an untuned cell, per unit.
+
+    The derivation is in the Notes of the result classes'
+    ``spatial_information_bias``. Units with fewer spikes than the map has
+    effectively independent bins get NaN, with one warning naming how many.
+
+    Parameters
+    ----------
+    result : rate result
+        A spatial, view or object-vector rate result, single or population.
+    base : float, default=2.0
+        Logarithm base of the information (2 for bits per spike).
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        Expected information in bits per spike of an untuned Poisson cell
+        with each unit's mean rate, on this result's occupancy and estimator.
+        NaN for a silent unit and where the expansion does not hold.
+    """
+    from neurospatial._stacklevel import _external_stacklevel
+    from neurospatial.encoding._base import _to_numpy
+
+    rates = np.atleast_2d(np.asarray(_to_numpy(result._get_rates()), np.float64))
+    occupancy = np.asarray(_to_numpy(result.occupancy), dtype=np.float64)
+    support = np.asarray(result.spatial_support, dtype=bool)
+    if not support.any():
+        return np.full(len(rates), np.nan)
+    dwell = occupancy[support]
+    mean_rates = rates[:, support] @ dwell / dwell.sum()
+    if result.method == "glm":
+        variance = _glm_untuned_rate_variance(result, mean_rates, support)
+    else:
+        variance = np.full(
+            len(rates),
+            _untuned_rate_variance(_count_to_rate(result), occupancy, support),
+        )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        bias = variance / (2.0 * mean_rates * np.log(base))
+    spiking = mean_rates > 0
+    # The expansion parameter is the relative variance of a bin's rate,
+    # ``V / lam`` on average. The second-order bias breaks down once it
+    # reaches 1: fewer spikes than independent bins.
+    too_few = spiking & ~(variance <= mean_rates)
+    if too_few.any():
+        total = occupancy[occupancy > 0].sum()
+        effective_bins = float(np.nanmax(variance[too_few]) * total)
+        warnings.warn(
+            f"{int(too_few.sum())} of {len(rates)} units have fewer spikes than "
+            f"their rate maps have independent bins (about {effective_bins:.0f}), "
+            "so their information bias is NaN and they fail the information "
+            "screen.\n"
+            "Why: the bias of plug-in information is an expansion in "
+            "independent bins per spike; with fewer spikes than independent "
+            "bins it breaks down, so the information an untuned cell would "
+            "show is unknown and the cutoff cannot be applied.\n"
+            "Fix: record longer, use coarser bins or a larger bandwidth (fewer "
+            "independent bins), or test these units with the family's shuffle "
+            "test (*_significance).",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    return np.where(spiking & ~too_few, bias, np.nan)
+
+
+def _debiased_information(result: Any) -> NDArray[np.float64]:
+    """Skaggs information minus the untuned-cell bias, per unit (bits/spike).
+
+    The value every information screen compares with its threshold. NaN for
+    silent units and units with too few spikes (see :func:`_information_bias`).
+    """
+    from neurospatial.encoding._base import _to_numpy
+
+    information = np.atleast_1d(
+        np.asarray(_to_numpy(result.spatial_information()), dtype=np.float64)
+    )
+    return information - _information_bias(result)
 
 
 def sparsity(
