@@ -26,6 +26,10 @@ Results that change:
   on the west wall of a 100 cm box left the arena in 99 of 100 samples.
   Steps from an internal wall may leave to either side; walks that start
   away from walls are unchanged.
+- `simulate_trajectory_ou` refuses a `start_position` outside the
+  environment, or one without `env.n_dims` coordinates, instead of
+  simulating a walk the walls keep outside. A start on the outline,
+  including one that rounds just past a slanted wall, is accepted.
 
 - A missing tracking sample (a NaN row, for example a low-confidence
   DeepLabCut frame) is treated exactly like a deleted row. A gap is the time

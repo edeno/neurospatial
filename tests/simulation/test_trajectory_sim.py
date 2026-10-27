@@ -286,6 +286,44 @@ class TestSimulateTrajectoryOU:
                 # Mirrored off the wall, the first step still moves the animal.
                 assert not np.array_equal(positions[1], positions[0]), seed
 
+    @pytest.mark.parametrize("boundary_mode", ["reflect", "stop", "periodic"])
+    @pytest.mark.parametrize(
+        "start",
+        [[-1.0, 50.0], [150.0, 150.0], [np.nan, 50.0], [50.0], [50.0, 50.0, 0.0]],
+        ids=["just-outside", "far-outside", "nan", "too-few", "too-many"],
+    )
+    def test_a_start_outside_the_environment_is_refused(self, start, boundary_mode):
+        """A walk from outside would stay outside: the walls keep it there."""
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+        with pytest.raises(
+            ValueError, match=r"start_position .* is not a point inside"
+        ):
+            simulate_trajectory_ou(
+                env,
+                duration=0.5,
+                start_position=np.array(start),
+                speed_units="cm",
+                boundary_mode=boundary_mode,
+                seed=0,
+            )
+
+    def test_a_start_outside_a_one_dimensional_environment_is_refused(self):
+        from neurospatial import Environment
+
+        env = Environment.from_samples(
+            np.linspace(0, 100, 50)[:, None], bin_size=5.0, units="cm"
+        )
+        with pytest.raises(
+            ValueError, match=r"start_position .* is not a point inside"
+        ):
+            simulate_trajectory_ou(
+                env, duration=0.5, start_position=np.array([200.0]), speed_units="cm"
+            )
+
     @pytest.mark.parametrize("boundary_mode", ["reflect", "stop"])
     def test_a_walk_starting_on_a_slanted_wall_stays_inside(self, boundary_mode):
         """A start computed onto a slanted wall may round to either side of it."""
