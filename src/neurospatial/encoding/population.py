@@ -40,7 +40,7 @@ from neurospatial.encoding._comparison_inputs import (
     _check_choice,
     _match_units,
 )
-from neurospatial.encoding._field_metrics import _relative_measures
+from neurospatial.encoding._field_metrics import _is_constant, _relative_measures
 from neurospatial.encoding._provenance import occupancy_support
 from neurospatial.encoding.spatial import (
     PlaceFieldsResult,
@@ -62,6 +62,8 @@ _PV = _Caller(
     second="firing_rates_2",
     intersection_effect="correlate over the units recorded in both conditions",
 )
+# A population-vector correlation needs this many units: two always give +-1.
+_MIN_UNITS = 3
 
 
 @dataclass(frozen=True, repr=False, eq=False)
@@ -930,9 +932,12 @@ def rate_map_correlations(
         The diagonal is 1.0. NaN propagates per row: a map with a NaN bin or
         with constant rates has no defined correlation, so its row, column
         and diagonal entry are NaN, and the other entries are unchanged.
-        A map is constant when all its rates are exactly equal, even if their
-        standard deviation rounds to a tiny nonzero value. With no bins, every
-        entry is NaN.
+        A map is constant when its highest and lowest rates differ by at most
+        ``1e-12`` times its largest absolute rate, the rule
+        ``field_stability`` and ``compare_spatial_rates`` use: smoothing
+        leaves a flat map with rounding of order ``1e-14`` relative. With
+        fewer than three bins every entry is NaN, since two points always
+        give exactly +-1.
 
     Examples
     --------
@@ -978,17 +983,17 @@ def rate_map_correlations(
     meshes) small bins therefore weigh as much as large ones.
     """
     maps = np.atleast_2d(np.asarray(firing_rates, dtype=np.float64))
-    if maps.shape[1] == 0:
-        # No bins, for example no bin supported in both conditions.
+    if maps.shape[1] < 3:
+        # Two bins always correlate at +-1, and none or one not at all, for
+        # example when few bins are supported in both conditions.
         return np.full((maps.shape[0], maps.shape[0]), np.nan)
 
     # A constant map divides by zero; the NaN it produces is the documented result.
     with np.errstate(divide="ignore", invalid="ignore"):
         correlation_matrix = np.atleast_2d(np.corrcoef(maps))
 
-    # Exact constancy: the std of equal rates can round to ~1e-17, which
-    # corrcoef would turn into a meaningless correlation instead of NaN.
-    constant = maps.max(axis=1) == maps.min(axis=1)
+    # Rates equal up to rounding would give corrcoef a meaningless correlation.
+    constant = _is_constant(maps, np.ones(maps.shape, dtype=bool))
     correlation_matrix[constant, :] = np.nan
     correlation_matrix[:, constant] = np.nan
 
@@ -1080,8 +1085,8 @@ def population_vector_correlation(
         a mapped partner are NaN. NaN where the location is not used (not
         observed in both conditions, a NaN rate in either map, or outside
         ``spatial_support``) or where either population vector is flat
-        (every unit has the same rate there). NaN means undefined, never
-        zero correlation.
+        (every unit has the same rate there, up to rounding). NaN means
+        undefined, never zero correlation.
 
     Raises
     ------
@@ -1090,9 +1095,10 @@ def population_vector_correlation(
         ``SpatialRateResult`` or another kind of result.
     ValueError
         If a result has generated ``unit_ids``, the units cannot be matched,
-        an option is invalid, ``spatial_support`` is passed with results, or
-        a results-only option is passed with arrays. With arrays: if either
-        map is not 2-D, the two shapes differ, there are fewer than two
+        fewer than three units are recorded in both results, an option is
+        invalid, ``spatial_support`` is passed with results, or a
+        results-only option is passed with arrays. With arrays: if either
+        map is not 2-D, the two shapes differ, there are fewer than three
         units, or ``spatial_support`` is not a bool array of shape
         ``(n_bins,)``.
     IncompatibleEnvironmentError
@@ -1122,10 +1128,13 @@ def population_vector_correlation(
 
         r = \frac{\sum_c a_c b_c}{\sqrt{\sum_c a_c^2 \sum_c b_c^2}},
 
-    clipped to [-1, 1] against rounding. A location is flat when every unit
-    has exactly the same rate there (maximum equals minimum); the correlation
-    is then 0/0 and the result is NaN. The check is exact, so equal rates
-    whose standard deviation rounds to about 1e-17 are still flat.
+    clipped to [-1, 1] against rounding. It needs at least three units: two
+    points always give exactly +-1, whatever the rates. A location is flat,
+    and its result NaN, when the highest and lowest rate there differ by at
+    most ``1e-12`` times the largest absolute rate, the rule
+    ``field_stability`` and ``compare_spatial_rates`` use: equal rates carry
+    rounding of order ``1e-14`` relative after smoothing, and correlating
+    that rounding is not a measurement.
 
     With results, a location is observed in both conditions when each
     result's occupancy there reaches its ``min_occupancy`` and every compared
@@ -1291,11 +1300,12 @@ def population_vector_correlation(
             "units on the same environment, with the units in the same row order."
         )
     n_units, n_bins = rates_1.shape
-    if n_units < 2:
+    if n_units < _MIN_UNITS:
         raise ValueError(
-            f"A population-vector correlation needs at least two units, got {n_units}: "
-            "it correlates rates across cells at each location. For one cell, "
-            "compare its two maps with field_stability."
+            "A population-vector correlation needs at least three units, got "
+            f"{n_units}: it correlates rates across cells at each location, and "
+            "two cells always correlate at exactly +-1. For one cell, compare "
+            "its two maps with field_stability."
         )
 
     used = np.ones(n_bins, dtype=bool)
@@ -1365,13 +1375,18 @@ def _population_vector_correlation_of_results(
             )
         )
     unit_ids, rows_1, rows_2, _, _ = _match_units(rates_1, rates_2, unit_selection, _PV)
-    if unit_ids.size < 2:
+    if unit_ids.size < _MIN_UNITS:
+        shared = (
+            f"unit {unit_ids.tolist()} is"
+            if unit_ids.size == 1
+            else f"units {unit_ids.tolist()} are"
+        )
         raise ValueError(
             _format_error(
-                f"{_PV.operation}: only unit {unit_ids.tolist()} is recorded in "
-                "both conditions.",
+                f"{_PV.operation}: only {shared} recorded in both conditions.",
                 why="Why: a population-vector correlation correlates rates across "
-                "cells at each location, so it needs at least two shared units.",
+                "cells at each location, so it needs at least three shared "
+                "units; two always correlate at exactly +-1.",
                 fix="check the unit_ids of both results; to compare one cell's two "
                 "maps, use compare_spatial_rates()",
             )
@@ -1411,13 +1426,14 @@ def _correlate_population_vectors(
     Returns
     -------
     ndarray, shape (n_bins,)
-        NaN at unused or flat columns.
+        NaN at unused columns and at columns flat up to rounding (the rule of
+        ``field_stability``).
     """
     used = used & np.isfinite(rates_1).all(axis=0) & np.isfinite(rates_2).all(axis=0)
     a = rates_1[:, used]
     b = rates_2[:, used]
-    # Exact flatness: the standard deviation of equal floats can round to ~1e-17.
-    varies = (a.max(axis=0) > a.min(axis=0)) & (b.max(axis=0) > b.min(axis=0))
+    every_unit = np.ones(a.shape[::-1], dtype=bool)
+    varies = ~_is_constant(a.T, every_unit) & ~_is_constant(b.T, every_unit)
     a = a[:, varies] - a[:, varies].mean(axis=0)
     b = b[:, varies] - b[:, varies].mean(axis=0)
     r = np.sum(a * b, axis=0) / np.sqrt(np.sum(a**2, axis=0) * np.sum(b**2, axis=0))

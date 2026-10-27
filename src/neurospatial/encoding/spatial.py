@@ -70,7 +70,7 @@ from neurospatial.encoding._base import (
     SingleUnitRateMixin,
     _to_numpy,
 )
-from neurospatial.encoding._field_metrics import _seed_component
+from neurospatial.encoding._field_metrics import _seed_component, field_stability
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding._provenance import spikes_outside_intervals
 from neurospatial.encoding._significance import (
@@ -4646,7 +4646,9 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ``0`` (or negative) indicate direction-specific tuning.
 
         Bins where either map is NaN are excluded pairwise before the
-        correlation is computed.
+        correlation is computed. This is ``field_stability`` with
+        ``method="pearson"``, which shares its rule for an undefined
+        correlation with ``compare_spatial_rates``.
 
         Parameters
         ----------
@@ -4657,8 +4659,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         -------
         float
             Pearson correlation coefficient in ``[-1, 1]``. Returns ``nan``
-            if fewer than two finite overlapping bins exist or if either map
-            has zero variance over the overlap.
+            if fewer than three bins are finite in both maps (two points
+            always give exactly +-1) or if either map is flat over those
+            bins: its highest and lowest rates differ by at most ``1e-12``
+            times its largest absolute rate, the rounding a smoothed flat map
+            carries.
 
         Raises
         ------
@@ -4689,15 +4694,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
                     f"Unknown direction label {label!r}. Known labels: {tuple(self.firing_rates)}."
                     + f" Fix: pass one of {tuple(self.firing_rates)}."
                 )
-        a = _to_numpy(self.firing_rates[label_a]).ravel()
-        b = _to_numpy(self.firing_rates[label_b]).ravel()
-        finite = np.isfinite(a) & np.isfinite(b)
-        if int(finite.sum()) < 2:
-            return float("nan")
-        a, b = a[finite], b[finite]
-        if a.std() == 0.0 or b.std() == 0.0:
-            return float("nan")
-        return float(np.corrcoef(a, b)[0, 1])
+        return field_stability(
+            _to_numpy(self.firing_rates[label_a]).ravel(),
+            _to_numpy(self.firing_rates[label_b]).ravel(),
+            method="pearson",
+        )
 
     def directionality_index(self, label_a: Hashable, label_b: Hashable) -> float:
         """Rate-weighted directionality index between two directions.

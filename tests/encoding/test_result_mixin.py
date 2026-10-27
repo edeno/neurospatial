@@ -95,6 +95,31 @@ def test_directional_place_fields_compare(linear_env: Environment) -> None:
         same.correlation("fwd", "nope")
 
 
+def test_directional_correlation_needs_three_bins(linear_env: Environment) -> None:
+    """Two shared bins always correlate at +-1: the correlation is undefined."""
+    n = linear_env.n_bins
+    rate_a = np.full(n, np.nan)
+    rate_a[:2] = [1.0, 3.0]
+    result = _directional(linear_env, rate_a, np.linspace(1.0, 5.0, n))
+    assert np.isnan(result.correlation("fwd", "rev"))
+    rate_a[2] = 2.0
+    result = _directional(linear_env, rate_a, np.linspace(1.0, 5.0, n))
+    assert np.isfinite(result.correlation("fwd", "rev"))
+
+
+def test_directional_correlation_of_a_map_flat_up_to_rounding_is_nan(
+    linear_env: Environment,
+) -> None:
+    """A map flat up to rounding (as a smoothed flat map) has no field to correlate."""
+    n = linear_env.n_bins
+    rounding = 1e-15 * np.random.default_rng(0).standard_normal(n)
+    flat = 5.0 * (1.0 + rounding)
+    assert flat.std() > 0.0  # the trap: an exact-zero check would correlate noise
+    result = _directional(linear_env, flat, np.linspace(1.0, 5.0, n))
+    assert np.isnan(result.correlation("fwd", "rev"))
+    assert np.isnan(result.correlation("rev", "fwd"))
+
+
 def test_directional_summary_includes_correlation(linear_env: Environment) -> None:
     n = linear_env.n_bins
     result = _directional(
