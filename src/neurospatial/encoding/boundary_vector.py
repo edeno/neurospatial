@@ -969,6 +969,7 @@ def _boundary_vector_rates(
     """Validate, cast the rays once, count every unit and estimate rates."""
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._spikes import as_labelled_spike_trains
+    from neurospatial.encoding._core_numpy import compute_firing_rates_batch
     from neurospatial.encoding._egocentric_counts import _create_egocentric_environment
     from neurospatial.encoding._provenance import (
         rate_analysis_settings,
@@ -989,10 +990,7 @@ def _boundary_vector_rates(
         validate_spike_trains,
         validate_trajectory,
     )
-    from neurospatial.encoding.egocentric import (
-        _raw_polar_rate,
-        _require_planar_env,
-    )
+    from neurospatial.encoding.egocentric import _require_planar_env
 
     _validate_env_argument(
         env, context=context, arguments="spike_times, times, positions[, headings]"
@@ -1062,8 +1060,8 @@ def _boundary_vector_rates(
     if method == "binned":
         _warn_if_fully_masked(occupancy, min_occupancy)
         firing_rates = (
-            np.stack(
-                [_raw_polar_rate(c, occupancy, min_occupancy) for c in spike_counts]
+            compute_firing_rates_batch(
+                spike_counts, occupancy, min_occupancy=min_occupancy
             )
             if len(spike_trains)
             else np.empty((0, polar_env.n_bins))

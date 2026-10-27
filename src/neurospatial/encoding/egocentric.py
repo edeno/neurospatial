@@ -1426,48 +1426,6 @@ class ObjectVectorRatesResult(
         return _object_vector_summary_frame(self, index=index_ids)
 
 
-def _raw_polar_rate(
-    spike_counts: NDArray[np.float64],
-    occupancy: NDArray[np.float64],
-    min_occupancy: float,
-) -> NDArray[np.float64]:
-    """Raw firing rate (spikes / occupancy) for an egocentric polar grid.
-
-    Graph-diffusion smoothing on the polar environment bleeds rate across
-    *distance* rings (the env connects adjacent distance bins radially), which
-    erases the distance tuning object-vector cells encode. The ``binned``
-    method therefore computes the bin rate directly, with no graph smoothing.
-
-    Parameters
-    ----------
-    spike_counts : ndarray of shape (n_bins,), dtype float64
-        Spike counts per polar bin.
-    occupancy : ndarray of shape (n_bins,), dtype float64
-        Time spent in each polar bin, in seconds.
-    min_occupancy : float
-        Bins with occupancy below this value are treated as unvisited.
-
-    Returns
-    -------
-    ndarray of shape (n_bins,), dtype float64
-        Firing rate per bin in Hz. Unvisited bins and bins below
-        ``min_occupancy`` are NaN (undefined, not zero).
-
-    Notes
-    -----
-    Masking convention (shared with ``_smoothing._apply_min_occupancy_mask``):
-    a bin is valid iff its raw occupancy is positive and at least
-    ``min_occupancy``, so ``result.occupancy < min_occupancy`` is exactly the
-    masked set.
-    """
-    occ = np.asarray(occupancy, dtype=np.float64)
-    counts = np.asarray(spike_counts, dtype=np.float64)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        rate = counts / occ
-    valid = (occ > 0.0) & (occ >= min_occupancy)
-    return np.where(valid, rate, np.nan)
-
-
 def compute_egocentric_rate(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -3080,10 +3038,13 @@ def _object_vector_firing_rates(
 ) -> ArrayLike:
     """Firing rates of a population of polar maps.
 
-    The ``"binned"`` method uses the raw bin rate with no graph smoothing:
-    diffusion over the polar environment bleeds rate across distance rings
-    and erases distance tuning (see ``_raw_polar_rate``). The kernel methods
-    smooth counts and occupancy over the polar graph.
+    The ``"binned"`` method divides spikes by occupancy in each bin, with no
+    graph smoothing: diffusion over the polar environment bleeds rate across
+    distance rings (the graph connects adjacent rings radially) and erases
+    the distance tuning object-vector cells encode. A bin is supported iff its
+    occupancy is positive and at least ``min_occupancy``, so
+    ``occupancy < min_occupancy`` is exactly the masked set. The kernel
+    methods smooth counts and occupancy over the polar graph.
 
     Parameters
     ----------
@@ -3102,17 +3063,15 @@ def _object_vector_firing_rates(
     ArrayLike of shape (n_units, n_bins)
         Firing rates in Hz, NaN outside the occupancy support.
     """
+    from neurospatial.encoding._core_numpy import compute_firing_rates_batch
     from neurospatial.encoding._smoothing import smooth_rate_maps_batch
 
     if len(spike_counts) == 0:
         return np.empty((0, polar_env.n_bins), dtype=np.float64)
     if method == "binned":
         _warn_if_fully_masked(occupancy, min_occupancy)
-        return np.stack(
-            [
-                _raw_polar_rate(unit_counts, occupancy, min_occupancy)
-                for unit_counts in spike_counts
-            ]
+        return compute_firing_rates_batch(
+            spike_counts, occupancy, min_occupancy=min_occupancy
         )
     assert bandwidth is not None  # resolved for every kernel method
     # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend

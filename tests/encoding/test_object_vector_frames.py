@@ -289,14 +289,25 @@ def test_plot_allocentric_north_is_up(ou_env, ou_2min, obj):
     plt.close(ax.figure)
 
 
-def test_binned_polar_rate_keeps_bins_at_min_occupancy():
+def test_binned_polar_rate_keeps_bins_at_min_occupancy(
+    ou_env, ou_2min, noise_trains, obj
+):
     """Object-vector binned rates use the shared inclusive occupancy rule."""
-    from neurospatial.encoding.egocentric import _raw_polar_rate
-
-    rate = _raw_polar_rate(
-        np.array([1.0, 1.0, 1.0, 1.0]), np.array([0.0, 0.5, 1.0, 2.0]), 1.0
+    times, positions, _ = ou_2min
+    spikes = noise_trains(120)[0]
+    occupancy = np.asarray(
+        encoding.compute_object_vector_rate(
+            ou_env, spikes, times, positions, obj
+        ).occupancy
     )
-    np.testing.assert_array_equal(rate, [np.nan, np.nan, 1.0, 0.5])
+    occupied = np.sort(occupancy[occupancy > 0])
+    threshold = float(occupied[len(occupied) // 2])  # a bin sits exactly on it
+    result = encoding.compute_object_vector_rate(
+        ou_env, spikes, times, positions, obj, min_occupancy=threshold
+    )
+    np.testing.assert_array_equal(
+        np.isfinite(result.firing_rate), occupancy >= threshold
+    )
 
 
 def test_binned_object_vector_warns_when_min_occupancy_masks_everything(
