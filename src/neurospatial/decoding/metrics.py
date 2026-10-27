@@ -245,7 +245,8 @@ def confusion_matrix(
     method : {"map", "expected"}, default="map"
         How to summarize the posterior for each time bin:
 
-        - "map": Use argmax (most likely bin). Returns integer counts.
+        - "map": Use the MAP bin, the bin of highest posterior density
+          (probability divided by bin size). Returns integer counts.
           Cell (i, j) contains the count of time bins where actual=i and
           decoded=j.
         - "expected": Accumulate full posterior mass. Cell (i, j) contains
@@ -353,8 +354,12 @@ def confusion_matrix(
         )
 
     if method == "map":
-        # Use argmax to get decoded bin for each (finite) time step.
-        decoded_bins = np.argmax(posterior[finite_rows], axis=1)
+        # The decoded bin is the highest-density bin of each finite row.
+        from neurospatial.decoding._support import relative_bin_measures
+        from neurospatial.decoding.estimates import _density_mode
+
+        measures = relative_bin_measures(env, context="confusion_matrix")
+        decoded_bins = _density_mode(posterior[finite_rows], measures)
         # Vectorized counting using np.add.at.
         np.add.at(cm, (actual_bins[finite_rows], decoded_bins), 1.0)
 

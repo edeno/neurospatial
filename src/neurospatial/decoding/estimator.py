@@ -321,9 +321,10 @@ warn_on_drop
                     f"is {self.env.n_bins}; the encoding model's bin axis must "
                     f"match the environment it decodes over."
                 )
-            from neurospatial.decoding._support import supported_prior
+            from neurospatial.decoding._support import validate_support
 
-            supported_prior(None, self._fit.spatial_support, self.env.n_bins, 0)
+            if self._fit.spatial_support is not None:
+                validate_support(self._fit.spatial_support, self.env.n_bins)
 
     def _encoding_config(self) -> _EncodingConfig:
         """Snapshot requested encoding settings, before defaults are resolved."""

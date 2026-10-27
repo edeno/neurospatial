@@ -356,8 +356,9 @@ class DecodingResult(ResultMixin):
     def map_estimate(self) -> NDArray[np.int64]:
         """Maximum a posteriori bin index for each time bin.
 
-        Returns the index of the bin with highest posterior probability
-        at each time step.
+        Returns the index of the bin with highest posterior density at each
+        time step: the largest probability per unit length, area or volume,
+        ``posterior / env.bin_sizes``.
 
         Returns
         -------
@@ -366,8 +367,11 @@ class DecodingResult(ResultMixin):
 
         Notes
         -----
-        Uses ``np.argmax(axis=1)`` which returns the first maximum
-        in case of ties.
+        The posterior holds a probability mass per bin. On equal bins the
+        highest-density bin is the highest-mass bin; on unequal bins a large
+        bin would otherwise win only by holding more space. Ties go to the
+        lowest bin index. An environment that mixes bins measured by length
+        and by area has no common density unit and raises ``ValueError``.
 
         A row whose posterior is entirely non-finite (all-NaN / all-Inf)
         is undecodable; ``np.argmax`` returns bin 0 for such a row, so the
@@ -379,15 +383,18 @@ class DecodingResult(ResultMixin):
         --------
         map_position : MAP position in environment coordinates
         """
-        result: NDArray[np.int64] = np.argmax(self.posterior, axis=1).astype(np.int64)
-        return result
+        from neurospatial.decoding._support import relative_bin_measures
+        from neurospatial.decoding.estimates import _density_mode
+
+        measures = relative_bin_measures(self.env, context="map_estimate")
+        return _density_mode(self.posterior, measures)
 
     @cached_property
     def map_position(self) -> NDArray[np.float64]:
         """MAP position in environment coordinates.
 
-        Returns the coordinates of the bin with highest posterior probability
-        at each time step.
+        Returns the center of the bin with highest posterior density at each
+        time step (see :attr:`map_estimate`).
 
         Returns
         -------
@@ -802,7 +809,7 @@ class DecodingResult(ResultMixin):
             DataFrame with columns:
 
             - ``time`` : Time bin center in seconds (only if times provided)
-            - ``map_bin`` : Bin index of maximum posterior probability
+            - ``map_bin`` : Bin index of maximum posterior density
             - ``map_x``, ``map_y``, ... : MAP position coordinates
             - ``mean_x``, ``mean_y``, ... : Mean position coordinates
             - ``posterior_entropy`` : Posterior entropy in bits
@@ -1153,11 +1160,12 @@ class DecodingSummary(ReadOnlyArraysMixin, ResultMixin):
     posterior_entropy : NDArray[np.float64], shape (n_time_bins,)
         Posterior entropy per time bin, in bits.
     peak_prob : NDArray[np.float64], shape (n_time_bins,)
-        Maximum posterior probability per time bin.
+        Largest posterior probability mass of any bin per time bin. On
+        unequal bins this need not be the mass at ``map_bin``.
     env : Environment
         Reference to the environment used for decoding.
     map_bin : NDArray[np.int64], shape (n_time_bins,)
-        MAP bin index per time bin.
+        MAP bin index per time bin: the bin of highest posterior density.
     spike_window : NDArray[np.float64] | None, optional
         Normalized spike-recording windows, copied read-only. ``None`` records
         the assumption that spikes were observed wherever position was.
