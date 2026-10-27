@@ -1079,6 +1079,24 @@ then `"unclassified"`. Grid and border do not
 apply on a 1-D track, and scores that cannot be computed (no measured walls
 for the physical border score) have NaN p-values with the reason recorded.
 
+Each unit gets three tests, so an untuned unit can receive some label by chance
+more often than `alpha`. `label_cell_types(correction=...)` and
+`summary_table(correction=...)` choose how to handle that. The default,
+`correction=None`, tests each statistic at `alpha`, as most studies report; in
+simulated 20-minute sessions 7% of untuned units still received a label.
+`correction="holm"` adjusts each unit's own tests together, so an untuned unit
+receives any label with probability at most `alpha` (2% in the same
+simulation) while all simulated place and grid cells kept their labels. Use it
+when each unit's label must stand on its own. `correction="fdr_bh"` adjusts
+every test of every unit together, so at most a fraction `alpha` of the labels
+you count are expected to be false (1% of untuned units were labeled, 3 false
+labels among 48). Use it to report how many cells of each
+type a population holds, and run it on the whole population: one unit's verdict
+depends on the others. A correction compares p-values with a fraction of
+`alpha`, and a shuffle p-value cannot go below `1/(n_shuffles+1)`. When tests
+sit at that floor and still fail the correction, a warning names the number of
+shuffles needed.
+
 For publication, report a shuffle test through the raw-array predicate or the
 matching `*_cell_significance` function, together with its estimator, windows,
 shift range, number of shuffles and seed. The shift null assumes stable firing

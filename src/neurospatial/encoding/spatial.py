@@ -6610,6 +6610,86 @@ def place_cell_significance(
     return to_shuffle_results(shuffled.observed, shuffled.null, shuffled.unit_ids)
 
 
+def _holm_adjusted(p_values: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Holm step-down adjusted p-values within each row.
+
+    Parameters
+    ----------
+    p_values : ndarray, shape (n_units, n_tests)
+        NaN marks a test outside the unit's family.
+
+    Returns
+    -------
+    ndarray, shape (n_units, n_tests)
+        With the m finite p-values of a row sorted, p_(1) <= ... <= p_(m),
+        the adjusted value of p_(j) is ``max_{i <= j} min(1, (m - i + 1)
+        p_(i))``; a test passes Holm's procedure at level alpha exactly when
+        its adjusted value is below alpha. NaN where the input is NaN.
+    """
+    order = np.argsort(p_values, axis=1)  # NaN sorts last
+    ranked = np.take_along_axis(p_values, order, axis=1)
+    m = np.isfinite(p_values).sum(axis=1, keepdims=True)
+    scaled = ranked * (m - np.arange(p_values.shape[1]))
+    adjusted = np.minimum(np.fmax.accumulate(scaled, axis=1), 1.0)
+    adjusted[np.isnan(ranked)] = np.nan
+    result: NDArray[np.float64] = np.empty_like(adjusted)
+    np.put_along_axis(result, order, adjusted, axis=1)
+    return result
+
+
+def _benjamini_hochberg_adjusted(
+    p_values: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Benjamini-Hochberg adjusted p-values over every finite entry.
+
+    Parameters
+    ----------
+    p_values : ndarray, any shape
+        NaN marks a test outside the family.
+
+    Returns
+    -------
+    ndarray, same shape
+        With the M finite p-values sorted, p_(1) <= ... <= p_(M), the
+        adjusted value of p_(j) is ``min_{i >= j} min(1, M p_(i) / i)``, as
+        :func:`scipy.stats.false_discovery_control` computes it. NaN where
+        the input is NaN.
+    """
+    result = np.full(p_values.shape, np.nan)
+    finite = np.isfinite(p_values)
+    values = p_values[finite]
+    order = np.argsort(values)
+    ranked = values[order] * values.size / np.arange(1, values.size + 1)
+    adjusted = np.empty(values.size)
+    adjusted[order] = np.minimum(np.minimum.accumulate(ranked[::-1])[::-1], 1.0)
+    result[finite] = adjusted
+    return result
+
+
+def _adjusted_p_values(
+    p_values: NDArray[np.float64], correction: str | None
+) -> NDArray[np.float64]:
+    """P-values adjusted for the tests of one result; NaN outside the family."""
+    if correction is None:
+        return np.array(p_values, dtype=np.float64, copy=True)
+    if correction == "holm":
+        return _holm_adjusted(p_values)
+    if correction == "fdr_bh":
+        return _benjamini_hochberg_adjusted(p_values)
+    raise ValueError(
+        _format_error(
+            f"correction={correction!r} is not a multiple-comparison correction.",
+            why="Why: the correction decides which error rate the labels control",
+            fix=(
+                "pass correction='holm' (each unit's chance of any false label "
+                "at most alpha), correction='fdr_bh' (expected fraction of "
+                "false labels across the units at most alpha) or None (each "
+                "test at alpha)"
+            ),
+        )
+    )
+
+
 @dataclass(frozen=True, repr=False, eq=False)
 class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     """Circular-shift tests of place, grid and border tuning for each unit.
@@ -6776,8 +6856,26 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             for k, name in enumerate(self.statistics)
         }
 
+    def _adjusted(
+        self, level: float, correction: str | None
+    ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+        """Adjusted p-values and the tests that cannot reject at ``level``.
+
+        The smallest p-value of n finite null scores is 1 / (n + 1); when it
+        is not below ``level`` the test cannot reject, whatever the data, and
+        is left out of the correction's family along with unscored tests.
+        """
+        cannot_reject = np.isfinite(self.observed_scores) & (
+            1.0 / (1.0 + self._n_finite_null()) >= level
+        )
+        family = np.where(cannot_reject, np.nan, self.p_values)
+        return _adjusted_p_values(family, correction), cannot_reject
+
     def _outcomes(
-        self, alpha: float | None, min_spatial_info: float | None
+        self,
+        alpha: float | None,
+        min_spatial_info: float | None,
+        correction: Literal["holm", "fdr_bh"] | None,
     ) -> dict[str, NDArray[np.float64]]:
         from neurospatial._stacklevel import _external_stacklevel
 
@@ -6787,8 +6885,11 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             if min_spatial_info is None
             else min_spatial_info
         )
+        adjusted, cannot_reject = self._adjusted(level, correction)
         with np.errstate(invalid="ignore"):
-            passed = self.p_values < level
+            passed = adjusted < level
+        if correction is not None:
+            self._warn_resolution_limit(adjusted, passed, level, correction)
         unknown_bias = passed[:, 0] & np.isnan(self.spatial_information_bias)
         if unknown_bias.any():
             warnings.warn(
@@ -6811,11 +6912,6 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         )
         # A significant grid score is a grid cell only with a lattice to show.
         met[:, 1] = np.isfinite(self.grid_spacing)
-        # The smallest p-value of n finite null scores is 1 / (n + 1); when it
-        # is not below alpha the test cannot reject, whatever the data.
-        cannot_reject = np.isfinite(self.observed_scores) & (
-            1.0 / (1.0 + self._n_finite_null()) >= level
-        )
         undetermined = cannot_reject & met
         if undetermined.any():
             names = [
@@ -6830,9 +6926,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 "Why: with n finite null scores the smallest p-value is "
                 "1 / (n + 1); shifted maps without a defined score (a silent "
                 "shift, or a border map with no field) are left out of n.\n"
-                f"Fix: run more shuffles (n_shuffles >= {int(np.ceil(1 / level))}"
-                " for every null score to be usable), or inspect the "
-                "<statistic>_n_finite_null columns of summary_table().",
+                "Fix: run more shuffles, so that each test has at least "
+                f"{int(np.floor(1 / level))} finite null scores; "
+                "summary_table() reports them as <statistic>_n_finite_null.",
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
@@ -6845,15 +6941,60 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 outcomes[:, k] = np.nan
         return {name: outcomes[:, k] for k, name in enumerate(self.statistics)}
 
+    def _warn_resolution_limit(
+        self,
+        adjusted: NDArray[np.float64],
+        passed: NDArray[np.bool_],
+        level: float,
+        correction: str,
+    ) -> None:
+        """Warn when tests at the smallest attainable p-value fail a correction.
+
+        Such a test is as extreme as its shuffles can show, so the number of
+        shuffles, not the data, decided it. Holm passes the smallest of a
+        unit's m p-values when ``m p < alpha``, and Benjamini-Hochberg passes
+        k equal p-values of M tests when ``M p / k < alpha``; with the
+        smallest attainable p, ``1 / (n + 1)``, that gives the shuffle count
+        named in the message.
+        """
+        from neurospatial._stacklevel import _external_stacklevel
+
+        n_finite = self._n_finite_null()
+        at_floor = np.isfinite(adjusted) & (self.p_values <= 1.0 / (1.0 + n_finite))
+        limited = at_floor & ~passed
+        if not limited.any():
+            return
+        if correction == "holm":
+            family = np.isfinite(adjusted).sum(axis=1)
+            needed = int(np.floor(family[limited.any(axis=1)].max() / level))
+        else:
+            needed = int(
+                np.floor(np.isfinite(adjusted).sum() / (at_floor.sum() * level))
+            )
+        warnings.warn(
+            f"{int(limited.sum())} tests reached the smallest p-value their "
+            f"shuffles allow, 1 / (n + 1), but fail correction={correction!r} "
+            f"at alpha={level}, so the number of shuffles, not the data, "
+            "decided them.\n"
+            "Why: a correction compares p-values with a fraction of alpha, "
+            "which a Monte Carlo p-value cannot go below 1 / (n_shuffles + 1) "
+            "to reach.\n"
+            f"Fix: rerun with n_shuffles >= {needed}.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
     def _n_finite_null(self) -> NDArray[np.int64]:
         """Finite null scores behind each p-value, shape (n_units, 3)."""
-        return np.isfinite(self.null_scores).sum(axis=1)
+        counts: NDArray[np.int64] = np.isfinite(self.null_scores).sum(axis=1)
+        return counts
 
     def label_cell_types(
         self,
         *,
         alpha: float | None = None,
         min_spatial_info: float | None = None,
+        correction: Literal["holm", "fdr_bh"] | None = None,
     ) -> NDArray[np.str_]:
         """Label each unit from its three shuffle tests.
 
@@ -6869,6 +7010,27 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             is 0.5, the cutoff of the fixed-threshold screen
             (:meth:`SpatialRatesResult.label_cell_types`), a common screening
             convention, not derived or calibrated.
+        correction : {"holm", "fdr_bh"} or None, default=None
+            Multiple-comparison correction across the shuffle tests; a test
+            passes when its adjusted p-value is below ``alpha``. Only tests
+            that can reject are in the family: unscored tests and tests with
+            too few finite null scores are left out.
+
+            - None: each test at ``alpha``, as most studies report. Each
+              unit is tested three times, so an untuned unit receives some
+              label more often than ``alpha`` (measured rates in the Notes of
+              :func:`spatial_cell_type_significance`).
+            - ``"holm"``: Holm-Bonferroni step-down across each unit's own
+              tests. Each unit's chance of any false label is at most
+              ``alpha``, whatever the dependence between its tests. Use it
+              when each unit's label must stand on its own.
+            - ``"fdr_bh"``: Benjamini-Hochberg across every test of every
+              unit in this result. The expected fraction of false passes
+              among all passing tests is at most ``alpha`` when the tests are
+              independent or positively dependent. Use it to count cell types
+              in a population. A unit's verdict depends on the other units
+              in the result, so a unit tested alone and in a population can
+              be labeled differently.
 
         Returns
         -------
@@ -6903,13 +7065,14 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 UserWarning,
                 stacklevel=2,
             )
-        return _cell_type_labels(self._outcomes(alpha, min_spatial_info))
+        return _cell_type_labels(self._outcomes(alpha, min_spatial_info, correction))
 
     def summary_table(
         self,
         *,
         alpha: float | None = None,
         min_spatial_info: float | None = None,
+        correction: Literal["holm", "fdr_bh"] | None = None,
     ) -> pd.DataFrame:
         """Per-unit observed scores, null percentiles, p-values and labels.
 
@@ -6921,23 +7084,29 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         min_spatial_info : float or None, default=None
             Bias-corrected information cutoff of the place label; see
             :meth:`label_cell_types`. None is 0.5 bits/spike.
+        correction : {"holm", "fdr_bh"} or None, default=None
+            Multiple-comparison correction of ``passes_*`` and ``cell_type``;
+            see :meth:`label_cell_types`.
 
         Returns
         -------
         pandas.DataFrame
             One row per unit, indexed by ``unit_id``: for each statistic in
             :attr:`statistics` the observed score, then
-            ``spatial_information_bias``, ``<statistic>_p_value``,
-            ``<statistic>_null_percentile`` (the ``100 * (1 - alpha)``
+            ``spatial_information_bias``, ``<statistic>_p_value``, with a
+            ``correction`` its ``<statistic>_p_adjusted`` (NaN for a test
+            outside the family), ``<statistic>_null_percentile`` (the
+            ``100 * (1 - alpha)``
             percentile of the unit's finite null scores) and
             ``<statistic>_n_finite_null`` (how many null scores were finite and
             entered the p-value), then ``passes_<statistic>``
-            (``p_value < alpha``, with the place and grid requirements of
+            (adjusted ``p_value < alpha``, with the place and grid
+            requirements of
             :meth:`label_cell_types`; ``<NA>`` when the statistic applies but
             could not be computed or the test cannot reach ``alpha``) and
             ``cell_type``
             from :meth:`label_cell_types`. ``df.attrs`` records ``alpha``,
-            ``classification_thresholds``, ``null_percentile``,
+            ``correction``, ``classification_thresholds``, ``null_percentile``,
             ``n_shuffles``, ``min_shift``,
             ``shuffle_type``, ``method``, ``bandwidth``, ``boundary_source``,
             ``units`` and any ``unavailable_metrics``.
@@ -6955,6 +7124,10 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         columns["spatial_information_bias"] = self.spatial_information_bias.copy()
         for k, name in enumerate(self.statistics):
             columns[f"{name}_p_value"] = self.p_values[:, k].copy()
+        if correction is not None:
+            adjusted, _ = self._adjusted(level, correction)
+            for k, name in enumerate(self.statistics):
+                columns[f"{name}_p_adjusted"] = adjusted[:, k]
         for k, name in enumerate(self.statistics):
             columns[f"{name}_null_percentile"] = thresholds[:, k]
         n_finite = self._n_finite_null()
@@ -6965,12 +7138,13 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             if min_spatial_info is None
             else min_spatial_info
         )
-        columns.update(_cell_type_columns(self._outcomes(level, min_info)))
+        columns.update(_cell_type_columns(self._outcomes(level, min_info, correction)))
         df = pd.DataFrame(
             columns, index=pd.Index(self.unit_ids.tolist(), name="unit_id")
         )
         df.attrs.update(
             alpha=level,
+            correction=correction,
             classification_thresholds={"min_spatial_info": min_info},
             null_percentile=percentile,
             n_shuffles=self.n_shuffles,
@@ -7135,15 +7309,24 @@ def spatial_cell_type_significance(
     ``"undetermined"`` rather than ``"unclassified"``; ``summary_table()``
     reports n as ``<statistic>_n_finite_null``.
 
-    Each test controls its own false-positive rate at ``alpha``; a unit is
-    tested three times, so an untuned unit receives some label more often
-    than ``alpha``. For 100 untuned Poisson units (0.5-3 Hz) in a 20-minute
-    simulated session in a 100 cm box (2.5 cm bins, 200 shuffles, analysis
-    boundary), 6%, 1% and 3% had p < 0.05 for spatial information, grid
-    score and border score, and 10% received a label other than
-    ``"unclassified"``; the fixed-cutoff screen labeled 46% of them border
-    cells. Of 12 simulated place cells on a radial-arm maze none was labeled
-    a border cell (the screen labeled 6). A significant grid score says the
+    Each test controls its own false-positive rate at ``alpha``, and each
+    unit is tested three times. Calibration: three simulated 20-minute
+    sessions in a 100 cm box (2.5 cm bins, 1000 shuffles, analysis
+    boundary), each with 100 untuned Poisson units (0.5-3 Hz), 10 place cells
+    and 5 grid cells. Of the 300 untuned units 5.3%, 3.7% and 5.3% had
+    p < 0.05 for spatial information, grid score and border score; a unit's
+    three p-values were nearly independent (rank correlations -0.11 to
+    0.03), and 12.3% had at least one p < 0.05. The place label also needs
+    bias-corrected information and the grid label a hexagonal ring, so
+    6.7% (standard error 1.4%) of the untuned units received a label without
+    a correction, 2.3% (0.9%) with ``correction="holm"`` and 1.0% (0.6%)
+    with ``correction="fdr_bh"`` (3 false labels among 48); all 30 place
+    cells and 15 grid cells kept their labels under every option. With 200
+    shuffles ``"fdr_bh"`` labeled no unit at all, tuned cells included: their
+    p-values sat at the floor 1 / 201, which the correction cannot use, and
+    a warning names the number of shuffles needed. The fixed-cutoff screen
+    labeled 46% of untuned units in such a session border cells. Of 12
+    simulated place cells on a radial-arm maze none was labeled a border cell (the screen labeled 6). A significant grid score says the
     map's autocorrelogram is more sixfold-symmetric than those of its own
     shifted spike trains, not that it has a lattice of fields: 2 of 30
     simulated single-field place cells had significant grid scores (0.92 and

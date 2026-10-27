@@ -300,6 +300,14 @@ def test_untuned_p_values_are_uniform_for_every_statistic(box_session):
         p = result.p_values[:, k]
         assert np.mean(p < 0.05) <= 0.1, name
         assert 0.3 <= np.median(p) <= 0.7, name
+    # Holm bounds each unit's chance of any label by alpha (within two
+    # binomial standard errors for 60 units).
+    labeled = {
+        correction: result.label_cell_types(correction=correction) != "unclassified"
+        for correction in (None, "holm")
+    }
+    assert np.mean(labeled["holm"]) <= 0.05 + 2 * np.sqrt(0.05 * 0.95 / 60)
+    assert not (labeled["holm"] & ~labeled[None]).any()
 
 
 @pytest.mark.slow
@@ -503,3 +511,110 @@ def test_too_few_finite_null_scores_leave_the_test_undetermined():
     np.testing.assert_array_equal(labels, ["undetermined", "border", "unclassified"])
     # At alpha = 0.2 the nine finite nulls are enough.
     assert result.label_cell_types(alpha=0.2)[0] == "border"
+
+
+@pytest.fixture(scope="module")
+def mixed_p_values():
+    """A result whose p-values span strong, borderline and null tests."""
+    rng = np.random.default_rng(5)
+    n_units, n_shuffles = 40, 199
+    null = rng.uniform(0.0, 1.0, (n_units, n_shuffles, 3))
+    observed = rng.uniform(0.0, 1.0, (n_units, 3))
+    observed[:10] = 1.5  # p = 1 / 200 for every test of ten units
+    observed[10:20, 1] = np.quantile(null[10:20, :, 1], 0.97, axis=1)
+    # p = 0.01 and 0.02 with a null third test: Holm's step-down passes both
+    # (0.03 and 0.04 < 0.05) where Bonferroni passes only the first.
+    ranked = np.sort(null[20:25], axis=1)
+    observed[20:25, 0] = ranked[:, -2, 0] + 1e-9
+    observed[20:25, 1] = ranked[:, -4, 1] + 1e-9
+    observed[20:25, 2] = 0.0
+    observed[30:, 2] = np.nan  # no border score: outside the family
+    # Shift the information scores so every unit clears the place cutoff.
+    observed[:, 0] += 0.6
+    null[:, :, 0] += 0.6
+    return _synthetic(observed, null)
+
+
+def _holm_passes(p_values, alpha):
+    """Holm's step-down procedure, one unit at a time."""
+    passes = np.zeros(p_values.shape, dtype=bool)
+    for i, row in enumerate(p_values):
+        tests = [k for k in np.argsort(row) if np.isfinite(row[k])]
+        for rank, k in enumerate(tests):
+            if row[k] * (len(tests) - rank) >= alpha:
+                break
+            passes[i, k] = True
+    return passes
+
+
+@pytest.mark.parametrize("alpha", [0.05, 0.1])
+def test_corrections_match_reference_procedures(mixed_p_values, alpha):
+    from scipy.stats import false_discovery_control
+
+    result = mixed_p_values
+    p = result.p_values
+    finite = np.isfinite(p)
+    bh = np.full(p.shape, np.nan)
+    bh[finite] = false_discovery_control(p[finite], method="bh")
+    expected = {
+        None: finite & (p < alpha),
+        "holm": _holm_passes(p, alpha),
+        "fdr_bh": finite & (bh < alpha),
+    }
+    # The procedures differ on these p-values, so each comparison has teeth.
+    assert expected["holm"].sum() < expected[None].sum()
+    assert expected["fdr_bh"].sum() < expected[None].sum()
+    for correction, passes in expected.items():
+        table = result.summary_table(alpha=alpha, correction=correction)
+        assert table.attrs["correction"] == correction
+        observed = np.column_stack(
+            [table[f"passes_{name}"].to_numpy(dtype=bool) for name in result.statistics]
+        )
+        np.testing.assert_array_equal(observed, passes)
+        np.testing.assert_array_equal(
+            table["cell_type"],
+            result.label_cell_types(alpha=alpha, correction=correction),
+        )
+    adjusted = result.summary_table(correction="fdr_bh")
+    np.testing.assert_allclose(
+        np.column_stack([adjusted[f"{name}_p_adjusted"] for name in result.statistics]),
+        bh,
+    )
+    assert "grid_score_p_adjusted" not in result.summary_table().columns
+
+
+def test_holm_never_labels_a_unit_the_uncorrected_test_leaves_out(mixed_p_values):
+    uncorrected = mixed_p_values.label_cell_types()
+    holm = mixed_p_values.label_cell_types(correction="holm")
+    assert (holm[uncorrected == "unclassified"] == "unclassified").all()
+    assert np.sum(holm == "unclassified") > np.sum(uncorrected == "unclassified")
+
+
+def test_unknown_correction_is_refused(mixed_p_values):
+    with pytest.raises(ValueError, match="Fix:"):
+        mixed_p_values.label_cell_types(correction="bonferroni")
+
+
+@pytest.mark.parametrize(
+    ("correction", "n_units", "observed", "needed"),
+    [
+        # Holm passes a unit's smallest of 3 p-values when 3 p < alpha.
+        ("holm", 1, [[1.0, 1.0, 1.0]], 60),
+        # BH passes 1 floor p-value of 30 tests when 30 p < alpha.
+        ("fdr_bh", 10, [[1.0, 0.0, 0.0]] + [[0.0, 0.0, 0.0]] * 9, 600),
+    ],
+)
+def test_shuffle_count_that_limits_a_correction_is_named(
+    correction, n_units, observed, needed
+):
+    """A test at the smallest attainable p-value passes once shuffles allow it."""
+    for n_shuffles, passes in ((needed - 1, False), (needed, True)):
+        result = _synthetic(observed, np.full((n_units, n_shuffles, 3), 0.5))
+        if passes:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                labels = result.label_cell_types(correction=correction)
+        else:
+            with pytest.warns(UserWarning, match=f"n_shuffles >= {needed}"):
+                labels = result.label_cell_types(correction=correction)
+        assert (labels[0] != "unclassified") == passes
