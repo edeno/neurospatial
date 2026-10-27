@@ -388,9 +388,10 @@ def smooth_rate_maps_batch(
             f"spike_counts has {sc_shape[1]} bins but "
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
-    # The threshold is a plain number on both backends (only occupancy may be
-    # traced), so refuse a negative, NaN or infinite one before dispatching.
-    min_occupancy = validate_min_occupancy(min_occupancy)
+    # Refuse a negative, NaN or infinite threshold before dispatching. Under
+    # jax.jit it may be traced, with no value to check until it runs.
+    if not (backend == "jax" and _is_jax_tracer(min_occupancy)):
+        min_occupancy = validate_min_occupancy(min_occupancy)
 
     # Dispatch to JAX or NumPy implementation.
     if backend == "jax":
@@ -682,6 +683,13 @@ def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
                 "bandwidth must be positive (in environment units, e.g., cm), "
                 f"got {bandwidth}"
             )
+
+
+def _is_jax_tracer(value: Any) -> bool:
+    """Whether ``value`` is traced by a JAX transformation (no concrete value)."""
+    import jax
+
+    return isinstance(value, jax.core.Tracer)
 
 
 def validate_min_occupancy(min_occupancy: float) -> float:

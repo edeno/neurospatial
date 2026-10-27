@@ -853,6 +853,23 @@ class TestRatesOutsideOccupancySupport:
     bins keep the dense-kernel estimate.
     """
 
+    def test_traced_min_occupancy_still_compiles(self, half_visited_arena):
+        """A threshold traced under jax.jit is not validated, only concrete ones."""
+        jax = pytest.importorskip("jax")
+        env, spike_counts, occupancy = half_visited_arena
+        kwargs = {"method": "gaussian_kde", "bandwidth": 5.0, "backend": "jax"}
+
+        compiled = jax.jit(
+            lambda counts, occ, threshold: smooth_rate_maps_batch(
+                env, counts, occ, min_occupancy=threshold, **kwargs
+            )
+        )
+        traced = compiled(spike_counts[None, :], occupancy, 0.5)
+        eager = smooth_rate_maps_batch(
+            env, spike_counts[None, :], occupancy, min_occupancy=0.5, **kwargs
+        )
+        np.testing.assert_array_equal(np.asarray(traced), np.asarray(eager))
+
     @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
     @pytest.mark.parametrize("backend", ["numpy", "jax"])
     @pytest.mark.parametrize("min_occupancy", [-1.0, np.nan, np.inf])
