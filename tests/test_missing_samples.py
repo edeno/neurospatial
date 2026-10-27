@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.animation._sampling import observed_rows, sample_at_times
+from neurospatial.animation._sampling import observed_support, sample_at_times
 from neurospatial.behavior import compute_speed
 from neurospatial.behavior.segmentation import segment_by_velocity
 from neurospatial.encoding import compute_directional_rate, compute_spatial_rate
@@ -141,9 +141,8 @@ def test_gap_longer_than_max_gap_is_a_tracking_loss(env, tracking):
 def test_animation_samples_a_bridged_gap_between_its_valid_rows(tracking):
     times, positions, _, _, lost = tracking
     kept = ~lost
-    rows, valid, intervals = observed_rows(
-        times, _with_nan(positions, lost), max_gap=1.0, interp="linear"
-    )
+    rows = _with_nan(positions, lost)
+    valid, intervals = observed_support(times, rows, max_gap=1.0)
     query = np.linspace(times[0], times[-1], 997)
     sampled = sample_at_times(
         times,

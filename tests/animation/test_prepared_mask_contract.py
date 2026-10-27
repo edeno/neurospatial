@@ -1,6 +1,7 @@
 """Adapter support has one meaning for sampling, raw geometry and realignment."""
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 import numpy as np
 import pytest
@@ -37,15 +38,22 @@ def env():
 
 
 def position_masks(case):
+    """Given masks and the effective intervals: a rejected row is deleted."""
     if case == "sample":
-        return np.array([True, False, True, True]), None, [False, False, True]
+        return np.array([True, False, True, True]), None, [True, True, True]
     if case == "interval":
         return None, np.array([False, True, True]), [False, True, True]
     return (
         np.array([True, False, True, True]),
         np.array([True, True, False]),
-        [False, False, False],
+        [True, True, False],
     )
+
+
+def joined_rows(samples, expected_intervals):
+    """Consecutive valid rows joined across a crossable gap."""
+    rows = np.flatnonzero(np.ones(4, dtype=bool) if samples is None else samples)
+    return [[a, b] for a, b in pairwise(rows) if expected_intervals[b - 1]]
 
 
 @pytest.mark.parametrize("case", ["sample", "interval", "both"])
@@ -82,7 +90,11 @@ def test_position_preparation_owns_effective_support(env, case):
         if expected_valid[index]:
             np.testing.assert_array_equal(sampled, POINTS[index])
         else:
-            assert np.isnan(sampled).all()
+            # At a rejected row's time, its neighbors are sampled as if the
+            # row were deleted; it lies halfway between them.
+            np.testing.assert_allclose(
+                sampled, (POINTS[index - 1] + POINTS[index + 1]) / 2
+            )
     for index, time in enumerate((CLOCK[:-1] + CLOCK[1:]) / 2):
         sampled = sample_observation(prepared, prepared.data, time)
         assert np.isfinite(sampled).all() == expected_intervals[index]
@@ -139,7 +151,8 @@ def test_spatial_adapter_rows_respect_rejected_samples(env, kind):
         intervals = prepared.interval_valid
     assert np.isnan(values[1]).all()
     assert np.isfinite(points).all()
-    np.testing.assert_array_equal(intervals, [False, False, True])
+    # The rejected row is crossed like a deleted one.
+    np.testing.assert_array_equal(intervals, [True, True, True])
     assert not np.shares_memory(values, points)
 
 
@@ -155,9 +168,7 @@ def test_scene_trails_and_markers_follow_effective_support(env, case):
         sample_valid=samples,
         interval_valid=intervals,
     )
-    expected_pairs = [
-        POINTS[i : i + 2] for i, keep in enumerate(expected_intervals) if keep
-    ]
+    expected_pairs = [POINTS[pair] for pair in joined_rows(samples, expected_intervals)]
     with Animation(
         env, np.ones((4, env.n_bins)), frame_times=CLOCK, overlays=[Adapter(source)]
     ) as scene:
@@ -176,10 +187,11 @@ def test_scene_trails_and_markers_follow_effective_support(env, case):
         # Exact finite observations survive beside intervals that reject interpolation.
         aligned = scene.overlay_data(CLOCK).positions[0]
         np.testing.assert_array_equal(aligned.interval_valid, expected_intervals)
-        np.testing.assert_allclose(
-            aligned.data, scene._overlay_data.positions[0].data, equal_nan=True
-        )
-        # A rejected sample hides the marker rather than drawing it there.
+        expected = scene._overlay_data.positions[0].data.copy()
+        if samples is not None:
+            expected[1] = (POINTS[0] + POINTS[2]) / 2
+        np.testing.assert_allclose(aligned.data, expected)
+        # A rejected sample is not drawn: the marker sits between its neighbors.
         image = scene.render_frame(CLOCK[1], dpi=50)
         col, row = scene._renderer.figure.axes[0].transData.transform(POINTS[1])
         pixel = image[int(image.shape[0] - row), int(col)]
@@ -205,7 +217,7 @@ def test_track_paths_do_not_draw_rejected_samples(case):
     ) as scene:
         window = PreparedScene(scene).track_window(scene.fields["field"], CLOCK[-1])
         expected_times = [
-            CLOCK[i : i + 2] for i, keep in enumerate(expected_intervals) if keep
+            CLOCK[pair] for pair in joined_rows(samples, expected_intervals)
         ]
         assert len(window.paths) == len(expected_times)
         assert window.path_colors == ["red"] * len(expected_times)
@@ -234,16 +246,30 @@ def test_partial_bodypart_masks_infer_missing_entries_and_realign(env, mask_kind
         np.testing.assert_array_equal(
             prepared.sample_valid["tail"], [True, True, False, True]
         )
+        # Without a mask, the missing tail row is crossed like a deleted one.
         np.testing.assert_array_equal(
-            prepared.interval_valid["tail"], [True, False, False]
+            prepared.interval_valid["tail"], [True, True, True]
         )
         # Resampling exercises each part's independent support and missing mask entries.
         aligned = scene.overlay_data([0.05, 0.15, 0.25]).bodypart_sets[0]
         np.testing.assert_allclose(
-            aligned.bodyparts["tail"][0], POINTS[:2].mean(axis=0)
+            aligned.bodyparts["tail"],
+            [
+                POINTS[:2].mean(axis=0),
+                0.75 * POINTS[1] + 0.25 * POINTS[3],
+                0.25 * POINTS[1] + 0.75 * POINTS[3],
+            ],
         )
-        assert np.isnan(aligned.bodyparts["tail"][1:]).all()
-        assert np.isnan(aligned.bodyparts["nose"][:2]).all()
+        if mask_kind == "sample_valid":
+            np.testing.assert_allclose(
+                aligned.bodyparts["nose"][:2],
+                [
+                    0.75 * POINTS[0] + 0.25 * POINTS[2],
+                    0.25 * POINTS[0] + 0.75 * POINTS[2],
+                ],
+            )
+        else:
+            assert np.isnan(aligned.bodyparts["nose"][:2]).all()
         np.testing.assert_allclose(
             aligned.bodyparts["nose"][2], POINTS[2:].mean(axis=0)
         )

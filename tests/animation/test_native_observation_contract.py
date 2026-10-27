@@ -128,11 +128,13 @@ def test_object_vector_consumers_share_full_recording_finite_peak(env, monkeypat
 
     monkeypatch.setattr(_style, "_finite_rate_peak", summarize)
     times = np.array([0.0, 0.1, 0.2, 0.3])
+    # The rate's 0.2 s gap is longer than max_gap, so 0.2 s shows no rate.
     vector = ObjectVectorOverlay(
         np.array([[1.0, 1.0]]),
         np.zeros((4, 2)),
         times,
         firing_rates=np.array([0.0, 5.0, np.nan, 10.0]),
+        max_gap=0.15,
     )
     with Animation(
         env, np.ones((4, env.n_bins)), frame_times=times, overlays=[vector]
