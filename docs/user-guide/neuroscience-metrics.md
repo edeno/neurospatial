@@ -314,8 +314,8 @@ n_place_cells = count_place_cells(rates, min_info=0.5)  # bits/spike, inclusive
 # Equivalent: int(rates.classify(min_info=0.5).sum())
 ```
 
-The 0.5 bits/spike cutoff is a screening choice, not a universal significance
-threshold; see
+The 0.5 bits/spike cutoff is a common screening convention, not derived or
+calibrated, and not a significance threshold; see
 [information bias and cell verdicts](#information-bias-and-cell-verdicts).
 
 ### Rate-map correlations

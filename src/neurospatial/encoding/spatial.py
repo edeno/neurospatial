@@ -1821,8 +1821,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         at about 20, 60, 120 and 600 spikes; corrected, none passed. Place
         cells with a 2 Hz peak passed at 10 minutes (about 110 spikes) and
         were refused at 2 minutes (about 18 spikes). The cutoff itself is a
-        screening convention. For publication, report a circular-shift test
-        and its assumptions instead of a cutoff verdict.
+        common screening convention, not derived or calibrated. For
+        publication, report a circular-shift test and its assumptions
+        instead of a cutoff verdict.
         For a shuffle test, call place_cell_significance(...) or
         is_place_cell(..., criterion='shuffle') with the raw arrays; a result
         does not keep the arrays it was computed from.
@@ -2826,8 +2827,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         at about 20, 60, 120 and 600 spikes; corrected, none passed. Place
         cells with a 2 Hz peak passed at 10 minutes (about 110 spikes) and
         were refused at 2 minutes (about 18 spikes). The cutoff itself is a
-        screening convention. For publication, report a circular-shift test
-        and its assumptions instead of a cutoff verdict.
+        common screening convention, not derived or calibrated. For
+        publication, report a circular-shift test and its assumptions
+        instead of a cutoff verdict.
         ``min_info=None`` is 0.5 bits/spike.
         For a shuffle test, call place_cell_significance(...)
         with the raw arrays; a result does not keep the arrays it was computed from.

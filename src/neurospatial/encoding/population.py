@@ -701,7 +701,7 @@ def count_place_cells(
         values alone cannot be screened.
     min_info : float or None, default=None
         Inclusive minimum bias-corrected information (bits/spike); None is
-        0.5 bits/spike, a screening convention, not a calibrated test.
+        0.5 bits/spike, a common screening convention, not derived or calibrated.
 
     Returns
     -------
