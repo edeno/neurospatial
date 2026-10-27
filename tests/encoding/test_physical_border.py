@@ -352,15 +352,17 @@ def test_summary_does_not_call_a_wall_cell_place_when_border_is_unavailable():
     )
     with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
         single.border_score()
-    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
-        population.label_cell_types()
+    with pytest.warns(UserWarning, match="Physical-wall coverage"):
+        labels = population.label_cell_types()
 
     single_table = single.summary_table()
     population_table = population.summary_table()
-    # Place versus border cannot be decided without the border score, but the
-    # information gate still rules out every type for an untuned cell.
+    # Without the border score either cell could be a border cell, whatever
+    # its spatial information, so neither label is known.
     assert single_table["cell_type"].tolist() == ["undetermined"]
-    assert population_table["cell_type"].tolist() == ["undetermined", "unclassified"]
+    assert population_table["cell_type"].tolist() == ["undetermined"] * 2
+    assert labels.tolist() == population_table["cell_type"].tolist()
+    assert population_table["passes_border_score"].isna().all()
     for table in (single_table, population_table):
         assert np.isnan(table["border_score"]).all()
         assert "border_score" in table.attrs["unavailable_metrics"]

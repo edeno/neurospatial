@@ -1760,11 +1760,12 @@ class TestSpatialRatesResultClassify:
             )
             assert labels[0] == "border"
 
-    def test_classify_priority_order(self, simple_env: Environment) -> None:
-        """classify() should follow priority: grid > border > place > unclassified."""
+    def test_tuned_cell_without_grid_or_border_is_place(
+        self, simple_env: Environment
+    ) -> None:
+        """A tuned cell that is neither a grid nor a border cell is a place cell."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
-        # This tests that when multiple criteria are met, the right label is chosen
         n_bins = simple_env.n_bins
         n_neurons = 1
         # Create firing that could meet multiple criteria
@@ -1851,6 +1852,9 @@ class TestSpatialRatesResultSummaryTable:
                     "peak_x",
                     "peak_y",
                     "n_spikes_outside_intervals",
+                    "passes_spatial_information",
+                    "passes_grid_score",
+                    "passes_border_score",
                     "cell_type",
                 ],
             ),
