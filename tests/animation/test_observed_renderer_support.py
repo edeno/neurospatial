@@ -56,7 +56,12 @@ def test_napari_trail_breaks_at_missing_samples_and_recording_breaks(napari_view
     breaks = np.zeros(6, dtype=bool)
     breaks[4] = True  # a recording break between samples 3 and 4
     view = napari_view(
-        [PositionOverlay(path, TIMES, trail_length=6, break_before=breaks)]
+        # Below two frames, so the dropout is a tracking loss, not bridged.
+        [
+            PositionOverlay(
+                path, TIMES, trail_length=6, break_before=breaks, max_gap=0.15
+            )
+        ]
     )
     view.seek(TIMES[-1])
     trail = view.native.layers["Position trail 1"].data
@@ -78,7 +83,11 @@ def test_napari_pose_hides_missing_keypoints_and_their_edges(napari_view):
     tail[1] = [3.0, 4.0]
     skeleton = Skeleton(name="rat", nodes=("nose", "tail"), edges=(("nose", "tail"),))
     view = napari_view(
-        [BodypartOverlay({"nose": nose, "tail": tail}, TIMES, skeleton=skeleton)]
+        [
+            BodypartOverlay(
+                {"nose": nose, "tail": tail}, TIMES, skeleton=skeleton, max_gap=0.15
+            )
+        ]
     )
     layers = view.native.layers
     view.seek(TIMES[1])
@@ -96,7 +105,10 @@ def test_napari_heading_is_hidden_while_its_animal_is_missing(napari_view):
     path = np.full((6, 2), 5.0)
     path[1] = np.nan
     view = napari_view(
-        [PositionOverlay(path, TIMES), HeadDirectionOverlay(np.zeros(6), TIMES)]
+        [
+            PositionOverlay(path, TIMES, max_gap=0.15),
+            HeadDirectionOverlay(np.zeros(6), TIMES),
+        ]
     )
     layer = view.native.layers["Head direction 1"]
     view.seek(TIMES[1])

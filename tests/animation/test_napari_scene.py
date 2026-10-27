@@ -83,6 +83,7 @@ def test_native_fields_sample_independent_clocks_and_keep_native_edits():
         vmax=2,
         cmap="magma",
         label="Rate (Hz)",
+        max_gap=0.5,  # the 0.8 s interval is unsupported
     )
     second = AnimationField(
         np.array([np.full(env.n_bins, 10.0), np.full(env.n_bins, 20.0)]),
@@ -781,7 +782,10 @@ def _layout_scene():
             "cellB": AnimationField(ones, times, vmin=0, vmax=1, cmap="Greens"),
         },
         overlays=[
-            PositionOverlay(positions, times, trail_length=2, color="blue", size=14),
+            # Below two sampling intervals, so the dropout is a tracking loss.
+            PositionOverlay(
+                positions, times, trail_length=2, color="blue", size=14, max_gap=0.75
+            ),
             EventOverlay.from_fixed_positions(
                 np.array([0.5]), np.array([[30.0, 10.0]])
             ),
