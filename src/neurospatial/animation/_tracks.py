@@ -17,27 +17,6 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-def track_extents(
-    env: Environment,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
-    """Where each bin starts and ends along a track; None off a track.
-
-    Linearized tracks (``linear_track``, ``from_graph``) measure distance
-    along the track, with the spacing between segments left empty; 1-D
-    environments use their own coordinate.
-    """
-    if env.is_linearized_track:
-        linearization = env._binning.linearization
-        assert linearization is not None
-        edges = np.asarray(linearization.grid_edges[0], dtype=np.float64)
-        active = linearization.active_mask
-        return edges[:-1][active], edges[1:][active]
-    if env.n_dims == 1:
-        centers, half = env.bin_centers[:, 0], env.bin_sizes / 2
-        return centers - half, centers + half
-    return None
-
-
 def track_segments(env: Environment) -> list[tuple[str, float, float]]:
     """Each segment of a linearized track: its name, start and stop along it.
 

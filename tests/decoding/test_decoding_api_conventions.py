@@ -15,7 +15,11 @@ import pytest
 
 from neurospatial.decoding.assemblies import detect_assemblies
 from neurospatial.decoding.metrics import confusion_matrix
-from neurospatial.decoding.trajectory import fit_isotonic_trajectory
+from neurospatial.decoding.trajectory import (
+    detect_trajectory_radon,
+    fit_isotonic_trajectory,
+    fit_linear_trajectory,
+)
 
 
 @pytest.fixture
@@ -65,32 +69,16 @@ def test_detect_assemblies_rng_keyword(assembly_spike_counts):
         detect_assemblies(assembly_spike_counts, random_state=0)
 
 
-def test_fit_isotonic_trajectory_env_optional():
-    """`fit_isotonic_trajectory` runs without `env`; `env` is keyword-only."""
-    sig = inspect.signature(fit_isotonic_trajectory)
-    params = list(sig.parameters)
-    assert params[0] == "posterior"
-    assert params[1] == "times"
-    assert sig.parameters["env"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert sig.parameters["env"].default is None
-
-    n_time_bins, n_bins = 20, 50
-    posterior = np.zeros((n_time_bins, n_bins))
-    for t in range(n_time_bins):
-        posterior[t, t * 2] = 1.0
-    times = np.linspace(0, 1, n_time_bins)
-
-    result_no_env = fit_isotonic_trajectory(posterior, times)
-    result_with_env = fit_isotonic_trajectory(posterior, times, env=None)
-
-    np.testing.assert_array_equal(
-        result_no_env.fitted_positions, result_with_env.fitted_positions
-    )
-    assert result_no_env.r_squared == pytest.approx(result_with_env.r_squared)
-
-    # Cannot pass env as the first positional argument any more.
-    with pytest.raises(TypeError):
-        fit_isotonic_trajectory(None, posterior, times)
+def test_trajectory_fits_take_env_first():
+    """Replay fits read positions from ``env``, the first positional argument."""
+    for fit in (
+        fit_isotonic_trajectory,
+        fit_linear_trajectory,
+        detect_trajectory_radon,
+    ):
+        params = inspect.signature(fit).parameters
+        assert list(params)[:2] == ["env", "posterior"]
+        assert params["env"].default is inspect.Parameter.empty
 
 
 def test_confusion_matrix_method_renamed(small_2d_env):

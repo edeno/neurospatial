@@ -1113,6 +1113,9 @@ $$
 J(A, B) = \frac{|A \cap B|}{|A \cup B|}
 $$
 
+where $A$ and $B$ are the visited bins and $|\cdot|$ is their area
+(`env.bin_sizes`), so bins of different sizes count by the space they cover.
+
 **Range**: [0, 1] where 1.0 = identical, 0.0 = disjoint
 
 **Applications**:
@@ -1135,7 +1138,9 @@ similarity = trajectory_similarity(
 )
 ```
 
-**Computes**: Pearson correlation between bin index sequences
+**Computes**: Pearson correlation between the positions along the track of
+the visited bins. It needs a 1-D environment or a linearized track; for a 2-D
+path, use DTW or Hausdorff below.
 
 **Sensitive To**:
 - Sequential order (unlike Jaccard)

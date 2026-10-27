@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from environment_helpers import track_for
 from numpy.testing import assert_array_equal
 
 from neurospatial.stats.shuffle import (
@@ -522,7 +523,10 @@ class TestShufflePlaceFieldsCircular:
         n_shuffles = 10
         shuffles = list(
             shuffle_place_fields_circular(
-                encoding_models, n_shuffles=n_shuffles, rng=42
+                track_for(encoding_models),
+                encoding_models,
+                n_shuffles=n_shuffles,
+                rng=42,
             )
         )
         assert len(shuffles) == n_shuffles
@@ -535,7 +539,7 @@ class TestShufflePlaceFieldsCircular:
         from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         for shuffled in shuffle_place_fields_circular(
-            encoding_models, n_shuffles=10, rng=42
+            track_for(encoding_models), encoding_models, n_shuffles=10, rng=42
         ):
             for i in range(encoding_models.shape[0]):
                 original_sorted = sorted(encoding_models[i, :].tolist())
@@ -550,7 +554,7 @@ class TestShufflePlaceFieldsCircular:
         from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         for shuffled in shuffle_place_fields_circular(
-            encoding_models, n_shuffles=10, rng=42
+            track_for(encoding_models), encoding_models, n_shuffles=10, rng=42
         ):
             for i in range(encoding_models.shape[0]):
                 # Check if shuffled row is a circular shift of original
@@ -572,7 +576,7 @@ class TestShufflePlaceFieldsCircular:
         # at least sometimes
         found_different = False
         for shuffled in shuffle_place_fields_circular(
-            encoding_models, n_shuffles=50, rng=42
+            track_for(encoding_models), encoding_models, n_shuffles=50, rng=42
         ):
             # Check shift amounts for each neuron
             shifts = []
@@ -595,10 +599,14 @@ class TestShufflePlaceFieldsCircular:
         from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         shuffles1 = list(
-            shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=42)
+            shuffle_place_fields_circular(
+                track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
+            )
         )
         shuffles2 = list(
-            shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=42)
+            shuffle_place_fields_circular(
+                track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
+            )
         )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
             assert_array_equal(s1, s2)
@@ -610,10 +618,14 @@ class TestShufflePlaceFieldsCircular:
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
         shuffles1 = list(
-            shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=rng1)
+            shuffle_place_fields_circular(
+                track_for(encoding_models), encoding_models, n_shuffles=5, rng=rng1
+            )
         )
         shuffles2 = list(
-            shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=rng2)
+            shuffle_place_fields_circular(
+                track_for(encoding_models), encoding_models, n_shuffles=5, rng=rng2
+            )
         )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
             assert_array_equal(s1, s2)
@@ -625,10 +637,14 @@ class TestShufflePlaceFieldsCircular:
         from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         shuffles1 = list(
-            shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=42)
+            shuffle_place_fields_circular(
+                track_for(encoding_models), encoding_models, n_shuffles=5, rng=42
+            )
         )
         shuffles2 = list(
-            shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=123)
+            shuffle_place_fields_circular(
+                track_for(encoding_models), encoding_models, n_shuffles=5, rng=123
+            )
         )
         any_different = any(
             not np.array_equal(s1, s2)
@@ -641,7 +657,9 @@ class TestShufflePlaceFieldsCircular:
         from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         shuffles = list(
-            shuffle_place_fields_circular(encoding_models, n_shuffles=5, rng=None)
+            shuffle_place_fields_circular(
+                track_for(encoding_models), encoding_models, n_shuffles=5, rng=None
+            )
         )
         assert len(shuffles) == 5
         for shuffled in shuffles:
@@ -652,7 +670,9 @@ class TestShufflePlaceFieldsCircular:
         from neurospatial.stats.shuffle import shuffle_place_fields_circular
 
         single_bin = np.array([[5.0], [3.0]], dtype=np.float64)
-        for shuffled in shuffle_place_fields_circular(single_bin, n_shuffles=5, rng=42):
+        for shuffled in shuffle_place_fields_circular(
+            track_for(single_bin), single_bin, n_shuffles=5, rng=42
+        ):
             assert_array_equal(shuffled, single_bin)
 
     def test_single_neuron(self) -> None:
@@ -661,7 +681,7 @@ class TestShufflePlaceFieldsCircular:
 
         single_neuron = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float64)
         for shuffled in shuffle_place_fields_circular(
-            single_neuron, n_shuffles=5, rng=42
+            track_for(single_neuron), single_neuron, n_shuffles=5, rng=42
         ):
             assert shuffled.shape == single_neuron.shape
             # Should be a circular shift
@@ -836,12 +856,17 @@ class TestShufflePlaceFieldsCircular2D:
         encoding_models = np.random.default_rng(42).random((3, env.n_bins))
 
         # Should fail because n_bins != prod(grid_shape)
-        with pytest.raises(ValueError, match="inactive bins"):
+        with pytest.raises(ValueError, match="cells outside the arena") as error:
             list(
                 shuffle_place_fields_circular_2d(
                     env, encoding_models, n_shuffles=5, rng=42
                 )
             )
+        # The 1-D shuffle would break the field on a masked grid; the message
+        # points to the spike-time shuffle instead.
+        assert "shuffle_spike_times_circular" in str(error.value)
+        assert "shuffle_place_fields_circular " not in str(error.value)
+        assert "shuffle_place_fields_circular for" not in str(error.value)
 
 
 # =============================================================================
@@ -866,7 +891,9 @@ class TestShufflePosteriorCircular:
 
         n_shuffles = 10
         shuffles = list(
-            shuffle_posterior_circular(posterior, n_shuffles=n_shuffles, rng=42)
+            shuffle_posterior_circular(
+                track_for(posterior), posterior, n_shuffles=n_shuffles, rng=42
+            )
         )
         assert len(shuffles) == n_shuffles
 
@@ -874,7 +901,9 @@ class TestShufflePosteriorCircular:
         """Each row should still sum to 1.0 after shuffle."""
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
-        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
+        for shuffled in shuffle_posterior_circular(
+            track_for(posterior), posterior, n_shuffles=10, rng=42
+        ):
             row_sums = shuffled.sum(axis=1)
             assert np.allclose(row_sums, 1.0), f"Row sums should be 1.0, got {row_sums}"
 
@@ -885,7 +914,9 @@ class TestShufflePosteriorCircular:
         """
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
-        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
+        for shuffled in shuffle_posterior_circular(
+            track_for(posterior), posterior, n_shuffles=10, rng=42
+        ):
             for i in range(posterior.shape[0]):
                 original_sorted = sorted(posterior[i, :].tolist())
                 shuffled_sorted = sorted(shuffled[i, :].tolist())
@@ -897,7 +928,9 @@ class TestShufflePosteriorCircular:
         """Each row should be a circular shift of the original."""
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
-        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=10, rng=42):
+        for shuffled in shuffle_posterior_circular(
+            track_for(posterior), posterior, n_shuffles=10, rng=42
+        ):
             for i in range(posterior.shape[0]):
                 orig = posterior[i, :]
                 shuf = shuffled[i, :]
@@ -914,7 +947,9 @@ class TestShufflePosteriorCircular:
         # With enough shuffles, different time bins should have different shifts
         # at least sometimes
         found_different = False
-        for shuffled in shuffle_posterior_circular(posterior, n_shuffles=50, rng=42):
+        for shuffled in shuffle_posterior_circular(
+            track_for(posterior), posterior, n_shuffles=50, rng=42
+        ):
             # Check shift amounts for each time bin
             shifts = []
             for i in range(posterior.shape[0]):
@@ -935,8 +970,16 @@ class TestShufflePosteriorCircular:
         """Same seed should produce same shuffles."""
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
-        shuffles1 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
-        shuffles2 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
+        shuffles1 = list(
+            shuffle_posterior_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=42
+            )
+        )
+        shuffles2 = list(
+            shuffle_posterior_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=42
+            )
+        )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
             assert_array_equal(s1, s2)
 
@@ -946,8 +989,16 @@ class TestShufflePosteriorCircular:
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
-        shuffles1 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=rng1))
-        shuffles2 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=rng2))
+        shuffles1 = list(
+            shuffle_posterior_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=rng1
+            )
+        )
+        shuffles2 = list(
+            shuffle_posterior_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=rng2
+            )
+        )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
             assert_array_equal(s1, s2)
 
@@ -957,8 +1008,16 @@ class TestShufflePosteriorCircular:
         """Different seeds should produce different shuffles."""
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
-        shuffles1 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=42))
-        shuffles2 = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=123))
+        shuffles1 = list(
+            shuffle_posterior_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=42
+            )
+        )
+        shuffles2 = list(
+            shuffle_posterior_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=123
+            )
+        )
         any_different = any(
             not np.array_equal(s1, s2)
             for s1, s2 in zip(shuffles1, shuffles2, strict=True)
@@ -969,7 +1028,11 @@ class TestShufflePosteriorCircular:
         """rng=None should still produce valid shuffles."""
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
-        shuffles = list(shuffle_posterior_circular(posterior, n_shuffles=5, rng=None))
+        shuffles = list(
+            shuffle_posterior_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=None
+            )
+        )
         assert len(shuffles) == 5
         for shuffled in shuffles:
             assert shuffled.shape == posterior.shape
@@ -979,7 +1042,9 @@ class TestShufflePosteriorCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         empty = np.zeros((0, 5), dtype=np.float64)
-        shuffles = list(shuffle_posterior_circular(empty, n_shuffles=5, rng=42))
+        shuffles = list(
+            shuffle_posterior_circular(track_for(empty), empty, n_shuffles=5, rng=42)
+        )
         assert len(shuffles) == 5
         for s in shuffles:
             assert s.shape == (0, 5)
@@ -989,7 +1054,9 @@ class TestShufflePosteriorCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         single = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float64)
-        for shuffled in shuffle_posterior_circular(single, n_shuffles=5, rng=42):
+        for shuffled in shuffle_posterior_circular(
+            track_for(single), single, n_shuffles=5, rng=42
+        ):
             assert shuffled.shape == single.shape
             # Should be a circular shift (including identity)
             is_shift = any(
@@ -1003,7 +1070,9 @@ class TestShufflePosteriorCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_circular
 
         single_bin = np.array([[1.0], [1.0], [1.0]], dtype=np.float64)
-        for shuffled in shuffle_posterior_circular(single_bin, n_shuffles=5, rng=42):
+        for shuffled in shuffle_posterior_circular(
+            track_for(single_bin), single_bin, n_shuffles=5, rng=42
+        ):
             assert_array_equal(shuffled, single_bin)
 
 
@@ -1038,7 +1107,7 @@ class TestShufflePosteriorWeightedCircular:
         n_shuffles = 10
         shuffles = list(
             shuffle_posterior_weighted_circular(
-                posterior, n_shuffles=n_shuffles, rng=42
+                track_for(posterior), posterior, n_shuffles=n_shuffles, rng=42
             )
         )
         assert len(shuffles) == n_shuffles
@@ -1048,7 +1117,7 @@ class TestShufflePosteriorWeightedCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         for shuffled in shuffle_posterior_weighted_circular(
-            posterior, n_shuffles=10, rng=42
+            track_for(posterior), posterior, n_shuffles=10, rng=42
         ):
             row_sums = shuffled.sum(axis=1)
             assert np.allclose(row_sums, 1.0), f"Row sums should be 1.0, got {row_sums}"
@@ -1058,7 +1127,7 @@ class TestShufflePosteriorWeightedCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         for shuffled in shuffle_posterior_weighted_circular(
-            posterior, n_shuffles=10, rng=42
+            track_for(posterior), posterior, n_shuffles=10, rng=42
         ):
             for i in range(posterior.shape[0]):
                 original_sorted = sorted(posterior[i, :].tolist())
@@ -1072,7 +1141,7 @@ class TestShufflePosteriorWeightedCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         for shuffled in shuffle_posterior_weighted_circular(
-            posterior, n_shuffles=10, rng=42
+            track_for(posterior), posterior, n_shuffles=10, rng=42
         ):
             for i in range(posterior.shape[0]):
                 orig = posterior[i, :]
@@ -1105,7 +1174,11 @@ class TestShufflePosteriorWeightedCircular:
         # With edge_buffer=5, time bins with MAP near edges should have
         # restricted shifts to avoid wrapping to the opposite side
         for shuffled in shuffle_posterior_weighted_circular(
-            edge_posterior, edge_buffer=5, n_shuffles=100, rng=42
+            track_for(edge_posterior),
+            edge_posterior,
+            edge_buffer=5,
+            n_shuffles=100,
+            rng=42,
         ):
             assert shuffled.shape == edge_posterior.shape
             assert np.allclose(shuffled.sum(axis=1), 1.0)
@@ -1129,7 +1202,7 @@ class TestShufflePosteriorWeightedCircular:
 
         # With edge_buffer=0, any shift should be possible
         for shuffled in shuffle_posterior_weighted_circular(
-            posterior, edge_buffer=0, n_shuffles=10, rng=42
+            track_for(posterior), posterior, edge_buffer=0, n_shuffles=10, rng=42
         ):
             assert shuffled.shape == posterior.shape
             assert np.allclose(shuffled.sum(axis=1), 1.0)
@@ -1139,10 +1212,14 @@ class TestShufflePosteriorWeightedCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         shuffles1 = list(
-            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=42)
+            shuffle_posterior_weighted_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=42
+            )
         )
         shuffles2 = list(
-            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=42)
+            shuffle_posterior_weighted_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=42
+            )
         )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
             assert_array_equal(s1, s2)
@@ -1154,10 +1231,14 @@ class TestShufflePosteriorWeightedCircular:
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
         shuffles1 = list(
-            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=rng1)
+            shuffle_posterior_weighted_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=rng1
+            )
         )
         shuffles2 = list(
-            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=rng2)
+            shuffle_posterior_weighted_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=rng2
+            )
         )
         for s1, s2 in zip(shuffles1, shuffles2, strict=True):
             assert_array_equal(s1, s2)
@@ -1169,10 +1250,14 @@ class TestShufflePosteriorWeightedCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         shuffles1 = list(
-            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=42)
+            shuffle_posterior_weighted_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=42
+            )
         )
         shuffles2 = list(
-            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=123)
+            shuffle_posterior_weighted_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=123
+            )
         )
         any_different = any(
             not np.array_equal(s1, s2)
@@ -1185,7 +1270,9 @@ class TestShufflePosteriorWeightedCircular:
         from neurospatial.stats.shuffle import shuffle_posterior_weighted_circular
 
         shuffles = list(
-            shuffle_posterior_weighted_circular(posterior, n_shuffles=5, rng=None)
+            shuffle_posterior_weighted_circular(
+                track_for(posterior), posterior, n_shuffles=5, rng=None
+            )
         )
         assert len(shuffles) == 5
         for shuffled in shuffles:
@@ -1197,7 +1284,9 @@ class TestShufflePosteriorWeightedCircular:
 
         empty = np.zeros((0, 5), dtype=np.float64)
         shuffles = list(
-            shuffle_posterior_weighted_circular(empty, n_shuffles=5, rng=42)
+            shuffle_posterior_weighted_circular(
+                track_for(empty), empty, n_shuffles=5, rng=42
+            )
         )
         assert len(shuffles) == 5
         for s in shuffles:
@@ -1209,7 +1298,7 @@ class TestShufflePosteriorWeightedCircular:
 
         single = np.array([[0.1, 0.2, 0.3, 0.4]], dtype=np.float64)
         for shuffled in shuffle_posterior_weighted_circular(
-            single, n_shuffles=5, rng=42
+            track_for(single), single, n_shuffles=5, rng=42
         ):
             assert shuffled.shape == single.shape
             # Should be a circular shift (including identity)
@@ -1232,7 +1321,7 @@ class TestShufflePosteriorWeightedCircular:
             [[0.2, 0.2, 0.2, 0.2, 0.2], [0.1, 0.2, 0.4, 0.2, 0.1]], dtype=np.float64
         )
         for shuffled in shuffle_posterior_weighted_circular(
-            small, edge_buffer=4, n_shuffles=5, rng=42
+            track_for(small), small, edge_buffer=4, n_shuffles=5, rng=42
         ):
             assert shuffled.shape == small.shape
             assert np.allclose(shuffled.sum(axis=1), 1.0)
@@ -1978,3 +2067,83 @@ class TestShuffleTestResult:
             n_shuffles=3,
         )
         assert result.is_significant is False
+
+
+# =============================================================================
+# Circular shifts run along the track
+# =============================================================================
+
+
+class TestCircularShiftsRunAlongTrack:
+    """Shifts follow bin positions along the track, not bin numbers."""
+
+    @pytest.fixture
+    def renumbered_track(self):
+        from environment_helpers import renumbered, strips_1d
+
+        env = strips_1d(np.arange(0.0, 101.0, 5.0))
+        order = np.random.default_rng(3).permutation(env.n_bins)
+        return env, renumbered(env, order), order
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "shuffle_place_fields_circular",
+            "shuffle_posterior_circular",
+            "shuffle_posterior_weighted_circular",
+        ],
+    )
+    def test_renumbering_bins_gives_the_same_shuffles(self, renumbered_track, name):
+        import neurospatial.stats.shuffle as shuffle
+
+        env, shuffled_env, order = renumbered_track
+        # A field over bins 3-7 (and a small background), normalized per row.
+        values = np.full((4, env.n_bins), 0.01)
+        values[:, 3:8] = [1.0, 3.0, 5.0, 3.0, 1.0]
+        values /= values.sum(axis=1, keepdims=True)
+
+        original = list(getattr(shuffle, name)(env, values, n_shuffles=5, rng=7))
+        renumbered = list(
+            getattr(shuffle, name)(shuffled_env, values[:, order], n_shuffles=5, rng=7)
+        )
+
+        for first, second in zip(original, renumbered, strict=True):
+            np.testing.assert_array_equal(second, first[:, order])
+
+    def test_field_stays_one_piece_on_a_renumbered_track(self, renumbered_track):
+        from neurospatial.stats.shuffle import shuffle_place_fields_circular
+
+        _, shuffled_env, order = renumbered_track
+        field = np.zeros((1, 20))
+        field[0, 3:8] = [1.0, 3.0, 5.0, 3.0, 1.0]
+        new_index = np.argsort(order)
+
+        for shuffled in shuffle_place_fields_circular(
+            shuffled_env, field[:, order], n_shuffles=20, rng=1
+        ):
+            along_track = shuffled[0, new_index]
+            # Rolling along the track keeps the field's profile, cyclically.
+            shift = int(np.argmax(along_track)) - 5
+            np.testing.assert_array_equal(along_track, np.roll(field[0], shift))
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "shuffle_place_fields_circular",
+            "shuffle_posterior_circular",
+            "shuffle_posterior_weighted_circular",
+        ],
+    )
+    def test_open_arena_is_refused(self, name):
+        import neurospatial.stats.shuffle as shuffle
+        from neurospatial import Environment
+
+        theta = np.random.default_rng(0).uniform(0, 2 * np.pi, 4000)
+        radius = 40 * np.sqrt(np.random.default_rng(1).uniform(0, 1, 4000))
+        disc = Environment.from_samples(
+            np.c_[radius * np.cos(theta), radius * np.sin(theta)], bin_size=4.0
+        )
+        values = np.full((2, disc.n_bins), 1.0 / disc.n_bins)
+
+        with pytest.raises(ValueError, match="needs a position along a track"):
+            getattr(shuffle, name)(disc, values, n_shuffles=1, rng=0)

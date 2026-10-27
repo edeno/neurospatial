@@ -7,7 +7,12 @@ analyzing replay events and sequential activation patterns.
 Getting replay (ripple) intervals
 ----------------------------------
 The trajectory fits here characterize a posterior *within* a candidate replay
-event; they do not themselves detect the sharp-wave-ripple (SWR) events that
+event. They read each bin's position along the track (the linear position of a
+linearized track, or the coordinate of a 1-D environment), so slopes are in
+environment units per second and do not depend on how bins are numbered. They
+refuse 2-D and 3-D arenas, which have no single axis to fit along.
+
+The fits do not themselves detect the sharp-wave-ripple (SWR) events that
 delimit replay. neurospatial does not implement ripple detection. Instead,
 detect ripple intervals with the external ``ripple_detection`` package
 (``pip install ripple_detection``), then decode the spikes within each
@@ -81,8 +86,9 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     fitted_positions : NDArray[np.float64]
-        Fitted monotonic positions in bin index space, shape (n_time_bins,).
-        These are constrained to be monotonically increasing or decreasing.
+        Fitted monotonic positions along the track, in environment units,
+        shape (n_time_bins,). These are constrained to be monotonically
+        increasing or decreasing.
     r_squared : float
         Coefficient of determination (R²) measuring goodness of fit.
         Range [0, 1] where 1 indicates perfect fit.
@@ -91,8 +97,9 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
         "increasing" means position increases with time (forward replay).
         "decreasing" means position decreases with time (reverse replay).
     residuals : NDArray[np.float64]
-        Residuals (observed - fitted) for each time bin, shape (n_time_bins,).
-        Useful for diagnostics and outlier detection.
+        Residuals (observed - fitted) for each time bin, in environment
+        units, shape (n_time_bins,). Useful for diagnostics and outlier
+        detection.
 
     See Also
     --------
@@ -101,11 +108,11 @@ class IsotonicFitResult(ReadOnlyArraysMixin, ResultMixin):
 
     Examples
     --------
-    >>> result = fit_isotonic_trajectory(posterior, times)  # doctest: +SKIP
+    >>> result = fit_isotonic_trajectory(env, posterior, times)  # doctest: +SKIP
     >>> print(
     ...     f"R² = {result.r_squared:.3f}, direction = {result.direction}"
     ... )  # doctest: +SKIP
-    >>> replay_speed = np.diff(result.fitted_positions) / np.diff(
+    >>> replay_speed_cm_s = np.diff(result.fitted_positions) / np.diff(
     ...     times
     ... )  # doctest: +SKIP
     """
@@ -135,12 +142,14 @@ class LinearFitResult(ResultMixin):
     Attributes
     ----------
     slope : float
-        Slope of the fitted line in bin indices per second.
-        Positive slope indicates forward replay, negative indicates reverse.
-        To convert to environment units: speed_cm_s = slope * bin_size.
+        Slope of the fitted line: replay speed along the track in
+        environment units per second (cm/s for a track in cm). Positive
+        slope means position increases along the track with time.
     intercept : float
-        Intercept of the fitted line (bin index at t=0).
-        Note: t=0 refers to the start of the time array, not absolute time.
+        Position along the track, in environment units, where the fitted
+        line crosses ``times == 0``. This is time zero of the ``times``
+        values passed in, so shift ``times`` to the event start to read the
+        intercept as the start position.
     r_squared : float
         Coefficient of determination (R²) measuring goodness of fit.
         Range [0, 1] where 1 indicates perfect linear relationship.
@@ -161,9 +170,8 @@ class LinearFitResult(ResultMixin):
     ...     env, posterior, times, method="sample", rng=42
     ... )  # doctest: +SKIP
     >>> print(
-    ...     f"slope = {result.slope:.2f} ± {result.slope_std:.2f} bins/s"
+    ...     f"speed = {result.slope:.0f} ± {result.slope_std:.0f} cm/s"
     ... )  # doctest: +SKIP
-    >>> replay_speed_cm_s = result.slope * env.bin_size  # doctest: +SKIP
     """
 
     slope: float
@@ -219,7 +227,7 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
 
     Examples
     --------
-    >>> result = detect_trajectory_radon(posterior)  # doctest: +SKIP
+    >>> result = detect_trajectory_radon(env, posterior)  # doctest: +SKIP
     >>> print(
     ...     f"Detected angle: {result.angle_degrees:.1f}°, score: {result.score:.3f}"
     ... )  # doctest: +SKIP
@@ -243,33 +251,103 @@ class RadonDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+_TRACK_ALTERNATIVE = (
+    "a 2-D arena has no single axis to fit a replay line along, so decode on "
+    "a linearized track (Environment.linear_track, Environment.maze or "
+    "Environment.from_graph)"
+)
+
+
+def _track_positions(
+    env: Environment, posterior: NDArray[np.float64], operation: str
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Each bin's extent along the track, in track order.
+
+    Parameters
+    ----------
+    env : Environment
+        A 1-D environment or a linearized track.
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior mass per bin, in bin numbering.
+    operation : str
+        The calling function, for the refusal message.
+
+    Returns
+    -------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Columns reordered so that bins run along the track.
+    starts, stops : NDArray[np.float64], shape (n_bins,)
+        Where each reordered bin starts and ends along the track, in
+        environment units.
+
+    Raises
+    ------
+    ValueError
+        If ``env`` is neither 1-D nor a linearized track, if ``posterior`` is
+        not 2-D, or if it does not have one column per bin.
+    """
+    from neurospatial.environment._queries import require_track_extents
+
+    starts, stops = require_track_extents(
+        env, operation, alternative=_TRACK_ALTERNATIVE
+    )
+    posterior = np.asarray(posterior, dtype=np.float64)
+    if posterior.ndim != 2:
+        raise ValueError(f"posterior must be 2D, got shape {posterior.shape}")
+    if posterior.shape[1] != env.n_bins:
+        raise ValueError(
+            f"posterior has {posterior.shape[1]} columns but the environment "
+            f"has {env.n_bins} bins. Pass the posterior decoded on this "
+            "environment, with one column per bin."
+        )
+    # A stable sort keeps bins that are already in track order in place, so
+    # sampling below draws the same bins as it would in bin numbering.
+    order = np.argsort(starts, kind="stable")
+    return posterior[:, order], starts[order], stops[order]
+
+
+def _decoded_positions(
+    posterior: NDArray[np.float64],
+    centers: NDArray[np.float64],
+    method: str,
+) -> NDArray[np.float64]:
+    """Position along the track per time bin: MAP bin center or posterior mean."""
+    if method == "map":
+        positions: NDArray[np.float64] = centers[np.argmax(posterior, axis=1)]
+        return positions
+    # The posterior is a probability mass per bin, so its mean position is
+    # the mass-weighted mean of the bin centers.
+    return np.asarray(posterior @ centers, dtype=np.float64)
+
+
 def fit_isotonic_trajectory(
+    env: Environment,
     posterior: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
-    env: Environment | None = None,
     increasing: bool | None = None,
     method: Literal["map", "expected"] = "expected",
 ) -> IsotonicFitResult:
     """Fit monotonic trajectory using isotonic regression.
 
     Isotonic regression fits a monotonic (non-decreasing or non-increasing)
-    function to the decoded position sequence. This is useful for detecting
-    replay events that represent sequential traversal of spatial locations.
+    function to the decoded position along the track. This is useful for
+    detecting replay events that represent sequential traversal of spatial
+    locations.
 
     Parameters
     ----------
+    env : Environment
+        The environment the posterior was decoded on: a 1-D environment or a
+        linearized track. Positions are read along the track (the linear
+        position of a track, or the coordinate of a 1-D environment), so the
+        fit does not depend on how bins are numbered.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution over spatial bins for each time bin.
         Each row should sum to 1.
     times : NDArray[np.float64], shape (n_time_bins,)
         Time values for each time bin. Used as the independent variable (x)
         in the regression.
-    env : Environment | None, optional
-        Spatial environment, accepted as a keyword-only argument for parity
-        with :func:`fit_linear_trajectory`. This function operates entirely in
-        bin-index space and does not consult ``env``; it is a parity
-        placeholder consulted by no code path.
     increasing : bool | None, optional
         Direction constraint for the isotonic fit:
         - True: Fit increasing (non-decreasing) monotonic function
@@ -277,18 +355,21 @@ def fit_isotonic_trajectory(
         - None (default): Try both directions and return the one with higher R²
     method : {"map", "expected"}, optional
         How to extract position from the posterior for fitting:
-        - "map": Use argmax (maximum a posteriori) bin index
-        - "expected" (default): Use weighted mean (expected) bin index
+        - "map": Use the center of the most probable bin
+        - "expected" (default): Use the posterior mean position
 
     Returns
     -------
     IsotonicFitResult
-        Container with fitted_positions, r_squared, direction, and residuals.
+        Container with fitted_positions, r_squared, direction, and residuals,
+        with positions in environment units along the track.
 
     Raises
     ------
     ValueError
-        If method is not "map" or "expected".
+        If method is not "map" or "expected", if ``env`` is neither 1-D nor
+        a linearized track, or if ``posterior`` does not have one column per
+        bin.
 
     See Also
     --------
@@ -310,35 +391,32 @@ def fit_isotonic_trajectory(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.decoding.trajectory import fit_isotonic_trajectory
     >>>
-    >>> # Create posterior with increasing positions
-    >>> n_time_bins, n_bins = 20, 50
-    >>> posterior = np.zeros((n_time_bins, n_bins))
+    >>> # A 100 cm track in 2 cm bins and a posterior that moves along it
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
+    ... )
+    >>> n_time_bins = 20
+    >>> posterior = np.zeros((n_time_bins, env.n_bins))
     >>> for t in range(n_time_bins):
     ...     posterior[t, t * 2] = 1.0  # Delta posteriors
     >>> times = np.linspace(0, 1, n_time_bins)
     >>>
-    >>> result = fit_isotonic_trajectory(posterior, times)
+    >>> result = fit_isotonic_trajectory(env, posterior, times)
     >>> print(f"R² = {result.r_squared:.3f}, direction = {result.direction}")
     R² = 1.000, direction = increasing
     """
-    del env  # unused; kept for signature parity with fit_linear_trajectory
     from sklearn.isotonic import IsotonicRegression
 
     if method not in ("map", "expected"):
         raise ValueError(f"method must be 'map' or 'expected', got {method!r}")
 
-    # Extract positions from posterior
-    n_bins = posterior.shape[1]
-    bin_indices = np.arange(n_bins)
-
-    if method == "map":
-        # Use argmax positions
-        positions = np.argmax(posterior, axis=1).astype(np.float64)
-    else:
-        # Use expected (weighted mean) positions
-        positions = np.sum(posterior * bin_indices, axis=1)
+    posterior, starts, stops = _track_positions(
+        env, posterior, "fit_isotonic_trajectory()"
+    )
+    positions = _decoded_positions(posterior, (starts + stops) / 2, method)
 
     # If direction is specified, fit once
     if increasing is not None:
@@ -419,14 +497,18 @@ def fit_linear_trajectory(
 ) -> LinearFitResult:
     """Fit linear trajectory to posterior using linear regression.
 
-    Fits a straight line to the decoded position sequence, providing slope
-    (replay speed) and intercept estimates. Optionally uses Monte Carlo
+    Fits a straight line to the decoded position along the track, providing
+    slope (replay speed) and intercept estimates. Optionally uses Monte Carlo
     sampling to quantify uncertainty in the slope estimate.
 
     Parameters
     ----------
     env : Environment
-        Spatial environment (provides bin_centers for coordinate transforms).
+        The environment the posterior was decoded on: a 1-D environment or a
+        linearized track. Positions are read along the track (the linear
+        position of a track, or the coordinate of a 1-D environment), so the
+        slope is a physical speed and does not depend on how bins are
+        numbered.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution over spatial bins for each time bin.
         Each row should sum to 1.
@@ -438,7 +520,8 @@ def fit_linear_trajectory(
         estimation (only used when method="sample"). Default is 1000.
     method : {"map", "sample"}, optional
         How to fit the linear trajectory:
-        - "map": Use argmax positions directly. Fast but ignores uncertainty.
+        - "map": Use the center of the most probable bin. Fast but ignores
+          uncertainty.
         - "sample" (default): Sample from posterior, fit to each sample,
           average coefficients. Provides uncertainty estimate via slope_std.
     rng : np.random.Generator | int | None, optional
@@ -450,14 +533,16 @@ def fit_linear_trajectory(
     Returns
     -------
     LinearFitResult
-        Container with slope, intercept, r_squared, and slope_std.
-        slope_std is None when method="map".
+        Container with slope (environment units per second), intercept
+        (environment units), r_squared, and slope_std. slope_std is None
+        when method="map".
 
     Raises
     ------
     ValueError
         If method is not "map" or "sample".
-        If posterior is not 2D.
+        If ``env`` is neither 1-D nor a linearized track.
+        If posterior is not 2D or does not have one column per bin.
         If times length doesn't match posterior shape.
 
     See Also
@@ -467,25 +552,18 @@ def fit_linear_trajectory(
 
     Notes
     -----
-    **Slope interpretation**: The slope is in units of bin indices per second.
-    To convert to environment units (e.g., cm/s):
-
-    .. code-block:: python
-
-        speed_cm_s = result.slope * env.bin_size  # for regular grids
+    **Slope interpretation**: The slope is replay speed along the track, in
+    environment units per second (cm/s for a track in cm). Bins of unequal
+    length are placed at their centers, so a constant-speed sweep gives a
+    straight line. On a linearized track the position includes any
+    ``edge_spacing`` gap between segments.
 
     **Sampling implementation** (for method="sample"):
 
-    Sampling is performed in cumulative-sum space to handle peaky posteriors:
-
-    .. code-block:: python
-
-        cumsum = np.cumsum(posterior, axis=1)
-        u = rng.random((n_samples, n_time_bins, 1))
-        samples = np.argmax(cumsum >= u, axis=-1)
-
-    This avoids numerical issues with np.random.choice on posteriors
-    with probabilities very close to 0 or 1.
+    Each sample draws one bin per time bin from the posterior, by inverting
+    the cumulative posterior with bins in track order, and takes that bin's
+    center. A line is fit to each sampled sequence; the result averages the
+    coefficients and ``slope_std`` is the spread of the sampled slopes.
 
     **Edge cases**:
 
@@ -500,26 +578,27 @@ def fit_linear_trajectory(
     >>> from neurospatial import Environment
     >>> from neurospatial.decoding.trajectory import fit_linear_trajectory
     >>>
-    >>> # Create environment and posterior with linear trajectory
-    >>> positions = np.linspace(0, 100, 1000).reshape(-1, 1)
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> # A 100 cm track in 2 cm bins and a posterior that sweeps along it
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
+    ... )
     >>> n_time_bins = 20
     >>> posterior = np.zeros((n_time_bins, env.n_bins))
     >>> for t in range(n_time_bins):
-    ...     posterior[t, t * 2] = 1.0  # Linear trajectory
+    ...     posterior[t, t * 2] = 1.0  # 4 cm per time bin
     >>> times = np.linspace(0, 1, n_time_bins)
     >>>
     >>> result = fit_linear_trajectory(env, posterior, times, method="map")
-    >>> print(f"slope = {result.slope:.2f} bins/s, R² = {result.r_squared:.3f}")
-    slope = 38.00 bins/s, R² = 1.000
+    >>> print(f"speed = {result.slope:.0f} cm/s, R² = {result.r_squared:.3f}")
+    speed = 76 cm/s, R² = 1.000
     """
     if method not in ("map", "sample"):
         raise ValueError(f"method must be 'map' or 'sample', got {method!r}")
 
-    # Input validation
-    if posterior.ndim != 2:
-        raise ValueError(f"posterior must be 2D, got shape {posterior.shape}")
-
+    posterior, starts, stops = _track_positions(
+        env, posterior, "fit_linear_trajectory()"
+    )
+    centers = (starts + stops) / 2
     n_time_bins = posterior.shape[0]
 
     if len(times) != n_time_bins:
@@ -528,8 +607,7 @@ def fit_linear_trajectory(
         )
 
     if method == "map":
-        # Use argmax positions directly
-        positions = np.argmax(posterior, axis=1).astype(np.float64)
+        positions = _decoded_positions(posterior, centers, "map")
 
         # Simple linear regression
         slope, intercept = _fit_line(times, positions)
@@ -544,21 +622,16 @@ def fit_linear_trajectory(
         )
 
     # method == "sample"
-    # Set up RNG using shared helper for consistency
     from neurospatial.stats import _ensure_rng
 
     rng_gen = _ensure_rng(rng)
 
-    # Sample positions from posterior using cumulative sum approach
-    # This is numerically stable for peaky posteriors
+    # Invert the cumulative posterior (bins in track order); this is
+    # numerically stable for peaky posteriors.
     cumsum = np.cumsum(posterior, axis=1)
-
-    # Generate uniform random values: (n_samples, n_time_bins, 1)
     u = rng_gen.random((n_samples, n_time_bins, 1))
-
-    # Find bin indices where cumsum exceeds uniform values
     # Shape: (n_samples, n_time_bins)
-    sampled_positions = np.argmax(cumsum >= u, axis=-1).astype(np.float64)
+    sampled_positions = centers[np.argmax(cumsum >= u, axis=-1)]
 
     # Fit line to each sample
     slopes = np.empty(n_samples)
@@ -572,10 +645,8 @@ def fit_linear_trajectory(
     mean_intercept = np.mean(intercepts)
     slope_std = np.std(slopes, ddof=1)
 
-    # Compute R² using mean coefficients on expected (weighted mean) positions
-    n_bins = posterior.shape[1]
-    bin_indices = np.arange(n_bins)
-    expected_positions = np.sum(posterior * bin_indices, axis=1)
+    # Compute R² using mean coefficients on the posterior mean positions
+    expected_positions = _decoded_positions(posterior, centers, "expected")
     predicted = mean_slope * times + mean_intercept
     r_squared = _compute_r_squared(expected_positions, predicted)
 
@@ -619,7 +690,52 @@ def _fit_line(x: NDArray[np.float64], y: NDArray[np.float64]) -> tuple[float, fl
     return float(slope), float(intercept)
 
 
+def _posterior_image(
+    posterior: NDArray[np.float64],
+    starts: NDArray[np.float64],
+    stops: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Posterior mass on equally spaced columns along the track.
+
+    Parameters
+    ----------
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior mass per bin, bins in track order.
+    starts, stops : NDArray[np.float64], shape (n_bins,)
+        Where each bin starts and ends along the track, in track order.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_time_bins, n_columns)
+        Posterior mass per column. Contiguous bins of one length are the
+        columns themselves. Otherwise columns are as long as the shortest
+        bin, shortened so that whole columns span the track, and each holds
+        the mass of the overlapping bins in proportion to the overlap: the
+        posterior density (mass per unit length) is constant within a bin,
+        and a gap between bins holds no mass.
+    """
+    lengths = stops - starts
+    shortest = float(lengths.min())
+    tolerance = 1e-9 * shortest
+    if np.all(np.abs(lengths - shortest) <= tolerance) and np.all(
+        np.abs(starts[1:] - stops[:-1]) <= tolerance
+    ):
+        return posterior
+    span = float(stops[-1] - starts[0])
+    n_columns = int(np.ceil(span / shortest - 1e-9))
+    edges = np.linspace(starts[0], stops[-1], n_columns + 1)
+    overlap = np.clip(
+        np.minimum(stops[:, None], edges[None, 1:])
+        - np.maximum(starts[:, None], edges[None, :-1]),
+        0.0,
+        None,
+    )  # (n_bins, n_columns)
+    image: NDArray[np.float64] = posterior @ (overlap / lengths[:, None])
+    return image
+
+
 def detect_trajectory_radon(
+    env: Environment,
     posterior: NDArray[np.float64],
     *,
     theta_range: tuple[float, float] = (-90, 90),
@@ -627,15 +743,21 @@ def detect_trajectory_radon(
 ) -> RadonDetectionResult:
     """Detect linear trajectory using Radon transform.
 
-    Treats the posterior as a 2D image (time × position) and finds the line
-    with maximum integrated probability mass. This is particularly useful
-    for detecting diagonal stripe patterns in replay posteriors.
+    Treats the posterior as a 2D image (time × position along the track) and
+    finds the line with maximum integrated probability mass. This is
+    particularly useful for detecting diagonal stripe patterns in replay
+    posteriors.
 
     Parameters
     ----------
+    env : Environment
+        The environment the posterior was decoded on: a 1-D environment or a
+        linearized track. Image columns run along the track, so the result
+        does not depend on how bins are numbered.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution over spatial bins for each time bin.
-        Treated as a 2D image where rows are time bins and columns are spatial bins.
+        Treated as a 2D image where rows are time bins and columns are
+        equally spaced positions along the track.
     theta_range : tuple[float, float], optional
         Range of angles to search in degrees. Default is (-90, 90).
         - 0° corresponds to a horizontal line (constant position).
@@ -656,6 +778,9 @@ def detect_trajectory_radon(
     ImportError
         If ``scikit-image`` is unavailable. It ships as a core dependency, so
         this indicates a broken install; repair with ``pip install scikit-image``.
+    ValueError
+        If ``env`` is neither 1-D nor a linearized track, or if ``posterior``
+        does not have one column per bin.
 
     See Also
     --------
@@ -680,6 +805,19 @@ def detect_trajectory_radon(
     - θ ≈ 45° typically indicates forward replay (position increases with time).
     - θ ≈ -45° typically indicates reverse replay (position decreases with time).
 
+    **Position axis:**
+
+    A line in the image is a constant speed only if the columns are equally
+    spaced along the track. When the bins are contiguous and of one length,
+    each bin is a column, in track order. Otherwise the posterior is
+    resampled onto columns as long as the shortest bin (shortened slightly
+    so that whole columns span the track): each column receives the mass of
+    the bins it overlaps, in proportion to the overlap, which treats the
+    posterior density as constant within a bin. The shortest bin sets the
+    spacing so that no bin is merged with its neighbor. Gaps between bins,
+    such as ``edge_spacing`` between the segments of a track, are columns
+    with no mass.
+
     **Time uniformity assumption:**
 
     Time bins are assumed to be uniformly spaced for image interpretation.
@@ -689,15 +827,16 @@ def detect_trajectory_radon(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.decoding.trajectory import detect_trajectory_radon
     >>>
-    >>> # Create posterior with diagonal pattern (forward replay)
-    >>> n_time_bins, n_bins = 50, 50
-    >>> posterior = np.zeros((n_time_bins, n_bins))
-    >>> for t in range(n_time_bins):
-    ...     posterior[t, t] = 1.0  # Perfect diagonal
+    >>> # A 100 cm track in 2 cm bins and a posterior that sweeps along it
+    >>> env = Environment.linear_track(
+    ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=2.0, units="cm"
+    ... )
+    >>> posterior = np.eye(env.n_bins)  # one bin per time bin: a diagonal
     >>>
-    >>> result = detect_trajectory_radon(posterior)
+    >>> result = detect_trajectory_radon(env, posterior)
     >>> print(f"Detected angle: {result.angle_degrees:.1f}°")  # doctest: +SKIP
     Detected angle: 45.0°
     """
@@ -708,6 +847,11 @@ def detect_trajectory_radon(
             "broken install; repair with: pip install scikit-image"
         )
 
+    posterior, starts, stops = _track_positions(
+        env, posterior, "detect_trajectory_radon()"
+    )
+    image = _posterior_image(posterior, starts, stops)
+
     # Generate angle array
     theta_start, theta_end = theta_range
     # Use endpoint=False to get consistent behavior with theta_step
@@ -717,8 +861,8 @@ def detect_trajectory_radon(
     # Compute Radon transform
     # The posterior is treated as an image with:
     # - rows = time bins (vertical axis in image)
-    # - columns = spatial bins (horizontal axis in image)
-    sinogram = radon(posterior, theta=theta, circle=False)
+    # - columns = positions along the track (horizontal axis in image)
+    sinogram = radon(image, theta=theta, circle=False)
 
     # Find the peak in the sinogram
     # sinogram has shape (n_offsets, n_angles)

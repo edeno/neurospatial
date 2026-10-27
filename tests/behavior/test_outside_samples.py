@@ -28,8 +28,16 @@ def env() -> Environment:
 METHODS = ["jaccard", "correlation", "hausdorff", "dtw"]
 
 
+def _env_for(method: str, env: Environment) -> Environment:
+    """Correlation compares positions along a track, so it gets a 1-D one."""
+    if method == "correlation":
+        return Environment.from_samples(np.arange(0.0, 30.0)[:, None], bin_size=3.0)
+    return env
+
+
 @pytest.mark.parametrize("method", METHODS)
 def test_similarity_outside_sample_is_not_the_last_bin(env, method):
+    env = _env_for(method, env)
     reference = np.array([0, 1, 2, 3, 4])
     with_outside = np.array([0, 1, 2, -1, 4])
     with_last_bin = np.array([0, 1, 2, env.n_bins - 1, 4])
@@ -43,6 +51,7 @@ def test_similarity_outside_sample_is_not_the_last_bin(env, method):
 @pytest.mark.parametrize("method", METHODS)
 def test_similarity_ignores_outside_samples(env, method):
     """Adding outside samples to a trajectory leaves its similarity unchanged."""
+    env = _env_for(method, env)
     first = np.array([0, 1, 2, 3, 4])
     second = np.array([2, 3, 4, 5, 6])
     padded = np.array([-1, 2, 3, 4, 5, 6, -1])
