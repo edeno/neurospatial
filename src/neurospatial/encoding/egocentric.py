@@ -649,7 +649,8 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
 
         Notes
         -----
-        The 0.3 bits/spike default is a screening convention. The screen
+        The 0.3 bits/spike default is a common screening convention, not
+        derived or calibrated. The screen
         compares bias-corrected information, ``spatial_information() -
         spatial_information_bias()``, with it: the information an untuned cell
         shows from Poisson noise alone is subtracted first (derivation in
@@ -1226,7 +1227,8 @@ class ObjectVectorRatesResult(
 
         Notes
         -----
-        The 0.3 bits/spike default is a screening convention. The screen
+        The 0.3 bits/spike default is a common screening convention, not
+        derived or calibrated. The screen
         compares bias-corrected information, ``spatial_information() -
         spatial_information_bias()``, with it: the information an untuned cell
         shows from Poisson noise alone is subtracted first (derivation in
@@ -3755,7 +3757,8 @@ def is_object_vector_cell(
 
     Notes
     -----
-    The 0.3 bits/spike default is a screening convention. The screen
+    The 0.3 bits/spike default is a common screening convention, not
+    derived or calibrated. The screen
     compares bias-corrected information, ``spatial_information() -
     spatial_information_bias()``, with it: the information an untuned cell
     shows from Poisson noise alone is subtracted first (derivation in
@@ -4039,7 +4042,8 @@ def is_egocentric_object_vector_cell(
 
     Notes
     -----
-    The 0.3 bits/spike default is a screening convention. The screen
+    The 0.3 bits/spike default is a common screening convention, not
+    derived or calibrated. The screen
     compares bias-corrected information, ``spatial_information() -
     spatial_information_bias()``, with it: the information an untuned cell
     shows from Poisson noise alone is subtracted first (derivation in

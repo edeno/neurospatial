@@ -314,8 +314,8 @@ n_place_cells = count_place_cells(rates, min_info=0.5)  # bits/spike, inclusive
 # Equivalent: int(rates.classify(min_info=0.5).sum())
 ```
 
-The 0.5 bits/spike cutoff is a screening choice, not a universal significance
-threshold; see
+The 0.5 bits/spike cutoff is a common screening convention, not derived or
+calibrated, and not a significance threshold; see
 [information bias and cell verdicts](#information-bias-and-cell-verdicts).
 
 ### Rate-map correlations
@@ -752,7 +752,11 @@ autocorrelogram and occupancy together. A score of 0.4 is a common screening
 convention, not a significance test: on circularly time-shifted spike trains of
 simulated grid, place and untuned cells, 1-8% of the shuffled maps reached it.
 `spatial_cell_type_significance` tests each unit's grid score against its own
-spike train circularly shifted in time. On layouts without a rectangular grid (hexagonal bins,
+spike train circularly shifted in time. A map without a lattice can still have a
+sixfold-symmetric autocorrelogram, so both the screen and the shuffle test call a
+unit a grid cell only when its autocorrelogram also has a hexagonal first ring
+(a finite `grid_properties` spacing); a grid whose spacing exceeds about 0.6 of
+the arena's side has no such ring and is not labeled grid. On layouts without a rectangular grid (hexagonal bins,
 tracks, meshes) there is no grid score: `summary_table()` records it in
 `attrs["unavailable_metrics"]`. `spatial_autocorrelation_radial` from
 `neurospatial.encoding.grid` gives a distance-correlation profile there, but a
@@ -1068,9 +1072,31 @@ each unit's spikes once per shuffle and recomputes spatial information, grid
 score and border score from the same shifted trains. Its `summary_table()`
 gives each statistic's observed score, p-value and null percentile, and a
 `cell_type` label in which each type is judged by its own test (a unit that
-passes the grid and border tests is `"grid+border"`). Grid and border do not
+passes the grid and border tests is `"grid+border"`). A `"place"` label also
+needs the same bias-corrected information as the screen (0.5 bits/spike by
+default, `min_spatial_info=`): in a short recording an untuned unit can pass the
+information test by chance with almost no information beyond its bias, and is
+then `"unclassified"`. Grid and border do not
 apply on a 1-D track, and scores that cannot be computed (no measured walls
 for the physical border score) have NaN p-values with the reason recorded.
+
+Each unit gets three tests, so an untuned unit can receive some label by chance
+more often than `alpha`. `label_cell_types(correction=...)` and
+`summary_table(correction=...)` choose how to handle that. The default,
+`correction=None`, tests each statistic at `alpha`, as most studies report; in
+simulated 20-minute sessions 7% of untuned units still received a label.
+`correction="holm"` adjusts each unit's own tests together, so an untuned unit
+receives any label with probability at most `alpha` (2% in the same
+simulation) while all simulated place and grid cells kept their labels. Use it
+when each unit's label must stand on its own. `correction="fdr_bh"` adjusts
+every test of every unit together, so at most a fraction `alpha` of the labels
+you count are expected to be false (1% of untuned units were labeled, 3 false
+labels among 48). Use it to report how many cells of each
+type a population holds, and run it on the whole population: one unit's verdict
+depends on the others. A correction compares p-values with a fraction of
+`alpha`, and a shuffle p-value cannot go below `1/(n_shuffles+1)`. When tests
+sit at that floor and still fail the correction, a warning names the number of
+shuffles needed.
 
 For publication, report a shuffle test through the raw-array predicate or the
 matching `*_cell_significance` function, together with its estimator, windows,
@@ -1079,7 +1105,13 @@ statistics on the joined analyzed clock. Gaps, invalid samples and excluded
 epochs never receive shifted spikes. Stable integer seeds and matching unit
 labels give the same shifts alone, in a population and after reordering.
 The corrected upper-tail rank counts ties; its minimum p is `1/(n_shuffles+1)`
-when all null scores are finite. NaN observed scores give NaN p-values.
+when all null scores are finite. NaN observed scores give NaN p-values. Shifted
+maps without a defined score (a border map with no field) are left out, so the
+p-value is `(1 + k) / (1 + n)` over the `n` finite null scores. When
+`1 / (1 + n)` is not below `alpha` the test cannot reject, and
+`spatial_cell_type_significance` labels the unit `"undetermined"` rather than
+`"unclassified"`; its `summary_table()` reports `n` as
+`<statistic>_n_finite_null`.
 The cost is about `n_shuffles` plural-map recomputes; significance rejects
 `method="glm"` because pooled REML couples units. Neither a significant polar
 association nor a chosen cutoff distinguishes an object-vector cell from a

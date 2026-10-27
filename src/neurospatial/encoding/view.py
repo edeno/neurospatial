@@ -582,8 +582,8 @@ class ViewRateResult(SingleUnitRateMixin):
         ----------
         min_info : float or None, default=None
             Minimum view spatial information threshold in bits/spike. None
-            uses 0.5 bits/spike, this library's screening heuristic rather
-            than a published criterion; see Notes for its false-positive
+            uses 0.5 bits/spike, a common screening convention, not derived
+            or calibrated; see Notes for its false-positive
             rate on untuned units.
 
         Returns
@@ -594,7 +594,8 @@ class ViewRateResult(SingleUnitRateMixin):
 
         Notes
         -----
-        The 0.5 bits/spike cutoff is a screening convention. The screen
+        The 0.5 bits/spike cutoff is a common screening convention, not
+        derived or calibrated. The screen
         compares bias-corrected information, ``spatial_information() -
         spatial_information_bias()``, with it: the information an untuned cell
         shows from Poisson noise alone is subtracted first (derivation in
@@ -1076,7 +1077,8 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
 
         Notes
         -----
-        The 0.5 bits/spike cutoff is a screening convention. The screen
+        The 0.5 bits/spike cutoff is a common screening convention, not
+        derived or calibrated. The screen
         compares bias-corrected information, ``spatial_information() -
         spatial_information_bias()``, with it: the information an untuned cell
         shows from Poisson noise alone is subtracted first (derivation in
@@ -2366,7 +2368,8 @@ def is_spatial_view_cell(
 
     Notes
     -----
-    The 0.5 bits/spike cutoff is a screening convention. The screen
+    The 0.5 bits/spike cutoff is a common screening convention, not
+    derived or calibrated. The screen
     compares bias-corrected information, ``spatial_information() -
     spatial_information_bias()``, with it: the information an untuned cell
     shows from Poisson noise alone is subtracted first (derivation in
