@@ -3546,7 +3546,6 @@ def _spatial_rate_maps(
     from neurospatial.encoding._spatial_counts import (
         _warn_if_population_silent,
         bin_spike_trains,
-        compute_occupancy,
         tracked_samples,
     )
     from neurospatial.encoding._validation import (
@@ -3639,10 +3638,6 @@ def _spatial_rate_maps(
         pooled=pooled,
         backend=resolved_backend,
     )
-    resolved_speed = support.speed
-    linear_intervals = support.linear_intervals
-    interval_mask = support.time_support.mask
-
     # Recording coverage uses tracked runs, independently of speed or frame
     # bins. Fewer than five units never warn, so a single unit never does.
     _warn_if_population_silent(
@@ -3667,42 +3662,27 @@ def _spatial_rate_maps(
             fit=fit,
         )
 
-    # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
-    # Handles the no-neurons case too (fit_mrf_gam returns an (r_eff, 0) fit), so
-    # it sits before the ratio no-neurons short-circuit and returns early, leaving
-    # the ratio path below untouched.
-    if method == "glm":
-        if n_neurons == 0:
-            spike_counts = np.zeros((0, env.n_bins), dtype=np.float64)
-            occupancy = compute_occupancy(
-                env,
-                times,
-                positions,
-                speed=resolved_speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
-                interval_mask=interval_mask,
-                context=context,
-                time_allocation=time_allocation,
-                linear_intervals=linear_intervals,
-            )
-        else:
-            spike_counts, occupancy = bin_spike_trains(
-                env,
-                spike_times_list,
-                times,
-                positions,
-                speed=resolved_speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
-                interval_mask=interval_mask,
-                n_jobs=n_jobs,
-                warn_on_drop=warn_on_drop,
-                time_allocation=time_allocation,
-                linear_intervals=linear_intervals,
-                drop_scope="" if single_unit else "across all neurons ",
-            )
+    # Bin spike trains and compute the shared occupancy (always NumPy -
+    # CPU/joblib); an empty population still has occupancy.
+    spike_counts, occupancy = bin_spike_trains(
+        env,
+        spike_times_list,
+        times,
+        positions,
+        speed=support.speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        interval_mask=support.time_support.mask,
+        n_jobs=n_jobs,
+        warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=support.linear_intervals,
+        drop_scope="" if single_unit else "across all neurons ",
+    )
 
+    # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
+    # It handles the no-neurons case too (fit_mrf_gam returns an (r_eff, 0) fit).
+    if method == "glm":
         glm_firing_rates, fit = _compute_glm_spatial_rates(
             env,
             spike_counts,
@@ -3718,44 +3698,11 @@ def _spatial_rate_maps(
         )
         return maps(glm_firing_rates, occupancy, fit)
 
-    # Handle edge case: no neurons
-    # Still compute occupancy from trajectory (occupancy is independent of neural data)
     if n_neurons == 0:
-        # Use compute_occupancy which handles 1D position reshaping
-        occupancy = compute_occupancy(
-            env,
-            times,
-            positions,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            interval_mask=interval_mask,
-            context=context,
-            time_allocation=time_allocation,
-            linear_intervals=linear_intervals,
-        )
         empty = _to_backend(
             np.empty((0, env.n_bins), dtype=dtype), resolved_backend, dtype=dtype
         )
         return maps(empty, occupancy, None)
-
-    # Bin spike trains and compute occupancy (always NumPy - CPU/joblib)
-    # bin_spike_trains returns (spike_counts, occupancy)
-    spike_counts, occupancy = bin_spike_trains(
-        env,
-        spike_times_list,
-        times,
-        positions,
-        speed=resolved_speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        interval_mask=interval_mask,
-        n_jobs=n_jobs,
-        warn_on_drop=warn_on_drop,
-        time_allocation=time_allocation,
-        linear_intervals=linear_intervals,
-        drop_scope="" if single_unit else "across all neurons ",
-    )
 
     # Apply batch smoothing to compute firing rates
     # When backend="jax", uses JAX for the core rate computation
