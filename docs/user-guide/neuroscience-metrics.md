@@ -756,14 +756,20 @@ measures the vector **from animal to object** in world coordinates;
 egocentric bearing measures that vector relative to the animal's heading
 (zero is straight ahead).
 
+The map is a grid of distance rings and direction bins around the object. By
+default it covers every distance inside the arena, as in Høydal et al. (2019),
+so a cell tuned to a far point is not cut off, and maps of one arena with the
+object moved share a grid. The default rings are 5 cm wide and the direction
+bins 30°, a resolution unsmoothed maps of 5-15 minute sessions support. Pass
+`distance_range=` to restrict the map: the share of time it then covers is in
+`analysis_settings["fraction_of_time_in_distance_range"]`, and a unit whose
+peak lies in the outermost ring of a range that cut time off raises a warning.
+
 <!-- docs-test: run -->
 ```python
 from neurospatial.encoding import compute_egocentric_rate, compute_object_vector_rate
 
 polar_settings = {
-    "distance_range": (0.0, 50.0),
-    "n_distance_bins": 10,
-    "n_direction_bins": 12,
     "method": "binned",
     "min_occupancy": 0.5,
     "epochs": (float(times[0]), float(times[-1])),
@@ -799,7 +805,6 @@ screen = Landmark("monitor", "line", [(x_low, y_high), (x_high, y_high)])
 with_screen = env.with_landmarks(Landmarks([screen]))
 by_screen = compute_object_vector_rate(
     with_screen, spike_times, times, positions, "monitor",
-    distance_range=(0.0, 50.0), n_distance_bins=10, n_direction_bins=12,
     epochs=(float(times[0]), float(times[-1])),
     spike_window=(float(times[0]), float(times[-1])),
 )
@@ -809,9 +814,10 @@ print(by_screen.analysis_settings["objects"])
 Compare support in the two polar domains before comparing their information
 scores. Polar bin area grows with distance, and occupancy corrects dwell time;
 do not smooth a finished rate map as if it contained counts. A place field near
-one stationary object can yield a localized object-vector map. Stable vector
-tuning after object relocation, diverse heading coverage and appropriate
-controls are needed to distinguish those explanations.
+one stationary object yields a localized object-vector map, and within one
+session it scores like an object-vector cell. Move the object and correlate the
+two vector maps: an object-vector field keeps its vector to the object, a place
+field stays where it was (Høydal et al., 2019).
 
 ### Viewed-location maps
 
@@ -842,8 +848,12 @@ print("View information (bits/spike):", view.spatial_information())
 
 Bins that were never viewed lack support (NaN). View and position
 maps generally have different occupancy and correlated predictors, so a larger
-view-information score alone does not demonstrate a spatial view cell. Match
-the scientific interpretation to the head/eye measurements and gaze model.
+view-information score alone does not demonstrate a spatial view cell. A
+head-direction cell also has more view than place information, because its
+heading fixes which wall is in view. A spatial view cell's field stays in place
+when the view map is computed separately from the two halves of the arena; a
+head-direction cell's field slides along the wall with the animal. Match the
+scientific interpretation to the head/eye measurements and gaze model.
 The plural `compute_*_rates` APIs share preprocessing across a population and
 preserve supplied unit labels.
 

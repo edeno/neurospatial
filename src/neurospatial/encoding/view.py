@@ -30,7 +30,14 @@ Key Difference: Place Cells vs Spatial View Cells
 
 For place cells, both place field and view field are similar (because viewing
 location correlates with position). For spatial view cells, the view field
-has higher spatial information than the place field.
+has higher spatial information than the place field. So does a head-direction
+cell: the wall a heading points at follows from the heading, so a cell tuned
+to heading has a field on that wall in its view map and little information
+about position (simulated head-direction cells, von Mises kappa 6: view
+information 0.66 bits/spike, place information 0.04). A spatial view cell keeps
+one view field wherever the animal stands; compare view maps computed from
+separate halves of the arena (set positions in the other half to NaN), in
+which a head-direction cell's field slides along the wall with the animal.
 
 Examples
 --------
@@ -599,7 +606,11 @@ class ViewRateResult(SingleUnitRateMixin):
         **Place cells vs spatial view cells**: Both may show high spatial
         information, but spatial view cells have higher *view* spatial
         information (using view occupancy) than *position* spatial information
-        (using standard occupancy).
+        (using standard occupancy). Head-direction cells pass that comparison
+        too, since the heading fixes which wall is in view (simulated kappa 6
+        head-direction cells: view 0.66 bits/spike, place 0.04). Check that the
+        view field stays in place when computed from separate halves of the
+        arena; a head-direction cell's field moves with the animal's position.
 
         References
         ----------
@@ -1257,12 +1268,10 @@ def _resolve_view_distance(
     Raises
     ------
     ValueError
-        If ``view_distance`` is given with ``ray_cast``, is not a positive
-        finite number, or is needed but ``env.units`` is not a known length
-        unit.
+        If ``view_distance`` is given with ``ray_cast``, is missing with
+        ``fixed_distance``, or is not a positive finite number.
     """
     from neurospatial._exceptions import _format_error
-    from neurospatial._units import units_per_centimeter
 
     if gaze_model == "ray_cast":
         if view_distance is not None:
@@ -1277,19 +1286,16 @@ def _resolve_view_distance(
             )
         return None
     if view_distance is None:
-        per_cm = units_per_centimeter(env.units)
-        if per_cm is None:
-            raise ValueError(
-                _format_error(
-                    f"{context}: gaze_model='fixed_distance' needs view_distance "
-                    f"because env.units={env.units!r} is not a known length unit.",
-                    why="Why: the 10 cm default cannot be converted to coordinates "
-                    "of unknown scale",
-                    fix="pass view_distance in the units of positions, or build "
-                    "the environment with units='cm' (or 'mm', 'm')",
-                )
+        raise ValueError(
+            _format_error(
+                f"{context}: gaze_model='fixed_distance' needs view_distance.",
+                why="Why: how far ahead an animal looks depends on the species, "
+                "task and arena, and no published value applies by default",
+                fix="pass view_distance, the distance along the gaze to the "
+                f"viewed point in the units of positions (env.units={env.units!r}), "
+                "or use gaze_model='ray_cast' to take the first wall",
             )
-        return 10.0 * per_cm
+        )
     if not (np.isfinite(view_distance) and view_distance > 0):
         raise ValueError(
             f"{context}: view_distance must be a positive finite distance, "
@@ -1499,8 +1505,8 @@ def compute_view_rate(
         ``boundary_source="analysis"``.
     view_distance : float or None, default=None
         Distance to the viewed point for ``gaze_model="fixed_distance"``, in
-        environment units. None uses 10 cm converted to ``env.units``; with
-        other or unknown units pass it explicitly. Refused with ``ray_cast``,
+        environment units; required with that model, since how far ahead
+        an animal looks has no default value. Refused with ``ray_cast``,
         which has no fixed distance.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from head direction to actual gaze direction (radians).
@@ -1607,7 +1613,9 @@ def compute_view_rate(
     **Place cells vs spatial view cells**: For place cells, the view field
     and place field are correlated (viewing location correlates with position).
     For true spatial view cells, the view field shows stronger spatial
-    selectivity than the place field.
+    selectivity than the place field, but so does a head-direction cell,
+    whose heading fixes the wall in view. A spatial view cell's field stays in
+    place in view maps computed from separate halves of the arena.
 
     Examples
     --------
@@ -1824,8 +1832,8 @@ def compute_view_rates(
         ``boundary_source="analysis"``.
     view_distance : float or None, default=None
         Distance to the viewed point for ``gaze_model="fixed_distance"``, in
-        environment units. None uses 10 cm converted to ``env.units``; with
-        other or unknown units pass it explicitly. Refused with ``ray_cast``,
+        environment units; required with that model, since how far ahead
+        an animal looks has no default value. Refused with ``ray_cast``,
         which has no fixed distance.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from head direction to actual gaze direction (radians).
@@ -2266,8 +2274,8 @@ def is_spatial_view_cell(
         ``boundary_source="analysis"``.
     view_distance : float or None, default=None
         Distance to the viewed point for ``gaze_model="fixed_distance"``, in
-        environment units. None uses 10 cm converted to ``env.units``; with
-        other or unknown units pass it explicitly. Refused with ``ray_cast``,
+        environment units; required with that model, since how far ahead
+        an animal looks has no default value. Refused with ``ray_cast``,
         which has no fixed distance.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from head direction to actual gaze direction (radians).
@@ -2538,8 +2546,8 @@ def spatial_view_cell_significance(
         ``boundary_source="analysis"``.
     view_distance : float or None, default=None
         Distance to the viewed point for ``gaze_model="fixed_distance"``, in
-        environment units. None uses 10 cm converted to ``env.units``; with
-        other or unknown units pass it explicitly. Refused with ``ray_cast``,
+        environment units; required with that model, since how far ahead
+        an animal looks has no default value. Refused with ``ray_cast``,
         which has no fixed distance.
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from head direction to actual gaze direction (radians).

@@ -83,6 +83,7 @@ def egocentric_batch():
         headings,
         object_positions,
         distance_range=(0.0, 50.0),
+        distance_bin_size=5.0,
     )
 
 

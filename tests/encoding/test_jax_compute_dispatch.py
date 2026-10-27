@@ -668,8 +668,8 @@ class TestComputeEgocentricRateJaxBackend:
             headings,
             object_positions,
             distance_range=(0.0, 100.0),
-            n_distance_bins=5,
-            n_direction_bins=8,
+            distance_bin_size=20.0,
+            direction_bin_size=2 * np.pi / 8,
             method="binned",
             backend="jax",
         )
@@ -704,8 +704,8 @@ class TestComputeEgocentricRateJaxBackend:
 
         settings = {
             "distance_range": (0.0, 100.0),
-            "n_distance_bins": 5,
-            "n_direction_bins": 8,
+            "distance_bin_size": 20.0,
+            "direction_bin_size": np.pi / 4,
             "method": method,
             "bandwidth": 10.0,
         }
@@ -761,8 +761,8 @@ class TestComputeEgocentricRatesJaxBackend:
             headings,
             object_positions,
             distance_range=(0.0, 100.0),
-            n_distance_bins=5,
-            n_direction_bins=8,
+            distance_bin_size=20.0,
+            direction_bin_size=2 * np.pi / 8,
             method="binned",
             backend="jax",
         )
@@ -796,8 +796,8 @@ class TestComputeEgocentricRatesJaxBackend:
 
         settings = {
             "distance_range": (0.0, 100.0),
-            "n_distance_bins": 5,
-            "n_direction_bins": 8,
+            "distance_bin_size": 20.0,
+            "direction_bin_size": np.pi / 4,
             "method": method,
             "bandwidth": 10.0,
         }

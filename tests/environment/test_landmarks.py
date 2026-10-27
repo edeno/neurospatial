@@ -169,7 +169,11 @@ def test_landmarks_must_match_the_environment(landmarks):
 
 # --- in encoding -------------------------------------------------------------
 
-_BINS = {"distance_range": (0, 50), "n_distance_bins": 5, "n_direction_bins": 8}
+_BINS = {
+    "distance_range": (0, 50),
+    "distance_bin_size": 10.0,
+    "direction_bin_size": np.pi / 4,
+}
 
 
 def _rings(result):

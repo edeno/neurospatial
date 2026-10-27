@@ -481,6 +481,10 @@ def _coords_to_flat_bin_idx(
     return flat_bin_idx
 
 
+BEYOND_RANGE = -2
+"""Frame bin of a sample whose nearest object is beyond the polar range."""
+
+
 def object_frame_bins(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
@@ -512,21 +516,28 @@ def object_frame_bins(
     Returns
     -------
     ndarray of intp, shape (n_time,)
-        Flat polar bin; -1 for a missing sample, a distance outside
-        ``distance_range`` and, when ``env`` is given, a position outside
-        every environment bin. The last is the rule place maps use: a
-        sample tracked outside the environment is not an observation of it.
+        Flat polar bin; :data:`BEYOND_RANGE` for a tracked sample whose
+        nearest object is at or beyond ``distance_range[1]``, and -1 for a
+        missing sample, a distance below ``distance_range[0]`` and, when
+        ``env`` is given, a position outside every environment bin. The
+        last is the rule place maps use: a sample tracked outside the
+        environment is not an observation of it. Both codes are negative,
+        so every consumer that keeps bins ``>= 0`` drops them.
     """
     distances, bearings = _compute_object_coords(
         positions, headings, object_positions, metric=metric, env=env
     )
+    distances, bearings = distances.ravel(), bearings.ravel()
     bins = _coords_to_flat_bin_idx(
-        distances.ravel(),
-        bearings.ravel(),
+        distances,
+        bearings,
         distance_range,
         n_distance_bins,
         n_direction_bins,
     )
+    with np.errstate(invalid="ignore"):
+        beyond = np.isfinite(bearings) & (distances >= distance_range[1])
+    bins[beyond] = BEYOND_RANGE
     if env is not None:
         bins[env.bin_at(positions) < 0] = -1
     return bins
@@ -538,9 +549,9 @@ def compute_egocentric_occupancy(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
@@ -563,11 +574,11 @@ def compute_egocentric_occupancy(
         Head direction at each time sample (radians, 0=East).
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
-    distance_range : tuple of float, default=(0.0, 50.0)
+    distance_range : tuple of float
         (min_distance, max_distance) for binning.
-    n_distance_bins : int, default=10
+    n_distance_bins : int
         Number of distance bins.
-    n_direction_bins : int, default=12
+    n_direction_bins : int
         Number of direction bins (covers full circle -pi to pi).
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric:
@@ -630,7 +641,13 @@ def compute_egocentric_occupancy(
 
     >>> # Compute occupancy
     >>> occupancy, env = compute_egocentric_occupancy(
-    ...     times, positions, headings, object_positions
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
+    ...     n_distance_bins=10,
+    ...     n_direction_bins=12,
     ... )
     >>> occupancy.shape == (10 * 12,)  # n_distance * n_direction
     True
@@ -706,9 +723,9 @@ def bin_egocentric_spike_train(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
@@ -732,11 +749,11 @@ def bin_egocentric_spike_train(
         Head direction at each time sample (radians, 0=East).
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
-    distance_range : tuple of float, default=(0.0, 50.0)
+    distance_range : tuple of float
         (min_distance, max_distance) for binning.
-    n_distance_bins : int, default=10
+    n_distance_bins : int
         Number of distance bins.
-    n_direction_bins : int, default=12
+    n_direction_bins : int
         Number of direction bins.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
@@ -800,7 +817,14 @@ def bin_egocentric_spike_train(
 
     >>> # Bin spikes
     >>> spike_counts, env = bin_egocentric_spike_train(
-    ...     spike_times, times, positions, headings, object_positions
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
+    ...     n_distance_bins=10,
+    ...     n_direction_bins=12,
     ... )
     >>> spike_counts.shape == (env.n_bins,)
     True
@@ -862,9 +886,9 @@ def prepare_egocentric_binning(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
@@ -873,11 +897,22 @@ def prepare_egocentric_binning(
     frame_bins: NDArray[np.int64] | None = None,
     polar_env: PolarEnvironment | None = None,
     break_before: NDArray[np.bool_] | None = None,
-) -> tuple[FrameBinning, PolarEnvironment]:
+) -> tuple[FrameBinning, PolarEnvironment, float]:
     """Prepare geometry and exact temporal support before counting spikes.
 
     ``break_before`` is already validated; the interval ending at each
     declared recording break is dropped from counts and occupancy.
+
+    Returns
+    -------
+    prepared : FrameBinning
+        Frame bins and the exact interval support of the map.
+    polar_env : Environment
+        The polar grid.
+    time_beyond : float
+        Seconds, within the same temporal gates, during which the nearest
+        object was at or beyond ``distance_range[1]``: the time the map
+        would have covered had its range been unbounded.
     """
     times = np.asarray(times, dtype=np.float64).ravel()
     positions = np.asarray(positions, dtype=np.float64)
@@ -921,6 +956,18 @@ def prepare_egocentric_binning(
             env=env,
         )
 
+    # One temporal gate for the map and for the time its range left out: a
+    # sample beyond the range passes the bin check here and is split off below.
+    gated = interval_valid_mask(
+        times,
+        start_bin=np.where(frame_bins == BEYOND_RANGE, 0, frame_bins),
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        break_before=break_before,
+    )
+    starts = frame_bins[:-1]
+    time_beyond = float(np.diff(times)[gated & (starts == BEYOND_RANGE)].sum())
     prepared = prepare_frame_binning(
         times,
         frame_bins,
@@ -928,9 +975,10 @@ def prepare_egocentric_binning(
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        interval_mask=gated & (starts >= 0),
         break_before=break_before,
     )
-    return prepared, polar_env
+    return prepared, polar_env, time_beyond
 
 
 def bin_egocentric_spike_trains(
@@ -940,9 +988,9 @@ def bin_egocentric_spike_trains(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    distance_range: tuple[float, float] = (0.0, 50.0),
-    n_distance_bins: int = 10,
-    n_direction_bins: int = 12,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
     metric: DistanceMetric = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = 0.5,
@@ -973,11 +1021,11 @@ def bin_egocentric_spike_trains(
         Head direction at each time sample (radians, 0=East).
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
-    distance_range : tuple of float, default=(0.0, 50.0)
+    distance_range : tuple of float
         (min_distance, max_distance) for binning.
-    n_distance_bins : int, default=10
+    n_distance_bins : int
         Number of distance bins.
-    n_direction_bins : int, default=12
+    n_direction_bins : int
         Number of direction bins.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
@@ -1048,7 +1096,14 @@ def bin_egocentric_spike_trains(
 
     >>> # Bin spikes
     >>> spike_counts, occupancy, env = bin_egocentric_spike_trains(
-    ...     spike_times, times, positions, headings, object_positions
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     distance_range=(0.0, 50.0),
+    ...     n_distance_bins=10,
+    ...     n_direction_bins=12,
     ... )
     >>> spike_counts.shape == (3, env.n_bins)
     True
@@ -1063,7 +1118,7 @@ def bin_egocentric_spike_trains(
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
 
-    prepared, polar_env = prepare_egocentric_binning(
+    prepared, polar_env, _ = prepare_egocentric_binning(
         times,
         positions,
         headings,

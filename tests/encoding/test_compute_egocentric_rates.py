@@ -127,6 +127,7 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert isinstance(result, ObjectVectorRatesResult)
@@ -145,8 +146,8 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["positions"],
             trajectory_data["headings"],
             trajectory_data["object_positions"],
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
+            distance_bin_size=(50.0 - 0.0) / n_distance_bins,
+            direction_bin_size=2 * np.pi / n_direction_bins,
             distance_range=(0.0, 50.0),
         )
 
@@ -169,8 +170,8 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["positions"],
             trajectory_data["headings"],
             trajectory_data["object_positions"],
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
+            distance_bin_size=(50.0 - 0.0) / n_distance_bins,
+            direction_bin_size=2 * np.pi / n_direction_bins,
             distance_range=(0.0, 50.0),
         )
 
@@ -189,6 +190,7 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         from neurospatial import Environment
@@ -209,6 +211,7 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert result.env.n_bins == len(result.occupancy)
@@ -234,6 +237,7 @@ class TestComputeEgocentricRatesSpikeTimeFormats:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert result.firing_rates.shape[0] == len(spike_times_list)
@@ -250,6 +254,7 @@ class TestComputeEgocentricRatesSpikeTimeFormats:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         n_neurons = spike_times_2d.shape[0]
@@ -270,6 +275,7 @@ class TestComputeEgocentricRatesSpikeTimeFormats:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         # Should have 1 neuron
@@ -298,6 +304,7 @@ class TestComputeEgocentricRatesParameters:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=distance_range,
+            distance_bin_size=5.0,
         )
 
         assert result.distance_range == distance_range
@@ -315,7 +322,7 @@ class TestComputeEgocentricRatesParameters:
             trajectory_data["positions"],
             trajectory_data["headings"],
             trajectory_data["object_positions"],
-            n_distance_bins=n_distance_bins,
+            distance_bin_size=(50.0 - 0.0) / n_distance_bins,
             distance_range=(0.0, 50.0),
         )
 
@@ -334,8 +341,9 @@ class TestComputeEgocentricRatesParameters:
             trajectory_data["positions"],
             trajectory_data["headings"],
             trajectory_data["object_positions"],
-            n_direction_bins=n_direction_bins,
+            direction_bin_size=2 * np.pi / n_direction_bins,
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert result.n_direction_bins == n_direction_bins
@@ -353,6 +361,7 @@ class TestComputeEgocentricRatesParameters:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert result is not None
@@ -371,6 +380,7 @@ class TestComputeEgocentricRatesParameters:
                 trajectory_data["object_positions"],
                 method=method,
                 distance_range=(0.0, 50.0),
+                distance_bin_size=5.0,
                 bandwidth=5.0,
             )
             assert result is not None
@@ -390,6 +400,7 @@ class TestComputeEgocentricRatesParameters:
                 trajectory_data["object_positions"],
                 n_jobs=n_jobs,
                 distance_range=(0.0, 50.0),
+                distance_bin_size=5.0,
             )
             assert result.firing_rates.shape[0] == len(spike_times_list)
 
@@ -414,6 +425,7 @@ class TestComputeEgocentricRatesNeuronIteration:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert len(result) == len(spike_times_list)
@@ -433,6 +445,7 @@ class TestComputeEgocentricRatesNeuronIteration:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         single = result[0]
@@ -450,6 +463,7 @@ class TestComputeEgocentricRatesNeuronIteration:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         singles = list(result)
@@ -476,6 +490,7 @@ class TestComputeEgocentricRatesEdgeCases:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert len(result) == 0
@@ -498,6 +513,7 @@ class TestComputeEgocentricRatesEdgeCases:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert len(result) == 1
@@ -517,6 +533,7 @@ class TestComputeEgocentricRatesEdgeCases:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert len(result) == len(spike_times_with_empty)
@@ -549,6 +566,7 @@ class TestComputeEgocentricRatesInputValidation:
                 trajectory_data["object_positions"],
                 method="invalid",  # type: ignore[arg-type],
                 distance_range=(0.0, 50.0),
+                distance_bin_size=5.0,
             )
 
     def test_invalid_metric_raises(self, trajectory_data, spike_times_list):
@@ -565,6 +583,7 @@ class TestComputeEgocentricRatesInputValidation:
                 trajectory_data["object_positions"],
                 metric="invalid",
                 distance_range=(0.0, 50.0),
+                distance_bin_size=5.0,
             )
 
     def test_geodesic_without_env_raises(self, trajectory_data, spike_times_list):
@@ -581,6 +600,7 @@ class TestComputeEgocentricRatesInputValidation:
                 trajectory_data["object_positions"],
                 metric="geodesic",
                 distance_range=(0.0, 50.0),
+                distance_bin_size=5.0,
             )
 
     def test_mismatched_times_positions_raises(self, trajectory_data, spike_times_list):
@@ -599,6 +619,7 @@ class TestComputeEgocentricRatesInputValidation:
                 trajectory_data["headings"],
                 trajectory_data["object_positions"],
                 distance_range=(0.0, 50.0),
+                distance_bin_size=5.0,
             )
 
     def test_mismatched_times_headings_raises(self, trajectory_data, spike_times_list):
@@ -617,6 +638,7 @@ class TestComputeEgocentricRatesInputValidation:
                 wrong_headings,
                 trajectory_data["object_positions"],
                 distance_range=(0.0, 50.0),
+                distance_bin_size=5.0,
             )
 
 
@@ -647,8 +669,8 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            distance_bin_size=5.0,
+            direction_bin_size=2 * np.pi / 12,
             method="binned",
         )
 
@@ -661,8 +683,8 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            distance_bin_size=5.0,
+            direction_bin_size=2 * np.pi / 12,
             method="binned",
         )
 
@@ -694,8 +716,8 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            distance_bin_size=5.0,
+            direction_bin_size=2 * np.pi / 12,
             method="binned",
         )
 
@@ -709,8 +731,8 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
                 trajectory_data["headings"],
                 trajectory_data["object_positions"],
                 distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
+                distance_bin_size=5.0,
+                direction_bin_size=2 * np.pi / 12,
                 method="binned",
             )
 
@@ -743,6 +765,7 @@ class TestComputeEgocentricRatesSignature:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert result is not None
@@ -758,8 +781,8 @@ class TestComputeEgocentricRatesSignature:
         # `env` is first positional (canonical order); excluded here.
         keyword_only_params = [
             "distance_range",
-            "n_distance_bins",
-            "n_direction_bins",
+            "distance_bin_size",
+            "direction_bin_size",
             "metric",
             "method",
             "bandwidth",
@@ -825,6 +848,7 @@ class TestComputeEgocentricRatesCorrectness:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         # All firing rates should be >= 0 (or NaN)
@@ -843,6 +867,7 @@ class TestComputeEgocentricRatesCorrectness:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         assert np.all(result.occupancy >= 0)
@@ -862,6 +887,7 @@ class TestComputeEgocentricRatesCorrectness:
             trajectory_data["object_positions"],
             # Use large distance range to include all samples
             distance_range=(0.0, 200.0),
+            distance_bin_size=5.0,
         )
 
         total_occupancy = result.occupancy.sum()
@@ -896,6 +922,7 @@ class TestComputeObjectVectorRatesResultMethods:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         ax = result.plot(0)
@@ -913,6 +940,7 @@ class TestComputeObjectVectorRatesResultMethods:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         pref_dists = result.preferred_distances()
@@ -930,6 +958,7 @@ class TestComputeObjectVectorRatesResultMethods:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         pref_dirs = result.preferred_directions()
@@ -956,6 +985,7 @@ class TestComputeObjectVectorRatesResultMethods:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         firing_rates = _to_numpy(result.firing_rates)
@@ -990,6 +1020,7 @@ class TestComputeObjectVectorRatesResultMethods:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         is_egocentric_object_vector_cell = result.classify()
@@ -1010,6 +1041,7 @@ class TestComputeObjectVectorRatesResultMethods:
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
         summary = result.summary_table()

@@ -122,6 +122,7 @@ def test_allocentric_object_vector_recovers_rate_across_pause(
         r.positions,
         np.array([[50.0, 50.0]]),
         distance_range=(0, 100),
+        distance_bin_size=5.0,
         method="binned",
         max_gap=max_gap,
     )

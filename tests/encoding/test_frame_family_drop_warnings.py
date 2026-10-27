@@ -66,5 +66,6 @@ def test_allocentric_object_vector_epochs_on_wrong_clock_warn(continuous_recordi
             r.positions,
             np.array([[50.0, 50.0]]),
             distance_range=(0, 100),
+            distance_bin_size=5.0,
             epochs=[(1e4, 6e4)],
         )
