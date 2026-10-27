@@ -2195,8 +2195,9 @@ class Environment(Generic[_C]):
             Bin index for samples outside environment bounds (see
             :meth:`bin_sequence`). With ``outside_value=None``, outside
             gaps split runs even when consecutive in-env samples land
-            in the same bin (so ``run_lengths.sum()`` equals the
-            post-filter count of in-env samples).
+            in the same bin. A run's length is its extent in the original
+            rows, including missing (NaN) rows bridged inside it, so
+            ``run_lengths.sum()`` can exceed the number of in-env samples.
         max_gap : float or None, default=1.0
             Longest stretch of missing tracking, in seconds, to bridge: the time
             between consecutive valid samples (a dropped frame and a NaN row are

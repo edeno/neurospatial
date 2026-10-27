@@ -82,17 +82,17 @@ class BinSequenceWithRuns:
     run_starts : NDArray[np.int64], shape (n_runs,)
         Start index of each run in the original ``times`` array.
     run_lengths : NDArray[np.int64], shape (n_runs,)
-        Number of trajectory samples contributed by each run, equivalent
-        to the inclusive run extent in the original ``times`` array
-        (the inclusive end index is ``run_starts[i] + run_lengths[i] -
-        1``). Always >= 1 for any emitted run.
+        Inclusive extent of each run in the original ``times`` array (the
+        inclusive end index is ``run_starts[i] + run_lengths[i] - 1``),
+        counting any missing (NaN) rows bridged inside the run. Always >= 1
+        for any emitted run.
 
         With ``outside_value=None``, samples outside the environment
         are dropped from ``bins`` *and* outside gaps split runs even
         when consecutive in-env samples land in the same bin — so a
         sequence ``[bin0, outside, bin0]`` becomes two runs of length
-        1, not one run of length 3. ``run_lengths.sum()`` then equals
-        the post-filter count of in-env samples.
+        1, not one run of length 3. ``run_lengths.sum()`` then counts
+        the in-env samples plus the missing rows bridged inside runs.
     """
 
     bins: NDArray[np.intp]

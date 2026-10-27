@@ -1050,10 +1050,13 @@ def bin_spike_train(
         (see ``min_speed``). Consumed as-is; never re-derived here.
     min_speed : float or None
         Minimum speed threshold. When provided together with ``speed``, each
-        time-window-valid spike at time ``t`` is kept iff
-        ``speed[searchsorted(times, t, "right") - 1] >= min_speed`` — the same
-        per-interval gate ``env.occupancy`` applies to the denominator. When
-        ``None`` (default) no speed filtering happens.
+        time-window-valid spike at time ``t`` is kept iff ``speed[a] >=
+        min_speed``, where ``a`` is the start of the gap holding the spike:
+        the last sample with finite position at or before
+        ``searchsorted(times, t, "right") - 1``, so a spike in a bridged gap
+        uses the speed of the valid sample before the missing rows. This is
+        the same per-interval gate ``env.occupancy`` applies to the
+        denominator. When ``None`` (default) no speed filtering happens.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
