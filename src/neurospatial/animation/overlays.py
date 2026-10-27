@@ -56,7 +56,7 @@ from neurospatial._units import same_coordinate_declaration
 from neurospatial._validation import validate_finite
 from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import (
-    observed_rows,
+    observed_support,
     resample,
     resolve_support,
     sample_at_times,
@@ -88,7 +88,8 @@ class OverlayProtocol(Protocol):
     vectors, video) keeps its own samples and states their times in
     ``times``; views sample it at the times they show. Omitted
     ``sample_valid`` and ``interval_valid`` masks accept every finite row
-    and every interval between finite rows.
+    and every interval between finite rows; a row with a NaN is missing and
+    is sampled across as if it were deleted.
 
     See Also
     --------
@@ -379,15 +380,14 @@ class PositionOverlay(_Overlay):
             name="PositionOverlay.positions",
             threshold=0.1,
         )
-        positions, sample_valid, interval_valid = observed_rows(
+        sample_valid, interval_valid = observed_support(
             times,
             self.positions,
             max_gap=self.max_gap,
             break_before=self.break_before,
-            interp=self.interp,
         )
         return PositionData(
-            positions,
+            self.positions,
             self.color,
             self.size,
             self.trail_length,
@@ -600,14 +600,12 @@ class BodypartOverlay(_Overlay):
                 )
             _validate_bounds(part_data, env.dimension_ranges, name=name, threshold=0.1)
             # Each keypoint has its own missing observations and support.
-            parts[part_name], sample_valid[part_name], interval_valid[part_name] = (
-                observed_rows(
-                    times,
-                    part_data,
-                    max_gap=self.max_gap,
-                    break_before=self.break_before,
-                    interp=self.interp,
-                )
+            parts[part_name] = part_data
+            sample_valid[part_name], interval_valid[part_name] = observed_support(
+                times,
+                part_data,
+                max_gap=self.max_gap,
+                break_before=self.break_before,
             )
         if times is None:
             times = _sample_clock(
@@ -813,16 +811,14 @@ class HeadDirectionOverlay(_Overlay):
             len(self.headings),
             name="HeadDirectionOverlay",
         )
-        headings, sample_valid, interval_valid = observed_rows(
+        sample_valid, interval_valid = observed_support(
             times,
             self.headings,
             max_gap=self.max_gap,
             break_before=self.break_before,
-            interp=self.interp,
-            circular=np.ndim(self.headings) == 1,
         )
         return HeadDirectionData(
-            headings,
+            self.headings,
             self.color,
             self.length,
             self.width,
@@ -1457,12 +1453,11 @@ class EventOverlay(_Overlay):
                     "EventOverlay.position_times must have one timestamp per "
                     "nonempty position sample."
                 )
-            support = observed_rows(
+            support = observed_support(
                 self.position_times,
                 self.positions,
                 max_gap=self.max_gap,
                 break_before=self.break_before,
-                interp=self.interp,
             )
         else:
             assert isinstance(self.event_positions, dict)
@@ -1551,10 +1546,10 @@ class EventOverlay(_Overlay):
                 assert self.positions is not None
                 assert self.position_times is not None
                 assert support is not None
-                rows, rows_valid, rows_intervals = support
+                rows_valid, rows_intervals = support
                 positions_for_events = sample_at_times(
                     self.position_times,
-                    rows,
+                    self.positions,
                     filtered_times,
                     interp=self.interp,
                     sample_valid=rows_valid,
@@ -2488,16 +2483,27 @@ class ObjectVectorOverlay(_Overlay):
             name="ObjectVectorOverlay.animal_positions",
             threshold=0.1,
         )
-        animal_positions, sample_valid, interval_valid = observed_rows(
+        sample_valid, interval_valid = observed_support(
             times,
             self.animal_positions,
             max_gap=self.max_gap,
             break_before=self.break_before,
-            interp=self.interp,
+        )
+        # A rate is observed where it and the animal's position are finite;
+        # its own gaps are bridged or not like the positions'.
+        rate_support = (
+            None
+            if self.firing_rates is None
+            else observed_support(
+                times,
+                np.column_stack([self.animal_positions, self.firing_rates]),
+                max_gap=self.max_gap,
+                break_before=self.break_before,
+            )
         )
         return ObjectVectorData(
             self.object_positions,
-            animal_positions,
+            self.animal_positions,
             self.firing_rates,
             self.color,
             self.linewidth,
@@ -2508,6 +2514,7 @@ class ObjectVectorOverlay(_Overlay):
             interp=self.interp,
             sample_valid=sample_valid,
             interval_valid=interval_valid,
+            rate_support=rate_support,
         )
 
 
@@ -3007,9 +3014,11 @@ class _SampledData:
     Position, pose, heading and object-vector data keep each overlay's
     samples. Their support masks are resolved when the data is made: a
     sample is valid when its row is finite and the given ``sample_valid``
-    allows it, an interval when both samples are valid and the given
-    ``interval_valid`` allows it. Rejected rows are NaN. Omitted masks accept
-    every finite row and every interval between finite rows.
+    allows it, an interval when a valid sample bounds its gap on each side
+    and the given ``interval_valid`` allows it. Views sample across the gap
+    from those two samples, so a rejected row behaves as a deleted one.
+    Rejected rows are NaN. Omitted masks accept every finite row and every
+    interval between finite rows.
     """
 
     times: NDArray[np.float64]
@@ -3691,6 +3700,10 @@ class ObjectVectorData(_SampledData):
         How views sample the rows between observations.
     sample_valid, interval_valid : ndarray of bool, optional
         Support of the animal positions; see ``_SampledData``.
+    rate_support : tuple of ndarray of bool, optional
+        ``(sample_valid, interval_valid)`` of ``firing_rates``. A rate is
+        valid only where the animal position is too. None accepts every
+        finite rate at a valid position and every interval between them.
 
     See Also
     --------
@@ -3714,29 +3727,33 @@ class ObjectVectorData(_SampledData):
 
     # The full recording's finite peak rate; 0 until computed, then positive.
     _rate_peak: float = field(default=0.0, repr=False, compare=False)
-    # Support of firing_rates: valid positions with a finite rate.
-    _rate_support: tuple[NDArray[np.bool_], NDArray[np.bool_]] | None = field(
-        default=None, init=False, repr=False, compare=False
+    rate_support: tuple[NDArray[np.bool_], NDArray[np.bool_]] | None = field(
+        default=None, repr=False, compare=False
     )
 
     def __post_init__(self) -> None:
         """Resolve the rows' support and the full-recording rate summary."""
         rows = {"animal_positions": self.animal_positions}
+        masks: dict[str, tuple[Any, Any]] = {
+            "animal_positions": (self.sample_valid, self.interval_valid)
+        }
         if self.firing_rates is not None:
             rows["firing_rates"] = self.firing_rates
-        _check_rows(
-            self,
-            rows,
-            {"animal_positions": (self.sample_valid, self.interval_valid)},
-        )
+            masks["firing_rates"] = self.rate_support or (None, None)
+        _check_rows(self, rows, masks)
         self.animal_positions, self.sample_valid, self.interval_valid = resolve_support(
             self.animal_positions, self.sample_valid, self.interval_valid
         )
         if self.firing_rates is not None:
+            rate_valid, rate_intervals = self.rate_support or (None, None)
             _, *rate_support = resolve_support(
-                self.firing_rates, self.sample_valid, self.interval_valid
+                self.firing_rates,
+                self.sample_valid
+                if rate_valid is None
+                else rate_valid & self.sample_valid,
+                rate_intervals,
             )
-            self._rate_support = (rate_support[0], rate_support[1])
+            self.rate_support = (rate_support[0], rate_support[1])
         if not self._rate_peak:
             from neurospatial.animation._style import _finite_rate_peak
 
@@ -3749,8 +3766,8 @@ class ObjectVectorData(_SampledData):
     ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
         """``(sample_valid, interval_valid)`` of the positions or ``"firing_rates"``."""
         if name == "firing_rates":
-            assert self._rate_support is not None
-            return self._rate_support
+            assert self.rate_support is not None
+            return self.rate_support
         return self.sample_valid, self.interval_valid
 
     def on_clock(self, clock: NDArray[np.float64]) -> ObjectVectorData:
@@ -3765,11 +3782,11 @@ class ObjectVectorData(_SampledData):
         )
         rates, rate_support = None, None
         if self.firing_rates is not None:
-            assert self._rate_support is not None
+            assert self.rate_support is not None
             rates, *moved = resample(
                 self.times,
                 self.firing_rates,
-                *self._rate_support,
+                *self.rate_support,
                 clock,
                 interp=self.interp,
             )
@@ -3781,7 +3798,7 @@ class ObjectVectorData(_SampledData):
             firing_rates=rates,
             sample_valid=sample_valid,
             interval_valid=interval_valid,
-            _rate_support=rate_support,
+            rate_support=rate_support,
         )
 
 

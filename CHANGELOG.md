@@ -6,6 +6,27 @@
 
 Results that change:
 
+- The head-direction tuning test measures its heading autocorrelation time
+  and its spike-count windows in seconds on the observed time, not in rows.
+  Missing headings given as NaN rows and the same rows deleted now give the
+  same p-value (they gave 0.070 and 0.047 on one recording with 20% of
+  frames lost, on either side of 0.05), and dropped frames no longer shorten
+  the window. On regularly sampled recordings no calibration verdict changed.
+- Animation overlays sample between the real observations on either side of
+  a bridged gap instead of treating the filled-in row as an observation.
+  With `interp="nearest"` the switch falls at the midpoint between the two
+  observations (for samples at 0, 0.4 and 0.8 s with the middle one missing,
+  a frame at 0.5 s showed the first position; it now shows the last, as
+  with the row deleted), and head-direction arrows follow the real
+  observations. Trails and track paths join the two observed rows. A sample
+  a custom adapter rejects without giving `interval_valid` is crossed like
+  a deleted row.
+- `simulate_trajectory_ou` keeps a walk that starts on a wall inside. An
+  outward first step from the outline was not reflected, so a walk started
+  on the west wall of a 100 cm box left the arena in 99 of 100 samples.
+  Steps from an internal wall may leave to either side; walks that start
+  away from walls are unchanged.
+
 - A missing tracking sample (a NaN row, for example a low-confidence
   DeepLabCut frame) is treated exactly like a deleted row. A gap is the time
   between consecutive valid samples; a gap no longer than `max_gap` is

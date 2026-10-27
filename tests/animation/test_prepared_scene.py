@@ -548,6 +548,7 @@ def test_each_overlay_stream_is_sampled_once_per_frame_for_every_panel(
 
 @pytest.mark.parametrize("interp", ["linear", "nearest"])
 def test_parts_sampled_together_equal_each_part_sampled_alone(interp):
+    from neurospatial._intervals import gap_endpoints
     from neurospatial.animation._sampling import resolve_support, sample_parts
 
     rng = np.random.default_rng(5)
@@ -562,6 +563,11 @@ def test_parts_sampled_together_equal_each_part_sampled_alone(interp):
         parts.append(rows)
         valid.append(sample_valid)
         intervals.append(interval_valid)
+    ends = [gap_endpoints(sample_valid) for sample_valid in valid]
+    gap_ends = (
+        np.column_stack([end[0] for end in ends]),
+        np.column_stack([end[1] for end in ends]),
+    )
     queries = np.r_[times, rng.uniform(-0.1, 1.1, 200)]
     for query in queries:
         together = sample_parts(
@@ -569,6 +575,7 @@ def test_parts_sampled_together_equal_each_part_sampled_alone(interp):
             parts,
             np.column_stack(valid),
             np.column_stack(intervals),
+            gap_ends,
             query,
             interp=interp,
         )
@@ -669,6 +676,30 @@ def test_track_paths_break_where_the_position_changes_segment():
     ) as scene:
         paths = PreparedScene(scene).track_window(scene.fields["field"], 0.15).paths
     np.testing.assert_allclose(paths[:, :, 1], [[0.5, 1.5], [4.0, 5.0]], atol=1e-9)
+
+
+def test_track_paths_cross_a_missing_row_like_a_deleted_row():
+    track = Environment.linear_track(endpoints=[[0.0, 0.5], [4.0, 0.5]], bin_size=1.0)
+    times = np.arange(5) * 0.1
+    along = np.array([0.5, 1.0, 1.5, 2.5, 3.5])
+    positions = track.linear_to_nd(along)
+    positions[2] = np.nan
+    paths = []
+    for keep in (np.arange(5), np.array([0, 1, 3, 4])):
+        position = PositionOverlay(positions[keep], times=times[keep], max_gap=0.25)
+        with Animation(
+            track,
+            AnimationField(np.zeros((5, track.n_bins)), times),
+            overlays=[position],
+            window_seconds=2.0,
+        ) as scene:
+            paths.append(
+                PreparedScene(scene).track_window(scene.fields["field"], 0.2).paths
+            )
+    np.testing.assert_array_equal(paths[0], paths[1])
+    np.testing.assert_allclose(
+        paths[0][:, :, 1], [[0.5, 1.0], [1.0, 2.5], [2.5, 3.5]], atol=1e-9
+    )
 
 
 def test_single_sample_pose_prepares_and_renders():

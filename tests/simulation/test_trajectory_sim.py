@@ -255,6 +255,151 @@ class TestSimulateTrajectoryOU:
         assert (positions[low, 0] > 52).any()
         assert (env.bin_at(positions) >= 0).all()
 
+    @pytest.mark.parametrize("boundary_mode", ["reflect", "stop", "periodic"])
+    @pytest.mark.parametrize(
+        "start",
+        [[0, 50], [100, 50], [50, 0], [50, 100], [0, 0], [100, 0], [0, 100]],
+        ids=["west", "east", "south", "north", "SW", "SE", "NW"],
+    )
+    def test_a_walk_starting_on_the_wall_stays_inside(self, start, boundary_mode):
+        """A step from a wall point outward is turned back, on a side or a corner.
+
+        The starting heading is random, so about half of the walks first
+        head out of the arena.
+        """
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+        for seed in range(20):
+            positions, _times = simulate_trajectory_ou(
+                env,
+                duration=0.5,
+                start_position=np.array(start, dtype=float),
+                speed_units="cm",
+                boundary_mode=boundary_mode,
+                seed=seed,
+            )
+            assert env.contains(positions).all(), seed
+            if boundary_mode == "reflect":
+                # Mirrored off the wall, the first step still moves the animal.
+                assert not np.array_equal(positions[1], positions[0]), seed
+
+    @pytest.mark.parametrize("boundary_mode", ["reflect", "stop"])
+    def test_a_walk_starting_on_a_slanted_wall_stays_inside(self, boundary_mode):
+        """A start computed onto a slanted wall may round to either side of it."""
+        from shapely import affinity
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+
+        square = affinity.rotate(box(0, 0, 100, 100), 30, origin=(0, 0))
+        env = Environment.from_polygon(square, bin_size=4.0, units="cm")
+        corners = np.asarray(square.exterior.coords)[:4]
+        starts = [*corners, *(0.37 * corners + 0.63 * np.roll(corners, -1, axis=0))]
+        for start in starts:
+            for seed in range(5):
+                positions, _times = simulate_trajectory_ou(
+                    env,
+                    duration=0.5,
+                    start_position=start,
+                    speed_units="cm",
+                    boundary_mode=boundary_mode,
+                    seed=seed,
+                )
+                # The start itself may round outside; no position the
+                # animal moves to may.
+                moved = np.any(positions != start, axis=1)
+                assert env.contains(positions[moved]).all(), (start, seed)
+
+    @pytest.mark.parametrize("boundary_mode", ["reflect", "stop"])
+    def test_a_walk_starting_on_a_divider_leaves_it_on_one_side(self, boundary_mode):
+        """Either side of an internal wall is free; the animal keeps the side it takes."""
+        from shapely.geometry import LineString, box
+
+        from neurospatial import Environment
+        from neurospatial.geometry import OpenArena
+
+        arena = box(0, 0, 100, 100)
+        env = Environment.from_polygon(
+            arena,
+            bin_size=4.0,
+            units="cm",
+            arena=OpenArena(arena, walls={"divider": LineString([(52, 0), (52, 60)])}),
+        )
+        sides = set()
+        for seed in range(20):
+            # At most about 10 cm in 1 s: too short to round the divider's end.
+            positions, _times = simulate_trajectory_ou(
+                env,
+                duration=1.0,
+                start_position=np.array([52.0, 30.0]),
+                speed_units="cm",
+                boundary_mode=boundary_mode,
+                seed=seed,
+            )
+            side = np.sign(positions[1:, 0] - 52)
+            moved = side != 0
+            assert moved.any(), seed
+            assert len(set(side[moved])) == 1, seed
+            sides.add(side[moved][0])
+        assert sides == {-1.0, 1.0}
+
+    def test_no_walk_leaves_the_arena_or_crosses_an_internal_wall(self):
+        """Over many walks, including ones starting on walls, nothing gets through."""
+        import shapely
+        from shapely.geometry import LineString, Polygon
+
+        from neurospatial import Environment
+        from neurospatial.geometry import OpenArena
+
+        # A non-convex outline with slanted edges, and a bent divider on bin
+        # edges.
+        arena = Polygon([(0, 0), (90, 0), (90, 40), (50, 40), (60, 90), (0, 70)])
+        divider = LineString([(12, 6), (12, 30), (36, 30)])
+        env = Environment.from_polygon(
+            arena,
+            bin_size=3.0,
+            units="cm",
+            arena=OpenArena(arena, walls={"divider": divider}),
+        )
+        rng = np.random.default_rng(7)
+        outline = arena.exterior
+        on_wall = [
+            *shapely.line_interpolate_point(
+                outline, rng.uniform(0, 1, 20), normalized=True
+            ),
+            *shapely.line_interpolate_point(
+                divider, rng.uniform(0, 1, 10), normalized=True
+            ),
+            *[shapely.Point(xy) for xy in outline.coords[:-1]],
+        ]
+        starts = [None] * 10 + [np.array([p.x, p.y]) for p in on_wall]
+        for seed, start in enumerate(starts):
+            for boundary_mode in ("reflect", "stop"):
+                positions, _times = simulate_trajectory_ou(
+                    env,
+                    duration=10.0,
+                    dt=1 / 30,
+                    speed_mean=30.0,
+                    speed_std=15.0,
+                    start_position=start,
+                    speed_units="cm",
+                    boundary_mode=boundary_mode,
+                    seed=seed,
+                )
+                moved = np.any(positions != positions[0], axis=1)
+                assert env.contains(positions[moved]).all(), (seed, boundary_mode)
+                # Only a step leaving the divider from a start on it may touch it.
+                steps = shapely.linestrings(
+                    np.stack([positions[1:-1], positions[2:]], axis=1)
+                )
+                assert not shapely.intersects(steps, divider).any(), (
+                    seed,
+                    boundary_mode,
+                )
+
     def test_reproducibility_with_seed(self, simple_2d_env):
         """Test that same seed produces same trajectory."""
         pos1, times1 = simulate_trajectory_ou(

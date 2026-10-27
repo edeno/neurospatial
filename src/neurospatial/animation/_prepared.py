@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._intervals import gap_endpoints
 from neurospatial.animation._sampling import sample_observation, sample_parts
 from neurospatial.animation._style import _heading_displacement
 from neurospatial.animation._tracks import (
@@ -85,6 +86,7 @@ class _PoseStreams(NamedTuple):
     parts: list[NDArray[np.float64]]
     sample_valid: NDArray[np.bool_]
     interval_valid: NDArray[np.bool_]
+    gap_ends: tuple[NDArray[np.intp], NDArray[np.intp]]
     edges: NDArray[np.intp]
 
 
@@ -309,6 +311,7 @@ class PreparedScene:
         self._missing: dict[int, np.ndarray] = {}
         self._video_held: dict[int, tuple[int, np.ndarray | None]] = {}
         self._sampled: dict[tuple[int, str | None, bool], tuple[float, np.ndarray]] = {}
+        self._gap_ends: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         frames = scene.frame_times
         # The scene's typical frame interval, which measures trail lengths.
         self._frame_interval = (
@@ -345,15 +348,23 @@ class PreparedScene:
             names = list(body.bodyparts)
             edges = () if body.skeleton is None else body.skeleton.edges
             n_samples = len(body.times)
+            # One sample has no intervals: name the part count explicitly.
+            n_intervals = max(n_samples - 1, 0)
+            ends = [gap_endpoints(body.sample_valid[name])[:2] for name in names]
             self._poses[id(body)] = _PoseStreams(
                 list(body.bodyparts.values()),
                 np.array([body.sample_valid[name] for name in names], bool)
                 .reshape(len(names), n_samples)
                 .T,
-                # One sample has no intervals: name the part count explicitly.
                 np.array([body.interval_valid[name] for name in names], bool)
-                .reshape(len(names), max(n_samples - 1, 0))
+                .reshape(len(names), n_intervals)
                 .T,
+                tuple(
+                    np.array([end[side] for end in ends], np.intp)
+                    .reshape(len(names), n_intervals)
+                    .T
+                    for side in range(2)
+                ),
                 np.array(
                     [[names.index(a), names.index(b)] for a, b in edges], dtype=np.intp
                 ).reshape(-1, 2),
@@ -411,6 +422,7 @@ class PreparedScene:
         self._missing.clear()
         self._video_held.clear()
         self._sampled.clear()
+        self._gap_ends.clear()
 
     def _field_row(
         self, field: AnimationField, index: int, *, projected: bool = False
@@ -463,6 +475,18 @@ class PreparedScene:
             self._held[id(field)] = previous
         return previous[1]
 
+    def gap_ends(self, sample_valid: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The valid samples that bound each interval's gap, computed once.
+
+        ``gap_endpoints(sample_valid)[:2]`` of one stream's read-only mask:
+        views sample and draw across missing rows from these samples.
+        """
+        held = self._gap_ends.get(id(sample_valid))
+        if held is None or held[0] is not sample_valid:
+            held = (sample_valid, *gap_endpoints(sample_valid)[:2])
+            self._gap_ends[id(sample_valid)] = held
+        return held[1], held[2]
+
     def trail_seconds(self, position: Any) -> float:
         """How far back a position's trail reaches: ``trail_length`` scene frames.
 
@@ -486,8 +510,9 @@ class PreparedScene:
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """The position's trail at ``time``: segments and their opacities.
 
-        Segments join consecutive supported samples, and none is drawn while
-        the current position is missing. Each fades with the age of its newer
+        Segments join consecutive valid samples across a supported gap, as
+        if missing rows were deleted, and none is drawn while the current
+        position is missing. Each fades with the age of its newer
         sample, from ``_TRAIL_MAX_ALPHA`` now to zero ``trail_seconds`` ago.
 
         Returns
@@ -501,15 +526,29 @@ class PreparedScene:
         if not np.isfinite(self.sample(position, data, time)).all():
             return np.empty((0, 2, data.shape[1])), np.empty(0)
         rows = self.trail_rows(position, time)
-        # A valid interval joins two valid, finite samples.
-        starts = np.arange(rows.start, max(rows.start, rows.stop - 1))
-        starts = starts[position.interval_valid[starts]]
-        segments = np.stack([data[starts], data[starts + 1]], axis=1)
+        starts, ends = self._joined(position, rows.start, rows.stop)
+        segments = np.stack([data[starts], data[ends]], axis=1)
         seconds = self.trail_seconds(position)
         if seconds <= 0:
             return segments, np.full(len(starts), _TRAIL_MAX_ALPHA)
-        age = time - position.times[starts + 1]
+        age = time - position.times[ends]
         return segments, _TRAIL_MAX_ALPHA * np.clip(1 - age / seconds, 0, 1)
+
+    def _joined(
+        self, position: Any, start: int, stop: int
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+        """Consecutive valid samples in ``[start, stop)`` across a supported gap.
+
+        One pair per gap: the interval that ends at a valid sample names it.
+        """
+        intervals = np.arange(start, max(start, stop - 1))
+        first, _ = self.gap_ends(position.sample_valid)
+        ends = intervals[
+            position.interval_valid[intervals] & position.sample_valid[intervals + 1]
+        ]
+        starts = first[ends]
+        inside = starts >= start
+        return starts[inside], ends[inside] + 1
 
     def trail_capacity(self, position: Any) -> int:
         """The most samples any trail of ``position`` holds."""
@@ -537,9 +576,17 @@ class PreparedScene:
         key = (id(values), name, circular)
         held = self._sampled.get(key)
         if held is None or held[0] != time:
+            sample_valid, _ = item.support(name)
             held = (
                 time,
-                sample_observation(item, values, time, circular=circular, name=name),
+                sample_observation(
+                    item,
+                    values,
+                    time,
+                    circular=circular,
+                    name=name,
+                    gap_ends=self.gap_ends(sample_valid),
+                ),
             )
             self._sampled[key] = held
         return held[1]
@@ -603,6 +650,7 @@ class PreparedScene:
             streams.parts,
             streams.sample_valid,
             streams.interval_valid,
+            streams.gap_ends,
             time,
             interp=body.interp,
         )
@@ -765,22 +813,24 @@ class PreparedScene:
             stop = int(np.searchsorted(times, right, side="right"))
             along = track_position(self.track_env, position.data[start:stop])
             segment = np.searchsorted(self._segment_starts, along, side="right")
-            # A valid interval joins two supported samples on one segment of
+            before, after = self._joined(position, start, stop)
+            before, after = before - start, after - start
+            # A valid gap joins its two supported samples on one segment of
             # the track: a line between segments would cross positions along
             # the track that the animal never passed.
-            joined = np.flatnonzero(
-                position.interval_valid[start : max(start, stop - 1)]
-                & np.isfinite(along[:-1])
-                & np.isfinite(along[1:])
-                & (segment[:-1] == segment[1:])
+            joined = (
+                np.isfinite(along[before])
+                & np.isfinite(along[after])
+                & (segment[before] == segment[after])
             )
-            segments = np.empty((len(joined), 2, 2))
+            before, after = before[joined], after[joined]
+            segments = np.empty((len(before), 2, 2))
             segments[:, :, 0] = np.column_stack(
-                [times[start + joined], times[start + joined + 1]]
+                [times[start + before], times[start + after]]
             )
-            segments[:, :, 1] = np.column_stack([along[joined], along[joined + 1]])
+            segments[:, :, 1] = np.column_stack([along[before], along[after]])
             paths.append(segments)
-            colors += [position.color] * len(joined)
+            colors += [position.color] * len(before)
         return TrackWindow(
             time_edges, observed, track_edges, values, np.concatenate(paths), colors
         )
