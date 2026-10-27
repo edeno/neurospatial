@@ -8,6 +8,7 @@ from here, never from its ``_`` modules. Users reach the records through
 from neurospatial.geometry._adapters import SnapshotAdapter as SnapshotAdapter
 from neurospatial.geometry._affine import _check_homogeneous as _check_homogeneous
 from neurospatial.geometry._arena import Arena as Arena
+from neurospatial.geometry._arena import BoundaryKind as BoundaryKind
 from neurospatial.geometry._arena import EgocentricSurround as EgocentricSurround
 from neurospatial.geometry._arena import MaskArena as MaskArena
 from neurospatial.geometry._arena import OpenArena as OpenArena
@@ -16,6 +17,7 @@ from neurospatial.geometry._arena import UnknownArena as UnknownArena
 from neurospatial.geometry._arena import _CombinedArena as _CombinedArena
 from neurospatial.geometry._arena import _TransformedArena as _TransformedArena
 from neurospatial.geometry._arena import mapped_geometry as mapped_geometry
+from neurospatial.geometry._arena import outline_declared as outline_declared
 from neurospatial.geometry._arena import segment_distance as segment_distance
 from neurospatial.geometry._arena_fit import apply_walls as apply_walls
 from neurospatial.geometry._arena_fit import fit_walls as fit_walls

@@ -4055,8 +4055,9 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole bins by strict center inclusion; use ``env.clip``
-            to change cell areas. When omitted, the supplied polygon defines
-            the physical footprint.
+            to change cell areas. When omitted, the supplied polygon's
+            outline is an opaque wall; for an elevated track or platform pass
+            ``arena=OpenArena(polygon, outline="drop")``.
         wall_fit : {'snap', 'split'}, default='snap'
             What to do with a bin that a wall of `arena` divides. ``'snap'``
             keeps every bin and moves the wall onto the bin edges between the
@@ -4169,8 +4170,9 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole bins by strict center inclusion. When omitted, the
-            mask defines the computational domain without asserting physical
-            walls or a measured footprint.
+            mask defines the computational domain without declaring its
+            outline a physical boundary; pass ``MaskArena(..., outline=...)``
+            to declare one.
         wall_fit : {'snap', 'split'}, default='snap'
             What to do with a bin that a wall of `arena` divides. ``'snap'``
             keeps every bin and moves the wall onto the bin edges between the
@@ -4278,8 +4280,8 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole pixels by strict center inclusion. When omitted, the
-            image mask defines a computational domain without asserting
-            physical walls or a measured footprint.
+            image mask defines a computational domain without declaring its
+            outline a physical boundary.
         wall_fit : {'snap', 'split'}, default='snap'
             What to do with a bin that a wall of `arena` divides. ``'snap'``
             keeps every bin and moves the wall onto the bin edges between the

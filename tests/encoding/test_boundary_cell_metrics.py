@@ -322,7 +322,7 @@ class TestBorderWalls:
             mask,
             edges,
             units="cm",
-            arena=MaskArena(edges, mask, physical_footprint_known=True),
+            arena=MaskArena(edges, mask, outline="wall"),
         )
         polygon = Environment.from_polygon(hexagon, bin_size=2.5, units="cm")
         side = shapely.LineString([(35, 65 - 60 * np.sin(np.pi / 3)), (5, 65)])

@@ -413,12 +413,12 @@ def test_arena_nesting_is_limited_to_32_levels():
     def nested(depth):
         meta = {
             "codec": "UnknownArena",
-            "codec_version": 2,
+            "codec_version": 3,
             "n_dims": 2,
             "coordinate_kind": "cartesian",
         }
         for _ in range(depth):
-            meta = {"codec": "_CombinedArena", "codec_version": 2, "children": [meta]}
+            meta = {"codec": "_CombinedArena", "codec_version": 3, "children": [meta]}
         return meta
 
     assert isinstance(decode_arena(nested(32), {}), _CombinedArena)

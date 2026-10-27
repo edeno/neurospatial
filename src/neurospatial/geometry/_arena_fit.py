@@ -79,9 +79,7 @@ def infer_arena(binning: Binning) -> Arena:
     # Exact area cells are sufficient to infer an analysis domain, but not
     # measured physical walls. Keep unsupported custom layouts usable.
     if binning.shapes is not None and n_dims == 2:
-        return OpenArena(
-            unary_union(materialize_cells(binning)), physical_footprint_known=False
-        )
+        return OpenArena(unary_union(materialize_cells(binning)), outline=None)
     return UnknownArena(n_dims)
 
 
@@ -314,6 +312,11 @@ def fit_walls(
         wall_names=tuple(
             name
             for name, parts in zip(arena.wall_names, snapped, strict=True)
+            for _ in parts
+        ),
+        wall_kinds=tuple(
+            kind
+            for kind, parts in zip(arena.wall_kinds, snapped, strict=True)
             for _ in parts
         ),
     )

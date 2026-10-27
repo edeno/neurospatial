@@ -93,9 +93,12 @@ def border_score(
     boundary_source : {'physical', 'analysis'}, default='physical'
         Which walls to score against.
 
-        - 'physical': the measured arena: the rings of its asserted footprint
+        - 'physical': the measured arena: the rings of its declared outline
           (for example ``Environment.from_polygon(outline, ...)``) and any
-          declared walls. Every piece of wall must be owned by a retained
+          declared walls, of every kind: an opaque wall, a transparent wall
+          or the drop edge of an elevated platform all bound the animal's
+          movement, and border cells fire along a drop edge too (see
+          Notes). Every piece of wall must be owned by a retained
           bin: the bin whose cell touches it or, where a curved or diagonal
           wall runs through a grid cell that was not kept, the neighboring
           bin that owns positions there.
@@ -117,8 +120,8 @@ def border_score(
         If an argument is invalid.
     NotImplementedError
         If the walls are unavailable: with ``boundary_source='physical'``, when
-        the arena's footprint was not measured (or a combined component has
-        none), or a piece of wall lies outside every bin (bins built from
+        the arena's outline was inferred rather than declared (or a combined
+        component's was), or a piece of wall lies outside every bin (bins built from
         positions inside the outline, or a corridor narrower than a bin);
         with either source, when the bins are not exact planar cells. Choose
         ``boundary_source='analysis'`` explicitly when the retained bins'
@@ -196,6 +199,18 @@ def border_score(
     half, as in Høydal et al. (2018). This implementation also scores
     polygonal and multi-room arenas and internal walls.
 
+    **Elevated arenas.** Every physical boundary the animal cannot cross is a
+    wall here, so an elevated platform whose outline is a drop edge
+    (``OpenArena(outline, outline="drop")``) scores exactly like the same
+    platform with walls. Border cells keep edge-apposing fields when an
+    arena's walls are removed and only a drop edge confines the animal: in
+    van Wijngaarden et al. (2020, Fig. 3E-H) most medial entorhinal border
+    cells were unaffected, though a subset lost firing near the edge, and
+    Lever et al. (2009) report that 8 of the 10 border cells Solstad et al.
+    (2008, supplementary Fig. S7) tested without walls appear to remap, the
+    field shifting to another wall or changing shape and size. Compare walled
+    and elevated sessions of one cell with care.
+
     References
     ----------
     Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I.
@@ -204,6 +219,12 @@ def border_score(
     Høydal, Ø. A., Skytøen, E. R., Moser, M.-B., & Moser, E. I. (2018).
         Object-vector coding in the medial entorhinal cortex. bioRxiv 286286.
         https://doi.org/10.1101/286286
+    Lever, C., Burton, S., Jeewajee, A., O'Keefe, J., & Burgess, N. (2009).
+        Boundary vector cells in the subiculum of the hippocampal formation.
+        Journal of Neuroscience, 29(31), 9771-9777.
+    van Wijngaarden, J. B. G., Babl, S. S., & Ito, H. T. (2020).
+        Entorhinal-retrosplenial circuits for allocentric-egocentric
+        transformation of boundary coding. eLife, 9, e59816.
 
     Examples
     --------

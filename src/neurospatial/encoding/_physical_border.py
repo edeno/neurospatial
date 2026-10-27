@@ -160,8 +160,10 @@ def _prepare_border(env: Environment, source: BoundarySource) -> _BorderGeometry
     from neurospatial.geometry import boundary_geometry
 
     # Validates the source, coordinates and dimensionality, and raises when
-    # the walls are unknown.
-    boundary_geometry(env.binning, env.arena, source)
+    # the walls are unknown. A border is any edge the animal cannot cross:
+    # border cells keep firing along a drop edge once the walls are removed
+    # (see border_score).
+    boundary_geometry(env.binning, env.arena, source, blocking="movement")
     if source == "physical":
         cells, source_arena, forward = _physical_frame(env)
         source_domain = unary_union(_footprints(source_arena))
@@ -257,6 +259,7 @@ def _physical_frame(
         _CombinedArena,
         _TransformedArena,
         composition_view,
+        outline_declared,
         wall_source_frame,
     )
 
@@ -270,18 +273,18 @@ def _physical_frame(
         return False
 
     # Explicit wall lines do not say where the outer walls are. Without a
-    # known footprint, a field on an undeclared outer edge would be scored
+    # physical outline, a field on an undeclared outer edge would be scored
     # against walls elsewhere: internal walls or other components' walls.
     binning = env.binning
     composition = composition_view(binning.locator)
     arena = env.arena
     while isinstance(arena, _TransformedArena):
         arena = arena.base
-    if isinstance(arena, _CombinedArena) and not arena.physical_footprint_known:
+    if isinstance(arena, _CombinedArena) and not outline_declared(arena):
         missing = [
             index
             for index, child in enumerate(arena.children)
-            if not child.physical_footprint_known
+            if not outline_declared(child)
         ]
         keys = composition[0].keys if composition is not None else ()
         named = (
@@ -290,19 +293,20 @@ def _physical_frame(
             else f"{len(missing)} of {len(arena.children)}"
         )
         raise NotImplementedError(
-            f"Physical border scores need a measured footprint for every combined component; component(s) {named} "
-            "have none, so fields at their edges would be scored against walls elsewhere (their own internal walls "
-            "or walls in other components). Build each component with its measured outline "
-            "(Environment.from_polygon(...), OpenArena(outline, physical_footprint_known=True) or "
-            "MaskArena(physical_footprint_known=True)) before combining, or explicitly use boundary_source='analysis'."
+            f"Physical border scores need a physical outline for every combined component; component(s) {named} "
+            "have none (their outline was inferred), so fields at their edges would be scored against walls "
+            "elsewhere (their own internal walls or walls in other components). Build each component with its "
+            "measured outline and say what it is (Environment.from_polygon(...) for walls, "
+            "OpenArena(outline, outline='drop') for an elevated track, or MaskArena(..., outline=...)) before "
+            "combining, or explicitly use boundary_source='analysis'."
         )
-    if not arena.physical_footprint_known:
+    if not outline_declared(arena):
         raise NotImplementedError(
-            "Physical border scores need the arena's outer walls, but its physical footprint is unknown: only "
-            "internal walls are declared, so a field on the outer edge would be scored against those walls alone. "
-            "If the arena outline is the measured enclosure, declare it with "
-            "OpenArena(outline, walls=..., physical_footprint_known=True), for example "
-            "Environment.from_polygon(outline, bin_size, arena=OpenArena(outline, walls=...)). Otherwise explicitly "
+            "Physical border scores need the arena's outer boundary, but its outline was inferred rather than "
+            "declared: only internal walls are declared, so a field on the outer edge would be scored against "
+            "those walls alone. If the outline is the measured enclosure, say what it is, for example "
+            "Environment.from_polygon(outline, bin_size, arena=OpenArena(outline, walls=...)) for a walled box "
+            "or arena=OpenArena(outline, outline='drop') for an elevated platform. Otherwise explicitly "
             "use boundary_source='analysis' to score the retained analysis boundary."
         )
     if composition is not None and any(
@@ -352,7 +356,7 @@ def _pixel_footprints(arena: Arena) -> list[shapely.Geometry]:
             mapped_geometry(part, arena.forward)
             for part in _pixel_footprints(arena.base)
         ]
-    if isinstance(arena, MaskArena) and arena.physical_footprint_known:
+    if isinstance(arena, MaskArena) and arena.outline is not None:
         domain = arena.polygonal_domain()
         return [] if domain is None else [domain]
     return []

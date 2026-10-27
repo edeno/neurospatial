@@ -746,10 +746,10 @@ def test_explicit_outline_is_drawing_geometry_without_physical_wall_evidence():
     source = replace(_rectilinear(), outline=Outline(box(0, 0, 2, 2)))
     env = Environment.from_bins(source)
     assert env.arena.domain_known
-    assert not env.arena.physical_footprint_known
+    assert env.arena.outline is None
     np.testing.assert_array_equal(env.bin_centers, source.bins.centers)
     asserted = Environment.from_bins(source, arena=OpenArena(box(0, 0, 2, 2)))
-    assert asserted.arena.physical_footprint_known
+    assert asserted.arena.outline == "wall"
 
 
 @pytest.mark.parametrize("field", ["A", "distance"])

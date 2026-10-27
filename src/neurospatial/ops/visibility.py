@@ -33,6 +33,14 @@ Which Function Should I Use?
 **Analyze visibility along a trajectory?**
     Use ``compute_viewshed_trajectory()`` or ``visibility_occupancy()``.
 
+What Blocks the View
+--------------------
+Only opaque walls block a line of sight or stop a gaze ray. Transparent
+walls and the drop edges of an elevated track or platform keep the animal in
+but not its view (``OpenArena(outline=..., wall_kinds=...)``). A gaze that
+leaves an elevated track meets no wall, so its ray-cast viewed location is
+NaN: the animal looks at something outside the environment.
+
 Species-Specific Field of View
 ------------------------------
 Use ``FieldOfView`` presets for biologically realistic constraints:
@@ -614,6 +622,10 @@ def compute_viewed_location(
         - "fixed_distance": the point ``view_distance`` ahead along the gaze,
           or the first wall when one is nearer. Without ``env`` the walls are
           unknown and the point is not stopped.
+
+        Only opaque walls stop the gaze: it passes transparent walls and the
+        drop edges of an elevated track or platform (see
+        :class:`~neurospatial.arena.OpenArena`).
     view_distance : float or None, default None
         Distance along the gaze to the viewed point, in environment units
         (e.g. cm). Required with ``method="fixed_distance"`` and refused
@@ -640,7 +652,9 @@ def compute_viewed_location(
     NDArray[np.float64], shape (n_time, 2)
         Viewed location in allocentric coordinates. NaN for a missing
         observation and, with ``env``, for an observer outside the walls;
-        with ray_cast also where no wall lies within ``max_distance``.
+        with ray_cast also where no opaque wall lies within
+        ``max_distance``, such as a gaze past the edge of an elevated
+        track, whose viewed location is unknown.
 
     Raises
     ------
@@ -845,6 +859,7 @@ def gaze_points(
             float(view_distance),
             boundary_source,
             indexes,
+            blocking="gaze",
         )
         at_wall = np.all(np.isfinite(hits), axis=1)
         viewed = np.where(at_wall[:, None], hits, fixed)
@@ -860,7 +875,8 @@ def gaze_points(
     binning, arena = env.binning, env.arena
     if max_distance is None:
         max_distance = search_distance(
-            boundary_geometry(binning, arena, boundary_source), positions
+            boundary_geometry(binning, arena, boundary_source, blocking="gaze"),
+            positions,
         )
     viewed = boundary_view(
         binning,
@@ -870,6 +886,7 @@ def gaze_points(
         max_distance,
         boundary_source,
         CallIndexes(),
+        blocking="gaze",
     )
     return viewed, np.all(np.isfinite(viewed), axis=1)
 
@@ -1042,7 +1059,7 @@ def _sight_lines(
         physical_clear_segments,
     )
 
-    walls = boundary_geometry(binning, arena, boundary_source)
+    walls = boundary_geometry(binning, arena, boundary_source, blocking="gaze")
     if boundary_source == "physical":
         return lambda observer, targets: physical_clear_segments(
             arena, observer, targets

@@ -62,13 +62,13 @@ from neurospatial import Environment
 from neurospatial.simulation.mazes import make_t_maze
 
 maze = make_t_maze()
-assert not maze.env_2d.arena.physical_footprint_known  # an elevated T
+assert maze.env_2d.arena.outline is None  # an elevated T
 walled = (
     Environment.from_polygon(maze.env_2d.arena.polygon, bin_size=2.0, units="cm")
     .with_regions(maze.env_2d.regions)
     .with_landmarks(maze.env_2d.landmarks)
 )
-assert walled.arena.physical_footprint_known
+assert walled.arena.outline == "wall"
 ```
 
 ## Use the apparatus by name

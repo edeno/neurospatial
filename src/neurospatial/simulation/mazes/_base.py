@@ -100,7 +100,7 @@ class MazeEnvironments:
 
     A walled maze declares its outline as physical walls. An elevated maze
     (an open track or platform, whose edges are drops the animal can see
-    past) declares none: ``env_2d.arena.physical_footprint_known`` is False,
+    past) declares none: ``env_2d.arena.outline`` is None,
     so wall-based analyses such as border scores and ray-cast gaze refuse it
     rather than treat the track's edges as walls.
 

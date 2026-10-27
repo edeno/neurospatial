@@ -696,6 +696,17 @@ def _same_weighted_edges(first: nx.Graph, second: nx.Graph) -> bool:
     )
 
 
+def _walls_of(arena: Arena, kind: str) -> Any:
+    """The union of the arena's walls of one kind."""
+    return unary_union(
+        [
+            wall
+            for wall, wall_kind in zip(arena.walls, arena.wall_kinds, strict=True)
+            if wall_kind == kind
+        ]
+    )
+
+
 def _same_arena(first: Arena, second: Arena) -> bool:
     """Compare continuous meaning independently of polygon ring storage order."""
     if first is second:
@@ -706,7 +717,7 @@ def _same_arena(first: Arena, second: Arena) -> bool:
             "n_dims",
             "coordinate_kind",
             "domain_known",
-            "physical_footprint_known",
+            "outline",
         )
     ):
         return False
@@ -716,7 +727,11 @@ def _same_arena(first: Arena, second: Arena) -> bool:
             first_domain is not None
             and second_domain is not None
             and first_domain.equals(second_domain)
-            and unary_union(first.walls).equals(unary_union(second.walls))
+            and set(first.wall_kinds) == set(second.wall_kinds)
+            and all(
+                _walls_of(first, kind).equals(_walls_of(second, kind))
+                for kind in set(first.wall_kinds)
+            )
         )
     try:
         return same_encoded_arena(first, second)

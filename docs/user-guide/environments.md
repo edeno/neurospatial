@@ -25,7 +25,7 @@ env = Environment.from_samples(
 )
 
 assert env.arena.domain_known
-assert not env.arena.physical_footprint_known
+assert env.arena.outline is None  # inferred from positions, not a wall
 ```
 
 By default, bins containing observations are active. `bin_count_threshold`
@@ -161,8 +161,9 @@ assert env.contains(np.array([[1.0, 1.5], [5.0, 1.5]])).all()
 
 The mask itself supplies the domain; you do not need to trace an additional
 polygon. Its physical interpretation depends on how the mask was obtained.
-The default `MaskArena` records computational support without claiming a
-measured physical footprint.
+The default `MaskArena` records computational support without declaring its
+outline a physical boundary; pass `arena=MaskArena(..., outline="wall")` (or
+`"drop"`) when the mask traces the apparatus.
 
 ## Immutable values and labels
 
@@ -347,8 +348,64 @@ from shapely.geometry import Point
 from neurospatial import Environment
 
 env = Environment.from_polygon(Point(0.0, 0.0).buffer(10.0), bin_size=2.0)
-assert env.arena.physical_footprint_known
+assert env.arena.outline == "wall"
 assert env.bin_at(np.array([[9.9, 2.0]]))[0] == -1
+```
+
+### Walls, transparent walls and drop edges
+
+Every physical boundary has a kind, which says what it blocks:
+
+| kind | blocks movement | blocks gaze | example |
+| --- | --- | --- | --- |
+| `"wall"` | yes | yes | an opaque box or maze wall |
+| `"transparent_wall"` | yes | no | a clear plexiglass divider |
+| `"drop"` | yes | no | the edge of an elevated track or platform |
+| `None` (outline only) | unknown | no | a domain inferred from positions or a mask |
+
+`from_polygon` declares the polygon's outline an opaque wall. For an elevated
+track or platform pass `arena=OpenArena(polygon, outline="drop")`. Named walls
+take their kinds from `wall_kinds`: one kind for all, or a mapping from wall
+name to kind. A named wall lying on the outline gives that stretch its own
+kind, so a box with opaque outer walls and one clear side declares the clear
+side as a named transparent wall built from the outline's vertices. An animal
+that climbs a wall or leans over a drop is not modeled.
+
+Analyses choose the property they need. Border scores and boundary-vector maps
+measure every boundary the animal cannot cross, so an elevated platform scores
+like the same platform with walls; boundary-vector cells (Lever et al., 2009)
+and most border cells (van Wijngaarden et al., 2020) keep firing along a drop
+edge. Gaze, line of sight and view fields stop only at opaque walls: a gaze
+that leaves an elevated track meets no wall, so its ray-cast viewed location is
+NaN.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import LineString, box
+from neurospatial import Environment
+from neurospatial.arena import OpenArena
+from neurospatial.ops.visibility import compute_viewed_location
+
+platform = box(0, 0, 100, 100)
+arena = OpenArena(
+    platform,
+    outline="drop",
+    walls={
+        "glass": LineString([(30, 20), (30, 80)]),
+        "board": LineString([(70, 20), (70, 80)]),
+    },
+    wall_kinds={"glass": "transparent_wall"},
+)
+env = Environment.from_polygon(platform, bin_size=5.0, units="cm", arena=arena)
+viewed = compute_viewed_location(
+    np.array([[10.0, 50.0], [10.0, 50.0]]),
+    np.array([0.0, np.pi]),  # east, then west
+    method="ray_cast",
+    env=env,
+)
+np.testing.assert_allclose(viewed[0], [70.0, 50.0])  # through the glass
+assert np.isnan(viewed[1]).all()  # past the drop edge
 ```
 
 `OpenArena` separates a known polygon from explicitly supplied internal walls.
@@ -592,11 +649,11 @@ their coordinate and distance conventions.
 
 ## Choose physical walls or analysis boundaries
 
-Physical border scores use asserted footprint rings (including holes) and
-explicit internal walls. The footprint must be known: internal walls alone do
-not say where the outer walls are, so an arena declared with
-`OpenArena(..., physical_footprint_known=False)` refuses physical scoring even
-when it has internal walls. A crop or a missing position sample does not create a
+Physical border scores use the declared outline rings (including holes) and
+named walls, of every kind: walls, transparent walls and drop edges. The
+outline must be declared: internal walls alone do not say where the outer
+boundary is, so an arena declared with `OpenArena(..., outline=None)` refuses
+physical scoring even when it has internal walls. A crop or a missing position sample does not create a
 wall. If only tracking-derived support or an analysis mask is available, request
 `boundary_source="analysis"` to score against the outline of the retained bins
 instead.
@@ -632,7 +689,7 @@ np.testing.assert_allclose(approximation, score)
 ```
 
 This is the border score of Solstad et al. (2008). Coverage is the largest
-fraction of one wall that one field covers. Each footprint ring is split into
+fraction of one wall that one field covers. Each outline ring is split into
 walls at its corners, in physical units: a polygon's vertices are corners
 unless they sample a curve (a rectangle has four walls, an octagon eight, a box
 with rounded corners four). A ring without corners, such as a circular arena,
@@ -690,19 +747,21 @@ reason in `table.attrs["unavailable_metrics"]` and the chosen source in
 and border cells do not apply, so a tuned cell is `"place"`. No analysis
 approximation is selected
 implicitly. Physical border coverage currently requires exact planar cells and
-polygonal walls; curved track footprints require a separate representation.
+polygonal walls; a `TrackArena` declares no physical boundary, so declare a
+walled or elevated track as an `OpenArena` of its floor polygon.
 Independently transformed combined components also refuse physical contact
 until a shared-frame contact certificate is available; combine before applying
 one shared transform, or explicitly choose the analysis approximation.
-A combined environment also needs a measured footprint for every component: a
+A combined environment also needs a declared outline for every component: a
 field at the edge of a component without one would otherwise be scored against
 walls elsewhere, so physical scoring refuses and names the component.
 
 ## Compute gaze and visibility against walls
 
 Ray casting and cue visibility use the same `boundary_source` choice. Physical
-mode reads declared footprint rings and internal walls; it does not stop when a
-ray crosses an analysis crop or an unvisited bin. Analysis mode explicitly uses
+mode reads the declared outline and named walls, and only opaque walls
+(`"wall"`) stop a gaze: transparent walls and drop edges do not. It does not
+stop when a ray crosses an analysis crop or an unvisited bin. Analysis mode explicitly uses
 analysis-cell boundaries, constrained by the known domain and internal walls.
 
 <!-- docs-test: run -->
@@ -735,8 +794,8 @@ np.testing.assert_array_equal(visible, [True, False])  # on the wall; behind it
 ```
 
 `compute_viewed_location()` returns the first wall contact. No hit within
-`max_distance`, a nonfinite observation, or an observer outside an asserted
-footprint yields NaN. An observer tracked exactly on a wall sees the next wall
+`max_distance`, a nonfinite observation, or an observer outside a declared
+outline yields NaN. An observer tracked exactly on a wall sees the next wall
 when it faces into the room; facing out through the wall, or exactly along it,
 gives a zero-distance contact at the observer. On an internal wall, the
 observer sees the side it faces. A cue at the first contact is visible; a cue
@@ -786,8 +845,9 @@ walls: its viewed point is `view_distance` ahead or the first wall, whichever
 is nearer, so a gaze never lands behind a wall.
 
 Physical encoding of independently transformed combined components requires a
-shared certified owner frame; unsupported cases refuse with guidance. Curved
-track footprints still require a separate exact wall representation. For a
+shared certified owner frame; unsupported cases refuse with guidance. A
+`TrackArena` declares no physical boundary; declare a track's floor polygon as
+an `OpenArena` instead. For a
 position-derived environment with supported planar cells, explicitly select
 `boundary_source="analysis"` when that approximation is the intended model.
 

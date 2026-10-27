@@ -13,7 +13,11 @@ reaches a wall within ``distance_range``, and each spike adds one count to
 the same bins of the sample it falls after. The rate is spikes divided by that
 boundary occupancy, so a bin's rate is the firing rate while a wall was at
 that distance in that direction. Walls are the arena's declared walls by
-default (``boundary_source="physical"``).
+default (``boundary_source="physical"``), of every kind: opaque walls,
+transparent walls and the drop edges of an elevated track or platform. Lever
+et al. (2009) found that "any given BVC responds to both extended vertical
+surfaces and to drops", so an elevated arena's boundary-vector map is
+measured from its edges.
 
 Examples
 --------
@@ -766,9 +770,10 @@ def compute_boundary_vector_rates(
         If ``headings`` does not match ``direction_frame``, or the inputs do
         not have matching lengths.
     NotImplementedError
-        If the arena has no known walls and ``boundary_source="physical"``:
-        build the environment with ``Environment.from_polygon`` or pass an
-        ``OpenArena`` to say where the walls are.
+        If the arena declares no physical boundary and
+        ``boundary_source="physical"``: build the environment with
+        ``Environment.from_polygon`` or pass an ``OpenArena`` to say where
+        the walls or drop edges are.
     CartesianOnlyError
         If ``env`` is an egocentric polar environment.
 

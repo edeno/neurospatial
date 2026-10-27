@@ -64,7 +64,7 @@ def walled(request):
 
 
 def test_elevated_maze_declares_no_walls(elevated):
-    assert not elevated.arena.physical_footprint_known
+    assert elevated.arena.outline is None
     assert elevated.arena.walls == ()
     # The floor still decides which positions are on the maze.
     assert (elevated.bin_at(elevated.bin_centers) >= 0).all()
@@ -72,9 +72,9 @@ def test_elevated_maze_declares_no_walls(elevated):
 
 def test_wall_analyses_refuse_an_elevated_maze(elevated):
     rates = np.ones(elevated.n_bins)
-    with pytest.raises(NotImplementedError, match="no physical walls"):
+    with pytest.raises(NotImplementedError, match="Physical boundaries are unknown"):
         border_score(elevated, rates)
-    with pytest.raises(NotImplementedError, match="no physical walls"):
+    with pytest.raises(NotImplementedError, match="Physical boundaries are unknown"):
         compute_viewed_location(
             elevated.bin_centers[:1], np.zeros(1), method="ray_cast", env=elevated
         )
@@ -113,10 +113,10 @@ def test_a_walled_rebuild_of_an_elevated_maze_keeps_its_bins():
         maze.env_2d.arena.polygon, bin_size=2.0, units="cm"
     ).with_regions(maze.env_2d.regions)
     np.testing.assert_array_equal(walled.bin_centers, maze.env_2d.bin_centers)
-    assert walled.arena.physical_footprint_known
+    assert walled.arena.outline == "wall"
 
 
 def test_a_square_box_is_walled():
     env = mazes.make_square_maze(bin_size=4.0).env_2d
-    assert env.arena.physical_footprint_known
+    assert env.arena.outline == "wall"
     assert env.arena.polygon.equals(box(*env.arena.polygon.bounds))

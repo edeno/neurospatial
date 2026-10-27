@@ -9,6 +9,11 @@ Unlike spatial encoding which uses standard occupancy (time spent at each
 location), view encoding uses occupancy (time spent *viewing* each
 location). The view occupancy depends on the gaze model used.
 
+Only opaque walls stop the gaze. It passes transparent walls and the drop
+edges of an elevated track or platform, so on an elevated track a ray-cast
+gaze leaving the track views a location outside the environment, which is
+missing: those samples add to no bin's view occupancy.
+
 Result Classes
 --------------
 ViewRateResult
@@ -1493,9 +1498,11 @@ def compute_view_rate(
         - **fixed_distance**: the point ``view_distance`` along the gaze, or
           the first wall when one is nearer.
 
-        Either way a gaze never passes through a wall, so the environment
-        needs known walls (a measured outline, e.g. ``from_polygon``) or
-        ``boundary_source="analysis"``.
+        Either way a gaze never passes through an opaque wall, so the
+        environment needs a declared outline (e.g. ``from_polygon``, or an
+        ``OpenArena`` with ``outline="drop"`` for an elevated track) or
+        ``boundary_source="analysis"``. The gaze passes transparent walls
+        and drop edges.
     view_distance : float or None, default=None
         Distance to the viewed point for ``gaze_model="fixed_distance"``, in
         environment units; required with that model, since how far ahead
@@ -1820,9 +1827,11 @@ def compute_view_rates(
         - **fixed_distance**: the point ``view_distance`` along the gaze, or
           the first wall when one is nearer.
 
-        Either way a gaze never passes through a wall, so the environment
-        needs known walls (a measured outline, e.g. ``from_polygon``) or
-        ``boundary_source="analysis"``.
+        Either way a gaze never passes through an opaque wall, so the
+        environment needs a declared outline (e.g. ``from_polygon``, or an
+        ``OpenArena`` with ``outline="drop"`` for an elevated track) or
+        ``boundary_source="analysis"``. The gaze passes transparent walls
+        and drop edges.
     view_distance : float or None, default=None
         Distance to the viewed point for ``gaze_model="fixed_distance"``, in
         environment units; required with that model, since how far ahead
@@ -2262,9 +2271,11 @@ def is_spatial_view_cell(
         - **fixed_distance**: the point ``view_distance`` along the gaze, or
           the first wall when one is nearer.
 
-        Either way a gaze never passes through a wall, so the environment
-        needs known walls (a measured outline, e.g. ``from_polygon``) or
-        ``boundary_source="analysis"``.
+        Either way a gaze never passes through an opaque wall, so the
+        environment needs a declared outline (e.g. ``from_polygon``, or an
+        ``OpenArena`` with ``outline="drop"`` for an elevated track) or
+        ``boundary_source="analysis"``. The gaze passes transparent walls
+        and drop edges.
     view_distance : float or None, default=None
         Distance to the viewed point for ``gaze_model="fixed_distance"``, in
         environment units; required with that model, since how far ahead
@@ -2535,9 +2546,11 @@ def spatial_view_cell_significance(
         - **fixed_distance**: the point ``view_distance`` along the gaze, or
           the first wall when one is nearer.
 
-        Either way a gaze never passes through a wall, so the environment
-        needs known walls (a measured outline, e.g. ``from_polygon``) or
-        ``boundary_source="analysis"``.
+        Either way a gaze never passes through an opaque wall, so the
+        environment needs a declared outline (e.g. ``from_polygon``, or an
+        ``OpenArena`` with ``outline="drop"`` for an elevated track) or
+        ``boundary_source="analysis"``. The gaze passes transparent walls
+        and drop edges.
     view_distance : float or None, default=None
         Distance to the viewed point for ``gaze_model="fixed_distance"``, in
         environment units; required with that model, since how far ahead

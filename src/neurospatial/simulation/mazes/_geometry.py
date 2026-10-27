@@ -198,7 +198,7 @@ def elevated_arena(floor: Polygon) -> OpenArena:
 
     The animal stays on ``floor``, but its edges are drops it can see past,
     not walls. The arena keeps the floor for bin lookup and declares no
-    physical walls, so wall-based analyses (border scores, ray-cast gaze,
+    physical boundary, so boundary analyses (border scores, ray-cast gaze,
     boundary-vector distances, ``BorderCellModel``) refuse it instead of
     treating the track's edges as walls.
 
@@ -210,17 +210,17 @@ def elevated_arena(floor: Polygon) -> OpenArena:
     Returns
     -------
     OpenArena
-        ``OpenArena(floor, physical_footprint_known=False)``.
+        ``OpenArena(floor, outline=None)``.
 
     Examples
     --------
     >>> from shapely.geometry import box
-    >>> elevated_arena(box(0, 0, 100, 6)).physical_footprint_known
-    False
+    >>> elevated_arena(box(0, 0, 100, 6)).outline is None
+    True
     """
     from neurospatial.geometry import OpenArena
 
-    return OpenArena(floor, physical_footprint_known=False)
+    return OpenArena(floor, outline=None)
 
 
 def union_polygons(

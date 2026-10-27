@@ -423,7 +423,7 @@ def _polar_coordinates(arena: Arena | None) -> EgocentricPolarSystem:
 # a pickled record (metadata, provenance, geometry, binning or locators)
 # gains, loses or reinterprets a field, so a pickle from another version is
 # refused with the advice to use environment files instead of failing later.
-STATE_FORMAT = 6
+STATE_FORMAT = 7
 
 
 def environment_state(env_dict: dict[str, Any]) -> dict[str, Any]:

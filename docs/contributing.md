@@ -458,13 +458,19 @@ re-binning.
 
 `env.arena` describes continuous support independently of the active analysis
 bins. Samples, grid masks and image masks supply computational domains without
-asserting measured physical walls. Explicit polygons and measured track widths
-record known footprints; units, frame and regions remain environment-owned.
+declaring a physical outline (`arena.outline is None`). Explicit polygons
+declare their outline's boundary kind (`"wall"`, `"transparent_wall"` or
+`"drop"`), and named walls carry their own kinds; a measured track width bounds
+positions but declares no boundary. Units, frame and regions remain
+environment-owned.
 Subsets preserve the parent arena, while affine transforms map its geometry
 with the bins. Exact lookup applies both the arena gate and locator ownership.
 
 Border and visibility consumers use shared planar wall evidence in
-`geometry/_boundaries.py`. Physical mode reads asserted footprints and internal walls;
+`geometry/_boundaries.py`. Physical mode reads the declared outline and named walls,
+and each consumer chooses `blocking="movement"` (every physical boundary: border
+scores, boundary vectors, boundary-cell models) or `blocking="gaze"` (opaque walls
+only: ray-cast gaze, line of sight, view fields);
 analysis mode is explicit. Analysis cuts never create physical walls. Boundary
 contacts and wall-hit bin ownership use retained source frames with locally
 bounded inverse rounding. Viewshed bin coverage remains sampled, while first

@@ -28,7 +28,7 @@ def test_unknown_walls_require_explicit_analysis_mode():
     env = Environment.from_grid_mask(
         np.ones((5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 2
     )
-    with pytest.raises(NotImplementedError, match=r"physical|footprint"):
+    with pytest.raises(NotImplementedError, match="Physical boundaries are unknown"):
         border_score(env, np.ones(env.n_bins))
     # The full grid's outline is the box itself, so the analysis score equals
     # the physical score of the same box with its walls declared.
@@ -100,7 +100,7 @@ def test_asserted_mask_holes_remain_walls_after_storage_and_crop():
     env = Environment.from_grid_mask(
         mask,
         grid_edges=edges,
-        arena=MaskArena(edges, mask, physical_footprint_known=True),
+        arena=MaskArena(edges, mask, outline="wall"),
     )
     restored = Environment.from_dict(env.to_dict())
     field = (env.bin_centers[:, 0] == 1.5).astype(float)
@@ -207,7 +207,7 @@ def test_combined_rooms_retain_shared_physical_wall(restore, transformed):
         )
     if restore:
         env = Environment.from_dict(env.to_dict())
-    walls = physical_walls(env.arena)
+    walls = physical_walls(env.arena, blocking="movement")
     assert walls.length == pytest.approx(35.0)  # union includes the shared 5-unit wall
     assert walls.distance(Point(105.0, 202.5) if transformed else Point(5.0, 2.5)) == 0
 
@@ -225,7 +225,9 @@ def test_combined_partial_wall_evidence_does_not_assert_unknown_child_outline():
         grid_edges=(np.arange(10.0, 16.0), np.arange(6.0)),
     )
     env = Environment.combine({"known": known, "unknown": unknown}, auto_bridge=False)
-    assert physical_walls(env.arena).equals(physical_walls(known.arena))
+    assert physical_walls(env.arena, blocking="movement").equals(
+        physical_walls(known.arena, blocking="movement")
+    )
 
 
 def test_unknown_wall_error_distinguishes_geometry_from_map_support():
@@ -425,7 +427,7 @@ def test_combined_component_without_walls_is_not_scored_against_other_walls(metr
     assert border_score(walled, field, metric=metric) > 0.5
 
 
-def _room_with_internal_wall(*, footprint_known):
+def _room_with_internal_wall(*, outline):
     """A 10 m x 10 m room with one declared internal wall at x=5."""
     return Environment.from_grid_mask(
         np.ones((10, 10), dtype=bool),
@@ -433,7 +435,7 @@ def _room_with_internal_wall(*, footprint_known):
         arena=OpenArena(
             box(0, 0, 10, 10),
             walls=(LineString([(5, 2), (5, 8)]),),
-            physical_footprint_known=footprint_known,
+            outline=outline,
         ),
     ).with_metadata(units="m")
 
@@ -442,15 +444,15 @@ def _room_with_internal_wall(*, footprint_known):
 def test_internal_walls_without_footprint_do_not_score_outer_edge_fields(metric):
     from neurospatial.encoding.spatial import SpatialRateResult
 
-    unknown = _room_with_internal_wall(footprint_known=False)
+    unknown = _room_with_internal_wall(outline=None)
     # A strong field hugging the west edge. Only the internal wall is declared,
     # so whether the west edge is a wall is unknown.
     rates = np.where(unknown.bin_centers[:, 0] < 1, 10.0, 0.1)
     with pytest.raises(NotImplementedError) as error:
         border_score(unknown, rates, metric=metric)
     message = str(error.value)
-    assert "footprint" in message
-    assert "physical_footprint_known=True" in message
+    assert "outline was inferred" in message
+    assert "outline='drop'" in message
     assert "boundary_source='analysis'" in message
 
     result = SpatialRateResult(
@@ -458,12 +460,12 @@ def test_internal_walls_without_footprint_do_not_score_outer_edge_fields(metric)
     )
     table = result.summary_table()
     assert np.isnan(table["border_score"].iloc[0])
-    assert "footprint" in table.attrs["unavailable_metrics"]["border_score"]
+    assert "outline" in table.attrs["unavailable_metrics"]["border_score"]
     assert table["cell_type"].tolist() == ["undetermined"]
 
-    # Declaring the same outline as the measured footprint scores the
-    # outer-wall field as a border field.
-    known = _room_with_internal_wall(footprint_known=True)
+    # Declaring the same outline as walls scores the outer-wall field as a
+    # border field.
+    known = _room_with_internal_wall(outline="wall")
     assert border_score(known, rates, metric=metric) > 0.5
     known_result = SpatialRateResult(
         rates, np.ones(known.n_bins), known, method="binned", bandwidth=0.0
@@ -483,7 +485,7 @@ def test_combined_component_with_internal_walls_but_no_footprint_is_refused():
         arena=OpenArena(
             box(10, 0, 15, 5),
             walls=(LineString([(13, 1), (13, 4)]),),
-            physical_footprint_known=False,
+            outline=None,
         ),
     )
     env = Environment.combine({"known": known, "partial": partial}, auto_bridge=False)

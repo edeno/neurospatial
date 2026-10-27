@@ -17,7 +17,7 @@ def test_environment_payload_uses_arena_schema():
     payload = to_dict(env)
     assert payload["schema_version"] == "Environment-v3"
     assert isinstance(payload["arena"], dict)
-    assert payload["arena"]["codec_version"] == 2
+    assert payload["arena"]["codec_version"] == 3
 
 
 def test_builtin_arena_round_trip(built_environment, round_trip_environment):
@@ -32,14 +32,14 @@ def test_builtin_arena_round_trip(built_environment, round_trip_environment):
     for name, array in original_arrays.items():
         np.testing.assert_array_equal(loaded_arrays[name], array, strict=True)
     assert loaded.arena.domain_known == original.arena.domain_known
-    assert (
-        loaded.arena.physical_footprint_known == original.arena.physical_footprint_known
-    )
+    assert loaded.arena.outline == original.arena.outline
+    assert loaded.arena.wall_kinds == original.arena.wall_kinds
 
 
-@pytest.mark.parametrize("physical_footprint_known", [False, True])
+@pytest.mark.parametrize("outline", [None, "wall", "transparent_wall", "drop"])
+@pytest.mark.parametrize("wall_kind", ["wall", "transparent_wall", "drop"])
 def test_open_arena_walls_and_provenance_round_trip(
-    round_trip_environment, physical_footprint_known
+    round_trip_environment, outline, wall_kind
 ):
     from shapely.geometry import LineString, box
 
@@ -56,12 +56,14 @@ def test_open_arena_walls_and_provenance_round_trip(
         base.layout_type,
         base.layout_parameters,
         arena=OpenArena(
-            domain, walls=(wall,), physical_footprint_known=physical_footprint_known
+            domain, outline=outline, walls={"divider": wall}, wall_kinds=wall_kind
         ),
     )
     loaded = round_trip_environment(original)
     assert loaded.arena.polygonal_domain().equals_exact(domain, 0)
-    assert loaded.arena.physical_footprint_known is physical_footprint_known
+    assert loaded.arena.outline == outline
+    assert loaded.arena.wall_names == ("divider",)
+    assert loaded.arena.wall_kinds == (wall_kind,)
     assert len(loaded.arena.walls) == 1
     assert loaded.arena.walls[0].equals_exact(wall, 0)
     np.testing.assert_array_equal(loaded.bin_centers, original.bin_centers)
@@ -90,7 +92,7 @@ def test_nested_transformed_mask_arena_round_trip(round_trip_environment, n_dims
     np.testing.assert_array_equal(
         loaded.arena.contains(points), env.arena.contains(points)
     )
-    assert loaded.arena.physical_footprint_known is False
+    assert loaded.arena.outline is None
 
 
 def _make_legacy(metadata, arrays):
@@ -119,7 +121,7 @@ def test_v2_restores_unknown_arena_or_refuses_polar(
     loaded = corrupted_environment_round_trip(_make_legacy)
     assert isinstance(loaded.arena, UnknownArena)
     assert loaded.arena.domain_known is False
-    assert loaded.arena.physical_footprint_known is False
+    assert loaded.arena.outline is None
     assert loaded.arena.n_dims == original.n_dims
     assert loaded.arena.coordinate_kind == original.arena.coordinate_kind
     assert not loaded.arena.walls

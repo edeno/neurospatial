@@ -413,7 +413,9 @@ class TestBorderCellModel:
         """Bins inferred from positions declare no physical wall."""
         from neurospatial.simulation.models import BorderCellModel
 
-        with pytest.raises(NotImplementedError, match="Physical walls are unknown"):
+        with pytest.raises(
+            NotImplementedError, match="Physical boundaries are unknown"
+        ):
             BorderCellModel(simple_2d_env, distance_tolerance=3.0)
 
     def test_rate_is_nan_outside_the_walls(self, walled_box):
