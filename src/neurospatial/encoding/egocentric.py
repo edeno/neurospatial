@@ -101,9 +101,10 @@ if TYPE_CHECKING:
     from matplotlib.projections.polar import PolarAxes
 
     from neurospatial._typing import SpikeTrainsLike
+    from neurospatial.encoding._spatial_counts import FrameBinning
     from neurospatial.environment import Environment
     from neurospatial.geometry import EgocentricPolarSystem
-    from neurospatial.ops._types import BackendType, DistanceMetric
+    from neurospatial.ops._types import BackendType, DistanceMetric, ResolvedBackend
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -2281,8 +2282,6 @@ def _count_object_vectors(
     min_occupancy: float,
     backend: str,
     n_jobs: int = 1,
-    frame_bins: NDArray[np.int64] | None = None,
-    polar_env: PolarEnvironment | None = None,
     break_before: NDArray[np.bool_] | None = None,
 ) -> _ObjectVectorCounts:
     """Bin egocentric coordinates, count spikes and build provenance.
@@ -2318,8 +2317,6 @@ def _count_object_vectors(
         Smoothing settings; ``bandwidth`` may be ``None`` for the default.
     n_jobs : int, default=1
         Parallel jobs for spike counting.
-    frame_bins, polar_env : optional
-        Trajectory-only geometry reused from an earlier call.
     break_before : ndarray of bool, shape (n_time,), or None
         Validated declared recording breaks.
 
@@ -2358,8 +2355,6 @@ def _count_object_vectors(
         epochs=epochs,
         break_before=break_before,
         spike_window=spike_window,
-        frame_bins=frame_bins,
-        polar_env=polar_env,
     )
     spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
     time_in_range = float(occupancy.sum())
@@ -3073,6 +3068,65 @@ def compute_object_vector_rates(
     )
 
 
+def _object_vector_firing_rates(
+    polar_env: PolarEnvironment,
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    *,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    bandwidth: float | None,
+    min_occupancy: float,
+    backend: ResolvedBackend,
+) -> ArrayLike:
+    """Firing rates of a population of polar maps.
+
+    The ``"binned"`` method uses the raw bin rate with no graph smoothing:
+    diffusion over the polar environment bleeds rate across distance rings
+    and erases distance tuning (see ``_raw_polar_rate``). The kernel methods
+    smooth counts and occupancy over the polar graph.
+
+    Parameters
+    ----------
+    polar_env : Environment
+        The polar grid, with the positions' length units.
+    spike_counts : ndarray of shape (n_units, n_bins)
+        Spike counts per polar bin.
+    occupancy : ndarray of shape (n_bins,)
+        Seconds spent in each polar bin.
+    method, bandwidth, min_occupancy, backend
+        Estimator settings; ``bandwidth`` is resolved, ``None`` for
+        ``"binned"``.
+
+    Returns
+    -------
+    ArrayLike of shape (n_units, n_bins)
+        Firing rates in Hz, NaN outside the occupancy support.
+    """
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+
+    if len(spike_counts) == 0:
+        return np.empty((0, polar_env.n_bins), dtype=np.float64)
+    if method == "binned":
+        _warn_if_fully_masked(occupancy, min_occupancy)
+        return np.stack(
+            [
+                _raw_polar_rate(unit_counts, occupancy, min_occupancy)
+                for unit_counts in spike_counts
+            ]
+        )
+    assert bandwidth is not None  # resolved for every kernel method
+    # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
+    return smooth_rate_maps_batch(
+        polar_env,
+        spike_counts,
+        occupancy,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
+    )
+
+
 def _object_vector_rates(
     env: Environment | None,
     spike_times: SpikeTrainsLike,
@@ -3097,9 +3151,6 @@ def _object_vector_rates(
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     context: str,
     single_unit: bool = False,
-    frame_bins: NDArray[np.int64] | None = None,
-    polar_env: PolarEnvironment | None = None,
-    diagnose: bool = True,
 ) -> ObjectVectorRatesResult:
     """Compute either frame through the shared binning and smoothing path.
 
@@ -3107,11 +3158,6 @@ def _object_vector_rates(
     one train, validated and named as ``spike_times`` in errors, its peak
     warning names unit ``0``, and the population-silence warning, which
     needs several units, is skipped.
-
-    ``frame_bins`` and ``polar_env`` reuse trajectory-only geometry computed
-    by a caller that bins many spike sets on one trajectory
-    (the shuffle null), which also passes ``diagnose=False`` so the input
-    warnings are not repeated for every shuffle.
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
@@ -3123,7 +3169,6 @@ def _object_vector_rates(
     from neurospatial.encoding._egocentric_counts import resolve_object_positions
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
-        smooth_rate_maps_batch,
     )
     from neurospatial.encoding._validation import (
         validate_spike_times,
@@ -3154,7 +3199,6 @@ def _object_vector_rates(
         spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
             spike_times, unit_ids, context=context
         )
-    n_neurons = len(spike_times_list)
 
     # Convert inputs to arrays (1D required for times/headings)
     times = np.asarray(times, dtype=np.float64)
@@ -3221,61 +3265,39 @@ def _object_vector_rates(
         min_occupancy=min_occupancy,
         backend=resolved_backend,
         n_jobs=n_jobs,
-        frame_bins=frame_bins,
-        polar_env=polar_env,
         break_before=breaks,
     )
 
-    # Compute firing rates. The "binned" method uses the raw bin rate (no graph
-    # smoothing): diffusion over the polar env bleeds rate across distance rings
-    # and erases distance tuning (see _raw_polar_rate). Other methods smooth.
-    firing_rates: ArrayLike
-    if n_neurons == 0:
-        firing_rates = np.empty((0, counts.polar_env.n_bins), dtype=np.float64)
-    elif method == "binned":
-        _warn_if_fully_masked(counts.occupancy, min_occupancy)
-        firing_rates = np.stack(
-            [
-                _raw_polar_rate(unit_counts, counts.occupancy, min_occupancy)
-                for unit_counts in counts.spike_counts
-            ]
-        )
-    else:
-        assert counts.bandwidth is not None  # resolved for every kernel method
-        # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
-        firing_rates = smooth_rate_maps_batch(
-            counts.polar_env,
-            counts.spike_counts,
-            counts.occupancy,
-            method=method,
-            bandwidth=counts.bandwidth,
-            min_occupancy=min_occupancy,
-            backend=resolved_backend,
-        )
+    firing_rates = _object_vector_firing_rates(
+        counts.polar_env,
+        counts.spike_counts,
+        counts.occupancy,
+        method=method,
+        bandwidth=counts.bandwidth,
+        min_occupancy=min_occupancy,
+        backend=resolved_backend,
+    )
 
-    if diagnose:
-        _warn_if_directions_unsampled(
-            counts.occupancy,
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
-            direction_frame="allocentric" if headings is None else "egocentric",
-            units=units,
-            extended_landmarks=(
-                object_names is not None and object_positions.ndim == 3
-            ),
-            context=context,
-        )
-        _warn_if_peak_at_range_edge(
-            firing_rates,
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
-            distance_range=distance_range,
-            time_beyond=counts.time_beyond,
-            time_in_range=float(counts.occupancy.sum()),
-            unit_ids=list(resolved_unit_ids),
-            units=units,
-            context=context,
-        )
+    _warn_if_directions_unsampled(
+        counts.occupancy,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        direction_frame="allocentric" if headings is None else "egocentric",
+        units=units,
+        extended_landmarks=(object_names is not None and object_positions.ndim == 3),
+        context=context,
+    )
+    _warn_if_peak_at_range_edge(
+        firing_rates,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        distance_range=distance_range,
+        time_beyond=counts.time_beyond,
+        time_in_range=float(counts.occupancy.sum()),
+        unit_ids=list(resolved_unit_ids),
+        units=units,
+        context=context,
+    )
 
     # Return result
     return ObjectVectorRatesResult(
@@ -4156,6 +4178,168 @@ def plot_object_vector_tuning(
     return ax
 
 
+class _ObjectVectorNullMaps(NamedTuple):
+    """Trajectory binning and estimator settings shared by every shuffle."""
+
+    binning: FrameBinning  # frame bins and interval support of the map
+    occupancy: NDArray[np.float64]  # (n_bins,) seconds
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"]
+    bandwidth: float | None  # resolved kernel bandwidth; None for "binned"
+    min_occupancy: float
+    backend: ResolvedBackend
+    n_jobs: int
+
+
+def _object_vector_null_maps(
+    polar_env: PolarEnvironment,
+    spike_trains: list[NDArray[np.float64]],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: NDArray[np.float64],
+    frame_bins: NDArray[np.intp],
+    *,
+    distance_range: tuple[float, float],
+    n_distance_bins: int,
+    n_direction_bins: int,
+    metric: DistanceMetric,
+    env: Environment | None,
+    max_gap: float | None,
+    epochs: NDArray[np.float64] | None,
+    spike_window: NDArray[np.float64] | None,
+    break_before: NDArray[np.bool_] | None,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    bandwidth: float | None,
+    min_occupancy: float,
+    n_jobs: int,
+    backend: BackendType,
+) -> _ObjectVectorNullMaps:
+    """Validate the estimator and bin the trajectory once for a shuffle test.
+
+    Shows the observed population map's input warnings (recording silence,
+    excluded intervals, spikes outside the trajectory) once, as
+    ``_object_vector_rates`` would for ``spike_trains``.
+
+    Parameters
+    ----------
+    polar_env : Environment
+        The polar grid, with the positions' length units.
+    spike_trains : list of ndarray of shape (n_spikes_i,)
+        The observed, validated spike trains.
+    times, positions, headings, object_positions, frame_bins
+        The validated trajectory, resolved objects and each sample's polar bin.
+    distance_range, n_distance_bins, n_direction_bins
+        The resolved polar grid of ``polar_env``.
+    metric, env, max_gap, epochs, spike_window, break_before
+        Binning settings; windows and breaks are resolved.
+    method, bandwidth, min_occupancy, n_jobs, backend
+        Estimator settings; ``bandwidth`` may be ``None`` for the default.
+
+    Returns
+    -------
+    _ObjectVectorNullMaps
+    """
+    from neurospatial.encoding._backend import validate_and_resolve_backend
+    from neurospatial.encoding._egocentric_counts import prepare_egocentric_binning
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        resolve_spatial_bandwidth,
+    )
+
+    resolved_backend = validate_and_resolve_backend(backend)
+    _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
+    _warn_if_population_silent(
+        spike_trains,
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        tracked=tracked_samples(len(times), positions, headings),
+        break_before=break_before,
+    )
+    binning, _, _ = prepare_egocentric_binning(
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        env=env,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        frame_bins=frame_bins,
+        polar_env=polar_env,
+        break_before=break_before,
+    )
+    _, occupancy = binning.count(spike_trains, n_jobs=n_jobs)
+    return _ObjectVectorNullMaps(
+        binning,
+        occupancy,
+        method,
+        None if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth),
+        min_occupancy,
+        resolved_backend,
+        n_jobs,
+    )
+
+
+def _object_vector_information(
+    polar_env: PolarEnvironment,
+    spike_times: list[NDArray[np.float64]],
+    maps: _ObjectVectorNullMaps,
+) -> NDArray[np.float64]:
+    """Skaggs information of each train's polar map on the shared binning.
+
+    Equals ``_object_vector_rates(...).spatial_information()`` for the same
+    trains and settings, without binning the trajectory again.
+
+    Returns
+    -------
+    ndarray of shape (n_units,)
+        Information in bits per spike.
+    """
+    from neurospatial.encoding._backend import _to_backend
+    from neurospatial.encoding._metrics import batch_spatial_information
+    from neurospatial.encoding._spatial_counts import count_spikes_by_frame
+
+    binning = maps.binning
+    mask = binning.support.mask
+
+    def count(train: NDArray[np.float64]) -> NDArray[np.float64]:
+        return count_spikes_by_frame(
+            train, binning.times, binning.frame_bins, mask, binning.n_bins
+        )
+
+    if len(spike_times) and maps.n_jobs != 1:
+        from joblib import Parallel, delayed
+
+        spike_counts = np.asarray(
+            Parallel(n_jobs=maps.n_jobs)(delayed(count)(t) for t in spike_times),
+            dtype=np.float64,
+        )
+    else:
+        spike_counts = np.zeros((len(spike_times), binning.n_bins), dtype=np.float64)
+        for i, train in enumerate(spike_times):
+            spike_counts[i] = count(train)
+    rates = _object_vector_firing_rates(
+        polar_env,
+        spike_counts,
+        maps.occupancy,
+        method=maps.method,
+        bandwidth=maps.bandwidth,
+        min_occupancy=maps.min_occupancy,
+        backend=maps.backend,
+    )
+    # Results hold backend arrays; score the rates as a result would.
+    return batch_spatial_information(
+        _to_numpy(_to_backend(rates, maps.backend, dtype=np.float64)),
+        _to_numpy(_to_backend(maps.occupancy, maps.backend, dtype=np.float64)),
+    )
+
+
 def _object_vector_significance(
     env: Environment | None,
     spike_times: SpikeTrainsLike,
@@ -4232,29 +4416,14 @@ def _object_vector_significance(
     if headings is not None:
         headings = inputs.copies[1]
     resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
-    options: dict[str, Any] = {
-        "distance_range": distance_range,
-        "distance_bin_size": distance_bin_size,
-        "direction_bin_size": direction_bin_size,
-        "metric": metric,
-        "max_gap": max_gap,
-        "method": method,
-        "bandwidth": bandwidth,
-        "min_occupancy": min_occupancy,
-        "n_jobs": n_jobs,
-        "backend": backend,
-    }
-    options = snapshot_options(
-        options,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        unit_ids=ids,
+    # Estimator settings the null reads, copied from the caller's arrays.
+    estimator = snapshot_options(
+        {"bandwidth": bandwidth, "min_occupancy": min_occupancy, "max_gap": max_gap}
     )
     _check_object_vector_env(env, headings, context=context)
     validate_trajectory(times, positions=positions, headings=headings, context=context)
     validate_spike_trains(trains, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
-    options["break_before"] = breaks
     _validate_object_vector_metric(env, metric, context=context)
     units = env.units if env is not None else None
     require_known_bandwidth(units, bandwidth, method, context=context)
@@ -4270,12 +4439,6 @@ def _object_vector_significance(
         direction_bin_size=direction_bin_size,
         context=context,
     )
-    # Every shuffle rebuilds exactly this grid.
-    options["distance_range"] = distance_range
-    options["distance_bin_size"] = (
-        distance_range[1] - distance_range[0]
-    ) / n_distance_bins
-    options["direction_bin_size"] = 2 * np.pi / n_direction_bins
     frame_bins = object_frame_bins(
         positions,
         headings,
@@ -4293,7 +4456,7 @@ def _object_vector_significance(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-        break_before=options["break_before"],
+        break_before=breaks,
         sample_valid=tracked,
     )
     windows = run_time_bounds(times, mask)
@@ -4316,26 +4479,36 @@ def _object_vector_significance(
     # so every shuffle reuses them instead of rebuilding them.
     polar_env = _create_egocentric_environment(
         distance_range, n_distance_bins, n_direction_bins
-    )
+    ).with_metadata(units=units)
+    maps: _ObjectVectorNullMaps | None = None
 
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        return _object_vector_rates(
-            env,
-            shifted,
-            times,
-            positions,
-            headings,
-            object_positions,
-            **options,
-            context=(
-                "compute_egocentric_rates"
-                if egocentric
-                else "compute_object_vector_rates"
-            ),
-            frame_bins=frame_bins,
-            polar_env=polar_env,
-            diagnose=False,
-        ).spatial_information()
+        # run_shuffle_test scores the observed trains first, so the binning is
+        # prepared, and its warnings shown, where the observed map would be.
+        nonlocal maps
+        if maps is None:
+            maps = _object_vector_null_maps(
+                polar_env,
+                trains,
+                times,
+                positions,
+                headings,
+                object_positions,
+                frame_bins,
+                distance_range=distance_range,
+                n_distance_bins=n_distance_bins,
+                n_direction_bins=n_direction_bins,
+                metric=metric,
+                env=env,
+                epochs=resolved_epochs,
+                spike_window=resolved_spike_window,
+                break_before=breaks,
+                method=method,
+                n_jobs=n_jobs,
+                backend=backend,
+                **estimator,
+            )
+        return _object_vector_information(polar_env, shifted, maps)
 
     observed, null = run_shuffle_test(
         statistic,
