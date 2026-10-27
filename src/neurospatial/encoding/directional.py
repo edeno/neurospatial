@@ -2577,79 +2577,36 @@ def compute_directional_rate(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-
-    from neurospatial.encoding._backend import (
-        _to_backend,
-        validate_and_resolve_backend,
-    )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_trajectory,
-    )
-
-    # Raises ValueError for unknown names and ImportError if jax is unavailable;
-    # "auto" resolves to "numpy" or "jax".
-    resolved_backend = validate_and_resolve_backend(backend)
-
-    # Validate angle_unit
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
-
-    # Convert inputs to arrays (1D required; validated below)
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
-
-    validate_trajectory(
-        times,
-        headings=headings,
-        context="compute_directional_rate",
-        heading_unit=angle_unit,
-    )
-    validate_spike_times(spike_times, context="compute_directional_rate")
-    breaks = validate_break_before(
-        break_before, len(times), call="compute_directional_rate"
-    )
-
-    counts = _count_directional(
-        [spike_times],
+    population = _directional_rates(
+        spike_times,
         times,
         headings,
         bin_size=bin_size,
         bandwidth=bandwidth,
         angle_unit=angle_unit,
         max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        backend=resolved_backend,
-        break_before=breaks,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
+        n_jobs=1,
+        backend=backend,
+        unit_ids=None,
+        context="compute_directional_rate",
+        single_unit=True,
     )
-    spike_counts = counts.spike_counts[0]
-    occupancy = counts.occupancy
-    bin_centers = counts.bin_centers
-    actual_bin_size_rad = counts.bin_size
-    bandwidth_rad = counts.bandwidth
-    settings = counts.analysis_settings
-
-    # Rates from the unsmoothed counts; the counts stay unsmoothed for the
-    # tuning test.
-    firing_rate = _smoothed_directional_rates(
-        spike_counts[None], occupancy, bandwidth_rad, actual_bin_size_rad
-    )[0]
-
+    unit = population[0]
     return DirectionalRateResult(
-        firing_rate=_to_backend(firing_rate, resolved_backend),
-        occupancy=_to_backend(occupancy, resolved_backend),
-        bin_centers=_to_backend(bin_centers, resolved_backend),
-        bin_size=actual_bin_size_rad,
-        bandwidth=bandwidth_rad,
-        spike_counts=spike_counts,
-        n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
-        spike_count_dispersion=float(counts.dispersion[0]),
-        dispersion_dof=counts.dispersion_dof,
-        spike_window=resolved_spike_window,
-        analysis_settings=settings,
+        firing_rate=unit.firing_rate,
+        occupancy=unit.occupancy,
+        bin_centers=unit.bin_centers,
+        bin_size=unit.bin_size,
+        bandwidth=unit.bandwidth,
+        spike_counts=unit.spike_counts,
+        n_spikes_outside_intervals=unit.n_spikes_outside_intervals,
+        spike_count_dispersion=unit.spike_count_dispersion,
+        dispersion_dof=unit.dispersion_dof,
+        spike_window=unit.spike_window,
+        analysis_settings=unit.analysis_settings,
     )
 
 
@@ -2842,6 +2799,49 @@ def compute_directional_rates(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
+    return _directional_rates(
+        spike_times,
+        times,
+        headings,
+        bin_size=bin_size,
+        bandwidth=bandwidth,
+        angle_unit=angle_unit,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
+        n_jobs=n_jobs,
+        backend=backend,
+        unit_ids=unit_ids,
+        context="compute_directional_rates",
+        single_unit=False,
+    )
+
+
+def _directional_rates(
+    spike_times: SpikeTrainsLike,
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    bin_size: float | None,
+    bandwidth: float | None,
+    angle_unit: Literal["rad", "deg"],
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    spike_window: Any,
+    n_jobs: int,
+    backend: BackendType,
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    context: str,
+    single_unit: bool,
+) -> DirectionalRatesResult:
+    """Validate, count every unit and estimate directional rates.
+
+    ``single_unit=True`` takes one spike train (an array), validates it as
+    one unit and skips the population-silence warning, which needs several
+    units.
+    """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial._spikes import as_labelled_spike_trains
@@ -2850,6 +2850,7 @@ def compute_directional_rates(
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._validation import (
+        validate_spike_times,
         validate_spike_trains,
         validate_trajectory,
     )
@@ -2862,39 +2863,42 @@ def compute_directional_rates(
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
-    # Normalize spike times to canonical list-of-arrays format and resolve the
-    # per-unit identity labels (defaults to arange). A labelled input keeps its
-    # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
-        spike_times, unit_ids, context="compute_directional_rates"
-    )
-    n_neurons = len(spike_times_list)
+    if single_unit:
+        spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
+        resolved_unit_ids, labels_supplied = None, False
+    else:
+        # Normalize spike times to canonical list-of-arrays format and resolve
+        # the per-unit identity labels (defaults to arange). A labelled input
+        # keeps its own labels; a differing unit_ids= raises.
+        spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+            spike_times, unit_ids, context=context
+        )
 
     # Convert inputs to arrays (1D required; validated below)
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
     validate_trajectory(
-        times,
-        headings=headings,
-        context="compute_directional_rates",
-        heading_unit=angle_unit,
+        times, headings=headings, context=context, heading_unit=angle_unit
     )
-    validate_spike_trains(spike_times_list, context="compute_directional_rates")
-    breaks = validate_break_before(
-        break_before, len(times), call="compute_directional_rates"
-    )
+    if single_unit:
+        validate_spike_times(spike_times_list[0], context=context)
+    else:
+        validate_spike_trains(spike_times_list, context=context)
+    breaks = validate_break_before(break_before, len(times), call=context)
 
-    # Recording coverage uses tracked runs, independently of speed or frame bins.
-    _warn_if_population_silent(
-        spike_times_list,
-        times,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        tracked=tracked_samples(len(times), headings),
-        break_before=breaks,
-    )
+    if not single_unit:
+        # Recording coverage uses tracked runs, independently of speed or
+        # frame bins.
+        _warn_if_population_silent(
+            spike_times_list,
+            times,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            tracked=tracked_samples(len(times), headings),
+            break_before=breaks,
+        )
 
     counts = _count_directional(
         spike_times_list,
@@ -2910,55 +2914,25 @@ def compute_directional_rates(
         n_jobs=n_jobs,
         break_before=breaks,
     )
-    spike_counts_batch = counts.spike_counts
-    occupancy = counts.occupancy
-    bin_centers = counts.bin_centers
-    n_bins = len(bin_centers)
-    actual_bin_size_rad = counts.bin_size
-    bandwidth_rad = counts.bandwidth
-    settings = counts.analysis_settings
-
-    # Handle empty neuron list
-    if n_neurons == 0:
-        empty_rates = np.empty((0, n_bins), dtype=np.float64)
-        empty_counts: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
-        return DirectionalRatesResult(
-            firing_rates=_to_backend(empty_rates, resolved_backend),
-            occupancy=_to_backend(occupancy, resolved_backend),
-            bin_centers=_to_backend(bin_centers, resolved_backend),
-            bin_size=actual_bin_size_rad,
-            bandwidth=bandwidth_rad,
-            spike_counts=empty_counts,
-            unit_ids=resolved_unit_ids if labels_supplied else None,
-            unit_table=getattr(spike_times, "unit_table", None),
-            n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
-            spike_count_dispersion=counts.dispersion,
-            dispersion_dof=counts.dispersion_dof,
-            spike_window=resolved_spike_window,
-            analysis_settings=settings,
-        )
-
     # Rates from the unsmoothed counts; the counts stay unsmoothed for the
     # tuning test.
     firing_rates = _smoothed_directional_rates(
-        spike_counts_batch, occupancy, bandwidth_rad, actual_bin_size_rad
+        counts.spike_counts, counts.occupancy, counts.bandwidth, counts.bin_size
     )
-    spike_counts_all: ArrayLike = np.asarray(spike_counts_batch, dtype=np.float64)
-
     return DirectionalRatesResult(
         firing_rates=_to_backend(firing_rates, resolved_backend),
-        occupancy=_to_backend(occupancy, resolved_backend),
-        bin_centers=_to_backend(bin_centers, resolved_backend),
-        bin_size=actual_bin_size_rad,
-        bandwidth=bandwidth_rad,
-        spike_counts=spike_counts_all,
+        occupancy=_to_backend(counts.occupancy, resolved_backend),
+        bin_centers=_to_backend(counts.bin_centers, resolved_backend),
+        bin_size=counts.bin_size,
+        bandwidth=counts.bandwidth,
+        spike_counts=counts.spike_counts,
         unit_ids=resolved_unit_ids if labels_supplied else None,
         unit_table=getattr(spike_times, "unit_table", None),
         n_spikes_outside_intervals=counts.n_spikes_outside_intervals,
         spike_count_dispersion=counts.dispersion,
         dispersion_dof=counts.dispersion_dof,
         spike_window=resolved_spike_window,
-        analysis_settings=settings,
+        analysis_settings=counts.analysis_settings,
     )
 
 
