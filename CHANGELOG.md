@@ -2,12 +2,44 @@
 
 ## [Unreleased]
 
-### Faster encoding analyses
+### Encoding cleanup and faster analyses
 
 Single-unit and population rate maps now share one code path in every
 family, and the shuffle tests bin the trajectory once instead of once per
 shuffle. Rate maps, scores, p-values and labels for a given seed are
-unchanged, except at float rounding where noted.
+unchanged, except where listed under "Breaking" and "Results that change"
+or at float rounding where noted.
+
+Breaking:
+
+- `fill_value` is removed from `compute_spatial_rate`,
+  `compute_spatial_rates`, `has_place_field`, `is_place_cell` and
+  `place_cell_significance`, and from `analysis_settings`. Rate maps always
+  store bins without enough occupancy as NaN: missing, not 0 Hz. The option
+  changed only the stored array; decoding, the predicates, the shuffle test
+  and every result metric already treated filled bins as missing, so passing
+  `fill_value=0.0` before `BayesianDecoder.from_rates` did nothing. For a tool
+  that needs finite values, fill a copy with `np.nan_to_num(rates.firing_rates)`
+  and keep `rates.spatial_support`; a zero-filled raw array still needs
+  `prior=rates.spatial_support * env.bin_sizes` to decode.
+
+Results that change:
+
+- `DirectionalPlaceFields.correlation`, `rate_map_correlations` and
+  `population_vector_correlation` call a correlation undefined by the rule
+  `field_stability` and `compare_spatial_rates` use: at least three points,
+  and a map is flat when its range is within 1e-12 of its largest rate. Two
+  shared bins gave exactly +/-1 and now give NaN; a 5 Hz map with 1e-15
+  rounding noise gave a finite r and now gives NaN.
+  `population_vector_correlation` needs at least three units: with two it
+  returned +/-1 at every location, and it now raises.
+- `object_vector_score` refuses a map with negative or infinite rates, for
+  example a baseline-subtracted or z-scored map. Random noise scored 1.0, and
+  an infinite bin silently dropped its ring. NaN bins are still unvisited.
+- `ViewRatesResult.peak_locations()` uses the occupancy support and returns
+  NaN for a silent unit, matching `peak_location()` and `summary_table()`. It
+  could report a rate in a never-viewed bin and returned the first bin for
+  an all-zero map.
 
 Faster:
 
@@ -40,7 +72,15 @@ Faster:
 - `compute_phase_precession` shuffles build their slope basis once (up to
   about 2x faster), and the default smoothing bandwidth for environments
   without metric units is found about 30x faster.
-- `import neurospatial.encoding` no longer imports matplotlib.
+- `grid_score`, `batch_grid_scores`, `grid_properties` and the grid
+  statistic of `spatial_cell_type_significance` build the five
+  autocorrelogram rotations once per map shape (`batch_grid_scores` on 100
+  maps: 100 ms instead of 180 ms; `spatial_cell_type_significance` for 50
+  units with 200 shuffles in a 100 cm box: 16 s instead of 25 s on one core).
+  Rotated autocorrelograms differ only at float rounding (up to 1.3e-14), and
+  seeded p-values are unchanged.
+- `import neurospatial.encoding` no longer imports matplotlib or
+  `scipy.stats` (median 0.22 s instead of 0.43 s).
 
 Messages that change:
 
@@ -49,7 +89,10 @@ Messages that change:
 - Timestamp errors read the same in every family: "times has N non-finite
   value(s), first at index I." and "times must be monotonically
   non-decreasing; it decreases at N place(s), first a -> b at index K.".
-  Non-finite times no longer also report their ordering.
+  Non-finite times no longer also report their ordering. Unsorted times say
+  how to sort them (`order = np.argsort(times, kind="stable")`, applied to
+  every per-sample array), and calls without positions are not told to pass
+  position rows.
 - `compute_object_vector_rate`, `compute_egocentric_rate` and
   `compute_view_rates` check `method` (and, for views, `gaze_model` and
   `view_distance`) before other settings, matching their single-unit or
@@ -59,6 +102,14 @@ Messages that change:
   positions that do not match the environment with the same errors as
   `compute_view_rates` (it raised a NumPy broadcasting error), and warns
   once instead of twice about headings that look like degrees.
+- `object_vector_cell_significance`,
+  `egocentric_object_vector_cell_significance` and, without an environment,
+  `compute_object_vector_rates` report positions with the wrong number of
+  columns (for example `(n, 3)`) instead of raising a NumPy broadcasting
+  error.
+- `smooth_rate_maps_batch` refuses a negative, NaN or infinite
+  `min_occupancy` on the JAX backend too, so the view and object-vector
+  shuffle tests refuse it before shuffling.
 - Single-unit `gaussian_kde` rate maps on the JAX backend can differ from
   before at float rounding (about 1e-15 relative).
 
