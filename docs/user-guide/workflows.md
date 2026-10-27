@@ -699,7 +699,7 @@ synthetic sequence, is covered in
 `decode_session` requires tracking and computes its own maps. For maps already
 computed on a training epoch, use `BayesianDecoder.from_rates(rates)`; prediction
 takes spike times and a plain timestamp array. An explicit array handoff uses
-`rates.firing_rates` with binned counts and `prior=rates.spatial_support.astype(float)` to retain the training mask. This example decodes the second recording
+`rates.firing_rates` with binned counts and `prior=rates.spatial_support * env.bin_sizes` to retain the training mask. This example decodes the second recording
 run through both routes. It bins only that run and uses each decoder's returned
 timestamps, so the 10–20 s pause is never represented by a decode bin.
 
@@ -732,7 +732,7 @@ counts, centers = bin_spikes_in_time(
     spike_times, dt=dt, epochs=(test[0], min(test[1], times[-1])),
 )
 array_result = decode_position(env, counts, rates.firing_rates, dt=dt, times=centers,
-    prior=rates.spatial_support.astype(float))
+    prior=rates.spatial_support * env.bin_sizes)
 np.testing.assert_array_equal(result.times, array_result.times)
 np.testing.assert_array_equal(result.posterior, array_result.posterior)
 assert np.all((result.times >= 20.0) & (result.times < 30.0))

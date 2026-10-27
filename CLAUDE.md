@@ -54,7 +54,10 @@ NEUROSPATIAL_UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api_snapshot.
   and filling never changes `spatial_support`. Decode with
   `BayesianDecoder.from_rates(rates)` or pass the rate result itself to
   `decode_position`; bare zero-filled arrays need
-  `prior=rates.spatial_support.astype(float)`.
+  `prior=rates.spatial_support * env.bin_sizes`.
+- A decoding posterior or prior is a probability mass per bin. The default
+  prior is uniform over space (mass proportional to `env.bin_sizes`), and the
+  MAP bin and credible region rank bins by density, mass / bin size.
 - `min_occupancy` is seconds of occupancy per bin, not a density.
 - `has_place_field` detects a field, and result-method cell-type checks are
   threshold screens. A shuffle verdict needs `criterion="shuffle"` on raw arrays.

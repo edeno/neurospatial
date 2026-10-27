@@ -103,10 +103,13 @@ clipping: splitting bridge endpoints needs an explicit reconnection rule.
 
 Components can differ in what their bins measure. An approach corridor built as
 a track has bins measured by length; the arena it leads into has bins measured
-by area. Combining them keeps each bin's own measure, so occupancy, rate maps,
-smoothing within each component and decoding all work on the combined
-environment, while `bin_sizes` refuses, because a sum or density over lengths
-and areas together has no unit:
+by area. Combining them keeps each bin's own measure, so occupancy, rate maps
+and smoothing within each component all work on the combined environment,
+while `bin_sizes` refuses, because a sum or density over lengths and areas
+together has no unit. Decoding refuses for the same reason: its default prior
+is uniform over space, and its MAP position and credible region compare
+probability per unit length or area. Decode each component on its own
+`env.subset(mask=...)`, as the arena is selected here:
 
 <!-- docs-test: run -->
 ```python
