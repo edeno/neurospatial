@@ -8,6 +8,14 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import pearsonr
 
+#: Default center-error limit, in true field widths (Gaussian standard
+#: deviations), calibrated by simulation; see ``validate_simulation`` Notes.
+CENTER_ERROR_WIDTHS = 1.5
+
+#: Default minimum correlation between detected and true field shapes,
+#: calibrated by simulation; see ``validate_simulation`` Notes.
+MIN_FIELD_CORRELATION = 0.9
+
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
@@ -39,6 +47,13 @@ def _select_unit_indices(
     return [valid_ids.index(label) for label in unit_ids]
 
 
+def _field_width(truth: dict[str, Any]) -> float:
+    """A ground truth's place field width (the largest axis), or NaN."""
+    if "width" not in truth:
+        return np.nan
+    return float(np.max(np.atleast_1d(np.asarray(truth["width"], dtype=float))))
+
+
 def validate_simulation(
     session: SimulationSession,
     *,
@@ -65,13 +80,13 @@ def validate_simulation(
     method : {'diffusion_kde', 'gaussian_kde', 'binned'}, optional
         Smoothing method for computing place fields (default: 'diffusion_kde').
     max_center_error : float | None, optional
-        Maximum acceptable center error in environment units. If None, uses
-        2 × bin spacing (median distance between neighbouring bin centres, or
-        the median bin length on a track; equals ``bin_size`` on a regular
-        grid).
+        Maximum acceptable center error in environment units, the same for
+        every cell. If None, each cell's limit is 1.5 times its true field
+        width (the largest axis of ``ground_truth['width']``); a cell whose
+        ground truth has no width cannot pass. Calibrated; see Notes.
     min_correlation : float | None, optional
         Minimum acceptable correlation between detected and true fields.
-        If None, uses 0.5 as threshold.
+        If None, 0.9. Calibrated; see Notes.
     show_plots : bool, optional
         If True, creates diagnostic plots (default: False).
     **kwargs
@@ -102,6 +117,8 @@ def validate_simulation(
         - 'passed': bool
             True only for a nonempty selection in which every selected unit
             has both metrics finite and meets both specified thresholds.
+        - 'max_center_errors': NDArray[np.float64], shape (n_cells,)
+            Center-error limit applied to each selected unit.
         - 'plots': Figure | None
             Matplotlib figure with diagnostic plots (only if show_plots=True).
 
@@ -184,18 +201,25 @@ def validate_simulation(
 
     **Default Thresholds**:
 
-    - Center error: 2 × bin spacing (median distance between neighbouring bin
-      centres, or the median bin length on a track; equals ``bin_size`` on a
-      regular grid) - accounts for discretization error
-    - Correlation: 0.5
+    - Center error: 1.5 × each cell's true field width (Gaussian standard
+      deviation)
+    - Correlation: 0.9
 
-    These thresholds are conventions, not calibrated confidence bounds. In
-    simulations of ``open_field_session(duration=180)`` with default place
-    cells (5 seeds, 16 cells each), correctly specified cells had a median
-    center error of 6 cm (95th percentile 16 cm), so most exceeded the 4 cm
-    default, and moving the ground-truth center by one field width still left
-    93% of correlations above 0.5. Choose both thresholds for your session's
-    field size and duration, for example from such simulations. Missing metrics remain NaN and prevent an overall pass; a partial
+    Both were calibrated by simulation: ``open_field_session`` (100 cm
+    arena, 2 cm bins, default 12.4 Hz place cells, default
+    ``diffusion_kde`` smoothing), 8 seeds × 16 cells for each of 180 s and
+    600 s sessions and 6, 11.1 and 17.5 cm field widths. In five of the six
+    conditions at least 95% of correctly specified cells pass (95.3-100%),
+    while 93-100% of cells whose ground-truth center is moved by one field
+    width fail, and every cell whose ground-truth width is tripled fails;
+    the correlation threshold catches most mis-specified cells, as a
+    one-width shift leaves the center error near 1 width. The exception is
+    180 s with 6 cm fields, whose small fields are visited briefly: only
+    69% of correct cells pass, and no pair of thresholds that passes 95% of them
+    (about 3.4 widths and a correlation of 0.33) rejects mis-specified
+    cells. Short sessions with small fields cannot validate each cell;
+    lengthen the session or pass thresholds for your own design.
+    Missing metrics remain NaN and prevent an overall pass; a partial
     report is not evidence that every selected unit was recovered. Inspect
     ``unit_status``, ``skip_reasons``, and ``spike_counts`` to distinguish failed
     recovery from units that could not be evaluated.
@@ -217,13 +241,21 @@ def validate_simulation(
     ground_truth = session.ground_truth
     n_cells = len(spike_times)
 
-    # Set default thresholds
+    # Thresholds: by default each cell's center error is judged against its
+    # own true field width (calibrated; see Notes).
     if max_center_error is None:
-        # 2 bin spacings (accounts for discretization).
-        max_center_error = 2.0 * env.bin_spacing
+        center_error_limits = np.array(
+            [
+                CENTER_ERROR_WIDTHS
+                * _field_width(ground_truth.get(int(session.unit_ids[index]), {}))
+                for index in cell_indices
+            ]
+        )
+    else:
+        center_error_limits = np.full(len(cell_indices), float(max_center_error))
 
     if min_correlation is None:
-        min_correlation = 0.5  # a convention; see Notes
+        min_correlation = MIN_FIELD_CORRELATION
 
     # Keep unavailable metrics missing, with diagnostics aligned to unit labels.
     selected_unit_ids = session.unit_ids[cell_indices].copy()
@@ -372,13 +404,13 @@ def validate_simulation(
 
     # An empty or incomplete metric array cannot satisfy a recovery criterion.
     errors_pass = bool(
-        n_selected and np.all(finite_errors & (center_errors <= max_center_error))
+        n_selected and np.all(finite_errors & (center_errors <= center_error_limits))
     )
     corrs_pass = bool(
         n_selected and np.all(finite_corrs & (correlations >= min_correlation))
     )
     passed = bool(errors_pass and corrs_pass)
-    meets_thresholds = (center_errors <= max_center_error) & (
+    meets_thresholds = (center_errors <= center_error_limits) & (
         correlations >= min_correlation
     )
     unit_status = tuple(
@@ -388,6 +420,11 @@ def validate_simulation(
 
     # Generate summary string
     units = env.units if env.units else "units"
+    threshold_text = (
+        f"{CENTER_ERROR_WIDTHS:g} x each cell's true field width"
+        if max_center_error is None
+        else f"{max_center_error:.2f}"
+    )
     summary = f"""Validation Results:
 ===================
 Cells selected: {n_selected} (of {n_cells} total)
@@ -397,7 +434,7 @@ Cells not evaluable: {n_selected - n_evaluated}
 Center Errors ({units}):
   Mean: {mean_error:.2f} ± {std_error:.2f}
   Max:  {max_error:.2f}
-  Threshold: {max_center_error:.2f}
+  Threshold: {threshold_text}
   Passed: {errors_pass}
 
 Field Correlations:
@@ -421,6 +458,7 @@ Overall: {"✓ PASSED" if passed else "✗ FAILED"}
         "n_evaluated": n_evaluated,
         "summary": summary,
         "passed": passed,
+        "max_center_errors": center_error_limits,
     }
 
     # Optionally create diagnostic plots
@@ -432,7 +470,8 @@ Overall: {"✓ PASSED" if passed else "✗ FAILED"}
         # Plot 1: Center error histogram
         ax = axes[0, 0]
         ax.hist(valid_errors, bins=20, edgecolor="black", alpha=0.7)
-        ax.axvline(max_center_error, color="r", linestyle="--", label="Threshold")
+        if max_center_error is not None:
+            ax.axvline(max_center_error, color="r", linestyle="--", label="Threshold")
         ax.set_xlabel(f"Center Error ({units})")
         ax.set_ylabel("Count")
         ax.set_title("Center Error Distribution")
@@ -451,7 +490,8 @@ Overall: {"✓ PASSED" if passed else "✗ FAILED"}
         ax = axes[1, 0]
         ax.scatter(center_errors[evaluated], correlations[evaluated], alpha=0.6)
         ax.axhline(min_correlation, color="r", linestyle="--", alpha=0.5)
-        ax.axvline(max_center_error, color="r", linestyle="--", alpha=0.5)
+        if max_center_error is not None:
+            ax.axvline(max_center_error, color="r", linestyle="--", alpha=0.5)
         ax.set_xlabel(f"Center Error ({units})")
         ax.set_ylabel("Correlation")
         ax.set_title("Error vs Correlation")
