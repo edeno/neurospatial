@@ -196,6 +196,29 @@ Results that change:
 - `place_cell_significance` bins the trajectory once for every shuffle; null
   scores are bit-identical and a 4-unit, 50-shuffle run takes 0.05 s instead
   of 0.22 s.
+- A "grid" label needs a hexagonal first ring of autocorrelogram peaks (a
+  finite `grid_properties` spacing), on the fixed-cutoff screen and the
+  shuffle labels alike. A smoothed-noise map scored 0.50 with shuffle
+  p = 0.025 and no ring, and both called it a grid cell; it now falls through
+  to its other labels.
+- A shuffle verdict of place, view or object-vector cell needs both a
+  significant information test and bias-corrected information at the
+  screen's cutoff: `CellTypeSignificanceResult.label_cell_types()` (keyword
+  `min_spatial_info`) and `criterion="shuffle"` on `is_place_cell`,
+  `is_spatial_view_cell`, `is_object_vector_cell` and
+  `is_egocentric_object_vector_cell` (keyword `min_info`, which no longer
+  raises with the shuffle). Untuned units that passed by chance in 2-minute
+  recordings (p = 0.01–0.04, 0.04–0.17 bits/spike beyond their bias) are no
+  longer called cells. Units with too few spikes for a bias estimate are
+  refused with a warning; the significance functions still return their
+  p-values and their docstrings say a p-value alone is not a verdict.
+- A shuffle test whose p-value cannot fall below `alpha` because too few
+  null scores are finite (`1 / (1 + n_finite) >= alpha`) is "undetermined",
+  not "unclassified". p-values are `(1 + k) / (1 + n)` over the `n` finite
+  null scores, as the docs now state, and `summary_table()` reports
+  `<statistic>_n_finite_null`.
+- The 0.5 and 0.3 bits/spike cutoffs are described everywhere as a common
+  screening convention; no source derives or calibrates them.
 
 Breaking API changes:
 
@@ -222,6 +245,17 @@ Added:
   screen despite high information shows why. `summary_table()` of spatial
   results adds nullable `passes_spatial_information`, `passes_grid_score` and
   `passes_border_score` columns.
+- `CellTypeSignificanceResult.label_cell_types()` and `summary_table()` take
+  `correction="holm"` (Holm–Bonferroni across each unit's applicable tests:
+  the chance that an untuned unit gets any label stays at `alpha`) or
+  `correction="fdr_bh"` (Benjamini–Hochberg across every unit and test: the
+  expected fraction of false labels in the population stays at `alpha`); the
+  default `None` tests each statistic at `alpha`. On 345 untuned simulated
+  units 6.7%, 2.3% and 1.0% got some label with no correction, Holm and
+  BH; all 30 place and 15 grid cells kept their labels. With a correction the
+  table adds `<statistic>_p_adjusted` columns, and a warning says how many
+  shuffles are needed when p-values at the shuffle floor cannot pass it
+  (with 200 shuffles BH labeled no unit at all).
 
 #### Place fields
 
@@ -432,6 +466,40 @@ Added:
   `n_spikes_outside_intervals`; files without `min_occupancy` are refused,
   since their support threshold is unknown.
 
+#### Walls, transparent walls and drop edges
+
+Results that change:
+
+- A physical boundary has a kind that says what it blocks: `"wall"` blocks
+  movement and gaze, `"transparent_wall"` and `"drop"` (the edge of an
+  elevated track or platform) block movement only. Climbing a wall or
+  leaning over a drop is not modeled. Gaze (ray-cast viewed locations,
+  viewsheds, line of sight, view maps, `SpatialViewCellModel`) stops only at
+  walls; a ray that leaves the floor views nothing (NaN). Border scores,
+  boundary-vector maps, boundary distances, `BorderCellModel` and
+  `BoundaryVectorCellModel` use every kind, so elevated mazes are analyzed
+  instead of refused: a border cell on an elevated square platform scores
+  exactly as in the walled box, as boundary-vector cells respond to drops
+  (Lever et al., 2009) and most border cells keep firing when the walls are
+  removed (van Wijngaarden et al., 2020). Inferred domains (`from_samples`,
+  masks) have no physical outline, and wall-based analyses still refuse them
+  with a message naming `outline="drop"`.
+
+Breaking API changes:
+
+- `physical_footprint_known` is removed from every arena. `OpenArena(polygon,
+  *, outline="wall", walls=..., wall_kinds="wall")` takes the outline's kind
+  (None for a non-physical outline) and one kind per named wall (a single
+  kind, a mapping by wall name, or one per segment); a named wall lying on
+  the outline overrides that stretch of it. `MaskArena(outline=)` replaces
+  its flag, and arenas expose `outline` and `wall_kinds`.
+  `neurospatial.arena.BoundaryKind` names the kinds. The geometry helpers
+  `boundary_geometry`, `physical_walls`, `boundary_view` and
+  `physical_ray_hits` take a required `blocking="movement" | "gaze"`. The
+  arena codec (version 3) and `STATE_FORMAT` (7) record the kinds and refuse
+  older records; save them again from rebuilt environments. The
+  `elevated_arena` maze helper is removed.
+
 #### Simulation and mazes
 
 Results that change:
@@ -447,13 +515,43 @@ Results that change:
 - `tmaze_alternation_session` runs to both arms (the right arm had no bins),
   and uniform field coverage on a track spaces field centers along the
   track.
-- Elevated mazes and platforms (linear track, T, Y, W, plus, radial arm,
-  crossword, Barnes, cheeseboard, honeycomb) declare no walls
-  (`env.arena.physical_footprint_known` is False): their edges are drops the
-  animal sees past, so ray-cast gaze and border scores no longer treat them
-  as walls, and wall-based analyses refuse these environments. Walled mazes
-  keep their outline as walls, and the maze guide shows how to rebuild an
-  elevated maze as a walled arena.
+- Each maze declares its edges as its published apparatus has them. Drop
+  edges: linear track, radial arm, Barnes, honeycomb, crossword, cheeseboard,
+  W and plus maze. Opaque walls: hamlet, Hampton Court, repeated T and Y,
+  rat HexMaze, small hex, square maze, watermaze, and the T and Y mazes
+  (Wijnen et al., 2024 describe walls; they were elevated before). Sungod
+  has an opaque outline with 14 transparent stretches between its arms
+  (`arm_k_wall_facing_arm_j`), so simulated and analyzed gaze crosses
+  between arms: 52% of random gaze rays now land farther away (median
+  4.1 → 41.6 cm). Where a source does not say, the docstring states it and
+  the maze uses the common open build.
+- Simulated cells default to published values, converted from cm to the
+  environment's units. Place cells: width 11.1 cm and peak 12.4 Hz from the
+  median CA1 open-field field in Mizuseki et al. (2012); on the linear-track
+  and T-maze sessions 17.5 cm and 14.5 Hz from the same paper's track data.
+  Head direction: peak 35 Hz and concentration 9.1 (a 22.5° half-width) from
+  Taube, Muller & Ranck (1990). Grid spacing 41 cm, the dorsal-most cells of
+  Hafting et al. (2005). Border-cell distance tolerance 9.8 cm and
+  object-vector distance 21.2 cm from Høydal et al. (2019), and
+  object-vector cells fire at the same vector from every object
+  (`object_selectivity="any"`, as Høydal et al. found with 2–6 objects).
+  Values no source supports (baseline rates, the remaining peak rates) are
+  marked illustrative in each docstring. The place width no longer scales
+  with `bin_size`, so simulated ground truth does not change with the
+  analysis binning; an environment without length units needs an explicit
+  `width`.
+- Place fields stay Gaussian beyond five widths (the rate sat on a
+  7.5e-05 Hz floor there), and object-vector cells with very sharp direction
+  tuning return their peak rate at the preferred direction instead of NaN.
+- `validate_simulation` compares each cell's center error with 1.5 times its
+  true field width and requires a field correlation of 0.9 (was a 2-bin
+  center error and 0.5). Calibrated on 180 s and 600 s open-field sessions
+  with 6–17.5 cm fields: 94% of correctly simulated cells pass, 96% of cells
+  whose ground-truth center is moved by one width fail and every cell whose
+  ground-truth width is tripled fails. The old default failed 71% of correct
+  cells and passed 93% of moved ones. Short sessions with small fields (180 s,
+  6 cm) pass only 69%; the docstring gives the numbers. The per-cell limits
+  are returned as `max_center_errors`.
 - `from_polygon` gives a grid cell centered exactly on the outline to its
   neighboring bin. Positions there were dropped from occupancy, and wall
   pieces and ray-cast hits there had no bin, so border scores and view maps
@@ -465,10 +563,13 @@ Breaking API changes:
 - `BoundaryCellModel` is replaced by `BoundaryVectorCellModel` (Barry et
   al., 2006: every visible piece of wall contributes) and `BorderCellModel`
   (firing by distance to the nearest wall), measured against the declared
-  walls. Tuning widths (`distance_tolerance`, `direction_tolerance`) are
-  required. `boundary_cell_session` becomes `border_cell_session` with a
-  required `border_width` and `n_border_cells`, and `simulate_session`'s
-  `cell_type="boundary"` becomes `"border"`.
+  walls. Both default their tuning (see above); `BoundaryVectorCellModel`
+  draws a random preferred direction from a new `seed`.
+  `boundary_cell_session` becomes `border_cell_session` with a required
+  `n_border_cells`, and `simulate_session`'s `cell_type="boundary"` becomes
+  `"border"`.
+- `grid_cell_session(grid_spacing=)` defaults to 41.0 (was 50.0), and
+  `linear_track_session` passes extra keyword arguments to its place cells.
 
 ### Operations review (`neurospatial.ops`)
 
