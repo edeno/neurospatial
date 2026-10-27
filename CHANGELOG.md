@@ -2,6 +2,66 @@
 
 ## [Unreleased]
 
+### Faster encoding analyses
+
+Single-unit and population rate maps now share one code path in every
+family, and the shuffle tests bin the trajectory once instead of once per
+shuffle. Rate maps, scores, p-values and labels for a given seed are
+unchanged, except at float rounding where noted.
+
+Faster:
+
+- `place_cell_significance` and `spatial_cell_type_significance` bin the
+  trajectory once for all shuffles instead of once per unit and shuffle:
+  50 units with 100 shuffles took 2.0 s instead of 16 s at 2e5 samples and
+  8.6 s instead of 79 s at 1e6 samples.
+- `compute_spatial_rates` fills missing positions and bins the trajectory
+  once for the population instead of once per unit (1e6 samples, 100 units:
+  0.5 s instead of 1.8 s).
+- `head_direction_cell_significance`, `spatial_view_cell_significance`,
+  `object_vector_cell_significance` and
+  `egocentric_object_vector_cell_significance` (and the predicates with
+  `criterion="shuffle"`) reuse the observed binning, analyzed intervals and
+  occupancy in every shuffle and only recount spikes: about 2x faster for
+  head direction and object vectors, 1.4x for view cells.
+- Calling `spatial_information_bias()` on each unit of a population reuses
+  the population's estimate instead of recomputing it per unit (100 units,
+  1600 bins: 0.05 s instead of 5.8 s).
+- `population_coverage` diffuses all candidate field peaks in one batch
+  (about 5x faster).
+- `compute_field_emd` uses sparse transport constraints, and with
+  `metric="geodesic"` computes shortest paths only from bins with mass:
+  peak memory 634 MB to 15 MB for 214 active bins in a 10,000-bin arena, and
+  geodesic runs 5-10x faster.
+- `spatial_autocorrelation`, grid scores and their shuffles reuse the
+  terms that depend only on the map's missing bins (about 1.7x faster for
+  the autocorrelogram). Values change only at float rounding (relative
+  differences up to about 1e-14).
+- `compute_phase_precession` shuffles build their slope basis once (up to
+  about 2x faster), and the default smoothing bandwidth for environments
+  without metric units is found about 30x faster.
+- `import neurospatial.encoding` no longer imports matplotlib.
+
+Messages that change:
+
+- A bad spike train in a `*_significance` function names the unit, e.g.
+  "place_cell_significance (neuron 1): spike_times must be ...".
+- Timestamp errors read the same in every family: "times has N non-finite
+  value(s), first at index I." and "times must be monotonically
+  non-decreasing; it decreases at N place(s), first a -> b at index K.".
+  Non-finite times no longer also report their ordering.
+- `compute_object_vector_rate`, `compute_egocentric_rate` and
+  `compute_view_rates` check `method` (and, for views, `gaze_model` and
+  `view_distance`) before other settings, matching their single-unit or
+  population counterparts. An invalid `method` with no environment or a
+  unitless one used to report a misleading "needs a bandwidth" error.
+- `spatial_view_cell_significance` reports wrong-length `gaze_offsets` and
+  positions that do not match the environment with the same errors as
+  `compute_view_rates` (it raised a NumPy broadcasting error), and warns
+  once instead of twice about headings that look like degrees.
+- Single-unit `gaussian_kde` rate maps on the JAX backend can differ from
+  before at float rounding (about 1e-15 relative).
+
 ### Unequal bins and bin numbering
 
 Bins can differ in size (cells clipped by an outline or split by a wall,
