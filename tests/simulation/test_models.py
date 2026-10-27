@@ -364,6 +364,23 @@ class TestPlaceCellModel:
         # Allow tolerance for small contribution from tail
         assert abs(rate[0] - pc.baseline_rate) < 0.001
 
+    @pytest.mark.parametrize("width", [5.0, [5.0, 2.0]])
+    def test_field_is_gaussian_in_its_tail(self, simple_2d_env, width):
+        """The field keeps falling as a Gaussian beyond 5 standard deviations."""
+        pc = PlaceCellModel(
+            simple_2d_env,
+            center=[50.0, 50.0],
+            width=width,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+        x_width = np.atleast_1d(width)[0]
+        sigmas = np.array([4.0, 6.0, 8.0])
+        positions = np.column_stack([50.0 + sigmas * x_width, np.full(3, 50.0)])
+        np.testing.assert_allclose(
+            pc.firing_rate(positions), 20.0 * np.exp(-0.5 * sigmas**2), rtol=1e-12
+        )
+
 
 @pytest.fixture(scope="module")
 def walled_box():

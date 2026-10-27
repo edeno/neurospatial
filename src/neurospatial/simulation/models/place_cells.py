@@ -165,9 +165,6 @@ class PlaceCellModel:
 
     Notes
     -----
-    **Numerical Stability**: Distances > 5*width are clipped to avoid numerical
-    underflow in the Gaussian computation (contribution < 1e-6).
-
     **Geodesic Distance**: For geodesic metric, the distance field is precomputed
     in ``__init__`` using graph shortest paths. This makes subsequent firing rate
     computations fast (O(1) lookup per position) but adds initialization cost.
@@ -325,10 +322,8 @@ class PlaceCellModel:
         Implementation:
 
         1. Compute distance from positions to center (euclidean or geodesic)
-        2. Apply Gaussian with numerical stability:
-
-           - Clip distances > 5*width (contribution < 1e-6)
-           - rate = baseline + (max - baseline) * exp(-0.5 * (d/width)^2)
+        2. Apply the Gaussian:
+           rate = baseline + (max - baseline) * exp(-0.5 * (d/width)^2)
 
         3. Apply condition mask if provided (multiply rates by mask)
 
@@ -377,22 +372,17 @@ class PlaceCellModel:
             normalized_diff = diff / width
             distances = np.linalg.norm(normalized_diff, axis=1)
             # `distances` is now in sigma units, so the Gaussian divisor is 1.0.
-            # Use the mean width only as a length scale for the clip threshold,
-            # expressed back in sigma units (5 sigma).
             sigma_divisor = 1.0
-            clip_threshold = 5.0  # 5 sigma, since `distances` is in sigma units
         else:
             # Isotropic: `distances` (set above) is a raw Euclidean distance,
             # so divide by the scalar width to convert to sigma units.
-            scalar_width = float(width)
-            sigma_divisor = scalar_width
-            clip_threshold = 5.0 * scalar_width  # 5 sigma in raw distance units
-
-        # Clip for numerical stability (Gaussian < 1e-6 beyond 5 sigma).
-        distances = np.minimum(distances, clip_threshold)
+            sigma_divisor = float(width)
 
         # Compute Gaussian firing rate:
         #   rate = baseline + (max - baseline) * exp(-0.5 * (d / sigma)^2)
+        # Far from the field the exponential underflows to 0 (and an
+        # unreachable geodesic distance, inf, gives exactly 0), so the rate
+        # settles on the baseline without any clipping.
         gaussian = np.exp(-0.5 * (distances / sigma_divisor) ** 2)
         rates = self.baseline_rate + (self.max_rate - self.baseline_rate) * gaussian
 
