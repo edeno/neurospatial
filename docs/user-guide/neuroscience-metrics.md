@@ -520,6 +520,15 @@ egocentric boundary cells. The walls are the arena's declared walls
 (`boundary_source="physical"`), so build the environment from the measured
 outline; an unvisited corner is then not a wall.
 
+The map covers walls 0-50 cm away by default, the range Hinman et al. (2019)
+used, in 5 cm rings and 30° direction bins. It does not reach the far side of
+the arena on purpose: in a box, a cell firing 15 cm from the East wall is
+also firing 85 cm from the West wall, and a map out to the far walls lets the
+peak jump there. `analysis_settings["fraction_of_time_in_distance_range"]`
+records the share of ray time the map covers, and a unit whose peak lies in
+the outermost ring raises a warning, because its field may continue beyond the
+range. Widen `distance_range=` for a cell that may be tuned to a farther wall.
+
 This example simulates an egocentric boundary cell that fires when a wall is
 about 15 cm to the animal's left:
 
@@ -549,7 +558,7 @@ spike_times = generate_poisson_spikes(rate, times, seed=1)
 
 result = compute_boundary_vector_rate(
     env, spike_times, times, positions, headings,
-    direction_frame="egocentric", n_direction_bins=18,
+    direction_frame="egocentric", direction_bin_size=np.deg2rad(20),
 )
 print(f"Preferred direction: {np.degrees(result.preferred_direction()):.0f} deg")
 print(f"Preferred distance: {result.preferred_distance():.1f} cm")

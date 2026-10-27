@@ -53,6 +53,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
 
@@ -74,10 +75,12 @@ from neurospatial.encoding._base import (
     _to_numpy,
 )
 from neurospatial.encoding._polar_results import (
+    DEFAULT_DIRECTION_BIN_SIZE,
     _PolarRateMixin,
-    _unknown_units,
     polar_summary_frame,
     require_known_bandwidth,
+    resolve_polar_grid,
+    warn_if_peak_at_range_edge,
 )
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
@@ -127,18 +130,6 @@ __all__ = [
 
 
 OBJECT_VECTOR_THRESHOLDS = MappingProxyType({"min_info": 0.3})
-
-# Default polar grid. Calibrated on simulated object-vector cells (Gaussian
-# distance tuning, sd 6 cm, at 20/40/60 cm; von Mises direction tuning,
-# kappa 4; 15 Hz peak over 0.2 Hz; 5- and 15-minute sessions in a 150 cm box)
-# among ring widths of 2.5, 5 and 10 cm and direction bins of 15, 30 and 45
-# degrees with the unsmoothed ("binned") estimator. In 15-minute sessions 5 cm
-# by 30 degrees kept both 90th-percentile errors small (distance 2.5 cm,
-# direction 19 degrees); 10 cm rings trade a 5 cm distance error for a 15-17
-# degree direction error, and finer bins hold too few spikes without smoothing
-# (2.5 cm by 15 degrees: direction error 62 degrees).
-_DEFAULT_RING_WIDTH_CM = 5.0
-_DEFAULT_DIRECTION_BIN_SIZE = np.pi / 6
 
 
 def _check_direction_frame(direction_frame: str, *, context: str) -> None:
@@ -1520,7 +1511,7 @@ def compute_egocentric_rate(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -1781,7 +1772,7 @@ def compute_object_vector_rate(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -2153,22 +2144,17 @@ def _object_vector_grid(
     direction_bin_size: float,
     context: str,
 ) -> tuple[tuple[float, float], int, int]:
-    """Resolve the polar grid: ``(distance_range, n_distance_bins, n_direction_bins)``.
+    """Resolve the object-vector polar grid; see :func:`resolve_polar_grid`.
 
-    Ring and direction bins have physical widths. A default range starts at
-    0 and covers every distance inside ``env`` in whole rings; an explicit
-    range is kept and divided into the whole number of rings nearest
-    ``distance_bin_size``, as ``n = round(2 pi / direction_bin_size)``
-    direction bins span the circle.
+    The default range covers every distance to the nearest object inside
+    ``env`` (:func:`_largest_object_distance`).
 
     Raises
     ------
     ValueError
-        If a default needs ``env`` or known length units that are missing,
-        or a width or range is not a positive finite span.
+        If the default range has no ``env`` to measure, or the widths or
+        range are invalid.
     """
-    from neurospatial._units import units_per_centimeter
-
     if distance_range is None and env is None:
         raise ValueError(
             _format_error(
@@ -2179,50 +2165,18 @@ def _object_vector_grid(
                 "of positions, or the env the positions were recorded in",
             )
         )
-    units = env.units if env is not None else None
-    if distance_bin_size is None:
-        per_cm = units_per_centimeter(units)
-        if per_cm is None:
-            raise ValueError(
-                _format_error(
-                    f"{context}: distance_bin_size is required because "
-                    f"{_unknown_units(units)}.",
-                    why=f"Why: the default {_DEFAULT_RING_WIDTH_CM:g} cm ring "
-                    "width cannot be converted to coordinates of unknown scale",
-                    fix="pass distance_bin_size in the units of positions, or "
-                    "an env with units='cm' (or 'mm', 'm')",
-                )
-            )
-        distance_bin_size = _DEFAULT_RING_WIDTH_CM * per_cm
-    width = float(distance_bin_size)
-    if not (np.isfinite(width) and width > 0):
-        raise ValueError(
-            f"{context}: distance_bin_size must be a positive finite length, "
-            f"got {distance_bin_size!r}."
-        )
-    angle = float(direction_bin_size)
-    if not (np.isfinite(angle) and 0 < angle <= 2 * np.pi):
-        raise ValueError(
-            _format_error(
-                f"{context}: direction_bin_size={direction_bin_size!r} is not an "
-                "angular bin width.",
-                fix="pass a width in radians in (0, 2*pi], e.g. np.deg2rad(30)",
-            )
-        )
-    n_direction_bins = max(1, round(2 * np.pi / angle))
-    if distance_range is None:
-        assert env is not None  # refused above
-        n_rings = int(
-            np.floor(_largest_object_distance(env, object_positions, metric) / width)
-        )
-        return (0.0, (n_rings + 1) * width), n_rings + 1, n_direction_bins
-    low, high = (float(value) for value in distance_range)
-    if not (np.isfinite(low) and np.isfinite(high) and 0 <= low < high):
-        raise ValueError(
-            f"{context}: distance_range must be (min, max) with "
-            f"0 <= min < max, got {distance_range!r}."
-        )
-    return (low, high), max(1, round((high - low) / width)), n_direction_bins
+    return resolve_polar_grid(
+        env.units if env is not None else None,
+        distance_range=distance_range,
+        largest_distance=(
+            None
+            if env is None
+            else partial(_largest_object_distance, env, object_positions, metric)
+        ),
+        distance_bin_size=distance_bin_size,
+        direction_bin_size=direction_bin_size,
+        context=context,
+    )
 
 
 def _warn_if_directions_unsampled(
@@ -2278,53 +2232,6 @@ def _warn_if_directions_unsampled(
             fix=f"check object_positions against the arena (units={units!r}); "
             "for an object that really is at the edge, read direction tuning "
             "over the sampled arc only",
-        ),
-        UserWarning,
-        stacklevel=3,
-    )
-
-
-def _warn_if_peak_at_range_edge(
-    firing_rates: ArrayLike,
-    *,
-    n_distance_bins: int,
-    n_direction_bins: int,
-    distance_range: tuple[float, float],
-    time_beyond: float,
-    time_in_range: float,
-    unit_ids: Sequence[Any],
-    units: str | None,
-    context: str,
-) -> None:
-    """Warn when a unit peaks in the outermost ring and the range cut time off.
-
-    A rate map's peak is a local maximum only away from the domain's edge. A
-    peak in the last ring, while the animal also spent time beyond it, cannot
-    be told from a field that continues past ``distance_range``.
-    """
-    if time_beyond <= 0:
-        return
-    rates = np.atleast_2d(np.asarray(_to_numpy(firing_rates), dtype=np.float64))
-    observed = np.isfinite(rates).any(axis=1)
-    if not observed.any():
-        return
-    peak_ring = np.full(len(rates), -1)
-    peak_ring[observed] = np.nanargmax(rates[observed], axis=1) // n_direction_bins
-    edge = np.flatnonzero(peak_ring == n_distance_bins - 1)
-    if edge.size == 0:
-        return
-    labels = [unit_ids[i] for i in edge[:5]]
-    more = f" and {edge.size - 5} more" if edge.size > 5 else ""
-    share = time_beyond / (time_beyond + time_in_range)
-    warnings.warn(
-        _format_error(
-            f"{context}: unit(s) {labels}{more} peak in the outermost ring of "
-            f"distance_range={distance_range} {units or ''}, and the nearest "
-            f"object was beyond {distance_range[1]:g} for {time_beyond:.1f} s "
-            f"({share:.0%} of the analyzed time).",
-            why="Why: a field cut off by the range looks the same as a peak at "
-            "its edge, so preferred_distance may be wrong",
-            fix="widen distance_range (the default covers the whole environment)",
         ),
         UserWarning,
         stacklevel=3,
@@ -2486,7 +2393,7 @@ def _object_vector_rate(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -2602,7 +2509,7 @@ def _object_vector_rate(
         extended_landmarks=object_names is not None and object_positions.ndim == 3,
         context=context,
     )
-    _warn_if_peak_at_range_edge(
+    warn_if_peak_at_range_edge(
         firing_rate,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
@@ -2611,6 +2518,8 @@ def _object_vector_rate(
         time_in_range=float(counts.occupancy.sum()),
         unit_ids=[0],
         units=units,
+        subject="the nearest object",
+        fix="widen distance_range (the default covers the whole environment)",
         context=context,
     )
 
@@ -2647,7 +2556,7 @@ def compute_egocentric_rates(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -2985,7 +2894,7 @@ def compute_object_vector_rates(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -3257,7 +3166,7 @@ def _object_vector_rates(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -3425,7 +3334,7 @@ def _object_vector_rates(
             ),
             context=context,
         )
-        _warn_if_peak_at_range_edge(
+        warn_if_peak_at_range_edge(
             firing_rates,
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
@@ -3434,6 +3343,8 @@ def _object_vector_rates(
             time_in_range=float(counts.occupancy.sum()),
             unit_ids=list(resolved_unit_ids),
             units=units,
+            subject="the nearest object",
+            fix="widen distance_range (the default covers the whole environment)",
             context=context,
         )
 
@@ -3631,7 +3542,7 @@ def is_object_vector_cell(
     unit_id: Hashable | None = None,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -3907,7 +3818,7 @@ def is_egocentric_object_vector_cell(
     unit_id: Hashable | None = None,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -4506,7 +4417,7 @@ def object_vector_cell_significance(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -4732,7 +4643,7 @@ def egocentric_object_vector_cell_significance(
     *,
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
-    direction_bin_size: float = _DEFAULT_DIRECTION_BIN_SIZE,
+    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
     metric: DistanceMetric = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,

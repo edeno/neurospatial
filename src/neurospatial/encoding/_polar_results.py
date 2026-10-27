@@ -8,18 +8,32 @@ compute alike; each family keeps its own public methods and documentation.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial.encoding._base import KERNEL_ESTIMATORS, BandwidthRule, _to_numpy
 
 if TYPE_CHECKING:
     import pandas as pd
 
+
+# Default polar grid. Calibrated on simulated object-vector cells (Gaussian
+# distance tuning, sd 6 cm, at 20/40/60 cm; von Mises direction tuning,
+# kappa 4; 15 Hz peak over 0.2 Hz; 5- and 15-minute sessions in a 150 cm box)
+# among ring widths of 2.5, 5 and 10 cm and direction bins of 15, 30 and 45
+# degrees with the unsmoothed ("binned") estimator. In 15-minute sessions 5 cm
+# by 30 degrees kept both 90th-percentile errors small (distance 2.5 cm,
+# direction 19 degrees); 10 cm rings trade a 5 cm distance error for a 15-17
+# degree direction error, and finer bins hold too few spikes without smoothing
+# (2.5 cm by 15 degrees: direction error 62 degrees). On simulated
+# boundary-vector and egocentric boundary cells the same grid kept 90% of
+# errors within 2.5 cm and 17 degrees (see compute_boundary_vector_rates).
+DEFAULT_RING_WIDTH_CM = 5.0
+DEFAULT_DIRECTION_BIN_SIZE = np.pi / 6
 
 POLAR_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
     {**KERNEL_ESTIMATORS, "binned": "none"}
@@ -101,13 +115,22 @@ def _unknown_units(units: str | None) -> str:
     return f"env.units={units!r} is not a known length unit"
 
 
-def resolve_distance_range(
+def resolve_polar_grid(
     units: str | None,
-    distance_range: tuple[float, float] | None,
     *,
+    distance_range: tuple[float, float] | None,
+    largest_distance: Callable[[], float] | None,
+    distance_bin_size: float | None,
+    direction_bin_size: float,
     context: str,
-) -> tuple[float, float]:
-    """The polar grid's distance range, defaulting to 0-50 cm.
+) -> tuple[tuple[float, float], int, int]:
+    """Resolve the polar grid: ``(distance_range, n_distance_bins, n_direction_bins)``.
+
+    Ring and direction bins have physical widths. A default range starts at
+    0 and covers ``largest_distance()`` in whole rings; an explicit range is
+    kept and divided into the whole number of rings nearest
+    ``distance_bin_size``, as ``n = round(2 pi / direction_bin_size)``
+    direction bins span the circle.
 
     Parameters
     ----------
@@ -115,39 +138,140 @@ def resolve_distance_range(
         Length units of the positions (``env.units``), or None when unknown.
     distance_range : tuple of float or None
         The caller's range, in those units; None for the default.
+    largest_distance : callable or None
+        Returns the largest distance the map can measure, in those units;
+        called only for the default range, and None when the caller always
+        passes a range.
+    distance_bin_size : float or None
+        Ring width in those units; None for 5 cm converted to ``units``.
+    direction_bin_size : float
+        Direction bin width in radians.
     context : str
         Public function name for error messages.
-
-    Returns
-    -------
-    tuple of float
-        ``(min, max)`` in the positions' units.
 
     Raises
     ------
     ValueError
-        If ``distance_range`` is None and ``units`` is not a known length
-        unit: 50 has no meaning without a scale.
+        If the default ring width needs known length units that are missing,
+        or a width or range is not a positive finite span.
     """
     from neurospatial._exceptions import _format_error
     from neurospatial._units import units_per_centimeter
 
-    if distance_range is not None:
-        low, high = distance_range
-        return (float(low), float(high))
-    per_cm = units_per_centimeter(units)
-    if per_cm is None:
+    if distance_bin_size is None:
+        per_cm = units_per_centimeter(units)
+        if per_cm is None:
+            raise ValueError(
+                _format_error(
+                    f"{context}: distance_bin_size is required because "
+                    f"{_unknown_units(units)}.",
+                    why=f"Why: the default {DEFAULT_RING_WIDTH_CM:g} cm ring "
+                    "width cannot be converted to coordinates of unknown scale",
+                    fix="pass distance_bin_size in the units of positions, or "
+                    "an env with units='cm' (or 'mm', 'm')",
+                )
+            )
+        distance_bin_size = DEFAULT_RING_WIDTH_CM * per_cm
+    width = float(distance_bin_size)
+    if not (np.isfinite(width) and width > 0):
+        raise ValueError(
+            f"{context}: distance_bin_size must be a positive finite length, "
+            f"got {distance_bin_size!r}."
+        )
+    angle = float(direction_bin_size)
+    if not (np.isfinite(angle) and 0 < angle <= 2 * np.pi):
         raise ValueError(
             _format_error(
-                f"{context}: distance_range is required because "
-                f"{_unknown_units(units)}.",
-                why="Why: the default 0-50 cm range cannot be converted to "
-                "coordinates of unknown scale",
-                fix="pass distance_range=(0.0, max_distance) in the units of "
-                "positions, or an env with units='cm' (or 'mm', 'm')",
+                f"{context}: direction_bin_size={direction_bin_size!r} is not an "
+                "angular bin width.",
+                fix="pass a width in radians in (0, 2*pi], e.g. np.deg2rad(30)",
             )
         )
-    return (0.0, 50.0 * per_cm)
+    n_direction_bins = max(1, round(2 * np.pi / angle))
+    if distance_range is None:
+        assert largest_distance is not None  # callers without one pass a range
+        n_rings = int(np.floor(largest_distance() / width)) + 1
+        return (0.0, n_rings * width), n_rings, n_direction_bins
+    low, high = (float(value) for value in distance_range)
+    if not (np.isfinite(low) and np.isfinite(high) and 0 <= low < high):
+        raise ValueError(
+            f"{context}: distance_range must be (min, max) with "
+            f"0 <= min < max, got {distance_range!r}."
+        )
+    return (low, high), max(1, round((high - low) / width)), n_direction_bins
+
+
+def warn_if_peak_at_range_edge(
+    firing_rates: ArrayLike,
+    *,
+    n_distance_bins: int,
+    n_direction_bins: int,
+    distance_range: tuple[float, float],
+    time_beyond: float | NDArray[np.float64],
+    time_in_range: float | NDArray[np.float64],
+    unit_ids: Sequence[Any],
+    units: str | None,
+    subject: str,
+    fix: str,
+    context: str,
+) -> None:
+    """Warn when a unit peaks in the outermost ring and the range cut time off.
+
+    A rate map's peak is a local maximum only away from the domain's edge. A
+    peak in the last ring, while ``subject`` also lay beyond it, cannot be
+    told from a field that continues past ``distance_range``.
+
+    Parameters
+    ----------
+    time_beyond, time_in_range : float or NDArray[np.float64], shape (n_direction_bins,)
+        Seconds ``subject`` lay beyond and within ``distance_range``, for the
+        whole map or per direction bin.
+    subject : str
+        What lay beyond the range, for the message (``"the nearest object"``).
+    fix : str
+        How to fix it, for the message.
+    """
+    import warnings
+
+    from neurospatial._exceptions import _format_error
+
+    beyond = np.broadcast_to(
+        np.asarray(time_beyond, dtype=np.float64), n_direction_bins
+    )
+    within = np.broadcast_to(
+        np.asarray(time_in_range, dtype=np.float64), n_direction_bins
+    )
+    if not (beyond > 0).any():
+        return
+    rates = np.atleast_2d(np.asarray(_to_numpy(firing_rates), dtype=np.float64))
+    observed = np.isfinite(rates).any(axis=1)
+    if not observed.any():
+        return
+    peak_bin = np.full(len(rates), -1)
+    peak_bin[observed] = np.nanargmax(rates[observed], axis=1)
+    ring, column = np.divmod(peak_bin, n_direction_bins)
+    edge = np.flatnonzero(
+        observed & (ring == n_distance_bins - 1) & (beyond[column] > 0)
+    )
+    if edge.size == 0:
+        return
+    labels = [unit_ids[i] for i in edge[:5]]
+    more = f" and {edge.size - 5} more" if edge.size > 5 else ""
+    columns = column[edge]
+    share = float(np.max(beyond[columns] / (beyond[columns] + within[columns])))
+    warnings.warn(
+        _format_error(
+            f"{context}: unit(s) {labels}{more} peak in the outermost ring of "
+            f"distance_range={distance_range} {units or ''}, and {subject} lay "
+            f"beyond {distance_range[1]:g} for up to {share:.0%} of the "
+            "analyzed time.",
+            why="Why: a field cut off by the range looks the same as a peak at "
+            "its edge, so preferred_distance may be wrong",
+            fix=fix,
+        ),
+        UserWarning,
+        stacklevel=3,
+    )
 
 
 def require_known_bandwidth(
