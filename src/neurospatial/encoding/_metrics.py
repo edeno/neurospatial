@@ -1024,72 +1024,30 @@ def batch_grid_scores(
     neurospatial.encoding.grid.grid_score : Single autocorrelogram grid score
     neurospatial.encoding.grid.spatial_autocorrelation : Compute autocorrelation
     """
-    from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+    from neurospatial.encoding.grid import (
+        _require_rectangular_grid,
+        grid_score,
+        spatial_autocorrelation,
+    )
 
-    firing_rates = np.asarray(firing_rates)
-
-    # Validate shapes
-    if firing_rates.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
-        )
-
-    if firing_rates.shape[1] != env.n_bins:
-        raise ValueError(
-            f"firing_rates has {firing_rates.shape[1]} bins but "
-            f"env has {env.n_bins} bins"
-        )
-
-    n_neurons = firing_rates.shape[0]
-    scores = np.empty(n_neurons, dtype=np.float64)
-    failures = np.zeros(n_neurons, dtype=np.bool_)
-
+    firing_rates = _unit_maps(env, firing_rates)
     # The environment either has a rectangular lag grid or has no grid score
     # at all; refuse once, as spatial_autocorrelation does, rather than
     # returning NaN scores that read as "not a grid cell".
-    from neurospatial.encoding.grid import _require_rectangular_grid
-
     _require_rectangular_grid(env, "batch_grid_scores()")
 
-    for i in range(n_neurons):
-        firing_rate = firing_rates[i]
+    def score(firing_rate: NDArray[np.float64]) -> float:
+        # An all-NaN or constant map has no spatial structure to
+        # autocorrelate: its score is NaN, not a failure. Checking first lets
+        # the failure mask flag only true failures.
+        finite_rates = firing_rate[np.isfinite(firing_rate)]
+        if finite_rates.size == 0 or np.all(finite_rates == finite_rates[0]):
+            return np.nan
+        return grid_score(spatial_autocorrelation(env, firing_rate))
 
-        # Pre-check legitimate-NaN inputs before calling
-        # spatial_autocorrelation. Both conditions raise ValueError from
-        # inside spatial_autocorrelation, but they reflect properties of
-        # the input rate map (no spatial structure to autocorrelate),
-        # not a computation failure. Pre-checking lets the catch-all
-        # below flag only true failures.
-        finite_mask = np.isfinite(firing_rate)
-        if not np.any(finite_mask):
-            scores[i] = np.nan
-            continue
-        finite_rates = firing_rate[finite_mask]
-        if np.all(finite_rates == finite_rates[0]):
-            scores[i] = np.nan
-            continue
-
-        try:
-            autocorr = spatial_autocorrelation(env, firing_rate)
-            scores[i] = grid_score(autocorr)
-        except (ValueError, RuntimeError):
-            # Caught exception: record both NaN and the failure flag so
-            # the caller can distinguish this from a legitimate-NaN.
-            scores[i] = np.nan
-            failures[i] = True
-
-    n_failed = int(failures.sum())
-    if n_failed > 0:
-        warnings.warn(
-            f"batch_grid_scores: grid_score raised an exception for "
-            f"{n_failed} of {n_neurons} neuron"
-            f"{'' if n_neurons == 1 else 's'}; their scores were set to "
-            "NaN. Inspect the `failures` mask on the returned "
-            "BatchScoresResult to identify which neurons failed.",
-            UserWarning,
-            stacklevel=2,
-        )
-    return BatchScoresResult(scores=scores, failures=failures)
+    return _score_units(
+        firing_rates, score, caller="batch_grid_scores", scorer="grid_score"
+    )
 
 
 def batch_border_scores(
@@ -1198,61 +1156,92 @@ def batch_border_scores(
     from neurospatial.encoding._physical_border import border_geometry
     from neurospatial.encoding.border import _validate_border_arguments, border_score
 
-    firing_rates = np.asarray(firing_rates)
-
-    # Validate shapes
-    if firing_rates.ndim != 2:
-        raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
-        )
-
-    if firing_rates.shape[1] != env.n_bins:
-        raise ValueError(
-            f"firing_rates has {firing_rates.shape[1]} bins but "
-            f"env has {env.n_bins} bins"
-        )
-
+    firing_rates = _unit_maps(env, firing_rates)
     # Invalid arguments and unavailable walls concern every neuron, so raise
     # them once here instead of recording a per-neuron failure.
     _validate_border_arguments(threshold, min_area, metric, boundary_source)
     border_geometry(env, boundary_source)
 
+    def score(firing_rate: NDArray[np.float64]) -> float:
+        return border_score(
+            env,
+            firing_rate,
+            threshold=threshold,
+            min_area=min_area,
+            metric=metric,  # type: ignore[arg-type]
+            boundary_source=boundary_source,
+        )
+
+    return _score_units(
+        firing_rates, score, caller="batch_border_scores", scorer="border_score"
+    )
+
+
+def _unit_maps(env: Environment, firing_rates: ArrayLike) -> NDArray[np.float64]:
+    """Rate maps as an array of shape ``(n_neurons, env.n_bins)``, or raise."""
+    maps = np.asarray(firing_rates)
+    if maps.ndim != 2:
+        raise ValueError(
+            f"firing_rates must be 2D (n_neurons, n_bins), got shape {maps.shape}"
+        )
+    if maps.shape[1] != env.n_bins:
+        raise ValueError(
+            f"firing_rates has {maps.shape[1]} bins but env has {env.n_bins} bins"
+        )
+    return maps
+
+
+def _score_units(
+    firing_rates: NDArray[np.float64],
+    score: Callable[[NDArray[np.float64]], float],
+    *,
+    caller: str,
+    scorer: str,
+) -> BatchScoresResult:
+    """Score each row of ``firing_rates``, recording failures as NaN.
+
+    A ``ValueError`` or ``RuntimeError`` from ``score`` sets that neuron's
+    score to NaN and its failure flag, and the batch warns once. A
+    ``NotImplementedError`` (a ``RuntimeError``) is missing scientific
+    support, an unavailable measurement rather than a numerical failure, so
+    it propagates.
+
+    Parameters
+    ----------
+    firing_rates : ndarray, shape (n_neurons, n_bins)
+        Rate map of each neuron.
+    score : callable
+        Score of one rate map.
+    caller, scorer : str
+        The batch function and the score it computes, named in the warning.
+
+    Returns
+    -------
+    BatchScoresResult
+        Scores and failure flags, one per neuron.
+    """
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
     failures = np.zeros(n_neurons, dtype=np.bool_)
-
     for i in range(n_neurons):
-        firing_rate = firing_rates[i]
-
         try:
-            scores[i] = border_score(
-                env,
-                firing_rate,
-                threshold=threshold,
-                min_area=min_area,
-                metric=metric,  # type: ignore[arg-type]
-                boundary_source=boundary_source,
-            )
+            scores[i] = score(firing_rates[i])
         except NotImplementedError:
-            # Missing scientific support is an unavailable measurement, not a
-            # numerical failure that can be hidden in the batch failure mask.
             raise
         except (ValueError, RuntimeError):
-            # Caught exception: record both NaN and the failure flag so
-            # the caller can distinguish this from a legitimate-NaN.
             scores[i] = np.nan
             failures[i] = True
 
     n_failed = int(failures.sum())
     if n_failed > 0:
         warnings.warn(
-            f"batch_border_scores: border_score raised an exception for "
+            f"{caller}: {scorer} raised an exception for "
             f"{n_failed} of {n_neurons} neuron"
             f"{'' if n_neurons == 1 else 's'}; their scores were set to "
             "NaN. Inspect the `failures` mask on the returned "
             "BatchScoresResult to identify which neurons failed.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=3,
         )
     return BatchScoresResult(scores=scores, failures=failures)
 
