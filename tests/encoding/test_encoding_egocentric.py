@@ -1024,10 +1024,11 @@ class TestObjectVectorRateResultIsOVC:
         firing_rate = np.zeros(n_bins)
         firing_rate[n_bins // 2] = 30.0  # Single peak
 
+        # 100 s per bin: 3000 spikes, enough for the 120-bin polar map.
         result = ObjectVectorRateResult(
             direction_frame="egocentric",
             firing_rate=firing_rate,
-            occupancy=single_neuron_occupancy,
+            occupancy=np.full(n_bins, 100.0),
             env=sample_env,
         )
 
@@ -1074,19 +1075,19 @@ class TestObjectVectorRateResultIsOVC:
 
         # Create moderately selective firing (some spatial info)
         n_bins = sample_env.n_bins
-        firing_rate = np.random.rand(n_bins) * 5.0
+        firing_rate = np.random.default_rng(0).random(n_bins) * 5.0
         # Add a mild peak
         firing_rate[n_bins // 2] = 15.0
 
         result = ObjectVectorRateResult(
             direction_frame="egocentric",
             firing_rate=firing_rate,
-            occupancy=single_neuron_occupancy,
+            occupancy=np.full(n_bins, 100.0),
             env=sample_env,
         )
 
-        # Compute actual info to set appropriate thresholds
-        info = result.spatial_information()
+        # The screen thresholds information minus the untuned-cell bias
+        info = result.spatial_information() - result.spatial_information_bias()
 
         # Should be True for lower threshold
         assert result.is_object_vector_cell(min_info=info - 0.1) is True

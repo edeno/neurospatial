@@ -66,20 +66,24 @@ rates = compute_spatial_rates(
     unit_ids=unit_ids, bandwidth=5.0, min_occupancy=0.05,
 )
 information = rates.spatial_information()  # bits/spike, one value per unit
-n_spatial = count_place_cells(information, threshold=0.5)
-print(f"Units at or above 0.5 bits/spike: {n_spatial} of {len(unit_ids)}")
+bias = rates.spatial_information_bias()  # expected for an untuned unit
+n_spatial = count_place_cells(rates, min_info=0.5)
+print(f"Units at or above 0.5 bits/spike beyond chance: {n_spatial} of {len(unit_ids)}")
 print("Information of the untuned units:", np.round(information[20:], 2))
+print("Expected for untuned units:      ", np.round(bias[20:], 2))
 # Quoted numbers: atol = 0.6 * 10**-decimals
 assert n_spatial == 20
 assert 0.004 <= information[20:].min() <= information[20:].max() <= 0.046
 ```
 
 All 20 simulated place cells pass the 0.5 bits/spike screen and none of the
-untuned units do; the untuned units carry almost no spatial information
-(0.01-0.04 bits/spike). This is a screen, not a verdict. Spatial information
-is biased upward when a unit has few spikes, so a short or sparse recording
-can push untuned cells over any fixed cutoff (see
+untuned units do. The untuned units show 0.01-0.04 bits/spike, about what an
+untuned unit with their spike counts is expected to show from Poisson noise
+alone (`spatial_information_bias()`, 0.03-0.04 here). The screen subtracts that
+expectation before it applies the cutoff, so short or sparse recordings do not
+pass untuned cells (see
 [information bias and cell verdicts](neuroscience-metrics.md#information-bias-and-cell-verdicts)).
+This is a screen, not a verdict.
 For a per-cell decision you can report, use the shuffle test
 `place_cell_significance` on the raw spike times and tracking, or
 `spatial_cell_type_significance` to test grid and border scores as well.
@@ -89,7 +93,7 @@ screened units only:
 
 ```python
 coverage_all = population_coverage(env, rates.firing_rates)
-is_spatial = information >= 0.5  # the same cutoff count_place_cells uses
+is_spatial = rates.classify(min_info=0.5)  # the screen count_place_cells counts
 coverage = population_coverage(env, rates.firing_rates[is_spatial])
 print(f"All 25 units: {coverage_all.coverage_fraction:.0%} of bins covered, "
       f"{coverage_all.n_fields} fields")

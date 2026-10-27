@@ -46,6 +46,13 @@ def test_labels_follow_their_own_statistic(field_and_noise, grid, border, expect
 def test_table_reports_each_screen(field_and_noise):
     table = field_and_noise.summary_table(boundary_source="analysis")
     thresholds = table.attrs["classification_thresholds"]
+    # The information screen subtracts the untuned-cell bias first.
+    screened = {
+        "spatial_information": table["spatial_information"].to_numpy()
+        - field_and_noise.spatial_information_bias(),
+        "grid_score": table["grid_score"].to_numpy(),
+        "border_score": table["border_score"].to_numpy(),
+    }
     for name, cutoff in [
         ("spatial_information", thresholds["min_spatial_info"]),
         ("grid_score", thresholds["min_grid_score"]),
@@ -53,7 +60,7 @@ def test_table_reports_each_screen(field_and_noise):
     ]:
         np.testing.assert_array_equal(
             table[f"passes_{name}"].to_numpy(dtype=bool),
-            table[name].to_numpy() >= cutoff,
+            screened[name] >= cutoff,
         )
     np.testing.assert_array_equal(
         table["cell_type"],
@@ -104,3 +111,17 @@ def test_unavailable_border_score_is_undetermined_not_an_error(
     np.testing.assert_array_equal(table["cell_type"], labels)
     assert table["passes_border_score"].isna().all()
     assert table["passes_spatial_information"].tolist() == [True, False]
+
+
+def test_short_recording_information_bias_is_screened_out(
+    ou_2min_env, ou_2min, noise_trains
+):
+    """Untuned 0.5 Hz units in a 2-minute recording pass 0.5 bits/spike only by bias."""
+    times, positions, _ = ou_2min
+    rates = compute_spatial_rates(
+        ou_2min_env, noise_trains(120), times, positions, bandwidth=5
+    )
+    assert (rates.spatial_information() >= 0.5).sum() >= 10
+    table = rates.summary_table(boundary_source="analysis")
+    assert not table["passes_spatial_information"].any()
+    assert not (table["cell_type"] == "place").any()

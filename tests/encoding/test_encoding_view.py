@@ -873,9 +873,11 @@ class TestViewRateResultIsViewCell:
         firing_rate = np.ones(n_bins, dtype=np.float64) * 2.0
         firing_rate[n_bins // 2] = 10.0  # Moderate peak
 
+        # 100 s per bin: thousands of spikes, so the untuned-cell bias is
+        # small and defined.
         result = ViewRateResult(
             firing_rate=firing_rate,
-            occupancy=single_occupancy,
+            occupancy=np.full(n_bins, 100.0),
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
@@ -915,11 +917,11 @@ class TestViewRateResultIsViewCell:
         # With default threshold (0.5), uniform firing should be False
         assert result.is_spatial_view_cell() is False
 
-    def test_is_view_cell_uses_spatial_information(
+    def test_is_view_cell_uses_bias_corrected_information(
         self,
         simple_env: Environment,
     ) -> None:
-        """is_spatial_view_cell() should use spatial_information() for classification."""
+        """The screen thresholds spatial information minus its untuned bias."""
         from neurospatial.encoding.view import ViewRateResult
 
         # Create peaked firing rate with custom view occupancy
@@ -927,8 +929,7 @@ class TestViewRateResultIsViewCell:
         firing_rate = np.zeros(n_bins, dtype=np.float64)
         firing_rate[n_bins // 2] = 30.0
 
-        # Custom view occupancy that emphasizes the peak
-        occupancy = np.ones(n_bins, dtype=np.float64)
+        occupancy = np.full(n_bins, 100.0)
 
         result = ViewRateResult(
             firing_rate=firing_rate,
@@ -940,12 +941,13 @@ class TestViewRateResultIsViewCell:
             bandwidth=5.0,
         )
 
-        # Get actual info value
         info = result.spatial_information()
+        bias = result.spatial_information_bias()
+        assert 0 < bias < 0.01
+        corrected = info - bias
 
-        # Classification should be consistent with the threshold
-        assert result.is_spatial_view_cell(min_info=info - 0.01) is True
-        assert result.is_spatial_view_cell(min_info=info + 0.01) is False
+        assert result.is_spatial_view_cell(min_info=corrected) is True
+        assert result.is_spatial_view_cell(min_info=corrected + bias / 2) is False
 
 
 # ==============================================================================

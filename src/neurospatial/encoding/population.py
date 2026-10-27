@@ -681,48 +681,57 @@ def field_density_map(
 
 
 def count_place_cells(
-    spatial_information: NDArray[np.float64], *, threshold: float = 0.5
+    rates: SpatialRatesResult, *, min_info: float | None = None
 ) -> int:
     """
-    Count cells at or above a spatial information threshold.
+    Count units that pass the place-cell information screen.
 
-    A threshold screen on Skaggs spatial information [1]_. Plug-in
-    information is biased upward at low spike counts, so the count includes
-    untuned cells in short recordings; use ``place_cell_significance`` for a
-    shuffle test.
+    The count of :meth:`SpatialRatesResult.classify`: units whose Skaggs
+    spatial information [1]_, minus the information an untuned cell shows by
+    chance on the same maps (``rates.spatial_information_bias()``), is at or
+    above ``min_info``. Without that subtraction, short recordings count
+    untuned cells; use ``place_cell_significance`` for a shuffle test.
 
     Parameters
     ----------
-    spatial_information : array, shape (n_cells,)
-        Spatial information (bits/spike) for each cell.
-        Typically computed using `spatial_information()`.
-    threshold : float, default=0.5
-        Minimum spatial information (bits/spike) to count a cell. The cutoff
-        is inclusive: a cell exactly at the threshold counts. 0.5 bits/spike
-        is a common screening value, not a calibrated test.
+    rates : SpatialRatesResult
+        Population rate maps from ``compute_spatial_rates``. The bias depends
+        on the maps' occupancy, estimator and bandwidth, so information
+        values alone cannot be screened.
+    min_info : float or None, default=None
+        Inclusive minimum bias-corrected information (bits/spike); None is
+        0.5 bits/spike, a screening convention, not a calibrated test.
 
     Returns
     -------
     count : int
-        Number of cells with spatial information >= threshold.
+        Number of units that pass. Silent units and units with fewer spikes
+        than the maps have effectively independent bins do not count.
 
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import compute_spatial_rates
     >>> from neurospatial.encoding.population import count_place_cells
-    >>> # Population with mix of place cells and non-selective cells
-    >>> spatial_info = np.array([0.2, 0.8, 1.5, 0.3, 1.2, 0.1])
-    >>> n_place_cells = count_place_cells(spatial_info, threshold=0.5)
-    >>> print(n_place_cells)  # 3 cells reach 0.5 bits/spike
-    3
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (36000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+    >>> times = np.arange(36000) / 30.0
+    >>> field = np.exp(-np.sum((positions - 50.0) ** 2, axis=1) / (2 * 10.0**2))
+    >>> place = times[rng.random(36000) < 8.0 * field / 30.0]
+    >>> untuned = np.sort(rng.uniform(0, 1200, 600))
+    >>> rates = compute_spatial_rates(env, [place, untuned], times, positions)
+    >>> count_place_cells(rates)
+    1
 
     See Also
     --------
-    spatial_information : Compute spatial information
+    SpatialRatesResult.classify : The per-unit screen this counts.
+    SpatialRatesResult.spatial_information_bias : The subtracted bias.
 
     Notes
     -----
-    NaN values (undefined information, e.g. silent cells) are not counted.
     The screen does not separate interneurons or other cell classes.
 
     References
@@ -732,12 +741,19 @@ def count_place_cells(
            hippocampal code. Advances in Neural Information Processing
            Systems 5, 1030-1037.
     """
-    # Exclude NaN values (cells with undefined information)
-    valid_mask = ~np.isnan(spatial_information)
-    valid_info = spatial_information[valid_mask]
-
-    # Inclusive cutoff, as in the cell-type threshold screens
-    return int(np.sum(valid_info >= threshold))
+    if not isinstance(rates, SpatialRatesResult):
+        raise TypeError(
+            _format_error(
+                "count_place_cells needs a SpatialRatesResult, got "
+                f"{type(rates).__name__}.",
+                why="Why: the screen subtracts the information an untuned cell "
+                "shows on the same maps, which depends on their occupancy, "
+                "estimator and bandwidth; information values alone lack them.",
+                fix="pass rates = compute_spatial_rates(env, spike_times, times, "
+                "positions).",
+            )
+        )
+    return int(np.count_nonzero(rates.classify(min_info=min_info)))
 
 
 def field_overlap(

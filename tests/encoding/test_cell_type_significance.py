@@ -101,17 +101,34 @@ def test_null_maps_match_rate_maps_of_shifted_trains(
         np.testing.assert_array_equal(got, expected)
 
 
-def test_threshold_flags_noise_as_object_vector_cell(
+def test_object_vector_screen_rejects_untuned_units(
     ou_env, ou_10min, noise_trains, obj
 ):
+    """Untuned 0.5 Hz units (about 300 spikes) on the 120-bin polar map.
+
+    Their uncorrected information passes 0.3 bits/spike by chance; the screen
+    subtracts the untuned-cell bias (K - 1) / (2 ln 2 N), so none passes.
+    """
     times, positions, headings = ou_10min
     trains = noise_trains(600)
     ego = encoding.compute_egocentric_rates(
         ou_env, trains, times, positions, headings, obj
     )
     allo = encoding.compute_object_vector_rates(ou_env, trains, times, positions, obj)
-    assert ego.classify().sum() == 20
-    assert allo.classify().sum() >= 18
+    for rates in (ego, allo):
+        assert (rates.spatial_information() >= 0.3).sum() >= 18
+        bias = rates.spatial_information_bias()
+        assert np.isfinite(bias).all()
+        occupancy = np.asarray(rates.occupancy)
+        occupied = int((occupancy > 0).sum())
+        # Spikes in the map: the polar grid covers only samples within its
+        # distance range of the object.
+        n_spikes = np.nansum(np.asarray(rates.firing_rates) * occupancy, axis=1)
+        # Unsmoothed polar bins: exactly the Miller-Madow form.
+        np.testing.assert_allclose(
+            bias, (occupied - 1) / (2 * np.log(2) * n_spikes), rtol=1e-10
+        )
+        assert rates.classify().sum() == 0
 
 
 def test_population_labels_and_order(significance_family, significance_recording):

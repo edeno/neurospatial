@@ -714,14 +714,19 @@ def _screen_outcomes(
     unavailable: Mapping[str, str],
     inapplicable: tuple[str, ...],
     *,
+    information: NDArray[np.float64],
     min_spatial_info: float,
     min_grid_score: float,
     min_border_score: float,
 ) -> dict[str, NDArray[np.float64]]:
-    """Fixed-threshold outcome of each test; a NaN score fails its test."""
+    """Fixed-threshold outcome of each test; a NaN score fails its test.
+
+    ``information`` is the bias-corrected spatial information the place
+    screen compares with its cutoff, shape (n_units,).
+    """
     passed = {
         "spatial_information": _passes_information_screen(
-            scores["spatial_information"], min_spatial_info
+            information, min_spatial_info
         ),
         "grid_score": scores["grid_score"] >= min_grid_score,
         "border_score": scores["border_score"] >= min_border_score,
@@ -768,7 +773,7 @@ def _spatial_summary_frame(
     """Build spatial metric columns for single and population results."""
     import pandas as pd
 
-    from neurospatial.encoding._metrics import batch_sparsity
+    from neurospatial.encoding._metrics import _debiased_information, batch_sparsity
     from neurospatial.encoding.border import _border_field_minimum
 
     rates = np.atleast_2d(_to_numpy(_supported_rates(result)))
@@ -792,7 +797,11 @@ def _spatial_summary_frame(
         columns.update(
             _cell_type_columns(
                 _screen_outcomes(
-                    scores, unavailable, inapplicable, **PLACE_GRID_BORDER_THRESHOLDS
+                    scores,
+                    unavailable,
+                    inapplicable,
+                    information=_debiased_information(result),
+                    **PLACE_GRID_BORDER_THRESHOLDS,
                 )
             )
         )
@@ -1178,6 +1187,91 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         # Pass arrays directly - _metrics.py handles JAX dispatch
         return spatial_information(_supported_rates(self), self.occupancy)
+
+    def spatial_information_bias(self) -> float:
+        """Expected spatial information of an untuned cell (bits/spike).
+
+        Plug-in Skaggs information is positive even for a cell that fires at
+        the same rate everywhere, because Poisson noise makes its rate map
+        uneven. This is the information such an untuned cell, firing at this
+        unit's mean rate, is expected to show on this occupancy with this
+        estimator and bandwidth. ``spatial_information() -
+        spatial_information_bias()`` estimates the information beyond chance,
+        the value :meth:`is_place_cell` compares with its cutoff.
+
+        Returns
+        -------
+        float
+            Expected untuned information in bits/spike. NaN for a silent unit,
+            and, with a ``UserWarning``, when the unit has fewer spikes than
+            the map has effectively independent bins (see Notes).
+
+        Notes
+        -----
+        **Derivation.** Every ratio estimator here is linear in spike counts at
+        fixed occupancy: ``r = A n``, where column ``j`` of ``A`` is the map one
+        spike in bin ``j`` produces, and a constant rate is reproduced
+        (``sum_j A_ij t_j = 1``). For an untuned Poisson cell,
+        ``n_j ~ Poisson(lam t_j)``. With ``x_i = r_i / rbar`` and
+        ``sum_i p_i x_i = 1``, a second-order expansion of ``x log2 x`` about 1
+        gives ``I ~= sum_i p_i (r_i - rbar)^2 / (2 ln2 rbar^2)``, and
+
+        ``E[sum_i p_i (r_i - rbar)^2] = lam V``,
+        ``V = sum_j t_j (sum_i p_i A_ij^2 - (sum_i p_i A_ij)^2)``,
+
+        so the expected information is ``V / (2 ln2 lam)``, evaluated at the
+        unit's mean rate. Writing ``K = V T`` (``T`` the total occupancy) gives
+        ``K / (2 ln2 N)`` for ``N`` spikes: ``K`` is the number of effectively
+        independent bins. Without smoothing (``A = diag(1/t)``), ``K`` is the
+        number of supported bins minus one, the form of the Miller (1955) and
+        Treves & Panzeri (1995) correction; occupancy weights cancel. Smoothing
+        correlates neighboring bins, so ``K`` is the occupancy-weighted
+        variance of each one-spike footprint, summed: about 46 for a 1 m box
+        with 5 cm bins and a 5 cm kernel (441 bins), 11 with a 10 cm kernel.
+        ``method="glm"`` uses the same expression with the GAM's response to
+        one spike at a constant-rate fit, ``A = lam B H^-1 B^T``,
+        ``H = lam B^T T B + penalty * diag(d)``; unpenalized, ``K`` is the basis
+        rank minus one.
+
+        **Range.** The expansion is a series in the relative variance of a
+        bin's rate, ``K / N`` on average, and fails once it reaches 1. With
+        fewer spikes than ``K`` the bias is NaN, so screens refuse the unit.
+
+        **Validation.** Untuned Poisson units (40 per spike count) on an
+        Ornstein-Uhlenbeck trajectory: predicted and simulated mean
+        information agreed within 10% for ``N >= K`` with ``diffusion_kde``
+        and ``gaussian_kde`` on 1 m and 2 m boxes (2.5 and 5 cm bins, 5 and
+        10 cm kernels) and a 200 cm track, within 16% for ``binned``. For
+        a tuned cell the plug-in bias is smaller (its spikes come from fewer
+        bins), so the correction is conservative.
+
+        References
+        ----------
+        .. [1] Miller, G. A. (1955). Note on the bias of information estimates.
+               In Information Theory in Psychology, 95-100.
+        .. [2] Treves, A., & Panzeri, S. (1995). The upward bias in measures of
+               information derived from limited data samples. Neural
+               Computation, 7(2), 399-407.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 100, (36000, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+        >>> times = np.arange(36000) / 30.0
+        >>> spike_times = np.sort(rng.uniform(0, 1200, 600))  # untuned, 0.5 Hz
+        >>> result = compute_spatial_rate(env, spike_times, times, positions)
+        >>> info = result.spatial_information()
+        >>> bias = result.spatial_information_bias()
+        >>> bool(abs(info - bias) < 0.02)
+        True
+        """
+        from neurospatial.encoding._metrics import _information_bias
+
+        return float(_information_bias(self)[0])
 
     def sparsity(self) -> float | Any:
         """Sparsity of spatial firing.
@@ -1649,11 +1743,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         """Classify one neuron using an explicitly chosen criterion.
 
         There is no default criterion. ``criterion="threshold"`` thresholds
-        plug-in spatial information, which flagged 19/20 and 14/20 untuned
-        0.5 Hz Poisson units at 1 and 2 minutes. ``criterion="shuffle"`` tests
+        spatial information minus the information an untuned cell shows by
+        chance (``spatial_information_bias``). ``criterion="shuffle"`` tests
         it against circularly shifted spike trains. Use the shuffle when the
-        verdict must control false positives under that null (slow), or spatial
-        information for a fast screen biased upward at low counts. To detect a
+        verdict must control false positives under that null (slow), or the
+        information screen for a fast check. To detect a
         field, use ``has_place_field()``; field detection also flags most noise units.
 
         Parameters
@@ -1666,18 +1760,24 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Returns
         -------
         bool
-            Whether spatial information meets the cutoff.
+            Whether bias-corrected spatial information meets the cutoff.
 
         Notes
         -----
-        Plug-in information is biased upward by approximately
-        (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
-        For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
-        bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
-        10 and 20 minutes was 0.86, 0.54, 0.22, 0.11 and 0.05 bits/spike.
-        The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
-        Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
-        report a circular-shift test and its assumptions instead of a cutoff verdict.
+        The screen compares bias-corrected information,
+        ``spatial_information() - spatial_information_bias()``, with the
+        cutoff: the information an untuned cell shows from Poisson noise alone
+        is subtracted first (derivation in
+        :meth:`SpatialRateResult.spatial_information_bias`). Units with fewer
+        spikes than the map has effectively independent bins fail, with a
+        warning. For 40 untuned Poisson units per spike count in a 100 x 100 cm
+        arena (5 cm bins, diffusion KDE bandwidth 5 cm), uncorrected
+        information passed 0.5 bits/spike in 100%, 25-55%, 0% and 0% of units
+        at about 20, 60, 120 and 600 spikes; corrected, none passed. Place
+        cells with a 2 Hz peak passed at 10 minutes (about 110 spikes) and
+        were refused at 2 minutes (about 18 spikes). The cutoff itself is a
+        screening convention. For publication, report a circular-shift test
+        and its assumptions instead of a cutoff verdict.
         For a shuffle test, call place_cell_significance(...) or
         is_place_cell(..., criterion='shuffle') with the raw arrays; a result
         does not keep the arrays it was computed from.
@@ -1696,7 +1796,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         min_info = (
             PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
         )
-        return bool(_passes_information_screen(self.spatial_information(), min_info))
+        from neurospatial.encoding._metrics import _debiased_information
+
+        return bool(
+            _passes_information_screen(_debiased_information(self)[0], min_info)
+        )
 
 
 @_copy_unit_table
@@ -2204,6 +2308,42 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         # Pass arrays directly - _metrics.py handles JAX dispatch
         return batch_spatial_information(_supported_rates(self), self.occupancy)
 
+    def spatial_information_bias(self) -> NDArray[np.float64]:
+        """Expected spatial information of an untuned cell, per unit (bits/spike).
+
+        The information a cell firing at each unit's mean rate everywhere is
+        expected to show on this occupancy with this estimator, from Poisson
+        noise alone. ``spatial_information() - spatial_information_bias()``
+        is what :meth:`classify` and :meth:`label_cell_types` compare with
+        their cutoff. The derivation and its validation are in
+        :meth:`SpatialRateResult.spatial_information_bias`.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Expected untuned information in bits/spike. NaN for silent units
+            and, with one ``UserWarning``, for units with fewer spikes than
+            the maps have effectively independent bins.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 100, (36000, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+        >>> times = np.arange(36000) / 30.0
+        >>> spike_times = [np.sort(rng.uniform(0, 1200, n)) for n in (600, 1200)]
+        >>> result = compute_spatial_rates(env, spike_times, times, positions)
+        >>> bias = result.spatial_information_bias()
+        >>> bool(bias[0] > bias[1] > 0)  # twice the spikes, half the bias
+        True
+        """
+        from neurospatial.encoding._metrics import _information_bias
+
+        return _information_bias(self)
+
     def sparsity(self) -> NDArray[np.float64] | Any:
         """Sparsity of spatial firing for all neurons.
 
@@ -2412,7 +2552,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         Each label is judged by its own statistic: a grid label needs only a
         grid score at the cutoff and a border label only a border score at the
-        cutoff. ``"place"`` is a cell whose spatial information reaches the
+        cutoff. ``"place"`` is a cell whose bias-corrected spatial information
+        (``spatial_information() - spatial_information_bias()``) reaches the
         cutoff and that is neither a grid nor a border cell. This is a fast
         screen with known false positives (see Notes); for a verdict, test
         each statistic against circularly shifted spike trains with
@@ -2470,13 +2611,17 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         The cutoffs are conventions, not calibrated values. The grid cutoff
         0.4 and the border cutoff 0.5 are carried over from rectangular-box
         recordings; 0.5 bits/spike is a common information cutoff. In
-        simulated open-field sessions they produce these false positives:
+        simulated sessions:
 
-        - Spatial information: plug-in information is biased upward by about
-          (n_bins - 1) / (2 ln(2) N_spikes). For 20 untuned 0.5 Hz Poisson
-          units in a 100 x 100 cm arena with 5 cm bins and diffusion KDE
-          (bandwidth 5), the 0.5 cutoff flagged 19/20, 14/20 and 0/20 at 1, 2
-          and 5 minutes.
+        - Spatial information: the screen subtracts the information an untuned
+          cell shows from Poisson noise alone (derivation in
+          :meth:`SpatialRateResult.spatial_information_bias`); units with fewer
+          spikes than the map has effectively independent bins fail, with a
+          warning. For 40 untuned Poisson units per spike count in a
+          100 x 100 cm arena (5 cm bins, diffusion KDE bandwidth 5 cm),
+          uncorrected information passed 0.5 bits/spike in 100%, 25-55%, 0%
+          and 0% of units at about 20, 60, 120 and 600 spikes; corrected, none
+          passed.
         - Grid score: about 10% of rate maps from circularly shifted spike
           trains reach 0.4; the 95th percentile of that null was 0.46-0.57
           across square, rectangular and circular arenas, and 11% of place
@@ -2556,14 +2701,23 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
                 UserWarning,
                 stacklevel=2,
             )
+        from neurospatial.encoding._metrics import _debiased_information
+
         return _cell_type_labels(
-            _screen_outcomes(scores, unavailable, inapplicable, **thresholds)
+            _screen_outcomes(
+                scores,
+                unavailable,
+                inapplicable,
+                information=_debiased_information(self),
+                **thresholds,
+            )
         )
 
     def classify(self, *, min_info: float | None = None) -> NDArray[np.bool_]:
         """Classify neurons as place cells (single-type boolean predicate).
 
-        A neuron is classified as a place cell if its spatial information
+        A neuron is classified as a place cell if its bias-corrected spatial
+        information, ``spatial_information() - spatial_information_bias()``,
         meets the minimum threshold. This is the single-type boolean
         predicate ("is this a place cell") sibling of
         :meth:`ObjectVectorRatesResult.classify` and
@@ -2613,14 +2767,20 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         Notes
         -----
-        Plug-in information is biased upward by approximately
-        (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
-        For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
-        bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
-        10 and 20 minutes was 0.86, 0.54, 0.22, 0.11 and 0.05 bits/spike.
-        The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
-        Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
-        report a circular-shift test and its assumptions instead of a cutoff verdict.
+        The screen compares bias-corrected information,
+        ``spatial_information() - spatial_information_bias()``, with the
+        cutoff: the information an untuned cell shows from Poisson noise alone
+        is subtracted first (derivation in
+        :meth:`SpatialRateResult.spatial_information_bias`). Units with fewer
+        spikes than the map has effectively independent bins fail, with a
+        warning. For 40 untuned Poisson units per spike count in a 100 x 100 cm
+        arena (5 cm bins, diffusion KDE bandwidth 5 cm), uncorrected
+        information passed 0.5 bits/spike in 100%, 25-55%, 0% and 0% of units
+        at about 20, 60, 120 and 600 spikes; corrected, none passed. Place
+        cells with a 2 Hz peak passed at 10 minutes (about 110 spikes) and
+        were refused at 2 minutes (about 18 spikes). The cutoff itself is a
+        screening convention. For publication, report a circular-shift test
+        and its assumptions instead of a cutoff verdict.
         ``min_info=None`` is 0.5 bits/spike.
         For a shuffle test, call place_cell_significance(...)
         with the raw arrays; a result does not keep the arrays it was computed from.
@@ -2628,9 +2788,11 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         min_info = (
             PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
         )
+        from neurospatial.encoding._metrics import _debiased_information
+
         return cast(
             "NDArray[np.bool_]",
-            _passes_information_screen(self.spatial_information(), min_info),
+            _passes_information_screen(_debiased_information(self), min_info),
         )
 
     def summary_table(
@@ -5591,11 +5753,11 @@ def is_place_cell(
     """Classify one neuron using an explicitly chosen criterion.
 
     There is no default criterion. ``criterion="threshold"`` thresholds
-    plug-in spatial information, which flagged 19/20 and 14/20 untuned
-    0.5 Hz Poisson units at 1 and 2 minutes. ``criterion="shuffle"`` tests
+    spatial information minus the information an untuned cell shows by
+    chance (``spatial_information_bias``). ``criterion="shuffle"`` tests
     it against circularly shifted spike trains. Use the shuffle when the
-    verdict must control false positives under that null (slow), or spatial
-    information for a fast screen biased upward at low counts. To detect a
+    verdict must control false positives under that null (slow), or the
+    information screen for a fast check. To detect a
     field, use ``has_place_field()``; field detection also flags most noise units.
 
     Parameters
@@ -5793,13 +5955,11 @@ def is_place_cell(
 
     Notes
     -----
-    Plug-in information is biased upward by approximately
-    (n_bins - 1) / (2 ln(2) N_spikes). The threshold is a screening heuristic.
-    For 20 untuned 0.5 Hz Poisson units in a 100 x 100 cm arena with 5 cm
-    bins and diffusion KDE (bandwidth 5), median information at 1, 2, 5,
-    10 and 20 minutes was 0.86, 0.54, 0.22, 0.11 and 0.05 bits/spike.
-    The 0.5 screen flagged 19/20, 14/20, 0/20, 0/20 and 0/20, respectively.
-    Field detection flagged 11, 11, 20, 20 and 16 of 20. For publication,
+    ``criterion="threshold"`` compares
+    ``spatial_information() - spatial_information_bias()`` of the rate map
+    with ``min_info``; see :meth:`SpatialRateResult.is_place_cell` for its
+    false- and true-positive rates. Units with fewer spikes than the map has
+    effectively independent bins fail, with a warning. For publication,
     report a circular-shift test and its assumptions instead of a cutoff verdict.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.

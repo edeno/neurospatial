@@ -571,46 +571,47 @@ class TestFieldDensityMap:
 
 
 class TestCountPlaceCells:
-    """Test count_place_cells function."""
+    """count_place_cells counts the bias-corrected place-cell screen."""
 
-    def test_count_place_cells_above_threshold(self) -> None:
-        """Test counting cells above information threshold."""
-        spatial_information = np.array([0.2, 0.8, 1.5, 0.3, 1.2])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        # 3 cells have information > 0.5
-        assert count == 3
+    @pytest.fixture(scope="class")
+    def rates(self):
+        from neurospatial import Environment
+        from neurospatial.encoding import compute_spatial_rates
+        from neurospatial.simulation import generate_poisson_spikes
 
-    def test_count_place_cells_default_threshold(self) -> None:
-        """Test default threshold of 0.5 bits/spike."""
-        spatial_information = np.array([0.3, 0.5, 0.6, 0.4, 1.0])
-        count = count_place_cells(spatial_information)
-        # Default threshold is 0.5, inclusive: 0.5, 0.6 and 1.0 count
-        assert count == 3
+        rng = np.random.default_rng(0)
+        positions = rng.uniform(0, 100, (36000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+        times = np.arange(36000) / 30.0
+        distance2 = np.sum((positions - 50.0) ** 2, axis=1)
+        field = 8.0 * np.exp(-distance2 / (2 * 10.0**2))
+        trains = [
+            generate_poisson_spikes(field, times, seed=1),  # place cell
+            generate_poisson_spikes(np.full(36000, 0.5), times, seed=2),  # untuned
+            np.array([]),  # silent
+        ]
+        return compute_spatial_rates(env, trains, times, positions)
 
-    def test_count_place_cells_none_qualify(self) -> None:
-        """Test when no cells exceed threshold."""
-        spatial_information = np.array([0.1, 0.2, 0.3])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        assert count == 0
+    def test_counts_the_classify_screen(self, rates) -> None:
+        assert count_place_cells(rates) == int(rates.classify().sum()) == 1
+        assert rates.classify().tolist() == [True, False, False]
 
-    def test_count_place_cells_all_qualify(self) -> None:
-        """Test when all cells exceed threshold."""
-        spatial_information = np.array([1.0, 1.5, 2.0, 0.8])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        assert count == 4
+    def test_untuned_cell_passes_only_without_the_correction(self, rates) -> None:
+        corrected = rates.spatial_information() - rates.spatial_information_bias()
+        raw = rates.spatial_information()
+        # 600 spikes of an untuned cell: raw information is all bias.
+        assert raw[1] > 0.04
+        assert abs(corrected[1]) < 0.02
+        assert count_place_cells(rates, min_info=raw[1]) == 1
 
-    def test_count_place_cells_boundary(self) -> None:
-        """A value exactly at the threshold counts (inclusive >=)."""
-        spatial_information = np.array([0.5, 0.50001, 0.49999])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        assert count == 2  # 0.5 and 0.50001
+    def test_cutoff_is_inclusive(self, rates) -> None:
+        corrected = rates.spatial_information() - rates.spatial_information_bias()
+        assert count_place_cells(rates, min_info=corrected[0]) == 1
+        assert count_place_cells(rates, min_info=np.nextafter(corrected[0], 9)) == 0
 
-    def test_count_place_cells_nan_handling(self) -> None:
-        """Test handling of NaN values in spatial information."""
-        spatial_information = np.array([0.8, np.nan, 1.2, 0.3, np.nan])
-        count = count_place_cells(spatial_information, threshold=0.5)
-        # NaN values should be excluded from count
-        assert count == 2  # 0.8 and 1.2
+    def test_information_values_alone_are_refused(self) -> None:
+        with pytest.raises(TypeError, match="SpatialRatesResult"):
+            count_place_cells(np.array([0.8, 1.2]))  # type: ignore[arg-type]
 
 
 class TestFieldOverlap:

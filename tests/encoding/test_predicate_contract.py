@@ -57,8 +57,10 @@ def test_threshold_free_method_classify_agree(
         metric = (
             result.mean_vector_length()
             if f.name == "head_direction"
-            else result.spatial_information()
+            else result.spatial_information() - result.spatial_information_bias()
         )
+        if not np.isfinite(metric):
+            continue
         threshold = (
             {"min_mvl": metric, "alpha": 1.01}
             if f.name == "head_direction"
@@ -67,10 +69,11 @@ def test_threshold_free_method_classify_agree(
         assert getattr(result, method_name)(**method_kw, **threshold)
         assert predicate(*f.args(r, train), **criteria, **threshold, **f.defaults)
     if f.name != "head_direction":
-        metric = rates.spatial_information()
-        np.testing.assert_array_equal(
-            rates.classify(min_info=metric[0]), metric >= metric[0]
-        )
+        metric = rates.spatial_information() - rates.spatial_information_bias()
+        finite = np.flatnonzero(np.isfinite(metric))
+        assert finite.size
+        cutoff = metric[finite[0]]
+        np.testing.assert_array_equal(rates.classify(min_info=cutoff), metric >= cutoff)
 
 
 def test_mode_keywords_raise(significance_family, significance_recording):
@@ -324,10 +327,13 @@ def test_is_place_cell_threshold(ou_2min_env, ou_2min, noise_trains):
         for tr in trains
     ]
     np.testing.assert_array_equal(flags, rates.classify())
-    assert sum(flags) == 14
     assert all(
         rates[i].is_place_cell(criterion="threshold") == flags[i] for i in range(20)
     )
+    # Untuned 0.5 Hz units (about 60 spikes): the uncorrected cutoff passes
+    # most of them by chance; the bias-corrected screen passes none.
+    assert (rates.spatial_information() >= 0.5).sum() >= 10
+    assert sum(flags) == 0
 
 
 def test_heading_interpretation_uses_shared_thresholds(
