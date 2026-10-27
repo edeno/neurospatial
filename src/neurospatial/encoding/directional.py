@@ -350,8 +350,10 @@ def _tuning_pvalues(
     ``p = (1 + T / (max(φ, 1) dof))^(-dof / 2)``. Flooring ``φ`` at 1 keeps
     the Poisson variance as the least the test assumes, so estimation noise
     in ``φ`` for Poisson cells, or underdispersed (regular) spiking, cannot
-    make it reject more often. Without ``dispersion`` the test is the Poisson
-    one, ``p = exp(-T / 2)`` (χ² with 2 degrees of freedom).
+    make it reject more often. With a known ``φ`` (``dispersion_dof`` None)
+    the reference is χ² with 2 degrees of freedom, ``p = exp(-T / (2φ))``.
+    Without ``dispersion`` the p-values are NaN: the Poisson test alone
+    rejects far too often for bursting cells.
 
     Parameters
     ----------
@@ -365,7 +367,7 @@ def _tuning_pvalues(
     spike_counts : ndarray of shape (n_units, n_bins) or None
         Unsmoothed spike counts. None rebuilds them as ``rates * occupancy``.
     dispersion : ndarray of shape (n_units,) or None
-        Estimated spike-count dispersion per unit; None for the Poisson test.
+        Estimated spike-count dispersion per unit; None gives NaN p-values.
     dispersion_dof : int or None
         Degrees of freedom of ``dispersion``; None treats it as known.
 
@@ -375,7 +377,7 @@ def _tuning_pvalues(
         P-values; NaN when fewer than ``_MIN_TUNING_TEST_SPIKES`` spikes fall
         in occupied bins, the occupied headings cannot separate a cosine from
         a sine term (fewer than three distinct directions), or the unit's
-        dispersion is NaN.
+        dispersion is NaN or not given.
     """
     rates = np.atleast_2d(np.asarray(rates, dtype=np.float64))
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -411,7 +413,7 @@ def _tuning_pvalues(
         ) / det
         statistic = np.maximum(quad / lam, 0.0)
     phi = (
-        np.ones(len(counts))
+        np.full(len(counts), np.nan)
         if dispersion is None
         else np.maximum(np.asarray(dispersion, dtype=np.float64).reshape(-1), 1.0)
     )
@@ -642,8 +644,9 @@ class DirectionalRateResult(SingleUnitRateMixin):
         counts, beyond what heading explains (variance / mean of counts in
         time windows; 1 for Poisson spiking, larger for bursting or drifting
         cells). :meth:`tuning_pvalue` divides its statistic by it.
-        :func:`compute_directional_rate` estimates it; None (a result built
-        without spike times) makes the test assume Poisson spiking.
+        :func:`compute_directional_rate` estimates it. None (a result built
+        without spike times) leaves the tuning test undefined (NaN); pass
+        1.0 to assume Poisson spiking explicitly.
     dispersion_dof : int or None, optional
         Keyword-only. Degrees of freedom of ``spike_count_dispersion`` (time
         windows minus three); None treats the dispersion as known.
@@ -1261,7 +1264,8 @@ class DirectionalRateResult(SingleUnitRateMixin):
             P-value in [0, 1]; small values indicate directional tuning.
             NaN when fewer than 50 spikes fall in visited bins, when the
             visited headings span fewer than three distinct directions, or
-            when the spike-count dispersion could not be estimated.
+            when the spike-count dispersion is missing or could not be
+            estimated.
 
         Notes
         -----
@@ -1295,9 +1299,10 @@ class DirectionalRateResult(SingleUnitRateMixin):
         stay correlated (the integrated autocorrelation time of the heading,
         recorded as ``analysis_settings["dispersion_window"]``, about 2 s
         for a freely moving rat), because that is the time scale on which
-        correlated spikes inflate the test statistic. With ``φ`` and
-        ``dof`` None (a result built by hand), the test assumes Poisson
-        spiking, ``p = exp(-T / 2)``.
+        correlated spikes inflate the test statistic. A result built by hand
+        has no dispersion and returns NaN: pass ``spike_count_dispersion``
+        (1.0 assumes Poisson spiking) to test it, and ``dispersion_dof`` None
+        compares ``T / φ`` with χ² on 2 degrees of freedom.
 
         In simulated 10-minute open-field and 50-lap linear-track sessions,
         untuned cells were rejected at α = 0.05 in 4-5% of Poisson cells,
@@ -1337,6 +1342,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ...     spike_counts=np.round(firing_rate * occupancy),
+        ...     spike_count_dispersion=1.0,  # assume Poisson spiking
         ... )
         >>> bool(result.tuning_pvalue() < 0.05)
         True
@@ -1394,6 +1400,7 @@ class DirectionalRateResult(SingleUnitRateMixin):
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
+        ...     spike_count_dispersion=1.0,  # assume Poisson spiking
         ... )
         >>> result.is_head_direction_cell()  # Sharply tuned neuron should be classified as HD cell
         True
@@ -1556,8 +1563,9 @@ class DirectionalRatesResult(PopulationRateMixin[DirectionalRateResult]):
     spike_count_dispersion : ArrayLike or None, optional
         Keyword-only. Spike-count dispersion per neuron, shape (n_neurons,),
         used by :meth:`tuning_pvalues`; see
-        :class:`DirectionalRateResult`. None makes the test assume Poisson
-        spiking.
+        :class:`DirectionalRateResult`. None leaves the tuning test
+        undefined (NaN); pass ``np.ones(n_neurons)`` to assume Poisson
+        spiking explicitly.
     dispersion_dof : int or None, optional
         Keyword-only. Degrees of freedom of ``spike_count_dispersion``,
         shared by all neurons; None treats the dispersion as known.

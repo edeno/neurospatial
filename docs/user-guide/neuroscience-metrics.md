@@ -638,7 +638,9 @@ fire in bursts and drift in rate, so their spike counts vary more than
 independent spikes would; the test estimates that extra variability from spike
 counts in time windows (`hd.spike_count_dispersion`, 1 for independent spikes,
 about 2b - 1 for bursts of b spikes) and divides its statistic by it. It needs
-at least 50 spikes and returns NaN below that. Mean vector length uses only visited headings, so check
+at least 50 spikes and returns NaN below that. A result you build yourself
+from tuning curves has no dispersion, so its test is NaN until you pass
+`spike_count_dispersion` (1.0 assumes independent spikes). Mean vector length uses only visited headings, so check
 `hd.largest_unvisited_arc()`: when the animal never faced an arc wider than
 90°, untuned cells get inflated MVLs and the screen warns. A circular-shift
 test on the raw recording is the verdict when its stationarity assumptions fit

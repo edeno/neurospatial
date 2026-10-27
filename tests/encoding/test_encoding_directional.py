@@ -959,6 +959,7 @@ class TestTuningPvalue:
             bin_centers=centers,
             bin_size=2 * np.pi / n,
             bandwidth=None,
+            spike_count_dispersion=1.0,
             spike_counts=counts,
         )
 
@@ -1075,6 +1076,7 @@ class TestTuningPvalue:
             bin_centers=with_counts.bin_centers,
             bin_size=with_counts.bin_size,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
         assert without.tuning_pvalue() == pytest.approx(
             with_counts.tuning_pvalue(), rel=1e-12
@@ -1298,6 +1300,27 @@ class TestTuningPvalueDispersion:
         missing = replace(poisson, spike_count_dispersion=np.nan, dispersion_dof=100)
         assert np.isnan(missing.tuning_pvalue())
 
+    def test_result_without_dispersion_is_untestable(self) -> None:
+        """A hand-built result does not fall back to the Poisson test.
+
+        Without a dispersion the Poisson test rejects most bursting cells, so
+        the p-value is NaN and the screen flags nothing until a dispersion
+        (1.0 for Poisson spiking) is given.
+        """
+        from dataclasses import replace
+
+        n = 36
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        counts = np.round(20.0 * np.exp(3.0 * (np.cos(centers - 1.0) - 1.0)))
+        poisson = TestTuningPvalue._result(counts, np.full(n, 0.5))
+        assert poisson.tuning_pvalue() < 1e-10
+        assert poisson.is_head_direction_cell()
+
+        unknown = replace(poisson, spike_count_dispersion=None)
+        assert np.isnan(unknown.tuning_pvalue())
+        assert not unknown.is_head_direction_cell()
+        assert "dispersion" in unknown.interpretation()
+
 
 # ==============================================================================
 # DirectionalRateResult Classification Methods Tests
@@ -1326,6 +1349,7 @@ class TestDirectionalRateResultIsHdCell:
             bin_centers=bin_centers,
             bin_size=bin_size,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
 
         # Should be classified as HD cell (high MVL, low p-value)
@@ -1374,6 +1398,7 @@ class TestDirectionalRateResultIsHdCell:
             bin_centers=bin_centers,
             bin_size=bin_size,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
 
         mvl = result.mean_vector_length()
@@ -1403,6 +1428,7 @@ class TestDirectionalRateResultIsHdCell:
             bin_centers=bin_centers,
             bin_size=bin_size,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
 
         pval = result.tuning_pvalue()
@@ -1496,6 +1522,7 @@ class TestDirectionalRateResultInterpretation:
             bin_centers=bin_centers,
             bin_size=bin_size,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
 
         interp = result.interpretation()
@@ -1586,6 +1613,7 @@ class TestDirectionalRateResultInterpretation:
             bin_centers=bin_centers,
             bin_size=bin_size,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
 
         mvl = result.mean_vector_length()
@@ -1614,6 +1642,7 @@ class TestDirectionalRateResultInterpretation:
             bin_centers=bin_centers,
             bin_size=bin_size,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
 
         custom_threshold = 0.5
@@ -3629,6 +3658,7 @@ class TestDirectionalRateResultNaNHandling:
             bin_centers=bin_centers,
             bin_size=np.pi / 30,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
         pval = result.tuning_pvalue()
 
