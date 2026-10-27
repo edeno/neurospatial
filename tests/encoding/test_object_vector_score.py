@@ -151,6 +151,31 @@ class TestObjectVectorScoreProfiles:
         with pytest.raises(ValueError, match="reshape"):
             object_vector_score(np.ones(N_DIST * N_DIR))
 
+    def test_baseline_subtracted_map_raises(self):
+        # Subtracting the mean leaves negative rates, and the score weights
+        # directions by rate: random noise used to score 1.0.
+        rates = np.random.default_rng(0).normal(size=(N_DIST, N_DIR))
+        n_negative = int((rates < 0).sum())
+        with pytest.raises(ValueError) as excinfo:
+            object_vector_score(rates)
+        message = str(excinfo.value)
+        assert f"{n_negative} negative" in message
+        assert f"{rates.min():.3g}" in message
+        assert "Why:" in message
+        assert "Fix:" in message
+        assert "z-scored" in message
+
+    def test_infinite_rate_raises(self):
+        rates = _gaussian_bump(width=1.0)
+        rates[2, 3] = np.inf
+        with pytest.raises(ValueError, match="1 infinite"):
+            object_vector_score(rates)
+
+    def test_nan_marks_unvisited_bins_not_an_error(self):
+        rates = _gaussian_bump(width=1.0)
+        rates[0, :4] = np.nan
+        assert np.isfinite(object_vector_score(rates))
+
 
 def test_result_input_matches_its_reshaped_rate_map():
     """A result is scored on its own grid, distance-major."""

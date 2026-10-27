@@ -3259,32 +3259,40 @@ def _object_vector_rates(
 # ==============================================================================
 
 
-def _mean_resultant_length(
-    angles: NDArray[np.float64],
-    weights: NDArray[np.float64] | None = None,
-) -> float:
-    """Compute mean resultant length of circular data.
+def _require_firing_rates(tuning_curve: NDArray[np.float64]) -> None:
+    """Refuse a map that is not a firing-rate map for ``object_vector_score``.
 
     Parameters
     ----------
-    angles : array of float
-        Angles in radians.
-    weights : array of float, optional
-        Weights for each angle. If None, uniform weights.
+    tuning_curve : ndarray, shape (n_distance_bins, n_direction_bins)
+        Rates in Hz; NaN marks an unvisited bin.
 
-    Returns
-    -------
-    float
-        Mean resultant length in [0, 1].
+    Raises
+    ------
+    ValueError
+        If any rate is negative or infinite.
     """
-    if weights is None:
-        weights = np.ones_like(angles)
-
-    weights = weights / np.sum(weights)
-    x = np.sum(weights * np.cos(angles))
-    y = np.sum(weights * np.sin(angles))
-
-    return float(np.sqrt(x**2 + y**2))
+    n_negative = int(np.sum(tuning_curve < 0))
+    n_infinite = int(np.sum(np.isinf(tuning_curve)))
+    if not (n_negative or n_infinite):
+        return
+    found = []
+    if n_negative:
+        found.append(
+            f"{n_negative} negative rate(s) (min {np.nanmin(tuning_curve):.3g})"
+        )
+    if n_infinite:
+        found.append(f"{n_infinite} infinite rate(s)")
+    raise ValueError(
+        _format_error(
+            f"object_vector_score needs a firing-rate map; got {' and '.join(found)}.",
+            why="the score weights each distance and direction by its firing "
+            "rate, so a negative or infinite rate has no meaning",
+            fix="pass the firing-rate map itself (the ObjectVectorRateResult), "
+            "not a baseline-subtracted or z-scored map; leave unvisited bins "
+            "NaN",
+        )
+    )
 
 
 def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
@@ -3332,7 +3340,10 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
     Raises
     ------
     ValueError
-        If ``rate_map`` is not 2-D.
+        If ``rate_map`` is not 2-D, or has a negative or infinite rate: the
+        score weights each direction by its firing rate, so a
+        baseline-subtracted or z-scored map has no meaning. NaN marks an
+        unvisited bin and is allowed.
 
     Notes
     -----
@@ -3367,6 +3378,8 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
     is_object_vector_cell : Classify neuron as OVC
     ObjectVectorRateResult.is_object_vector_cell : Classifier method on result object
     """
+    from neurospatial.stats.circular import mean_resultant_length
+
     if isinstance(rate_map, ObjectVectorRateResult):
         tuning_curve = np.asarray(
             _to_numpy(rate_map.firing_rate), dtype=np.float64
@@ -3390,6 +3403,8 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
         direction_edges = np.linspace(-np.pi, np.pi, n_dir + 1)
         dir_bin_centers = (direction_edges[:-1] + direction_edges[1:]) / 2
 
+    _require_firing_rates(tuning_curve)
+
     disc = tuning_curve[np.isfinite(tuning_curve).all(axis=1)]
     n_rings = len(disc)
     if n_rings < 2:
@@ -3400,7 +3415,7 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
         return float("nan")
     sparsity = float(np.mean(distance_profile)) ** 2 / mean_square
     distance_selectivity = (1.0 - sparsity) / (1.0 - 1.0 / n_rings)
-    direction_selectivity = _mean_resultant_length(
+    direction_selectivity = mean_resultant_length(
         dir_bin_centers, weights=disc.mean(axis=0)
     )
     return float(np.clip(distance_selectivity * direction_selectivity, 0.0, 1.0))
