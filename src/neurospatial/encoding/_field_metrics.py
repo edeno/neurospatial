@@ -1237,7 +1237,7 @@ def compute_field_emd(
     **Computational complexity:**
 
     - Euclidean: O(n^2) for distance matrix + O(n^3) for optimization
-    - Geodesic: O(n^2 log n) for all-pairs shortest paths + O(n^3) for optimization
+    - Geodesic: shortest paths from each bin with mass + O(n^3) for optimization
 
     For large environments (n_bins > 1000), consider subsampling or using
     approximate methods.
@@ -1271,6 +1271,7 @@ def compute_field_emd(
     ... )
     >>> print(f"Euclidean EMD: {emd_euclidean:.3f}")  # doctest: +SKIP
     """
+    from scipy import sparse
     from scipy.optimize import linprog
     from scipy.spatial.distance import pdist, squareform
 
@@ -1370,10 +1371,9 @@ def compute_field_emd(
         dist_matrix = squareform(pdist(positions, metric="euclidean"))
 
     else:  # metric == "geodesic"
-        from neurospatial.ops.distance import geodesic_distance_matrix
+        from neurospatial.ops.distance import pairwise_distances
 
-        full_geodesic = geodesic_distance_matrix(env.connectivity, weight="distance")
-        dist_matrix = full_geodesic[np.ix_(active_bins, active_bins)]
+        dist_matrix = pairwise_distances(env.connectivity, active_bins)
 
     # Mass cannot travel between parts of the environment with no path
     # between them. Label each active bin by the first active bin it can
@@ -1405,14 +1405,18 @@ def compute_field_emd(
     # Row constraints: sum over j of T[i,j] = p[i]
     # Column constraints: sum over i of T[i,j] = q[j]
     #
-    # Vectorized construction using Kronecker products:
+    # Sparse construction using Kronecker products (2n² nonzeros of a
+    # (2n, n²) matrix, which dense would hold 432 MB at n = 300):
     # - Row constraints: each row i has 1s in columns [i*n, i*n+1, ..., i*n+n-1]
     #   This is kron(I_n, ones(1,n)) = block diagonal of row vectors
     # - Column constraints: each column j has 1s in columns [j, n+j, 2n+j, ...]
     #   This is kron(ones(1,n), I_n) = tiled identity matrices
-    row_constraints = np.kron(np.eye(n), np.ones((1, n)))  # Shape: (n, n*n)
-    col_constraints = np.kron(np.ones((1, n)), np.eye(n))  # Shape: (n, n*n)
-    a_eq = np.vstack([row_constraints, col_constraints])  # Shape: (2n, n*n)
+    ones_row = np.ones((1, n))
+    identity = sparse.eye(n)
+    a_eq = sparse.vstack(
+        [sparse.kron(identity, ones_row), sparse.kron(ones_row, identity)],
+        format="csc",
+    )  # Shape: (2n, n*n)
 
     b_eq = np.concatenate([p, q])
 
