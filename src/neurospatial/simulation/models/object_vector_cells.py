@@ -77,7 +77,7 @@ See Also
 --------
 neurospatial.ops.egocentric : Coordinate transformations
 PlaceCellModel : Gaussian place fields
-BoundaryCellModel : Boundary-distance tuned cells
+BoundaryVectorCellModel : Wall-distance and direction tuned cells
 """
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ class ObjectVectorCellModel:
     See Also
     --------
     PlaceCellModel : Gaussian place fields
-    BoundaryCellModel : Boundary-distance tuned cells
+    BoundaryVectorCellModel : Wall-distance and direction tuned cells
     compute_egocentric_bearing : Compute bearing to targets
     """
 

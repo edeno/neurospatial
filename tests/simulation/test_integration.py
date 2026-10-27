@@ -11,7 +11,7 @@ import pytest
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
-    boundary_cell_session,
+    border_cell_session,
     grid_cell_session,
     linear_track_session,
     open_field_session,
@@ -51,15 +51,15 @@ class TestSimulateSessionIntegration:
         assert total_spikes > 0
 
     @pytest.mark.slow
-    def test_simulate_session_boundary_cells_end_to_end(self, simple_2d_env):
-        """Test complete boundary cell simulation workflow."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
+    def test_simulate_session_border_cells_end_to_end(self, connected_arena_env):
+        """Test complete border cell simulation workflow."""
 
         session = simulate_session(
-            simple_2d_env,
+            connected_arena_env,
             duration=10.0,
             n_cells=10,
-            cell_type="boundary",
+            cell_type="border",
+            border_width=5.0,
             seed=42,
             show_progress=False,
         )
@@ -85,32 +85,32 @@ class TestSimulateSessionIntegration:
         assert len(session.spike_times) == 10
         assert len(session.ground_truth) == 10
 
-    def test_simulate_session_mixed_cells_end_to_end(self, simple_2d_env):
+    def test_simulate_session_mixed_cells_end_to_end(self, connected_arena_env):
         """Test complete mixed cell simulation workflow."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
 
         session = simulate_session(
-            simple_2d_env,
+            connected_arena_env,
             duration=30.0,
             n_cells=10,
             cell_type="mixed",
+            border_width=5.0,
             seed=42,
             show_progress=False,
         )
 
-        # Should have 6 place (60%), 2 boundary (20%), 2 grid (20%)
+        # Should have 6 place (60%), 2 border (20%), 2 grid (20%)
         from neurospatial.simulation.models import (
-            BoundaryCellModel,
+            BorderCellModel,
             GridCellModel,
             PlaceCellModel,
         )
 
         n_place = sum(isinstance(m, PlaceCellModel) for m in session.models)
-        n_boundary = sum(isinstance(m, BoundaryCellModel) for m in session.models)
+        n_border = sum(isinstance(m, BorderCellModel) for m in session.models)
         n_grid = sum(isinstance(m, GridCellModel) for m in session.models)
 
         assert n_place == 6
-        assert n_boundary == 2
+        assert n_border == 2
         assert n_grid == 2
 
 
@@ -212,14 +212,14 @@ class TestPreConfiguredExamplesIntegration:
         assert len(session.spike_times) == 5
         assert "trial_choices" in session.metadata
 
-    def test_boundary_cell_session_runs_without_errors(self):
-        """Test boundary_cell_session() completes successfully."""
-        session = boundary_cell_session(
-            duration=10.0, n_boundary_cells=3, n_place_cells=2, seed=42
+    def test_border_cell_session_runs_without_errors(self):
+        """Test border_cell_session() completes successfully."""
+        session = border_cell_session(
+            border_width=5.0, duration=10.0, n_border_cells=3, n_place_cells=2, seed=42
         )
 
         assert session is not None
-        assert len(session.models) == 5  # 3 boundary + 2 place
+        assert len(session.models) == 5  # 3 border + 2 place
         assert len(session.spike_times) == 5
 
     def test_grid_cell_session_runs_without_errors(self):
