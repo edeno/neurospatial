@@ -114,7 +114,14 @@ def test_frame_compute_signatures_are_truthful():
         assert "direction_frame" not in params
     with pytest.raises(TypeError, match="headings"):
         encoding.compute_object_vector_rate(
-            None, [], [], [], [], headings=[], distance_range=(0.0, 50.0)
+            None,
+            [],
+            [],
+            [],
+            [],
+            headings=[],
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
 
@@ -130,12 +137,19 @@ def test_allocentric_preserves_gap_and_window_gates():
         epochs=[[0, 0.2], [100, 100.2]],
         spike_window=[0, 100.2],
         distance_range=(0.0, 50.0),
+        distance_bin_size=5.0,
     )
     assert result.occupancy.sum() == pytest.approx(0.4)
     assert np.nansum(result.firing_rate * result.occupancy) == pytest.approx(2)
     assert result.spike_window_assumed is False
     empty = encoding.compute_object_vector_rates(
-        None, [], times, positions, [[10, 0]], distance_range=(0.0, 50.0)
+        None,
+        [],
+        times,
+        positions,
+        [[10, 0]],
+        distance_range=(0.0, 50.0),
+        distance_bin_size=5.0,
     )
     assert empty.firing_rates.shape == (0, 120)
     assert empty.direction_frame == "allocentric"
@@ -198,7 +212,14 @@ def test_frame_predicate_signatures_are_truthful():
     assert egocentric["headings"].default is inspect.Parameter.empty
     with pytest.raises(TypeError, match="headings"):
         encoding.is_object_vector_cell(
-            None, [], [], [], [], headings=[], distance_range=(0.0, 50.0)
+            None,
+            [],
+            [],
+            [],
+            [],
+            headings=[],
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
 
@@ -207,7 +228,13 @@ def test_zero_heading_equivalence_at_direction_bin_edge():
     positions = np.zeros((4, 2))
     objects = np.array([[4.999999999999999, -8.660254037844387]])
     allo = encoding.compute_object_vector_rate(
-        None, [0.05], times, positions, objects, distance_range=(0.0, 50.0)
+        None,
+        [0.05],
+        times,
+        positions,
+        objects,
+        distance_range=(0.0, 50.0),
+        distance_bin_size=5.0,
     )
     ego = encoding.compute_egocentric_rate(
         None,
@@ -217,6 +244,7 @@ def test_zero_heading_equivalence_at_direction_bin_edge():
         np.zeros(4),
         objects,
         distance_range=(0.0, 50.0),
+        distance_bin_size=5.0,
     )
     np.testing.assert_array_equal(allo.occupancy, ego.occupancy)
     np.testing.assert_array_equal(allo.firing_rate, ego.firing_rate)
@@ -285,6 +313,7 @@ def test_binned_object_vector_warns_when_min_occupancy_masks_everything(
             r.positions,
             np.array([[50.0, 50.0]]),
             distance_range=(0, 100),
+            distance_bin_size=5.0,
             method="binned",
             min_occupancy=1e6,
         )
@@ -330,7 +359,11 @@ def test_egocentric_shuffle_paths_require_headings(continuous_recording, call):
     with pytest.raises(ValueError, match="headings is required") as exc:
         if call == "significance":
             egocentric_object_vector_cell_significance(
-                *args, distance_range=(0, 100), n_shuffles=3, rng=0
+                *args,
+                distance_range=(0, 100),
+                distance_bin_size=5.0,
+                n_shuffles=3,
+                rng=0,
             )
         else:
             is_egocentric_object_vector_cell(
@@ -393,7 +426,13 @@ def test_without_an_environment_every_sample_counts():
     outside = positions.copy()
     outside[: len(times) // 2] += 1000.0
     result = encoding.compute_object_vector_rate(
-        None, spikes, times, outside, [[50.0, 50.0]], distance_range=(0.0, 2000.0)
+        None,
+        spikes,
+        times,
+        outside,
+        [[50.0, 50.0]],
+        distance_range=(0.0, 2000.0),
+        distance_bin_size=5.0,
     )
     assert np.sum(result.occupancy) == pytest.approx(times[-1] - times[0])
 
@@ -408,6 +447,7 @@ def test_all_samples_outside_the_environment_warn_like_place_maps():
             positions + 1000.0,
             [[50.0, 50.0]],
             distance_range=(0.0, 2000.0),
+            distance_bin_size=5.0,
         )
     assert np.all(np.isnan(result.firing_rate))
 

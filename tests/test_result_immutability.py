@@ -56,6 +56,7 @@ def populations() -> dict[str, object]:
             headings,
             objects,
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         ),
         "peri_event": population_peri_event_histogram(
             trains, np.array([10.0, 20.0]), (-1.0, 1.0)

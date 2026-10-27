@@ -2047,8 +2047,8 @@ class TestIsObjectVectorCellFreeFunction:
             headings,
             object_positions,
             distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
+            distance_bin_size=5.0,
+            direction_bin_size=2 * np.pi / 12,
             metric="euclidean",
         )
 
@@ -2069,8 +2069,8 @@ class TestIsObjectVectorCellFreeFunction:
                 headings,
                 object_positions,
                 distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
+                distance_bin_size=5.0,
+                direction_bin_size=2 * np.pi / 12,
                 metric="euclidean",
                 min_info=min_info,
             )

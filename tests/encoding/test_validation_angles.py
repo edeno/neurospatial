@@ -74,6 +74,7 @@ def test_egocentric_entry_point_warns_for_degree_headings(session) -> None:
             np.degrees(headings),
             [[50.0, 50.0]],
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
         )
 
 

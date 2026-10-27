@@ -703,14 +703,20 @@ measures the vector **from animal to object** in world coordinates;
 egocentric bearing measures that vector relative to the animal's heading
 (zero is straight ahead).
 
+The map is a grid of distance rings and direction bins around the object. By
+default it covers every distance inside the arena, as in Høydal et al. (2019),
+so a cell tuned to a far point is not cut off, and maps of one arena with the
+object moved share a grid. The default rings are 5 cm wide and the direction
+bins 30°, a resolution unsmoothed maps of 5-15 minute sessions support. Pass
+`distance_range=` to restrict the map: the share of time it then covers is in
+`analysis_settings["fraction_of_time_in_distance_range"]`, and a unit whose
+peak lies in the outermost ring of a range that cut time off raises a warning.
+
 <!-- docs-test: run -->
 ```python
 from neurospatial.encoding import compute_egocentric_rate, compute_object_vector_rate
 
 polar_settings = {
-    "distance_range": (0.0, 50.0),
-    "n_distance_bins": 10,
-    "n_direction_bins": 12,
     "method": "binned",
     "min_occupancy": 0.5,
     "epochs": (float(times[0]), float(times[-1])),
@@ -746,7 +752,6 @@ screen = Landmark("monitor", "line", [(x_low, y_high), (x_high, y_high)])
 with_screen = env.with_landmarks(Landmarks([screen]))
 by_screen = compute_object_vector_rate(
     with_screen, spike_times, times, positions, "monitor",
-    distance_range=(0.0, 50.0), n_distance_bins=10, n_direction_bins=12,
     epochs=(float(times[0]), float(times[-1])),
     spike_window=(float(times[0]), float(times[-1])),
 )

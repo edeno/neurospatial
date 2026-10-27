@@ -43,7 +43,9 @@ def rate_family(request):
                 data += (headings,)
             data += (np.array([[15.0, 15.0]]),)
             kwargs.update(
-                distance_range=(0.0, 25.0), n_distance_bins=5, n_direction_bins=8
+                distance_range=(0.0, 25.0),
+                distance_bin_size=5.0,
+                direction_bin_size=np.pi / 4,
             )
 
     def compute(spikes, *, single=False, **overrides):
@@ -172,8 +174,8 @@ def test_physical_bandwidth_default_is_invariant_under_unit_conversion(
             args += (objects * scale,)
             kwargs.update(
                 distance_range=(0.0, 20.0 * scale),
-                n_distance_bins=4,
-                n_direction_bins=8,
+                distance_bin_size=5.0 * scale,
+                direction_bin_size=np.pi / 4,
             )
         if not declared_units and family != "view":
             # A polar grid's edges mix rings and arcs; without length units

@@ -79,6 +79,7 @@ def _compute(name, env, times, positions, headings, trains, **kwargs):
             headings,
             obj,
             distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
             **kwargs,
         )
     raise ValueError(name)

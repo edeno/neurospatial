@@ -150,7 +150,7 @@ def test_result_input_matches_its_reshaped_rate_map():
 
     spikes = generate_poisson_spikes(rate, times, seed=11)
     untuned = generate_poisson_spikes(np.full(len(times), rate.mean()), times, seed=12)
-    settings = {"distance_range": (0.0, 50.0)}
+    settings = {"distance_range": (0.0, 50.0), "distance_bin_size": 5.0}
     result = compute_object_vector_rate(None, spikes, times, positions, obj, **settings)
     grid = np.asarray(result.firing_rate).reshape(
         result.n_distance_bins, result.n_direction_bins
