@@ -2579,7 +2579,7 @@ def compute_directional_rate(
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._validation import (
@@ -2654,20 +2654,10 @@ def compute_directional_rate(
         # Unvisited headings are unobserved, even where smoothing reaches them.
         firing_rate[occupancy == 0] = np.nan
 
-    # Convert to JAX arrays if JAX backend is selected
-    occupancy_out: ArrayLike = occupancy
-    bin_centers_out: ArrayLike = bin_centers
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        firing_rate = jnp.asarray(firing_rate)
-        occupancy_out = jnp.asarray(occupancy)
-        bin_centers_out = jnp.asarray(bin_centers)
-
     return DirectionalRateResult(
-        firing_rate=firing_rate,
-        occupancy=occupancy_out,
-        bin_centers=bin_centers_out,
+        firing_rate=_to_backend(firing_rate, resolved_backend),
+        occupancy=_to_backend(occupancy, resolved_backend),
+        bin_centers=_to_backend(bin_centers, resolved_backend),
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts,
@@ -2872,7 +2862,7 @@ def compute_directional_rates(
 
     from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._validation import (
@@ -2946,20 +2936,12 @@ def compute_directional_rates(
 
     # Handle empty neuron list
     if n_neurons == 0:
-        empty_rates: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
+        empty_rates = np.empty((0, n_bins), dtype=np.float64)
         empty_counts: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
-        occupancy_result: ArrayLike = occupancy
-        bin_centers_result: ArrayLike = bin_centers
-        if resolved_backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            empty_rates = jnp.asarray(empty_rates)
-            occupancy_result = jnp.asarray(occupancy)
-            bin_centers_result = jnp.asarray(bin_centers)
         return DirectionalRatesResult(
-            firing_rates=empty_rates,
-            occupancy=occupancy_result,
-            bin_centers=bin_centers_result,
+            firing_rates=_to_backend(empty_rates, resolved_backend),
+            occupancy=_to_backend(occupancy, resolved_backend),
+            bin_centers=_to_backend(bin_centers, resolved_backend),
             bin_size=actual_bin_size_rad,
             bandwidth=bandwidth_rad,
             spike_counts=empty_counts,
@@ -2979,21 +2961,10 @@ def compute_directional_rates(
     )
     spike_counts_all: ArrayLike = np.asarray(spike_counts_batch, dtype=np.float64)
 
-    # Convert to JAX arrays if JAX backend is selected
-    firing_rates_out: ArrayLike = firing_rates
-    occupancy_out: ArrayLike = occupancy
-    bin_centers_out: ArrayLike = bin_centers
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        firing_rates_out = jnp.asarray(firing_rates)
-        occupancy_out = jnp.asarray(occupancy)
-        bin_centers_out = jnp.asarray(bin_centers)
-
     return DirectionalRatesResult(
-        firing_rates=firing_rates_out,
-        occupancy=occupancy_out,
-        bin_centers=bin_centers_out,
+        firing_rates=_to_backend(firing_rates, resolved_backend),
+        occupancy=_to_backend(occupancy, resolved_backend),
+        bin_centers=_to_backend(bin_centers, resolved_backend),
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts_all,

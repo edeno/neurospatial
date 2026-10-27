@@ -3188,7 +3188,7 @@ def _compute_glm_spatial_rates(
         The raw (always-NumPy, float64) fit result; the caller reads the GAM
         result fields off it.
     """
-    from neurospatial.encoding._backend import is_jax_available
+    from neurospatial.encoding._backend import _to_backend
     from neurospatial.encoding._glm import _RATE_FLOOR, fit_mrf_gam
 
     spike_counts = np.asarray(spike_counts, dtype=np.float64)  # (n_units, n_bins)
@@ -3245,18 +3245,11 @@ def _compute_glm_spatial_rates(
         firing_rates[:, live_bins] = rate_live.T  # (n_units, n_live_bins)
 
     # dtype at the result boundary (the core stayed float64), like the ratio path.
-    firing_rates_out: ArrayLike = firing_rates.astype(dtype, copy=False)
-
-    # Return-array-type contract: convert to a JAX array iff the resolved backend
-    # is "jax" (resolved via get_backend_name upstream -- NOT a raw backend check),
+    # Return-array-type contract: a JAX array iff the resolved backend is "jax",
     # matching what the ratio path returns for backend="jax".
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
-        firing_rates_out = jnp.asarray(firing_rates, dtype=jnp_dtype)
-
-    return firing_rates_out, fit
+    if resolved_backend == "jax":
+        return _to_backend(firing_rates, resolved_backend, dtype=dtype), fit
+    return firing_rates.astype(dtype, copy=False), fit
 
 
 def _check_spatial_env(
@@ -3849,7 +3842,7 @@ default="diffusion_kde"
     'linear'
     """
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._smoothing import smooth_rate_map
@@ -3967,18 +3960,9 @@ default="diffusion_kde"
         )
         # ``glm_firing_rates`` already has the right array type from the helper
         # (JAX for backend="jax", NumPy otherwise); slice row 0 once, preserving
-        # that type -- no redundant round-trip. Use dedicated ``ArrayLike`` output
-        # variables so the JAX branch does not reassign the NumPy-typed
-        # ``occupancy`` (which would not type-check under a JAX-present run).
-        single_firing_rate: ArrayLike
-        single_occupancy: ArrayLike = occupancy
-        if resolved_backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            single_firing_rate = jnp.asarray(glm_firing_rates)[0]
-            single_occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
-        else:
-            single_firing_rate = np.asarray(glm_firing_rates)[0]
+        # that type -- no redundant round-trip.
+        single_firing_rate = _to_backend(glm_firing_rates, resolved_backend)[0]
+        single_occupancy = _to_backend(occupancy, resolved_backend, dtype=np.float64)
         # Singular result: UNWRAP the one-element per-unit vectors (pooled=False)
         # to scalars so ``compute_spatial_rate(pooled=False)`` equals
         # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
@@ -4024,15 +4008,7 @@ default="diffusion_kde"
     if fill_value is not None:
         firing_rate = _fill_nan(firing_rate, fill_value)
 
-    # Convert occupancy to JAX if JAX backend is selected
-    # (firing_rate is already JAX from smooth_rate_map)
-    occupancy_out: ArrayLike = occupancy
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
-
-    # Return result
+    # Return result (firing_rate is already JAX from smooth_rate_map)
     return SpatialRateResult(
         n_spikes_outside_intervals=int(
             spikes_outside_intervals([spike_times], support.time_support)[0]
@@ -4041,7 +4017,7 @@ default="diffusion_kde"
         analysis_settings=settings,
         spike_window=resolved_spike_window,
         firing_rate=firing_rate,
-        occupancy=occupancy_out,
+        occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
         env=env,
         method=method,
         bandwidth=bandwidth,
@@ -4402,7 +4378,7 @@ default="diffusion_kde"
     """
     from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._smoothing import smooth_rate_maps_batch
@@ -4569,13 +4545,6 @@ default="diffusion_kde"
             resolved_backend=resolved_backend,
             dtype=dtype,
         )
-        # Dedicated ArrayLike output var so the JAX branch does not reassign the
-        # NumPy-typed ``occupancy`` (which would not type-check JAX-present).
-        batch_occupancy: ArrayLike = occupancy
-        if resolved_backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            batch_occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
         # The per-unit lambda fields (``penalty`` / ``reml_objective`` /
         # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
         # straight through from the fit; they are scalar/None under pooled=True.
@@ -4587,7 +4556,7 @@ default="diffusion_kde"
             unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
             firing_rates=glm_firing_rates,
-            occupancy=batch_occupancy,
+            occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
             env=env,
             method=method,
             bandwidth=None,
@@ -4628,16 +4597,6 @@ default="diffusion_kde"
             linear_intervals=linear_intervals,
         )
 
-        # Convert to JAX if needed
-        firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=dtype)
-        occupancy_result: ArrayLike = occupancy
-        if resolved_backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
-            firing_rates_result = jnp.asarray(firing_rates_result, dtype=jnp_dtype)
-            occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
-
         return SpatialRatesResult(
             n_spikes_outside_intervals=spikes_outside_intervals(
                 spike_times_list, support.time_support
@@ -4646,8 +4605,10 @@ default="diffusion_kde"
             analysis_settings=settings,
             unit_table=getattr(spike_times, "unit_table", None),
             spike_window=resolved_spike_window,
-            firing_rates=firing_rates_result,
-            occupancy=occupancy_result,
+            firing_rates=_to_backend(
+                np.empty((0, env.n_bins), dtype=dtype), resolved_backend, dtype=dtype
+            ),
+            occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
             env=env,
             method=method,
             bandwidth=bandwidth,
@@ -4694,19 +4655,8 @@ default="diffusion_kde"
     # stored dtype regardless of the fill_value / backend path.
     if isinstance(firing_rates, np.ndarray):
         firing_rates = firing_rates.astype(dtype, copy=False)
-    elif is_jax_available():
-        import jax.numpy as jnp
-
-        jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
-        firing_rates = jnp.asarray(firing_rates, dtype=jnp_dtype)
-
-    # Convert occupancy to JAX if JAX backend is selected
-    # (firing_rates is already JAX from smooth_rate_maps_batch)
-    occupancy_out: ArrayLike = occupancy
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
+    else:
+        firing_rates = _to_backend(firing_rates, resolved_backend, dtype=dtype)
 
     # Return result
     return SpatialRatesResult(
@@ -4718,7 +4668,7 @@ default="diffusion_kde"
         unit_table=getattr(spike_times, "unit_table", None),
         spike_window=resolved_spike_window,
         firing_rates=firing_rates,
-        occupancy=occupancy_out,
+        occupancy=_to_backend(occupancy, resolved_backend, dtype=np.float64),
         env=env,
         method=method,
         bandwidth=bandwidth,

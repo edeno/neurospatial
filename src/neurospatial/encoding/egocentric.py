@@ -1510,17 +1510,13 @@ def _egocentric_firing_rate(
     ArrayLike of shape (n_bins,)
         Firing rate per bin in Hz, as a NumPy or JAX array per ``backend``.
     """
-    from neurospatial.encoding._backend import is_jax_available
+    from neurospatial.encoding._backend import _to_backend
 
     if method == "binned":
         _warn_if_fully_masked(occupancy, min_occupancy)
         rate = _raw_polar_rate(spike_counts, occupancy, min_occupancy)
-        if backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            jax_rate: ArrayLike = jnp.asarray(rate, dtype=jnp.float64)
-            return jax_rate
-        return rate
+        rate_out: ArrayLike = _to_backend(rate, backend, dtype=np.float64)
+        return rate_out
 
     from neurospatial.encoding._smoothing import smooth_rate_map
 
@@ -2500,7 +2496,7 @@ def _object_vector_rate(
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._egocentric_counts import resolve_object_positions
@@ -2612,20 +2608,12 @@ def _object_vector_rate(
         context=context,
     )
 
-    # Convert occupancy to JAX if JAX backend is selected
-    # (firing_rate is already JAX from smooth_rate_map)
-    occupancy_out: ArrayLike = counts.occupancy
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
-
-    # Return result
+    # Return result (firing_rate is already JAX from smooth_rate_map)
     return ObjectVectorRateResult(
         min_occupancy=min_occupancy,
         direction_frame="allocentric" if headings is None else "egocentric",
         firing_rate=firing_rate,
-        occupancy=occupancy_out,
+        occupancy=_to_backend(counts.occupancy, resolved_backend, dtype=np.float64),
         env=counts.polar_env,
         method=method,
         bandwidth=counts.bandwidth,
@@ -3287,7 +3275,7 @@ def _object_vector_rates(
 
     from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._egocentric_counts import resolve_object_positions
@@ -3399,10 +3387,6 @@ def _object_vector_rates(
                 for unit_counts in counts.spike_counts
             ]
         )
-        if resolved_backend == "jax" and is_jax_available():
-            import jax.numpy as jnp
-
-            firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
     else:
         assert counts.bandwidth is not None  # resolved for every kernel method
         # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
@@ -3440,21 +3424,12 @@ def _object_vector_rates(
             context=context,
         )
 
-    # Convert occupancy to JAX if JAX backend is selected
-    # (firing_rates is already JAX from smooth_rate_maps_batch)
-    occupancy_out: ArrayLike = counts.occupancy
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
-        firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
-
     # Return result
     return ObjectVectorRatesResult(
         min_occupancy=min_occupancy,
         direction_frame="allocentric" if headings is None else "egocentric",
-        firing_rates=firing_rates,
-        occupancy=occupancy_out,
+        firing_rates=_to_backend(firing_rates, resolved_backend, dtype=np.float64),
+        occupancy=_to_backend(counts.occupancy, resolved_backend, dtype=np.float64),
         env=counts.polar_env,
         method=method,
         bandwidth=counts.bandwidth,

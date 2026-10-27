@@ -37,6 +37,7 @@ import sys
 from typing import Any, get_args
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from neurospatial.ops._types import BackendType, ResolvedBackend
 
@@ -266,3 +267,43 @@ def validate_and_resolve_backend(backend: str) -> ResolvedBackend:
         )
 
     return get_backend_name(backend)  # type: ignore[arg-type]
+
+
+def _to_backend(
+    x: ArrayLike,
+    resolved_backend: ResolvedBackend,
+    *,
+    dtype: type[np.floating[Any]] | None = None,
+) -> Any:
+    """Return ``x`` as a JAX array when the resolved backend is ``"jax"``.
+
+    Parameters
+    ----------
+    x : array_like
+        Array to hand back in the backend's array type.
+    resolved_backend : {"numpy", "jax"}
+        Backend from :func:`validate_and_resolve_backend`, which returns
+        ``"jax"`` only when JAX is available.
+    dtype : {np.float32, np.float64}, optional
+        Dtype of the JAX array; ``None`` keeps the dtype of ``x``. Ignored for
+        ``"numpy"``.
+
+    Returns
+    -------
+    array
+        ``jax.numpy.asarray(x, dtype=dtype)`` for ``"jax"``; ``x`` itself,
+        unconverted, for ``"numpy"``.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding._backend import _to_backend
+    >>> x = np.ones(3)
+    >>> _to_backend(x, "numpy") is x
+    True
+    """
+    if resolved_backend != "jax":
+        return x
+    import jax.numpy as jnp
+
+    return jnp.asarray(x, dtype=dtype)

@@ -1671,7 +1671,7 @@ def compute_view_rate(
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._smoothing import (
@@ -1751,19 +1751,11 @@ def compute_view_rate(
         backend=resolved_backend,
     )
 
-    # Convert occupancy to JAX if JAX backend is selected
-    # (firing_rate is already JAX from smooth_rate_map)
-    occupancy_out: ArrayLike = counts.occupancy
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
-
-    # Return result
+    # Return result (firing_rate is already JAX from smooth_rate_map)
     return ViewRateResult(
         min_occupancy=min_occupancy,
         firing_rate=firing_rate,
-        occupancy=occupancy_out,
+        occupancy=_to_backend(counts.occupancy, resolved_backend, dtype=np.float64),
         env=env,
         gaze_model=gaze_model,
         view_distance=view_distance,
@@ -2098,7 +2090,7 @@ def _compute_view_rates(
 
     from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._backend import (
-        is_jax_available,
+        _to_backend,
         validate_and_resolve_backend,
     )
     from neurospatial.encoding._smoothing import (
@@ -2200,20 +2192,11 @@ def _compute_view_rates(
             backend=resolved_backend,
         )
 
-    # Convert occupancy to JAX if JAX backend is selected
-    # (firing_rates is already JAX from smooth_rate_maps_batch)
-    occupancy_out: ArrayLike = counts.occupancy
-    if resolved_backend == "jax" and is_jax_available():
-        import jax.numpy as jnp
-
-        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
-        firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
-
     # Return result
     return ViewRatesResult(
         min_occupancy=min_occupancy,
-        firing_rates=firing_rates,
-        occupancy=occupancy_out,
+        firing_rates=_to_backend(firing_rates, resolved_backend, dtype=np.float64),
+        occupancy=_to_backend(counts.occupancy, resolved_backend, dtype=np.float64),
         env=env,
         gaze_model=gaze_model,
         view_distance=view_distance,
