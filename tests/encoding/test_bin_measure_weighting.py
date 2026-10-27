@@ -309,3 +309,28 @@ def test_comparison_mean_rate_is_firing_over_time_in_the_common_bins(square) -> 
     assert table["mean_rate_a"].item() == pytest.approx(28.0 / 8.0)
     assert table["mean_rate_b"].item() == pytest.approx(2.0)
     assert table["mean_rate_difference"].item() == pytest.approx(2.0 - 28.0 / 8.0)
+
+
+# --- coverage fractions ---------------------------------------------------------
+
+
+def test_single_cell_coverage_is_a_fraction_of_area(square, square_split) -> None:
+    from neurospatial.encoding import spatial_coverage_single_cell
+
+    # Firing only in the 80 cm^2 strip covers 80% of the square.
+    coverage = spatial_coverage_single_cell(square, np.array([0.0, 0.0, 5.0]))
+    split = spatial_coverage_single_cell(square_split, np.array([0.0, 0.0, 5.0, 5.0]))
+    assert coverage == pytest.approx(0.8, abs=1e-12)
+    assert split == pytest.approx(0.8, abs=1e-12)
+
+
+def test_single_cell_coverage_on_equal_bins_counts_bins(grid) -> None:
+    from neurospatial.encoding import spatial_coverage_single_cell
+
+    rng = np.random.default_rng(8)
+    rates = rng.uniform(0, 1, grid.n_bins)
+    rates[::5] = np.nan
+    observed = rates[np.isfinite(rates)]
+    assert spatial_coverage_single_cell(grid, rates, threshold=0.3) == np.mean(
+        observed > 0.3
+    )

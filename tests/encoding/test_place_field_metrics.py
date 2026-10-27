@@ -1320,7 +1320,7 @@ class TestSpatialCoverage:
 
         from neurospatial.encoding._metrics import spatial_coverage_single_cell
 
-        coverage = spatial_coverage_single_cell(firing_rate, threshold=0.1)
+        coverage = spatial_coverage_single_cell(env, firing_rate, threshold=0.1)
 
         # Should cover approximately 10% of environment (within 3% due to integer division)
         assert_allclose(coverage, 0.10, rtol=0.03)
@@ -1332,7 +1332,7 @@ class TestSpatialCoverage:
 
         from neurospatial.encoding._metrics import spatial_coverage_single_cell
 
-        coverage = spatial_coverage_single_cell(firing_rate, threshold=0.1)
+        coverage = spatial_coverage_single_cell(env, firing_rate, threshold=0.1)
 
         # Should cover 100% of environment
         assert_allclose(coverage, 1.0)
@@ -1344,7 +1344,7 @@ class TestSpatialCoverage:
 
         from neurospatial.encoding._metrics import spatial_coverage_single_cell
 
-        coverage = spatial_coverage_single_cell(firing_rate, threshold=0.1)
+        coverage = spatial_coverage_single_cell(env, firing_rate, threshold=0.1)
 
         # Should cover 0% of environment
         assert_allclose(coverage, 0.0)
@@ -1353,9 +1353,18 @@ class TestSpatialCoverage:
         """Unvisited (NaN) bins are missing, not uncovered."""
         from neurospatial.encoding._metrics import spatial_coverage_single_cell
 
-        assert spatial_coverage_single_cell(np.array([5.0, 5.0, np.nan, np.nan])) == 1.0
-        assert spatial_coverage_single_cell(np.array([5.0, 0.0, np.nan])) == 0.5
-        assert np.isnan(spatial_coverage_single_cell(np.full(4, np.nan)))
+        env = Environment.from_grid_mask(
+            np.ones(4, dtype=bool), grid_edges=(np.arange(5.0),), units="cm"
+        )
+        assert (
+            spatial_coverage_single_cell(env, np.array([5.0, 5.0, np.nan, np.nan]))
+            == 1.0
+        )
+        assert (
+            spatial_coverage_single_cell(env, np.array([5.0, 0.0, np.nan, np.nan]))
+            == 0.5
+        )
+        assert np.isnan(spatial_coverage_single_cell(env, np.full(4, np.nan)))
 
 
 class TestFieldShapeMetrics:
@@ -2353,7 +2362,7 @@ class TestSpatialCoverageSingleCellEdgeCases:
 
         firing_rate = np.full(100, np.nan)
 
-        result = spatial_coverage_single_cell(firing_rate, threshold=0.1)
+        result = spatial_coverage_single_cell(TRACK_100, firing_rate, threshold=0.1)
         assert np.isnan(result)
 
 
