@@ -7,6 +7,7 @@ and Radon transform detection.
 
 import numpy as np
 import pytest
+from environment_helpers import renumbered, strips_1d
 
 from neurospatial import Environment
 
@@ -746,42 +747,13 @@ class TestRadonAngleRecovery:
 # =============================================================================
 
 
-def _strips(edges: np.ndarray) -> Environment:
-    """A 1-D environment whose bins are the intervals between ``edges`` (cm)."""
-    import math
-
-    from neurospatial.binning import (
-        BinConnections,
-        Binning,
-        MissingFaces,
-        NearestBinLocator,
-        SpatialBins,
-    )
-
-    centers = ((edges[:-1] + edges[1:]) / 2)[:, None]
-    n_bins = len(centers)
-    pairs = np.column_stack([np.arange(n_bins - 1), np.arange(1, n_bins)])
-    return Environment.from_bins(
-        Binning(
-            "explicit",
-            SpatialBins.from_arrays(centers, np.diff(edges), 1),
-            BinConnections.from_arrays(pairs, np.diff(centers[:, 0])),
-            NearestBinLocator(centers, max_distance=math.inf),
-            MissingFaces("1-D strips"),
-        ),
-        units="cm",
-    )
-
-
 class TestFitsReadPositionAlongTrack:
     """Fits use each bin's position along the track, not its bin number."""
 
     @pytest.fixture
     def sweep(self):
         """20 bins of 5 cm, and a posterior sweeping 5 cm per 10 ms."""
-        from environment_helpers import renumbered
-
-        env = _strips(np.arange(0.0, 101.0, 5.0))
+        env = strips_1d(np.arange(0.0, 101.0, 5.0))
         times = np.arange(20) * 0.01
         posterior = np.eye(20)
         order = np.random.default_rng(3).permutation(20)
@@ -833,7 +805,7 @@ class TestFitsReadPositionAlongTrack:
         from neurospatial.decoding.trajectory import fit_linear_trajectory
 
         edges = np.r_[np.arange(0.0, 21.0, 2.0), 20.0 + 8.0 * np.arange(1, 11)]
-        env = _strips(edges)
+        env = strips_1d(edges)
         centers = (edges[:-1] + edges[1:]) / 2
         times = centers / 1000.0
         posterior = np.eye(env.n_bins)
@@ -848,8 +820,8 @@ class TestFitsReadPositionAlongTrack:
         from neurospatial.decoding.trajectory import detect_trajectory_radon
 
         rng = np.random.default_rng(0)
-        coarse = _strips(np.array([0.0, 2.0, 4.0, 12.0, 14.0]))
-        fine = _strips(np.array([0.0, 2.0, 4.0, 8.0, 12.0, 14.0]))
+        coarse = strips_1d(np.array([0.0, 2.0, 4.0, 12.0, 14.0]))
+        fine = strips_1d(np.array([0.0, 2.0, 4.0, 8.0, 12.0, 14.0]))
         posterior = rng.random((10, 4))
         posterior /= posterior.sum(axis=1, keepdims=True)
         split = np.column_stack(

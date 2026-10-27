@@ -300,6 +300,37 @@ def _renumbered(env, order, kind, locator, missing_faces, distances=None, **extr
     )
 
 
+def strips_1d(edges, *, units="cm"):
+    """A 1-D environment whose bins are the intervals between ``edges``.
+
+    Bins are numbered in order along the axis and may differ in length.
+    """
+    import math
+
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        MissingFaces,
+        NearestBinLocator,
+        SpatialBins,
+    )
+
+    edges = np.asarray(edges, dtype=float)
+    centers = ((edges[:-1] + edges[1:]) / 2)[:, None]
+    n_bins = len(centers)
+    pairs = np.column_stack([np.arange(n_bins - 1), np.arange(1, n_bins)])
+    return Environment.from_bins(
+        Binning(
+            "explicit",
+            SpatialBins.from_arrays(centers, np.diff(edges), 1),
+            BinConnections.from_arrays(pairs, np.diff(centers[:, 0])),
+            NearestBinLocator(centers, max_distance=math.inf),
+            MissingFaces("1-D strips"),
+        ),
+        units=units,
+    )
+
+
 def renumbered(env, order, distances=None, *, max_distance=5.0):
     """Publish ``env``'s bins and open connections in a new bin order.
 
