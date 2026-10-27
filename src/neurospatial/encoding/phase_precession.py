@@ -67,6 +67,8 @@ from neurospatial.stats import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from matplotlib.axes import Axes
 
 __all__ = [
@@ -430,58 +432,55 @@ def _slope_grid(
     return np.linspace(bounds[0], bounds[1], n_grid)
 
 
-def _max_residual_mrls(
-    phasors: NDArray[np.complex128],
-    positions: NDArray[np.float64],
-    grid_slopes: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Maximize MRL for columns of phase draws, with bounded temporary storage."""
-    maxima = np.zeros(phasors.shape[1], dtype=np.float64)
-    block_size = max(1, 1_000_000 // len(positions))
-    centered_positions = positions - positions.mean()
-    for start in range(0, len(grid_slopes), block_size):
-        slopes = grid_slopes[start : start + block_size]
-        basis = np.exp(-1j * slopes[:, None] * centered_positions)
-        values = np.abs(basis @ phasors) / len(positions)
-        maxima = np.maximum(maxima, values.max(axis=0))
-    return maxima
+# The slope-by-spike basis is built this many entries at a time. It bounds
+# memory (16 MB of complex128), not the computed value.
+_BASIS_BLOCK_ELEMENTS = 1_000_000
 
 
-def _best_residual_mrl(
-    phases: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    slope_bounds: tuple[float, float],
-) -> float:
-    """Data-adaptive grid maximum of residual mean resultant length.
+def _residual_mrl_maximizer(
+    positions: NDArray[np.float64], grid_slopes: NDArray[np.float64]
+) -> Callable[[NDArray[np.complex128]], NDArray[np.float64]]:
+    """Grid maximum of the residual MRL, for columns of phase draws.
 
-    Evaluates a position-scale-dependent grid and returns the largest mean resultant
-    length (MRL) of the phase residuals. This is the statistic used for both
-    the observed value and each shuffle in the permutation null, so the
-    comparison is unbiased. The grid resolves narrow peaks without requiring
-    Brent refinement for each shuffled slope.
+    The basis ``exp(-1j * slope * position)`` depends only on the positions
+    and the slope grid. When it fits in one block it is built once and
+    reused for every call; otherwise each call rebuilds it block by block.
 
     Parameters
     ----------
-    phases : ndarray of shape (n_spikes,)
-        Spike phases in radians, wrapped to ``[0, 2*pi)``.
     positions : ndarray of shape (n_spikes,)
-        Position at each spike (already normalized if requested).
-    slope_bounds : tuple of float
-        ``(lo, hi)`` bounds for the slope search (radians per position unit).
+        Position at each spike (already normalized).
+    grid_slopes : ndarray of shape (n_slopes,)
+        Slope grid of :func:`_slope_grid`.
 
     Returns
     -------
-    float
-        Maximum residual MRL over the adaptive slope grid, in [0, 1].
+    callable
+        Maps phasors of shape ``(n_spikes, n_draws)`` to the largest residual
+        MRL of each draw over the grid, shape ``(n_draws,)``, in [0, 1].
     """
+    block_size = max(1, _BASIS_BLOCK_ELEMENTS // len(positions))
+    centered_positions = positions - positions.mean()
+    starts = range(0, len(grid_slopes), block_size)
 
-    return float(
-        _max_residual_mrls(
-            np.exp(1j * phases)[:, None],
-            positions,
-            _slope_grid(positions, slope_bounds),
-        )[0]
-    )
+    def basis(start: int) -> NDArray[np.complex128]:
+        slopes = grid_slopes[start : start + block_size]
+        block: NDArray[np.complex128] = np.exp(
+            -1j * slopes[:, None] * centered_positions
+        )
+        return block
+
+    single = basis(0) if len(starts) == 1 else None
+
+    def maximize(phasors: NDArray[np.complex128]) -> NDArray[np.float64]:
+        maxima = np.zeros(phasors.shape[1], dtype=np.float64)
+        for start in starts:
+            block = basis(start) if single is None else single
+            values = np.abs(block @ phasors) / len(positions)
+            maxima = np.maximum(maxima, values.max(axis=0))
+        return maxima
+
+    return maximize
 
 
 def _fit_slope(
@@ -921,7 +920,8 @@ def _phase_precession(
     rng = np.random.default_rng(rng)
     grid_slopes = _slope_grid(normalized, slope_bounds)
     phasors = np.exp(1j * phases)
-    observed_mrl = _max_residual_mrls(phasors[:, None], normalized, grid_slopes)[0]
+    max_residual_mrls = _residual_mrl_maximizer(normalized, grid_slopes)
+    observed_mrl = max_residual_mrls(phasors[:, None])[0]
     null_mrls = np.empty(n_shuffles_eff, dtype=np.float64)
     batch_size = max(1, min(64, 1_000_000 // len(normalized)))
     for batch_start in range(0, n_shuffles_eff, batch_size):
@@ -931,9 +931,7 @@ def _phase_precession(
         draws = np.column_stack(
             [rng.permutation(phasors) for _ in range(batch_stop - batch_start)]
         )
-        null_mrls[batch_start:batch_stop] = _max_residual_mrls(
-            draws, normalized, grid_slopes
-        )
+        null_mrls[batch_start:batch_stop] = max_residual_mrls(draws)
     # +1 smoothing avoids p == 0 (Phipson & Smyth 2010).
     # Count numerical ties too: BLAS may sum vector and batched products in a
     # different order, but equivalent permutations must never become significant.
