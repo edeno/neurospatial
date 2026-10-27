@@ -544,3 +544,49 @@ def test_direction_labels_feed_epochs_and_place_fields_consistently():
     assert "stationary" not in dropped.labels
     assert set(dropped.labels) == set(result.labels) - {"stationary"}
     assert dropped.summary()["missing_label"] == "stationary"
+
+
+def test_directionality_index_separates_bidirectional_and_one_way_cells():
+    """Same firing both ways gives DI near 0; firing one way only gives near 1.
+
+    A per-bin average of |a - b| / (a + b) let out-of-field noise bins
+    dominate: identical maps scored 0.30-0.35 and a one-way cell 0.54-0.70.
+    """
+    from neurospatial.simulation import (
+        generate_poisson_spikes,
+        simulate_trajectory_laps,
+    )
+
+    env = Environment.from_samples(
+        np.linspace(0, 200, 401)[:, None], bin_size=2.0
+    ).with_metadata(units="cm")
+    for seed in range(3):
+        positions, times = simulate_trajectory_laps(
+            env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, seed=seed
+        )
+        x = positions[:, 0]
+        velocity = np.gradient(x, times)
+        labels = np.where(
+            velocity > 2, "out", np.where(velocity < -2, "in", None)
+        ).astype(object)
+        field = 15 * np.exp(-((x - 100) ** 2) / (2 * 8.0**2))
+        both_ways = field + 0.1
+        out_only = field * (velocity > 0) + 0.1
+        di = {}
+        for k, rate in enumerate((both_ways, out_only)):
+            spikes = generate_poisson_spikes(rate, times, seed=400 + 2 * seed + k)
+            maps = compute_directional_place_fields(
+                env, spikes, times, positions, labels
+            )
+            di[k] = (
+                maps.directionality_index("out", "in"),
+                maps.directionality_index("in", "out"),
+            )
+        # The one-way cell's own 0.1 Hz background fires both ways, so its
+        # index is that of the generating maps, just under 1.
+        bump = 15 * np.exp(-((env.bin_centers[:, 0] - 100) ** 2) / (2 * 8.0**2))
+        expected = bump.sum() / (bump.sum() + 2 * 0.1 * env.n_bins)
+        assert expected > 0.85
+        assert abs(di[0][0]) < 0.05
+        assert di[1][0] == pytest.approx(expected, abs=0.05)
+        assert di[1][1] == pytest.approx(-di[1][0])

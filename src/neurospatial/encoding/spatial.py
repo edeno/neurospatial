@@ -4539,19 +4539,25 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         return float(np.corrcoef(a, b)[0, 1])
 
     def directionality_index(self, label_a: Hashable, label_b: Hashable) -> float:
-        """Per-bin directionality index between two directions.
+        """Rate-weighted directionality index between two directions.
 
-        Returns the mean absolute normalized rate difference between the two
-        directions across bins:
+        The difference in total rate between the two directions' maps over
+        their total rate, summed over the bins observed in both:
 
         .. math::
 
-            \\mathrm{DI} = \\mathrm{mean}_i
-                \\frac{|r^a_i - r^b_i|}{r^a_i + r^b_i}
+            \\mathrm{DI} = \\frac{\\sum_i (r^a_i - r^b_i)}{\\sum_i (r^a_i + r^b_i)}
 
-        Values near ``0`` indicate direction-independent firing; values near
-        ``1`` indicate strongly direction-selective firing. Bins where either
-        map is NaN, or where both rates are zero, are excluded.
+        This is the index of Navratilova et al. [1]_, the difference in the
+        spikes fired in the two running directions over the spikes fired in
+        both, with each direction's rate map in place of its spike count, so
+        a direction traversed more often does not count more. ``0`` means the
+        cell fires as much in both directions, ``+1`` that it fires only in
+        ``label_a`` and ``-1`` only in ``label_b``. Bins with low rate in both
+        directions add little to either sum, so out-of-field noise does not
+        dominate. The index compares how much a cell fires, not where: a
+        field that moves between directions at the same rate has DI near 0
+        and is detected by :meth:`correlation` instead.
 
         Parameters
         ----------
@@ -4561,13 +4567,22 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         float
-            Mean directionality index in ``[0, 1]``. Returns ``nan`` if no
-            bin has a positive summed rate.
+            Directionality index in ``[-1, 1]``, positive when the cell fires
+            more in ``label_a``. ``nan`` if no bin is finite in both maps or
+            the cell is silent in both there.
 
         Raises
         ------
         KeyError
             If ``label_a`` or ``label_b`` is not a known direction label.
+
+        References
+        ----------
+        .. [1] Navratilova, Z., Hoang, L. T., Schwindel, C. D., Tatsuno, M., &
+               McNaughton, B. L. (2012). Experience-dependent firing rate
+               remapping generates directional selectivity in hippocampal place
+               cells. Frontiers in Neural Circuits, 6, 6.
+               https://doi.org/10.3389/fncir.2012.00006
 
         Examples
         --------
@@ -4595,12 +4610,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
                 )
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()
-        total = a + b
-        valid = np.isfinite(a) & np.isfinite(b) & (total > 0.0)
-        if not valid.any():
+        observed = np.isfinite(a) & np.isfinite(b)
+        rate_a, rate_b = float(a[observed].sum()), float(b[observed].sum())
+        if rate_a + rate_b <= 0.0:
             return float("nan")
-        di = np.abs(a[valid] - b[valid]) / total[valid]
-        return float(np.mean(di))
+        return (rate_a - rate_b) / (rate_a + rate_b)
 
     def summary(self) -> dict[str, Any]:
         """Scalar headline metrics across directions.

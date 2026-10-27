@@ -81,8 +81,14 @@ def test_directional_place_fields_compare(linear_env: Environment) -> None:
     # Reversed map -> perfectly anti-correlated (-1.0).
     flipped = _directional(linear_env, base, base[::-1].copy())
     assert np.isclose(flipped.correlation("fwd", "rev"), -1.0)
-    # Directionality index is positive when the maps differ per bin.
-    assert flipped.directionality_index("fwd", "rev") > 0.0
+    # The same total rate in both directions: the field moved, the rate did
+    # not, so the directionality index is 0 and only the correlation drops.
+    assert np.isclose(flipped.directionality_index("fwd", "rev"), 0.0)
+
+    # Twice the rate in one direction: DI = (2 - 1) / (2 + 1), sign by order.
+    louder = _directional(linear_env, 2 * base, base.copy())
+    assert np.isclose(louder.directionality_index("fwd", "rev"), 1 / 3)
+    assert np.isclose(louder.directionality_index("rev", "fwd"), -1 / 3)
 
     # Unknown label is a clear error, not a silent NaN.
     with pytest.raises(KeyError):
