@@ -92,9 +92,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
-    hold_last_valid,
     resolve_time_windows,
-    run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._results import _copy_analysis_settings, _copy_unit_table
@@ -1376,7 +1374,6 @@ def _view_setup(
     unit_ids: NDArray[Any] | Sequence[Any] | None,
     context: str,
     single_unit: bool,
-    view_bins: NDArray[np.intp] | None = None,
 ) -> _ViewSetup:
     """Validate view-rate inputs and bin the gaze once for every unit.
 
@@ -1395,8 +1392,6 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
     single_unit : bool
         Validate ``spike_times`` as one unit's train, without unit labels and
         without the population-silence warning.
-    view_bins : ndarray of shape (n_time,), optional
-        Precomputed viewed bins for these exact samples and gaze settings.
 
     Returns
     -------
@@ -1485,7 +1480,6 @@ spike_window, method, bandwidth, min_occupancy, backend, boundary_source
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-        view_bins=view_bins,
         boundary_source=boundary_source,
         break_before=breaks,
     )
@@ -1572,6 +1566,87 @@ def _view_rates(env: Environment, setup: _ViewSetup, *, n_jobs: int) -> _ViewRat
         settings,
         spikes_outside_intervals(setup.trains, prepared.support),
     )
+
+
+def _count_view_spikes(
+    spike_times: list[NDArray[np.float64]], prepared: FrameBinning, *, n_jobs: int
+) -> NDArray[np.float64]:
+    """Count each train by viewed bin on the prepared support, without warnings.
+
+    Returns
+    -------
+    ndarray, shape (n_units, n_bins)
+        The counts ``prepared.count`` returns for the same trains.
+    """
+    from neurospatial.encoding._spatial_counts import count_spikes_by_frame
+
+    frames = (
+        prepared.times,
+        prepared.frame_bins,
+        prepared.support.mask,
+        prepared.n_bins,
+    )
+    if spike_times and n_jobs != 1:
+        from joblib import Parallel, delayed
+
+        return np.asarray(
+            Parallel(n_jobs=n_jobs)(
+                delayed(count_spikes_by_frame)(train, *frames) for train in spike_times
+            ),
+            dtype=np.float64,
+        )
+    counts = np.zeros((len(spike_times), prepared.n_bins), dtype=np.float64)
+    for i, train in enumerate(spike_times):
+        counts[i] = count_spikes_by_frame(train, *frames)
+    return counts
+
+
+def _view_information(
+    env: Environment,
+    spike_times: list[NDArray[np.float64]],
+    setup: _ViewSetup,
+    occupancy: NDArray[np.float64],
+    *,
+    n_jobs: int,
+) -> NDArray[np.float64]:
+    """View information of spike trains on the shared gaze binning.
+
+    Matches ``compute_view_rates(...).spatial_information()`` for the same
+    trains and settings, without re-validating or re-binning the trajectory.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment that defines the viewed bins.
+    spike_times : list of ndarray
+        One spike-time array per unit, seconds.
+    setup : _ViewSetup
+        Validated settings and gaze binning from :func:`_view_setup`.
+    occupancy : ndarray, shape (n_bins,)
+        Seconds spent viewing each bin on ``setup.prepared``.
+    n_jobs : int
+        Parallel jobs for spike counting.
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        Skaggs information in bits per spike.
+    """
+    from neurospatial.encoding._metrics import batch_spatial_information
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+
+    if not spike_times:
+        return np.empty(0, dtype=np.float64)
+    rates = smooth_rate_maps_batch(
+        env,
+        _count_view_spikes(spike_times, setup.prepared, n_jobs=n_jobs),
+        occupancy,
+        method=setup.method,
+        bandwidth=setup.bandwidth,
+        min_occupancy=setup.min_occupancy,
+        backend=setup.backend,
+    )
+    return batch_spatial_information(_to_numpy(rates), occupancy)
 
 
 def compute_view_rate(
@@ -2096,53 +2171,6 @@ def compute_view_rates(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
-    return _compute_view_rates(
-        env,
-        spike_times,
-        times,
-        positions,
-        headings,
-        gaze_model=gaze_model,
-        view_distance=view_distance,
-        gaze_offsets=gaze_offsets,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        spike_window=spike_window,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        n_jobs=n_jobs,
-        backend=backend,
-        unit_ids=unit_ids,
-        boundary_source=boundary_source,
-    )
-
-
-def _compute_view_rates(
-    env: Environment,
-    spike_times: SpikeTrainsLike,
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
-    *,
-    gaze_model: Literal["fixed_distance", "ray_cast"] = "ray_cast",
-    view_distance: float | None = None,
-    gaze_offsets: NDArray[np.float64] | None = None,
-    max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: Any = None,
-    break_before: ArrayLike | None = None,
-    spike_window: Any = None,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float | None = None,
-    min_occupancy: float = 0.0,
-    n_jobs: int = 1,
-    backend: BackendType = "numpy",
-    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
-    view_bins: NDArray[np.intp] | None = None,
-    boundary_source: BoundarySource = "physical",
-) -> ViewRatesResult:
-    """Body of :func:`compute_view_rates`; ``view_bins`` reuses gaze geometry."""
     setup = _view_setup(
         env,
         spike_times,
@@ -2164,7 +2192,6 @@ def _compute_view_rates(
         unit_ids=unit_ids,
         context="compute_view_rates",
         single_unit=False,
-        view_bins=view_bins,
     )
     rates = _view_rates(env, setup, n_jobs=n_jobs)
     return ViewRatesResult(
@@ -2655,18 +2682,10 @@ def spatial_view_cell_significance(
     from neurospatial.encoding._significance import (
         run_shuffle_test,
         shuffle_inputs,
-        snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._validation import (
-        validate_spike_trains,
-        validate_trajectory,
-    )
-    from neurospatial.encoding._view_counts import (
-        _precompute_view_bins,
-        _view_observation_mask,
-    )
 
+    call = "spatial_view_cell_significance"
     inputs = shuffle_inputs(
         spike_times,
         times,
@@ -2674,80 +2693,44 @@ def spatial_view_cell_significance(
         unit_ids=unit_ids,
         epochs=epochs,
         spike_window=spike_window,
-        call="spatial_view_cell_significance",
+        call=call,
     )
-    trains, times, ids = inputs.trains, inputs.times, inputs.unit_ids
+    ids = inputs.unit_ids
     positions, headings = inputs.copies
-    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
-    options: dict[str, Any] = {
-        "gaze_model": gaze_model,
-        "boundary_source": boundary_source,
-        "view_distance": view_distance,
-        "gaze_offsets": gaze_offsets,
-        "max_gap": max_gap,
-        "method": method,
-        "bandwidth": bandwidth,
-        "min_occupancy": min_occupancy,
-        "n_jobs": n_jobs,
-        "backend": backend,
-    }
-    options = snapshot_options(
-        options,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        unit_ids=ids,
-    )
-    _check_view_env(env, context="spatial_view_cell_significance")
-    _validate_gaze_model(gaze_model)
-    options["view_distance"] = _resolve_view_distance(
-        env, gaze_model, view_distance, context="spatial_view_cell_significance"
-    )
-    validate_trajectory(
-        times,
-        positions=positions,
-        headings=headings,
-        context="spatial_view_cell_significance",
-    )
-    validate_spike_trains(trains, context="spatial_view_cell_significance")
-    breaks = validate_break_before(
-        break_before, len(times), call="spatial_view_cell_significance"
-    )
-    options["break_before"] = breaks
-    gaze_offsets = options["gaze_offsets"]
-    mask, observed_frames = _view_observation_mask(
-        times,
-        positions,
-        headings,
-        None if gaze_offsets is None else np.asarray(gaze_offsets, dtype=np.float64),
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        break_before=options["break_before"],
-    )
-    frame_bins = _precompute_view_bins(
+    # The observed population map's validation, gaze binning and occupancy,
+    # with the caller's data-quality warnings, once; every shifted map reuses
+    # them (ray casting dominates the cost of one map).
+    setup = _view_setup(
         env,
+        inputs.trains,
+        inputs.times,
         positions,
         headings,
         gaze_model=gaze_model,
-        view_distance=options["view_distance"],
-        gaze_offsets=options["gaze_offsets"],
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
+        max_gap=max_gap,
+        epochs=inputs.epochs,
+        break_before=break_before,
+        spike_window=inputs.spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
         boundary_source=boundary_source,
-        interval_mask=mask,
+        unit_ids=None,
+        context=call,
+        single_unit=False,
     )
-    mask &= hold_last_valid(frame_bins, observed_frames, fill=-1)[:-1] >= 0
-    windows = run_time_bounds(times, mask)
+    _, occupancy = setup.prepared.count(setup.trains, n_jobs=n_jobs)
 
-    # The gaze geometry depends only on the trajectory, so every shuffle
-    # reuses frame_bins instead of recomputing it (ray casting dominates).
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        return _compute_view_rates(
-            env, shifted, times, positions, headings, **options, view_bins=frame_bins
-        ).spatial_information()
+        return _view_information(env, shifted, setup, occupancy, n_jobs=n_jobs)
 
     observed, null = run_shuffle_test(
         statistic,
-        trains,
-        windows,
+        setup.trains,
+        setup.prepared.support.runs,
         ids,
         n_shuffles=n_shuffles,
         min_shift=min_shift,

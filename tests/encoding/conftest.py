@@ -230,7 +230,7 @@ def significance_family(request):
         statistic_name={
             "place": "_spatial_scores",
             "head_direction": "_count_directional",
-            "view": "_compute_view_rates",
+            "view": "_view_information",
             "object_vector": "_object_vector_rates",
             "egocentric_object_vector": "_object_vector_rates",
         }.get(name, compute_name),
