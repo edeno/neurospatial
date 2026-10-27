@@ -55,7 +55,7 @@ from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 from functools import partial
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -3689,76 +3689,34 @@ def is_object_vector_cell(
     >>> type(result)
     <class 'bool'>
     """
-    check_criterion(criterion, ("threshold", "shuffle"), call="is_object_vector_cell")
-    check_mode_keywords(
-        criterion,
-        threshold={},
-        shuffle={
-            "n_shuffles": n_shuffles,
-            "min_shift": min_shift,
-            "rng": rng,
-            "unit_id": unit_id,
-            "alpha": alpha,
-        },
-        call="is_object_vector_cell",
+    return _is_object_vector_cell(
+        env,
+        spike_times,
+        times,
+        positions,
+        None,
+        object_positions,
+        direction_frame="allocentric",
+        criterion=criterion,
+        min_info=min_info,
+        alpha=alpha,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+        unit_id=unit_id,
+        distance_range=distance_range,
+        distance_bin_size=distance_bin_size,
+        direction_bin_size=direction_bin_size,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
     )
-    break_before = validate_break_before(
-        break_before, len(times), call="is_object_vector_cell"
-    )
-
-    def rate_map() -> ObjectVectorRateResult:
-        return compute_object_vector_rate(
-            env,
-            spike_times,
-            times,
-            positions,
-            object_positions,
-            distance_range=distance_range,
-            distance_bin_size=distance_bin_size,
-            direction_bin_size=direction_bin_size,
-            metric=metric,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=break_before,
-            spike_window=spike_window,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            backend=backend,
-        )
-
-    if criterion == "shuffle":
-        label = 0 if unit_id is None else unit_id
-        return shuffle_information_verdict(
-            lambda: object_vector_cell_significance(
-                env,
-                [spike_times],
-                times,
-                positions,
-                object_positions,
-                unit_ids=[label],
-                **resolve_shuffle_settings(n_shuffles, min_shift),
-                rng=rng,
-                distance_range=distance_range,
-                distance_bin_size=distance_bin_size,
-                direction_bin_size=direction_bin_size,
-                metric=metric,
-                max_gap=max_gap,
-                epochs=epochs,
-                break_before=break_before,
-                spike_window=spike_window,
-                method=method,
-                bandwidth=bandwidth,
-                min_occupancy=min_occupancy,
-                backend=backend,
-            )[label],
-            rate_map,
-            alpha=alpha,
-            min_info=min_info,
-            default_min_info=OBJECT_VECTOR_THRESHOLDS["min_info"],
-            kind="object-vector",
-        )
-    return rate_map().is_object_vector_cell(min_info=min_info)
 
 
 def is_egocentric_object_vector_cell(
@@ -3991,9 +3949,73 @@ def is_egocentric_object_vector_cell(
     >>> type(result)
     <class 'bool'>
     """
-    check_criterion(
-        criterion, ("threshold", "shuffle"), call="is_egocentric_object_vector_cell"
+    return _is_object_vector_cell(
+        env,
+        spike_times,
+        times,
+        positions,
+        headings,
+        object_positions,
+        direction_frame="egocentric",
+        criterion=criterion,
+        min_info=min_info,
+        alpha=alpha,
+        n_shuffles=n_shuffles,
+        min_shift=min_shift,
+        rng=rng,
+        unit_id=unit_id,
+        distance_range=distance_range,
+        distance_bin_size=distance_bin_size,
+        direction_bin_size=direction_bin_size,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
     )
+
+
+def _is_object_vector_cell(
+    env: Environment | None,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+    object_positions: ObjectPositions,
+    *,
+    direction_frame: Literal["allocentric", "egocentric"],
+    criterion: Literal["threshold", "shuffle"],
+    min_info: float | None,
+    alpha: float | None,
+    n_shuffles: int | None,
+    min_shift: float | None,
+    rng: np.random.Generator | int | None,
+    unit_id: Hashable | None,
+    distance_range: tuple[float, float] | None,
+    distance_bin_size: float | None,
+    direction_bin_size: float,
+    metric: DistanceMetric,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    spike_window: Any,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    bandwidth: float | None,
+    min_occupancy: float,
+    backend: BackendType,
+) -> bool:
+    """Shared body of the allocentric and egocentric object-vector predicates.
+
+    ``direction_frame`` names the analysis and selects its public names; it is
+    never inferred from whether ``headings`` is missing.
+    """
+    egocentric = direction_frame == "egocentric"
+    call = "is_egocentric_object_vector_cell" if egocentric else "is_object_vector_cell"
+    check_criterion(criterion, ("threshold", "shuffle"), call=call)
     check_mode_keywords(
         criterion,
         threshold={},
@@ -4004,65 +4026,69 @@ def is_egocentric_object_vector_cell(
             "unit_id": unit_id,
             "alpha": alpha,
         },
-        call="is_egocentric_object_vector_cell",
+        call=call,
     )
-    break_before = validate_break_before(
-        break_before, len(times), call="is_egocentric_object_vector_cell"
-    )
+    settings: dict[str, Any] = {
+        "distance_range": distance_range,
+        "distance_bin_size": distance_bin_size,
+        "direction_bin_size": direction_bin_size,
+        "metric": metric,
+        "max_gap": max_gap,
+        "epochs": epochs,
+        "break_before": validate_break_before(break_before, len(times), call=call),
+        "spike_window": spike_window,
+        "method": method,
+        "bandwidth": bandwidth,
+        "min_occupancy": min_occupancy,
+        "backend": backend,
+    }
 
     def rate_map() -> ObjectVectorRateResult:
-        return compute_egocentric_rate(
-            env,
-            spike_times,
-            times,
-            positions,
-            headings,
-            object_positions,
-            distance_range=distance_range,
-            distance_bin_size=distance_bin_size,
-            direction_bin_size=direction_bin_size,
-            metric=metric,
-            max_gap=max_gap,
-            epochs=epochs,
-            break_before=break_before,
-            spike_window=spike_window,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            backend=backend,
+        if egocentric:
+            return compute_egocentric_rate(
+                env,
+                spike_times,
+                times,
+                positions,
+                cast("NDArray[np.float64]", headings),
+                object_positions,
+                **settings,
+            )
+        return compute_object_vector_rate(
+            env, spike_times, times, positions, object_positions, **settings
         )
 
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
+        shuffle = {
+            "unit_ids": [label],
+            **resolve_shuffle_settings(n_shuffles, min_shift),
+            "rng": rng,
+            **settings,
+        }
+
+        def significance() -> ShuffleTestResult:
+            if egocentric:
+                return egocentric_object_vector_cell_significance(
+                    env,
+                    [spike_times],
+                    times,
+                    positions,
+                    cast("NDArray[np.float64]", headings),
+                    object_positions,
+                    **shuffle,
+                )[label]
+            return object_vector_cell_significance(
+                env, [spike_times], times, positions, object_positions, **shuffle
+            )[label]
+
         return shuffle_information_verdict(
-            lambda: egocentric_object_vector_cell_significance(
-                env,
-                [spike_times],
-                times,
-                positions,
-                headings,
-                object_positions,
-                unit_ids=[label],
-                **resolve_shuffle_settings(n_shuffles, min_shift),
-                rng=rng,
-                distance_range=distance_range,
-                distance_bin_size=distance_bin_size,
-                direction_bin_size=direction_bin_size,
-                metric=metric,
-                max_gap=max_gap,
-                epochs=epochs,
-                break_before=break_before,
-                spike_window=spike_window,
-                method=method,
-                bandwidth=bandwidth,
-                min_occupancy=min_occupancy,
-                backend=backend,
-            )[label],
+            significance,
             rate_map,
             alpha=alpha,
             min_info=min_info,
             default_min_info=OBJECT_VECTOR_THRESHOLDS["min_info"],
-            kind="egocentric object-vector",
+            kind="egocentric object-vector" if egocentric else "object-vector",
         )
     return rate_map().is_object_vector_cell(min_info=min_info)
 
