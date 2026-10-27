@@ -60,7 +60,6 @@ def test_shuffles_reuse_one_dense_eigensolve(monkeypatch, ou_2min, strong_field_
             "method": "gaussian_kde",
             "epochs": [[0, 25], [30, 60]],
             "min_occupancy": 0.2,
-            "fill_value": 0.0,
         },
     ],
 )

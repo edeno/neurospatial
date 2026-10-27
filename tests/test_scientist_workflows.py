@@ -34,9 +34,7 @@ def partial_recording():
 
 def test_unsupported_space_never_becomes_evidence_of_silence(partial_recording):
     env, spikes, times, positions = partial_recording
-    rates = compute_spatial_rates(
-        env, spikes, times, positions, min_occupancy=0.1, fill_value=0.0
-    )
+    rates = compute_spatial_rates(env, spikes, times, positions, min_occupancy=0.1)
     expected_support = np.arange(env.n_bins) == 0
     np.testing.assert_array_equal(rates.spatial_support, expected_support)
     silent = [np.array([])]
@@ -90,20 +88,18 @@ def test_session_support_intersects_static_and_time_varying_priors(partial_recor
         )
 
 
-def test_low_occupancy_support_survives_zero_filling(partial_recording):
+def test_low_occupancy_bins_stay_missing_through_decoding(partial_recording):
     env, spikes, times, positions = partial_recording
     positions = positions.copy()
     positions[-2:] = 15.0
-    rates = compute_spatial_rates(
-        env, spikes, times, positions, min_occupancy=0.5, fill_value=0.0
-    )
+    rates = compute_spatial_rates(env, spikes, times, positions, min_occupancy=0.5)
     assert 0 < rates.occupancy[1] < 0.5
-    assert rates.firing_rates[0, 1] == 0.0
+    assert np.isnan(rates.firing_rates[0, 1])
     assert not rates.spatial_support[1]
     decoded = decode_position(env, np.zeros((3, 1)), rates, dt=0.1)
     np.testing.assert_array_equal(decoded.posterior[:, 1:], 0.0)
     unsupported = compute_spatial_rates(
-        env, spikes, times, positions, min_occupancy=100, fill_value=0.0
+        env, spikes, times, positions, min_occupancy=100
     )
     with pytest.raises(ValueError, match="supported training data"):
         BayesianDecoder.from_rates(unsupported)
@@ -113,9 +109,7 @@ def test_editing_settings_cannot_change_supported_training_bins(partial_recordin
     env, spikes, times, positions = partial_recording
     positions = positions.copy()
     positions[-2:] = 15.0
-    rates = compute_spatial_rates(
-        env, spikes, times, positions, min_occupancy=0.5, fill_value=0.0
-    )
+    rates = compute_spatial_rates(env, spikes, times, positions, min_occupancy=0.5)
     before = decode_position(env, np.zeros((1, 1)), rates, dt=0.1)
     settings = rates.analysis_settings
     settings["min_occupancy"] = 0.0
@@ -244,7 +238,6 @@ def test_analysis_settings_survive_indexing_and_exports(partial_recording, tmp_p
         spike_window=(0, 10),
         max_gap=0.3,
         min_occupancy=0.2,
-        fill_value=0.0,
         bandwidth=2.0,
         speed=np.full(len(times), 10.0),
         min_speed=5.0,

@@ -2915,64 +2915,30 @@ class TestMinOccupancyContract:
 
 
 class TestMetricsUseSpatialSupport:
-    """Filling unsupported bins never changes a metric (missing is not zero)."""
+    """Bins below min_occupancy are missing, not 0 Hz, in rates and metrics."""
 
     @pytest.mark.parametrize("method", ["binned", "diffusion_kde"])
-    def test_metrics_equal_for_nan_and_zero_fill(
-        self, sparse_coverage_recording, method
-    ) -> None:
-        from neurospatial.encoding.spatial import (
-            compute_spatial_rate,
-            compute_spatial_rates,
-        )
+    def test_masked_bins_are_missing(self, sparse_coverage_recording, method) -> None:
+        from neurospatial.encoding.spatial import compute_spatial_rate
 
         env, spikes, times, positions = sparse_coverage_recording
-        kwargs = {
-            "method": method,
-            "bandwidth": 0.0 if method == "binned" else 8.0,
-            "min_occupancy": 0.5,
-        }
-        nan_single = compute_spatial_rate(env, spikes, times, positions, **kwargs)
-        zero_single = compute_spatial_rate(
-            env, spikes, times, positions, fill_value=0.0, **kwargs
+        result = compute_spatial_rate(
+            env,
+            spikes,
+            times,
+            positions,
+            method=method,
+            bandwidth=0.0 if method == "binned" else 8.0,
+            min_occupancy=0.5,
         )
-        occupancy = np.asarray(nan_single.occupancy)
-        # Non-vacuous: occupied bins below the threshold are filled with 0 Hz.
+        occupancy = np.asarray(result.occupancy)
+        # Non-vacuous: many occupied bins fall below the threshold.
         masked = (occupancy > 0) & (occupancy < 0.5)
         assert masked.sum() > 20
-        assert np.all(np.asarray(zero_single.firing_rate)[masked] == 0.0)
-
-        for name in ["spatial_information", "sparsity"]:
-            assert getattr(zero_single, name)() == pytest.approx(
-                getattr(nan_single, name)(), rel=1e-12
-            )
-        assert zero_single.has_place_field() == nan_single.has_place_field()
-        assert zero_single.border_score(boundary_source="analysis") == pytest.approx(
-            nan_single.border_score(boundary_source="analysis")
-        )
-
-        nan_pop = compute_spatial_rates(
-            env, [spikes, spikes[::2]], times, positions, **kwargs
-        )
-        zero_pop = compute_spatial_rates(
-            env, [spikes, spikes[::2]], times, positions, fill_value=0.0, **kwargs
-        )
-        np.testing.assert_allclose(
-            zero_pop.spatial_information(), nan_pop.spatial_information(), rtol=1e-12
-        )
-        np.testing.assert_allclose(zero_pop.sparsity(), nan_pop.sparsity(), rtol=1e-12)
-        np.testing.assert_array_equal(zero_pop.classify(), nan_pop.classify())
-        np.testing.assert_allclose(
-            zero_pop.border_scores(boundary_source="analysis").scores,
-            nan_pop.border_scores(boundary_source="analysis").scores,
-        )
-        columns = ["spatial_information", "sparsity", "border_score"]
-        np.testing.assert_allclose(
-            zero_pop.summary_table(boundary_source="analysis")[columns].to_numpy(),
-            nan_pop.summary_table(boundary_source="analysis")[columns].to_numpy(),
-        )
+        assert np.isnan(np.asarray(result.firing_rate)[masked]).all()
+        assert not result.spatial_support[masked].any()
         # An untuned 5 Hz neuron carries little information once masked.
-        assert nan_single.spatial_information() < 0.15
+        assert result.spatial_information() < 0.15
 
 
 class TestComputeSpatialRateBackendParameter:
@@ -4245,43 +4211,6 @@ class TestComputeSpatialRatesDtype:
         )
         assert r32.firing_rates.dtype == np.float32
         _compare_finite(r32.firing_rates, r64.firing_rates)
-
-    def test_fill_value_float32_path(
-        self,
-        trajectory_env: Environment,
-        multiple_place_cell_spikes: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """dtype=float32 with fill_value=0.0 gives float32, no NaN, matches f64."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        r32 = compute_spatial_rates(
-            trajectory_env,
-            multiple_place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-            min_occupancy=0.1,
-            fill_value=0.0,
-            dtype=np.float32,
-        )
-        r64 = compute_spatial_rates(
-            trajectory_env,
-            multiple_place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-            min_occupancy=0.1,
-            fill_value=0.0,
-            dtype=np.float64,
-        )
-        assert r32.firing_rates.dtype == np.float32
-        assert not np.isnan(np.asarray(r32.firing_rates)).any()
-        np.testing.assert_allclose(
-            np.asarray(r32.firing_rates, dtype=np.float64),
-            np.asarray(r64.firing_rates, dtype=np.float64),
-            rtol=1e-5,
-            atol=1e-6,
-        )
 
     @pytest.mark.parametrize("bad_dtype", [np.int32, np.float16, "bogus"])
     def test_invalid_dtype_raises(

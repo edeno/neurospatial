@@ -117,7 +117,6 @@ def test_fit_short_training_runs_predicts_later_recording(tiny_env, training):
         times,
         positions,
         method="binned",
-        fill_value=0.0,
         epochs=epochs,
         warn_on_drop=False,
     )

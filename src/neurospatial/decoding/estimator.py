@@ -8,7 +8,7 @@ re-implement decoding: ``fit`` reuses the same internal encoder
 internally, and ``predict``/``predict_summary`` delegate straight to the
 functional core with the fitted encoding models. Reusing that internal encoder
 is what guarantees the encoding step is byte-identical to ``decode_session``'s
-(same ``fill_value=0.0``, ``max_gap`` masking, dtype, KDE parameters), so a
+(same ``max_gap`` masking, dtype, KDE parameters), so a
 fitted decoder's posterior is byte-for-byte equal to ``decode_session`` on the
 same inputs.
 
@@ -302,12 +302,11 @@ warn_on_drop
 
         # Method-specific validation, reusing the encoder's validator so the
         # mutual-exclusivity + value-domain errors are byte-identical to
-        # compute_spatial_rate's. fill_value is not a decoder param (pass None).
+        # compute_spatial_rate's.
         _validate_spatial_method_params(
             self.method,
             bandwidth=self.bandwidth,
             min_occupancy=self.min_occupancy,
-            fill_value=None,
             penalty=self.penalty,
             rank=self.rank,
         )
@@ -431,9 +430,7 @@ warn_on_drop
         >>> env = Environment.from_samples(positions, bin_size=2.0)
         >>> spikes = [times[::10], times[::15]]
         >>> train, test = (0.0, 10.0), (10.0, 19.9)
-        >>> rates = compute_spatial_rates(
-        ...     env, spikes, times, positions, epochs=train, fill_value=0.0
-        ... )
+        >>> rates = compute_spatial_rates(env, spikes, times, positions, epochs=train)
         >>> result = BayesianDecoder.from_rates(rates).predict(
         ...     spikes, times, epochs=test
         ... )

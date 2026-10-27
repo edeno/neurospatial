@@ -195,7 +195,6 @@ def test_coordinate_units_preserve_rates_and_posterior(method, n_dims, scale):
         "method": method,
         "bandwidth": 0.8,
         "min_occupancy": 0.5,
-        "fill_value": 0.0,
     }
     original = compute_spatial_rates(env, spikes, times, positions, **options)
     changed = compute_spatial_rates(

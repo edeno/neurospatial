@@ -3057,36 +3057,6 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 # ==============================================================================
 
 
-def _fill_nan(rates: ArrayLike, fill_value: float) -> ArrayLike:
-    """Replace NaN entries of a rate map with ``fill_value``.
-
-    Works for both NumPy and JAX arrays. The masked/low-occupancy bins set
-    to NaN by ``min_occupancy`` are the only NaN entries in a rate map, so
-    this targets exactly those bins.
-
-    Parameters
-    ----------
-    rates : ArrayLike
-        Firing rate map (NumPy or JAX array), any shape.
-    fill_value : float
-        Value substituted wherever ``rates`` is NaN.
-
-    Returns
-    -------
-    ArrayLike
-        A new array of the same type/shape with NaN replaced by ``fill_value``.
-    """
-    # JAX arrays expose .at/.dtype but are not numpy ndarrays; dispatch on
-    # whether the object is a numpy array. Both backends support np.isnan via
-    # the array's own namespace, but jnp.where keeps the result on-device.
-    if isinstance(rates, np.ndarray):
-        return np.where(np.isnan(rates), fill_value, rates)
-    import jax.numpy as jnp
-
-    rates_jax = cast("Any", rates)
-    return cast("ArrayLike", jnp.where(jnp.isnan(rates_jax), fill_value, rates_jax))
-
-
 def _compute_glm_spatial_rates(
     env: Environment,
     spike_counts: NDArray[np.float64],
@@ -3270,7 +3240,6 @@ def _resolve_spatial_method(
     *,
     bandwidth: float | None,
     min_occupancy: float | None,
-    fill_value: float | None,
     penalty: float | None,
     rank: int | None,
     pooled: bool,
@@ -3283,7 +3252,7 @@ def _resolve_spatial_method(
         Environment that sets the default bandwidth.
     method : str
         Spatial rate estimator.
-    bandwidth, min_occupancy, fill_value : float or None
+    bandwidth, min_occupancy : float or None
         Ratio-method parameters as passed by the caller.
     penalty : float or None
         GLM smoothing penalty as passed by the caller.
@@ -3317,7 +3286,6 @@ def _resolve_spatial_method(
         method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        fill_value=fill_value,
         penalty=penalty,
         rank=rank,
     )
@@ -3362,7 +3330,6 @@ def _prepare_spatial_support(
     method: str,
     bandwidth: float,
     min_occupancy: float,
-    fill_value: float | None,
     penalty: float | None,
     rank: int | None,
     pooled: bool,
@@ -3395,8 +3362,8 @@ def _prepare_spatial_support(
         Spatial rate estimator.
     bandwidth, min_occupancy : float
         Resolved ratio parameters.
-    fill_value, penalty : float or None
-        Validated fill value and GLM penalty.
+    penalty : float or None
+        Validated GLM penalty.
     rank : int or None
         Validated GLM basis rank.
     pooled : bool
@@ -3463,7 +3430,6 @@ def _prepare_spatial_support(
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        fill_value=fill_value,
         backend=backend,
         penalty=penalty,
         rank=rank,
@@ -3500,7 +3466,6 @@ def _spatial_rate_maps(
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"],
     bandwidth: float | None,
     min_occupancy: float | None,
-    fill_value: float | None,
     penalty: float | None,
     rank: int | None,
     pooled: bool,
@@ -3587,7 +3552,6 @@ def _spatial_rate_maps(
         method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        fill_value=fill_value,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
@@ -3635,7 +3599,6 @@ def _spatial_rate_maps(
         method=method,
         bandwidth=resolved_bandwidth,
         min_occupancy=resolved_min_occupancy,
-        fill_value=fill_value,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
@@ -3720,14 +3683,7 @@ def _spatial_rate_maps(
         dtype=dtype,
     )
 
-    # Replace masked/low-occupancy NaN bins with fill_value when requested;
-    # None keeps them NaN (missing).
-    if fill_value is not None:
-        firing_rates = _fill_nan(firing_rates, fill_value)
-
-    # Defensive final cast to the requested dtype. Under NEP 50,
-    # np.where(mask, 0.0, f32_array) keeps float32, but this guarantees the
-    # stored dtype regardless of the fill_value / backend path.
+    # Store the requested dtype on either backend.
     if isinstance(firing_rates, np.ndarray):
         firing_rates = firing_rates.astype(dtype, copy=False)
     else:
@@ -3802,7 +3758,6 @@ def compute_spatial_rate(
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float | None = None,
-    fill_value: float | None = None,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -3862,8 +3817,8 @@ default="diffusion_kde"
           (never a denominator) and the smoothness penalty λ is chosen by REML,
           so the fit returns **finite rates everywhere** -- including
           low-occupancy and unvisited bins where the ratio estimators NaN. Tuned
-          with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy`` /
-          ``fill_value``, which are mutually exclusive with ``method="glm"``).
+          with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy``, which are mutually exclusive
+          with ``method="glm"``).
 
         Note: ``diffusion_kde`` and ``binned`` smooth matrix-free via the cached
         finite-volume eigenbasis (O(n_bins·rank) per neuron) — they never build a
@@ -3886,14 +3841,6 @@ default="diffusion_kde"
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; bins below the threshold are set to NaN. ``None`` resolves to
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
-    fill_value : float | None, default=None
-        Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``,
-        and result metrics still treat filled bins as missing.
-        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
-        Zero filling without that prior treats unobserved space as silence.
-        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -4031,15 +3978,13 @@ default="diffusion_kde"
         Result object containing:
 
         - ``firing_rate``: Firing rate map in Hz, shape (n_bins,); NaN where
-          the rate is missing (see ``spatial_support``) unless ``fill_value``
-          is given
+          the rate is missing (see ``spatial_support``)
         - ``occupancy``: Time in each bin in seconds, shape (n_bins,)
         - ``env``: The environment used
         - ``method``: Estimator used
         - ``bandwidth``: Smoothing bandwidth (``None`` for ``method="glm"``)
         - ``spatial_support``: Bins with occupancy at least
-          ``min_occupancy`` and a finite rate, shape (n_bins,); unchanged by
-          ``fill_value``
+          ``min_occupancy`` and a finite rate, shape (n_bins,)
         - ``analysis_settings``: Resolved epochs, observed intervals,
           gap/speed/occupancy gates and estimator settings
         - ``spike_window`` and ``spike_window_assumed``: The spike-recording
@@ -4131,7 +4076,6 @@ default="diffusion_kde"
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        fill_value=fill_value,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
@@ -4196,7 +4140,6 @@ def compute_spatial_rates(
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float | None = None,
-    fill_value: float | None = None,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -4248,7 +4191,7 @@ default="diffusion_kde"
         to the three ratio methods, ``method="glm"`` fits a penalized-Poisson GAM
         (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
         everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
-        with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This function is
+        with ``bandwidth`` / ``min_occupancy``). This function is
         the batched entry point the decoder consumes; ``method="glm"`` flows
         through both the decoder (``decode_session`` / ``BayesianDecoder``) and
         NWB persistence (``write_spatial_rates`` round-trips the GAM diagnostics).
@@ -4268,14 +4211,6 @@ default="diffusion_kde"
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
         with ``method="glm"``.
-    fill_value : float | None, default=None
-        Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``,
-        and result metrics still treat filled bins as missing.
-        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
-        Zero filling without that prior treats unobserved space as silence.
-        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
         selects ``λ`` by REML, which raises ``ValueError`` on pathologically
@@ -4547,7 +4482,6 @@ default="diffusion_kde"
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        fill_value=fill_value,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
@@ -5643,7 +5577,6 @@ def has_place_field(
     max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
     min_occupancy: float | None = None,
-    fill_value: float | None = None,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -5728,14 +5661,6 @@ def has_place_field(
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; bins below the threshold are set to NaN. ``None`` resolves to
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
-    fill_value : float | None, default=None
-        Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``,
-        and result metrics still treat filled bins as missing.
-        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
-        Zero filling without that prior treats unobserved space as silence.
-        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -5873,7 +5798,6 @@ def has_place_field(
         ),
         spike_window=spike_window,
         min_occupancy=min_occupancy,
-        fill_value=fill_value,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
@@ -5907,7 +5831,6 @@ def is_place_cell(
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float | None = None,
-    fill_value: float | None = None,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -5985,8 +5908,8 @@ def is_place_cell(
           (never a denominator) and the smoothness penalty λ is chosen by REML,
           so the fit returns **finite rates everywhere** -- including
           low-occupancy and unvisited bins where the ratio estimators NaN. Tuned
-          with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy`` /
-          ``fill_value``, which are mutually exclusive with ``method="glm"``).
+          with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy``, which are mutually exclusive
+          with ``method="glm"``).
 
         Note: ``diffusion_kde`` and ``binned`` smooth matrix-free via the cached
         finite-volume eigenbasis (O(n_bins·rank) per neuron) — they never build a
@@ -6009,14 +5932,6 @@ def is_place_cell(
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; bins below the threshold are set to NaN. ``None`` resolves to
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
-    fill_value : float | None, default=None
-        Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``,
-        and result metrics still treat filled bins as missing.
-        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
-        Zero filling without that prior treats unobserved space as silence.
-        Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
         penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
@@ -6212,7 +6127,6 @@ def is_place_cell(
             method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
-            fill_value=fill_value,
             penalty=penalty,
             rank=rank,
             pooled=pooled,
@@ -6240,7 +6154,6 @@ def is_place_cell(
                 method=method,
                 bandwidth=bandwidth,
                 min_occupancy=min_occupancy,
-                fill_value=fill_value,
                 penalty=penalty,
                 rank=rank,
                 pooled=pooled,
@@ -6346,7 +6259,6 @@ def place_cell_significance(
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
     bandwidth: float | None = None,
     min_occupancy: float | None = None,
-    fill_value: float | None = None,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -6417,14 +6329,6 @@ def place_cell_significance(
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
         included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
         with ``method="glm"``.
-    fill_value : float | None, default=None
-        Ratio methods only: replace missing or masked stored rates with this
-        value. None preserves NaN. Filling never changes ``spatial_support``,
-        and result metrics still treat filled bins as missing.
-        Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
-        Zero filling without that prior treats unobserved space as silence.
-        Mutually exclusive with ``method="glm"``.
     penalty, rank : None, default=None
         GLM-only settings; ``method="glm"`` is not supported here, so any
         value raises ``ValueError``.
@@ -6558,7 +6462,6 @@ def place_cell_significance(
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        fill_value=fill_value,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
@@ -7409,7 +7312,6 @@ def spatial_cell_type_significance(
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        fill_value=None,
         penalty=None,
         rank=None,
         pooled=True,
@@ -7472,7 +7374,6 @@ class _ShuffleMaps(NamedTuple):
     method: str
     bandwidth: float
     min_occupancy: float
-    fill_value: float | None
     backend: ResolvedBackend
     dtype: type[np.float32] | type[np.float64]
 
@@ -7506,8 +7407,6 @@ def _shuffle_rate_maps(
         backend=maps.backend,
         dtype=maps.dtype,
     )
-    if maps.fill_value is not None:
-        rates = _fill_nan(rates, maps.fill_value)
     stored = np.asarray(rates).astype(maps.dtype, copy=False)
     return np.where(maps.occupied, stored.astype(np.float64), np.nan)
 
@@ -7612,7 +7511,6 @@ def _spatial_shuffle(
     method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"],
     bandwidth: float | None,
     min_occupancy: float | None,
-    fill_value: float | None,
     penalty: float | None,
     rank: int | None,
     pooled: bool,
@@ -7686,7 +7584,6 @@ def _spatial_shuffle(
         "method": method,
         "bandwidth": bandwidth,
         "min_occupancy": min_occupancy,
-        "fill_value": fill_value,
         "penalty": penalty,
         "rank": rank,
         "pooled": pooled,
@@ -7739,7 +7636,6 @@ def _spatial_shuffle(
         method=method,
         bandwidth=cast("float", reference.bandwidth),
         min_occupancy=reference.min_occupancy,
-        fill_value=fill_value,
         backend=validate_and_resolve_backend(backend),
         dtype=options["dtype"],
     )

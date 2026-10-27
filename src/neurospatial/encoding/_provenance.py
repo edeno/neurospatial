@@ -22,7 +22,6 @@ def rate_analysis_settings(
     min_occupancy: float | None = None,
     min_speed: float | None = None,
     speed: Any = None,
-    fill_value: float | None = None,
     penalty: float | None = None,
     rank: int | None = None,
     pooled: bool = True,
@@ -40,7 +39,6 @@ def rate_analysis_settings(
         "min_occupancy": None
         if min_occupancy is None or method == "glm"
         else float(min_occupancy),
-        "fill_value": None if fill_value is None else float(fill_value),
         "backend": backend,
         "penalty": None if penalty is None else float(penalty),
         "rank": None if rank is None else int(rank),

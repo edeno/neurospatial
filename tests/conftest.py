@@ -160,7 +160,7 @@ def analysis_invariant_method(request):
     """Exercise every spatial estimator without backend or optimizer randomness."""
     if request.param == "glm":
         return {"method": "glm", "penalty": 1.0, "rank": 5}
-    return {"method": request.param, "bandwidth": 0.8, "fill_value": 0.0}
+    return {"method": request.param, "bandwidth": 0.8}
 
 
 # =============================================================================

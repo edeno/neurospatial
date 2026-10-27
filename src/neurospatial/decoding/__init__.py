@@ -125,9 +125,7 @@ Explicit two-step form (build batch encoding models, then decode)::
     >>> from neurospatial.encoding import compute_spatial_rates
     >>> from neurospatial.decoding import bin_spikes_in_time, decode_position
     >>> # Batch place fields for the whole population in one call
-    >>> rates = compute_spatial_rates(
-    ...     env, spike_times, times, positions, fill_value=0.0
-    ... )
+    >>> rates = compute_spatial_rates(env, spike_times, times, positions)
     >>> spike_counts, time_grid = bin_spikes_in_time(
     ...     spike_times, dt=0.1, t_start=times[0], t_stop=times[-1]
     ... )

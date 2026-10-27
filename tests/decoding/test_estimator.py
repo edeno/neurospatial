@@ -240,7 +240,6 @@ def test_fit_epochs_matches_compute_spatial_rates(continuous_recording):
         bandwidth=None,
         min_occupancy=None,
         max_gap=0.5,
-        fill_value=0.0,
         epochs=[(0, 100)],
     )
     np.testing.assert_array_equal(fitted.encoding_models, expected.firing_rates)
@@ -286,7 +285,6 @@ def test_epochs_restrict_encoding(sim) -> None:
         bandwidth=None,
         method="diffusion_kde",
         min_occupancy=None,
-        fill_value=0.0,
     ).firing_rates
     assert_array_equal(fitted.encoding_models, models)
     held_out = (mid, float(times[-1]))
@@ -326,7 +324,6 @@ def test_epochs_keep_speed_aligned_to_original_samples(sim) -> None:
         bandwidth=None,
         method="diffusion_kde",
         min_occupancy=None,
-        fill_value=0.0,
     ).firing_rates
     assert fitted.is_fitted
     assert_array_equal(fitted.encoding_models, expected)
@@ -400,7 +397,7 @@ class TestImmutability:
         from neurospatial.encoding import compute_spatial_rates
 
         env, spikes, times, positions = sim
-        rates = compute_spatial_rates(env, spikes, times, positions, fill_value=0.0)
+        rates = compute_spatial_rates(env, spikes, times, positions)
         decoder = BayesianDecoder.from_rates(rates, dt=0.5)
         with pytest.raises(ValueError, match="read-only"):
             np.asarray(rates.firing_rates)[:] = 1.0
@@ -991,7 +988,6 @@ def test_from_rates_matches_fit(two_epoch_recording):
         trains,
         r.times,
         r.positions,
-        fill_value=0.0,
         spike_window=[(0, 100), (1100, 1200)],
     )
     from_rates = BayesianDecoder.from_rates(rates)
@@ -1013,7 +1009,7 @@ def test_from_rates_label_alignment(sim, make_spike_group):
 
     env, spikes, times, positions = sim
     trains = spikes[:3]
-    rates = compute_spatial_rates(env, trains, times, positions, fill_value=0.0)
+    rates = compute_spatial_rates(env, trains, times, positions)
     decoder = BayesianDecoder.from_rates(rates, dt=0.5)
     np.testing.assert_array_equal(
         decoder.predict(make_spike_group(trains, index=[3, 7, 9]), times).posterior,
@@ -1024,7 +1020,6 @@ def test_from_rates_label_alignment(sim, make_spike_group):
         make_spike_group(trains, index=[10, 11, 12]),
         times,
         positions,
-        fill_value=0.0,
     )
     decoder = BayesianDecoder.from_rates(labelled, dt=0.5)
     np.testing.assert_array_equal(

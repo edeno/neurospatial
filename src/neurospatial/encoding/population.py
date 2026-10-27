@@ -377,8 +377,7 @@ def population_coverage(
         fraction of the observed area, length or volume), ``uncovered_bins`` and
         ``uncovered_positions`` (gaps) and ``place_fields`` (detected fields
         per neuron). Bins that are NaN for every neuron were not observed:
-        they are neither covered nor gaps. Compute the rates with
-        ``fill_value=None`` (the default) so unvisited bins stay NaN.
+        they are neither covered nor gaps.
 
     Raises
     ------
@@ -1133,8 +1132,6 @@ def population_vector_correlation(
     unit's rate is finite. When every unit is compared this is
     ``firing_rates_1.spatial_support & firing_rates_2.spatial_support``; a
     unit left out by ``unit_selection="intersection"`` does not remove bins.
-    Zero-filled results (``fill_value=0``) give the same answer as NaN-kept
-    ones, because filling never changes occupancy.
 
     Summarize over the defined locations, for example with the median, and
     report how many were undefined:

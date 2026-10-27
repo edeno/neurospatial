@@ -176,12 +176,13 @@ scientific question. The values above illustrate the API; no fixed occupancy
 threshold establishes reliable tuning or a confidence level. Inspect the
 occupancy map and sensitivity to parameter choices.
 
-Sub-threshold and unvisited bins are `NaN` unless `fill_value` is supplied.
-The smoothing kernel reaches unvisited bins, but a rate there would be
-extrapolated from observed bins, so no method reports one. Keep
-`result.occupancy` when using
-`fill_value=0.0`, since zero-filled missing support and observed silence can
-otherwise look identical. Check the NaN policy of each downstream statistic.
+Sub-threshold and unvisited bins are `NaN`: missing, not 0 Hz. The smoothing
+kernel reaches unvisited bins, but a rate there would be extrapolated from
+observed bins, so no method reports one. If a downstream tool needs finite
+values, fill a copy (`np.nan_to_num(result.firing_rate)`) and keep
+`result.spatial_support`, since zero-filled missing support and observed
+silence otherwise look identical. Check the NaN policy of each downstream
+statistic.
 
 ### Checking the Occupancy Mask
 

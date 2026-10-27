@@ -466,7 +466,6 @@ _SPATIAL_METHODS: tuple[str, ...] = (
     "binned",
     "glm",
 )
-_RATIO_METHOD_PARAMS: tuple[str, ...] = ("bandwidth", "min_occupancy", "fill_value")
 
 
 def _validate_glm_penalty(penalty: Any) -> float:
@@ -586,7 +585,6 @@ def _validate_spatial_method_params(
     *,
     bandwidth: float | None,
     min_occupancy: float | None,
-    fill_value: float | None,
     penalty: float | None,
     rank: int | None,
 ) -> tuple[float | None, int | None]:
@@ -597,7 +595,7 @@ def _validate_spatial_method_params(
     1. **Method validity** -- ``method`` must be one of the four spatial methods
        (``diffusion_kde`` / ``gaussian_kde`` / ``binned`` / ``glm``).
     2. **Mutual exclusivity** -- an *explicitly set* (``not None``) ratio param
-       (``bandwidth`` / ``min_occupancy`` / ``fill_value``) with ``method="glm"``,
+       (``bandwidth`` / ``min_occupancy``) with ``method="glm"``,
        or ``penalty`` / ``rank`` with a ratio method, raises ``ValueError`` naming
        which param belongs to which method. Keyed on ``is None`` (the sentinel
        default), so bare ``method="glm"`` does not false-trip on a resolved
@@ -613,7 +611,7 @@ def _validate_spatial_method_params(
     ----------
     method : str
         The requested estimator.
-    bandwidth, min_occupancy, fill_value : float or None
+    bandwidth, min_occupancy : float or None
         Ratio-method params (``None`` = "not set").
     penalty : float or None
         glm penalty (``None`` = choose by REML).
@@ -642,7 +640,6 @@ def _validate_spatial_method_params(
         ratio_values = {
             "bandwidth": bandwidth,
             "min_occupancy": min_occupancy,
-            "fill_value": fill_value,
         }
         for name, value in ratio_values.items():
             if value is not None:
@@ -656,8 +653,8 @@ def _validate_spatial_method_params(
             if value is not None:
                 raise ValueError(
                     f"{name} is a method='glm' parameter and cannot be combined with "
-                    f"method={method!r}. Ratio methods use bandwidth=, "
-                    f"min_occupancy=, and fill_value=."
+                    f"method={method!r}. Ratio methods use bandwidth= and "
+                    f"min_occupancy=."
                 )
 
     validated_penalty = None if penalty is None else _validate_glm_penalty(penalty)
@@ -744,7 +741,7 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
     """Warn when ``min_occupancy`` would mask every occupied bin.
 
     Masking all bins the animal actually visited yields an empty rate map
-    (all-NaN, or all-``fill_value``) with no other signal -- almost always a
+    (all-NaN) with no other signal -- almost always a
     sign that ``min_occupancy`` is too large or in the wrong units (it is
     seconds). This defense-in-depth guard turns that silent empty result into a
     loud, actionable warning.
@@ -761,7 +758,7 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
         warnings.warn(
             f"min_occupancy={min_occupancy} s masks ALL {n_occupied} occupied "
             f"bins (the highest occupancy is {float(occupancy.max()):.4g} s), so "
-            "the rate map will be empty (all-NaN, or all-fill_value). "
+            "the rate map will be empty (all-NaN). "
             "min_occupancy is a threshold in SECONDS -- this usually means it is "
             "too large for this session. Lower it (or use the default 0.0 for no "
             "occupancy masking).",

@@ -376,8 +376,6 @@ def test_mutual_exclusivity(open_field_env: Environment) -> None:
         compute_spatial_rate(env, st, times, positions, method="glm", bandwidth=5.0)
     with pytest.raises(ValueError, match="min_occupancy"):
         compute_spatial_rate(env, st, times, positions, method="glm", min_occupancy=1.0)
-    with pytest.raises(ValueError, match="fill_value"):
-        compute_spatial_rate(env, st, times, positions, method="glm", fill_value=0.0)
     with pytest.raises(ValueError, match="penalty"):
         compute_spatial_rate(env, st, times, positions, method="binned", penalty=1.0)
     with pytest.raises(ValueError, match="rank"):

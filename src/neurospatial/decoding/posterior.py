@@ -592,7 +592,7 @@ def decode_position(
         ``validate=False``.
 
         NaN entries (e.g. low-occupancy bins masked by an encoder's
-        ``min_occupancy`` when ``fill_value=None``) are tolerated: each such
+        ``min_occupancy``) are tolerated: each such
         ``(neuron, bin)`` is excluded from that neuron's contribution to the
         Poisson log-likelihood at that bin, so the neuron is uninformative
         there, and a single :class:`UserWarning` is emitted per call. This is
@@ -648,7 +648,7 @@ def decode_position(
         - Reject NaN/Inf entries in spike_counts and prior. NaN entries in
           ``encoding_models`` are NOT rejected: they are absorbed by the
           zero-rate exclusion described above (which runs first), so a
-          ``fill_value=None`` model decodes under ``validate=True`` instead
+          NaN-masked model decodes under ``validate=True`` instead
           of raising. Inf entries in ``encoding_models`` are still rejected.
         - Reject negative spike_counts (must be non-negative integers).
         - Reject fractional spike_counts when given a float dtype
@@ -1135,8 +1135,8 @@ def _prepare_decode_inputs(
 
     # Defense-in-depth for non-finite encoding-model bins. Two distinct
     # sources:
-    #   * NaN bins -- e.g. an encoder's min_occupancy mask with
-    #     fill_value=None. These are the low-occupancy "unobserved" bins.
+    #   * NaN bins -- e.g. an encoder's min_occupancy mask. These are the
+    #     low-occupancy "unobserved" bins.
     #   * Inf bins -- a degenerate rate at one bin (only reachable with
     #     validate=False; validate=True rejects Inf via _validate_inputs).
     # Both are treated identically as zero-rate observations and excluded from
@@ -1160,8 +1160,8 @@ def _prepare_decode_inputs(
         n_bad = int(encoding_model_nonfinite_mask.sum())
         warnings.warn(
             f"encoding_models contains {n_bad} non-finite bin(s) (NaN or Inf; "
-            "e.g. low-occupancy bins masked by the encoder's min_occupancy "
-            "with fill_value=None). Each such (neuron, bin) is left out of that "
+            "e.g. low-occupancy bins masked by the encoder's min_occupancy). "
+            "Each such (neuron, bin) is left out of that "
             "neuron's Poisson likelihood, so the neuron says nothing about that "
             "bin. Pass the SpatialRatesResult directly to retain its training "
             "support, or supply a prior excluding unsupported locations. "

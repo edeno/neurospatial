@@ -112,7 +112,7 @@ def _setup() -> tuple[Environment, np.ndarray, object, float]:
     times = np.linspace(0, 100, 1000)
     spike_times = [np.sort(rng.uniform(0, 100, n)) for n in (40, 50, 30)]
     rates_result = compute_spatial_rates(
-        env, spike_times, times, positions, bandwidth=10.0, fill_value=0.0
+        env, spike_times, times, positions, bandwidth=10.0
     )
 
     n_time_bins, n_neurons = 50, len(spike_times)
@@ -197,7 +197,6 @@ def test_decode_position_result_object_preserves_float32() -> None:
         times,
         positions,
         bandwidth=10.0,
-        fill_value=0.0,
         dtype=np.float32,
     )
     assert rates_result.firing_rates.dtype == np.float32

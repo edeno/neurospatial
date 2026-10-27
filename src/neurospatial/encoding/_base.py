@@ -287,8 +287,8 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
     def _supported_rates(self) -> Any:
         """Rates with every bin outside the occupancy support set to NaN.
 
-        A filled (``fill_value``) or model-extrapolated (``method="glm"``) rate
-        in a bin the animal never occupied is not an observation, so metrics
+        A model-extrapolated (``method="glm"``) rate in a bin the animal
+        never occupied is not an observation, so metrics
         and peaks must not count it as observed firing.
 
         Returns
