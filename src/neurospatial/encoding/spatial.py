@@ -119,9 +119,8 @@ __all__ = [
 PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
     {
         "threshold": 0.2,
-        "min_size": None,
         "min_peak_rate": 1.0,
-        "min_secondary_peak_fraction": 0.6,
+        "min_secondary_peak_fraction": 0.0,
         "max_mean_rate": np.inf,
         "detect_subfields": True,
     }
@@ -1697,41 +1696,43 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         self,
         *,
         threshold: float = 0.2,
-        min_size: int | None = None,
         min_peak_rate: float = 1.0,
-        min_secondary_peak_fraction: float = 0.6,
+        min_secondary_peak_fraction: float = 0.0,
         max_mean_rate: float = np.inf,
         detect_subfields: bool = True,
     ) -> bool:
         """Detect whether the rate map has a place field; this is not a cell-type verdict.
 
-        Runs :func:`detect_place_fields` on this map. Independent 0.5 Hz
-        Poisson units with no spatial tuning had a detected
-        field in 11, 11, 20, 20 and 16 of 20 units at 1, 2, 5, 10 and 20 minutes
-        (30 Hz Ornstein-Uhlenbeck trajectory in a 100 x 100 cm arena, 5 cm bins,
-        diffusion KDE with a 5 cm bandwidth). Use
-        ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls false
-        positives under the circular-shift null.
+        Runs :func:`detect_place_fields` on this map. Untuned Poisson units
+        firing at 1 Hz had a detected field in 20 of 20 units at 1, 2, 5, 10
+        and 20 minutes, and at 0.5 Hz in 20, 20, 20, 19 and 11 of 20 (30 Hz
+        Ornstein-Uhlenbeck trajectory at 15 cm/s in a 100 x 100 cm arena,
+        5 cm bins, diffusion KDE with a 5 cm bandwidth). Use
+        :func:`place_cell_significance` or
+        ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls
+        false positives under the circular-shift null.
 
         Parameters
         ----------
         threshold : float, default=0.2
             Fraction of each field's own peak rate that defines its boundary
-            (0-1).
-        min_size : int, optional
-            Minimum number of bins for a valid field. If None, defaults to 9.
+            (0-1). A field must be larger than one noisy bin smoothed with
+            this map's ``bandwidth`` (see :func:`detect_place_fields`); for
+            ``method="glm"``, which has no kernel bandwidth, larger than one
+            bin.
         min_peak_rate : float, default=1.0
             Smallest peak rate (Hz) that can start a field.
-        min_secondary_peak_fraction : float, default=0.6
+        min_secondary_peak_fraction : float, default=0.0
             A field after the first must peak at least this fraction of the
-            map's maximum rate.
+            map's maximum rate. The default keeps every peak above
+            ``min_peak_rate``; see :func:`detect_place_fields`.
         max_mean_rate : float, default=np.inf
             Optional upper bound on the unweighted mean of non-NaN spatial-bin
             rates (Hz). The default disables exclusion. This is not the
             recording-time mean firing rate and does not identify cell type.
         detect_subfields : bool, default=True
-            If True, split a large field at 0.5 and then 0.7 of its peak when
-            that separates two neighboring fields.
+            If True, separate two fields that merge at ``threshold`` (the
+            FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
 
         Returns
         -------
@@ -1765,8 +1766,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         fields = detect_place_fields(
             self.env,
             firing_rate,
+            bandwidth=0.0 if self.bandwidth is None else self.bandwidth,
             threshold=threshold,
-            min_size=min_size,
             min_peak_rate=min_peak_rate,
             min_secondary_peak_fraction=min_secondary_peak_fraction,
             max_mean_rate=max_mean_rate,
@@ -3487,12 +3488,16 @@ default="diffusion_kde"
 
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles). Uses diffusion
-          kernel computed from environment graph. Bins too far from all
-          occupancy for the smoothing to resolve (typically 4-7 bandwidths
-          away) are NaN; so are such bins for ``binned``.
+          kernel computed from environment graph. Like ``gaussian_kde`` and
+          ``binned``, it leaves every bin the animal never visited NaN: the
+          kernel reaches them, but a rate there would be extrapolated.
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
-          on Euclidean distance between bin centers. Ignores boundaries (mass
-          can "bleed through" walls).
+          on Euclidean distance between bin centers, so by construction it
+          smooths through walls. In a simulated maze, 10 cm from a field
+          center across a thin wall, the rate reached 21% of the field's peak
+          at a 5 cm bandwidth and 60% at 10 cm, and the leak was detected as
+          a second field (``diffusion_kde`` and ``binned``: 0-0.3%, no
+          leaked field). Use ``diffusion_kde`` or ``binned`` in walled mazes.
         - **binned**: Bin-then-smooth method. Computes raw rate first, then
           smooths. Can introduce discretization artifacts.
         - **glm**: Penalized-Poisson GAM. Occupancy enters as a **log-offset**
@@ -3581,6 +3586,15 @@ default="diffusion_kde"
         magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
         at rest is not counted as running. Pass ``speed`` for another
         definition, such as speed along a linearized track.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -4073,6 +4087,15 @@ default="diffusion_kde"
         filtering is applied. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
         magnitude of the 0.1 s Gaussian-smoothed velocity; pass an explicit
         ``speed`` for geodesic / linearized-track environments.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -4809,19 +4832,25 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         return float(np.corrcoef(a, b)[0, 1])
 
     def directionality_index(self, label_a: Hashable, label_b: Hashable) -> float:
-        """Per-bin directionality index between two directions.
+        """Rate-weighted directionality index between two directions.
 
-        Returns the mean absolute normalized rate difference between the two
-        directions across bins:
+        The difference in total rate between the two directions' maps over
+        their total rate, summed over the bins observed in both:
 
         .. math::
 
-            \\mathrm{DI} = \\mathrm{mean}_i
-                \\frac{|r^a_i - r^b_i|}{r^a_i + r^b_i}
+            \\mathrm{DI} = \\frac{\\sum_i (r^a_i - r^b_i)}{\\sum_i (r^a_i + r^b_i)}
 
-        Values near ``0`` indicate direction-independent firing; values near
-        ``1`` indicate strongly direction-selective firing. Bins where either
-        map is NaN, or where both rates are zero, are excluded.
+        This is the index of Navratilova et al. [1]_, the difference in the
+        spikes fired in the two running directions over the spikes fired in
+        both, with each direction's rate map in place of its spike count, so
+        a direction traversed more often does not count more. ``0`` means the
+        cell fires as much in both directions, ``+1`` that it fires only in
+        ``label_a`` and ``-1`` only in ``label_b``. Bins with low rate in both
+        directions add little to either sum, so out-of-field noise does not
+        dominate. The index compares how much a cell fires, not where: a
+        field that moves between directions at the same rate has DI near 0
+        and is detected by :meth:`correlation` instead.
 
         Parameters
         ----------
@@ -4831,13 +4860,22 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         float
-            Mean directionality index in ``[0, 1]``. Returns ``nan`` if no
-            bin has a positive summed rate.
+            Directionality index in ``[-1, 1]``, positive when the cell fires
+            more in ``label_a``. ``nan`` if no bin is finite in both maps or
+            the cell is silent in both there.
 
         Raises
         ------
         KeyError
             If ``label_a`` or ``label_b`` is not a known direction label.
+
+        References
+        ----------
+        .. [1] Navratilova, Z., Hoang, L. T., Schwindel, C. D., Tatsuno, M., &
+               McNaughton, B. L. (2012). Experience-dependent firing rate
+               remapping generates directional selectivity in hippocampal place
+               cells. Frontiers in Neural Circuits, 6, 6.
+               https://doi.org/10.3389/fncir.2012.00006
 
         Examples
         --------
@@ -4865,12 +4903,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
                 )
         a = _to_numpy(self.firing_rates[label_a]).ravel()
         b = _to_numpy(self.firing_rates[label_b]).ravel()
-        total = a + b
-        valid = np.isfinite(a) & np.isfinite(b) & (total > 0.0)
-        if not valid.any():
+        observed = np.isfinite(a) & np.isfinite(b)
+        rate_a, rate_b = float(a[observed].sum()), float(b[observed].sum())
+        if rate_a + rate_b <= 0.0:
             return float("nan")
-        di = np.abs(a[valid] - b[valid]) / total[valid]
-        return float(np.mean(di))
+        return (rate_a - rate_b) / (rate_a + rate_b)
 
     def summary(self) -> dict[str, Any]:
         """Scalar headline metrics across directions.
@@ -5299,10 +5336,10 @@ def detect_place_fields(
     env: Environment,
     firing_rate: NDArray[np.float64],
     *,
+    bandwidth: float,
     threshold: float = 0.2,
-    min_size: int | None = None,
     min_peak_rate: float = 1.0,
-    min_secondary_peak_fraction: float = 0.6,
+    min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
 ) -> PlaceFieldsResult:
@@ -5324,28 +5361,38 @@ def detect_place_fields(
         Firing rate map (Hz) from neuron. NaN bins (unvisited or below the
         occupancy threshold) never belong to a field and do not connect
         fields.
+    bandwidth : float
+        Smoothing bandwidth (standard deviation, environment units) the map
+        was estimated with: ``result.bandwidth`` of a kernel rate map, 0 for
+        an unsmoothed map. It sets the smallest field, the region one noisy
+        bin fills after smoothing (see Notes). Must be finite and >= 0.
     threshold : float, default=0.2
         Fraction of each field's own peak rate that defines its boundary
         (0-1). 0.2 is the neurocode ``MapStats`` default [1]_.
-    min_size : int, optional
-        Minimum number of bins for a valid field. If None, defaults to 9 bins
-        (3 x 3 bins in 2-D).
     min_peak_rate : float, default=1.0
-        Smallest peak rate (Hz) that can start a field. 1 Hz is the minimum
-        peak in neurocode's ``MapStats`` and its place-cell pipeline [1]_
-        (also the FMAToolbox and opexebo default). Must be finite and >= 0.
-    min_secondary_peak_fraction : float, default=0.6
+        Smallest peak rate (Hz) that can start a field. 1 Hz is ``minPeak``
+        of ``MapStats`` in FMAToolbox [2]_ and neurocode [1]_ and opexebo's
+        ``firing_field_min_peak`` [3]_; neurocode's 1-D
+        ``findPlaceFieldsAvg1D`` uses 2 Hz. Must be finite and >= 0.
+    min_secondary_peak_fraction : float, default=0.0
         A field after the first must peak at least this fraction of the
-        map's maximum rate. 0.6 is neurocode's ``minPeak2nd`` [1]_. Pass
-        0.0 to keep every peak above ``min_peak_rate``. Must be in [0, 1].
+        map's maximum rate. Must be in [0, 1]. The default keeps every peak
+        above ``min_peak_rate``. neurocode's 1-D ``findPlaceFieldsAvg1D``
+        uses 0.6 (``minPeak2nd``) [1]_, together with a maximum field size
+        and a dip below threshold between fields. On simulated tracks and
+        mazes 0.6 missed every secondary field at 20-50% of the main peak
+        (a 40% arm field on a W-maze, a 50% third arm on a radial maze) and
+        gave untuned maps as many fields as 0.0 did, so it is no protection
+        against noise.
     max_mean_rate : float, default=np.inf
         Optional upper bound on the unweighted mean of non-NaN spatial-bin
         rates (Hz). The default disables exclusion. This is not the
         recording-time mean firing rate and does not identify cell type.
     detect_subfields : bool, default=True
-        If True, try to split each field larger than ``2 * min_size`` bins
-        into separate fields at 0.5 and then 0.7 of its peak. This separates
-        two neighboring fields that merge at the ``threshold`` level.
+        If True, separate two fields that merge at the ``threshold`` level,
+        with the rule of FMAToolbox ``MapStats`` [2]_: when the field's core
+        is less than half the field, the core is the field and the rest is
+        searched again from its own peak (see Notes, step 4).
 
     Returns
     -------
@@ -5373,19 +5420,22 @@ def detect_place_fields(
        also fail.
     3. **Field**: the bins connected to the peak through ``env.connectivity``
        whose rate is at least ``threshold`` times this peak.
-    4. **Keep or discard**: mark those bins as assigned. Keep the field only
-       if it has at least ``min_size`` bins and its peak bin is a local
-       maximum of the full map (no neighbor has a higher rate). A candidate
+    4. **Coalescent fields**: with ``detect_subfields``, repeat step 3 on the
+       map minus the field's floor ``m = threshold * peak``, at ``threshold``
+       of the remaining height: the core is the connected region above
+       ``m + threshold * (peak - m)`` (0.36 of the peak at the default 0.2).
+       If the core is less than half the field, a second field shares the
+       region, and the core replaces the field; the rest of the region stays
+       unassigned, so the neighboring field is found from its own peak with
+       the same rules. This is the subfield rule of FMAToolbox ``MapStats``
+       [2]_ (``Analyses/MapStats.m``, lines 194-203).
+    5. **Keep or discard**: mark the field's bins as assigned. Keep it only
+       if it is larger than the smallest field (below) and its peak bin is a
+       local maximum of the full map (no neighbor has a higher rate). A candidate
        that rises toward a neighbor is the flank of a field already assigned,
        left behind when that field was cut at its own threshold. This is the
        n-D form of neurocode's 1-D check that the rate dips below threshold
        between two fields, and of the ``localmax`` option of ``MapStats``.
-    5. **Subfields**: if ``detect_subfields`` is True and the field has more
-       than ``2 * min_size`` bins, threshold it at 0.5 and then 0.7 of its
-       peak. The first level that leaves two or more connected parts of at
-       least ``min_size`` bins replaces the field by those parts. This is one
-       pass over two levels, not a recursion; bins of the field outside
-       every part are assigned to no field.
     6. Repeat from step 2 until a peak fails the floor or every finite bin
        is assigned.
 
@@ -5393,11 +5443,40 @@ def detect_place_fields(
     successive threshold is a fraction of a smaller peak, so small bumps far
     below the main field would be reported as fields.
 
-    **Segmentation is not cell classification.** An unmodulated or high-rate
-    map can contain detected regions. An explicit finite ``max_mean_rate``
-    filters the unweighted mean of spatial-bin rates; unequal occupancy makes
-    that different from total spikes divided by recording duration. Neither
-    the filter nor the resulting field count establishes cell identity.
+    **Smallest field.** A field must be larger than what one noisy bin
+    becomes after smoothing; anything smaller cannot be told apart from a
+    single bin's excess rate. One bin's excess smoothed by a Gaussian kernel
+    of standard deviation ``σ = bandwidth`` stays above ``threshold`` times
+    its own peak within ``r = σ·sqrt(2·ln(1/threshold))`` of the bin (1.79σ
+    at the default 0.2): a segment of length ``2r`` on a track (18 cm at
+    σ = 5 cm) or a disk of area ``πr²`` in an open field (253 cm² at
+    σ = 5 cm). A real field of width ``s`` smoothed the same way is
+    ``sqrt(s² + σ²)/σ`` times wider, so it is always larger. The detector
+    measures this region on the environment: it diffuses one unit at the
+    candidate's peak bin (``env.diffuse``), keeps the connected bins with a
+    finite rate above ``threshold`` times the result's maximum, and sums their
+    measures (``env.binning.bins.sizes``). Walls, track ends and arena edges
+    shrink it as they shrink a field there. For an unsmoothed map
+    (``bandwidth=0``) it is the peak bin. Field and region are compared by
+    measure, so the rule does not depend on bin size.
+
+    **Segmentation is not a test.** The detector finds regions of elevated
+    rate; it does not ask whether they differ from chance. Every untuned
+    Poisson unit firing at 1 Hz or more had a field at every recording length
+    tried (1-20 min in a 1 m open field, 2-20 min on a 2 m track), and so did
+    every interneuron-like unit with a high, broadly modulated rate (15 Hz
+    plus a 5 Hz bump 40 cm wide on the track), whose field is the whole
+    track. Untuned 0.5 Hz units lose their field as the map converges below
+    ``min_peak_rate`` (7, 2, 0 and 0 of 20 on the track at 2, 5, 10 and
+    20 min). Use :func:`place_cell_significance` for a verdict.
+    neurocode's 1-D ``findPlaceFieldsAvg1D`` also drops fields longer than
+    60% of the track (``maxSize``) [1]_; a fraction of a track has no
+    counterpart in an open field, so no maximum is applied here. Filter the
+    fields on :func:`~neurospatial.encoding.field_size` if your protocol
+    needs one. An explicit finite ``max_mean_rate`` filters the unweighted
+    mean of spatial-bin rates; unequal occupancy makes that different from
+    total spikes divided by recording duration. Neither the filter nor the
+    resulting field count establishes cell identity.
 
     Examples
     --------
@@ -5409,7 +5488,7 @@ def detect_place_fields(
     >>> # An 8 Hz Gaussian place field (3 cm width) at the center
     >>> distance = np.linalg.norm(env.bin_centers, axis=1)
     >>> firing_rate = 8.0 * np.exp(-(distance**2) / (2 * 3.0**2))
-    >>> fields = detect_place_fields(env, firing_rate)
+    >>> fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
     >>> len(fields)
     1
 
@@ -5423,6 +5502,10 @@ def detect_place_fields(
     .. [1] AyA Lab neurocode toolbox, ``PlaceCells/MapStats.m`` and
            ``PlaceCells/findPlaceFieldsAvg1D.m``,
            https://github.com/ayalab1/neurocode
+    .. [2] Zugaro, M. FMAToolbox, ``Analyses/MapStats.m``,
+           https://github.com/michael-zugaro/FMAToolbox
+    .. [3] Kavli Institute (NTNU) opexebo, ``opexebo/defaults.py``,
+           https://github.com/kavli-ntnu/opexebo
     """
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
     if firing_rate.shape != (env.n_bins,):
@@ -5438,7 +5521,7 @@ def detect_place_fields(
             _format_error(
                 f"min_peak_rate must be a finite rate >= 0 Hz, got {min_peak_rate}.",
                 why="Why: it is the smallest peak rate that can start a field",
-                fix="pass min_peak_rate=1.0 (the neurocode default) or another rate in Hz",
+                fix="pass min_peak_rate=1.0 (the MapStats and opexebo default) or another rate in Hz",
             )
         )
     if not 0 <= min_secondary_peak_fraction <= 1:
@@ -5447,12 +5530,20 @@ def detect_place_fields(
                 "min_secondary_peak_fraction must be in [0, 1], got "
                 f"{min_secondary_peak_fraction}.",
                 why="Why: it is a fraction of the map's maximum rate",
-                fix="pass 0.6 (the neurocode default) or 0.0 to keep every peak above min_peak_rate",
+                fix="pass 0.0 to keep every peak above min_peak_rate, or a fraction such as 0.6",
             )
         )
 
-    if min_size is None:
-        min_size = 9  # 3 x 3 bins in 2-D
+    if not (np.isfinite(bandwidth) and bandwidth >= 0):
+        raise ValueError(
+            _format_error(
+                f"bandwidth must be a finite length >= 0, got {bandwidth}.",
+                why="Why: it is the smoothing the map was estimated with, which "
+                "sets the smallest field",
+                fix="pass result.bandwidth of the rate map, or 0.0 for an "
+                "unsmoothed map",
+            )
+        )
 
     finite = np.isfinite(firing_rate)
     if not np.any(finite):
@@ -5478,6 +5569,7 @@ def detect_place_fields(
     min_peak = max(
         min_peak_rate, min_secondary_peak_fraction * float(np.max(firing_rate[finite]))
     )
+    measures = np.asarray(env.binning.bins.sizes, dtype=np.float64)
     # Unassigned bins keep their rate; assigned and missing bins are NaN.
     remaining = np.where(finite, firing_rate, np.nan)
     fields: list[NDArray[np.int64]] = []
@@ -5488,21 +5580,21 @@ def detect_place_fields(
             break
 
         # NaN compares False, so assigned and missing bins are excluded.
-        above_threshold = remaining >= peak_rate * threshold
-        field_bins = _extract_connected_component(peak_idx, above_threshold, env)
+        floor = peak_rate * threshold
+        field_bins = _extract_connected_component(peak_idx, remaining >= floor, env)
+        if detect_subfields:
+            # FMAToolbox MapStats: the same search on the map minus the floor.
+            core_level = floor + (peak_rate - floor) * threshold
+            core = _extract_connected_component(peak_idx, remaining >= core_level, env)
+            if measures[core].sum() < measures[field_bins].sum() / 2:
+                field_bins = core
         remaining[field_bins] = np.nan
-        if len(field_bins) < min_size or _rises_toward_a_neighbor(
-            peak_idx, peak_rate, firing_rate, env
-        ):
+        if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
             continue
-
-        if detect_subfields and len(field_bins) > min_size * 2:
-            fields.extend(
-                _detect_subfields(
-                    firing_rate[field_bins], field_bins, peak_rate, env, min_size
-                )
-            )
-        else:
+        smallest = _smoothed_bin_measure(
+            env, peak_idx, bandwidth, threshold, finite, measures
+        )
+        if measures[field_bins].sum() > smallest:
             fields.append(field_bins)
 
     return PlaceFieldsResult(fields=fields)
@@ -5521,9 +5613,8 @@ def has_place_field(
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
     threshold: float = 0.2,
-    min_size: int | None = None,
     min_peak_rate: float = 1.0,
-    min_secondary_peak_fraction: float = 0.6,
+    min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
     min_occupancy: float | None = None,
@@ -5539,13 +5630,13 @@ def has_place_field(
     """Detect whether the rate map has a place field; this is not a cell-type verdict.
 
     Computes the rate map with :func:`compute_spatial_rate` and runs
-    :func:`detect_place_fields` on it. Independent 0.5 Hz Poisson units with
-    no spatial tuning had a detected
-    field in 11, 11, 20, 20 and 16 of 20 units at 1, 2, 5, 10 and 20 minutes
-    (30 Hz Ornstein-Uhlenbeck trajectory in a 100 x 100 cm arena, 5 cm bins,
-    diffusion KDE with a 5 cm bandwidth). Use
-    ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls false
-    positives under the circular-shift null.
+    :func:`detect_place_fields` on it. Untuned Poisson units firing at 1 Hz
+    had a detected field in 20 of 20 units at 1, 2, 5, 10 and 20 minutes,
+    and at 0.5 Hz in 20, 20, 20, 19 and 11 of 20 (30 Hz Ornstein-Uhlenbeck
+    trajectory at 15 cm/s in a 100 x 100 cm arena, 5 cm bins, diffusion KDE
+    with a 5 cm bandwidth). Use :func:`place_cell_significance` or
+    ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls
+    false positives under the circular-shift null.
 
     Parameters
     ----------
@@ -5589,20 +5680,22 @@ def has_place_field(
         started before, or continued after, the spike recording.
     threshold : float, default=0.2
         Fraction of each field's own peak rate that defines its boundary (0-1).
-    min_size : int, optional
-        Minimum number of bins for a valid field. If None, defaults to 9.
+        A field must be larger than one noisy bin smoothed with ``bandwidth``
+        (see :func:`detect_place_fields`); for ``method="glm"``, larger than
+        one bin.
     min_peak_rate : float, default=1.0
         Smallest peak rate (Hz) that can start a field.
-    min_secondary_peak_fraction : float, default=0.6
+    min_secondary_peak_fraction : float, default=0.0
         A field after the first must peak at least this fraction of the map's
-        maximum rate.
+        maximum rate. The default keeps every peak above ``min_peak_rate``;
+        see :func:`detect_place_fields`.
     max_mean_rate : float, default=np.inf
         Optional upper bound on the unweighted mean of non-NaN spatial-bin
         rates (Hz). The default disables exclusion. This is not the
         recording-time mean firing rate and does not identify cell type.
     detect_subfields : bool, default=True
-        If True, split a large field at 0.5 and then 0.7 of its peak when that
-        separates two neighboring fields.
+        If True, separate two fields that merge at ``threshold`` (the
+        FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
 
     min_occupancy : float | None, default=None
         (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
@@ -5666,6 +5759,15 @@ def has_place_field(
         magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
         at rest is not counted as running. Pass ``speed`` for another
         definition, such as speed along a linearized track.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -5755,7 +5857,6 @@ def has_place_field(
     )
     return result.has_place_field(
         threshold=threshold,
-        min_size=min_size,
         min_peak_rate=min_peak_rate,
         min_secondary_peak_fraction=min_secondary_peak_fraction,
         max_mean_rate=max_mean_rate,
@@ -5836,12 +5937,16 @@ def is_place_cell(
 
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles). Uses diffusion
-          kernel computed from environment graph. Bins too far from all
-          occupancy for the smoothing to resolve (typically 4-7 bandwidths
-          away) are NaN; so are such bins for ``binned``.
+          kernel computed from environment graph. Like ``gaussian_kde`` and
+          ``binned``, it leaves every bin the animal never visited NaN: the
+          kernel reaches them, but a rate there would be extrapolated.
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
-          on Euclidean distance between bin centers. Ignores boundaries (mass
-          can "bleed through" walls).
+          on Euclidean distance between bin centers, so by construction it
+          smooths through walls. In a simulated maze, 10 cm from a field
+          center across a thin wall, the rate reached 21% of the field's peak
+          at a 5 cm bandwidth and 60% at 10 cm, and the leak was detected as
+          a second field (``diffusion_kde`` and ``binned``: 0-0.3%, no
+          leaked field). Use ``diffusion_kde`` or ``binned`` in walled mazes.
         - **binned**: Bin-then-smooth method. Computes raw rate first, then
           smooths. Can introduce discretization artifacts.
         - **glm**: Penalized-Poisson GAM. Occupancy enters as a **log-offset**
@@ -5930,6 +6035,15 @@ def is_place_cell(
         magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
         at rest is not counted as running. Pass ``speed`` for another
         definition, such as speed along a linearized track.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -6117,6 +6231,30 @@ def _rises_toward_a_neighbor(
     return bool(np.any(firing_rate[neighbors] > peak_rate))
 
 
+def _smoothed_bin_measure(
+    env: Environment,
+    peak_idx: int,
+    bandwidth: float,
+    threshold: float,
+    observed: NDArray[np.bool_],
+    measures: NDArray[np.float64],
+) -> float:
+    """Measure of the field one noisy bin at ``peak_idx`` makes after smoothing.
+
+    The connected observed bins where one unit diffused from ``peak_idx``
+    stays at or above ``threshold`` times its maximum; the peak bin alone for
+    an unsmoothed map. See :func:`detect_place_fields`, Notes.
+    """
+    if bandwidth == 0:
+        return float(measures[peak_idx])
+    impulse = np.zeros(env.n_bins)
+    impulse[peak_idx] = 1.0
+    spread = np.asarray(env.diffuse(impulse, bandwidth=bandwidth, mode="density"))
+    above = observed & (spread >= threshold * spread.max())
+    region = _extract_connected_component(peak_idx, above, env)
+    return float(measures[region].sum())
+
+
 def _extract_connected_component_graph(
     seed_idx: int,
     mask: NDArray[np.bool_],
@@ -6169,77 +6307,6 @@ def _extract_connected_component(
     The environment graph is authoritative for every binning family.
     """
     return _extract_connected_component_graph(seed_idx, mask, env)
-
-
-def _detect_subfields(
-    field_rates: NDArray[np.float64],
-    field_bins: NDArray[np.int64],
-    peak_rate: float,
-    env: Environment,
-    min_size: int,
-) -> list[NDArray[np.int64]]:
-    """Recursively detect subfields using higher thresholds.
-
-    Parameters
-    ----------
-    field_rates : array
-        Firing rates within field bins.
-    field_bins : array
-        Bin indices of field.
-    peak_rate : float
-        Peak firing rate in field.
-    env : Environment
-        Spatial environment.
-    min_size : int
-        Minimum field size.
-
-    Returns
-    -------
-    subfields : list of arrays
-        List of subfield bin indices. If only one subfield found,
-        returns list with original field.
-    """
-    # Try thresholds: 0.5 and 0.7 of peak
-    subfield_thresholds = [0.5, 0.7]
-
-    for thresh in subfield_thresholds:
-        threshold_rate = peak_rate * thresh
-        above_threshold = field_rates >= threshold_rate
-
-        # Find connected components
-        subfields = []
-        remaining_mask = above_threshold.copy()
-
-        while remaining_mask.any():
-            # Find a seed
-            seed_local_idx = np.where(remaining_mask)[0][0]
-            seed_global_idx = field_bins[seed_local_idx]
-
-            # Build mask in global coordinates
-            global_mask = np.zeros(env.n_bins, dtype=bool)
-            global_mask[field_bins[above_threshold]] = True
-
-            # Extract component
-            component_global = _extract_connected_component(
-                seed_global_idx, global_mask, env
-            )
-
-            if len(component_global) >= min_size:
-                subfields.append(component_global)
-
-            # Remove from remaining mask
-            for bin_idx in component_global:
-                # Find local index
-                local_indices = np.where(field_bins == bin_idx)[0]
-                if len(local_indices) > 0:
-                    remaining_mask[local_indices[0]] = False
-
-        # If found multiple subfields, return them
-        if len(subfields) > 1:
-            return subfields
-
-    # No subfields found
-    return [field_bins]
 
 
 def place_cell_significance(
@@ -6339,6 +6406,15 @@ def place_cell_significance(
         filtering is applied. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
         magnitude of the 0.1 s Gaussian-smoothed velocity; pass an explicit
         ``speed`` for geodesic / linearized-track environments.
+
+        **Choosing it.** Without a gate, time and spikes at rest (reward
+        sites, track ends) enter the map. On a simulated track where the
+        animal rested 27% of the time and fired 3 Hz at rest, spatial
+        information was 0.85-0.94 bits/spike without a gate and 1.55-1.84
+        with ``min_speed=4`` cm/s, and the rest firing made extra fields at
+        the track ends. No speed suits every recording: place maps are
+        usually built from running, so pick the threshold from your animal's
+        speed distribution, between the resting and running modes.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded

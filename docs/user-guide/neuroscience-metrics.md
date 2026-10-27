@@ -30,14 +30,14 @@ from neurospatial.encoding import compute_spatial_rate, detect_place_fields
 
 # Create environment and compute firing rate map
 env = Environment.from_samples(positions, bin_size=2.5)
-firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
+rates = compute_spatial_rate(env, spike_times, times, positions)
 
 # Detect place fields
-fields = detect_place_fields(env, firing_rate,
-    threshold=0.2,          # 20% of peak rate
-    min_size=None,          # Default: at least 9 bins
-    max_mean_rate=np.inf,   # Default: no rate-based exclusion
-    detect_subfields=True   # Discriminate coalescent fields
+fields = detect_place_fields(env, rates.firing_rate,
+    bandwidth=rates.bandwidth,  # smoothing of the map: sets the smallest field
+    threshold=0.2,              # 20% of each field's peak rate
+    max_mean_rate=np.inf,       # Default: no rate-based exclusion
+    detect_subfields=True       # Discriminate coalescent fields
 )
 
 # Result: iterable PlaceFieldsResult with bin arrays and optional exclusion metadata
@@ -50,19 +50,40 @@ fields = detect_place_fields(env, firing_rate,
 1. **Iterative peak detection**: Identifies local maxima above threshold
 2. **Connected component extraction**: Groups neighboring bins into fields
 3. **Optional map-mean filter**: An explicitly finite `max_mean_rate` can skip maps
-4. **Subfield discrimination**: Recursively re-thresholds at 50% and 70% to separate coalescent fields
+4. **Subfield discrimination**: FMAToolbox `MapStats`'s rule. The core of a
+   field is the region above `m + threshold * (peak - m)`, with
+   `m = threshold * peak` (36% of the peak at the default 0.2). When the core
+   is less than half the field, two fields share it: the core is kept and the
+   neighboring field is found from its own peak
 
 **Key parameters:**
 
 - `threshold`: Fraction of peak rate (default 0.2 = 20%, following Muller & Kubie, 1989)
-- `min_size`: Minimum field size in bins (defaults to 9; choose for your bin size)
+- `bandwidth`: The smoothing bandwidth the map was estimated with
+  (`rates.bandwidth`; 0 for an unsmoothed map). A field must be larger than
+  what one noisy bin becomes after that smoothing: with a 5 cm bandwidth and
+  the 0.2 threshold, 18 cm on a track and 253 cm² in an open field, whatever
+  the bin size. `has_place_field` passes it for you.
+- `min_secondary_peak_fraction`: A second field must peak at least this
+  fraction of the map's maximum (default 0: every field peaking above
+  `min_peak_rate` counts). neurocode's 1-D pipeline uses 0.6, which on
+  simulated tracks and mazes missed every secondary field at 20-50% of the main
+  peak without reducing the fields found in untuned maps.
 - `max_mean_rate`: Optional upper bound on the unweighted mean of non-NaN spatial-bin rates
   (default `np.inf`, disabled). This is not spike count divided by recording time,
   and does not identify interneurons or another cell type.
-- `detect_subfields`: Enable subfield discrimination (default True, following neurocode)
+- `detect_subfields`: Enable subfield discrimination (default True, following
+  FMAToolbox and neurocode `MapStats`)
+- `min_peak_rate`: The smallest peak that starts a field (default 1 Hz, the
+  `minPeak` of FMAToolbox and neurocode `MapStats` and opexebo; neurocode's
+  1-D `findPlaceFieldsAvg1D` uses 2 Hz)
 
-Segmentation is descriptive: even a flat map can yield a region. Field count
-and `has_place_field` do not establish a place cell. Keep cell-type tests and
+Segmentation is descriptive, not a test: even a flat map can yield a region.
+In simulations, every untuned unit firing at 1 Hz or more had a "field" at
+every recording length from 1 to 20 minutes, and so did interneuron-like units
+with a high, broadly modulated rate, whose field covered the whole track. Field
+count and `has_place_field` do not establish a place cell; use
+`place_cell_significance` for a verdict. Keep cell-type tests and
 quality selection separate from map segmentation. To recover the previous
 10 Hz map-mean exclusion, pass `max_mean_rate=10.0` explicitly and inspect
 `fields.excluded_reason`; it remains `"mean_rate_above_threshold"` when the
@@ -198,8 +219,9 @@ import numpy as np
 # Stack firing rate maps from all neurons: shape (n_neurons, n_bins)
 firing_rates = np.array([rate_map_cell1, rate_map_cell2, rate_map_cell3])
 
-# Compute coverage (runs detect_place_fields internally)
-result = population_coverage(env, firing_rates)
+# Compute coverage (runs detect_place_fields internally); pass the bandwidth
+# the maps were smoothed with, e.g. rates.bandwidth from compute_spatial_rates
+result = population_coverage(env, firing_rates, bandwidth=5.0)
 
 # Access results
 print(f"Coverage: {result.coverage_fraction:.1%}")
@@ -358,9 +380,9 @@ as `part.bin_mapping_from(env).pairs` for a subset of the arena.
 
 With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
 then be the same units in the same order in both, and pass
-`spatial_support=rates_1.spatial_support & rates_2.spatial_support`: smoothing
-gives finite rates in bins the animal never visited, and zero-filling reads
-them as 0 Hz, so without it unvisited bins are compared. See
+`spatial_support=rates_1.spatial_support & rates_2.spatial_support`:
+zero-filled maps (`fill_value=0`) read unvisited bins as 0 Hz, so without it
+unvisited bins are compared. See
 [Does the spatial map change between conditions?](population-analysis.md#does-the-spatial-map-change-between-conditions)
 for a worked remapping example.
 
@@ -1058,12 +1080,13 @@ from neurospatial.encoding import compute_spatial_rate
 
 # 1. Create environment and compute firing rate
 env = Environment.from_samples(positions, bin_size=2.5)
-firing_rate = compute_spatial_rate(
-    env, spike_times, times, positions, min_occupancy=0.5
-).firing_rate
+rates = compute_spatial_rate(env, spike_times, times, positions, min_occupancy=0.5)
+firing_rate = rates.firing_rate
 
 # 2. Detect place fields
-fields = detect_place_fields(env, firing_rate, detect_subfields=True)
+fields = detect_place_fields(
+    env, firing_rate, bandwidth=rates.bandwidth, detect_subfields=True
+)
 print(f"Detected {len(fields)} place fields")
 
 # 3. Compute field properties
@@ -1099,10 +1122,10 @@ import numpy as np
 
 # Batch-encode firing rate maps for all cells: shape (n_neurons, n_bins)
 # all_spike_trains is a list of per-cell spike-time arrays.
-firing_rates = compute_spatial_rates(env, all_spike_trains, times, positions).firing_rates
+rates = compute_spatial_rates(env, all_spike_trains, times, positions)
 
 # Analyze population coverage (runs detect_place_fields internally)
-result = population_coverage(env, firing_rates)
+result = population_coverage(env, rates.firing_rates, bandwidth=rates.bandwidth)
 
 print(f"Population coverage: {result.coverage_fraction:.1%}")
 print(f"Place cells: {result.n_place_cells}/{result.n_neurons}")

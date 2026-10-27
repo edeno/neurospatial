@@ -2268,8 +2268,10 @@ def _smoothed_directional_rates(
     Returns
     -------
     ndarray of shape (n_units, n_bins)
-        Rates in Hz; NaN where the (smoothed) occupancy is zero.
+        Rates in Hz; NaN at headings the animal never faced, even where
+        smoothing reaches them.
     """
+    unvisited = occupancy == 0
     if bandwidth is not None:
         from scipy.ndimage import gaussian_filter1d
 
@@ -2278,7 +2280,7 @@ def _smoothed_directional_rates(
         occupancy = gaussian_filter1d(occupancy, sigma_bins, mode="wrap")
     with np.errstate(divide="ignore", invalid="ignore"):
         rates: NDArray[np.float64] = spike_counts / occupancy
-    rates[:, occupancy == 0] = np.nan
+    rates[:, unvisited] = np.nan
     return rates
 
 
@@ -2640,8 +2642,8 @@ def compute_directional_rate(
     # Compute firing rate (handle division by zero)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rate = spike_counts_smooth / occupancy_smooth
-        # Set unvisited bins to NaN
-        firing_rate[occupancy_smooth == 0] = np.nan
+        # Unvisited headings are unobserved, even where smoothing reaches them.
+        firing_rate[occupancy == 0] = np.nan
 
     # Convert to JAX arrays if JAX backend is selected
     occupancy_out: ArrayLike = occupancy

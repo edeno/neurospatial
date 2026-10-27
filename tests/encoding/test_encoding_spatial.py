@@ -4458,3 +4458,18 @@ def test_batch_plot_without_idx_raises_actionable_error(simple_env, occupancy):
     )
     with pytest.raises((TypeError, ValueError), match=r"(?i)idx|unit|plot\(0\)"):
         result.plot()
+
+
+def test_silent_unit_summary_has_no_peak_location():
+    """A unit with no spikes has rate 0 Hz everywhere and no peak location."""
+    from neurospatial.encoding.spatial import compute_spatial_rates
+
+    rng = np.random.default_rng(7)
+    times = np.arange(0.0, 60.0, 1 / 30)
+    positions = rng.uniform(0, 40, (times.size, 2))
+    env = Environment.from_samples(positions, bin_size=5.0)
+    spikes = [np.array([]), np.sort(np.random.default_rng(8).uniform(0, 60, 40))]
+    table = compute_spatial_rates(env, spikes, times, positions).summary_table()
+    assert table["peak_firing_rate"].iloc[0] == 0.0
+    assert np.isnan(table["peak_x"].iloc[0]) and np.isnan(table["peak_y"].iloc[0])
+    assert np.isfinite(table["peak_x"].iloc[1])

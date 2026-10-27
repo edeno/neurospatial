@@ -53,8 +53,8 @@ class TestPopulationCoverageDocstring:
         """Docstring example must use env-first argument order (canonical v0.6 convention)."""
         doc = population_coverage.__doc__
         assert doc is not None
-        assert "population_coverage(env, firing_rates)" in doc, (
-            "Docstring example must call population_coverage(env, firing_rates) "
+        assert "population_coverage(env, firing_rates," in doc, (
+            "Docstring example must call population_coverage(env, firing_rates, ...) "
             "with env as the first argument"
         )
         assert "population_coverage(firing_rates, env)" not in doc, (
@@ -78,14 +78,14 @@ class TestPopulationCoverageErrorMessage:
         # Build a firing_rates array with wrong number of bins (n_bins + 1)
         wrong_rates = np.zeros((3, n_bins + 1))
         with pytest.raises(ValueError, match=r"compute_spatial_rates\("):
-            population_coverage(env, wrong_rates)
+            population_coverage(env, wrong_rates, bandwidth=0.0)
 
     def test_error_message_no_old_per_neuron_recipe(self) -> None:
         """ValueError must not contain the old np.stack([rate1, rate2, ...]) recipe."""
         env, n_bins = self._make_env()
         wrong_rates = np.zeros((3, n_bins + 1))
         with pytest.raises(ValueError) as exc_info:
-            population_coverage(env, wrong_rates)
+            population_coverage(env, wrong_rates, bandwidth=0.0)
         msg = str(exc_info.value)
         assert "firing_rates = np.stack([rate1, rate2" not in msg, (
             "Error message must not contain the old np.stack per-neuron recipe"
@@ -96,7 +96,7 @@ class TestPopulationCoverageErrorMessage:
         env, n_bins = self._make_env()
         wrong_rates = np.zeros((3, n_bins + 1))
         with pytest.raises(ValueError) as exc_info:
-            population_coverage(env, wrong_rates)
+            population_coverage(env, wrong_rates, bandwidth=0.0)
         msg = str(exc_info.value)
         # The old recipe ended with: .firing_rate\n  firing_rates = np.stack(...)
         assert ".firing_rate\n  firing_rates = np.stack" not in msg

@@ -92,9 +92,11 @@ Now compare coverage computed from every map with coverage computed from the
 screened units only:
 
 ```python
-coverage_all = population_coverage(env, rates.firing_rates)
+coverage_all = population_coverage(env, rates.firing_rates, bandwidth=rates.bandwidth)
 is_spatial = rates.classify(min_info=0.5)  # the screen count_place_cells counts
-coverage = population_coverage(env, rates.firing_rates[is_spatial])
+coverage = population_coverage(
+    env, rates.firing_rates[is_spatial], bandwidth=rates.bandwidth
+)
 print(f"All 25 units: {coverage_all.coverage_fraction:.0%} of bins covered, "
       f"{coverage_all.n_fields} fields")
 print(f"20 screened units: {coverage.coverage_fraction:.0%} of bins covered, "
@@ -117,7 +119,9 @@ own recording, check `rates.spatial_support` the same way: coverage counts an
 unvisited bin as a gap.
 
 `population_coverage` detects fields with `detect_place_fields` (field edge at
-20% of the peak rate by default, set with `threshold=`). If you detect fields
+20% of the peak rate by default, set with `threshold=`). Pass the smoothing
+`bandwidth` the maps were estimated with: a field must be larger than what one
+noisy bin becomes after that smoothing. If you detect fields
 yourself, for example with a different threshold, `field_density_map` counts
 how many fields include each bin:
 
@@ -273,8 +277,12 @@ show whether a field is there. A cell with no field bin on shared bins in
 either condition has no defined overlap and gets NaN.
 
 ```python
-fields_before = population_coverage(env, maps["before"].firing_rates).place_fields
-fields_after = population_coverage(env, maps["after"].firing_rates).place_fields
+fields_before = population_coverage(
+    env, maps["before"].firing_rates, bandwidth=maps["before"].bandwidth
+).place_fields
+fields_after = population_coverage(
+    env, maps["after"].firing_rates, bandwidth=maps["after"].bandwidth
+).place_fields
 
 
 def field_bins(fields):
@@ -646,8 +654,10 @@ my_rates = compute_spatial_rates(
     unit_ids=my_unit_ids, epochs=my_periods["run"],
     bandwidth=5.0, min_occupancy=0.05, min_speed=4.0,
 )
-spatial = my_rates.spatial_information() >= 0.5
-my_coverage = population_coverage(my_env, my_rates.firing_rates[spatial])
+spatial = my_rates.classify(min_info=0.5)  # bias-corrected information screen
+my_coverage = population_coverage(
+    my_env, my_rates.firing_rates[spatial], bandwidth=my_rates.bandwidth
+)
 my_assemblies = detect_assemblies(my_counts["run"], unit_ids=my_unit_ids, rng=0)
 my_reactivation = explained_variance_reactivation(
     pairwise_correlations(my_counts["run"]),

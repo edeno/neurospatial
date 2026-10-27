@@ -222,13 +222,11 @@ class TestSmoothRateMapDiffusionKDE:
         assert np.nansum(result) == pytest.approx(spike_counts_center.sum(), rel=1e-9)
 
     def test_handles_zero_occupancy_bins(self, simple_env, spike_counts_center):
-        """Bins with zero raw occupancy get rate from smoothed neighbors.
+        """A zero-occupancy bin is missing; occupied bins keep their rate.
 
-        Note: With diffusion_kde, occupancy is smoothed, so even a bin with
-        zero raw occupancy has a non-zero smoothed denominator from its
-        neighbors and reports a finite rate when ``min_occupancy=0`` (the
-        default, no occupancy masking). The ``min_occupancy`` cut is a separate
-        threshold on the *raw* occupancy in seconds.
+        Its smoothed denominator is positive from neighboring occupancy, but
+        the animal was never there, so the rate is NaN even with no
+        ``min_occupancy`` threshold.
         """
         n_bins = simple_env.n_bins
         occupancy = np.ones(n_bins, dtype=np.float64)
@@ -241,10 +239,8 @@ class TestSmoothRateMapDiffusionKDE:
             method="diffusion_kde",
             bandwidth=2.0,
         )
-
-        # With smoothing and no occupancy mask (min_occupancy=0), even the
-        # zero-occupancy corner gets a finite rate from its neighbors.
-        assert np.isfinite(result[0])
+        assert np.isnan(result[0])
+        assert np.isfinite(result[1:]).all()
 
         # Any positive min_occupancy masks the corner: its RAW occupancy is 0,
         # which is below the threshold (the cut is on raw seconds, not the
@@ -732,55 +728,6 @@ class TestMinOccupancy:
                 f"{method}: only the single sub-threshold bin may be masked."
             )
 
-    def test_kde_min_occupancy_masks_untraversed_interior_bin(
-        self, simple_env, spike_counts_center
-    ):
-        """An untraversed interior bin (raw occupancy 0) is masked when set.
-
-        Prior behavior kept such a bin finite because the KDE denominator was
-        the smoothed density (nonzero from neighbors). The consistent
-        raw-seconds contract instead masks it: raw occupancy 0 < min_occupancy,
-        so it is NaN -- but ``min_occupancy=0`` (the default) still leaves it
-        finite from the smoothed denominator (no masking, no behavior change).
-        """
-        n_bins = simple_env.n_bins
-        occupancy = np.ones(n_bins, dtype=np.float64)
-        gap_idx = n_bins // 2 + 1  # interior bin next to the spiking center
-        occupancy[gap_idx] = 0.0
-
-        for method in ("diffusion_kde", "gaussian_kde"):
-            # min_occupancy > 0 masks the untraversed bin (raw occ 0 < 0.1).
-            masked = np.asarray(
-                smooth_rate_map(
-                    simple_env,
-                    spike_counts_center,
-                    occupancy,
-                    method=method,
-                    bandwidth=2.0,
-                    min_occupancy=0.1,
-                )
-            )
-            assert np.isnan(masked[gap_idx]), (
-                f"{method}: untraversed bin (raw occ 0) must be masked when "
-                "min_occupancy > 0."
-            )
-            # Default min_occupancy=0 does NOT mask it (unchanged behavior):
-            # it reports a finite rate from the smoothed denominator.
-            unmasked = np.asarray(
-                smooth_rate_map(
-                    simple_env,
-                    spike_counts_center,
-                    occupancy,
-                    method=method,
-                    bandwidth=2.0,
-                    min_occupancy=0.0,
-                )
-            )
-            assert np.isfinite(unmasked[gap_idx]), (
-                f"{method}: with min_occupancy=0 the untraversed interior bin "
-                "keeps its smoothed-denominator rate (no masking)."
-            )
-
     def test_min_occupancy_is_raw_seconds_batch_all_methods(
         self, simple_env, spike_counts_center
     ):
@@ -883,106 +830,40 @@ def half_visited_arena():
     return env, spike_counts, occupancy
 
 
-class TestDiffusionKdeUnresolvedFarField:
-    """Far from all occupancy the smoothed densities approach the diffusion
-    apply's truncation noise; their ratio there must not be reported.
-    """
-
-    @pytest.mark.parametrize("bandwidth", [5.0, 10.0, 20.0])
-    @pytest.mark.parametrize("backend", ["numpy", "jax"])
-    @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
-    def test_far_field_rates_match_dense_kernel(
-        self, half_visited_arena, batch, backend, bandwidth
-    ):
-        if backend == "jax":
-            pytest.importorskip("jax")
-        env, spike_counts, occupancy = half_visited_arena
-        dense = env.compute_kernel(
-            bandwidth=bandwidth, mode="density"
-        ) @ np.column_stack([spike_counts, occupancy])
-        dense_rate = dense[:, 0] / dense[:, 1]
-
-        if batch:
-            rate = smooth_rate_maps_batch(
-                env,
-                spike_counts[None, :],
-                occupancy,
-                method="diffusion_kde",
-                bandwidth=bandwidth,
-                backend=backend,
-            )[0]
-        else:
-            rate = smooth_rate_map(
-                env,
-                spike_counts,
-                occupancy,
-                method="diffusion_kde",
-                bandwidth=bandwidth,
-                backend=backend,
-            )
-        rate = np.asarray(rate)
-
-        finite = np.isfinite(rate)
-        peak = dense_rate[finite].max()
-        assert_allclose(rate[finite], dense_rate[finite], rtol=0, atol=1e-4 * peak)
-        # Bins are left out only far (> 3 bandwidths) from every occupied bin.
-        occupied = env.bin_centers[occupancy > 0]
-        far = np.min(
-            np.linalg.norm(
-                env.bin_centers[~finite][:, None, :] - occupied[None, :, :], axis=2
-            ),
-            axis=1,
-        )
-        assert far.size == 0 or far.min() > 3 * bandwidth
-
-    @pytest.mark.parametrize("bandwidth", [5.0, 10.0, 20.0])
-    @pytest.mark.parametrize("backend", ["numpy", "jax"])
-    @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
-    def test_binned_far_field_rates_match_dense_kernel(
-        self, half_visited_arena, batch, backend, bandwidth
-    ):
-        if backend == "jax":
-            pytest.importorskip("jax")
-        env, spike_counts, occupancy = half_visited_arena
-        visited = occupancy > 0
+def _dense_reference(env, spike_counts, occupancy, method, bandwidth):
+    """Rate from the dense kernels, the oracle for the matrix-free paths."""
+    visited = occupancy > 0
+    if method == "binned":
         raw_rate = np.where(visited, spike_counts / np.where(visited, occupancy, 1), 0)
         average = env.compute_kernel(bandwidth=bandwidth, mode="average")
-        dense_rate = (average @ raw_rate) / (average @ visited.astype(float))
-
-        kwargs = {"method": "binned", "bandwidth": bandwidth, "backend": backend}
-        if batch:
-            rate = smooth_rate_maps_batch(
-                env, spike_counts[None, :], occupancy, **kwargs
-            )[0]
-        else:
-            rate = smooth_rate_map(env, spike_counts, occupancy, **kwargs)
-        rate = np.asarray(rate)
-
-        finite = np.isfinite(rate)
-        peak = dense_rate[finite].max()
-        assert_allclose(rate[finite], dense_rate[finite], rtol=0, atol=1e-4 * peak)
-        far = np.min(
-            np.linalg.norm(
-                env.bin_centers[~finite][:, None, :]
-                - env.bin_centers[visited][None, :, :],
-                axis=2,
-            ),
-            axis=1,
-        )
-        assert far.size == 0 or far.min() > 3 * bandwidth
+        return (average @ raw_rate) / (average @ visited.astype(float))
+    if method == "gaussian_kde":
+        weights = env.compute_gaussian_kernel(bandwidth=bandwidth)
+    else:
+        weights = env.compute_kernel(bandwidth=bandwidth, mode="density")
+    return (weights @ spike_counts) / (weights @ occupancy)
 
 
-class TestGaussianKdeFarField:
-    """gaussian_kde stops extrapolating where the other estimators do."""
+class TestRatesOutsideOccupancySupport:
+    """A kernel rate map has a rate only where the animal was.
 
+    A smoothed rate in a never-visited bin is an extrapolation from visits
+    bandwidths away; it put place-field peaks and detected fields in space the
+    animal never entered. Every method leaves those bins NaN, and the visited
+    bins keep the dense-kernel estimate.
+    """
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+    @pytest.mark.parametrize("bandwidth", [5.0, 20.0])
     @pytest.mark.parametrize("backend", ["numpy", "jax"])
     @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
-    def test_far_field_is_missing(self, half_visited_arena, batch, backend):
+    def test_rate_is_missing_exactly_where_unvisited(
+        self, half_visited_arena, method, bandwidth, backend, batch
+    ):
         if backend == "jax":
             pytest.importorskip("jax")
         env, spike_counts, occupancy = half_visited_arena
-        bandwidth = 5.0
-        kwargs = {"method": "gaussian_kde", "bandwidth": bandwidth, "backend": backend}
+        kwargs = {"method": method, "bandwidth": bandwidth, "backend": backend}
         if batch:
             rate = smooth_rate_maps_batch(
                 env, spike_counts[None, :], occupancy, **kwargs
@@ -991,29 +872,27 @@ class TestGaussianKdeFarField:
             rate = smooth_rate_map(env, spike_counts, occupancy, **kwargs)
         rate = np.asarray(rate)
 
-        occupied = env.bin_centers[occupancy > 0]
-        distance = np.min(
-            np.linalg.norm(env.bin_centers[:, None, :] - occupied[None, :, :], axis=2),
-            axis=1,
+        visited = occupancy > 0
+        np.testing.assert_array_equal(np.isfinite(rate), visited)
+        dense = _dense_reference(env, spike_counts, occupancy, method, bandwidth)
+        assert_allclose(
+            rate[visited], dense[visited], rtol=0, atol=1e-4 * dense[visited].max()
         )
-        finite = np.isfinite(rate)
-        # Near the visits the estimate is kept; 150 cm (30 bandwidths) away it
-        # was a finite extrapolation before.
-        assert np.all(finite[distance <= 3 * bandwidth])
-        assert not np.any(finite[distance > 10 * bandwidth])
-        # The kept region matches diffusion_kde's to within two bandwidths.
-        diffusion = np.isfinite(
-            np.asarray(
-                smooth_rate_map(
-                    env,
-                    spike_counts,
-                    occupancy,
-                    method="diffusion_kde",
-                    bandwidth=bandwidth,
-                )
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+    def test_unvisited_interior_bin_is_missing(self, simple_env, method):
+        """A hole inside the visited region is unobserved, not interpolated."""
+        occupancy = np.ones(simple_env.n_bins)
+        hole = simple_env.n_bins // 2
+        occupancy[hole] = 0.0
+        spike_counts = np.full(simple_env.n_bins, 3.0)
+        rate = np.asarray(
+            smooth_rate_map(
+                simple_env, spike_counts, occupancy, method=method, bandwidth=2.0
             )
         )
-        assert abs(distance[finite].max() - distance[diffusion].max()) <= 2 * bandwidth
+        assert np.isnan(rate[hole])
+        assert np.isfinite(np.delete(rate, hole)).all()
 
 
 class TestEigenbasisCacheReuse:

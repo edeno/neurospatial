@@ -102,7 +102,7 @@ class TestPopulationCoverage:
             for j in simple_env.neighbors(bins=i):
                 firing_rates[i, j] = 5.0
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         assert result.coverage_fraction == pytest.approx(1.0)
         assert len(result.uncovered_bins) == 0
         assert result.n_neurons == n_bins
@@ -119,7 +119,7 @@ class TestPopulationCoverage:
                 if j < n_bins:
                     firing_rates[i, j] = 5.0
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         assert 0.0 < result.coverage_fraction < 1.0
         assert len(result.uncovered_bins) > 0
         assert len(result.uncovered_positions) == len(result.uncovered_bins)
@@ -133,7 +133,9 @@ class TestPopulationCoverage:
         firing_rates = np.ones((5, n_bins)) * 15.0
 
         with pytest.warns(UserWarning, match="spatial-map-mean filter"):
-            result = population_coverage(simple_env, firing_rates, max_mean_rate=10.0)
+            result = population_coverage(
+                simple_env, firing_rates, bandwidth=0.0, max_mean_rate=10.0
+            )
         assert result.coverage_fraction == 0.0
         assert len(result.uncovered_bins) == n_bins
         assert result.n_place_cells == 0
@@ -142,7 +144,7 @@ class TestPopulationCoverage:
     def test_default_coverage_does_not_exclude_high_rate_maps(self, simple_env):
         """A flat high-rate map covers space descriptively without implying cell identity."""
         rates = np.full((2, simple_env.n_bins), 25.0)
-        result = population_coverage(simple_env, rates)
+        result = population_coverage(simple_env, rates, bandwidth=0.0)
         assert result.coverage_fraction == pytest.approx(1.0)
         assert result.n_place_cells == 2  # Units with segmented regions.
         assert all(fields.excluded_reason is None for fields in result.place_fields)
@@ -156,7 +158,7 @@ class TestPopulationCoverage:
         for j in simple_env.neighbors(bins=0):
             firing_rates[0, j] = 5.0
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         assert result.n_neurons == 1
         assert result.n_place_cells == 1
         assert len(result.place_fields[0]) == 1
@@ -172,7 +174,7 @@ class TestPopulationCoverage:
         firing_rates[0, observed] = 5.0
         firing_rates[0, 0] = 10.0
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         assert result.coverage_fraction == 1.0
         assert len(result.uncovered_bins) == 0
 
@@ -185,7 +187,7 @@ class TestPopulationCoverage:
         firing_rates[1, 3:8] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
         firing_rates[2, 6:11] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         expected_density = field_density_map(result.place_fields, n_bins)
         np.testing.assert_array_equal(result.field_count, expected_density)
 
@@ -197,7 +199,7 @@ class TestPopulationCoverage:
         # Low uniform firing (no fields detected)
         firing_rates = np.ones((5, n_bins)) * 0.1
 
-        result = population_coverage(simple_env, firing_rates)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         expected_positions = simple_env.bin_centers[result.uncovered_bins]
         np.testing.assert_array_equal(result.uncovered_positions, expected_positions)
 
@@ -209,7 +211,7 @@ class TestPopulationCoverage:
         for i in range(3):
             firing_rates[i, i * 10 : (i + 1) * 10] = np.linspace(10.0, 1.0, 10)
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         assert result.n_place_cells == 3
         assert [len(fields) > 0 for fields in result.place_fields] == [True] * 3 + [
             False
@@ -224,7 +226,7 @@ class TestPopulationCoverage:
 
         from neurospatial.encoding.spatial import PlaceFieldsResult
 
-        result = population_coverage(simple_env, firing_rates, min_size=1)
+        result = population_coverage(simple_env, firing_rates, bandwidth=0.0)
         # Should have list of length n_neurons
         assert len(result.place_fields) == 2
         # Each element is a PlaceFieldsResult that iterates as list[NDArray]
@@ -242,18 +244,18 @@ class TestPopulationCoverage:
         wrong_n_bins = simple_env.n_bins + 10
         firing_rates = rng.random((5, wrong_n_bins))
         with pytest.raises(ValueError, match="firing_rates shape mismatch"):
-            population_coverage(simple_env, firing_rates)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0)
 
     def test_non_2d_input_error(self, simple_env: Environment) -> None:
         """Test error for non-2D firing_rates."""
         rng = np.random.default_rng(42)
         firing_rates_1d = rng.random(simple_env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
-            population_coverage(simple_env, firing_rates_1d)  # type: ignore[arg-type]
+            population_coverage(simple_env, firing_rates_1d, bandwidth=0.0)  # type: ignore[arg-type]
 
         firing_rates_3d = rng.random((5, simple_env.n_bins, 3))
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
-            population_coverage(simple_env, firing_rates_3d)  # type: ignore[arg-type]
+            population_coverage(simple_env, firing_rates_3d, bandwidth=0.0)  # type: ignore[arg-type]
 
     def test_threshold_out_of_range_error(self, simple_env: Environment) -> None:
         """Test error for threshold outside (0, 1)."""
@@ -262,16 +264,16 @@ class TestPopulationCoverage:
         firing_rates = rng.random((5, n_bins))
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(simple_env, firing_rates, threshold=0.0)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0, threshold=0.0)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(simple_env, firing_rates, threshold=1.0)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0, threshold=1.0)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(simple_env, firing_rates, threshold=-0.1)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0, threshold=-0.1)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(simple_env, firing_rates, threshold=1.5)
+            population_coverage(simple_env, firing_rates, bandwidth=0.0, threshold=1.5)
 
     def test_max_mean_rate_non_positive_error(self, simple_env: Environment) -> None:
         """Test error for non-positive max_mean_rate."""
@@ -280,10 +282,14 @@ class TestPopulationCoverage:
         firing_rates = rng.random((5, n_bins))
 
         with pytest.raises(ValueError, match="max_mean_rate must be positive"):
-            population_coverage(simple_env, firing_rates, max_mean_rate=0.0)
+            population_coverage(
+                simple_env, firing_rates, bandwidth=0.0, max_mean_rate=0.0
+            )
 
         with pytest.raises(ValueError, match="max_mean_rate must be positive"):
-            population_coverage(simple_env, firing_rates, max_mean_rate=-1.0)
+            population_coverage(
+                simple_env, firing_rates, bandwidth=0.0, max_mean_rate=-1.0
+            )
 
     def test_n_jobs_parity(self, simple_env: Environment) -> None:
         """population_coverage(n_jobs=2) equals n_jobs=1 on the same input."""
@@ -300,8 +306,8 @@ class TestPopulationCoverage:
         # Add a little noise so detection is non-trivial.
         firing_rates += rng.random((n_neurons, n_bins)) * 0.1
 
-        seq = population_coverage(simple_env, firing_rates, min_size=1, n_jobs=1)
-        par = population_coverage(simple_env, firing_rates, min_size=1, n_jobs=2)
+        seq = population_coverage(simple_env, firing_rates, bandwidth=0.0, n_jobs=1)
+        par = population_coverage(simple_env, firing_rates, bandwidth=0.0, n_jobs=2)
 
         # Scalar stats identical.
         assert seq.coverage_fraction == par.coverage_fraction
@@ -342,7 +348,7 @@ class TestPlotPopulationCoverage:
         for i in range(3):
             firing_rates[i, i * 10 : (i + 1) * 10] = np.linspace(10.0, 1.0, 10)
 
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
         return env, result
 
     @pytest.fixture
@@ -370,7 +376,7 @@ class TestPlotPopulationCoverage:
         firing_rates[0, 0:3] = np.array([10.0, 8.0, 6.0])
         firing_rates[1, 5:8] = np.array([10.0, 8.0, 6.0])
 
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
         return env, result
 
     def test_binary_plot(
@@ -443,7 +449,7 @@ class TestPlotPopulationCoverage:
         assert not env.is_linearized_track
         firing_rates = np.zeros((2, env.n_bins))
         firing_rates[0, 2:5] = [6.0, 10.0, 6.0]
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
         assert result.uncovered_positions.shape[1] == 1
         assert len(result.uncovered_bins) > 0
 
@@ -478,7 +484,7 @@ class TestPlotPopulationCoverage:
         assert env.n_dims == 2
         firing_rates = np.zeros((2, env.n_bins))
         firing_rates[0, 2:5] = [6.0, 10.0, 6.0]
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
 
         ax = plot_population_coverage(env, result)
         np.testing.assert_allclose(
@@ -937,7 +943,7 @@ class TestPopulationMetricsIntegration:
         firing_rates[4, :] = 0.1
 
         # Run population_coverage
-        result = population_coverage(env, firing_rates, min_size=1)
+        result = population_coverage(env, firing_rates, bandwidth=0.0)
 
         # Verify result structure
         assert isinstance(result, PopulationCoverageResult)

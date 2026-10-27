@@ -104,6 +104,27 @@ Use `method="binned", bandwidth=0.0` for an unsmoothed count/occupancy map.
 With positive bandwidth, `binned` smooths the rate after division; KDE methods
 smooth the numerator and denominator separately.
 
+`gaussian_kde` weighs bins by straight-line distance, so it smooths through
+walls. In a simulated maze, 10 cm from a field's center but across a thin
+wall, the rate reached 21% of the field's peak at a 5 cm bandwidth and 60% at
+10 cm, enough to be detected as a second field. `diffusion_kde` (the default)
+and `binned` smooth along the environment's connectivity and leaked 0-0.3%; use
+one of them in any maze with walls.
+
+### Running Only: `min_speed`
+
+By default every sample counts, including time at rest at reward sites and
+track ends. Spikes fired at rest, such as during sharp-wave ripples, then enter
+the map. In a simulated track session where the animal rested 27% of the time
+and the cell fired 3 Hz at rest, spatial information was 0.85-0.94 bits/spike
+without a speed gate and 1.55-1.84 with `min_speed=4.0` (cm/s), and the rest
+firing appeared as extra fields at both track ends. Place maps are usually built
+from running. There is no default threshold because the right one depends on the
+animal and the tracking: plot the speed distribution
+(`neurospatial.behavior.compute_speed`) and choose a value between the resting
+and running modes. The gate removes the same intervals from spikes and
+occupancy, so the rate stays correct.
+
 ## Parameter Order: Environment First
 
 Spatial encoding functions take the **environment first**. Other domains have
@@ -155,9 +176,10 @@ scientific question. The values above illustrate the API; no fixed occupancy
 threshold establishes reliable tuning or a confidence level. Inspect the
 occupancy map and sensitivity to parameter choices.
 
-Sub-threshold bins are `NaN` unless `fill_value` is supplied. A finite KDE rate
-in an unvisited bin reflects smoothing from observed bins; it is not evidence
-that the animal visited that bin. Keep `result.occupancy` when using
+Sub-threshold and unvisited bins are `NaN` unless `fill_value` is supplied.
+The smoothing kernel reaches unvisited bins, but a rate there would be
+extrapolated from observed bins, so no method reports one. Keep
+`result.occupancy` when using
 `fill_value=0.0`, since zero-filled missing support and observed silence can
 otherwise look identical. Check the NaN policy of each downstream statistic.
 

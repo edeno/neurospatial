@@ -1278,7 +1278,7 @@ class TestComputeViewRatesEdgeCases:
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
     ) -> None:
-        """Neuron with empty spike train should produce zeros."""
+        """Neuron with empty spike train is 0 Hz wherever a view was observed."""
         from neurospatial.encoding.view import compute_view_rates
 
         times, positions, headings = trajectory_data
@@ -1296,8 +1296,11 @@ class TestComputeViewRatesEdgeCases:
             boundary_source="analysis",
         )
 
-        # Second neuron should have all zeros
-        assert np.all(result.firing_rates[1] == 0)
+        # Second neuron is silent where viewed and missing where never viewed.
+        viewed = np.asarray(result.occupancy) > 0
+        rates = np.asarray(result.firing_rates[1])
+        assert np.all(rates[viewed] == 0)
+        assert np.all(np.isnan(rates[~viewed]))
 
 
 class TestComputeViewRatesInputValidation:
