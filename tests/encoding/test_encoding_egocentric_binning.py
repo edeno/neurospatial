@@ -582,6 +582,9 @@ class TestBinEgocentricSpikeTrainValidation:
                 positions,
                 headings,
                 object_positions,
+                distance_range=(0.0, 50.0),
+                n_distance_bins=10,
+                n_direction_bins=12,
             )
 
     def test_insufficient_samples_raises_error(
@@ -606,6 +609,9 @@ class TestBinEgocentricSpikeTrainValidation:
                 positions,
                 headings,
                 object_positions,
+                distance_range=(0.0, 50.0),
+                n_distance_bins=10,
+                n_direction_bins=12,
             )
 
 

@@ -284,6 +284,7 @@ def frame_family(request):
         kernel_defaults.update(gaze)
     if name == "egocentric":
         defaults["distance_range"] = kernel_defaults["distance_range"] = (0, 100)
+        kernel_defaults.update(n_distance_bins=20, n_direction_bins=12)
     return SimpleNamespace(
         name=name,
         module=module,
