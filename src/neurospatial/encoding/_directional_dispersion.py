@@ -110,32 +110,45 @@ def cosine_model_rates(
     has_spikes = n_spikes > 0
     beta = np.zeros((len(counts), _N_COSINE_PARAMETERS))
     beta[has_spikes, 0] = np.log(n_spikes[has_spikes] / exposure.sum())
-    counts, beta_fit = counts[has_spikes], beta[has_spikes]
 
-    def log_likelihood(b: NDArray[np.float64]) -> NDArray[np.float64]:
+    def log_likelihood(
+        y: NDArray[np.float64], b: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Each unit's log-likelihood and a bound on its rounding error."""
         eta = b @ design.T
-        value: NDArray[np.float64] = (counts * eta - exposure * np.exp(eta)).sum(axis=1)
-        return value
+        terms = y * eta - exposure * np.exp(eta)
+        rounding = len(exposure) * np.finfo(float).eps * np.abs(terms).sum(axis=1)
+        return terms.sum(axis=1), rounding
 
+    # Each unit is fitted on its own and stops when its own step is small,
+    # so a unit's fit does not depend on the other units in the call.
+    fitting = has_spikes.copy()
     with np.errstate(over="ignore", invalid="ignore"):
-        for _ in range(_MAX_NEWTON_STEPS if len(beta_fit) else 0):
-            mu = exposure * np.exp(beta_fit @ design.T)  # (n_fit, n_used)
-            gradient = (counts - mu) @ design
+        for _ in range(_MAX_NEWTON_STEPS):
+            units = np.flatnonzero(fitting)
+            if units.size == 0:
+                break
+            y, b = counts[units], beta[units]
+            mu = exposure * np.exp(b @ design.T)  # (n_fit, n_used)
+            gradient = (y - mu) @ design
             hessian = np.einsum("kb,bi,bj->kij", mu, design, design)
             step = (np.linalg.pinv(hessian) @ gradient[:, :, None])[:, :, 0]
-            current = log_likelihood(beta_fit)
-            scale = np.ones(len(beta_fit))
-            # Halve each unit's step until its likelihood does not decrease.
+            current, rounding = log_likelihood(y, b)
+            scale = np.ones(len(units))
+            # Halve each unit's step until its likelihood does not decrease by
+            # more than rounding. Near the maximum a Newton step changes the
+            # likelihood by less than its rounding error; rejecting those
+            # steps would stop the fit short of the maximum, at a point set by
+            # rounding noise.
             for _ in range(_MAX_STEP_HALVINGS):
-                worse = ~(log_likelihood(beta_fit + scale[:, None] * step) >= current)
+                candidate, _ = log_likelihood(y, b + scale[:, None] * step)
+                worse = ~(candidate >= current - rounding)
                 if not worse.any():
                     break
                 scale[worse] *= 0.5
             change = scale[:, None] * step
-            beta_fit = beta_fit + change
-            if not np.any(np.abs(change) > 1e-10):
-                break
-    beta[has_spikes] = beta_fit
+            beta[units] = b + change
+            fitting[units] = np.any(np.abs(change) > 1e-10, axis=1)
     full_design = np.stack(
         [np.ones_like(bin_centers), np.cos(bin_centers), np.sin(bin_centers)], axis=1
     )

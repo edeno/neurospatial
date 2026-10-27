@@ -1187,6 +1187,30 @@ class TestTuningPvalueDispersion:
         window = heading_correlation_time(prepared, centers)
         assert window == pytest.approx(1 / 30, rel=0.1)
 
+    def test_cosine_model_reaches_the_likelihood_maximum(self) -> None:
+        """The fitted cosine model solves its score equations to rounding.
+
+        A fit that stops short of the maximum leaves rates, and so the
+        dispersion, set by rounding noise, which differs between one unit
+        and a population and between platforms.
+        """
+        from neurospatial.encoding._directional_dispersion import cosine_model_rates
+
+        n_bins = 60
+        centers = np.linspace(-np.pi, np.pi, n_bins, endpoint=False) + np.pi / n_bins
+        occupancy = 600.0 * np.exp(1.5 * np.cos(centers - 0.5))
+        occupancy /= occupancy.sum() / 600.0
+        truth = np.exp(np.cos(centers[None] - np.array([[-2.0], [0.0], [2.5]])))
+        counts = np.random.default_rng(3).poisson(truth * occupancy).astype(float)
+        design = np.stack([np.ones(n_bins), np.cos(centers), np.sin(centers)], 1)
+
+        rates = cosine_model_rates(counts, occupancy, centers)
+        score = (counts - occupancy * rates) @ design
+        assert np.all(np.abs(score) <= 1e-14 * counts.sum(axis=1, keepdims=True))
+        np.testing.assert_allclose(
+            cosine_model_rates(counts[1:2], occupancy, centers)[0], rates[1], rtol=1e-14
+        )
+
     @pytest.mark.parametrize("mean_burst", [1.0, 2.5, 4.0])
     def test_dispersion_matches_burst_size(
         self, wandering_heading_session, mean_burst
