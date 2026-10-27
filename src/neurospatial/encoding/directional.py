@@ -84,6 +84,7 @@ from neurospatial.encoding._base import (
     _to_numpy,
 )
 from neurospatial.encoding._significance import (
+    _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
@@ -3158,7 +3159,7 @@ def is_head_direction_cell(
     )
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
-        level = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
+        level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
         shuffle_result = head_direction_cell_significance(
             [spike_times],
             times,

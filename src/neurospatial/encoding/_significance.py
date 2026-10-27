@@ -17,6 +17,9 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.stats import _validate_circular_shift_settings
 from neurospatial.stats.shuffle import ShuffleTestResult, shuffle_spike_times_circular
 
+# Shuffle settings every cell-type shuffle test shares. The ``*_significance``
+# signatures spell ``n_shuffles`` and ``min_shift`` out so the API reference
+# shows the values; a test pins them to this mapping.
 _SHUFFLE_DEFAULTS = MappingProxyType(
     {"n_shuffles": 1000, "min_shift": 20.0, "alpha": 0.05}
 )
