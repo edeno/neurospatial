@@ -4,6 +4,16 @@
 
 ### Event analyses refuse bad input instead of returning wrong numbers
 
+Breaking:
+
+- `events_to_intervals` raises when an interval stops before it starts; it
+  warned and kept the negative-duration row, which also passed any
+  `max_duration` filter. Sequential pairing (`match_by=None`) also raises
+  unless the sorted starts and stops alternate, `start[k] <= stop[k] <=
+  start[k+1]`: a missed exit plus an extra one kept the counts equal and
+  silently paired every later event with the wrong partner, returning
+  overlapping intervals. Pair by an id column with `match_by=` instead.
+
 Results that change:
 
 - `event_count_in_window` and `event_indicator` count each event at exactly
@@ -21,7 +31,14 @@ Fixed:
 
 - `align_events` refuses a NaN or infinite event or reference time, which it
   dropped without a word, and a non-DataFrame input with a `TypeError`.
-
+- `filter_by_intervals` refuses NaN event times (with `include=False` they
+  were kept as "outside every artifact") and NaN or inverted intervals,
+  which silently matched nothing. Membership is one binary search per event
+  instead of an events x intervals array.
+- `events_to_intervals` and `intervals_to_events` refuse NaN times, a NaN
+  `match_by` key and a NaN or negative `max_duration` (NaN dropped every
+  interval). `intervals_to_events(which="both")` lists a stop before a start
+  at the same time, and an empty input gives a float `timestamp` column.
 - `event_count_in_window` and `event_indicator` refuse a NaN or infinite
   window bound (a NaN start gave negative counts) and 2-D time arrays.
   `time_to_nearest_event` refuses `max_time=nan`, which returned all NaN.

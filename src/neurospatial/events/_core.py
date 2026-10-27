@@ -819,6 +819,46 @@ def _validate_events_dataframe(
         )
 
 
+def _event_times(
+    df: pd.DataFrame, column: str, *, name: str, call: str
+) -> NDArray[np.float64]:
+    """Validate an event table and return its ``column`` as finite seconds.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Event or interval table.
+    column : str
+        Numeric time column in seconds.
+    name, call : str
+        Argument and function names for the error messages.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_rows,)
+
+    Raises
+    ------
+    TypeError
+        If ``df`` is not a DataFrame.
+    ValueError
+        If ``column`` is missing or not numeric, or holds NaN or inf.
+    """
+    _validate_events_dataframe(df, timestamp_column=column, context=f"{call} {name}")
+    times: NDArray[np.float64] = df[column].to_numpy(dtype=np.float64)
+    bad = np.flatnonzero(~np.isfinite(times))
+    if bad.size:
+        raise ValueError(
+            f"{call}: {name}[{column!r}] has {bad.size} NaN or inf time(s), "
+            f"first at row {int(bad[0])}.\n"
+            "  WHY: a row without a time cannot be placed on the clock, and "
+            "dropping or keeping it silently would change the result.\n"
+            f"  Fix: drop or repair those rows first, e.g. "
+            f"{name}.dropna(subset=[{column!r}])."
+        )
+    return times
+
+
 def _validate_spatial_columns(
     df: pd.DataFrame,
     *,

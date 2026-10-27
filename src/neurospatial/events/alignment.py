@@ -30,8 +30,8 @@ from neurospatial._time_bins import (
 from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
+    _event_times,
     _make_bin_edges,
-    _validate_events_dataframe,
     _validate_window,
 )
 
@@ -695,29 +695,10 @@ def align_events(
     2       20.1            0.1                1
     """
     _validate_window(window, context="align_events")
-    for frame, column, name in (
-        (events, event_column, "events"),
-        (reference_events, reference_column, "reference_events"),
-    ):
-        _validate_events_dataframe(
-            frame, timestamp_column=column, context=f"align_events {name}"
-        )
-    event_times = events[event_column].to_numpy(dtype=np.float64)
-    ref_times = reference_events[reference_column].to_numpy(dtype=np.float64)
-    for times, name, column in (
-        (event_times, "events", event_column),
-        (ref_times, "reference_events", reference_column),
-    ):
-        bad = np.flatnonzero(~np.isfinite(times))
-        if bad.size:
-            raise ValueError(
-                f"align_events: {name}[{column!r}] has {bad.size} NaN or inf "
-                f"time(s), first at row {int(bad[0])}.\n"
-                "  WHY: an event without a time cannot be placed in any window, "
-                "and dropping it silently would hide it from the result.\n"
-                f"  Fix: drop or repair those rows first, e.g. "
-                f"{name}.dropna(subset=[{column!r}])."
-            )
+    event_times = _event_times(events, event_column, name="events", call="align_events")
+    ref_times = _event_times(
+        reference_events, reference_column, name="reference_events", call="align_events"
+    )
 
     # Events in each reference's half-open window, grouped by reference and
     # ordered by time within each group.

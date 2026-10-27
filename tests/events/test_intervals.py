@@ -157,6 +157,26 @@ class TestIntervalsToEvents:
 
         assert len(result) == 0
         assert "timestamp" in result.columns
+        assert result["timestamp"].dtype == np.float64
+
+    def test_abutting_intervals_list_stop_before_start(self):
+        from neurospatial.events.intervals import intervals_to_events
+
+        intervals = pd.DataFrame({"start_time": [0.0, 1.0], "stop_time": [1.0, 2.0]})
+
+        result = intervals_to_events(intervals, which="both")
+
+        assert result["boundary"].tolist() == ["start", "stop", "start", "stop"]
+        assert_allclose(result["timestamp"], [0.0, 1.0, 1.0, 2.0])
+
+    @pytest.mark.parametrize("which", ["start", "both"])
+    def test_nan_boundary_is_refused(self, which):
+        from neurospatial.events.intervals import intervals_to_events
+
+        intervals = pd.DataFrame({"start_time": [0.0, np.nan], "stop_time": [1.0, 3.0]})
+
+        with pytest.raises(ValueError, match="NaN"):
+            intervals_to_events(intervals, which=which)
 
     def test_single_interval(self):
         """Test with single interval."""
@@ -443,19 +463,89 @@ class TestEventsToIntervals:
         with pytest.raises(ValueError, match=r"unmatched"):
             events_to_intervals(start_events, stop_events, match_by="trial_id")
 
-    def test_negative_duration_warning(self):
-        """Test warning when stop time is before start time."""
+    def test_stop_before_start_is_refused(self):
+        """A negative duration means a start and stop were mismatched."""
         from neurospatial.events.intervals import events_to_intervals
 
         start_events = pd.DataFrame({"timestamp": [5.0]})
-        stop_events = pd.DataFrame({"timestamp": [3.0]})  # Before start!
+        stop_events = pd.DataFrame({"timestamp": [3.0]})
 
-        with pytest.warns(UserWarning, match=r"negative.*duration"):
-            result = events_to_intervals(start_events, stop_events)
+        with pytest.raises(ValueError, match="before its start"):
+            events_to_intervals(start_events, stop_events)
 
-        # Should still return the interval (user might want to filter later)
-        assert len(result) == 1
-        assert result["duration"].iloc[0] == -2.0
+    def test_missed_and_extra_event_is_refused(self):
+        """A missed exit plus an extra one keeps the counts equal.
+
+        Pairing by rank would return the overlapping [30, 58) and [50, 60).
+        """
+        from neurospatial.events.intervals import events_to_intervals
+
+        entries = pd.DataFrame({"timestamp": [10.0, 30.0, 50.0]})
+        exits = pd.DataFrame({"timestamp": [15.0, 58.0, 60.0]})
+
+        with pytest.raises(ValueError, match="do not alternate"):
+            events_to_intervals(entries, exits)
+
+    def test_abutting_intervals_pair_sequentially(self):
+        from neurospatial.events.intervals import events_to_intervals
+
+        result = events_to_intervals(
+            pd.DataFrame({"timestamp": [0.0, 1.0]}),
+            pd.DataFrame({"timestamp": [1.0, 2.0]}),
+        )
+        assert_allclose(result[["start_time", "stop_time"]], [[0, 1], [1, 2]])
+
+    @pytest.mark.parametrize("side", ["start_events", "stop_events"])
+    def test_nan_timestamp_is_refused(self, side):
+        """Sorted last, a NaN stop would hand the next trial's stop to this one."""
+        from neurospatial.events.intervals import events_to_intervals
+
+        frames = {
+            "start_events": pd.DataFrame({"timestamp": [10.0, 30.0]}),
+            "stop_events": pd.DataFrame({"timestamp": [15.0, 35.0]}),
+        }
+        frames[side].loc[0, "timestamp"] = np.nan
+
+        with pytest.raises(ValueError, match=rf"{side}.*NaN"):
+            events_to_intervals(frames["start_events"], frames["stop_events"])
+
+    def test_match_by_stop_before_start_is_refused(self):
+        from neurospatial.events.intervals import events_to_intervals
+
+        starts = pd.DataFrame({"timestamp": [1.0, 2.0], "trial": [1, 2]})
+        stops = pd.DataFrame({"timestamp": [5.0, 0.5], "trial": [1, 2]})
+
+        with pytest.raises(ValueError, match="stop before they start"):
+            events_to_intervals(starts, stops, match_by="trial")
+
+    def test_match_by_missing_key_is_refused(self):
+        from neurospatial.events.intervals import events_to_intervals
+
+        starts = pd.DataFrame({"timestamp": [1.0, 2.0], "trial": [1.0, np.nan]})
+        stops = pd.DataFrame({"timestamp": [1.5, 2.5], "trial": [1.0, np.nan]})
+
+        with pytest.raises(ValueError, match="missing values"):
+            events_to_intervals(starts, stops, match_by="trial")
+
+    @pytest.mark.parametrize("max_duration", [np.nan, -1.0])
+    def test_invalid_max_duration_is_refused(self, max_duration):
+        """NaN would silently drop every interval."""
+        from neurospatial.events.intervals import events_to_intervals
+
+        with pytest.raises(ValueError, match="max_duration"):
+            events_to_intervals(
+                pd.DataFrame({"timestamp": [0.0]}),
+                pd.DataFrame({"timestamp": [1.0]}),
+                max_duration=max_duration,
+            )
+
+    def test_missing_timestamp_column_is_explained(self):
+        from neurospatial.events.intervals import events_to_intervals
+
+        with pytest.raises(ValueError, match=r"Missing required columns.*timestamp"):
+            events_to_intervals(
+                pd.DataFrame({"time": [0.0]}), pd.DataFrame({"timestamp": [1.0]})
+            )
 
     def test_preserves_additional_columns(self):
         """Test that additional columns from start_events are preserved."""
@@ -484,6 +574,7 @@ class TestEventsToIntervals:
         result = events_to_intervals(start_events, stop_events)
 
         assert_allclose(result["start_time"].values, [1.0, 5.0, 10.0])
+        assert_allclose(result["stop_time"].values, [3.0, 8.0, 12.0])
 
     def test_typical_zone_crossing_use_case(self):
         """Test typical use case: zone entry/exit to dwell intervals."""
@@ -747,6 +838,53 @@ class TestFilterByIntervals:
 
         with pytest.raises(ValueError, match=r"timestamp"):
             filter_by_intervals(events, intervals)
+
+    def test_nan_timestamp_is_refused_when_excluding(self):
+        """Removing artifacts must not keep an event with no time as clean."""
+        from neurospatial.events.intervals import filter_by_intervals
+
+        events = pd.DataFrame({"timestamp": [5.0, np.nan, 25.0]})
+        artifacts = pd.DataFrame({"start_time": [0.0], "stop_time": [10.0]})
+
+        with pytest.raises(ValueError, match="NaN"):
+            filter_by_intervals(events, artifacts, include=False)
+
+    @pytest.mark.parametrize("stop", [-5.0, np.nan])
+    def test_invalid_interval_is_refused(self, stop):
+        """An inverted or NaN interval would silently exclude nothing."""
+        from neurospatial.events.intervals import filter_by_intervals
+
+        events = pd.DataFrame({"timestamp": [1.0, 2.0]})
+        intervals = pd.DataFrame({"start_time": [0.0], "stop_time": [stop]})
+
+        with pytest.raises(ValueError, match=r"stop before|NaN"):
+            filter_by_intervals(events, intervals, include=False)
+
+    def test_zero_length_interval_holds_no_event(self):
+        from neurospatial.events.intervals import filter_by_intervals
+
+        events = pd.DataFrame({"timestamp": [1.0, 2.0]})
+        intervals = pd.DataFrame({"start_time": [1.0, 1.5], "stop_time": [1.0, 3.0]})
+
+        kept = filter_by_intervals(events, intervals)
+        assert kept["timestamp"].tolist() == [2.0]
+
+    def test_many_events_and_intervals_match_a_brute_force_check(self):
+        from neurospatial.events.intervals import filter_by_intervals
+
+        rng = np.random.default_rng(0)
+        times = rng.uniform(0, 100, 2000)
+        starts = rng.uniform(0, 100, 50)
+        intervals = pd.DataFrame(
+            {"start_time": starts, "stop_time": starts + rng.uniform(0, 3, 50)}
+        )
+        kept = filter_by_intervals(pd.DataFrame({"timestamp": times}), intervals)
+
+        inside = (
+            (times[:, None] >= intervals["start_time"].to_numpy())
+            & (times[:, None] < intervals["stop_time"].to_numpy())
+        ).any(axis=1)
+        np.testing.assert_array_equal(kept.index, np.flatnonzero(inside))
 
     def test_missing_interval_columns_raises(self):
         """Test missing interval columns raises ValueError."""
