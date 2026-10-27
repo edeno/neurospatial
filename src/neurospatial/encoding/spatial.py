@@ -798,7 +798,11 @@ def _spatial_summary_frame(
     """Build spatial metric columns for single and population results."""
     import pandas as pd
 
-    from neurospatial.encoding._metrics import _debiased_information, batch_sparsity
+    from neurospatial.encoding._metrics import (
+        _debiased_information,
+        _information_bias,
+        batch_sparsity,
+    )
     from neurospatial.encoding.border import _border_field_minimum
 
     rates = np.atleast_2d(_to_numpy(_supported_rates(result)))
@@ -812,9 +816,11 @@ def _spatial_summary_frame(
         if "border_score" in unavailable
         else _border_baseline(result, boundary_source)
     )
+    bias = _information_bias(result)
     columns: dict[str, Any] = {
         "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
         "spatial_information": scores["spatial_information"],
+        "spatial_information_bias": bias,
         "sparsity": np.asarray(batch_sparsity(rates, occupancy)),
         "grid_score": scores["grid_score"],
         "border_score": scores["border_score"],
@@ -830,7 +836,7 @@ def _spatial_summary_frame(
                     scores,
                     unavailable,
                     inapplicable,
-                    information=_debiased_information(result),
+                    information=_debiased_information(result, bias),
                     **PLACE_GRID_BORDER_THRESHOLDS,
                 )
             )
@@ -844,6 +850,7 @@ def _spatial_summary_frame(
     df.attrs["units"] = {
         "peak_firing_rate": "Hz",
         "spatial_information": "bits/spike",
+        "spatial_information_bias": "bits/spike",
         "peak_x": result.env.units or "",
         "peak_y": result.env.units or "",
     }
@@ -2877,6 +2884,10 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             - peak_y: y-coordinate of peak firing location (NaN for 1D)
             - peak_firing_rate: maximum firing rate (Hz)
             - spatial_information: spatial information (bits/spike)
+            - spatial_information_bias: the information an untuned cell
+              would show (bits/spike); ``passes_spatial_information``
+              compares ``spatial_information - spatial_information_bias``
+              with its cutoff, and a NaN bias (too few spikes) fails it
             - sparsity: sparsity measure (0-1)
             - grid_score: grid score (hexagonal periodicity)
             - border_score: border score (boundary proximity tuning)

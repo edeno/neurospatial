@@ -189,12 +189,15 @@ def _check_gaze_fields(result: ViewRateResult | ViewRatesResult) -> None:
 
 
 def _view_classify(
-    result: ViewRateResult | ViewRatesResult, *, min_info: float
+    result: ViewRateResult | ViewRatesResult,
+    *,
+    min_info: float,
+    bias: NDArray[np.float64] | None = None,
 ) -> NDArray[np.bool_]:
     """The shared rule: bias-corrected information at or above ``min_info``."""
     from neurospatial.encoding._metrics import _debiased_information
 
-    return _debiased_information(result) >= min_info
+    return _debiased_information(result, bias) >= min_info
 
 
 def _view_summary_frame(
@@ -205,21 +208,27 @@ def _view_summary_frame(
 
     rates = np.atleast_2d(_to_numpy(result._get_rates()))
     occupancy = _to_numpy(result.occupancy)
-    from neurospatial.encoding._metrics import batch_spatial_information
+    from neurospatial.encoding._metrics import (
+        _information_bias,
+        batch_spatial_information,
+    )
 
     peaks = np.atleast_2d(result.peak_location())
+    bias = _information_bias(result)
     columns = {
         "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
         "spatial_information": np.asarray(batch_spatial_information(rates, occupancy)),
+        "spatial_information_bias": bias,
         "peak_x": peaks[:, 0],
         "peak_y": peaks[:, 1] if peaks.shape[1] > 1 else np.full(len(rates), np.nan),
         **result._accounting_columns(),
-        "is_spatial_view_cell": _view_classify(result, **VIEW_THRESHOLDS),
+        "is_spatial_view_cell": _view_classify(result, **VIEW_THRESHOLDS, bias=bias),
     }
     df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
     df.attrs["units"] = {
         "peak_firing_rate": "Hz",
         "spatial_information": "bits/spike",
+        "spatial_information_bias": "bits/spike",
         "peak_x": result.env.units or "",
         "peak_y": result.env.units or "",
     }
@@ -1138,6 +1147,10 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
 
             - peak_firing_rate: maximum firing rate (Hz)
             - spatial_information: view spatial information (bits/spike)
+            - spatial_information_bias: the information an untuned cell
+              would show (bits/spike); the screen compares
+              ``spatial_information - spatial_information_bias`` with its
+              cutoff, and a NaN bias (too few spikes) fails it
             - peak_x: x-coordinate of peak view location
             - peak_y: y-coordinate of peak view location
             - is_spatial_view_cell: whether the default threshold screen
@@ -1183,7 +1196,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         >>> result = compute_view_rates(env, spike_times, times, trajectory, headings)
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_firing_rate', 'spatial_information', 'peak_x', 'peak_y', 'n_spikes_outside_intervals', 'is_spatial_view_cell']
+        ['peak_firing_rate', 'spatial_information', 'spatial_information_bias', 'peak_x', 'peak_y', 'n_spikes_outside_intervals', 'is_spatial_view_cell']
         >>> df.index.name
         'unit_id'
 
@@ -1988,7 +2001,7 @@ def compute_view_rates(
     >>> # Per-unit scalar summary (one row per unit)
     >>> summary = result.summary_table()
     >>> summary.shape
-    (3, 6)
+    (3, 7)
     >>> # Dense per-bin frame (one row per (unit, bin))
     >>> df = result.to_dataframe()
     >>> len(df) == 3 * env.n_bins

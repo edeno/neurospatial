@@ -148,12 +148,15 @@ def _check_direction_frame(direction_frame: str, *, context: str) -> None:
 
 
 def _object_vector_classify(
-    result: ObjectVectorRateResult | ObjectVectorRatesResult, *, min_info: float
+    result: ObjectVectorRateResult | ObjectVectorRatesResult,
+    *,
+    min_info: float,
+    bias: NDArray[np.float64] | None = None,
 ) -> NDArray[np.bool_]:
     """The shared rule: bias-corrected information at or above ``min_info``."""
     from neurospatial.encoding._metrics import _debiased_information
 
-    return _debiased_information(result) >= min_info
+    return _debiased_information(result, bias) >= min_info
 
 
 def _object_vector_summary_frame(
@@ -161,17 +164,32 @@ def _object_vector_summary_frame(
     *,
     index: Sequence[Hashable],
 ) -> pd.DataFrame:
-    """Build identical metric columns for single and population results."""
+    """Build identical metric columns for single and population results.
+
+    ``spatial_information`` and ``spatial_information_bias`` are the two
+    terms of the information screen behind ``is_object_vector_cell``.
+    """
+    from neurospatial.encoding._metrics import _information_bias
+
+    bias = _information_bias(result)
     return polar_summary_frame(
         result,
         index=index,
-        extra={},
+        extra={
+            "spatial_information": np.atleast_1d(
+                np.asarray(_to_numpy(result.spatial_information()), dtype=np.float64)
+            ),
+            "spatial_information_bias": bias,
+        },
         classification={
             "is_object_vector_cell": _object_vector_classify(
-                result, **OBJECT_VECTOR_THRESHOLDS
+                result, **OBJECT_VECTOR_THRESHOLDS, bias=bias
             )
         },
-        extra_units={},
+        extra_units={
+            "spatial_information": "bits/spike",
+            "spatial_information_bias": "bits/spike",
+        },
         thresholds=OBJECT_VECTOR_THRESHOLDS,
     )
 
@@ -1304,6 +1322,13 @@ class ObjectVectorRatesResult(
             - preferred_direction_deg: preferred direction (degrees in
               ``result.direction_frame``)
             - preferred_direction: preferred direction (radians, same frame)
+            - spatial_information: Skaggs information of the polar map
+              (bits/spike)
+            - spatial_information_bias: the information an untuned cell
+              would show (bits/spike); the screen compares
+              ``spatial_information - spatial_information_bias`` with its
+              cutoff, and a NaN bias (too few spikes) fails it
+            - n_spikes_outside_intervals: spikes outside the analyzed time
             - is_object_vector_cell: whether the default threshold screen
               passes
 
@@ -1359,7 +1384,7 @@ class ObjectVectorRatesResult(
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'n_spikes_outside_intervals', 'is_object_vector_cell']
+        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'spatial_information', 'spatial_information_bias', 'n_spikes_outside_intervals', 'is_object_vector_cell']
         >>> len(df)
         3
         >>> df.index.name

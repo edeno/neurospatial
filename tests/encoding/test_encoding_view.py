@@ -1479,6 +1479,7 @@ class TestViewRatesResultSummaryTable:
         assert list(df.columns) == [
             "peak_firing_rate",
             "spatial_information",
+            "spatial_information_bias",
             "peak_x",
             "peak_y",
             "n_spikes_outside_intervals",
