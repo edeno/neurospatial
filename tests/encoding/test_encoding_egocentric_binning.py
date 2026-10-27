@@ -291,6 +291,47 @@ class TestEgocentricInputValidation:
                 times, positions, headings, object_positions, **GRID
             )
 
+    @pytest.mark.parametrize(
+        ("short", "message"),
+        [
+            ("positions", r"times has 100 samples, positions has 90"),
+            ("headings", r"headings has 90 samples but times has 100"),
+            ("object_positions", r"object_positions has 90 samples but times has 100"),
+        ],
+    )
+    def test_samples_must_align_with_times(self, short: str, message: str):
+        """Every per-sample array has one row per timestamp."""
+        n = 100
+        data = {
+            "positions": np.random.default_rng(0).random((n, 2)) * 50,
+            "headings": np.zeros(n),
+            "object_positions": np.full((n, 1, 2), 25.0),
+        }
+        data[short] = data[short][:90]
+        with pytest.raises(ValueError, match=message):
+            prepare_egocentric_binning(
+                np.linspace(0, 10, n),
+                data["positions"],
+                data["headings"],
+                data["object_positions"],
+                **GRID,
+            )
+
+    def test_position_columns_must_match_env(self, object_positions: np.ndarray):
+        env = Environment.from_samples(
+            np.random.default_rng(0).random((200, 2)) * 50, bin_size=5.0
+        )
+        positions = np.random.default_rng(1).random((100, 3)) * 50
+        with pytest.raises(ValueError, match=r"positions with shape \(100, 3\)"):
+            prepare_egocentric_binning(
+                np.linspace(0, 10, 100),
+                positions,
+                np.zeros(100),
+                object_positions,
+                **GRID,
+                env=env,
+            )
+
 
 # =============================================================================
 # Spike counts

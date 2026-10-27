@@ -33,14 +33,14 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     hold_last_valid,
     interval_valid_mask,
 )
 from neurospatial.encoding._spatial_counts import FrameBinning, prepare_frame_binning
-from neurospatial.encoding._validation import _validate_times as _validate_times
-from neurospatial.encoding._validation import require_planar
+from neurospatial.encoding._validation import require_planar, validate_trajectory
 from neurospatial.geometry import wall_hit_bins
 from neurospatial.ops.visibility import gaze_points
 
@@ -245,9 +245,25 @@ def prepare_view_binning(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
+    if gaze_offsets is not None:
+        gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64)
 
-    # Validate times (minimum samples and monotonicity)
-    _validate_times(times, context="prepare_view_binning")
+    validate_trajectory(
+        times, positions, context="prepare_view_binning", n_dims=env.n_dims
+    )
+    # Headings are checked here, not by validate_trajectory, so a degree-like
+    # heading warns once, at the public entry point.
+    for name, values in (("headings", headings), ("gaze_offsets", gaze_offsets)):
+        if values is not None and len(values) != len(times):
+            raise ValueError(
+                _format_error(
+                    f"prepare_view_binning: {name} has {len(values)} samples but "
+                    f"times has {len(times)}.",
+                    why=f"row k of {name} describes the sample at times[k]",
+                    fix=f"pass one {name} row per timestamp (NaN marks a "
+                    "missing sample)",
+                )
+            )
 
     # Precompute view bins ONCE (shared across all neurons) unless the caller
     # already holds them for these exact samples and gaze settings.
@@ -256,7 +272,7 @@ def prepare_view_binning(
         times,
         positions,
         headings,
-        None if gaze_offsets is None else np.asarray(gaze_offsets, dtype=np.float64),
+        gaze_offsets,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,

@@ -682,6 +682,45 @@ class TestViewBinningInputValidation:
                 boundary_source="analysis",
             )
 
+    @pytest.mark.parametrize(
+        ("short", "message"),
+        [
+            ("positions", r"times has 100 samples, positions has 90"),
+            ("headings", r"headings has 90 samples but times has 100"),
+            ("gaze_offsets", r"gaze_offsets has 90 samples but times has 100"),
+        ],
+    )
+    def test_samples_must_align_with_times(
+        self, simple_env: Environment, short: str, message: str
+    ) -> None:
+        """Every per-sample array has one row per timestamp."""
+        n = 100
+        data = {
+            "positions": np.full((n, 2), 50.0),
+            "headings": np.zeros(n),
+            "gaze_offsets": np.zeros(n),
+        }
+        data[short] = data[short][:90]
+        with pytest.raises(ValueError, match=message):
+            prepare_view_binning(
+                simple_env,
+                np.linspace(0, 10, n),
+                data["positions"],
+                data["headings"],
+                gaze_offsets=data["gaze_offsets"],
+                boundary_source="analysis",
+            )
+
+    def test_position_columns_must_match_env(self, simple_env: Environment) -> None:
+        with pytest.raises(ValueError, match=r"positions with shape \(100, 3\)"):
+            prepare_view_binning(
+                simple_env,
+                np.linspace(0, 10, 100),
+                np.full((100, 3), 50.0),
+                np.zeros(100),
+                boundary_source="analysis",
+            )
+
     def test_insufficient_samples(
         self,
         simple_env: Environment,

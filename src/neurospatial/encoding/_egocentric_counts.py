@@ -60,7 +60,7 @@ from neurospatial._intervals import (
     interval_valid_mask,
 )
 from neurospatial.encoding._spatial_counts import FrameBinning, prepare_frame_binning
-from neurospatial.encoding._validation import _validate_times
+from neurospatial.encoding._validation import validate_trajectory
 from neurospatial.ops.egocentric import compute_egocentric_bearing
 
 if TYPE_CHECKING:
@@ -637,8 +637,28 @@ def prepare_egocentric_binning(
 
     _validate_object_vector_metric(env, metric, context="prepare_egocentric_binning")
 
-    # Validate times
-    _validate_times(times, context="prepare_egocentric_binning")
+    validate_trajectory(
+        times,
+        positions,
+        context="prepare_egocentric_binning",
+        n_dims=None if env is None else env.n_dims,
+    )
+    # Headings are checked here, not by validate_trajectory, so a degree-like
+    # heading warns once, at the public entry point.
+    for name, values in (
+        ("headings", headings),
+        ("object_positions", object_positions if object_positions.ndim == 3 else None),
+    ):
+        if values is not None and len(values) != len(times):
+            raise ValueError(
+                _format_error(
+                    f"prepare_egocentric_binning: {name} has {len(values)} samples but "
+                    f"times has {len(times)}.",
+                    why=f"row k of {name} describes the sample at times[k]",
+                    fix=f"pass one {name} row per timestamp (NaN marks a "
+                    "missing sample)",
+                )
+            )
 
     # Create egocentric environment
     if polar_env is None:
