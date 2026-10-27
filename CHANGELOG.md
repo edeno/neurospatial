@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Missing tracking and `max_gap`
+
+Results that change:
+
+- A missing tracking sample (a NaN row, for example a low-confidence
+  DeepLabCut frame) is treated exactly like a deleted row. A gap is the time
+  between consecutive valid samples; a gap no longer than `max_gap` is
+  bridged (its time goes to the last valid position and spikes in it count),
+  and a longer gap is excluded. Before, one NaN frame always excluded both
+  neighboring intervals and split the run, whatever `max_gap` said: on
+  simulated 30 Hz tracking with dropped frames and NaN bursts, occupancy
+  differed from the same recording with the rows deleted by 7.0 of 60 s, one
+  bin's rate by 4.2 Hz, and 21 running bouts were found instead of 19. This
+  applies to occupancy and rate maps of every cell family, environment
+  occupancy, `bin_sequence` and transitions, speed and kinematics (which use
+  the real time between valid samples across a bridged gap), behavior
+  segmentation, region visits, trials, continuous alignment, decoding ground
+  truth, visibility and animation overlays. `bin_sequence` drops NaN samples
+  instead of reporting −1, so −1 means only "outside the environment", and
+  functions that take `position_bins` bridge bin −1 like a missing sample.
+- `max_gap` defaults to 1.0 s (was 0.5 s) in every function that takes it,
+  from one shared constant. The value is calibrated by simulation: on 15
+  minutes of linear-track running tracked at 30, 60 and 120 Hz with 1–5%
+  dropped frames, DeepLabCut-style bursts of 1–15 low-confidence frames,
+  2–5 s tracking losses and a 10 s pickup, occupancy, rate maps, bout counts
+  and complete runs were all near their best for `max_gap` between 0.55 and
+  2.0 s; 1.0 s is the middle of that range. At 0.5 s the longest routine
+  bursts (15 frames at 30 Hz) split running bouts. Choose another value
+  when your tracking differs: longer than routine dropped or low-confidence
+  stretches, shorter than real tracking losses or pickups.
+- A NaN that means "undefined" rather than "not tracked" (for example
+  `heading_from_velocity` while the animal is still) is bridged like
+  missing tracking when it is shorter than `max_gap`. Pass a smaller
+  `max_gap` where that would invent values, as the behavior-around-events
+  guide shows.
+
 ### Encoding review (`neurospatial.encoding`)
 
 #### Grid score
