@@ -920,23 +920,22 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         """Locations of peak firing for all neurons.
 
         Returns the spatial coordinates where each neuron shows maximum
-        firing rate when the animal *views* that location.
+        firing rate when the animal *views* that location, over the bins
+        viewed for at least ``min_occupancy``. The same array as the batch
+        form of :meth:`peak_location`.
 
         Returns
         -------
         ndarray, shape (n_neurons, n_dims)
             Spatial coordinates of the bins with maximum firing rate for
-            each neuron. Uses nanargmax to handle NaN values. Returns NaN
-            coordinates for neurons with all-NaN firing rates.
+            each neuron. NaN for a neuron with no viewed bin or no positive
+            rate: a silent map has no peak.
 
         Notes
         -----
         For spatial view cells, peak locations represent where each
         neuron fires most when the animal looks there, regardless of where
         the animal is positioned.
-
-        If all firing rates for a neuron are NaN, the peak location will
-        be NaN coordinates.
 
         Examples
         --------
@@ -960,20 +959,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         ViewRateResult.peak_location : Single-neuron version
         spatial_information : Quantify spatial selectivity
         """
-        firing_rates = _to_numpy(self.firing_rates)
-        n_neurons = firing_rates.shape[0]
-        n_dims = self.env.bin_centers.shape[1]
-
-        peak_locs = np.empty((n_neurons, n_dims), dtype=np.float64)
-        for i in range(n_neurons):
-            valid_mask = ~np.isnan(firing_rates[i])
-            if not np.any(valid_mask):
-                # All NaN - return NaN coordinates
-                peak_locs[i] = np.nan
-            else:
-                peak_idx = int(np.nanargmax(firing_rates[i]))
-                peak_locs[i] = self.env.bin_centers[peak_idx]
-        return peak_locs
+        return self.peak_location()
 
     def spatial_information(self) -> NDArray[np.float64]:
         """View spatial information for all neurons (bits per spike).

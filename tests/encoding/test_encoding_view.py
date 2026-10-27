@@ -1131,6 +1131,39 @@ class TestViewRatesResultPeakLocations:
         # Second neuron: has valid data -> valid coordinates
         assert_array_equal(peaks[1], simple_env.bin_centers[5])
 
+    def test_peak_locations_follow_occupancy_support_and_silence(
+        self,
+        simple_env: Environment,
+        single_occupancy: np.ndarray,
+    ) -> None:
+        """A filled rate in an unviewed bin is not a peak; a silent map has none."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        occupancy = single_occupancy.copy()
+        occupancy[2] = 0.0  # never viewed
+        rates = np.ones((3, simple_env.n_bins))
+        rates[0, 2] = 99.0  # filled value in the unviewed bin
+        rates[0, 6] = 10.0  # the largest observed rate
+        rates[1] = 0.0  # silent unit
+        rates[2, 4] = 5.0
+        result = ViewRatesResult(
+            firing_rates=rates,
+            occupancy=occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        peaks = result.peak_locations()
+        assert_array_equal(peaks[0], simple_env.bin_centers[6])
+        assert np.all(np.isnan(peaks[1]))
+        assert_array_equal(peaks[2], simple_env.bin_centers[4])
+        assert_array_equal(peaks, np.stack([unit.peak_location() for unit in result]))
+        summary = result.summary_table()
+        assert_array_equal(peaks, summary[["peak_x", "peak_y"]].to_numpy())
+
 
 class TestViewRatesResultViewSpatialInformation:
     """Test ViewRatesResult.spatial_information() method."""
