@@ -38,15 +38,19 @@ def test_rebin_new_resolution_keeps_the_selection_after_an_analysis_crop():
 
 
 def test_rebin_reports_original_area_left_without_a_new_bin():
-    # 4-unit cells over a 6-unit arena: only the cell centered at (2, 2) lies
-    # strictly inside, so 20 of the 36 original bins lose their bin.
-    env = Environment.from_polygon(box(0, 0, 6, 6), bin_size=1.0)
+    # 4-unit cells over a 4-unit room with a 1.5-unit-wide arm: only the cell
+    # centered at (2, 2) lies inside. Arm positions in the next cell belong to
+    # it, one cell away; the 8 original bins farther along the arm lose their
+    # bin.
+    arena = box(0, 0, 4, 4).union(box(4, 0, 16, 1.5))
+    env = Environment.from_polygon(arena, bin_size=1.0)
     with pytest.warns(UserWarning, match="without a new bin") as record:
         coarse = env.rebin(bin_size=4.0)
     lost = coarse.bin_at(env.bin_centers) < 0
-    assert np.count_nonzero(lost) == 20
+    assert np.count_nonzero(lost) == 8
+    assert (env.bin_centers[lost, 0] > 8).all()
     (message,) = [str(item.message) for item in record]
-    assert re.search(r"20 of 36 original bins \(55\.6% of their area\)", message)
+    assert re.search(r"8 of 28 original bins \(28\.6% of their area\)", message)
     assert "divisor" in message and "-1" in message
 
 
