@@ -308,6 +308,46 @@ def _directional_mean_vector_length(rates: NDArray, centers: NDArray) -> float:
     return mean_resultant_length(centers[valid_mask], weights=rates[valid_mask])
 
 
+def _resultant(
+    rates: ArrayLike, centers: ArrayLike
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
+    """Rate-weighted mean cosine and sine of each unit's tuning curve.
+
+    Non-finite (unvisited) bins are dropped before the reduction, not
+    propagated, matching the single-unit circular statistics.
+
+    Parameters
+    ----------
+    rates : array-like of shape (n_units, n_bins)
+        Firing rates; NaN at unvisited bins.
+    centers : array-like of shape (n_bins,)
+        Bin centers in radians.
+
+    Returns
+    -------
+    mean_cos, mean_sin : ndarray of shape (n_units,)
+        Weighted means of ``cos(centers)`` and ``sin(centers)``.
+    valid : ndarray of bool, shape (n_units,)
+        False for a unit with no positive finite rate; its means are
+        meaningless.
+    """
+    rates = np.asarray(rates, dtype=np.float64)
+    centers = np.asarray(centers, dtype=np.float64)
+    finite_rates = np.where(np.isfinite(rates), rates, 0.0)
+    weight_sums = finite_rates.sum(axis=1)
+    valid = weight_sums > 0
+    weights_norm = finite_rates / np.where(valid, weight_sums, 1.0)[:, np.newaxis]
+    return weights_norm @ np.cos(centers), weights_norm @ np.sin(centers), valid
+
+
+def _mean_vector_lengths(rates: ArrayLike, centers: ArrayLike) -> NDArray[np.float64]:
+    """Mean vector length of each row of ``rates`` (n_units, n_bins); NaN if empty."""
+    mean_cos, mean_sin, valid = _resultant(rates, centers)
+    mvls: NDArray[np.float64] = np.sqrt(mean_cos**2 + mean_sin**2)
+    mvls[~valid] = np.nan
+    return mvls
+
+
 # Fewest spikes for which the tuning test returns a p-value. Calibrated by
 # simulation of untuned cells (10-minute open-field and 50-lap linear-track
 # headings, 800 cells per session type, spike count and firing pattern): with
@@ -540,6 +580,9 @@ def _head_direction_classify(
     """The shared MVL and occupancy-corrected tuning-test screen."""
     inputs = _tuning_inputs(result)
     _warn_if_headings_incomplete(inputs["occupancy"])
+    # The scalar helper, not _mean_vector_lengths: the screen must agree with
+    # mean_vector_length() exactly at an inclusive threshold, and the two
+    # reductions can differ in the last bit.
     mvls = np.array(
         [
             _directional_mean_vector_length(row, inputs["centers"])
@@ -1860,24 +1903,7 @@ class DirectionalRatesResult(
         --------
         DirectionalRateResult.preferred_direction : Single-neuron method
         """
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
-        centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
-
-        # Match the single-neuron path: NaN bins are dropped before the
-        # circular-mean reduction, not propagated through. Without this
-        # mask any NaN bin makes the whole row's direction NaN, which
-        # disagrees with iterating singles.
-        finite = np.isfinite(rates)
-        finite_rates = np.where(finite, rates, 0.0)
-
-        weight_sums = finite_rates.sum(axis=1)
-        valid = weight_sums > 0
-        safe_sums = np.where(valid, weight_sums, 1.0)
-        weights_norm = finite_rates / safe_sums[:, np.newaxis]
-
-        mean_cos = weights_norm @ np.cos(centers)
-        mean_sin = weights_norm @ np.sin(centers)
-
+        mean_cos, mean_sin, valid = _resultant(self.firing_rates, self.bin_centers)
         pref_dirs: NDArray[np.float64] = np.arctan2(mean_sin, mean_cos)
         pref_dirs[~valid] = np.nan
         return pref_dirs
@@ -1917,24 +1943,7 @@ class DirectionalRatesResult(
         --------
         DirectionalRateResult.mean_vector_length : Single-neuron method
         """
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
-        centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
-
-        # NaN bins are dropped before the reduction (see preferred_directions).
-        finite = np.isfinite(rates)
-        finite_rates = np.where(finite, rates, 0.0)
-
-        weight_sums = finite_rates.sum(axis=1)
-        valid = weight_sums > 0
-        safe_sums = np.where(valid, weight_sums, 1.0)
-        weights_norm = finite_rates / safe_sums[:, np.newaxis]
-
-        mean_cos = weights_norm @ np.cos(centers)
-        mean_sin = weights_norm @ np.sin(centers)
-
-        mvls: NDArray[np.float64] = np.sqrt(mean_cos**2 + mean_sin**2)
-        mvls[~valid] = np.nan
-        return mvls
+        return _mean_vector_lengths(self.firing_rates, self.bin_centers)
 
     def tuning_widths(self) -> NDArray[np.float64]:
         """Compute tuning widths (HWHM) for all neurons.
