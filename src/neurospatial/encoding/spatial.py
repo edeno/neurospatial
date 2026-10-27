@@ -3614,7 +3614,7 @@ default="diffusion_kde"
         value. None preserves NaN. Filling never changes ``spatial_support``,
         and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
         Zero filling without that prior treats unobserved space as silence.
         Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
@@ -4132,7 +4132,7 @@ default="diffusion_kde"
         value. None preserves NaN. Filling never changes ``spatial_support``,
         and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
         Zero filling without that prior treats unobserved space as silence.
         Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
@@ -5797,7 +5797,7 @@ def has_place_field(
         value. None preserves NaN. Filling never changes ``spatial_support``,
         and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
         Zero filling without that prior treats unobserved space as silence.
         Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
@@ -6078,7 +6078,7 @@ def is_place_cell(
         value. None preserves NaN. Filling never changes ``spatial_support``,
         and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
         Zero filling without that prior treats unobserved space as silence.
         Mutually exclusive with ``method="glm"``.
     penalty : float | None, default=None
@@ -6507,7 +6507,7 @@ def place_cell_significance(
         value. None preserves NaN. Filling never changes ``spatial_support``,
         and result metrics still treat filled bins as missing.
         Prefer ``BayesianDecoder.from_rates(rates)`` for population decoding;
-        explicit arrays require ``prior=rates.spatial_support.astype(float)``.
+        explicit arrays require ``prior=rates.spatial_support * env.bin_sizes``.
         Zero filling without that prior treats unobserved space as silence.
         Mutually exclusive with ``method="glm"``.
     penalty, rank : None, default=None
