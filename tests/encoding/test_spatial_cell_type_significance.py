@@ -185,16 +185,21 @@ def test_rejects_glm(significance_recording):
         )
 
 
-def test_result_validates_shapes():
+@pytest.mark.parametrize(
+    ("observed", "grid_spacing"),
+    [((2, 2), (2,)), ((2, 3), (3,))],
+)
+def test_result_validates_shapes(observed, grid_spacing):
     with pytest.raises(ValueError, match="n_units, 3"):
         CellTypeSignificanceResult(
-            observed_scores=np.zeros((2, 2)),
+            observed_scores=np.zeros(observed),
             null_scores=np.zeros((2, 5, 3)),
             unit_ids=np.arange(2),
             min_shift=20.0,
             method="binned",
             bandwidth=5.0,
             boundary_source="physical",
+            grid_spacing=np.zeros(grid_spacing),
         )
 
 
@@ -347,3 +352,50 @@ def test_radial_arm_place_cells_are_not_border_cells():
     labels = result.label_cell_types()
     assert not np.any(np.char.find(labels.astype(str), "border") >= 0), labels
     assert np.sum(labels == "place") >= 10
+
+
+def _rebuilt(result, **changes):
+    """The result rebuilt with some fields replaced."""
+    fields = {
+        name: getattr(result, name)
+        for name in (
+            "observed_scores",
+            "null_scores",
+            "unit_ids",
+            "min_shift",
+            "method",
+            "bandwidth",
+            "boundary_source",
+            "grid_spacing",
+            "unavailable_metrics",
+            "inapplicable_metrics",
+        )
+    }
+    return CellTypeSignificanceResult(**{**fields, **changes})
+
+
+def test_significant_grid_score_without_a_ring_is_not_grid(grid_and_hexless):
+    """A grid label needs a hexagonal ring as well as a significant score."""
+    r = grid_and_hexless
+    result = spatial_cell_type_significance(
+        r.env,
+        r.trains,
+        r.times,
+        r.positions,
+        n_shuffles=79,
+        rng=0,
+        boundary_source="analysis",
+    )
+    assert np.isfinite(result.grid_spacing[0]) and np.isnan(result.grid_spacing[1])
+    assert abs(result.grid_spacing[0] - 45.0) < 5.0
+    assert (result.p_values[:, 1] < 0.05).all()
+    labels = result.label_cell_types()
+    assert labels[0] == "grid"
+    assert "grid" not in labels[1]
+    # Only the ring separates a significant grid score from a grid label.
+    significant = result.p_values[:, 1] < 0.05
+    with_ring = _rebuilt(result, grid_spacing=np.array([45.0, 45.0]))
+    without_ring = _rebuilt(result, grid_spacing=np.array([np.nan, np.nan]))
+    for has_ring, rebuilt in ((True, with_ring), (False, without_ring)):
+        is_grid = np.char.find(rebuilt.label_cell_types().astype(str), "grid") >= 0
+        np.testing.assert_array_equal(is_grid, significant & has_ring)

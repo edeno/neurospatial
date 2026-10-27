@@ -870,3 +870,55 @@ def ovc_session() -> tuple[
     )
 
     return env, spike_times, times, positions, headings, object_positions
+
+
+@pytest.fixture(scope="session")
+def grid_and_hexless():
+    """A grid cell and a cell whose grid score passes 0.4 without a hexagonal ring.
+
+    100 cm box, 2.5 cm bins, 10 minutes. The second cell fires on a
+    smoothed-noise map: its rate map scores 0.50 but its autocorrelogram has
+    no hexagonal first ring of peaks, so it has no grid spacing.
+    """
+    from types import SimpleNamespace
+
+    import shapely
+    from scipy.ndimage import gaussian_filter
+
+    from neurospatial import Environment
+    from neurospatial.simulation import (
+        GridCellModel,
+        generate_poisson_spikes,
+        simulate_trajectory_ou,
+    )
+
+    env = Environment.from_polygon(
+        shapely.box(0, 0, 100, 100), bin_size=2.5, units="cm"
+    )
+    positions, times = simulate_trajectory_ou(
+        env,
+        duration=600.0,
+        dt=1 / 30,
+        speed_units="cm",
+        speed_mean=15.0,
+        speed_std=7.5,
+        seed=1,
+    )
+    grid = GridCellModel(
+        env, grid_spacing=45.0, max_rate=10.0, baseline_rate=1.0
+    ).firing_rate(positions)
+    rng = np.random.default_rng(0)
+    noise = [rng.normal(size=(40, 40)) for _ in range(3)][2]
+    noise = gaussian_filter(noise, 4.0, mode="wrap")
+    noise = (noise - noise.min()) / np.ptp(noise)
+    cell = np.clip((positions / 2.5).astype(int), 0, 39)
+    hexless = 0.2 + 8 * noise[cell[:, 0], cell[:, 1]] ** 3
+    return SimpleNamespace(
+        env=env,
+        times=times,
+        positions=positions,
+        trains=[
+            generate_poisson_spikes(grid, times, seed=21),
+            generate_poisson_spikes(hexless, times, seed=102),
+        ],
+    )

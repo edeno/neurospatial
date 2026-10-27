@@ -751,7 +751,11 @@ autocorrelogram and occupancy together. A score of 0.4 is a common screening
 convention, not a significance test: on circularly time-shifted spike trains of
 simulated grid, place and untuned cells, 1-8% of the shuffled maps reached it.
 `spatial_cell_type_significance` tests each unit's grid score against its own
-spike train circularly shifted in time. On layouts without a rectangular grid (hexagonal bins,
+spike train circularly shifted in time. A map without a lattice can still have a
+sixfold-symmetric autocorrelogram, so both the screen and the shuffle test call a
+unit a grid cell only when its autocorrelogram also has a hexagonal first ring
+(a finite `grid_properties` spacing); a grid whose spacing exceeds about 0.6 of
+the arena's side has no such ring and is not labeled grid. On layouts without a rectangular grid (hexagonal bins,
 tracks, meshes) there is no grid score: `summary_table()` records it in
 `attrs["unavailable_metrics"]`. `spatial_autocorrelation_radial` from
 `neurospatial.encoding.grid` gives a distance-correlation profile there, but a

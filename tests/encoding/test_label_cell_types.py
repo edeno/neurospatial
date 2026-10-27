@@ -27,14 +27,15 @@ def field_and_noise(ou_env, ou_10min, noise_trains, allocentric_field_spikes):
 @pytest.mark.parametrize(
     ("grid", "border", "expected"),
     [
-        ([0.9, 0.9], [0.0, 0.0], ["grid", "grid"]),
         ([0.0, 0.0], [0.9, 0.9], ["border", "border"]),
-        ([0.9, 0.9], [0.9, 0.9], ["grid+border", "grid+border"]),
         ([0.0, 0.0], [0.0, 0.0], ["place", "unclassified"]),
+        # Neither map has a hexagonal ring, so a grid score alone is not grid.
+        ([0.9, 0.9], [0.0, 0.0], ["place", "unclassified"]),
+        ([0.9, 0.9], [0.9, 0.9], ["border", "border"]),
     ],
 )
 def test_labels_follow_their_own_statistic(field_and_noise, grid, border, expected):
-    """No information gate on grid or border, and no grid-over-border rule."""
+    """No information gate on border, and a grid label needs a hexagonal ring."""
     labels = field_and_noise.label_cell_types(
         grid_scores=np.array(grid),
         border_scores=np.array(border),
@@ -125,3 +126,24 @@ def test_short_recording_information_bias_is_screened_out(
     table = rates.summary_table(boundary_source="analysis")
     assert not table["passes_spatial_information"].any()
     assert not (table["cell_type"] == "place").any()
+
+
+def test_grid_label_needs_a_hexagonal_ring(grid_and_hexless):
+    """A grid score at the cutoff without a hexagonal first ring is not grid."""
+    r = grid_and_hexless
+    rates = compute_spatial_rates(r.env, r.trains, r.times, r.positions)
+    scores = rates.grid_scores().scores
+    assert (scores >= 0.4).all()
+    spacing = [rates[i].grid_properties().scale for i in range(2)]
+    assert np.isfinite(spacing[0]) and np.isnan(spacing[1])
+    labels = rates.label_cell_types(boundary_source="analysis")
+    assert labels[0] == "grid"
+    assert "grid" not in labels[1]
+    table = rates.summary_table(boundary_source="analysis")
+    assert table["passes_grid_score"].tolist() == [True, False]
+    np.testing.assert_array_equal(table["cell_type"], labels)
+    # The ring is read from the maps when the scores are passed in.
+    np.testing.assert_array_equal(
+        rates.label_cell_types(grid_scores=scores, boundary_source="analysis"),
+        labels,
+    )

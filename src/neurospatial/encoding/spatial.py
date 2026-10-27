@@ -708,7 +708,44 @@ def _screen_scores(
     return scores, unavailable, tuple(inapplicable)
 
 
+def _grid_spacings(env: Environment, rates: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Spacing of each map's hexagonal first ring of autocorrelogram peaks.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment with a regular 2-D grid of rectangular cells.
+    rates : ndarray, shape (n_units, n_bins)
+        Rates in Hz, NaN outside the occupancy support.
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        :func:`~neurospatial.encoding.grid.grid_scale` of each map, in
+        environment units. NaN when the peaks nearest zero lag are not the
+        first ring of one hexagon, and for an all-NaN or constant map.
+    """
+    from neurospatial.encoding.grid import (
+        autocorrelation_pixel_size,
+        grid_scale,
+        spatial_autocorrelation,
+    )
+
+    spacing = np.full(len(rates), np.nan)
+    if len(rates) == 0:
+        return spacing
+    pixel_size = autocorrelation_pixel_size(env)
+    for i, rate in enumerate(rates):
+        finite = rate[np.isfinite(rate)]
+        if finite.size and np.ptp(finite) > 0:
+            spacing[i] = grid_scale(
+                spatial_autocorrelation(env, rate), pixel_size=pixel_size
+            )
+    return spacing
+
+
 def _screen_outcomes(
+    result: SpatialRateResult | SpatialRatesResult,
     scores: Mapping[str, NDArray[np.float64]],
     unavailable: Mapping[str, str],
     inapplicable: tuple[str, ...],
@@ -721,13 +758,21 @@ def _screen_outcomes(
     """Fixed-threshold outcome of each test; a NaN score fails its test.
 
     ``information`` is the bias-corrected spatial information the place
-    screen compares with its cutoff, shape (n_units,).
+    screen compares with its cutoff, shape (n_units,). A grid score at its
+    cutoff passes only when the unit's map has a hexagonal first ring of
+    autocorrelogram peaks (see :func:`_grid_spacings`); the ring is read
+    from ``result``'s maps for those units alone.
     """
+    with np.errstate(invalid="ignore"):
+        grid = scores["grid_score"] >= min_grid_score
+    if grid.any():
+        rates = np.atleast_2d(_to_numpy(_supported_rates(result)))
+        grid[grid] = np.isfinite(_grid_spacings(result.env, rates[grid]))
     passed = {
         "spatial_information": _passes_information_screen(
             information, min_spatial_info
         ),
-        "grid_score": scores["grid_score"] >= min_grid_score,
+        "grid_score": grid,
         "border_score": scores["border_score"] >= min_border_score,
     }
     return {
@@ -833,6 +878,7 @@ def _spatial_summary_frame(
         columns.update(
             _cell_type_columns(
                 _screen_outcomes(
+                    result,
                     scores,
                     unavailable,
                     inapplicable,
@@ -2596,9 +2642,10 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
     ) -> NDArray[np.str_]:
         """Screen neurons for place, grid and border tuning with fixed cutoffs.
 
-        Each label is judged by its own statistic: a grid label needs only a
-        grid score at the cutoff and a border label only a border score at the
-        cutoff. ``"place"`` is a cell whose bias-corrected spatial information
+        Each label is judged by its own statistic: a grid label needs a grid
+        score at the cutoff and a hexagonal first ring of autocorrelogram
+        peaks (a finite :meth:`SpatialRateResult.grid_properties` ``scale``),
+        and a border label only a border score at the cutoff. ``"place"`` is a cell whose bias-corrected spatial information
         (``spatial_information() - spatial_information_bias()``) reaches the
         cutoff and that is neither a grid nor a border cell. This is a fast
         screen with known false positives (see Notes); for a verdict, test
@@ -2637,7 +2684,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         ndarray, shape (n_neurons,)
             String labels for each neuron. One of:
 
-            - ``"grid"``, ``"border"``: the grid or border score reaches its cutoff.
+            - ``"grid"``, ``"border"``: the grid or border score reaches its
+              cutoff; a grid map also has a hexagonal first ring.
             - ``"grid+border"``: both do; the cell is reported as both.
             - ``"place"``: spatial information reaches its cutoff and neither
               the grid nor the border score does.
@@ -2673,7 +2721,12 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         - Grid score: about 10% of rate maps from circularly shifted spike
           trains reach 0.4; the 95th percentile of that null was 0.46-0.57
           across square, rectangular and circular arenas, and 11% of place
-          cells reached 0.4.
+          cells reached 0.4. The score measures sixfold symmetry of the
+          autocorrelogram, which a map without a lattice can have, so a grid
+          label also needs the peaks nearest zero lag to be one hexagon's
+          first ring (:func:`~neurospatial.encoding.grid.grid_scale`); a grid
+          whose spacing exceeds about 0.6 of a square arena's side has no
+          ring inside the autocorrelogram and is not labeled grid.
         - Border score: a uniform (untuned) map scores 0.50 in convex arenas
           and 0.58-0.79 on corridor mazes, so untuned cells pass the 0.5
           cutoff often; on a radial-arm maze, 6 of 12 arm place cells did.
@@ -2753,6 +2806,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         return _cell_type_labels(
             _screen_outcomes(
+                self,
                 scores,
                 unavailable,
                 inapplicable,
@@ -2896,8 +2950,9 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             - n_spikes_outside_intervals: spikes outside the analyzed time
             - passes_spatial_information, passes_grid_score,
               passes_border_score (if include_classification=True): whether
-              each score reaches its screen cutoff; ``<NA>`` when the score
-              applies to this environment but cannot be computed
+              each score reaches its screen cutoff (a grid score only with a
+              hexagonal first ring); ``<NA>`` when the score applies to this
+              environment but cannot be computed
             - cell_type (if include_classification=True): the
               ``label_cell_types()`` label: ``"grid"``, ``"border"``,
               ``"grid+border"``, ``"place"``, ``"unclassified"`` or
@@ -6582,6 +6637,12 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         Smoothing bandwidth in environment units.
     boundary_source : {'physical', 'analysis'}
         Wall geometry of the border score.
+    grid_spacing : ndarray, shape (n_units,)
+        Spacing of the hexagonal first ring of each observed map's
+        autocorrelogram, in environment units, as
+        :meth:`SpatialRateResult.grid_properties` reads it. NaN when the map
+        has no such ring or the grid score is unscored; such a unit is never
+        labeled grid.
     unavailable_metrics : dict of str to str
         Why each unscored statistic has no score.
     inapplicable_metrics : tuple of str
@@ -6611,6 +6672,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     ...     method="diffusion_kde",
     ...     bandwidth=5.0,
     ...     boundary_source="physical",
+    ...     grid_spacing=np.array([40.0]),
     ... )
     >>> result.p_values.tolist()
     [[0.05, 0.05, 0.05]]
@@ -6625,6 +6687,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     method: str
     bandwidth: float
     boundary_source: str
+    grid_spacing: NDArray[np.float64]
     unavailable_metrics: Mapping[str, str] = field(default_factory=dict)
     inapplicable_metrics: tuple[str, ...] = ()
     p_values: NDArray[np.float64] = field(init=False)
@@ -6636,6 +6699,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
 
         observed = np.asarray(self.observed_scores, dtype=np.float64)
         null = np.asarray(self.null_scores, dtype=np.float64)
+        spacing = np.asarray(self.grid_spacing, dtype=np.float64)
         n_stats = len(self.statistics)
         if (
             observed.ndim != 2
@@ -6644,12 +6708,15 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             or null.shape[0] != observed.shape[0]
             or null.shape[2] != n_stats
             or len(self.unit_ids) != observed.shape[0]
+            or spacing.shape != (observed.shape[0],)
         ):
             raise ValueError(
                 "observed_scores must have shape (n_units, 3), null_scores "
-                "(n_units, n_shuffles, 3) and unit_ids (n_units,); got "
-                f"{observed.shape}, {null.shape} and {np.shape(self.unit_ids)}."
+                "(n_units, n_shuffles, 3), and unit_ids and grid_spacing "
+                f"(n_units,); got {observed.shape}, {null.shape}, "
+                f"{np.shape(self.unit_ids)} and {spacing.shape}."
             )
+        object.__setattr__(self, "grid_spacing", spacing)
         object.__setattr__(self, "observed_scores", observed)
         object.__setattr__(self, "null_scores", null)
         object.__setattr__(self, "unit_ids", np.asarray(self.unit_ids))
@@ -6699,6 +6766,8 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
         with np.errstate(invalid="ignore"):
             passed = self.p_values < level
+        # A significant grid score is a grid cell only with a lattice to show.
+        passed[:, 1] &= np.isfinite(self.grid_spacing)
         return {
             name: _test_outcome(
                 passed[:, k],
@@ -6721,7 +6790,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         -------
         ndarray of str, shape (n_units,)
             ``"grid"``, ``"border"`` or ``"grid+border"`` from the grid and
-            border tests, each judged by its own p-value; ``"place"`` for a
+            border tests, each judged by its own p-value, and a grid label
+            also needs a hexagonal first ring (finite :attr:`grid_spacing`);
+            ``"place"`` for a
             unit whose spatial information is significant and that is neither
             a grid nor a border cell; ``"unclassified"`` for none;
             ``"undetermined"`` when a grid or border test applies to the
@@ -6849,8 +6920,9 @@ def spatial_cell_type_significance(
     Each unit's spike train is circularly shifted against the behavior, and
     spatial information, grid score and border score are recomputed from the
     same shifted trains. Each statistic gets its own p-value, and each label
-    is judged by its own test: a grid cell needs a significant grid score, a
-    border cell a significant border score, and a cell that passes both is
+    is judged by its own test: a grid cell needs a significant grid score and
+    a hexagonal first ring of autocorrelogram peaks, a border cell a
+    significant border score, and a cell that passes both is
     reported as ``"grid+border"``. A place cell has significant spatial
     information and is neither. Use this for a verdict; the fixed cutoffs of
     :meth:`SpatialRatesResult.label_cell_types` are a screen.
@@ -6948,10 +7020,14 @@ def spatial_cell_type_significance(
     ``"unclassified"``; the fixed-cutoff screen labeled 46% of them border
     cells. Of 12 simulated place cells on a radial-arm maze none was labeled
     a border cell (the screen labeled 6). A significant grid score says the
-    map is more hexagonal than its own shifted spike trains, not that it has
-    several fields: 2 of 30 simulated single-field place cells had
-    significant grid scores (0.92 and 1.07), so check the autocorrelogram
-    (:meth:`SpatialRateResult.grid_properties`) before reporting a grid cell.
+    map's autocorrelogram is more sixfold-symmetric than those of its own
+    shifted spike trains, not that it has a lattice of fields: 2 of 30
+    simulated single-field place cells had significant grid scores (0.92 and
+    1.07). A grid label therefore also needs the observed map's
+    autocorrelogram peaks nearest zero lag to be one hexagon's first ring
+    (``grid_spacing`` finite, as in :meth:`SpatialRateResult.grid_properties`).
+    A grid whose spacing exceeds about 0.6 of a square arena's side has no
+    ring inside the autocorrelogram and is not labeled grid.
     Scoring all three statistics for 50 units with 200 shuffles in that box
     took about 50 s on one core, against 9 s for spatial information alone.
 
@@ -7011,6 +7087,11 @@ def spatial_cell_type_significance(
         min_shift=min_shift,
         rng=rng,
     )
+    grid_spacing = np.full(len(shuffled.unit_ids), np.nan)
+    if "grid_score" not in shuffled.unavailable:
+        grid_spacing = _grid_spacings(
+            env, np.atleast_2d(_supported_rates(shuffled.reference))
+        )
     return CellTypeSignificanceResult(
         observed_scores=shuffled.observed,
         null_scores=shuffled.null.transpose(1, 0, 2),
@@ -7019,6 +7100,7 @@ def spatial_cell_type_significance(
         method=method,
         bandwidth=shuffled.bandwidth,
         boundary_source=boundary_source,
+        grid_spacing=grid_spacing,
         unavailable_metrics=shuffled.unavailable,
         inapplicable_metrics=shuffled.inapplicable,
     )
@@ -7033,6 +7115,7 @@ class _ShuffleScores(NamedTuple):
     unavailable: dict[str, str]  # why each unscored statistic has no score
     inapplicable: tuple[str, ...]  # unscored statistics that do not apply
     bandwidth: float  # resolved smoothing bandwidth
+    reference: SpatialRatesResult  # the observed rate maps
 
 
 class _ShuffleMaps(NamedTuple):
@@ -7364,4 +7447,5 @@ def _spatial_shuffle(
         unavailable=unavailable,
         inapplicable=tuple(inapplicable),
         bandwidth=maps.bandwidth,
+        reference=reference,
     )
