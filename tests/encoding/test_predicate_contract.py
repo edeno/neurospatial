@@ -1,6 +1,7 @@
 """Cell screens share defaults and boundaries; shuffle verdicts use raw arrays."""
 
 import inspect
+import warnings
 from types import MappingProxyType
 
 import numpy as np
@@ -80,10 +81,11 @@ def test_mode_keywords_raise(significance_family, significance_recording):
     f, r = significance_family, significance_recording
     predicate = getattr(f.module, _names(f)[0])
     args = f.args(r, r.trains[0])
-    threshold = "min_mvl" if f.name == "head_direction" else "min_info"
-    with pytest.raises(ValueError, match="Fix:") as exc:
-        predicate(*args, criterion="shuffle", **{threshold: 0.3})
-    assert threshold in str(exc.value)
+    if f.name == "head_direction":
+        # The information predicates' min_info applies to both criteria.
+        with pytest.raises(ValueError, match="Fix:") as exc:
+            predicate(*args, criterion="shuffle", min_mvl=0.3)
+        assert "min_mvl" in str(exc.value)
     criterion = "threshold"
     bad = {"n_shuffles": 10, "min_shift": 1, "rng": 0, "unit_id": 3}
     if f.name != "head_direction":
@@ -227,6 +229,15 @@ def test_free_and_population_shuffles_agree(
         rng=0,
         **f.defaults,
     )
+    if f.name == "head_direction":
+        beyond_bias = np.ones(len(ids), dtype=bool)
+    else:
+        # The information verdicts also need bias-corrected information.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            rates = f.compute(*f.args(r), **f.defaults)
+            debiased = rates.spatial_information() - rates.spatial_information_bias()
+        beyond_bias = debiased >= _information_cutoff(f)
     for i, uid in enumerate(ids):
         alone = f.function(
             *f.args(r, [r.trains[i]]),
@@ -248,7 +259,110 @@ def test_free_and_population_shuffles_agree(
             n_shuffles=50,
             rng=0,
             **f.defaults,
-        ) == (population[uid].p_value < 0.05)
+        ) == (population[uid].p_value < 0.05 and beyond_bias[i])
+
+
+def _information_cutoff(f):
+    """The family's default bias-corrected information cutoff (bits/spike)."""
+    constant = {
+        "place": "PLACE_SPATIAL_INFO_THRESHOLDS",
+        "view": "VIEW_THRESHOLDS",
+    }.get(f.name, "OBJECT_VECTOR_THRESHOLDS")
+    return getattr(f.module, constant)["min_info"]
+
+
+@pytest.mark.parametrize(
+    "significance_family",
+    ["place", "view", "egocentric_object_vector"],
+    indirect=True,
+)
+def test_shuffle_verdict_needs_bias_corrected_information(
+    significance_family, ou_2min_env, ou_2min, noise_trains, obj
+):
+    """Untuned units significant by chance in 2 minutes are not tuned cells.
+
+    About alpha of untuned units pass the information test by chance. Their
+    information beyond the untuned-cell bias is far below the cutoff (or
+    unknown, with fewer spikes than independent bins), so the shuffle verdict
+    refuses them, as the shuffle labels do.
+    """
+    from types import SimpleNamespace
+
+    f = significance_family
+    times, positions, headings = ou_2min
+    recording = SimpleNamespace(
+        env=ou_2min_env,
+        times=times,
+        positions=positions,
+        headings=headings,
+        objects=obj,
+        trains=noise_trains(120),
+    )
+    settings = {"boundary_source": "analysis"} if f.name == "view" else {}
+    shuffle = {"n_shuffles": 99, "rng": 0}
+    ids = np.arange(len(recording.trains))
+    tests = f.function(*f.args(recording), unit_ids=ids, **shuffle, **settings)
+    rates = f.compute(*f.args(recording), **settings)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        debiased = rates.spatial_information() - rates.spatial_information_bias()
+    chance = [uid for uid in ids if tests[uid].p_value < 0.05]
+    assert chance
+    assert not (debiased[chance] >= _information_cutoff(f)).any()
+    predicate = getattr(f.module, _names(f)[0])
+    for uid in chance:
+        arguments = f.args(recording, recording.trains[uid])
+        unknown = np.isnan(debiased[uid])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            verdict = predicate(
+                *arguments, criterion="shuffle", unit_id=uid, **shuffle, **settings
+            )
+        assert verdict is False
+        assert unknown == any(
+            "information bias is unknown" in str(w.message) for w in caught
+        )
+        # The cutoff is the only thing refusing them.
+        assert (
+            predicate(
+                *arguments,
+                criterion="shuffle",
+                unit_id=uid,
+                min_info=-np.inf,
+                **shuffle,
+                **settings,
+            )
+            is not unknown
+        )
+
+
+def test_shuffle_verdict_agrees_with_shuffle_labels(
+    ou_2min_env, ou_2min, noise_trains, strong_field_spikes
+):
+    """One place rule for one unit alone and in a population, as labels do."""
+    t, p, _ = ou_2min
+    trains = noise_trains(120)
+    ids = [1, 17, 99]  # two untuned units significant by chance, one place cell
+    population = [trains[1], trains[17], strong_field_spikes]
+    shuffle = {"n_shuffles": 99, "rng": 0}
+    labels = encoding.spatial_cell_type_significance(
+        ou_2min_env,
+        population,
+        t,
+        p,
+        unit_ids=ids,
+        boundary_source="analysis",
+        **shuffle,
+    ).summary_table()
+    assert (labels["spatial_information_p_value"] < 0.05).all()
+    verdicts = [
+        encoding.is_place_cell(
+            ou_2min_env, train, t, p, criterion="shuffle", unit_id=uid, **shuffle
+        )
+        for uid, train in zip(ids, population, strict=True)
+    ]
+    assert verdicts == [False, False, True]
+    assert verdicts == labels["passes_spatial_information"].tolist()
 
 
 def test_is_place_cell_shuffle_rejects_noise(ou_2min_env, ou_2min, noise_trains):

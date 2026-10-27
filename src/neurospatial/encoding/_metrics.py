@@ -573,9 +573,10 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
             "independent bins per spike; with fewer spikes than independent "
             "bins it breaks down, so the information an untuned cell would "
             "show is unknown and the cutoff cannot be applied.\n"
-            "Fix: record longer, use coarser bins or a larger bandwidth (fewer "
-            "independent bins), or test these units with the family's shuffle "
-            "test (*_significance).",
+            "Fix: record longer, or use coarser bins or a larger bandwidth "
+            "(fewer independent bins). The family's shuffle test "
+            "(*_significance) still gives these units a p-value, but its cell "
+            "verdict needs the same bias.",
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
@@ -598,6 +599,62 @@ def _debiased_information(
         np.asarray(_to_numpy(result.spatial_information()), dtype=np.float64)
     )
     return information - (_information_bias(result) if bias is None else bias)
+
+
+def _warn_unknown_bias(
+    significant: NDArray[np.bool_], debiased: NDArray[np.float64], *, kind: str
+) -> None:
+    """Warn about significant units whose bias-corrected information is unknown.
+
+    The shuffle verdict of an information-tuned cell type needs a significant
+    information test and bias-corrected information at or above a cutoff. A
+    unit with fewer spikes than independent bins has a NaN bias, so it is
+    never that cell type; this says so, in terms of the verdict.
+
+    Parameters
+    ----------
+    significant : ndarray of bool, shape (n_units,)
+        Whether each unit's information test passed.
+    debiased : ndarray, shape (n_units,)
+        Information minus the untuned-cell bias (bits/spike).
+    kind : str
+        Cell type of the verdict, such as ``"place"``.
+    """
+    from neurospatial._stacklevel import _external_stacklevel
+
+    unknown = significant & np.isnan(debiased)
+    if unknown.any():
+        warnings.warn(
+            f"{int(unknown.sum())} of {len(significant)} units have significant "
+            "information but fewer spikes than their rate maps have independent "
+            "bins, so their information bias is unknown and they are not called "
+            f"{kind} cells.\n"
+            f"Why: a {kind} verdict needs information beyond what an untuned "
+            "cell shows on the same map, and with fewer spikes than independent "
+            "bins that amount cannot be estimated.\n"
+            "Fix: record longer, or use coarser bins or a larger bandwidth "
+            "(fewer independent bins).",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
+def _beyond_bias(result: Any, min_info: float, *, kind: str) -> bool:
+    """Whether a unit with a significant information test is a ``kind`` cell.
+
+    The shuffle verdict of an information-tuned cell type, as the shuffle
+    labels apply it: the significant unit is that cell type when the
+    bias-corrected information of its rate map (``result``) is at or above
+    ``min_info``. An unknown bias fails, with the warning of
+    :func:`_warn_unknown_bias`.
+    """
+    with warnings.catch_warnings():
+        # An unknown bias is reported below, in terms of the verdict.
+        warnings.simplefilter("ignore", UserWarning)
+        bias = _information_bias(result)
+    debiased = _debiased_information(result, bias)
+    _warn_unknown_bias(np.array([True]), debiased, kind=kind)
+    return bool(debiased[0] >= min_info)
 
 
 def sparsity(

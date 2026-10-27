@@ -128,8 +128,13 @@ PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
 # Statistics recomputed from every shifted spike train, in result column order.
 _CELL_TYPE_STATISTICS = ("spatial_information", "grid_score", "border_score")
 PLACE_SPATIAL_INFO_THRESHOLDS = MappingProxyType({"min_info": 0.5})
+# Every place verdict and label applies the same information cutoff.
 PLACE_GRID_BORDER_THRESHOLDS = MappingProxyType(
-    {"min_spatial_info": 0.5, "min_grid_score": 0.4, "min_border_score": 0.5}
+    {
+        "min_spatial_info": PLACE_SPATIAL_INFO_THRESHOLDS["min_info"],
+        "min_grid_score": 0.4,
+        "min_border_score": 0.5,
+    }
 )
 
 
@@ -1761,9 +1766,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         and 20 minutes, and at 0.5 Hz in 20, 20, 20, 19 and 11 of 20 (30 Hz
         Ornstein-Uhlenbeck trajectory at 15 cm/s in a 100 x 100 cm arena,
         5 cm bins, diffusion KDE with a 5 cm bandwidth). Use
-        :func:`place_cell_significance` or
-        ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls
-        false positives under the circular-shift null.
+        ``is_place_cell(..., criterion="shuffle")``, or the labels of
+        :func:`spatial_cell_type_significance` for a population, for a verdict
+        that controls false positives under the circular-shift null.
 
         Parameters
         ----------
@@ -1835,8 +1840,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         There is no default criterion. ``criterion="threshold"`` thresholds
         spatial information minus the information an untuned cell shows by
-        chance (``spatial_information_bias``). ``criterion="shuffle"`` tests
-        it against circularly shifted spike trains. Use the shuffle when the
+        chance (``spatial_information_bias``). ``criterion="shuffle"``, on
+        the raw arrays, also requires spatial information to be significant
+        against circularly shifted spike trains. Use the shuffle when the
         verdict must control false positives under that null (slow), or the
         information screen for a fast check. To detect a
         field, use ``has_place_field()``; field detection also flags most noise units.
@@ -1870,9 +1876,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         common screening convention, not derived or calibrated. For
         publication, report a circular-shift test and its assumptions
         instead of a cutoff verdict.
-        For a shuffle test, call place_cell_significance(...) or
-        is_place_cell(..., criterion='shuffle') with the raw arrays; a result
-        does not keep the arrays it was computed from.
+        For a shuffle verdict, call is_place_cell(..., criterion='shuffle')
+        with the raw arrays; a result does not keep the arrays it was
+        computed from.
         """
         if str(criterion) == "shuffle":
             raise ValueError(
@@ -5536,7 +5542,7 @@ def detect_place_fields(
     plus a 5 Hz bump 40 cm wide on the track), whose field is the whole
     track. Untuned 0.5 Hz units lose their field as the map converges below
     ``min_peak_rate`` (7, 2, 0 and 0 of 20 on the track at 2, 5, 10 and
-    20 min). Use :func:`place_cell_significance` for a verdict.
+    20 min). Use ``is_place_cell(..., criterion="shuffle")`` for a verdict.
     neurocode's 1-D ``findPlaceFieldsAvg1D`` also drops fields longer than
     60% of the track (``maxSize``) [1]_; a fraction of a track has no
     counterpart in an open field, so no maximum is applied here. Filter the
@@ -5702,9 +5708,9 @@ def has_place_field(
     had a detected field in 20 of 20 units at 1, 2, 5, 10 and 20 minutes,
     and at 0.5 Hz in 20, 20, 20, 19 and 11 of 20 (30 Hz Ornstein-Uhlenbeck
     trajectory at 15 cm/s in a 100 x 100 cm arena, 5 cm bins, diffusion KDE
-    with a 5 cm bandwidth). Use :func:`place_cell_significance` or
-    ``is_place_cell(..., criterion="shuffle")`` for a verdict that controls
-    false positives under the circular-shift null.
+    with a 5 cm bandwidth). Use ``is_place_cell(..., criterion="shuffle")``,
+    or the labels of :func:`spatial_cell_type_significance` for a population,
+    for a verdict that controls false positives under the circular-shift null.
 
     Parameters
     ----------
@@ -5963,13 +5969,17 @@ def is_place_cell(
 ) -> bool:
     """Classify one neuron using an explicitly chosen criterion.
 
-    There is no default criterion. ``criterion="threshold"`` thresholds
-    spatial information minus the information an untuned cell shows by
-    chance (``spatial_information_bias``). ``criterion="shuffle"`` tests
-    it against circularly shifted spike trains. Use the shuffle when the
-    verdict must control false positives under that null (slow), or the
-    information screen for a fast check. To detect a
-    field, use ``has_place_field()``; field detection also flags most noise units.
+    There is no default criterion. Both criteria require spatial
+    information minus the information an untuned cell shows by chance
+    (``spatial_information_bias``) to reach ``min_info``.
+    ``criterion="threshold"`` applies only that cutoff.
+    ``criterion="shuffle"`` also requires spatial information to be
+    significant against circularly shifted spike trains, the rule of
+    ``passes_spatial_information`` in
+    :meth:`CellTypeSignificanceResult.summary_table`. Use the shuffle
+    when the verdict must control false positives under that null (slow), or
+    the information screen for a fast check. To detect a field, use
+    ``has_place_field()``; field detection also flags most noise units.
 
     Parameters
     ----------
@@ -5987,8 +5997,9 @@ def is_place_cell(
     criterion : {"threshold", "shuffle"}
         Screen the observed statistic or test circular-shift significance.
     min_info : float or None, default=None
-        Inclusive spatial-information cutoff for ``criterion="threshold"``
-        (bits/spike); None is 0.5 bits/spike.
+        Inclusive cutoff on bias-corrected spatial information (bits/spike),
+        for both criteria; None is 0.5 bits/spike, a common screening
+        convention, not derived or calibrated.
     alpha : float or None, default=None
         P-value level for ``criterion="shuffle"``; None resolves to 0.05.
     n_shuffles : int or None, default=None
@@ -6186,13 +6197,19 @@ def is_place_cell(
     effectively independent bins fail, with a warning. For publication,
     report a circular-shift test and its assumptions instead of a cutoff verdict.
 
-    Circular shifting costs about n_shuffles recomputes of the plural map.
-    Its null assumes stable firing statistics on the joined analyzed clock;
-    recording gaps and excluded epochs are never shift destinations.
-    Compare p_value < alpha; a significant association alone does not establish
-    cell identity. Results keep no raw arrays or recompute closures.
-    Threshold keywords belong only to the screen; shuffle keywords belong
-    only to the shuffle. Passing a keyword for the other mode raises.
+    ``criterion="shuffle"`` is True when the information test of
+    :func:`place_cell_significance` has ``p_value < alpha`` and the
+    bias-corrected information reaches ``min_info``. In 2-minute recordings,
+    untuned 0.5 Hz units passed the information test by chance (p = 0.02 and
+    0.04 against 99 shifts) with only 0.04 bits/spike beyond their bias; the
+    cutoff refuses them. A significant unit with fewer spikes than the map
+    has independent bins has an unknown bias and is not a place cell, with a
+    warning. Circular shifting costs about n_shuffles recomputes of the
+    plural map. Its null assumes stable firing statistics on the joined
+    analyzed clock; recording gaps and excluded epochs are never shift
+    destinations. Results keep no raw arrays or recompute closures.
+    Shuffle keywords belong only to the shuffle; passing one with
+    ``criterion="threshold"`` raises.
 
     See Also
     --------
@@ -6219,7 +6236,7 @@ def is_place_cell(
     check_criterion(criterion, ("threshold", "shuffle"), call="is_place_cell")
     check_mode_keywords(
         criterion,
-        threshold={"min_info": min_info},
+        threshold={},
         shuffle={
             "n_shuffles": n_shuffles,
             "min_shift": min_shift,
@@ -6257,31 +6274,40 @@ def is_place_cell(
             backend=backend,
             warn_on_drop=warn_on_drop,
         )[label]
-        return shuffle_result.p_value < level
+        if not shuffle_result.p_value < level:
+            return False
     min_info = (
         PLACE_SPATIAL_INFO_THRESHOLDS["min_info"] if min_info is None else min_info
     )
-    result = compute_spatial_rate(
-        env,
-        spike_times,
-        times,
-        positions,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        fill_value=fill_value,
-        penalty=penalty,
-        rank=rank,
-        pooled=pooled,
-        speed=speed,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=breaks,
-        spike_window=spike_window,
-        backend=backend,
-        warn_on_drop=warn_on_drop,
-    )
+    with warnings.catch_warnings():
+        if criterion == "shuffle":
+            # The shuffle's observed map is this map; its warnings were shown.
+            warnings.simplefilter("ignore")
+        result = compute_spatial_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            fill_value=fill_value,
+            penalty=penalty,
+            rank=rank,
+            pooled=pooled,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=breaks,
+            spike_window=spike_window,
+            backend=backend,
+            warn_on_drop=warn_on_drop,
+        )
+    if criterion == "shuffle":
+        from neurospatial.encoding._metrics import _beyond_bias
+
+        return _beyond_bias(result, min_info, kind="place")
     return result.is_place_cell(criterion="threshold", min_info=min_info)
 
 
@@ -6413,6 +6439,15 @@ def place_cell_significance(
     analyzed clock and never enter recording gaps.
     The result's is_significant property uses 0.05; compare p_value < alpha
     for another level.
+
+    A significant test is not a place verdict on its own: in a short
+    recording about alpha of untuned units pass it by chance, with almost no
+    information beyond what an untuned cell shows on the same map. A place
+    cell also needs bias-corrected information,
+    ``spatial_information() - spatial_information_bias()`` of
+    :func:`compute_spatial_rates` with the same settings, of at least 0.5
+    bits/spike. ``is_place_cell(..., criterion="shuffle")`` and the labels of
+    :func:`spatial_cell_type_significance` apply both.
 
     Parameters
     ----------
@@ -6890,26 +6925,13 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             passed = adjusted < level
         if correction is not None:
             self._warn_resolution_limit(adjusted, passed, level, correction)
-        unknown_bias = passed[:, 0] & np.isnan(self.spatial_information_bias)
-        if unknown_bias.any():
-            warnings.warn(
-                f"{int(unknown_bias.sum())} of {len(self)} units have significant "
-                "spatial information but fewer spikes than their rate maps have "
-                "independent bins, so their information bias is unknown and "
-                "they are not labeled place.\n"
-                "Why: a place label needs information beyond what an untuned "
-                "cell shows on the same map, and with fewer spikes than "
-                "independent bins that amount cannot be estimated.\n"
-                "Fix: record longer, or use coarser bins or a larger bandwidth "
-                "(fewer independent bins).",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
+        from neurospatial.encoding._metrics import _warn_unknown_bias
+
+        debiased = self.observed_scores[:, 0] - self.spatial_information_bias
+        _warn_unknown_bias(passed[:, 0], debiased, kind="place")
         met = np.ones_like(passed)
         # Significant information is a place cell only beyond the untuned bias.
-        met[:, 0] = _passes_information_screen(
-            self.observed_scores[:, 0] - self.spatial_information_bias, min_info
-        )
+        met[:, 0] = _passes_information_screen(debiased, min_info)
         # A significant grid score is a grid cell only with a lattice to show.
         met[:, 1] = np.isfinite(self.grid_spacing)
         undetermined = cannot_reject & met

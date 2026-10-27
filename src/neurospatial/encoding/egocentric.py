@@ -665,7 +665,8 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
         at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
         fired about 70 spikes in those 10 minutes, too few for the screen; pass
-        a narrower distance_range or wider bins, or use the shuffle test.
+        a narrower distance_range or wider bins (the shuffle verdict needs the
+        same corrected information).
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
@@ -1243,7 +1244,8 @@ class ObjectVectorRatesResult(
         bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
         at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
         fired about 70 spikes in those 10 minutes, too few for the screen; pass
-        a narrower distance_range or wider bins, or use the shuffle test.
+        a narrower distance_range or wider bins (the shuffle verdict needs the
+        same corrected information).
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
@@ -3732,7 +3734,8 @@ def is_object_vector_cell(
     criterion : {"threshold", "shuffle"}, default="threshold"
         Screen the observed statistic or test circular-shift significance.
     min_info : float or None, default=None
-        Inclusive screen cutoff; None resolves to the family threshold constant.
+        Inclusive cutoff on bias-corrected information (bits/spike), for both
+        criteria; None resolves to the family threshold constant.
     alpha : float or None, default=None
         P-value level for ``criterion="shuffle"``; None resolves to 0.05.
     n_shuffles : int or None, default=None
@@ -3773,7 +3776,8 @@ def is_object_vector_cell(
     bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
     at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
     fired about 70 spikes in those 10 minutes, too few for the screen; pass
-    a narrower distance_range or wider bins, or use the shuffle test.
+    a narrower distance_range or wider bins (the shuffle verdict needs the
+    same corrected information).
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
@@ -3781,10 +3785,14 @@ def is_object_vector_cell(
     frame (``spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
-    Compare p_value < alpha; a significant association alone does not establish
-    cell identity. Results keep no raw arrays or recompute closures.
-    Threshold keywords belong only to the screen; shuffle keywords belong
-    only to the shuffle. Passing a keyword for the other mode raises.
+    ``criterion="shuffle"`` is True when that test has ``p_value < alpha``
+    and the bias-corrected information also reaches ``min_info``: about
+    alpha of untuned units pass the test by chance, with almost no
+    information beyond what an untuned cell shows on the same map. A significant unit with fewer spikes than the map has independent
+    bins has an unknown bias and is not a object-vector cell, with a warning.
+    Results keep no raw arrays or recompute closures. Shuffle keywords
+    belong only to the shuffle; passing one with ``criterion="threshold"``
+    raises.
 
     See Also
     --------
@@ -3815,7 +3823,7 @@ def is_object_vector_cell(
     check_criterion(criterion, ("threshold", "shuffle"), call="is_object_vector_cell")
     check_mode_keywords(
         criterion,
-        threshold={"min_info": min_info},
+        threshold={},
         shuffle={
             "n_shuffles": n_shuffles,
             "min_shift": min_shift,
@@ -3853,27 +3861,36 @@ def is_object_vector_cell(
             min_occupancy=min_occupancy,
             backend=backend,
         )[label]
-        return shuffle_result.p_value < level
+        if not shuffle_result.p_value < level:
+            return False
     min_info = OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
-    result = compute_object_vector_rate(
-        env,
-        spike_times,
-        times,
-        positions,
-        object_positions,
-        distance_range=distance_range,
-        distance_bin_size=distance_bin_size,
-        direction_bin_size=direction_bin_size,
-        metric=metric,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        spike_window=spike_window,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=backend,
-    )
+    with warnings.catch_warnings():
+        if criterion == "shuffle":
+            # The shuffle's observed map is this map; its warnings were shown.
+            warnings.simplefilter("ignore")
+        result = compute_object_vector_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            object_positions,
+            distance_range=distance_range,
+            distance_bin_size=distance_bin_size,
+            direction_bin_size=direction_bin_size,
+            metric=metric,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=break_before,
+            spike_window=spike_window,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
+        )
+    if criterion == "shuffle":
+        from neurospatial.encoding._metrics import _beyond_bias
+
+        return _beyond_bias(result, min_info, kind="object-vector")
     return result.is_object_vector_cell(min_info=min_info)
 
 
@@ -4017,7 +4034,8 @@ def is_egocentric_object_vector_cell(
     criterion : {"threshold", "shuffle"}, default="threshold"
         Screen the observed statistic or test circular-shift significance.
     min_info : float or None, default=None
-        Inclusive screen cutoff; None resolves to the family threshold constant.
+        Inclusive cutoff on bias-corrected information (bits/spike), for both
+        criteria; None resolves to the family threshold constant.
     alpha : float or None, default=None
         P-value level for ``criterion="shuffle"``; None resolves to 0.05.
     n_shuffles : int or None, default=None
@@ -4058,7 +4076,8 @@ def is_egocentric_object_vector_cell(
     bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
     at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
     fired about 70 spikes in those 10 minutes, too few for the screen; pass
-    a narrower distance_range or wider bins, or use the shuffle test.
+    a narrower distance_range or wider bins (the shuffle verdict needs the
+    same corrected information).
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
@@ -4066,10 +4085,14 @@ def is_egocentric_object_vector_cell(
     frame (``spatial_information()``), the same value the screen thresholds.
     Its null assumes stable firing statistics on the joined analyzed clock;
     recording gaps and excluded epochs are never shift destinations.
-    Compare p_value < alpha; a significant association alone does not establish
-    cell identity. Results keep no raw arrays or recompute closures.
-    Threshold keywords belong only to the screen; shuffle keywords belong
-    only to the shuffle. Passing a keyword for the other mode raises.
+    ``criterion="shuffle"`` is True when that test has ``p_value < alpha``
+    and the bias-corrected information also reaches ``min_info``: about
+    alpha of untuned units pass the test by chance, with almost no
+    information beyond what an untuned cell shows on the same map. A significant unit with fewer spikes than the map has independent
+    bins has an unknown bias and is not a object-vector cell, with a warning.
+    Results keep no raw arrays or recompute closures. Shuffle keywords
+    belong only to the shuffle; passing one with ``criterion="threshold"``
+    raises.
 
     See Also
     --------
@@ -4104,7 +4127,7 @@ def is_egocentric_object_vector_cell(
     )
     check_mode_keywords(
         criterion,
-        threshold={"min_info": min_info},
+        threshold={},
         shuffle={
             "n_shuffles": n_shuffles,
             "min_shift": min_shift,
@@ -4143,28 +4166,37 @@ def is_egocentric_object_vector_cell(
             min_occupancy=min_occupancy,
             backend=backend,
         )[label]
-        return shuffle_result.p_value < level
+        if not shuffle_result.p_value < level:
+            return False
     min_info = OBJECT_VECTOR_THRESHOLDS["min_info"] if min_info is None else min_info
-    result = compute_egocentric_rate(
-        env,
-        spike_times,
-        times,
-        positions,
-        headings,
-        object_positions,
-        distance_range=distance_range,
-        distance_bin_size=distance_bin_size,
-        direction_bin_size=direction_bin_size,
-        metric=metric,
-        max_gap=max_gap,
-        epochs=epochs,
-        break_before=break_before,
-        spike_window=spike_window,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=backend,
-    )
+    with warnings.catch_warnings():
+        if criterion == "shuffle":
+            # The shuffle's observed map is this map; its warnings were shown.
+            warnings.simplefilter("ignore")
+        result = compute_egocentric_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            object_positions,
+            distance_range=distance_range,
+            distance_bin_size=distance_bin_size,
+            direction_bin_size=direction_bin_size,
+            metric=metric,
+            max_gap=max_gap,
+            epochs=epochs,
+            break_before=break_before,
+            spike_window=spike_window,
+            method=method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=backend,
+        )
+    if criterion == "shuffle":
+        from neurospatial.encoding._metrics import _beyond_bias
+
+        return _beyond_bias(result, min_info, kind="egocentric object-vector")
     return result.is_object_vector_cell(min_info=min_info)
 
 
@@ -4522,6 +4554,12 @@ def object_vector_cell_significance(
     This costs about n_shuffles population-map recomputes. The result's
     is_significant property uses 0.05; compare p_value < alpha for another level.
 
+    A significant test is not an object-vector verdict on its own: an
+    object-vector cell also needs bias-corrected information
+    (``spatial_information() - spatial_information_bias()`` of the rate
+    map with the same settings) at or above the screen's cutoff.
+    ``is_object_vector_cell(..., criterion="shuffle")`` applies both.
+
     Parameters
     ----------
     env : Environment or None
@@ -4747,6 +4785,12 @@ def egocentric_object_vector_cell_significance(
     counts on the compressed analyzed clock and never enter recording gaps.
     This costs about n_shuffles population-map recomputes. The result's
     is_significant property uses 0.05; compare p_value < alpha for another level.
+
+    A significant test is not an object-vector verdict on its own: an
+    object-vector cell also needs bias-corrected information
+    (``spatial_information() - spatial_information_bias()`` of the rate
+    map with the same settings) at or above the screen's cutoff.
+    ``is_egocentric_object_vector_cell(..., criterion="shuffle")`` applies both.
 
     Parameters
     ----------

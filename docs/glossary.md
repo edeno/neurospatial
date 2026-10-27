@@ -136,7 +136,9 @@ assumes stable firing statistics over analyzed time. Upper-tail p-values use
 The five `encoding.*_cell_significance` functions return label-keyed results;
 free predicates use `criterion="shuffle"`. A threshold screen or detected
 place field is separate from a calibrated verdict, and a significant
-association alone does not establish cell identity.
+association alone does not establish cell identity: the place, view and
+object-vector verdicts also need bias-corrected information at or above the
+screen's cutoff.
 
 ### Spike-triggered
 
