@@ -44,7 +44,6 @@ Examples
 from __future__ import annotations
 
 import warnings
-from collections import deque
 from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -71,6 +70,7 @@ from neurospatial.encoding._base import (
     SingleUnitRateMixin,
     _to_numpy,
 )
+from neurospatial.encoding._field_metrics import _seed_component
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding._provenance import spikes_outside_intervals
 from neurospatial.encoding._significance import (
@@ -5587,11 +5587,11 @@ def detect_place_fields(
 
         # NaN compares False, so assigned and missing bins are excluded.
         floor = peak_rate * threshold
-        field_bins = _extract_connected_component(peak_idx, remaining >= floor, env)
+        field_bins = _seed_component(peak_idx, remaining >= floor, env)
         if detect_subfields:
             # FMAToolbox MapStats: the same search on the map minus the floor.
             core_level = floor + (peak_rate - floor) * threshold
-            core = _extract_connected_component(peak_idx, remaining >= core_level, env)
+            core = _seed_component(peak_idx, remaining >= core_level, env)
             if measures[core].sum() < measures[field_bins].sum() / 2:
                 field_bins = core
         remaining[field_bins] = np.nan
@@ -6277,62 +6277,8 @@ def _smoothed_bin_measure(
     impulse[peak_idx] = 1.0
     spread = np.asarray(env.diffuse(impulse, bandwidth=bandwidth, mode="density"))
     above = observed & (spread >= threshold * spread.max())
-    region = _extract_connected_component(peak_idx, above, env)
+    region = _seed_component(peak_idx, above, env)
     return float(measures[region].sum())
-
-
-def _extract_connected_component_graph(
-    seed_idx: int,
-    mask: NDArray[np.bool_],
-    env: Environment,
-) -> NDArray[np.int64]:
-    """Extract the seed component using the environment's connectivity graph.
-
-    Breadth-first search follows only published edges between candidate bins,
-    preserving diagonal connections and respecting physical walls.
-
-    Parameters
-    ----------
-    seed_idx : int
-        Starting bin index.
-    mask : array, shape (n_bins,)
-        Boolean mask of candidate bins.
-    env : Environment
-        Spatial environment for connectivity.
-
-    Returns
-    -------
-    component : array
-        Bin indices in connected component (sorted).
-    """
-    # Flood fill using graph connectivity (BFS)
-    component_set = {seed_idx}
-    frontier = deque([seed_idx])
-
-    while frontier:
-        current = frontier.popleft()
-        # Get neighbors from graph
-        neighbors = list(env.connectivity.neighbors(current))
-        for neighbor in neighbors:
-            if mask[neighbor] and neighbor not in component_set:
-                component_set.add(neighbor)
-                frontier.append(neighbor)
-
-    return np.array(sorted(component_set), dtype=np.int64)
-
-
-def _extract_connected_component(
-    seed_idx: int,
-    mask: NDArray[np.bool_],
-    env: Environment,
-) -> NDArray[np.int64]:
-    """Return sorted candidate bins connected to the seed by published edges.
-
-    Grid geometry does not establish connectivity: physical walls can remove
-    lattice edges, while subsets and restored grids can retain diagonal edges.
-    The environment graph is authoritative for every binning family.
-    """
-    return _extract_connected_component_graph(seed_idx, mask, env)
 
 
 def place_cell_significance(

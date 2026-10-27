@@ -17,10 +17,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.sparse import coo_array
-from scipy.sparse.csgraph import connected_components
 
 from neurospatial._exceptions import RegionNotFoundError
+from neurospatial.encoding._field_metrics import _component_labels
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -505,13 +504,7 @@ def _border_fields(
         return []
     above = np.zeros(env.n_bins, dtype=bool)
     above[finite] = firing_rate[finite] >= threshold * peak
-    pairs = env.binning.connections.pairs
-    linked = pairs[above[pairs[:, 0]] & above[pairs[:, 1]]]
-    graph = coo_array(
-        (np.ones(len(linked)), (linked[:, 0], linked[:, 1])),
-        shape=(env.n_bins, env.n_bins),
-    )
-    _, labels = connected_components(graph, directed=False)
+    labels = _component_labels(env, above)
     bins = np.flatnonzero(above)
     groups, group = np.unique(labels[bins], return_inverse=True)
     areas = np.bincount(group, weights=env.bin_sizes[bins], minlength=len(groups))

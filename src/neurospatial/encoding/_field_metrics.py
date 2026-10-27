@@ -107,6 +107,69 @@ def _relative_measures(measures: NDArray[np.float64]) -> NDArray[np.float64]:
     return relative
 
 
+def _component_labels(env: Environment, mask: NDArray[np.bool_]) -> NDArray[np.intp]:
+    """Connected-component label of every bin, joining masked bins by open pairs.
+
+    Two bins in ``mask`` share a label when a path of open neighbor pairs
+    (``env.binning.connections.pairs``, the edges of ``env.connectivity``)
+    joins them through bins in ``mask``. Walls close pairs, so they separate
+    components; a bin outside ``mask`` is a component of its own.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose neighbor pairs connect the bins.
+    mask : ndarray of bool, shape (n_bins,)
+        Bins that may join a component.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_bins,)
+        Component label of each bin.
+    """
+    from scipy.sparse import coo_array
+    from scipy.sparse.csgraph import connected_components
+
+    pairs = env.binning.connections.pairs
+    linked = pairs[mask[pairs[:, 0]] & mask[pairs[:, 1]]]
+    graph = coo_array(
+        (np.ones(len(linked)), (linked[:, 0], linked[:, 1])),
+        shape=(env.n_bins, env.n_bins),
+    )
+    labels: NDArray[np.intp] = connected_components(graph, directed=False)[1]
+    return labels
+
+
+def _seed_component(
+    seed: int, mask: NDArray[np.bool_], env: Environment
+) -> NDArray[np.int64]:
+    """Sorted bins of ``mask`` connected to ``seed`` by open neighbor pairs.
+
+    The seed is always in its component, even outside ``mask``. Grid geometry
+    does not establish connectivity: walls close lattice pairs, and subsets
+    and restored grids keep diagonal ones, so the environment's pairs are
+    authoritative for every binning family.
+
+    Parameters
+    ----------
+    seed : int
+        Starting bin index.
+    mask : ndarray of bool, shape (n_bins,)
+        Candidate bins.
+    env : Environment
+        Environment whose neighbor pairs connect the bins.
+
+    Returns
+    -------
+    ndarray of int64, shape (n_component,)
+        Bin indices of the component, in increasing order.
+    """
+    candidates = mask.copy()
+    candidates[seed] = True
+    labels = _component_labels(env, candidates)
+    return np.flatnonzero(candidates & (labels == labels[seed])).astype(np.int64)
+
+
 def rate_map_centroid(
     env: Environment,
     firing_rate: NDArray[np.float64],
