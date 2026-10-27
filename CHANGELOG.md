@@ -39,6 +39,10 @@ Fixed:
   `match_by` key and a NaN or negative `max_duration` (NaN dropped every
   interval). `intervals_to_events(which="both")` lists a stop before a start
   at the same time, and an empty input gives a float `timestamp` column.
+- `add_positions` refuses positions with more than 3 columns (the 4th and
+  later were dropped) or none, repeated trajectory times (which of two
+  positions at one instant won depended on sort order; `align_continuous_to_events`
+  already refused them) and non-numeric timestamps, which it parsed.
 - `event_count_in_window` and `event_indicator` refuse a NaN or infinite
   window bound (a NaN start gave negative counts) and 2-D time arrays.
   `time_to_nearest_event` refuses `max_time=nan`, which returned all NaN.

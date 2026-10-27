@@ -1,13 +1,7 @@
 """
-Event detection functions for neurospatial.
+Spatial annotation of event tables.
 
-This module provides functions to detect events from trajectories and signals:
-- extract_region_crossing_events: Detect region entry/exit events
-- extract_threshold_crossing_events: Detect signal threshold crossings
-- extract_movement_onset_events: Detect movement onset from position
-
-Spatial utilities:
-- add_positions: Add x, y columns to events by interpolation
+- add_positions: Add x, y (and z) columns to events by interpolation
 """
 
 from __future__ import annotations
@@ -26,6 +20,7 @@ from neurospatial._intervals import (
     run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
+from neurospatial.events._core import _validate_events_dataframe
 
 
 def add_positions(
@@ -50,7 +45,7 @@ def add_positions(
     events : pd.DataFrame
         Events DataFrame with a timestamp column.
     times : NDArray[np.float64], shape (n_samples,), keyword-only
-        Timestamps corresponding to each position sample.
+        Timestamps corresponding to each position sample, in seconds.
     positions : NDArray[np.float64], shape (n_samples, n_dims), keyword-only
         Position trajectory. Shape is (n_samples, 1) for 1D, (n_samples, 2)
         for 2D, or (n_samples, 3) for 3D trajectories. ``times`` and
@@ -88,18 +83,19 @@ def add_positions(
     TypeError
         If events is not a pandas DataFrame.
     ValueError
-        If timestamp_column is not in events.
+        If timestamp_column is not in events or is not numeric.
+        If times is not 1-D, or positions has more than 2 dimensions or more
+        than 3 columns.
         If times and positions have different lengths.
         If the trajectory has fewer than 2 samples.
-        If all trajectory ``times`` are identical.
-        If trajectory ``times`` contain non-finite values.
+        If trajectory ``times`` repeat a value or contain non-finite values.
         If ``break_before`` is not a Boolean array with one entry per sample.
 
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
     not crossing a ``break_before``) is analyzed as a separate recording;
-    no velocity or heading spans a pause.
+    no position is interpolated across a pause.
 
     Missing positions (NaN rows) are skipped as if their rows were deleted,
     so an event in a bridged gap is interpolated between the valid samples
@@ -140,22 +136,9 @@ def add_positions(
     array([[3., 3.],
            [7., 7.]])
     """
-    # Validate events is a DataFrame
-    if not isinstance(events, pd.DataFrame):
-        raise TypeError(
-            f"events must be a pandas DataFrame, got {type(events).__name__}.\n"
-            "  WHY: This function operates on DataFrames to preserve metadata.\n"
-            "  Fix: Convert your data to a DataFrame before calling."
-        )
-
-    # Validate timestamp column exists
-    if timestamp_column not in events.columns:
-        raise ValueError(
-            f"timestamp column '{timestamp_column}' not found in events.\n"
-            f"  WHY: Events must have a timestamp column for interpolation.\n"
-            f"  Fix: Use timestamp_column parameter to specify the correct name.\n"
-            f"  Available columns: {list(events.columns)}"
-        )
+    _validate_events_dataframe(
+        events, timestamp_column=timestamp_column, context="add_positions"
+    )
 
     # Convert to numpy arrays
     positions = np.asarray(positions, dtype=np.float64)
@@ -192,6 +175,14 @@ def add_positions(
         positions = positions.reshape(-1, 1)
 
     n_dims = positions.shape[1]
+    if not 1 <= n_dims <= 3:
+        raise ValueError(
+            f"positions has {n_dims} columns; add_positions writes x, y and z, "
+            "so it takes 1 to 3 position dimensions.\n"
+            "  Fix: pass positions of shape (n_samples, 1), (n_samples, 2) or "
+            "(n_samples, 3); interpolate other per-sample signals with "
+            "align_continuous_to_events."
+        )
 
     # Handle empty events FIRST: with no events to position there is nothing to
     # interpolate, so we return early without validating the trajectory. This
@@ -226,21 +217,21 @@ def add_positions(
             "would return NaN for every event position.\n"
             "  Fix: pass a trajectory with >= 2 samples spanning the event times."
         )
-    if np.ptp(times) == 0:
+    # Sort trajectory by time if needed
+    sort_idx = np.argsort(times, kind="stable")
+    sorted_times = times[sort_idx]
+    repeated = np.flatnonzero(np.diff(sorted_times) == 0)
+    if repeated.size:
         raise ValueError(
-            "add_positions trajectory times are all identical "
-            f"(every sample at t={times[0]:g}).\n"
-            "  WHY: interpolation needs a non-zero time span; duplicate sample "
-            "times leave the interpolant undefined (NaN/Inf positions).\n"
-            "  Fix: pass a trajectory whose timestamps vary."
+            f"add_positions trajectory has {repeated.size} repeated sample "
+            f"time(s), first at t={sorted_times[repeated[0]]:g} s.\n"
+            "  WHY: two positions at one instant leave the interpolated position "
+            "undefined; which one wins would depend on sort order.\n"
+            "  Fix: drop or average duplicate samples first, e.g. keep the first "
+            "with np.unique(times, return_index=True)."
         )
 
-    # Get event timestamps
-    event_times = events[timestamp_column].values.astype(np.float64)
-
-    # Sort trajectory by time if needed
-    sort_idx = np.argsort(times)
-    sorted_times = times[sort_idx]
+    event_times = events[timestamp_column].to_numpy(dtype=np.float64)
     sorted_positions = positions[sort_idx]
     sorted_breaks = None
     if breaks is not None:
