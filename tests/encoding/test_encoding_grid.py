@@ -288,7 +288,7 @@ class TestFFTAutocorrelationNeedsRectangularCells:
 
         # label_cell_types agrees with the table and says why.
         population = compute_spatial_rates(env, [spike_times], times, positions)
-        with pytest.warns(UserWarning, match="grid score is unavailable") as caught:
+        with pytest.warns(UserWarning, match="grid_score cannot be computed") as caught:
             labels = population.label_cell_types(boundary_source="analysis")
         assert "Hexagonal" in str(caught[0].message)
         np.testing.assert_array_equal(labels, ["undetermined"])

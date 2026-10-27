@@ -33,6 +33,9 @@ TABLE_COLUMNS = {
         "peak_x",
         "peak_y",
         "n_spikes_outside_intervals",
+        "passes_spatial_information",
+        "passes_grid_score",
+        "passes_border_score",
         "cell_type",
     ],
     "view": [

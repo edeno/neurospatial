@@ -157,7 +157,7 @@ def test_place_predicates_forward_time_windows(continuous_recording, monkeypatch
         epochs=[(0, 100)],
         spike_window=(0, 1200),
         max_gap=1.0,
-        **({"criterion": "spatial_info"} if name == "is_place_cell" else {}),
+        **({"criterion": "threshold"} if name == "is_place_cell" else {}),
     )
     kwargs, result = seen[0]
     assert kwargs["epochs"] == [(0, 100)]

@@ -226,7 +226,7 @@ result = compute_spatial_rate(
 )
 
 # Fast screen; field detection and cell classification are separate questions.
-print("Place candidate:", result.is_place_cell(criterion="spatial_info"))
+print("Place candidate:", result.is_place_cell(criterion="threshold"))
 
 # 6. Plot.
 fig, ax = plt.subplots()

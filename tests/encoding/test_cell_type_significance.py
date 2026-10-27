@@ -51,6 +51,56 @@ def test_shuffles_reuse_one_dense_eigensolve(monkeypatch, ou_2min, strong_field_
     assert len(dense_solves) == 1
 
 
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {},
+        {"method": "binned", "min_speed": 2.0},
+        {
+            "method": "gaussian_kde",
+            "epochs": [[0, 25], [30, 60]],
+            "min_occupancy": 0.2,
+            "fill_value": 0.0,
+        },
+    ],
+)
+def test_null_maps_match_rate_maps_of_shifted_trains(
+    significance_recording, monkeypatch, settings
+):
+    """Reusing the trajectory binning gives the maps a full recompute gives."""
+    from neurospatial.encoding import spatial
+
+    r = significance_recording
+    shifted = []
+    score = spatial._spatial_scores
+
+    def capture(*args, **kwargs):
+        shifted.append([train.copy() for train in args[1]])
+        return score(*args, **kwargs)
+
+    monkeypatch.setattr(spatial, "_spatial_scores", capture)
+    result = spatial.place_cell_significance(
+        r.env,
+        r.trains,
+        r.times,
+        r.positions,
+        n_shuffles=3,
+        min_shift=5,
+        rng=0,
+        **settings,
+    )
+    assert len(shifted) == 4
+    for k, trains in enumerate(shifted):
+        expected = spatial.compute_spatial_rates(
+            r.env, trains, r.times, r.positions, **settings
+        ).spatial_information()
+        got = [
+            res.observed_score if k == 0 else res.null_scores[k - 1]
+            for res in result.values()
+        ]
+        np.testing.assert_array_equal(got, expected)
+
+
 def test_threshold_flags_noise_as_object_vector_cell(
     ou_env, ou_10min, noise_trains, obj
 ):
@@ -399,13 +449,13 @@ def test_inferred_speed_gate_preserves_retained_null_spikes(
     r.positions = np.c_[10 + np.maximum(r.times - 20, 0), np.full(len(r.times), 50.0)]
     trains = [np.arange(21.0, 59.5, 0.4)]
     recorded = []
-    compute = spatial.compute_spatial_rates
+    compute = spatial._spatial_scores
 
     def capture(*args, **kwargs):
         recorded.append([train.copy() for train in args[1]])
         return compute(*args, **kwargs)
 
-    monkeypatch.setattr(spatial, "compute_spatial_rates", capture)
+    monkeypatch.setattr(spatial, "_spatial_scores", capture)
     implicit = spatial.place_cell_significance(
         r.env,
         trains,

@@ -145,27 +145,36 @@ def to_shuffle_results(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    result = {}
-    for i, label in enumerate(unit_ids):
-        scores = null[:, i, 0].copy()
-        finite = scores[np.isfinite(scores)]
-        std = float(np.std(finite)) if finite.size else float("nan")
-        obs = float(observed[i, 0])
-        z = (
-            (obs - float(np.mean(finite))) / std
-            if finite.size and std > 0
-            else float("nan")
+    result = {
+        plain_value(label): shuffle_test_result(
+            float(observed[i, 0]), null[:, i, 0], float(p[i, 0])
         )
-        result[plain_value(label)] = ShuffleTestResult(
-            observed_score=obs,
-            null_scores=scores,
-            p_value=float(p[i, 0]),
-            z_score=z,
-            shuffle_type="circular_time_shift",
-            n_shuffles=len(scores),
-        )
+        for i, label in enumerate(unit_ids)
+    }
     assert len(result) == len(unit_ids)
     return result
+
+
+def shuffle_test_result(
+    observed: float, null_scores: NDArray[np.float64], p_value: float
+) -> ShuffleTestResult:
+    """One unit's circular-shift test, with a z-score over finite null scores."""
+    scores = np.array(null_scores, dtype=np.float64, copy=True)
+    finite = scores[np.isfinite(scores)]
+    std = float(np.std(finite)) if finite.size else float("nan")
+    z = (
+        (observed - float(np.mean(finite))) / std
+        if finite.size and std > 0
+        else float("nan")
+    )
+    return ShuffleTestResult(
+        observed_score=observed,
+        null_scores=scores,
+        p_value=p_value,
+        z_score=z,
+        shuffle_type="circular_time_shift",
+        n_shuffles=len(scores),
+    )
 
 
 def check_criterion(criterion: str, allowed: tuple[str, ...], *, call: str) -> None:
@@ -196,11 +205,7 @@ def check_mode_keywords(
     offending = {name: value for name, value in wrong.items() if value is not None}
     if offending:
         values = ", ".join(f"{name}={value!r}" for name, value in offending.items())
-        alternate = (
-            "shuffle"
-            if criterion != "shuffle"
-            else ("spatial_info" if call.endswith("is_place_cell") else "threshold")
-        )
+        alternate = "shuffle" if criterion != "shuffle" else "threshold"
         raise ValueError(
             _format_error(
                 f"{call}(criterion={criterion!r}) got {values}, which apply only with criterion={alternate!r}.",

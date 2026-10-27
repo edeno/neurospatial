@@ -270,7 +270,7 @@ PREDICATES = {
         "spatial",
         "spatial",
         "compute_spatial_rate",
-        {"criterion": "spatial_info"},
+        {"criterion": "threshold"},
     ),
     "is_head_direction_cell": (
         "directional",

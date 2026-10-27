@@ -434,13 +434,17 @@ score = border_score(
 - **-1**: firing only away from the walls.
 - **0.5 on a square for a uniform map**: one field covers every wall and its
   mean distance is a third of the half side. The usual 0.5 cutoff therefore
-  does not reject untuned cells by itself; `label_cell_types` also requires
-  spatial information, and a shuffle test gives a verdict.
+  does not reject untuned cells: in a simulated 20-minute session in a 100 cm
+  box, 46% of untuned units reached it, and on a radial-arm maze 6 of 12 arm
+  place cells did.
 
-The 0.5 cutoff was chosen for rectangular boxes. On other shapes the same field
-scores differently: a circular arena is one wall, so a field along a quarter
-of it covers 0.25 of its wall and scores lower than along one side of a square.
-Calibrate a cutoff for other shapes, for example against shuffled spike trains.
+The 0.5 cutoff is a convention from rectangular boxes. On other shapes the same
+field scores differently: a circular arena is one wall, so a field along a
+quarter of it covers 0.25 of its wall and scores lower than along one side of a
+square. `label_cell_types` judges each label by its own cutoff and is a screen;
+for a verdict, `spatial_cell_type_significance` compares each unit's border
+score (and its spatial information and grid score) with the scores of its own
+circularly shifted spike trains, which adapts to the arena's shape.
 
 **Differences from BNT and opexebo** on rectangular boxes: distances run from
 each bin center to the wall (a bin against the wall is half a bin away, where
@@ -715,8 +719,8 @@ hexagon's first ring, and leaves them NaN otherwise. Inspect the rate map,
 autocorrelogram and occupancy together. A score of 0.4 is a common screening
 convention, not a significance test: on circularly time-shifted spike trains of
 simulated grid, place and untuned cells, 1-8% of the shuffled maps reached it.
-To call a grid cell, compare its score with the scores of its own spike train
-circularly shifted in time. On layouts without a rectangular grid (hexagonal bins,
+`spatial_cell_type_significance` tests each unit's grid score against its own
+spike train circularly shifted in time. On layouts without a rectangular grid (hexagonal bins,
 tracks, meshes) there is no grid score: `summary_table()` records it in
 `attrs["unavailable_metrics"]`. `spatial_autocorrelation_radial` from
 `neurospatial.encoding.grid` gives a distance-correlation profile there, but a
@@ -978,11 +982,21 @@ dispersion), which keeps its false-positive rate near `alpha` for untuned
 cells under uneven heading sampling, including bursting cells.
 
 `has_place_field()` preserves field detection. `is_place_cell()` requires
-`criterion="spatial_info"` (screen) or `"shuffle"` (circular-shift verdict).
+`criterion="threshold"` (screen) or `"shuffle"` (circular-shift verdict).
 The other four cell predicates default to `criterion="threshold"` and allow
 opt-in `"shuffle"`. Result methods and batch `classify()` offer threshold
 screens; results keep no raw input arrays. Threshold comparisons are inclusive;
 shuffle and tuning-test p-values must be strictly below `alpha`.
+
+For grid and border cells there are no predicates:
+`spatial_cell_type_significance(env, spike_times, times, positions)` shifts
+each unit's spikes once per shuffle and recomputes spatial information, grid
+score and border score from the same shifted trains. Its `summary_table()`
+gives each statistic's observed score, p-value and null percentile, and a
+`cell_type` label in which each type is judged by its own test (a unit that
+passes the grid and border tests is `"grid+border"`). Grid and border do not
+apply on a 1-D track, and scores that cannot be computed (no measured walls
+for the physical border score) have NaN p-values with the reason recorded.
 
 For publication, report a shuffle test through the raw-array predicate or the
 matching `*_cell_significance` function, together with its estimator, windows,
@@ -1038,7 +1052,7 @@ print(f"Sparsity: {sparse:.3f}")
 
 # 5. Explicit fast screen (biased at low counts)
 from neurospatial.encoding import is_place_cell
-candidate = is_place_cell(env, spike_times, times, positions, criterion="spatial_info")
+candidate = is_place_cell(env, spike_times, times, positions, criterion="threshold")
 print(f"Place candidate: {candidate}")
 # For publication: criterion="shuffle" on these raw arrays.
 ```

@@ -123,6 +123,7 @@ from neurospatial.encoding.population import (
 
 # Spatial rate (place/grid/border cells)
 from neurospatial.encoding.spatial import (
+    CellTypeSignificanceResult,
     DirectionalPlaceFields,
     PlaceFieldsResult,
     SpatialRateResult,
@@ -134,6 +135,7 @@ from neurospatial.encoding.spatial import (
     has_place_field,
     is_place_cell,
     place_cell_significance,
+    spatial_cell_type_significance,
 )
 from neurospatial.encoding.spike_trains import SpikeTrains
 
@@ -155,6 +157,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     "spatial_view_cell_significance",
     "head_direction_cell_significance",
     "place_cell_significance",
+    "spatial_cell_type_significance",
+    "CellTypeSignificanceResult",
     # Spike-time normalization
     # Ragged-spike-train container
     "SpikeTrains",
