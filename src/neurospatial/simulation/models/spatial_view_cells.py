@@ -288,14 +288,13 @@ class SpatialViewCellModel:
             )
             raise ValueError(msg)
 
-        # Validate gaze_model
-        valid_gaze_models = ("fixed_distance", "ray_cast")
-        if gaze_model not in valid_gaze_models:
-            msg = f"gaze_model must be one of {valid_gaze_models}, got '{gaze_model}'"
-            raise ValueError(msg)
-        # The view analysis's own rule for the gaze distance and its default.
-        from neurospatial.encoding.view import _resolve_view_distance
+        # The view analysis's own gaze models, gaze-distance rule and default.
+        from neurospatial.encoding.view import (
+            _resolve_view_distance,
+            _validate_gaze_model,
+        )
 
+        _validate_gaze_model(gaze_model)
         view_distance = _resolve_view_distance(
             env, gaze_model, view_distance, context="SpatialViewCellModel()"
         )
