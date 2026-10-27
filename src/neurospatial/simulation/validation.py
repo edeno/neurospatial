@@ -189,8 +189,13 @@ def validate_simulation(
       regular grid) - accounts for discretization error
     - Correlation: 0.5
 
-    These thresholds are heuristic recovery criteria, not calibrated confidence
-    bounds. Missing metrics remain NaN and prevent an overall pass; a partial
+    These thresholds are conventions, not calibrated confidence bounds. In
+    simulations of ``open_field_session(duration=180)`` with default place
+    cells (5 seeds, 16 cells each), correctly specified cells had a median
+    center error of 6 cm (95th percentile 16 cm), so most exceeded the 4 cm
+    default, and moving the ground-truth center by one field width still left
+    93% of correlations above 0.5. Choose both thresholds for your session's
+    field size and duration, for example from such simulations. Missing metrics remain NaN and prevent an overall pass; a partial
     report is not evidence that every selected unit was recovered. Inspect
     ``unit_status``, ``skip_reasons``, and ``spike_counts`` to distinguish failed
     recovery from units that could not be evaluated.
@@ -218,7 +223,7 @@ def validate_simulation(
         max_center_error = 2.0 * env.bin_spacing
 
     if min_correlation is None:
-        min_correlation = 0.5  # Reasonable threshold for noisy place fields
+        min_correlation = 0.5  # a convention; see Notes
 
     # Keep unavailable metrics missing, with diagnostics aligned to unit labels.
     selected_unit_ids = session.unit_ids[cell_indices].copy()
