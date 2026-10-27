@@ -219,6 +219,46 @@ def outline_declared(arena: Arena) -> bool:
     return arena.outline is not None
 
 
+def outline_domains(
+    arena: Arena,
+) -> dict[BoundaryKind | None, Polygon | MultiPolygon] | None:
+    """The polygonal domain of each outline kind in ``arena``, or None.
+
+    A combined arena whose components have different outline kinds reports
+    None as its ``outline``; this says where each kind applies, so two joins
+    of the same pieces with swapped kinds can be told apart.
+
+    Returns
+    -------
+    dict or None
+        The union of the domains of the components with each outline kind
+        (None for an undeclared outline), in the arena's coordinates. None
+        when a component has no polygonal domain.
+    """
+    if isinstance(arena, _CombinedArena):
+        parts: dict[BoundaryKind | None, list[Polygon | MultiPolygon]] = {}
+        for child in arena.children:
+            child_parts = outline_domains(child)
+            if child_parts is None:
+                return None
+            for kind, domain in child_parts.items():
+                parts.setdefault(kind, []).append(domain)
+        return {
+            kind: cast("Polygon | MultiPolygon", shapely.union_all(domains))
+            for kind, domains in parts.items()
+        }
+    if isinstance(arena, _TransformedArena):
+        base = outline_domains(arena.base)
+        if base is None:
+            return None
+        return {
+            kind: cast("Polygon | MultiPolygon", mapped_geometry(domain, arena.forward))
+            for kind, domain in base.items()
+        }
+    domain = arena.polygonal_domain()
+    return None if domain is None else {arena.outline: domain}
+
+
 def _query(
     positions: Any, n_dims: int
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:

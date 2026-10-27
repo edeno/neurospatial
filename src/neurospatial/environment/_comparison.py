@@ -30,6 +30,7 @@ from neurospatial.geometry import (
     encode,
     materialize_cells,
 )
+from neurospatial.geometry._arena import outline_domains
 from neurospatial.geometry._codecs import same_encoded_arena
 
 if TYPE_CHECKING:
@@ -723,10 +724,23 @@ def _same_arena(first: Arena, second: Arena) -> bool:
         return False
     first_domain, second_domain = first.polygonal_domain(), second.polygonal_domain()
     if first_domain is not None or second_domain is not None:
+        # A combined arena's outline is None when its components differ, so
+        # compare where each outline kind applies.
+        first_outlines, second_outlines = (
+            outline_domains(first),
+            outline_domains(second),
+        )
         return (
             first_domain is not None
             and second_domain is not None
             and first_domain.equals(second_domain)
+            and first_outlines is not None
+            and second_outlines is not None
+            and first_outlines.keys() == second_outlines.keys()
+            and all(
+                domain.equals(second_outlines[kind])
+                for kind, domain in first_outlines.items()
+            )
             and set(first.wall_kinds) == set(second.wall_kinds)
             and all(
                 _walls_of(first, kind).equals(_walls_of(second, kind))
