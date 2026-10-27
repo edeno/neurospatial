@@ -336,3 +336,26 @@ def test_max_gap_none_preserves_requested_window(pause_track):
     )
     assert times.size == 10
     assert times[0] == 99.5
+
+
+def test_auto_laps_with_missing_template_rows_equal_deleted_rows():
+    """NaN rows in the first 10% change neither the template nor the search.
+
+    The automatic template is the first 10% of the located samples, and the
+    search begins after it, exactly as when the missing rows are deleted.
+    """
+    from neurospatial import Environment
+
+    theta = np.linspace(0, 20 * np.pi, 1801)
+    positions = np.column_stack([50 + 30 * np.cos(theta), 50 + 30 * np.sin(theta)])
+    times = np.linspace(0, 60, 1801)
+    env = Environment.from_samples(positions, bin_size=3.0)
+    missing = np.zeros(times.size, dtype=bool)
+    missing[50:70] = True  # 0.67 s of lost tracking, bridged by max_gap=1
+    missing[150:170] = True
+    positions[missing] = np.nan
+    position_bins = env.bin_at(positions)
+    kept = ~missing
+    expected = detect_laps(position_bins[kept], times[kept], env, method="auto")
+    assert expected
+    assert detect_laps(position_bins, times, env, method="auto") == expected

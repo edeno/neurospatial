@@ -1279,7 +1279,8 @@ def detect_laps(
 
     Region entries are paired within each recording. Reference and auto
     searches stay within it. The auto template still uses the first 10%
-    of the whole input, before any recording splits.
+    of the whole input, before any recording splits; samples outside the
+    environment are left out of it as if their rows were deleted.
 
     **Lap Detection Methods:**
 
@@ -1465,14 +1466,20 @@ def detect_laps(
             )
         return laps
     if method == "auto":
-        template_size = max(1, len(position_bins) // 10)
-        template = position_bins[:template_size]
+        # The first 10% of the located samples, as if missing rows were
+        # deleted; the search starts after the template's last sample.
+        located = np.flatnonzero(_located(position_bins, env))
+        template_samples = located[: max(1, located.size // 10)]
+        template = position_bins[template_samples]
+        template_stop = int(template_samples[-1]) + 1 if template_samples.size else 0
     else:
         assert reference_lap is not None
         template = reference_lap
-        template_size = 0
+        template_stop = 0
     for run in runs:
-        search_start = max(0, template_size - run[0]) if method == "auto" else 0
+        # Runs hold sample indices with missing samples removed, so the
+        # template's end is located by index, not by subtraction.
+        search_start = int(np.searchsorted(run, template_stop))
         laps.extend(
             _detect_laps_search_contiguous(
                 position_bins[run],
