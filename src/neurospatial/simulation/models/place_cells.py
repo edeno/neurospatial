@@ -17,6 +17,18 @@ from neurospatial.simulation.models.base import default_length, geodesic_lookup_
 #: (2012); see ``PlaceCellModel`` Notes.
 PLACE_FIELD_WIDTH_CM = 11.1
 
+#: Default peak rate in Hz: rat CA1 place cells in the open field (Mizuseki
+#: et al. 2012).
+PLACE_FIELD_PEAK_HZ = 12.4
+
+#: Place field width in centimeters on a linear track, derived from the
+#: 75 cm CA1 field length of Mizuseki et al. (2012) on their 250 cm track;
+#: see ``PlaceCellModel`` Notes. The track session helpers use it.
+TRACK_PLACE_FIELD_WIDTH_CM = 17.5
+
+#: Peak rate in Hz of the same CA1 cells on the linear track.
+TRACK_PLACE_FIELD_PEAK_HZ = 14.5
+
 
 class PlaceCellModel:
     """Gaussian place field model.
@@ -203,7 +215,7 @@ class PlaceCellModel:
         *,
         center: NDArray[np.float64] | None = None,
         width: float | NDArray[np.float64] | None = None,
-        max_rate: float = 12.4,
+        max_rate: float = PLACE_FIELD_PEAK_HZ,
         baseline_rate: float = 0.01,
         metric: DistanceMetric = "euclidean",
         condition: Callable[

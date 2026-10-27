@@ -7,6 +7,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from neurospatial.simulation.models.boundary_cells import BORDER_DISTANCE_TOLERANCE_CM
+from neurospatial.simulation.models.place_cells import (
+    TRACK_PLACE_FIELD_PEAK_HZ,
+    TRACK_PLACE_FIELD_WIDTH_CM,
+)
 
 if TYPE_CHECKING:
     from neurospatial.simulation.session import SimulationSession
@@ -213,9 +217,11 @@ def linear_track_session(
     seed : int | None, optional
         Random seed for reproducibility (default: None).
     **kwargs : Any
-        Place cell parameters passed to ``PlaceCellModel``: ``width`` (cm),
-        ``max_rate`` and ``baseline_rate`` (Hz), ``metric``. Their defaults
-        are ``PlaceCellModel``'s.
+        Place cell parameters passed to ``PlaceCellModel``: ``width`` (cm,
+        default 17.5) and ``max_rate`` (Hz, default 14.5), the CA1
+        linear-track values of Mizuseki et al. (2012) (see
+        ``PlaceCellModel``), and ``baseline_rate`` and ``metric`` with
+        ``PlaceCellModel``'s defaults.
 
     Returns
     -------
@@ -338,7 +344,10 @@ def linear_track_session(
     env = Environment.from_samples(track_data, bin_size=bin_size)
     env = env.with_metadata(units="cm")
 
-    # Simulate session with place cells and lap trajectory
+    # Simulate session with place cells and lap trajectory, with linear-track
+    # place fields unless the caller chose others.
+    kwargs.setdefault("width", TRACK_PLACE_FIELD_WIDTH_CM)
+    kwargs.setdefault("max_rate", TRACK_PLACE_FIELD_PEAK_HZ)
     session = simulate_session(
         env,
         duration=duration,
@@ -452,6 +461,8 @@ def tmaze_alternation_session(
     - Duration: 300 seconds (5 minutes) - sufficient for multiple trials
     - Number of trials: 20 - typical experimental session length
     - Number of cells: 60 - realistic hippocampal CA1 recording
+    - Place fields: 17.5 cm standard deviation and 14.5 Hz peak, the CA1
+      linear-track values of Mizuseki et al. (2012); see ``PlaceCellModel``
 
     **T-maze Structure**:
 
@@ -543,6 +554,8 @@ def tmaze_alternation_session(
         n_laps=n_trials,
         outbound_path=round_trip(first_choice),
         inbound_path=round_trip(second_choice),
+        width=TRACK_PLACE_FIELD_WIDTH_CM,  # linear-track CA1 fields
+        max_rate=TRACK_PLACE_FIELD_PEAK_HZ,
         seed=seed,
         show_progress=False,  # Disable progress bar for convenience function
     )

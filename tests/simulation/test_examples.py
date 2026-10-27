@@ -144,6 +144,19 @@ class TestOpenFieldSession:
 class TestLinearTrackSession:
     """Tests for linear_track_session() convenience function."""
 
+    def test_default_place_fields_are_linear_track_fields(self):
+        """Track helpers use the CA1 linear-track field of Mizuseki 2012."""
+        from neurospatial.simulation import tmaze_alternation_session
+
+        for session in (
+            linear_track_session(duration=5.0, n_place_cells=2, n_laps=2, seed=0),
+            tmaze_alternation_session(
+                duration=5.0, n_trials=2, n_place_cells=2, seed=0
+            ),
+        ):
+            for model in session.models:
+                assert (model.width, model.max_rate) == (17.5, 14.5)
+
     def test_place_cell_parameters_reach_every_cell(self):
         """Field width and rates passed to the helper are the cells' own."""
         session = linear_track_session(
