@@ -638,14 +638,16 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
         ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-        polar bins, and units with fewer spikes than K fail, with a warning:
-        about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
-        units per spike count in a 100 x 100 cm box (10-minute sessions,
+        polar bins, and units with fewer spikes than K fail, with a warning.
+        The default grid covers the arena, so K grows with it: with the object
+        at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
+        rings x 12 directions) were occupied in 10 minutes. In 40 untuned
+        Poisson units per spike count in that box (10-minute sessions,
         allocentric and egocentric), uncorrected information passed 0.3
         bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
         at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
-        fired about 80 spikes in those 10 minutes, too few for the screen; use
-        fewer bins or the shuffle test.
+        fired about 70 spikes in those 10 minutes, too few for the screen; pass
+        a narrower distance_range or wider bins, or use the shuffle test.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
@@ -1213,14 +1215,16 @@ class ObjectVectorRatesResult(
         shows from Poisson noise alone is subtracted first (derivation in
         :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
         ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-        polar bins, and units with fewer spikes than K fail, with a warning:
-        about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
-        units per spike count in a 100 x 100 cm box (10-minute sessions,
+        polar bins, and units with fewer spikes than K fail, with a warning.
+        The default grid covers the arena, so K grows with it: with the object
+        at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
+        rings x 12 directions) were occupied in 10 minutes. In 40 untuned
+        Poisson units per spike count in that box (10-minute sessions,
         allocentric and egocentric), uncorrected information passed 0.3
         bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
         at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
-        fired about 80 spikes in those 10 minutes, too few for the screen; use
-        fewer bins or the shuffle test.
+        fired about 70 spikes in those 10 minutes, too few for the screen; pass
+        a narrower distance_range or wider bins, or use the shuffle test.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through OBJECT_VECTOR_THRESHOLDS.
         For a shuffle test, call object_vector_cell_significance(...) (allocentric) or
@@ -3690,14 +3694,16 @@ def is_object_vector_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
     ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-    polar bins, and units with fewer spikes than K fail, with a warning:
-    about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
-    units per spike count in a 100 x 100 cm box (10-minute sessions,
+    polar bins, and units with fewer spikes than K fail, with a warning.
+    The default grid covers the arena, so K grows with it: with the object
+    at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
+    rings x 12 directions) were occupied in 10 minutes. In 40 untuned
+    Poisson units per spike count in that box (10-minute sessions,
     allocentric and egocentric), uncorrected information passed 0.3
     bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
     at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
-    fired about 80 spikes in those 10 minutes, too few for the screen; use
-    fewer bins or the shuffle test.
+    fired about 70 spikes in those 10 minutes, too few for the screen; pass
+    a narrower distance_range or wider bins, or use the shuffle test.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
@@ -3972,14 +3978,16 @@ def is_egocentric_object_vector_cell(
     shows from Poisson noise alone is subtracted first (derivation in
     :meth:`~neurospatial.encoding.spatial.SpatialRateResult.spatial_information_bias`). For the default
     ``binned`` map that bias is (K - 1) / (2 ln(2) N_spikes) for K occupied
-    polar bins, and units with fewer spikes than K fail, with a warning:
-    about 120 spikes for the default 10 x 12 grid. In 40 untuned Poisson
-    units per spike count in a 100 x 100 cm box (10-minute sessions,
+    polar bins, and units with fewer spikes than K fail, with a warning.
+    The default grid covers the arena, so K grows with it: with the object
+    at the center of a 100 x 100 cm box, 150-170 of the 348 polar bins (29
+    rings x 12 directions) were occupied in 10 minutes. In 40 untuned
+    Poisson units per spike count in that box (10-minute sessions,
     allocentric and egocentric), uncorrected information passed 0.3
     bits/spike in 100% of units at about 20, 60, 120 and 250 spikes and 0%
     at 600; corrected, none passed. An object-vector cell with a 2 Hz peak
-    fired about 80 spikes in those 10 minutes, too few for the screen; use
-    fewer bins or the shuffle test.
+    fired about 70 spikes in those 10 minutes, too few for the screen; pass
+    a narrower distance_range or wider bins, or use the shuffle test.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.

@@ -588,10 +588,11 @@ class ViewRateResult(SingleUnitRateMixin):
         Units with fewer spikes than the view map has effectively independent
         bins fail, with a warning. In 40 untuned Poisson units per spike count
         in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
-        bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
-        5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
-        none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
-        2 minutes (about 24 spikes) and all 20 in 10 minutes.
+        bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
+        passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,
+        60, 120 and 600 spikes; corrected, at most 1 of 40 (at about 20
+        spikes). Of 20 spatial view cells with a 2 Hz peak, 13 passed in 2
+        minutes (about 27 spikes) and all 20 in 10 minutes.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
@@ -1069,10 +1070,11 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         Units with fewer spikes than the view map has effectively independent
         bins fail, with a warning. In 40 untuned Poisson units per spike count
         in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
-        bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
-        5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
-        none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
-        2 minutes (about 24 spikes) and all 20 in 10 minutes.
+        bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
+        passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,
+        60, 120 and 600 spikes; corrected, at most 1 of 40 (at about 20
+        spikes). Of 20 spatial view cells with a 2 Hz peak, 13 passed in 2
+        minutes (about 27 spikes) and all 20 in 10 minutes.
         For publication, report a circular-shift test and its assumptions.
         None thresholds resolve through VIEW_THRESHOLDS.
         For a shuffle test, call spatial_view_cell_significance(...)
@@ -2348,10 +2350,11 @@ def is_spatial_view_cell(
     Units with fewer spikes than the view map has effectively independent
     bins fail, with a warning. In 40 untuned Poisson units per spike count
     in a 100 x 100 cm box (4 cm bins, ray-cast gaze, diffusion KDE
-    bandwidth 5 cm), uncorrected information passed 0.5 bits/spike in 97%,
-    5%, 0% and 0% of units at about 20, 60, 120 and 600 spikes; corrected,
-    none passed. Of 20 spatial view cells with a 2 Hz peak, 15 passed in
-    2 minutes (about 24 spikes) and all 20 in 10 minutes.
+    bandwidth 5 cm; 2- and 10-minute sessions), uncorrected information
+    passed 0.5 bits/spike in 95-97%, 0-3%, 0% and 0% of units at about 20,
+    60, 120 and 600 spikes; corrected, at most 1 of 40 (at about 20
+    spikes). Of 20 spatial view cells with a 2 Hz peak, 13 passed in 2
+    minutes (about 27 spikes) and all 20 in 10 minutes.
     For publication, report a circular-shift test and its assumptions.
 
     Circular shifting costs about n_shuffles recomputes of the plural map.
