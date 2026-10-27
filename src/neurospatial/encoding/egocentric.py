@@ -103,7 +103,7 @@ if TYPE_CHECKING:
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.environment import Environment
     from neurospatial.geometry import EgocentricPolarSystem
-    from neurospatial.ops._types import BackendType, DistanceMetric, ResolvedBackend
+    from neurospatial.ops._types import BackendType, DistanceMetric
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -1467,63 +1467,6 @@ def _raw_polar_rate(
     return np.where(valid, rate, np.nan)
 
 
-def _egocentric_firing_rate(
-    polar_env: PolarEnvironment,
-    spike_counts: NDArray[np.float64],
-    occupancy: NDArray[np.float64],
-    *,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
-    bandwidth: float | None,
-    min_occupancy: float,
-    backend: ResolvedBackend,
-) -> ArrayLike:
-    """Egocentric polar firing rate: raw for ``binned``, smoothed otherwise.
-
-    Parameters
-    ----------
-    polar_env : Environment
-        The egocentric polar grid the rate is computed over.
-    spike_counts : ndarray of shape (n_bins,), dtype float64
-        Spike counts per polar bin.
-    occupancy : ndarray of shape (n_bins,), dtype float64
-        Time spent in each polar bin, in seconds.
-    method : {"diffusion_kde", "gaussian_kde", "binned"}
-        ``"binned"`` returns the raw bin rate (see ``_raw_polar_rate``); the
-        kernel methods smooth via ``smooth_rate_map``.
-    bandwidth : float or None
-        Smoothing bandwidth, in environment units; ``None`` for ``"binned"``.
-    min_occupancy : float
-        Bins with occupancy below this value are treated as unvisited.
-    backend : {"numpy", "jax"}
-        Array backend for the returned rate.
-
-    Returns
-    -------
-    ArrayLike of shape (n_bins,)
-        Firing rate per bin in Hz, as a NumPy or JAX array per ``backend``.
-    """
-    from neurospatial.encoding._backend import _to_backend
-
-    if method == "binned":
-        _warn_if_fully_masked(occupancy, min_occupancy)
-        rate = _raw_polar_rate(spike_counts, occupancy, min_occupancy)
-        rate_out: ArrayLike = _to_backend(rate, backend, dtype=np.float64)
-        return rate_out
-
-    from neurospatial.encoding._smoothing import smooth_rate_map
-
-    assert bandwidth is not None  # resolved for every kernel method
-    return smooth_rate_map(
-        polar_env,
-        spike_counts,
-        occupancy,
-        method=method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=backend,
-    )
-
-
 def compute_egocentric_rate(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -2463,148 +2406,56 @@ def _object_vector_rate(
     headings: NDArray[np.float64] | None,
     object_positions: ObjectPositions,
     *,
-    distance_range: tuple[float, float] | None = None,
-    distance_bin_size: float | None = None,
-    direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
-    max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: Any = None,
-    break_before: ArrayLike | None = None,
-    spike_window: Any = None,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
-    bandwidth: float | None = None,
-    min_occupancy: float = 0.0,
-    backend: BackendType = "numpy",
+    distance_range: tuple[float, float] | None,
+    distance_bin_size: float | None,
+    direction_bin_size: float,
+    metric: DistanceMetric,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+    spike_window: Any,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    bandwidth: float | None,
+    min_occupancy: float,
+    backend: BackendType,
     context: str,
 ) -> ObjectVectorRateResult:
-    """Compute either frame through the shared binning and smoothing path."""
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-
-    from neurospatial.encoding._backend import (
-        _to_backend,
-        validate_and_resolve_backend,
-    )
-    from neurospatial.encoding._egocentric_counts import resolve_object_positions
-    from neurospatial.encoding._smoothing import (
-        _validate_smoothing_parameters,
-    )
-    from neurospatial.encoding._validation import (
-        validate_spike_times,
-        validate_trajectory,
-    )
-
-    _check_object_vector_env(env, headings, context=context)
-
-    # Raises ValueError for unknown names and ImportError if jax is unavailable;
-    # "auto" resolves to "numpy" or "jax".
-    resolved_backend = validate_and_resolve_backend(backend)
-
-    _validate_object_vector_metric(env, metric, context=context)
-    units = env.units if env is not None else None
-    require_known_bandwidth(units, bandwidth, method, context=context)
-
-    _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
-
-    # Convert inputs to arrays (1D required for spike_times/times/headings)
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
-    headings = None if headings is None else np.asarray(headings, dtype=np.float64)
-
-    validate_trajectory(
-        times,
-        positions=positions,
-        headings=headings,
-        context=context,
-        n_dims=env.n_dims if env is not None else None,
-    )
-    # Coordinates, or each named landmark's nearest point at every sample.
-    object_positions, object_names = resolve_object_positions(
-        object_positions, env=env, positions=positions, metric=metric
-    )
-    distance_range, n_distance_bins, n_direction_bins = _object_vector_grid(
+    """One unit's map in either frame: unit 0 of a one-unit population."""
+    population = _object_vector_rates(
         env,
-        object_positions,
-        metric=metric,
-        distance_range=distance_range,
-        distance_bin_size=distance_bin_size,
-        direction_bin_size=direction_bin_size,
-        context=context,
-    )
-    validate_spike_times(
         spike_times,
-        context=context,
-    )
-    breaks = validate_break_before(break_before, len(times), call=context)
-
-    # Reuse the batch binning path for the single-neuron API so egocentric
-    # coordinates are computed once and shared by spike counts and occupancy.
-    counts = _count_object_vectors(
-        [spike_times],
         times,
         positions,
         headings,
         object_positions,
-        object_names,
-        env,
         distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
+        distance_bin_size=distance_bin_size,
+        direction_bin_size=direction_bin_size,
         metric=metric,
         max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
+        epochs=epochs,
+        break_before=break_before,
+        spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
-        backend=resolved_backend,
-        break_before=breaks,
-    )
-    spike_counts = counts.spike_counts[0]
-
-    firing_rate = _egocentric_firing_rate(
-        counts.polar_env,
-        spike_counts,
-        counts.occupancy,
-        method=method,
-        bandwidth=counts.bandwidth,
-        min_occupancy=min_occupancy,
-        backend=resolved_backend,
-    )
-
-    _warn_if_directions_unsampled(
-        counts.occupancy,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
-        direction_frame="allocentric" if headings is None else "egocentric",
-        units=units,
-        extended_landmarks=object_names is not None and object_positions.ndim == 3,
+        backend=backend,
         context=context,
+        single_unit=True,
     )
-    _warn_if_peak_at_range_edge(
-        firing_rate,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
-        distance_range=distance_range,
-        time_beyond=counts.time_beyond,
-        time_in_range=float(counts.occupancy.sum()),
-        unit_ids=[0],
-        units=units,
-        context=context,
-    )
-
-    # Return result (firing_rate is already JAX from smooth_rate_map)
+    unit = population[0]
+    # A standalone unit has no label (unit_id=None), unlike an indexed one.
     return ObjectVectorRateResult(
-        min_occupancy=min_occupancy,
-        direction_frame="allocentric" if headings is None else "egocentric",
-        firing_rate=firing_rate,
-        occupancy=_to_backend(counts.occupancy, resolved_backend, dtype=np.float64),
-        env=counts.polar_env,
-        method=method,
-        bandwidth=counts.bandwidth,
-        n_spikes_outside_intervals=int(counts.n_spikes_outside_intervals[0]),
-        spike_window=resolved_spike_window,
-        analysis_settings=counts.analysis_settings,
+        min_occupancy=unit.min_occupancy,
+        direction_frame=unit.direction_frame,
+        firing_rate=unit.firing_rate,
+        occupancy=unit.occupancy,
+        env=unit.env,
+        method=unit.method,
+        bandwidth=unit.bandwidth,
+        n_spikes_outside_intervals=unit.n_spikes_outside_intervals,
+        spike_window=unit.spike_window,
+        analysis_settings=unit.analysis_settings,
     )
 
 
@@ -3245,11 +3096,17 @@ def _object_vector_rates(
     backend: BackendType = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
     context: str,
+    single_unit: bool = False,
     frame_bins: NDArray[np.int64] | None = None,
     polar_env: PolarEnvironment | None = None,
     diagnose: bool = True,
 ) -> ObjectVectorRatesResult:
     """Compute either frame through the shared binning and smoothing path.
+
+    ``single_unit=True`` serves the single-unit functions: ``spike_times`` is
+    one train, validated and named as ``spike_times`` in errors, its peak
+    warning names unit ``0``, and the population-silence warning, which
+    needs several units, is skipped.
 
     ``frame_bins`` and ``polar_env`` reuse trajectory-only geometry computed
     by a caller that bins many spike sets on one trajectory
@@ -3269,6 +3126,7 @@ def _object_vector_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._validation import (
+        validate_spike_times,
         validate_spike_trains,
         validate_trajectory,
     )
@@ -3285,12 +3143,17 @@ def _object_vector_rates(
     units = env.units if env is not None else None
     require_known_bandwidth(units, bandwidth, method, context=context)
 
-    # Normalize spike times to canonical list-of-arrays format and resolve the
-    # per-unit identity labels (defaults to arange). A labelled input keeps its
-    # own labels; a differing unit_ids= raises.
-    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
-        spike_times, unit_ids, context=context
-    )
+    resolved_unit_ids: NDArray[Any] | list[int]
+    if single_unit:
+        spike_times_list = [np.asarray(spike_times, dtype=np.float64)]
+        resolved_unit_ids, labels_supplied = [0], False
+    else:
+        # Normalize spike times to canonical list-of-arrays format and resolve
+        # the per-unit identity labels (defaults to arange). A labelled input
+        # keeps its own labels; a differing unit_ids= raises.
+        spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+            spike_times, unit_ids, context=context
+        )
     n_neurons = len(spike_times_list)
 
     # Convert inputs to arrays (1D required for times/headings)
@@ -3318,19 +3181,24 @@ def _object_vector_rates(
         direction_bin_size=direction_bin_size,
         context=context,
     )
-    validate_spike_trains(spike_times_list, context=context)
+    if single_unit:
+        validate_spike_times(spike_times_list[0], context=context)
+    else:
+        validate_spike_trains(spike_times_list, context=context)
     breaks = validate_break_before(break_before, len(times), call=context)
 
-    # Recording coverage uses tracked runs, independently of speed or frame bins.
-    _warn_if_population_silent(
-        spike_times_list,
-        times,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        spike_window=resolved_spike_window,
-        tracked=tracked_samples(len(times), positions, headings),
-        break_before=breaks,
-    )
+    if not single_unit:
+        # Recording coverage uses tracked runs, independently of speed or
+        # frame bins.
+        _warn_if_population_silent(
+            spike_times_list,
+            times,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
+            tracked=tracked_samples(len(times), positions, headings),
+            break_before=breaks,
+        )
 
     # Retain the exact binning support for result provenance.
     counts = _count_object_vectors(

@@ -811,14 +811,16 @@ class TestComputeEgocentricRateSmoothing:
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         captured: dict[str, object] = {}
-        original_smooth_rate_map = _smoothing.smooth_rate_map
+        original_smooth_rate_maps_batch = _smoothing.smooth_rate_maps_batch
 
-        def capture_smooth_rate_map(*args, **kwargs):
+        def capture_smooth_rate_maps_batch(*args, **kwargs):
             captured["method"] = kwargs["method"]
             captured["bandwidth"] = kwargs["bandwidth"]
-            return original_smooth_rate_map(*args, **kwargs)
+            return original_smooth_rate_maps_batch(*args, **kwargs)
 
-        monkeypatch.setattr(_smoothing, "smooth_rate_map", capture_smooth_rate_map)
+        monkeypatch.setattr(
+            _smoothing, "smooth_rate_maps_batch", capture_smooth_rate_maps_batch
+        )
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
