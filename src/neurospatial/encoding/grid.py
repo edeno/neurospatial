@@ -58,6 +58,7 @@ Sargolini, F., Fyhn, M., Hafting, T., McNaughton, B. L., Witter, M. P., Moser, M
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -597,6 +598,52 @@ _MIN_OVERLAP_BINS = 20
 _MIN_OVERLAP_FRACTION = 0.25
 
 
+def _padded_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
+    """FFT size that holds every 2D lag of a map without wrap-around."""
+    return tuple(fft.next_fast_len(2 * n - 1, real=True) for n in shape)
+
+
+def _padded_spectrum(array: NDArray[np.float64]) -> NDArray[np.complex128]:
+    """Real 2D spectrum of ``array`` zero-padded to :func:`_padded_shape`."""
+    return np.asarray(fft.rfft2(array, s=_padded_shape(array.shape)))
+
+
+def _overlap_sum(
+    first: NDArray[np.complex128],
+    second: NDArray[np.complex128],
+    shape: tuple[int, ...],
+) -> NDArray[np.float64]:
+    """``sum_i a[i] * b[i + lag]`` at every lag, from the padded spectra.
+
+    The padding leaves no wrap-around for lags up to ``n - 1`` in each
+    direction; zero lag is at the center of the ``(2 n_x - 1, 2 n_y - 1)``
+    result.
+    """
+    padded = _padded_shape(shape)
+    circular = fft.irfft2(np.conj(first) * second, s=padded)
+    rows = np.r_[padded[0] - shape[0] + 1 : padded[0], : shape[0]]
+    cols = np.r_[padded[1] - shape[1] + 1 : padded[1], : shape[1]]
+    return np.asarray(circular[np.ix_(rows, cols)], dtype=np.float64)
+
+
+@lru_cache(maxsize=8)
+def _mask_overlap(
+    shape: tuple[int, ...], valid_bytes: bytes
+) -> tuple[NDArray[np.complex128], NDArray[np.float64]]:
+    """Padded spectrum of a finite-bin mask and its pair count at every lag.
+
+    Rate maps of one recording share their finite bins, so the terms that
+    depend only on the mask are computed once per mask and reused. Both
+    arrays are read-only.
+    """
+    valid = np.frombuffer(valid_bytes, dtype=bool).reshape(shape)
+    mask_f = _padded_spectrum(valid.astype(np.float64))
+    n_pairs = np.rint(_overlap_sum(mask_f, mask_f, shape))
+    mask_f.setflags(write=False)
+    n_pairs.setflags(write=False)
+    return mask_f, n_pairs
+
+
 def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64]:
     """Pearson correlation of a rate map with itself at every 2D lag.
 
@@ -624,31 +671,16 @@ def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64
     # not change under it.
     values = rate_map[valid]
     standardized = np.where(valid, (rate_map - values.mean()) / values.std(), 0.0)
-    shape = tuple(2 * n - 1 for n in rate_map.shape)
-    padded = tuple(fft.next_fast_len(n, real=True) for n in shape)
-
-    def spectrum(array: NDArray[np.float64]) -> NDArray[np.complex128]:
-        return np.asarray(fft.rfft2(array, s=padded))
-
-    def overlap_sum(
-        first: NDArray[np.complex128], second: NDArray[np.complex128]
-    ) -> NDArray[np.float64]:
-        # sum_i a[i] * b[i + lag] over the zero-padded maps, for every lag up
-        # to n - 1 in each direction; the padding leaves no wrap-around.
-        circular = fft.irfft2(np.conj(first) * second, s=padded)
-        rows = np.r_[padded[0] - shape[0] // 2 : padded[0], : shape[0] // 2 + 1]
-        cols = np.r_[padded[1] - shape[1] // 2 : padded[1], : shape[1] // 2 + 1]
-        return np.asarray(circular[np.ix_(rows, cols)], dtype=np.float64)
-
-    mask_f = spectrum(valid.astype(np.float64))
-    x_f = spectrum(standardized)
-    xx_f = spectrum(standardized**2)
-    n_pairs = np.rint(overlap_sum(mask_f, mask_f))
-    sum_first = overlap_sum(x_f, mask_f)
-    sum_second = overlap_sum(mask_f, x_f)
-    sum_squares_first = overlap_sum(xx_f, mask_f)
-    sum_squares_second = overlap_sum(mask_f, xx_f)
-    sum_products = overlap_sum(x_f, x_f)
+    mask_f, n_pairs = _mask_overlap(valid.shape, valid.tobytes())
+    x_f = _padded_spectrum(standardized)
+    xx_f = _padded_spectrum(standardized**2)
+    sum_first = _overlap_sum(x_f, mask_f, valid.shape)
+    sum_squares_first = _overlap_sum(xx_f, mask_f, valid.shape)
+    sum_products = _overlap_sum(x_f, x_f, valid.shape)
+    # Summing over the second side of the overlap at a lag is summing over the
+    # first side at the opposite lag: the same sums, flipped about zero lag.
+    sum_second = sum_first[::-1, ::-1]
+    sum_squares_second = sum_squares_first[::-1, ::-1]
 
     with np.errstate(divide="ignore", invalid="ignore"):
         covariance = n_pairs * sum_products - sum_first * sum_second
