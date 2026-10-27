@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import networkx as nx
 import numpy as np
@@ -22,6 +22,9 @@ from neurospatial.geometry import (
 )
 from neurospatial.ops._types import DistanceMetric
 from neurospatial.ops.distance import distance_field
+
+if TYPE_CHECKING:
+    from neurospatial.environment import Environment
 
 _BUILD_A_TRACK = (
     "Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], "
@@ -48,6 +51,52 @@ def _track_linearization(
             )
         )
     return linearization
+
+
+def track_extents(
+    env: Environment,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
+    """Where each bin starts and ends along a track; None off a track.
+
+    Linearized tracks (``linear_track``, ``from_graph``, ``maze``) measure
+    distance along the track, with the spacing between segments left empty;
+    1-D environments use their own coordinate. Both arrays have shape
+    ``(n_bins,)`` and follow bin numbering, not track order.
+    """
+    linearization = env.binning.linearization
+    if linearization is not None:
+        edges = np.asarray(linearization.grid_edges[0], dtype=np.float64)
+        active = linearization.active_mask
+        return edges[:-1][active], edges[1:][active]
+    if env.n_dims == 1:
+        centers, half = env.bin_centers[:, 0], env.bin_sizes / 2
+        return centers - half, centers + half
+    return None
+
+
+def require_track_extents(
+    env: Environment, operation: str, *, alternative: str
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return :func:`track_extents`, or refuse ``operation`` off a track.
+
+    ``alternative`` names what works on other environments.
+    """
+    extents = track_extents(env)
+    if extents is None:
+        raise ValueError(
+            _format_error(
+                f"{operation} needs a position along a track, but this is a "
+                f"{env.n_dims}-D {env.binning.kind} environment that is not "
+                "a linearized track.",
+                why="it orders bins by their distance along one axis; bin "
+                "numbers have no spatial order, and a 2-D or 3-D arena has no "
+                "single axis to order them by",
+                fix=f"use a 1-D environment or build the track, for example "
+                f"{_BUILD_A_TRACK}, or Environment.maze(...) or "
+                f"Environment.from_graph(...) for other tracks; {alternative}",
+            )
+        )
+    return extents
 
 
 def _to_linear(binning: Binning, positions: NDArray[np.float64]) -> NDArray[np.float64]:
