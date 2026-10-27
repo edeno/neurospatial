@@ -20,12 +20,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-import matplotlib.axes
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import ListedColormap
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
@@ -55,6 +52,9 @@ from neurospatial.encoding.spatial import (
     detect_place_fields,
 )
 from neurospatial.environment import Environment
+
+if TYPE_CHECKING:
+    import matplotlib.axes
 
 _PV = _Caller(
     operation="population_vector_correlation()",
@@ -578,6 +578,9 @@ def plot_population_coverage(
             f"result must be PopulationCoverageResult, got {type(result).__name__}. "
             f"Use population_coverage() to compute the result first."
         )
+
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
 
     # Create axes if needed
     if ax is None:

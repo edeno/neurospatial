@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import stats
 
 from neurospatial.geometry import require_cartesian
 
@@ -428,6 +427,8 @@ def field_stability(
     if _is_constant(paired, np.ones(paired.shape, dtype=bool)).any():
         return np.nan
 
+    from scipy import stats
+
     # Compute correlation
     if method == "pearson":
         correlation, _ = stats.pearsonr(map1_clean, map2_clean)
@@ -577,7 +578,9 @@ def rate_map_coherence(
     if np.std(bin_rates) == 0 or np.std(neighbor_rate_means) == 0:
         return np.nan
 
-    correlation, _ = stats.pearsonr(bin_rates, neighbor_rate_means)
+    from scipy.stats import pearsonr
+
+    correlation, _ = pearsonr(bin_rates, neighbor_rate_means)
     with np.errstate(divide="ignore"):
         return float(np.arctanh(correlation))
 
