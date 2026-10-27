@@ -56,6 +56,35 @@ def test_physical_score_matches_independent_wall_length_and_distance_oracle():
         np.testing.assert_allclose(border_score(env, field, metric=metric), expected)
 
 
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+def test_distance_weights_each_bin_by_its_area(metric):
+    """The distance term is the mean over the field's area, not over its bins.
+
+    Clipping a 5 cm grid to a 32 cm wide box leaves an east column 7 cm wide.
+    A uniform band over the last two columns has its mean distance to the
+    walls weighted by area; counting bins would weigh the 25 cm² cells as
+    much as the 35 cm² cells, so the score would change with how the band
+    happens to be cut into bins."""
+    env = Environment.from_grid_mask(
+        np.ones((7, 6), dtype=bool),
+        grid_edges=(np.arange(0, 36, 5.0), np.arange(0, 31, 5.0)),
+        arena=OpenArena(box(0, 0, 32, 30)),
+        units="cm",
+    ).clip(box(0, 0, 32, 30))
+    x, y = env.bin_centers.T
+    band = x > 20
+    assert np.unique(env.bin_sizes[band]).tolist() == [25.0, 35.0]
+    # Each center's distance to the nearest of the four walls.
+    to_wall = np.minimum.reduce([x, 32 - x, y, 30 - y])[band]
+    area = env.bin_sizes[band]
+    # The band covers the whole east wall; the inscribed radius is 15 cm.
+    distance = np.sum(area * to_wall) / np.sum(area) / 15
+    np.testing.assert_allclose(
+        border_score(env, np.where(band, 10.0, 0.0), metric=metric),
+        (1 - distance) / (1 + distance),
+    )
+
+
 def test_analysis_crop_does_not_create_walls_or_supply_missing_wall_rates():
     env = physical(wall=True)
     field = (env.bin_centers[:, 0] == 3.5).astype(float)
@@ -289,10 +318,11 @@ def _west_strip(env):
 
 
 @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
-def test_unvisited_wall_bins_are_missing_not_uncovered(metric):
-    """A strip along the whole west wall whose three northern bins were never
-    visited covers the whole observed wall, so it scores as if fully observed.
-    Counting the unvisited wall as uncovered would give coverage 0.7."""
+def test_unvisited_wall_counts_as_not_covered(metric):
+    """Coverage is the covered fraction of the whole wall (Solstad et al.,
+    2008). A strip along the west wall whose three northern bins were never
+    visited covers 7 of the wall's 10 units. Leaving the unvisited wall out of
+    the wall's length would give coverage 1, as if fully observed."""
     from neurospatial.encoding import observed_wall_fraction
 
     env = physical()
@@ -301,12 +331,62 @@ def test_unvisited_wall_bins_are_missing_not_uncovered(metric):
     gap[(env.bin_centers[:, 0] < 1) & (env.bin_centers[:, 1] > 7)] = np.nan
     # Every center is half a cell from the wall; the inscribed radius is 5.
     distance = 0.5 / 5
-    expected = (1 - distance) / (1 + distance)
-    np.testing.assert_allclose(border_score(env, full, metric=metric), expected)
-    np.testing.assert_allclose(border_score(env, gap, metric=metric), expected)
+    np.testing.assert_allclose(
+        border_score(env, full, metric=metric), (1 - distance) / (1 + distance)
+    )
+    np.testing.assert_allclose(
+        border_score(env, gap, metric=metric), (0.7 - distance) / (0.7 + distance)
+    )
     # Three cells of the west wall and the corner cell's cell of the north
     # wall are unobserved.
     assert observed_wall_fraction(env, gap) == pytest.approx(36 / 40)
+
+
+def test_unvisited_bins_away_from_the_field_do_not_change_the_score():
+    """A field over a fifth of the west wall of a 100 cm box scores the same
+    whether the rest of the walls was visited, half visited or never visited:
+    unvisited wall is not covered, so missing data cannot inflate coverage."""
+    from neurospatial.encoding import observed_wall_fraction
+
+    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.5, units="cm")
+    x, y = env.bin_centers.T
+    field = (x < 12.5) & (y > 40) & (y < 60)
+    full = np.where(field, 10.0, 0.2)
+    on_wall = (x < 2.5) | (x > 97.5) | (y < 2.5) | (y > 97.5)
+    patchy = full.copy()
+    patchy[on_wall & ~field & (np.arange(env.n_bins) % 2 == 0)] = np.nan
+    only_field = np.where(field, 10.0, np.nan)
+    assert observed_wall_fraction(env, patchy) < 0.6
+    assert observed_wall_fraction(env, only_field) < 0.1
+    # The field covers 20 of the wall's 100 cm; its centers are 1.25-11.25 cm
+    # from the wall (mean 6.25), and the inscribed radius is 50 cm.
+    coverage, distance = 0.2, 6.25 / 50
+    expected = (coverage - distance) / (coverage + distance)
+    for rates in (full, patchy, only_field):
+        np.testing.assert_allclose(border_score(env, rates), expected)
+
+
+def test_unvisited_half_of_a_ring_does_not_change_a_half_ring_field():
+    """A field along the west half of a circular arena covers its half-ring
+    wall whether or not the east half was visited. Where part of its own half
+    was never visited, it scores as if the cell were silent there."""
+    env = Environment.from_polygon(
+        Point(0, 0).buffer(50, quad_segs=64), bin_size=2.5, units="cm"
+    )
+    x, y = env.bin_centers.T
+    near_wall = np.hypot(x, y) > 42
+    rates = np.where(near_wall & (x < 0), 10.0, 0.2)
+    east_unvisited = np.where(near_wall & (x > 2.5), np.nan, rates)
+    north = near_wall & (y > 30)
+    north_unvisited = np.where(north, np.nan, rates)
+    north_silent = np.where(north, 0.2, rates)
+    full = border_score(env, rates)
+    assert full > 0.8
+    np.testing.assert_allclose(border_score(env, east_unvisited), full)
+    np.testing.assert_allclose(
+        border_score(env, north_unvisited), border_score(env, north_silent)
+    )
+    assert border_score(env, north_silent) < full
 
 
 def test_observed_zero_rates_are_firing_not_missing():

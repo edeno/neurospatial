@@ -817,44 +817,38 @@ def _wall_coverage(
     fields: list[NDArray[np.intp]],
     firing_rate: NDArray[np.float64],
 ) -> float:
-    """Largest fraction of one wall's observed length that one field covers.
+    """Largest fraction of one wall's length that one field covers.
 
-    NaN when no wall has an observed piece. Unobserved pieces of a wall are
-    missing, not uncovered: each wall's coverage is the covered fraction of
-    its observed length.
+    Each wall's coverage is relative to its whole length (on a ring, half its
+    length), as in Solstad et al. (2008): a piece of wall the map does not
+    observe counts as not covered, so missing data can lower coverage but
+    never raise it. NaN when the map observes no piece of any wall.
     """
+    if not observed_lengths(geometry, firing_rate).any():
+        return float("nan")
     n_bins = len(firing_rate)
     in_field = np.zeros((n_bins, len(fields)))
     for column, field in enumerate(fields):
         in_field[field, column] = 1.0
-    observed = observed_lengths(geometry, firing_rate)
-    # A field bin has a finite rate, so covered atoms are observed.
     covered = geometry.atom_length[:, None] * (geometry.atom_owners @ in_field > 0)
-    n_walls = len(geometry.wall_lengths)
-    best = np.full(n_walls, np.nan)
-    for wall in range(n_walls):
+    best = np.zeros(len(geometry.wall_lengths))
+    for wall, length in enumerate(geometry.wall_lengths):
         atoms = geometry.atom_wall == wall
         if geometry.closed[wall]:
-            best[wall] = _half_ring_coverage(
-                geometry.atom_start[atoms],
-                geometry.wall_lengths[wall],
-                covered[atoms],
-                observed[atoms],
-            )
-            continue
-        seen = observed[atoms].sum()
-        if seen > 0:
-            best[wall] = np.max(covered[atoms].sum(axis=0)) / seen
-    return float(np.nanmax(best)) if np.isfinite(best).any() else float("nan")
+            best[wall] = _half_ring_cover(
+                geometry.atom_start[atoms], length, covered[atoms]
+            ) / (length / 2)
+        else:
+            best[wall] = np.max(covered[atoms].sum(axis=0)) / length
+    return float(np.max(best))
 
 
-def _half_ring_coverage(
+def _half_ring_cover(
     start: NDArray[np.float64],
     perimeter: float,
     covered: NDArray[np.float64],
-    observed: NDArray[np.float64],
 ) -> float:
-    """Largest covered fraction of the observed length in any half of a ring.
+    """Largest length that one field covers in any half of a ring.
 
     Parameters
     ----------
@@ -864,24 +858,19 @@ def _half_ring_coverage(
         The ring's length.
     covered : ndarray of float64, shape (n_atoms, n_fields)
         Length of each atom that each field covers.
-    observed : ndarray of float64, shape (n_atoms,)
-        Length of each atom the map observes.
 
     Notes
     -----
-    Covered and observed lengths in the window ``[t, t + perimeter / 2)`` are
-    linear in ``t`` between atom ends and atom ends less half the perimeter,
-    so their ratio is monotone between those points and its maximum is at
-    one of them.
+    The covered length in the window ``[t, t + perimeter / 2)`` is linear in
+    ``t`` between atom ends and atom ends less half the perimeter, so its
+    maximum is at one of those points.
     """
     half = perimeter / 2
     bounds = np.concatenate([start, [perimeter]])
+    totals = np.concatenate([np.zeros((1, covered.shape[1])), np.cumsum(covered, 0)])
 
-    def cumulative(values: NDArray[np.float64], at: NDArray[np.float64]) -> NDArray:
-        """Integral of ``values`` (per atom) from 0 to ``at``, over two turns."""
-        totals = np.concatenate(
-            [np.zeros((1, *values.shape[1:])), np.cumsum(values, axis=0)]
-        )
+    def cumulative(at: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Covered length from 0 to ``at``, over two turns, per field."""
         turns, place = np.divmod(at, perimeter)
         atom = np.clip(
             np.searchsorted(bounds, place, side="right") - 1, 0, len(start) - 1
@@ -890,38 +879,34 @@ def _half_ring_coverage(
         fraction = np.divide(
             place - bounds[atom], widths, out=np.zeros_like(place), where=widths > 0
         )
-        if values.ndim == 2:
-            fraction, turns = fraction[:, None], turns[:, None]
         integral: NDArray[np.float64] = (
             totals[atom]
-            + fraction * (totals[atom + 1] - totals[atom])
-            + turns * totals[-1]
+            + fraction[:, None] * (totals[atom + 1] - totals[atom])
+            + turns[:, None] * totals[-1]
         )
         return integral
 
     windows = np.unique(np.concatenate([start, (start - half) % perimeter]))
-    seen = cumulative(observed, windows + half) - cumulative(observed, windows)
-    hit = cumulative(covered, windows + half) - cumulative(covered, windows)
-    usable = seen > 0
-    if not usable.any():
-        return float("nan")
-    return float(np.max(hit[usable] / seen[usable, None]))
+    return float(np.max(cumulative(windows + half) - cumulative(windows)))
 
 
 def _border_score(
     fields: list[NDArray[np.intp]],
     firing_rate: NDArray[np.float64],
+    bin_sizes: NDArray[np.float64],
     metric: DistanceMetric,
     geometry: _BorderGeometry,
 ) -> float:
     """Solstad border score of the fields, with these walls.
 
-    Coverage is the largest fraction of one wall's observed length that one
-    field covers (on a ring, of its best half). Distance is the
-    firing-rate-weighted mean distance from all field bins to the nearest
-    wall, over the inscribed radius. Geodesic distances include a
-    center-to-wall seed length and then paths through the retained navigation
-    graph; any unreachable field bin makes the score NaN.
+    Coverage is the largest fraction of one wall's length that one field
+    covers (on a ring, of its best half); unobserved wall is not covered.
+    Distance is the mean distance from the fields to the nearest wall,
+    weighting each field bin by its rate times its area (``bin_sizes``), so
+    it does not depend on how a field is cut into bins; over the inscribed
+    radius. Geodesic distances include a center-to-wall seed length and then
+    paths through the retained navigation graph; any unreachable field bin
+    makes the score NaN.
     """
     coverage = _wall_coverage(geometry, fields, firing_rate)
     if np.isnan(coverage):
@@ -933,7 +918,7 @@ def _border_score(
         distances = geometry.geodesic[bins]
         if not np.all(np.isfinite(distances)):
             return float("nan")
-    weights = firing_rate[bins]
+    weights = firing_rate[bins] * bin_sizes[bins]
     distance = float(np.sum(weights * distances) / np.sum(weights)) / geometry.radius
     denominator = coverage + distance
     if denominator == 0:

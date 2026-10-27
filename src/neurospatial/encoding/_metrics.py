@@ -1041,8 +1041,8 @@ def batch_border_scores(
         The measured arena walls, or the explicitly requested outline of the
         retained bins. Missing wall geometry, or walls outside every bin,
         raise NotImplementedError rather than being converted to per-unit
-        computation failures. Unvisited wall bins do not: each unit's
-        coverage uses the observed part of each wall.
+        computation failures. Unvisited wall bins do not: they count as not
+        covered by the unit's fields.
 
     Returns
     -------
