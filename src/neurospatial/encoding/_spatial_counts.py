@@ -24,7 +24,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -53,7 +53,6 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 __all__ = [
-    "bin_spike_train",
     "bin_spike_trains",
     "compute_occupancy",
     "resolve_speed",
@@ -376,14 +375,92 @@ def require_allocentric(env: Environment, operation: str) -> None:
     )
 
 
-def _bin_spike_train_with_stats(
+class _SpikeTrack(NamedTuple):
+    """Trajectory lookups that place every unit's spikes, built once per batch."""
+
+    times: NDArray[np.float64]  # (n_samples,) seconds
+    t_min: float  # first trajectory timestamp
+    t_max: float  # last trajectory timestamp
+    interval_mask: NDArray[np.bool_]  # (n_samples - 1,) shared counts/dwell gate
+    frame_bins: NDArray[np.intp] | None  # (n_samples,) "start" allocation
+    linear_intervals: LinearSpatialIntervals | None  # "linear" allocation
+    observed_times: NDArray[np.float64] | None  # (n_observed,) "linear"
+    observed_coordinates: NDArray[np.float64] | None  # (n_dims, n_observed)
+
+
+def _start_frame_bins(
+    env: Environment, times: NDArray[np.float64], positions: NDArray[np.float64]
+) -> NDArray[np.intp]:
+    """Bin of each frame under ``"start"`` allocation, shape (n_samples,).
+
+    A missing frame holds the last valid position, so a bridged gap's dwell
+    time and spikes go to the bin where it started.
+    """
+    return env.bin_at(fill_missing_positions(times, positions, time_allocation="start"))
+
+
+def _spike_track(
     env: Environment,
-    spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
     interval_mask: NDArray[np.bool_],
-    linear_intervals: LinearSpatialIntervals | None = None,
+    linear_intervals: LinearSpatialIntervals | None,
+) -> _SpikeTrack:
+    """Prepare the trajectory lookups shared by every unit's spike counts.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment.
+    times : ndarray, shape (n_samples,)
+        Validated trajectory timestamps in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Trajectory coordinates, already reshaped to two dimensions.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        Shared gap, speed, bounds and time-window validity.
+    linear_intervals : LinearSpatialIntervals or None
+        Prepared ``time_allocation="linear"`` intervals. ``None`` means
+        ``"start"`` allocation.
+    """
+    if linear_intervals is None:
+        return _SpikeTrack(
+            times,
+            times.min(),
+            times.max(),
+            interval_mask,
+            _start_frame_bins(env, times, positions),
+            None,
+            None,
+            None,
+        )
+    observed = np.isfinite(positions).all(axis=1)
+    return _SpikeTrack(
+        times,
+        times.min(),
+        times.max(),
+        interval_mask,
+        None,
+        linear_intervals,
+        times[observed],
+        np.ascontiguousarray(positions[observed].T),
+    )
+
+
+def _track_occupancy(track: _SpikeTrack, n_bins: int) -> NDArray[np.float64]:
+    """Seconds in each bin on the track's shared support, shape (n_bins,)."""
+    if track.linear_intervals is not None:
+        return np.array(track.linear_intervals.occupancy, dtype=np.float64, copy=True)
+    assert track.frame_bins is not None
+    return start_allocated_occupancy(
+        track.frame_bins, np.diff(track.times), track.interval_mask, n_bins
+    )
+
+
+def _bin_spike_train_with_stats(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    track: _SpikeTrack,
 ) -> tuple[
     NDArray[np.float64],  # spike_counts, shape (n_bins,)
     int,  # n_time_dropped
@@ -399,20 +476,12 @@ def _bin_spike_train_with_stats(
         Spatial environment.
     spike_times : ndarray, shape (n_spikes,)
         Spike timestamps in seconds, already cast to float64.
-    times : ndarray, shape (n_samples,)
-        Validated trajectory timestamps in seconds.
-    positions : ndarray, shape (n_samples, n_dims)
-        Trajectory coordinates, already reshaped to two dimensions.
-    interval_mask : ndarray of bool, shape (n_samples - 1,)
-        Precomputed gap, speed, bounds and time-window validity. The same
-        array gates occupancy and every unit's spike counts. A spike belongs
+    track : _SpikeTrack
+        Trajectory lookups from :func:`_spike_track`. Its ``interval_mask``
+        gates occupancy and every unit's spike counts alike. A spike belongs
         to interval ``searchsorted(times, t, side="right") - 1``; a spike at
         ``times[-1]`` belongs to no interval. Exclusions by this mask are
         intentional and do not count toward inactive-bin drop warnings.
-
-    linear_intervals : LinearSpatialIntervals or None
-        Prepared ``time_allocation="linear"`` intervals. ``None`` means
-        ``"start"`` allocation.
 
     Returns
     -------
@@ -438,17 +507,17 @@ def _bin_spike_train_with_stats(
     if n_total == 0:
         return spike_counts, 0, 0, 0, 0
 
-    t_min, t_max = times.min(), times.max()
-    valid_time_mask = (spike_times >= t_min) & (spike_times < t_max)
+    valid_time_mask = (spike_times >= track.t_min) & (spike_times < track.t_max)
     spike_times_valid = spike_times[valid_time_mask]
     n_time_dropped = n_total - len(spike_times_valid)
 
-    spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
+    spike_interval = np.searchsorted(track.times, spike_times_valid, side="right") - 1
     if len(spike_times_valid) > 0:
-        keep = interval_mask[spike_interval]
+        keep = track.interval_mask[spike_interval]
         spike_times_valid = spike_times_valid[keep]
         spike_interval = spike_interval[keep]
 
+    linear_intervals = track.linear_intervals
     if linear_intervals is None:
         # Start allocation: the interval's whole dwell time goes to its start
         # frame's bin, so its spikes must go there too. Interpolating the spike
@@ -457,8 +526,8 @@ def _bin_spike_train_with_stats(
         n_after_time = len(spike_times_valid)
         if n_after_time == 0:
             return spike_counts, n_time_dropped, 0, n_total, 0
-        held = fill_missing_positions(times, positions, time_allocation="start")
-        spike_bins = env.bin_at(held[spike_interval])
+        assert track.frame_bins is not None
+        spike_bins = track.frame_bins[spike_interval]
     else:
         runs = linear_intervals.support.runs
         if len(runs) == 0:
@@ -473,13 +542,14 @@ def _bin_spike_train_with_stats(
         # Linear allocation splits each interval's dwell time along the
         # straight segment between its samples, so spikes take the bin of
         # their interpolated position.
-        n_dims = positions.shape[1]
-        observed = np.isfinite(positions).all(axis=1)
-        spike_positions = np.empty((n_after_time, n_dims), dtype=np.float64)
-        for d in range(n_dims):
-            spike_positions[:, d] = np.interp(
-                spike_times_valid, times[observed], positions[observed, d]
-            )
+        assert track.observed_times is not None
+        assert track.observed_coordinates is not None
+        spike_positions = np.column_stack(
+            [
+                np.interp(spike_times_valid, track.observed_times, coordinate)
+                for coordinate in track.observed_coordinates
+            ]
+        )
         spike_bins = env.bin_at(spike_positions)
 
     valid_bins = spike_bins[spike_bins >= 0]
@@ -1018,150 +1088,33 @@ def _emit_inactive_bin_warning(
     )
 
 
-def bin_spike_train(
+def _resolve_spatial_mask(
     env: Environment,
-    spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    speed: NDArray[np.float64] | None = None,
-    min_speed: float | None = None,
-    max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: Any = None,
-    spike_window: Any = None,
-    interval_mask: NDArray[np.bool_] | None = None,
-    time_allocation: Literal["start", "linear"] = "start",
-    linear_intervals: LinearSpatialIntervals | None = None,
-    context: str = "bin_spike_train",
-    warn_on_drop: bool = True,
-) -> NDArray[np.float64]:
-    """Bin spike train into spatial bins.
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    max_gap: float | None,
+    epochs: Any,
+    spike_window: Any,
+    interval_mask: NDArray[np.bool_] | None,
+    time_allocation: Literal["start", "linear"],
+    linear_intervals: LinearSpatialIntervals | None,
+) -> tuple[NDArray[np.bool_], LinearSpatialIntervals | None]:
+    """Resolve the interval gate shared by spike counts and occupancy.
 
-    Converts continuous spike times to spike counts per spatial bin. Each
-    spike goes to the bin that receives its sampling interval's dwell time
-    (see Notes).
-
-    Parameters
-    ----------
-    env : Environment
-        The spatial environment defining bin structure.
-    spike_times : ndarray, shape (n_spikes,)
-        Times of spike events in seconds.
-    times : ndarray, shape (n_samples,)
-        Timestamps of trajectory samples in seconds.
-    positions : ndarray, shape (n_samples, n_dims)
-        Position coordinates at each time sample.
-    speed : ndarray, shape (n_samples,), or None
-        Concrete, already-resolved speed array (typically from
-        :func:`resolve_speed`). When provided with ``min_speed``, spikes are
-        gated by the same per-interval speed criterion ``env.occupancy`` uses
-        (see ``min_speed``). Consumed as-is; never re-derived here.
-    min_speed : float or None
-        Minimum speed threshold. When provided together with ``speed``, each
-        time-window-valid spike at time ``t`` is kept iff ``speed[a] >=
-        min_speed``, where ``a`` is the start of the gap holding the spike:
-        the last sample with finite position at or before
-        ``searchsorted(times, t, "right") - 1``, so a spike in a bridged gap
-        uses the speed of the valid sample before the missing rows. This is
-        the same per-interval gate ``env.occupancy`` applies to the
-        denominator. When ``None`` (default) no speed filtering happens.
-    max_gap : float or None, default=1.0
-        Longest stretch of missing tracking, in seconds, to bridge: the time
-        between consecutive valid samples (a dropped frame and a NaN row are
-        the same missing sample). Longer gaps are excluded as tracking losses;
-        ``None`` bridges every gap. The default is calibrated for typical video
-        and DeepLabCut tracking; choose a value longer than routine dropped or
-        low-confidence frames and shorter than real tracking losses or pickups.
-    context : str, optional
-        Label used in error messages to identify the calling function.
-    warn_on_drop : bool, default=True
-        If ``True`` (the default), emit a ``UserWarning`` when a large
-        fraction of spikes are silently dropped — either because they
-        fall outside the position time window or because they map to
-        inactive/out-of-environment bins.  A warning is always emitted
-        when **all** spikes are dropped (regardless of threshold).
-        Set to ``False`` to suppress all drop-related warnings (e.g.
-        when the calling batch function will issue its own aggregate
-        warning).
-
-    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
-        Restrict complete sampling intervals to these half-open windows in
-        seconds on the same clock as ``times``. None means unrestricted.
-    spike_window : same forms as epochs, or None
-        When electrophysiology was recording. Sampling intervals outside
-        these windows contribute neither spikes nor occupancy.
-    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
-        Optional precomputed validity shared by counts and occupancy. When
-        supplied, it already includes all requested gates and windows, so
-        these helpers do not recalculate or renormalize them.
-    time_allocation : {"start", "linear"}, default="start"
-        Start allocation keeps complete intervals with both endpoints inside
-        and assigns each interval, with its spikes, to its start sample's bin.
-        Linear allocation uses exact retained planar segment support and
-        assigns spikes to their interpolated position.
-    linear_intervals : LinearSpatialIntervals or None
-        Prepared linear support shared with occupancy and other units.
+    Parameters are those of :func:`bin_spike_trains`; ``positions`` is already
+    two-dimensional.
 
     Returns
     -------
-    ndarray, shape (n_bins,)
-        Number of spikes in each spatial bin (float64 for compatibility
-        with smoothing operations).
-
-    Raises
-    ------
-    ValueError
-        If times and positions have different lengths.
-
-    Notes
-    -----
-    A spike in sampling interval ``[times[k], times[k + 1])`` is counted in
-    the same bin as that interval's dwell time: the bin of ``positions[k]``
-    under ``"start"`` allocation, and the bin of the spike's linearly
-    interpolated position under ``"linear"`` allocation (which splits the
-    interval's time along the segment). Matching numerator and denominator
-    keeps the rate of an untuned neuron flat. Spikes outside the trajectory
-    time range are excluded, and spikes whose position is outside the
-    environment bins are excluded from counts.
-
-    The default ``warn_on_drop=True`` guards against common unit
-    mismatches (e.g. spike_times in milliseconds while times is in
-    seconds), which would silently produce a near-empty firing field.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._spatial_counts import bin_spike_train
-
-    >>> # Create environment
-    >>> positions = np.random.rand(1000, 2) * 100
-    >>> env = Environment.from_samples(positions, bin_size=10.0)
-
-    >>> # Create trajectory and spikes
-    >>> times = np.linspace(0, 10, 1000)
-    >>> trajectory = np.random.rand(1000, 2) * 100
-    >>> spike_times = np.array([1.0, 2.5, 4.0, 7.5])
-
-    >>> # Bin spikes
-    >>> spike_counts = bin_spike_train(env, spike_times, times, trajectory)
-    >>> spike_counts.shape[0] == env.n_bins
-    True
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        The supplied mask, the linear support's mask, or the mask computed
+        from the gates and windows.
+    linear_intervals : LinearSpatialIntervals or None
+        The supplied or prepared linear support; ``None`` for ``"start"``.
     """
-    spike_times = np.asarray(spike_times, dtype=np.float64)
-    _validate_time_allocation(time_allocation)
-    times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
-
-    if len(times) != len(positions):
-        raise ValueError(
-            f"in {context}: times length ({len(times)}) must match "
-            f"positions length ({len(positions)})"
-        )
-
-    if positions.ndim == 1:
-        positions = positions.reshape(-1, 1)
-
     if time_allocation == "linear":
         if linear_intervals is None:
             linear_intervals = prepare_linear_spatial_intervals(
@@ -1175,8 +1128,8 @@ def bin_spike_train(
                 spike_window=spike_window,
                 interval_mask=interval_mask,
             )
-        interval_mask = linear_intervals.support.mask
-    elif interval_mask is None:
+        return linear_intervals.support.mask, linear_intervals
+    if interval_mask is None:
         resolved_epochs, resolved_spike_window = resolve_time_windows(
             epochs, spike_window
         )
@@ -1190,33 +1143,7 @@ def bin_spike_train(
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
         )
-
-    spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
-        _bin_spike_train_with_stats(
-            env,
-            spike_times,
-            times,
-            positions,
-            interval_mask=interval_mask,
-            linear_intervals=linear_intervals,
-        )
-    )
-
-    if warn_on_drop:
-        t_min, t_max = times.min(), times.max()
-        _emit_time_window_warning(
-            n_time_dropped,
-            n_total,
-            t_min,
-            t_max,
-            spike_times,
-        )
-        _emit_inactive_bin_warning(
-            n_bin_dropped,
-            n_after_time,
-        )
-
-    return spike_counts
+    return interval_mask, None
 
 
 def compute_occupancy(
@@ -1330,39 +1257,23 @@ def compute_occupancy(
 
     require_position_columns(positions, env.n_dims, call=context)
 
-    if time_allocation == "linear":
-        if linear_intervals is None:
-            linear_intervals = prepare_linear_spatial_intervals(
-                env,
-                times,
-                positions,
-                speed=speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
-                epochs=epochs,
-                spike_window=spike_window,
-                interval_mask=interval_mask,
-            )
-        occupancy: NDArray[np.float64] = np.array(
-            linear_intervals.occupancy, dtype=np.float64, copy=True
-        )
-        return occupancy
-    if interval_mask is None:
-        resolved_epochs, resolved_spike_window = resolve_time_windows(
-            epochs, spike_window
-        )
-        interval_mask = _spatial_interval_mask(
-            env,
-            times,
-            positions,
-            speed=speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-        )
+    interval_mask, linear_intervals = _resolve_spatial_mask(
+        env,
+        times,
+        positions,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        interval_mask=interval_mask,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
+    )
+    if linear_intervals is not None:
+        return np.array(linear_intervals.occupancy, dtype=np.float64, copy=True)
     return start_allocated_occupancy(
-        env.bin_at(fill_missing_positions(times, positions, time_allocation="start")),
+        _start_frame_bins(env, times, positions),
         np.diff(times),
         interval_mask,
         env.n_bins,
@@ -1389,9 +1300,11 @@ def bin_spike_trains(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains into spatial bins.
 
-    Batch version of bin_spike_train that efficiently processes multiple
-    neurons. Precomputes shared quantities (position bins, occupancy) and
-    optionally parallelizes spike counting with joblib.
+    Precomputes shared quantities (frame bins, occupancy) once for every
+    neuron and optionally parallelizes spike counting with joblib. Each spike
+    goes to the bin that receives its sampling interval's dwell time: the bin
+    of the interval's start sample under ``"start"`` allocation, the bin of
+    its interpolated position under ``"linear"``.
 
     Parameters
     ----------
@@ -1494,7 +1407,6 @@ def bin_spike_trains(
 
     See Also
     --------
-    bin_spike_train : Single-neuron version
     compute_occupancy : Compute occupancy only
     as_spike_trains : Coerce input to canonical per-neuron spike trains
     """
@@ -1515,130 +1427,65 @@ def bin_spike_trains(
     # the (shared) occupancy denominator and every per-neuron spike numerator.
     # This is what guarantees numerator/denominator alignment by construction.
     resolved_speed = resolve_speed(times, positions, speed, min_speed, max_gap=max_gap)
-
-    if time_allocation == "linear":
-        if linear_intervals is None:
-            linear_intervals = prepare_linear_spatial_intervals(
-                env,
-                times,
-                positions,
-                speed=resolved_speed,
-                min_speed=min_speed,
-                max_gap=max_gap,
-                epochs=epochs,
-                spike_window=spike_window,
-                interval_mask=interval_mask,
-            )
-        interval_mask = linear_intervals.support.mask
-    elif interval_mask is None:
-        resolved_epochs, resolved_spike_window = resolve_time_windows(
-            epochs, spike_window
-        )
-        interval_mask = _spatial_interval_mask(
-            env,
-            times,
-            positions,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-        )
-    occupancy = compute_occupancy(
+    interval_mask, linear_intervals = _resolve_spatial_mask(
         env,
         times,
         positions,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
         interval_mask=interval_mask,
         time_allocation=time_allocation,
         linear_intervals=linear_intervals,
     )
+    require_position_columns(positions, env.n_dims, call="bin_spike_trains")
+    # The frame bins (or linear lookups) are built once and shared by the
+    # occupancy and every unit's spike counts.
+    track = _spike_track(
+        env,
+        times,
+        positions,
+        interval_mask=interval_mask,
+        linear_intervals=linear_intervals,
+    )
+    occupancy = _track_occupancy(track, env.n_bins)
 
-    # Spike-counting pass.  We use the private kernel _bin_spike_train_with_stats
-    # which returns (counts, n_time_dropped, n_bin_dropped, n_total, n_after_time)
-    # so that drop statistics are accumulated FOR FREE during the single counting
-    # pass — no separate re-interpolation loop.  Workers are allowed to return
-    # stats as data; only emitting warnings.warn() from a worker is forbidden
-    # (they are commonly swallowed by joblib).
-
-    # Pre-cast all spike arrays once (avoids repeated asarray inside kernel)
+    # Each unit's counts come back with its drop statistics, so the warnings
+    # below are aggregated in the main process: warnings.warn() from a joblib
+    # worker is commonly swallowed.
     spike_arrays = [np.asarray(spikes, dtype=np.float64) for spikes in spike_times_list]
-
     if n_jobs == 1:
-        spike_counts = np.zeros((n_neurons, env.n_bins), dtype=np.float64)
-        total_spikes = 0
-        total_time_dropped = 0
-        total_after_time = 0
-        total_bin_dropped = 0
-
-        for i, spikes in enumerate(spike_arrays):
-            counts, n_td, n_bd, n_tot, n_at = _bin_spike_train_with_stats(
-                env,
-                spikes,
-                times,
-                positions,
-                interval_mask=interval_mask,
-                linear_intervals=linear_intervals,
-            )
-            spike_counts[i] = counts
-            total_spikes += n_tot
-            total_time_dropped += n_td
-            total_after_time += n_at
-            total_bin_dropped += n_bd
+        results = [
+            _bin_spike_train_with_stats(env, spikes, track) for spikes in spike_arrays
+        ]
     else:
         from joblib import Parallel, delayed
 
-        def _process_neuron(
-            spikes: NDArray[np.float64],
-        ) -> tuple[NDArray[np.float64], int, int, int, int]:
-            # Return stats as data — do NOT call warnings.warn() from here.
-            return _bin_spike_train_with_stats(
-                env,
-                spikes,
-                times,
-                positions,
-                interval_mask=interval_mask,
-                linear_intervals=linear_intervals,
-            )
-
         results = Parallel(n_jobs=n_jobs)(
-            delayed(_process_neuron)(spikes) for spikes in spike_arrays
+            delayed(_bin_spike_train_with_stats)(env, spikes, track)
+            for spikes in spike_arrays
         )
-        spike_counts = np.zeros((n_neurons, env.n_bins), dtype=np.float64)
-        total_spikes = 0
-        total_time_dropped = 0
-        total_after_time = 0
-        total_bin_dropped = 0
-        for i, (counts, n_td, n_bd, n_tot, n_at) in enumerate(results):
-            spike_counts[i] = counts
-            total_spikes += n_tot
-            total_time_dropped += n_td
-            total_after_time += n_at
-            total_bin_dropped += n_bd
+    spike_counts = np.array([counts for counts, *_ in results], dtype=np.float64)
+    spike_counts = spike_counts.reshape(n_neurons, env.n_bins)
+    n_time_dropped, n_bin_dropped, n_total, n_after_time = (
+        np.array([stats for _, *stats in results], dtype=np.int64)
+        .reshape(n_neurons, 4)
+        .sum(axis=0)
+        .tolist()
+    )
 
     # Warn ONCE in the main process from the aggregated statistics.
     if warn_on_drop and n_neurons > 0:
-        t_min, t_max = times.min(), times.max()
-
-        if total_spikes > 0 and total_time_dropped > 0:
-            all_spikes_cat = (
-                np.concatenate([s for s in spike_arrays if len(s) > 0])
-                if any(len(s) > 0 for s in spike_arrays)
-                else None
-            )
-            _emit_time_window_warning(
-                total_time_dropped,
-                total_spikes,
-                t_min,
-                t_max,
-                all_spikes_cat,
-                scope=drop_scope,
-            )
-
-        if total_after_time > 0 and total_bin_dropped > 0:
-            _emit_inactive_bin_warning(
-                total_bin_dropped,
-                total_after_time,
-                scope=drop_scope,
-            )
+        _emit_time_window_warning(
+            n_time_dropped,
+            n_total,
+            track.t_min,
+            track.t_max,
+            np.concatenate(spike_arrays),
+            scope=drop_scope,
+        )
+        _emit_inactive_bin_warning(n_bin_dropped, n_after_time, scope=drop_scope)
 
     return spike_counts, occupancy

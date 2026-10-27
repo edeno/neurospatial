@@ -4361,20 +4361,18 @@ class TestComputeSpatialRatesThroughputContract:
     """
 
     def test_occupancy_computed_once_regardless_of_neuron_count(self) -> None:
-        """compute_occupancy fires exactly once per call, for n=1 and n=25."""
+        """Occupancy is computed exactly once per call, for n=1 and n=25."""
         import neurospatial.encoding._spatial_counts as binning_mod
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         def run(n_neurons: int) -> int:
             env, times, positions, spikes = _make_batch_inputs(n_neurons)
-            # Patch at the module where compute_spatial_rates looks it up
-            # (function-local `from ..._binning import ... compute_occupancy`
-            # resolves the name on the _binning module at call time), wrapping
-            # the real function so behavior is preserved.
+            # Patch the module-level helper bin_spike_trains resolves at call
+            # time, wrapping the real function so behavior is preserved.
             with patch.object(
                 binning_mod,
-                "compute_occupancy",
-                wraps=binning_mod.compute_occupancy,
+                "_track_occupancy",
+                wraps=binning_mod._track_occupancy,
             ) as occ_spy:
                 compute_spatial_rates(
                     env,

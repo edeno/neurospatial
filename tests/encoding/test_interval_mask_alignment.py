@@ -14,7 +14,6 @@ import pytest
 from neurospatial import Environment
 from neurospatial._intervals import interval_valid_mask
 from neurospatial.encoding._spatial_counts import (
-    bin_spike_train,
     bin_spike_trains,
     compute_occupancy,
 )
@@ -42,7 +41,10 @@ SMOOTHING_METHODS = ["diffusion_kde", "gaussian_kde", "binned"]
 
 @pytest.mark.parametrize("offset,step", [(0.0, 0.5), (0.1, 0.1), (1e9, 0.1)])
 def test_spatial_spike_at_last_sample_not_counted(env_1d, offset, step):
-    from neurospatial.encoding._spatial_counts import _bin_spike_train_with_stats
+    from neurospatial.encoding._spatial_counts import (
+        _bin_spike_train_with_stats,
+        _spike_track,
+    )
 
     times = offset + np.arange(3) * step
     positions = np.full((3, 1), 20.0)
@@ -50,23 +52,27 @@ def test_spatial_spike_at_last_sample_not_counted(env_1d, offset, step):
     mask = interval_valid_mask(times, positions, env_1d)
     counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
         _bin_spike_train_with_stats(
-            env_1d, spikes, times, positions, interval_mask=mask
+            env_1d,
+            spikes,
+            _spike_track(
+                env_1d, times, positions, interval_mask=mask, linear_intervals=None
+            ),
         )
     )
     assert counts.sum() == 1
     assert (n_time_dropped, n_bin_dropped, n_total, n_after_time) == (1, 0, 2, 1)
-    public_counts = bin_spike_train(
-        env_1d, spikes, times, positions, warn_on_drop=False
-    )
+    public_counts = bin_spike_trains(
+        env_1d, [spikes], times, positions, warn_on_drop=False
+    )[0][0]
     np.testing.assert_array_equal(public_counts, counts)
 
 
 def test_max_gap_none_drops_out_of_bounds_spikes(env_1d):
     times = np.array([0.0, 0.5, 1.0])
     positions = np.array([[-20.0], [20.0], [30.0]])
-    counts = bin_spike_train(
-        env_1d, np.array([0.45, 0.75]), times, positions, max_gap=None
-    )
+    counts = bin_spike_trains(
+        env_1d, [np.array([0.45, 0.75])], times, positions, max_gap=None
+    )[0][0]
     assert counts.sum() == 1
     occupancy = compute_occupancy(env_1d, times, positions, max_gap=None)
     assert occupancy.sum() == 0.5
@@ -166,16 +172,16 @@ def test_max_gap_spike_in_gap_excluded_from_count(env_1d, gap_trajectory) -> Non
     t_gap = 0.5 * (times[gap_interval] + times[gap_interval + 1])
     spike_times = np.array([t_gap])
 
-    counts_default = bin_spike_train(
-        env_1d, spike_times, times, positions, warn_on_drop=False
-    )
+    counts_default = bin_spike_trains(
+        env_1d, [spike_times], times, positions, warn_on_drop=False
+    )[0][0]
     # With default max_gap=0.5 the spike falls in a dropped interval -> 0 count.
     assert counts_default.sum() == 0.0
 
     # With max_gap=None the gap is no longer dropped -> the spike IS counted.
-    counts_no_gap = bin_spike_train(
-        env_1d, spike_times, times, positions, max_gap=None, warn_on_drop=False
-    )
+    counts_no_gap = bin_spike_trains(
+        env_1d, [spike_times], times, positions, max_gap=None, warn_on_drop=False
+    )[0][0]
     assert counts_no_gap.sum() == 1.0
 
 
@@ -209,7 +215,9 @@ def test_max_gap_alignment_against_hand_masked_reference(
     t_gap = 0.5 * (times[gap_interval] + times[gap_interval + 1])
     spike_times = np.array([0.5, 1.5, t_gap, 3.5, 4.2])
 
-    counts = bin_spike_train(env_1d, spike_times, times, positions, warn_on_drop=False)
+    counts = bin_spike_trains(
+        env_1d, [spike_times], times, positions, warn_on_drop=False
+    )[0][0]
     occ = compute_occupancy(env_1d, times, positions)
 
     # --- Hand-masked reference: drop the gap interval from BOTH sides. ---
@@ -294,7 +302,9 @@ def test_oob_start_spike_excluded(env_1d, oob_trajectory) -> None:
     t_oob = 0.5 * (times[oob_interval] + times[oob_interval + 1])
     spike_times = np.array([t_oob])
 
-    counts = bin_spike_train(env_1d, spike_times, times, positions, warn_on_drop=False)
+    counts = bin_spike_trains(
+        env_1d, [spike_times], times, positions, warn_on_drop=False
+    )[0][0]
     # The interval is dropped by the shared mask -> spike not counted.
     assert counts.sum() == 0.0
 
@@ -312,7 +322,9 @@ def test_oob_alignment_against_reference(env_1d, oob_trajectory) -> None:
     t_oob = 0.5 * (times[oob_interval] + times[oob_interval + 1])
     spike_times = np.array([0.05, 0.15, t_oob, 0.45, 0.55])
 
-    counts = bin_spike_train(env_1d, spike_times, times, positions, warn_on_drop=False)
+    counts = bin_spike_trains(
+        env_1d, [spike_times], times, positions, warn_on_drop=False
+    )[0][0]
     occ = compute_occupancy(env_1d, times, positions)
 
     mask = interval_valid_mask(times, positions, env_1d)
@@ -392,15 +404,15 @@ def test_combined_mask_alignment(env_1d) -> None:
     from neurospatial.encoding._spatial_counts import resolve_speed
 
     resolved = resolve_speed(times, positions, speed, min_speed, max_gap=0.5)
-    counts = bin_spike_train(
+    counts = bin_spike_trains(
         env_1d,
-        spike_times,
+        [spike_times],
         times,
         positions,
         speed=resolved,
         min_speed=min_speed,
         warn_on_drop=False,
-    )
+    )[0][0]
     occ = compute_occupancy(
         env_1d, times, positions, speed=resolved, min_speed=min_speed
     )
@@ -446,9 +458,9 @@ def test_max_gap_none_aligned_and_matches_pre_fix(env_1d, gap_trajectory) -> Non
     t_gap = 0.5 * (times[gap_interval] + times[gap_interval + 1])
     spike_times = np.array([0.5, t_gap, 3.5])
 
-    counts = bin_spike_train(
-        env_1d, spike_times, times, positions, max_gap=None, warn_on_drop=False
-    )
+    counts = bin_spike_trains(
+        env_1d, [spike_times], times, positions, max_gap=None, warn_on_drop=False
+    )[0][0]
     occ = compute_occupancy(env_1d, times, positions, max_gap=None)
 
     mask = interval_valid_mask(times, positions, env_1d, max_gap=None)
@@ -700,7 +712,9 @@ def test_interval_mask_precompute_results_unchanged(env_1d, gap_trajectory) -> N
         env_1d, spike_trains, times, positions, n_jobs=1, warn_on_drop=False
     )
     for i, spikes in enumerate(spike_trains):
-        single = bin_spike_train(env_1d, spikes, times, positions, warn_on_drop=False)
+        single = bin_spike_trains(
+            env_1d, [spikes], times, positions, warn_on_drop=False
+        )[0][0]
         np.testing.assert_array_equal(batch_counts[i], single)
 
 
@@ -714,12 +728,14 @@ def test_dropout_is_bridged_like_a_deleted_row_on_both_sides():
     times = np.array([0.0, 0.1, 0.2, 0.3])
     positions = np.array([[15.0], [np.nan], [45.0], [46.0]])
     spikes = np.array([0.05, 0.15, 0.25])
-    counts = bin_spike_train(env, spikes, times, positions, warn_on_drop=False)
+    counts = bin_spike_trains(env, [spikes], times, positions, warn_on_drop=False)[0][0]
     occupancy = compute_occupancy(env, times, positions)
     kept = [0, 2, 3]
     np.testing.assert_array_equal(
         counts,
-        bin_spike_train(env, spikes, times[kept], positions[kept], warn_on_drop=False),
+        bin_spike_trains(
+            env, [spikes], times[kept], positions[kept], warn_on_drop=False
+        )[0][0],
     )
     np.testing.assert_allclose(
         occupancy, compute_occupancy(env, times[kept], positions[kept])
@@ -735,9 +751,9 @@ def test_dropout_beyond_max_gap_is_excluded_from_both_sides():
     times = np.array([0.0, 0.1, 0.2, 0.3])
     positions = np.array([[15.0], [np.nan], [45.0], [46.0]])
     spikes = np.array([0.05, 0.25])
-    counts = bin_spike_train(
-        env, spikes, times, positions, warn_on_drop=False, max_gap=0.15
-    )
+    counts = bin_spike_trains(
+        env, [spikes], times, positions, warn_on_drop=False, max_gap=0.15
+    )[0][0]
     occupancy = compute_occupancy(env, times, positions, max_gap=0.15)
     in_last = int(env.bin_at(np.array([[45.0]]))[0])
     expected_counts = np.zeros(env.n_bins)

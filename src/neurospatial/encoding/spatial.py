@@ -87,7 +87,10 @@ if TYPE_CHECKING:
 
     from neurospatial._intervals import TimeSupport
     from neurospatial._typing import SpikeTrainsLike
-    from neurospatial.encoding._spatial_counts import LinearSpatialIntervals
+    from neurospatial.encoding._spatial_counts import (
+        LinearSpatialIntervals,
+        _SpikeTrack,
+    )
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment import Environment
     from neurospatial.geometry._boundaries import BoundarySource
@@ -7442,9 +7445,7 @@ class _ShuffleScores(NamedTuple):
 class _ShuffleMaps(NamedTuple):
     """Trajectory binning and estimator settings shared by every shifted map."""
 
-    times: NDArray[np.float64]  # (n_time,)
-    positions: NDArray[np.float64]  # (n_time, n_dims)
-    interval_mask: NDArray[np.bool_]  # (n_time - 1,) analyzed intervals
+    track: _SpikeTrack  # frame bins on the analyzed intervals, built once
     occupancy: NDArray[np.float64]  # (n_bins,) seconds
     occupied: NDArray[np.bool_]  # (n_bins,) occupancy support of the metrics
     method: str
@@ -7473,13 +7474,7 @@ def _shuffle_rate_maps(
 
     counts = np.zeros((len(spike_times), env.n_bins), dtype=np.float64)
     for i, train in enumerate(spike_times):
-        counts[i] = _bin_spike_train_with_stats(
-            env,
-            train,
-            maps.times,
-            maps.positions,
-            interval_mask=maps.interval_mask,
-        )[0]
+        counts[i] = _bin_spike_train_with_stats(env, train, maps.track)[0]
     rates = smooth_rate_maps_batch(
         env,
         counts,
@@ -7639,6 +7634,7 @@ def _spatial_shuffle(
     )
     from neurospatial.encoding._spatial_counts import (
         _spatial_interval_mask,
+        _spike_track,
         require_allocentric,
         resolve_speed,
     )
@@ -7718,9 +7714,9 @@ def _spatial_shuffle(
     reference = compute_spatial_rates(env, trains, times, positions, **options)
     occupancy = np.asarray(reference.occupancy, dtype=np.float64)
     maps = _ShuffleMaps(
-        times=times,
-        positions=positions_2d,
-        interval_mask=mask,
+        track=_spike_track(
+            env, times, positions_2d, interval_mask=mask, linear_intervals=None
+        ),
         occupancy=occupancy,
         occupied=occupancy_support(reference),
         method=method,

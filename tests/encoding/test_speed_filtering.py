@@ -23,7 +23,7 @@ import pytest
 from neurospatial import Environment
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.encoding._spatial_counts import (
-    bin_spike_train,
+    bin_spike_trains,
     compute_occupancy,
     resolve_speed,
 )
@@ -170,9 +170,9 @@ def test_alignment_spikes_and_occupancy_same_intervals(
 
     # --- Public path ---
     resolved = resolve_speed(times, positions, None, min_speed, max_gap=0.5)
-    counts_public = bin_spike_train(
-        env_1d, spike_times, times, positions, speed=resolved, min_speed=min_speed
-    )
+    counts_public = bin_spike_trains(
+        env_1d, [spike_times], times, positions, speed=resolved, min_speed=min_speed
+    )[0][0]
     occ_public = compute_occupancy(
         env_1d, times, positions, speed=resolved, min_speed=min_speed
     )
@@ -187,7 +187,7 @@ def test_alignment_spikes_and_occupancy_same_intervals(
     interval = np.searchsorted(times, spike_times, side="right") - 1
     interval = np.clip(interval, 0, len(times) - 1)
     keep = resolved[interval] >= min_speed
-    counts_ref = bin_spike_train(env_1d, spike_times[keep], times, positions)
+    counts_ref = bin_spike_trains(env_1d, [spike_times[keep]], times, positions)[0][0]
 
     np.testing.assert_array_equal(counts_public, counts_ref)
     np.testing.assert_array_equal(occ_public, occ_ref)
@@ -366,9 +366,9 @@ def test_filter_occupancy_only_bug_regression(env_1d, two_speed_trajectory) -> N
     min_speed = 10.0
 
     resolved = resolve_speed(times, positions, None, min_speed, max_gap=0.5)
-    counts = bin_spike_train(
-        env_1d, spike_times, times, positions, speed=resolved, min_speed=min_speed
-    )
+    counts = bin_spike_trains(
+        env_1d, [spike_times], times, positions, speed=resolved, min_speed=min_speed
+    )[0][0]
     occ = compute_occupancy(
         env_1d, times, positions, speed=resolved, min_speed=min_speed
     )
@@ -708,9 +708,9 @@ def test_final_sample_is_outside_sampling_intervals(env_1d) -> None:
     # One spike just before the final timestamp, and one exactly on it.
     spike_times = np.array([times[-1] - 0.05, times[-1]])
 
-    counts = bin_spike_train(
-        env_1d, spike_times, times, positions, speed=speed, min_speed=min_speed
-    )
+    counts = bin_spike_trains(
+        env_1d, [spike_times], times, positions, speed=speed, min_speed=min_speed
+    )[0][0]
     # CHANGELOG: final-timestamp spikes are time-dropped; the interior spike
     # still uses the last interval's speed and is counted.
     assert counts.sum() == 1

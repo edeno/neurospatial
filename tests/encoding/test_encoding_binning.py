@@ -77,12 +77,12 @@ def multiple_neuron_spikes() -> list[NDArray[np.float64]]:
 
 
 # ==============================================================================
-# Test bin_spike_train (single neuron)
+# Test bin_spike_trains with one neuron
 # ==============================================================================
 
 
 class TestBinSpikeTrain:
-    """Tests for bin_spike_train function (single neuron binning)."""
+    """Tests for binning a single neuron."""
 
     def test_spike_counts_shape(
         self,
@@ -90,15 +90,15 @@ class TestBinSpikeTrain:
         trajectory_data: dict,
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
-        """bin_spike_train should return array with shape (n_bins,)."""
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        """One neuron's counts have shape (n_bins,)."""
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
-        spike_counts = bin_spike_train(
+        spike_counts = bin_spike_trains(
             simple_env,
-            single_neuron_spikes,
+            [single_neuron_spikes],
             trajectory_data["times"],
             trajectory_data["positions"],
-        )
+        )[0][0]
 
         assert spike_counts.shape == (simple_env.n_bins,)
 
@@ -109,14 +109,14 @@ class TestBinSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Spike counts should all be non-negative."""
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
-        spike_counts = bin_spike_train(
+        spike_counts = bin_spike_trains(
             simple_env,
-            single_neuron_spikes,
+            [single_neuron_spikes],
             trajectory_data["times"],
             trajectory_data["positions"],
-        )
+        )[0][0]
 
         assert np.all(spike_counts >= 0)
 
@@ -127,14 +127,14 @@ class TestBinSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Total spike count should equal number of spikes (within time range)."""
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
-        spike_counts = bin_spike_train(
+        spike_counts = bin_spike_trains(
             simple_env,
-            single_neuron_spikes,
+            [single_neuron_spikes],
             trajectory_data["times"],
             trajectory_data["positions"],
-        )
+        )[0][0]
 
         # Every sample is inside the environment and no interval exceeds
         # max_gap, so every spike inside [times[0], times[-1]) is counted.
@@ -147,16 +147,16 @@ class TestBinSpikeTrain:
         trajectory_data: dict,
     ) -> None:
         """Empty spike train should produce all-zero spike counts."""
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
         empty_spikes = np.array([])
 
-        spike_counts = bin_spike_train(
+        spike_counts = bin_spike_trains(
             simple_env,
-            empty_spikes,
+            [empty_spikes],
             trajectory_data["times"],
             trajectory_data["positions"],
-        )
+        )[0][0]
 
         assert spike_counts.shape == (simple_env.n_bins,)
         assert np.all(spike_counts == 0)
@@ -167,20 +167,20 @@ class TestBinSpikeTrain:
         trajectory_data: dict,
     ) -> None:
         """Spikes outside time range should be excluded."""
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
         # Spikes at -1.0 and 5.0, both outside the 0-1 second range.
         # warn_on_drop=False: this test only checks zero-count behavior,
         # not the warning itself (see TestWarnOnDrop for warning tests).
         spikes_outside = np.array([-1.0, 5.0])
 
-        spike_counts = bin_spike_train(
+        spike_counts = bin_spike_trains(
             simple_env,
-            spikes_outside,
+            [spikes_outside],
             trajectory_data["times"],
             trajectory_data["positions"],
             warn_on_drop=False,
-        )
+        )[0][0]
 
         assert np.sum(spike_counts) == 0
 
@@ -317,7 +317,6 @@ class TestBinSpikeTrains:
     ) -> None:
         """Batch result should be consistent with single-neuron results."""
         from neurospatial.encoding._spatial_counts import (
-            bin_spike_train,
             bin_spike_trains,
         )
 
@@ -330,12 +329,12 @@ class TestBinSpikeTrains:
 
         # Check each neuron matches single-neuron result
         for i, spikes in enumerate(multiple_neuron_spikes):
-            spike_counts_single = bin_spike_train(
+            spike_counts_single = bin_spike_trains(
                 simple_env,
-                spikes,
+                [spikes],
                 trajectory_data["times"],
                 trajectory_data["positions"],
-            )
+            )[0][0]
             np.testing.assert_array_equal(spike_counts_batch[i], spike_counts_single)
 
     def test_n_jobs_parameter(
@@ -428,7 +427,7 @@ class TestBinningEdgeCases:
         trajectory_data: dict,
     ) -> None:
         """All spikes in one location should be binned together."""
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
         # Three spikes inside one sampling interval share its start bin.
         spikes = np.array([0.5, 0.5001, 0.5002])
@@ -436,12 +435,12 @@ class TestBinningEdgeCases:
         assert frame == np.searchsorted(trajectory_data["times"], 0.5002, "right") - 1
         pos_at_mid = trajectory_data["positions"][frame]
 
-        spike_counts = bin_spike_train(
+        spike_counts = bin_spike_trains(
             simple_env,
-            spikes,
+            [spikes],
             trajectory_data["times"],
             trajectory_data["positions"],
-        )
+        )[0][0]
 
         target_bin = simple_env.bin_at(pos_at_mid.reshape(1, -1))[0]
         assert target_bin >= 0
@@ -519,7 +518,7 @@ class TestSpikeAllocationMatchesOccupancy:
     def test_start_allocation_counts_spike_at_start_frame(self) -> None:
         """Under "start", t=0.75 between samples at 0 and 10 counts in the 0 bin."""
         from neurospatial.encoding._spatial_counts import (
-            bin_spike_train,
+            bin_spike_trains,
             compute_occupancy,
         )
 
@@ -528,7 +527,9 @@ class TestSpikeAllocationMatchesOccupancy:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0], [10.0], [20.0]])
 
-        counts = bin_spike_train(env, np.array([0.75]), times, positions, max_gap=None)
+        counts = bin_spike_trains(
+            env, [np.array([0.75])], times, positions, max_gap=None
+        )[0][0]
         occupancy = compute_occupancy(env, times, positions, max_gap=None)
         start_bin = env.bin_at(np.array([[0.0]]))[0]
         assert counts[start_bin] == 1.0
@@ -537,9 +538,8 @@ class TestSpikeAllocationMatchesOccupancy:
         assert occupancy[start_bin] == 1.0
 
     def test_batch_matches_single(self) -> None:
-        """bin_spike_trains must match bin_spike_train per neuron exactly."""
+        """A batch must match each neuron binned on its own exactly."""
         from neurospatial.encoding._spatial_counts import (
-            bin_spike_train,
             bin_spike_trains,
         )
 
@@ -553,7 +553,9 @@ class TestSpikeAllocationMatchesOccupancy:
             env, spike_lists, times, positions, max_gap=None
         )
         for i, spikes in enumerate(spike_lists):
-            single = bin_spike_train(env, spikes, times, positions, max_gap=None)
+            single = bin_spike_trains(env, [spikes], times, positions, max_gap=None)[0][
+                0
+            ]
             np.testing.assert_array_equal(batch_counts[i], single)
 
     @pytest.mark.parametrize("time_allocation", ["start", "linear"])
@@ -605,7 +607,7 @@ class TestSpikeAllocationMatchesOccupancy:
 
 
 class TestWarnOnDrop:
-    """Tests for the warn_on_drop warning mechanism in bin_spike_train/bin_spike_trains.
+    """Tests for the warn_on_drop warning mechanism in bin_spike_trains.
 
     These tests verify that silent spike dropping is replaced with UserWarning
     messages when the dropped fraction exceeds the threshold or all spikes are
@@ -633,7 +635,7 @@ class TestWarnOnDrop:
     def test_out_of_window_single_neuron_warns(self) -> None:
         """Spikes in milliseconds while times in seconds → UserWarning."""
 
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
         env, times, positions = self._make_env_and_traj()
         # spike_times in ms (1000–9000 ms) while times in s (0–10)
@@ -642,7 +644,7 @@ class TestWarnOnDrop:
         spike_times_ms = np.array([1000.0, 2000.0, 5000.0, 8000.0, 9000.0])
 
         with pytest.warns(UserWarning, match=r"spike_times"):
-            counts = bin_spike_train(env, spike_times_ms, times, positions)
+            counts = bin_spike_trains(env, [spike_times_ms], times, positions)[0][0]
 
         # Field should be near-zero (all spikes dropped)
         assert np.sum(counts) == 0
@@ -718,7 +720,7 @@ class TestWarnOnDrop:
         """Fully in-window spikes should produce no UserWarning."""
         import warnings
 
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
         env, times, positions = self._make_env_and_traj()
         # All spikes well within [0, 10] s
@@ -726,7 +728,7 @@ class TestWarnOnDrop:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            bin_spike_train(env, spike_times, times, positions)
+            bin_spike_trains(env, [spike_times], times, positions)[0][0]
 
         drop_warnings = [
             x
@@ -750,14 +752,16 @@ class TestWarnOnDrop:
         """warn_on_drop=False: no warning even when all spikes are out-of-window."""
         import warnings
 
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
         env, times, positions = self._make_env_and_traj()
         spike_times_ms = np.array([1000.0, 5000.0, 9000.0])
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            bin_spike_train(env, spike_times_ms, times, positions, warn_on_drop=False)
+            bin_spike_trains(
+                env, [spike_times_ms], times, positions, warn_on_drop=False
+            )[0][0]
 
         drop_warnings = [
             x
@@ -872,7 +876,7 @@ class TestWarnOnDrop:
         """Warning message must name dropped count, total, and both time ranges."""
         import warnings
 
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
         env, times, positions = self._make_env_and_traj()
         # 5 spikes, all outside the 0–10 s window (times in ms)
@@ -880,7 +884,7 @@ class TestWarnOnDrop:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            bin_spike_train(env, spike_times_ms, times, positions)
+            bin_spike_trains(env, [spike_times_ms], times, positions)[0][0]
 
         time_warnings = [
             x
@@ -909,38 +913,38 @@ class TestWarnOnDrop:
     def test_inactive_bin_warns(self) -> None:
         """Spikes with no in-environment position at all → UserWarning.
 
-        The built-in bounds gate keeps such intervals out, so this path is
-        reachable only through a caller-supplied ``interval_mask`` that admits
-        intervals outside the environment.
+        The built-in bounds gate keeps such intervals out of both counts and
+        occupancy, so this path is reachable only through a caller-supplied
+        ``interval_mask`` that admits intervals outside the environment; the
+        counting kernel reports those spikes as bin drops.
         """
-        import warnings
-
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import (
+            _bin_spike_train_with_stats,
+            _emit_inactive_bin_warning,
+            _spike_track,
+        )
 
         sample_pos = np.column_stack([np.linspace(0, 10, 50), np.linspace(0, 10, 50)])
         env = Environment.from_samples(sample_pos, bin_size=2.0)
         times = np.array([0.0, 0.1, 0.2, 0.3])
         outside = np.full((4, 2), 500.0)
         spike_times = np.array([0.05, 0.15, 0.25])
+        track = _spike_track(
+            env,
+            times,
+            outside,
+            interval_mask=np.ones(3, dtype=bool),
+            linear_intervals=None,
+        )
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            counts = bin_spike_train(
-                env,
-                spike_times,
-                times,
-                outside,
-                interval_mask=np.ones(3, dtype=bool),
-            )
-
-        inactive_warnings = [
-            x
-            for x in w
-            if issubclass(x.category, UserWarning)
-            and "mapped to positions outside" in str(x.message)
-        ]
-        assert len(inactive_warnings) == 1
+        counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
+            _bin_spike_train_with_stats(env, spike_times, track)
+        )
         assert counts.sum() == 0
+        assert (n_time_dropped, n_bin_dropped, n_total, n_after_time) == (0, 3, 3, 3)
+        with pytest.warns(UserWarning, match="mapped to positions outside") as w:
+            _emit_inactive_bin_warning(n_bin_dropped, n_after_time)
+        assert len(w) == 1
 
     # ------------------------------------------------------------------
     # 6. Below-threshold drop: no warning when fraction is small
@@ -950,7 +954,7 @@ class TestWarnOnDrop:
         """A small fraction of dropped spikes (<= threshold) should not warn."""
         import warnings
 
-        from neurospatial.encoding._spatial_counts import bin_spike_train
+        from neurospatial.encoding._spatial_counts import bin_spike_trains
 
         env, times, positions = self._make_env_and_traj()
         # 100 spikes in-window + 1 out-of-window → 1% dropped → below default 50% threshold
@@ -961,7 +965,7 @@ class TestWarnOnDrop:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            bin_spike_train(env, spike_times, times, positions)
+            bin_spike_trains(env, [spike_times], times, positions)[0][0]
 
         time_warnings = [
             x
@@ -1156,7 +1160,8 @@ class TestBinSpikeTrainWithStatsSharedMask:
         from neurospatial._intervals import interval_valid_mask
         from neurospatial.encoding._spatial_counts import (
             _bin_spike_train_with_stats,
-            bin_spike_train,
+            _spike_track,
+            bin_spike_trains,
             resolve_speed,
         )
 
@@ -1173,19 +1178,20 @@ class TestBinSpikeTrainWithStatsSharedMask:
         mask = interval_valid_mask(
             times, positions, env, speed=speed, min_speed=min_speed
         )
-        counts, *stats = _bin_spike_train_with_stats(
-            env, spikes, times, positions, interval_mask=mask
+        track = _spike_track(
+            env, times, positions, interval_mask=mask, linear_intervals=None
         )
-        public_counts = bin_spike_train(
+        counts, *stats = _bin_spike_train_with_stats(env, spikes, track)
+        public_counts = bin_spike_trains(
             env,
-            spikes,
+            [spikes],
             times,
             positions,
             speed=speed,
             min_speed=min_speed,
             interval_mask=mask,
             warn_on_drop=False,
-        )
+        )[0][0]
         np.testing.assert_array_equal(counts, public_counts)
         assert counts.sum() == expected_count
         assert stats == [0, 0, 5, expected_count]
