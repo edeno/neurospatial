@@ -60,6 +60,11 @@ fields = detect_place_fields(env, rates.firing_rate,
   what one noisy bin becomes after that smoothing: with a 5 cm bandwidth and
   the 0.2 threshold, 18 cm on a track and 253 cm² in an open field, whatever
   the bin size. `has_place_field` passes it for you.
+- `min_secondary_peak_fraction`: A second field must peak at least this
+  fraction of the map's maximum (default 0: every field peaking above
+  `min_peak_rate` counts). neurocode's 1-D pipeline uses 0.6, which on
+  simulated tracks and mazes missed every secondary field at 20-50% of the main
+  peak without reducing the fields found in untuned maps.
 - `max_mean_rate`: Optional upper bound on the unweighted mean of non-NaN spatial-bin rates
   (default `np.inf`, disabled). This is not spike count divided by recording time,
   and does not identify interneurons or another cell type.

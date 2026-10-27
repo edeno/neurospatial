@@ -294,7 +294,7 @@ def population_coverage(
     bandwidth: float,
     threshold: float = 0.2,
     min_peak_rate: float = 1.0,
-    min_secondary_peak_fraction: float = 0.6,
+    min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
     n_jobs: int = 1,
@@ -322,9 +322,10 @@ def population_coverage(
     min_peak_rate : float, default=1.0
         Smallest peak rate (Hz) that can start a field. Passed to
         `detect_place_fields()`.
-    min_secondary_peak_fraction : float, default=0.6
+    min_secondary_peak_fraction : float, default=0.0
         A field after a neuron's first must peak at least this fraction of
-        that neuron's maximum rate. Passed to `detect_place_fields()`.
+        that neuron's maximum rate; the default keeps every peak above
+        ``min_peak_rate``. Passed to `detect_place_fields()`.
     max_mean_rate : float, default=np.inf
         Optional cutoff on the unweighted mean of non-NaN spatial-bin rates
         (Hz), passed to ``detect_place_fields``. The default disables exclusion.

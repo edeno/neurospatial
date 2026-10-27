@@ -117,7 +117,7 @@ PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
     {
         "threshold": 0.2,
         "min_peak_rate": 1.0,
-        "min_secondary_peak_fraction": 0.6,
+        "min_secondary_peak_fraction": 0.0,
         "max_mean_rate": np.inf,
         "detect_subfields": True,
     }
@@ -1469,7 +1469,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         *,
         threshold: float = 0.2,
         min_peak_rate: float = 1.0,
-        min_secondary_peak_fraction: float = 0.6,
+        min_secondary_peak_fraction: float = 0.0,
         max_mean_rate: float = np.inf,
         detect_subfields: bool = True,
     ) -> bool:
@@ -1493,9 +1493,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             bin.
         min_peak_rate : float, default=1.0
             Smallest peak rate (Hz) that can start a field.
-        min_secondary_peak_fraction : float, default=0.6
+        min_secondary_peak_fraction : float, default=0.0
             A field after the first must peak at least this fraction of the
-            map's maximum rate.
+            map's maximum rate. The default keeps every peak above
+            ``min_peak_rate``; see :func:`detect_place_fields`.
         max_mean_rate : float, default=np.inf
             Optional upper bound on the unweighted mean of non-NaN spatial-bin
             rates (Hz). The default disables exclusion. This is not the
@@ -5030,7 +5031,7 @@ def detect_place_fields(
     bandwidth: float,
     threshold: float = 0.2,
     min_peak_rate: float = 1.0,
-    min_secondary_peak_fraction: float = 0.6,
+    min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
 ) -> PlaceFieldsResult:
@@ -5064,10 +5065,16 @@ def detect_place_fields(
         Smallest peak rate (Hz) that can start a field. 1 Hz is the minimum
         peak in neurocode's ``MapStats`` and its place-cell pipeline [1]_
         (also the FMAToolbox and opexebo default). Must be finite and >= 0.
-    min_secondary_peak_fraction : float, default=0.6
+    min_secondary_peak_fraction : float, default=0.0
         A field after the first must peak at least this fraction of the
-        map's maximum rate. 0.6 is neurocode's ``minPeak2nd`` [1]_. Pass
-        0.0 to keep every peak above ``min_peak_rate``. Must be in [0, 1].
+        map's maximum rate. Must be in [0, 1]. The default keeps every peak
+        above ``min_peak_rate``. neurocode's 1-D ``findPlaceFieldsAvg1D``
+        uses 0.6 (``minPeak2nd``) [1]_, together with a maximum field size
+        and a dip below threshold between fields. On simulated tracks and
+        mazes 0.6 missed every secondary field at 20-50% of the main peak
+        (a 40% arm field on a W-maze, a 50% third arm on a radial maze) and
+        gave untuned maps as many fields as 0.0 did, so it is no protection
+        against noise.
     max_mean_rate : float, default=np.inf
         Optional upper bound on the unweighted mean of non-NaN spatial-bin
         rates (Hz). The default disables exclusion. This is not the
@@ -5194,7 +5201,7 @@ def detect_place_fields(
                 "min_secondary_peak_fraction must be in [0, 1], got "
                 f"{min_secondary_peak_fraction}.",
                 why="Why: it is a fraction of the map's maximum rate",
-                fix="pass 0.6 (the neurocode default) or 0.0 to keep every peak above min_peak_rate",
+                fix="pass 0.0 to keep every peak above min_peak_rate, or a fraction such as 0.6",
             )
         )
 
@@ -5286,7 +5293,7 @@ def has_place_field(
     spike_window: Any = None,
     threshold: float = 0.2,
     min_peak_rate: float = 1.0,
-    min_secondary_peak_fraction: float = 0.6,
+    min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
     detect_subfields: bool = True,
     min_occupancy: float | None = None,
@@ -5357,9 +5364,10 @@ def has_place_field(
         one bin.
     min_peak_rate : float, default=1.0
         Smallest peak rate (Hz) that can start a field.
-    min_secondary_peak_fraction : float, default=0.6
+    min_secondary_peak_fraction : float, default=0.0
         A field after the first must peak at least this fraction of the map's
-        maximum rate.
+        maximum rate. The default keeps every peak above ``min_peak_rate``;
+        see :func:`detect_place_fields`.
     max_mean_rate : float, default=np.inf
         Optional upper bound on the unweighted mean of non-NaN spatial-bin
         rates (Hz). The default disables exclusion. This is not the

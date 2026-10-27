@@ -228,10 +228,10 @@ class TestDetectPlaceFields:
     def test_peak_floor_stops_cascade_into_noise(self, track_arena):
         """Each field's threshold scales with its own peak, so low bumps need a floor.
 
-        A 20 Hz field, a 3 Hz bump and one isolated 5 Hz bin give one field:
-        neither secondary peak reaches 0.6 x 20 Hz. Without the floor the
-        thresholds shrank with each smaller peak and reported 22 fields with
-        peaks down to 0 Hz.
+        A 20 Hz field, a 3 Hz bump and one isolated 5 Hz bin: the 1 Hz floor
+        keeps the 3 Hz bump as a second field, and the lone bin is too small
+        to be one. Without the floor the thresholds shrank with each smaller
+        peak and reported 22 fields with peaks down to 0 Hz.
         """
         env, bump = track_arena
         firing_rate = bump(15, 20, 20.0, 4.0) + bump(60, 20, 3.0, 5.0)
@@ -240,17 +240,49 @@ class TestDetectPlaceFields:
         from neurospatial.encoding.spatial import detect_place_fields
 
         fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
+        peaks = sorted(float(np.max(firing_rate[f])) for f in fields)
+        assert peaks == pytest.approx([3.0, 20.0], rel=0.05)
+
+        # A secondary-peak fraction drops every field below 0.6 x 20 Hz.
+        fields = detect_place_fields(
+            env, firing_rate, bandwidth=0.0, min_secondary_peak_fraction=0.6
+        )
         assert len(fields) == 1
         assert np.max(firing_rate[fields[0]]) == pytest.approx(20.0, rel=0.05)
 
-        # Without the secondary-peak fraction, the 1 Hz floor still applies:
-        # the 3 Hz bump is a field and nothing below 1 Hz is.
-        fields = detect_place_fields(
-            env, firing_rate, bandwidth=0.0, min_secondary_peak_fraction=0.0
+    def test_secondary_track_field_at_40_percent_is_detected(self):
+        """A second field at 40% of the main peak is a field by default."""
+        from neurospatial.encoding.spatial import (
+            compute_spatial_rates,
+            detect_place_fields,
         )
-        peaks = [float(np.max(firing_rate[f])) for f in fields]
-        assert len(fields) == 2
-        assert min(peaks) >= 1.0
+        from neurospatial.simulation import (
+            generate_poisson_spikes,
+            simulate_trajectory_laps,
+        )
+
+        env = Environment.from_samples(
+            np.linspace(0, 200, 401)[:, None], bin_size=2.0
+        ).with_metadata(units="cm")
+        for seed in range(3):
+            positions, times = simulate_trajectory_laps(
+                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, seed=seed
+            )
+            x = positions[:, 0]
+            rate = (
+                10 * np.exp(-((x - 50) ** 2) / (2 * 8.0**2))
+                + 4 * np.exp(-((x - 150) ** 2) / (2 * 8.0**2))
+                + 0.1
+            )
+            spikes = [generate_poisson_spikes(rate, times, seed=200 + seed)]
+            rates = compute_spatial_rates(env, spikes, times, positions)
+            rate_map = np.asarray(rates.firing_rates)[0]
+            fields = detect_place_fields(env, rate_map, bandwidth=rates.bandwidth)
+            peaks = sorted(
+                env.bin_centers[f[np.argmax(rate_map[f])], 0] for f in fields
+            )
+            assert len(peaks) == 2
+            assert abs(peaks[0] - 50) <= 4 and abs(peaks[1] - 150) <= 4
 
     def test_min_peak_rate_is_an_absolute_floor(self, track_arena):
         """A map whose maximum is below min_peak_rate has no field."""
