@@ -201,8 +201,9 @@ plt.show()
 ```
 
 Condition A is the first argument (outbound) and B the second (inbound);
-`mean_rate_a` and `mean_rate_b` are each map's mean rate in Hz over the
-common bins. Read the table one cell at a time:
+`mean_rate_a` and `mean_rate_b` are each cell's mean rate in Hz over the
+time that direction spent in the common bins (rates weighted by occupancy).
+Read the table one cell at a time:
 
 - `c1` (r = 0.996) fires at the same place in both directions. `c4`, `c5`
   and `c6` are the same.

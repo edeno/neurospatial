@@ -286,3 +286,26 @@ def test_in_out_ratio_refuses_a_map_from_another_environment(square) -> None:
 
     with pytest.raises(ValueError, match=r"env has 3 bins(.|\n)*rates\.env"):
         in_out_field_ratio(square, np.ones(4), np.array([0]))
+
+
+# --- compare_spatial_rates mean rates -------------------------------------------
+
+
+def test_comparison_mean_rate_is_firing_over_time_in_the_common_bins(square) -> None:
+    """Spikes over seconds, however the common bins are sized or visited."""
+    from environment_helpers import rates_result
+
+    from neurospatial.encoding import compare_spatial_rates
+
+    # Condition A: 6 spikes in 2 s, 2 spikes in 1 s and 20 spikes in 5 s.
+    occupancy_a = np.array([2.0, 1.0, 5.0])
+    rates_a = np.array([6.0, 2.0, 20.0]) / occupancy_a
+    occupancy_b = np.array([1.0, 1.0, 1.0])
+    rates_b = np.array([1.0, 2.0, 3.0])
+    table = compare_spatial_rates(
+        rates_result(square, rates_a, occupancy_a),
+        rates_result(square, rates_b, occupancy_b),
+    ).summary_table()
+    assert table["mean_rate_a"].item() == pytest.approx(28.0 / 8.0)
+    assert table["mean_rate_b"].item() == pytest.approx(2.0)
+    assert table["mean_rate_difference"].item() == pytest.approx(2.0 - 28.0 / 8.0)
