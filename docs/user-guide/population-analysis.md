@@ -110,13 +110,13 @@ print("Uncovered positions, rounded to 10 cm:",
       np.unique(np.round(gap_positions, -1)))
 print("Uncovered bins the animal never visited:",
       int((~rates.spatial_support[coverage.uncovered_bins]).sum()))
-assert np.isclose(coverage.coverage_fraction, 0.69, atol=0.006)
+assert np.isclose(coverage.coverage_fraction, 0.94, atol=0.006)
 assert np.isclose(coverage.fields_per_place_cell, 1.0, atol=0.06)
 ```
 
 With all 25 maps the track looks fully covered, but only because the detector
 found fields in the flat maps of the untuned units. The 20 screened place cells
-cover 69% of the bins with one field each. The gaps are the two ends of the
+cover 94% of the bins with one field each. The gaps are the two ends of the
 track, where no simulated place cell has its field. Every gap bin was visited,
 so these are locations without a field, not locations without data. In your
 own recording, check `rates.spatial_support` the same way: coverage counts an
@@ -133,7 +133,7 @@ how many fields include each bin:
 density = field_density_map(coverage.place_fields, env.n_bins)
 covered = density[coverage.covered_bins]
 print(f"Fields per covered bin: median {np.median(covered):.0f}, max {covered.max()}")
-assert covered.max() == 4
+assert covered.max() == 12
 
 fig, ax = plt.subplots(figsize=(8, 2.5))
 plot_population_coverage(env, coverage, show_field_count=True, ax=ax)
@@ -141,7 +141,7 @@ plt.show()
 ```
 
 `plot_population_coverage` draws the same count from the coverage result:
-how many place fields include each position, zero at both ends and up to four
+how many place fields include each position, zero at both ends and up to twelve
 overlapping fields in between. Dashed lines mark the uncovered bins, and the
 title gives the coverage fraction. A location covered by several fields is
 represented redundantly; a location covered by none is decoded poorly, if at
@@ -221,7 +221,7 @@ per_cell = np.diag(map_similarity[:n_units, n_units:])
 print("Map correlation, cells that kept their field:", np.round(per_cell[~moves], 2))
 print("Map correlation, cells that moved their field:", np.round(per_cell[moves], 2))
 assert per_cell[~moves].min() >= 0.99 - 0.006  # 0.99-1.00
-assert (per_cell[moves] > -0.15).all() and (per_cell[moves] < 0).all()
+assert -0.476 <= per_cell[moves].min() <= per_cell[moves].max() <= -0.404
 
 # Identical maps with one flat location: the flat one is NaN, the rest are 1.
 demo = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
@@ -232,7 +232,7 @@ pv = population_vector_correlation(maps["before"], maps["after"])  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"Population-vector correlation per location: median {np.median(pv[defined]):.2f} "
       f"({(~defined).sum()} of {pv.size} locations undefined)")
-assert np.isclose(np.median(pv[defined]), 0.27, atol=0.006)
+assert np.isclose(np.median(pv[defined]), 0.22, atol=0.006)
 assert np.array_equal(defined, shared)  # undefined only where a condition lacks data
 
 # Units are paired by label: listing the cells in another order changes nothing.
@@ -253,8 +253,8 @@ assert np.isclose(np.median(by_position), -0.1, atol=0.06)
 ```
 
 The cells that kept their field have map correlations of 0.99-1.00, and the
-cells that moved have correlations slightly below 0: you can read off which
-cells remapped. The median population-vector correlation of 0.27 says the
+cells that moved have correlations of -0.47 to -0.41: you can read off which
+cells remapped. The median population-vector correlation of 0.22 says the
 population code changed substantially even though half the cells kept their
 fields, because a moved field lowers the correlation both where it was and
 where it went. An unchanged map gives values near 1 and a completely new map
@@ -314,12 +314,12 @@ overlap = np.array([
 ])
 print("Field overlap, cells that kept their field:", np.round(overlap[~moves], 2))
 print("Field overlap, cells that moved their field:", np.round(overlap[moves], 2))
-assert 0.854 <= overlap[~moves].min() <= overlap[~moves].max() <= 1.0 + 1e-9  # Jaccard is at most 1
+assert 0.894 <= overlap[~moves].min() <= overlap[~moves].max() <= 1.0 + 1e-9  # Jaccard is at most 1
 assert (overlap[moves] == 0).all()
 ```
 
 Cells that kept their field share most of their field bins (overlap
-0.86-1.00), and cells that moved share none. Neither per-cell measure detects
+0.90-0.97), and cells that moved share none. Neither per-cell measure detects
 a cell that keeps its field but changes its peak rate (rate remapping): field
 overlap ignores rates, and a correlation ignores a change of scale. Compare
 in-field rates for that; the per-location `population_vector_correlation` does

@@ -30,6 +30,12 @@ Lever, C., Burton, S., Jeewajee, A., O'Keefe, J., & Burgess, N. (2009).
 van Wijngaarden, J. B. G., Babl, S. S., & Ito, H. T. (2020).
     Entorhinal-retrosplenial circuits for allocentric-egocentric
     transformation of boundary coding. eLife, 9, e59816.
+Høydal, Ø. A., Skytøen, E. R., Andersson, S. O., Moser, M.-B., & Moser,
+    E. I. (2019). Object-vector coding in the medial entorhinal cortex.
+    Nature, 568, 400-404.
+George, T. M., Rastogi, M., de Cothi, W., Clopath, C., Stachenfeld, K., &
+    Barry, C. (2024). RatInABox, a toolkit for modelling locomotion and
+    neuronal activity in continuous environments. eLife, 13, e85274.
 """
 
 from __future__ import annotations
@@ -48,12 +54,21 @@ from neurospatial.geometry import (
 )
 from neurospatial.ops.boundary_vectors import boundary_directions, nearest_boundary
 from neurospatial.simulation._walls import Walls
+from neurospatial.simulation.models.base import default_length
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry._boundaries import BoundarySource
 
 __all__ = ["BorderCellModel", "BoundaryVectorCellModel"]
+
+#: Default border-cell distance tolerance in centimeters, derived from the
+#: border-field centers of Høydal et al. (2019); see ``BorderCellModel`` Notes.
+BORDER_DISTANCE_TOLERANCE_CM = 9.8
+
+#: Default boundary-vector preferred distance in centimeters: illustrative,
+#: the middle of RatInABox's 5-30 cm tuning-distance range.
+BVC_PREFERRED_DISTANCE_CM = 17.5
 
 # Rays per turn summed by BoundaryVectorCellModel: one every 2 degrees, the
 # angular resolution (``dtheta``) RatInABox's BoundaryVectorCells integrate
@@ -114,15 +129,19 @@ class BorderCellModel:
     env : Environment
         2-D environment whose arena declares the walls (for example
         ``Environment.from_polygon``).
-    distance_tolerance : float
-        Standard deviation of the distance tuning, in environment units.
+    distance_tolerance : float, optional
+        Standard deviation of the distance tuning, in environment units. If
+        None, 9.8 cm expressed in ``env.units`` (see Notes). An environment
+        without metric length units needs an explicit value.
     preferred_distance : float, default=0.0
         Distance from the wall at which the cell fires most, in environment
         units. 0 is a border cell, which fires along the walls.
     max_rate : float, default=15.0
-        Peak firing rate in Hz.
+        Peak firing rate in Hz. An illustrative value; it is not taken from a
+        published measurement.
     baseline_rate : float, default=0.01
-        Firing rate far from the preferred distance, in Hz.
+        Firing rate far from the preferred distance, in Hz. An illustrative
+        value.
     boundary_source : {'physical', 'analysis'}, default='physical'
         The arena's declared walls, or the edges of the environment's bins.
 
@@ -133,6 +152,15 @@ class BorderCellModel:
     NotImplementedError
         If the arena declares no physical boundary and
         ``boundary_source='physical'`` (bins inferred from positions).
+
+    Notes
+    -----
+    The default ``distance_tolerance`` is derived from Høydal et al. (2019),
+    whose mouse border-cell fields, defined as the area above 20% of the
+    peak rate, had centers 6-14 cm from the wall (mean 8.8 cm). With
+    ``preferred_distance=0`` the field above 20% of peak spans the walls out
+    to ``σ √(2 ln 5)``, so its center lies at ``σ √(2 ln 5) / 2`` and the
+    mean gives ``σ = 2 · 8.8 / √(2 ln 5) = 9.8 cm``.
 
     See Also
     --------
@@ -155,12 +183,19 @@ class BorderCellModel:
         self,
         env: Environment,
         *,
-        distance_tolerance: float,
+        distance_tolerance: float | None = None,
         preferred_distance: float = 0.0,
         max_rate: float = 15.0,
         baseline_rate: float = 0.01,
         boundary_source: BoundarySource = "physical",
     ) -> None:
+        if distance_tolerance is None:
+            distance_tolerance = default_length(
+                env,
+                BORDER_DISTANCE_TOLERANCE_CM,
+                name="distance_tolerance",
+                call="BorderCellModel()",
+            )
         _check_positive("distance_tolerance", distance_tolerance)
         _check_positive("preferred_distance", preferred_distance, allow_zero=True)
         _check_rates(max_rate, baseline_rate)
@@ -244,31 +279,44 @@ class BoundaryVectorCellModel:
     ----------
     env : Environment
         2-D environment whose arena declares the walls.
-    preferred_distance : float
+    preferred_distance : float, optional
         Distance to the wall that drives the cell most, in environment units.
-    preferred_direction : float
+        If None, 17.5 cm expressed in ``env.units``: an illustrative value,
+        the middle of the 5-30 cm range RatInABox's ``BoundaryVectorCells``
+        draw tuning distances from.
+    preferred_direction : float, optional
         Allocentric direction of that wall in radians (0 = East, +pi/2 =
-        North).
-    distance_tolerance : float
+        North). If None, drawn uniformly from [-pi, pi) with ``seed``, as
+        every direction is equally likely.
+    distance_tolerance : float, optional
         Standard deviation of the distance tuning, in environment units.
-        Barry et al. (2006) let it grow linearly with the preferred
-        distance, so a far-tuned cell needs a wider tolerance.
-    direction_tolerance : float
+        Hartley et al. (2000) let it grow linearly with the preferred
+        distance, so a far-tuned cell needs a wider tolerance. If None,
+        ``preferred_distance / 12 + 8 cm``, the linear relationship
+        (inverse slope 12, offset 8 cm) of RatInABox's default
+        ``sigma_distance=(0.08, 12)`` for this model.
+    direction_tolerance : float, default=pi/6
         Half-width at half-maximum of the angular tuning, in radians. The
         von Mises concentration is ``κ = ln 2 / (1 - cos(direction_tolerance))``.
+        The 30° default is an illustrative value.
     max_rate : float, default=15.0
         Rate in Hz next to a straight wall at the preferred distance and
-        direction.
+        direction. An illustrative value; it is not taken from a published
+        measurement.
     baseline_rate : float, default=0.01
-        Rate in Hz with no wall near the preferred distance and direction.
+        Rate in Hz with no wall near the preferred distance and direction. An
+        illustrative value.
     boundary_source : {'physical', 'analysis'}, default='physical'
         The arena's declared walls, or the edges of the environment's bins.
+    seed : int or None, optional
+        Seed for the random ``preferred_direction``.
 
     Raises
     ------
     ValueError
         If a distance, angle or rate is not finite, or
-        ``baseline_rate >= max_rate``.
+        ``baseline_rate >= max_rate``, or a length default is needed and
+        the environment has no metric length units.
     NotImplementedError
         If the arena declares no physical boundary and
         ``boundary_source='physical'``.
@@ -303,14 +351,28 @@ class BoundaryVectorCellModel:
         self,
         env: Environment,
         *,
-        preferred_distance: float,
-        preferred_direction: float,
-        distance_tolerance: float,
-        direction_tolerance: float,
+        preferred_distance: float | None = None,
+        preferred_direction: float | None = None,
+        distance_tolerance: float | None = None,
+        direction_tolerance: float = np.pi / 6,
         max_rate: float = 15.0,
         baseline_rate: float = 0.01,
         boundary_source: BoundarySource = "physical",
+        seed: int | None = None,
     ) -> None:
+        call = "BoundaryVectorCellModel()"
+        if preferred_distance is None:
+            preferred_distance = default_length(
+                env, BVC_PREFERRED_DISTANCE_CM, name="preferred_distance", call=call
+            )
+        if distance_tolerance is None:
+            distance_tolerance = preferred_distance / 12.0 + default_length(
+                env, 8.0, name="distance_tolerance", call=call
+            )
+        if preferred_direction is None:
+            preferred_direction = float(
+                np.random.default_rng(seed).uniform(-np.pi, np.pi)
+            )
         _check_positive("preferred_distance", preferred_distance, allow_zero=True)
         _check_positive("distance_tolerance", distance_tolerance)
         if not np.isfinite(preferred_direction):

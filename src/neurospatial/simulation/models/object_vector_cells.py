@@ -40,7 +40,7 @@ Create a simple object-vector cell:
 >>> # Define object positions
 >>> objects = np.array([[25.0, 50.0], [75.0, 50.0]])
 >>>
->>> # Create OVC that fires 10 units from nearest object
+>>> # Create OVC that fires 10 units from every object
 >>> ovc = ObjectVectorCellModel(
 ...     env=env,
 ...     object_positions=objects,
@@ -92,13 +92,21 @@ from neurospatial._exceptions import _format_error
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.egocentric import compute_egocentric_bearing
-from neurospatial.simulation.models.base import geodesic_lookup_bins
+from neurospatial.simulation.models.base import default_length, geodesic_lookup_bins
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.ops._types import DistanceMetric
 
 __all__ = ["ObjectVectorCellModel"]
+
+#: Default preferred distance in centimeters: the mean object-to-field-center
+#: distance of the object-vector cells of Høydal et al. (2019).
+OVC_PREFERRED_DISTANCE_CM = 21.2
+
+#: Default distance tuning width in centimeters, derived from the same
+#: paper's field extents; see ``ObjectVectorCellModel`` Notes.
+OVC_DISTANCE_WIDTH_CM = 6.9
 
 
 class ObjectVectorCellModel:
@@ -113,10 +121,15 @@ class ObjectVectorCellModel:
         The spatial environment.
     object_positions : NDArray[np.float64], shape (n_objects, 2)
         Positions of objects in allocentric coordinates.
-    preferred_distance : float
-        Preferred distance from object in environment units.
-    distance_width : float
-        Distance tuning width (standard deviation of Gaussian).
+    preferred_distance : float, optional
+        Preferred distance from object in environment units. If None,
+        21.2 cm expressed in ``env.units``: the mean distance between object
+        and field centers of the object-vector cells of Høydal et al. (2019).
+    distance_width : float, optional
+        Distance tuning width (standard deviation of Gaussian) in
+        environment units. If None, 6.9 cm expressed in ``env.units`` (see
+        Notes). An environment without metric length units needs explicit
+        lengths.
     preferred_direction : float | None, optional
         Preferred animal-to-object direction in radians (default: None).
         If None, responds at the preferred distance in any direction.
@@ -127,14 +140,21 @@ class ObjectVectorCellModel:
         headings in ``firing_rate()``. The reverse object-to-animal vector
         has preferred direction plus pi, wrapped to [-pi, pi].
     direction_kappa : float, optional
-        Direction tuning concentration parameter (default: 4.0).
-        Higher values = sharper tuning. κ=4 ≈ 30° half-width at half-max.
+        Direction tuning concentration parameter (default: 4.0, a 34°
+        half-width at half-maximum, ``arccos(1 - ln(2)/κ)``). Higher values =
+        sharper tuning. An illustrative value; it is not taken from a
+        published measurement.
     max_rate : float, optional
-        Peak firing rate in Hz (default: 20.0).
+        Peak firing rate in Hz (default: 20.0). An illustrative value; it is
+        not taken from a published measurement.
     baseline_rate : float, optional
-        Baseline firing rate outside tuned region (default: 0.01 Hz).
+        Firing rate outside the tuned region, in Hz (default: 0.01). An
+        illustrative value for a cell nearly silent away from its fields.
     object_selectivity : {'any', 'nearest', 'specific'}, optional
-        How to aggregate responses across objects (default: 'nearest').
+        How to aggregate responses across objects (default: 'any', a field
+        at the preferred vector from every object). Høydal et al. (2019)
+        tested object-vector cells with 2-6 objects at once and found similar
+        vector fields for each object.
 
         - 'any': Maximum response across all objects
         - 'nearest': Response to nearest object only
@@ -198,6 +218,14 @@ class ObjectVectorCellModel:
 
     Notes
     -----
+    **Default distances**: Høydal et al. (2019) report, for mouse
+    object-vector cells, a mean distance of 21.2 cm from the object to the
+    field center and of 8.9 cm from the object to the field's contour, so a
+    field extends about 12.3 cm from its center toward the object. Reading
+    that contour as 20% of the peak rate (their border-field threshold; their
+    object-vector contour was set by the rate map's variability instead) and
+    the field as a Gaussian, ``σ = 12.3 / √(2 ln 5) = 6.9 cm``.
+
     **Distance Tuning**: Firing rate follows Gaussian around preferred_distance:
 
     .. math::
@@ -231,14 +259,14 @@ class ObjectVectorCellModel:
         env: Environment,
         *,
         object_positions: NDArray[np.float64],
-        preferred_distance: float,
-        distance_width: float,
+        preferred_distance: float | None = None,
+        distance_width: float | None = None,
         preferred_direction: float | None = None,
         direction_frame: Literal["allocentric", "egocentric"] = "allocentric",
         direction_kappa: float = 4.0,
         max_rate: float = 20.0,
         baseline_rate: float = 0.01,
-        object_selectivity: Literal["any", "nearest", "specific"] = "nearest",
+        object_selectivity: Literal["any", "nearest", "specific"] = "any",
         specific_object_index: int | None = None,
         metric: DistanceMetric = "euclidean",
     ) -> None:
@@ -274,6 +302,16 @@ class ObjectVectorCellModel:
                 f"got {object_positions.shape[1]} columns"
             )
             raise ValueError(msg)
+
+        call = "ObjectVectorCellModel()"
+        if preferred_distance is None:
+            preferred_distance = default_length(
+                env, OVC_PREFERRED_DISTANCE_CM, name="preferred_distance", call=call
+            )
+        if distance_width is None:
+            distance_width = default_length(
+                env, OVC_DISTANCE_WIDTH_CM, name="distance_width", call=call
+            )
 
         # Validate preferred_distance
         if preferred_distance < 0:
@@ -473,12 +511,13 @@ class ObjectVectorCellModel:
                     positions, headings, self.object_positions
                 )
 
-            # Apply von Mises directional tuning
-            # von Mises: exp(κ * cos(θ - θ_pref)) / exp(κ)
+            # Apply von Mises directional tuning, peak 1 at θ_pref:
+            # exp(κ (cos(θ - θ_pref) - 1)), which equals exp(κ cos(θ - θ_pref))
+            # / exp(κ) without overflowing exp(κ) for a sharp cell.
             angle_diff = bearings - self.preferred_direction
             direction_response = np.exp(
-                self.direction_kappa * np.cos(angle_diff)
-            ) / np.exp(self.direction_kappa)
+                self.direction_kappa * (np.cos(angle_diff) - 1.0)
+            )
 
             # Combine distance and direction tuning
             combined_response = distance_response * direction_response

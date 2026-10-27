@@ -6,6 +6,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from neurospatial.simulation.models.boundary_cells import BORDER_DISTANCE_TOLERANCE_CM
+from neurospatial.simulation.models.place_cells import (
+    TRACK_PLACE_FIELD_PEAK_HZ,
+    TRACK_PLACE_FIELD_WIDTH_CM,
+)
+
 if TYPE_CHECKING:
     from neurospatial.simulation.session import SimulationSession
 
@@ -39,10 +45,10 @@ def open_field_session(
         Random seed for reproducibility (default: None).
     **kwargs : Any
         Additional parameters passed to PlaceCellModel. Common options:
-        - max_rate : float - Peak firing rate in Hz (default: 20.0)
-        - width : float - Place field width in cm (default: 3 × bin spacing,
-          the median distance between neighbouring bin centres, or the median
-          bin length on a track; equals ``bin_size`` on a regular grid)
+        - max_rate : float - Peak firing rate in Hz (default: 12.4, see
+          ``PlaceCellModel``)
+        - width : float - Place field width in cm (default: 11.1, see
+          ``PlaceCellModel``)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
 
     Returns
@@ -185,6 +191,7 @@ def linear_track_session(
     n_place_cells: int = 40,
     n_laps: int = 20,
     seed: int | None = None,
+    **kwargs: Any,
 ) -> SimulationSession:
     """Generate linear track simulation with lap-based running.
 
@@ -209,6 +216,12 @@ def linear_track_session(
         inbound starting outbound. Two traversals form one out-and-back cycle.
     seed : int | None, optional
         Random seed for reproducibility (default: None).
+    **kwargs : Any
+        Place cell parameters passed to ``PlaceCellModel``: ``width`` (cm,
+        default 17.5) and ``max_rate`` (Hz, default 14.5), the CA1
+        linear-track values of Mizuseki et al. (2012) (see
+        ``PlaceCellModel``), and ``baseline_rate`` and ``metric`` with
+        ``PlaceCellModel``'s defaults.
 
     Returns
     -------
@@ -331,7 +344,10 @@ def linear_track_session(
     env = Environment.from_samples(track_data, bin_size=bin_size)
     env = env.with_metadata(units="cm")
 
-    # Simulate session with place cells and lap trajectory
+    # Simulate session with place cells and lap trajectory, with linear-track
+    # place fields unless the caller chose others.
+    kwargs.setdefault("width", TRACK_PLACE_FIELD_WIDTH_CM)
+    kwargs.setdefault("max_rate", TRACK_PLACE_FIELD_PEAK_HZ)
     session = simulate_session(
         env,
         duration=duration,
@@ -342,6 +358,7 @@ def linear_track_session(
         n_laps=n_laps,
         seed=seed,
         show_progress=False,  # Disable progress bar for convenience function
+        **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
 
     return session
@@ -444,6 +461,8 @@ def tmaze_alternation_session(
     - Duration: 300 seconds (5 minutes) - sufficient for multiple trials
     - Number of trials: 20 - typical experimental session length
     - Number of cells: 60 - realistic hippocampal CA1 recording
+    - Place fields: 17.5 cm standard deviation and 14.5 Hz peak, the CA1
+      linear-track values of Mizuseki et al. (2012); see ``PlaceCellModel``
 
     **T-maze Structure**:
 
@@ -535,6 +554,8 @@ def tmaze_alternation_session(
         n_laps=n_trials,
         outbound_path=round_trip(first_choice),
         inbound_path=round_trip(second_choice),
+        width=TRACK_PLACE_FIELD_WIDTH_CM,  # linear-track CA1 fields
+        max_rate=TRACK_PLACE_FIELD_PEAK_HZ,
         seed=seed,
         show_progress=False,  # Disable progress bar for convenience function
     )
@@ -547,7 +568,7 @@ def tmaze_alternation_session(
 
 def border_cell_session(
     *,
-    border_width: float,
+    border_width: float = BORDER_DISTANCE_TOLERANCE_CM,
     duration: float = 180.0,
     arena_shape: str = "square",
     arena_size: float = 100.0,
@@ -565,10 +586,11 @@ def border_cell_session(
 
     Parameters
     ----------
-    border_width : float
+    border_width : float, optional
         Standard deviation in cm of each border cell's distance tuning
         (``BorderCellModel(distance_tolerance=...)``): how far from the walls
-        the cells fire. It has no default; choose it for the cells you model.
+        the cells fire (default: 9.8, derived from mouse border fields; see
+        ``BorderCellModel``).
     duration : float, optional
         Session duration in seconds (default: 180.0).
     arena_shape : str, optional
@@ -748,6 +770,7 @@ def border_cell_session(
         ground_truth[cell_idx] = {
             "cell_type": "place",
             "center": center.tolist(),
+            "width": float(place_model.width),
             "max_rate": float(place_model.max_rate),
             "baseline_rate": float(place_model.baseline_rate),
         }
@@ -795,7 +818,7 @@ def grid_cell_session(
     *,
     duration: float = 300.0,
     arena_size: float = 150.0,
-    grid_spacing: float = 50.0,
+    grid_spacing: float = 41.0,
     n_grid_cells: int = 40,
     seed: int | None = None,
 ) -> SimulationSession:
@@ -814,7 +837,8 @@ def grid_cell_session(
     arena_size : float, optional
         Square arena side length in cm (default: 150.0).
     grid_spacing : float, optional
-        Grid spacing (distance between firing fields) in cm (default: 50.0).
+        Grid spacing (distance between firing fields) in cm (default: 41.0,
+        dorsal-most rat grid cells; see ``GridCellModel``).
     n_grid_cells : int, optional
         Number of grid cells (default: 40).
     seed : int | None, optional
@@ -883,7 +907,7 @@ def grid_cell_session(
 
     - Duration: 300 seconds (5 minutes) - sufficient for spatial coverage
     - Arena size: 150 cm × 150 cm - larger arena to show grid structure
-    - Grid spacing: 50 cm - typical grid scale for medial entorhinal cortex
+    - Grid spacing: 41 cm - dorsal-most rat grid cells (Hafting et al. 2005)
     - Number of cells: 40 - realistic grid cell recording
 
     **Grid Cell Model**:

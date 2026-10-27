@@ -396,9 +396,7 @@ class TestValidateSimulation:
 
 
 def test_default_center_error_threshold(simple_2d_env):
-    """The default max_center_error is 2 bin spacings (4 cm at 2 cm bins)."""
-    import re
-
+    """The default limit is 1.5 true field widths, whatever the bins."""
     session = simulate_session(
         simple_2d_env,
         duration=10.0,
@@ -408,11 +406,9 @@ def test_default_center_error_threshold(simple_2d_env):
         show_progress=False,
     )
 
-    summary = validate_simulation(session)["summary"]
-
-    center_section = summary.split("Field Correlations")[0]
-    threshold = float(re.search(r"Threshold: ([0-9.]+)", center_section).group(1))
-    assert threshold == 4.0
+    result = validate_simulation(session)
+    np.testing.assert_allclose(result["max_center_errors"], [1.5 * 11.1])
+    assert "1.5 x each cell's true field width" in result["summary"]
 
 
 def test_detected_center_ignores_unresolved_bins():
@@ -457,9 +453,7 @@ def test_detected_center_ignores_unresolved_bins():
 
 
 def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
-    """On a track the default threshold is 2 bin lengths (10 cm at 5 cm bins)."""
-    import re
-
+    """On a track the default limit is also 1.5 true field widths."""
     times = np.arange(0, 20, 0.01)
     positions = np.column_stack([50 + 40 * np.sin(times), np.zeros_like(times)])
     center = np.array([50.0, 0.0])
@@ -478,9 +472,7 @@ def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
     )
 
     result = validate_simulation(session)
-    center_section = result["summary"].split("Field Correlations")[0]
-    threshold = float(re.search(r"Threshold: ([0-9.]+)", center_section).group(1))
-    assert threshold == 10.0
+    np.testing.assert_allclose(result["max_center_errors"], [22.5])
 
 
 class TestPlotSessionSummary:
@@ -733,3 +725,54 @@ class TestPlotSessionSummary:
             assert len(truncation_warnings) == 1
 
         plt.close(fig)
+
+
+def test_field_correlation_needs_only_center_and_width(simple_2d_env):
+    """Pearson correlation ignores the true field's baseline and peak rate."""
+    session = simulate_session(
+        simple_2d_env,
+        duration=30,
+        n_cells=3,
+        seed=0,
+        show_progress=False,
+        max_rate=20.0,
+        baseline_rate=0.01,
+        width=6.0,
+    )
+    shape_only = replace(
+        session,
+        ground_truth={
+            label: {"center": truth["center"], "width": truth["width"]}
+            for label, truth in session.ground_truth.items()
+        },
+    )
+    full = validate_simulation(session)
+    np.testing.assert_allclose(
+        validate_simulation(shape_only)["correlations"],
+        full["correlations"],
+        rtol=1e-12,
+    )
+    assert np.isfinite(full["correlations"]).any()
+
+
+@pytest.mark.slow
+def test_default_thresholds_separate_correct_from_misspecified_fields():
+    """Correct ground truth passes; a center one width off, or a 3x width, fails."""
+    from neurospatial.simulation import open_field_session
+
+    session = open_field_session(duration=600.0, n_place_cells=4, seed=0)
+    report = validate_simulation(session)
+    assert report["unit_status"] == ("passed",) * 4
+    widths = np.array([session.ground_truth[int(u)]["width"] for u in session.unit_ids])
+    np.testing.assert_allclose(report["max_center_errors"], 1.5 * widths)
+
+    def with_truth(change):
+        truth = {label: change(t) for label, t in session.ground_truth.items()}
+        return validate_simulation(replace(session, ground_truth=truth))
+
+    moved = with_truth(
+        lambda t: {**t, "center": np.asarray(t["center"]) + np.array([t["width"], 0.0])}
+    )
+    assert moved["unit_status"] == ("failed",) * 4
+    widened = with_truth(lambda t: {**t, "width": 3 * t["width"]})
+    assert widened["unit_status"] == ("failed",) * 4

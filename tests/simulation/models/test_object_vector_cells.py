@@ -65,6 +65,19 @@ class TestObjectVectorCellModelCreation:
         assert model.preferred_distance == 10.0
         assert model.distance_width == 5.0
 
+    def test_default_distances_are_physical(self, object_positions):
+        """21.2 cm preferred distance and 6.9 cm width, in the env's units."""
+        from shapely.geometry import box
+
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+        model = ObjectVectorCellModel(env, object_positions=object_positions)
+        assert model.preferred_distance == pytest.approx(21.2)
+        assert model.distance_width == pytest.approx(6.9)
+
     def test_default_parameters(self, env, object_positions):
         """Model uses sensible defaults for optional parameters."""
         from neurospatial.simulation.models.object_vector_cells import (
@@ -82,13 +95,8 @@ class TestObjectVectorCellModelCreation:
         # Default direction tuning (None = omnidirectional)
         assert model.preferred_direction is None
 
-        # Default rates
-        assert model.max_rate > 0
-        assert model.baseline_rate >= 0
-        assert model.baseline_rate < model.max_rate
-
-        # Default object selectivity
-        assert model.object_selectivity == "nearest"
+        # Default object selectivity: a field at every object
+        assert model.object_selectivity == "any"
 
         # Default distance metric
         assert model.metric == "euclidean"
@@ -630,6 +638,27 @@ class TestObjectSelectivity:
         """Two objects at different positions."""
         return np.array([[25.0, 50.0], [75.0, 50.0]])
 
+    def test_default_fires_at_the_same_vector_from_every_object(self, env):
+        """Each object gets a field at the preferred vector, not just the nearest."""
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        model = ObjectVectorCellModel(
+            env,
+            object_positions=np.array([[40.0, 50.0], [60.0, 50.0]]),
+            preferred_distance=15.0,
+            distance_width=3.0,
+            preferred_direction=0.0,  # the object is East of the animal
+            baseline_rate=0.0,
+        )
+        # 15 cm West of the first object, 15 cm West of the second (whose
+        # nearest object is the first, 5 cm away), and far from both fields.
+        positions = np.array([[25.0, 50.0], [45.0, 50.0], [50.0, 90.0]])
+        rates = model.firing_rate(positions)
+        np.testing.assert_allclose(rates[:2], model.max_rate)
+        assert rates[2] < 1e-6
+
     def test_selectivity_nearest(self, env, two_objects):
         """selectivity='nearest' responds to nearest object only."""
         from neurospatial.simulation.models.object_vector_cells import (
@@ -962,3 +991,27 @@ def test_egocentric_model_requires_headings():
     assert model.firing_rate(np.array([[30, 50]]), headings=np.array([0]))[
         0
     ] == pytest.approx(model.max_rate)
+
+
+@pytest.mark.parametrize("kappa", [4.0, 1000.0])
+def test_sharp_direction_tuning_peaks_at_max_rate(kappa):
+    """A sharply tuned cell still fires max_rate at its preferred vector."""
+    from neurospatial import Environment
+    from neurospatial.simulation import ObjectVectorCellModel
+
+    env = Environment.from_samples(np.array([[0, 0], [50, 50], [100, 100]]), bin_size=5)
+    model = ObjectVectorCellModel(
+        env,
+        object_positions=np.array([[50.0, 50.0]]),
+        preferred_distance=20.0,
+        distance_width=5.0,
+        preferred_direction=0.0,  # the object is East of the animal
+        direction_kappa=kappa,
+        max_rate=20.0,
+        baseline_rate=0.0,
+    )
+    angle = np.pi / 2
+    rates = model.firing_rate(np.array([[30.0, 50.0], [50.0, 30.0]]))
+    np.testing.assert_allclose(
+        rates, [20.0, 20.0 * np.exp(kappa * (np.cos(angle) - 1.0))], atol=1e-12
+    )

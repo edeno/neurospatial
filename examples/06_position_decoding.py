@@ -74,6 +74,8 @@ session = linear_track_session(
     bin_size=2.0,
     n_place_cells=20,
     n_laps=20,
+    width=6.0,  # place field standard deviation, cm: our choice
+    max_rate=20.0,  # peak rate, Hz: our choice
     seed=2026,
 )
 env, times, positions = session.env, session.times, session.positions

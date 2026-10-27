@@ -28,6 +28,14 @@ class TestHeadDirectionCellModel:
         assert hd.max_rate == 50.0
         assert hd.baseline_rate == 2.0
 
+    def test_default_tuning_matches_a_90_degree_firing_range(self):
+        """Half the rate 22.5 degrees off the peak, as a 90-degree triangle."""
+        hd = HeadDirectionCellModel(preferred_direction=0.0, baseline_rate=0.0)
+        assert hd.max_rate == 35.0
+        assert hd.ground_truth["tuning_width_deg"] == pytest.approx(22.5, abs=0.05)
+        rates = hd.firing_rate(np.radians([0.0, 22.5]))
+        assert rates[1] / rates[0] == pytest.approx(0.5, abs=1e-3)
+
     def test_random_direction_selection(self):
         """Test that direction is randomly chosen if not provided."""
         hd1 = HeadDirectionCellModel(seed=42)
