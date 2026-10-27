@@ -43,6 +43,34 @@ panels of Wijnen et al. 2024, Fig. 1.
 | `make_square_maze` | | 30 cm rest box | none |
 | `make_sungod_maze` | Gillespie et al. 2021 | about 1 x 1 m | `home_port`, `center_port_*`, `arm_port_1` to `arm_port_8` |
 
+## Walls or open edges
+
+Wall-based analyses (border scores, ray-cast gaze for view cells,
+boundary-vector distances, `BorderCellModel`) need to know which edges are
+walls. A walled maze declares its outline as walls: the Hampton Court, Hamlet,
+repeated T and Y, rat HexMaze and small hex mazes, the Sungod maze, the
+watermaze pool and the square box. An elevated maze, an open track or platform
+whose edges are drops the animal can see past, declares no walls: the linear
+track, T, Y, W and plus mazes, radial arm, crossword, Barnes, cheeseboard and
+honeycomb mazes. Their floor still decides which positions are on the maze,
+but wall-based analyses refuse them instead of treating the track's edges as
+walls. If your apparatus has walls, rebuild the floor as a walled arena:
+
+<!-- docs-test: run -->
+```python
+from neurospatial import Environment
+from neurospatial.simulation.mazes import make_t_maze
+
+maze = make_t_maze()
+assert not maze.env_2d.arena.physical_footprint_known  # an elevated T
+walled = (
+    Environment.from_polygon(maze.env_2d.arena.polygon, bin_size=2.0, units="cm")
+    .with_regions(maze.env_2d.regions)
+    .with_landmarks(maze.env_2d.landmarks)
+)
+assert walled.arena.physical_footprint_known
+```
+
 ## Use the apparatus by name
 
 A reward port, hole, hidden platform or start or goal box is a landmark whose

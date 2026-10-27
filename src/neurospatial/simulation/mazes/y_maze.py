@@ -46,6 +46,7 @@ from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
+    elevated_arena,
     make_corridor_polygon,
     union_polygons,
 )
@@ -191,6 +192,7 @@ def make_y_maze(
     env_2d = Environment.from_polygon(
         polygon=y_polygon,
         bin_size=bin_size,
+        arena=elevated_arena(y_polygon),
         name="y_maze",
         connect_diagonal_neighbors=True,
     )

@@ -404,8 +404,10 @@ def physical_walls(arena: Arena) -> shapely.Geometry:
     ]
     if not parts:
         raise NotImplementedError(
-            "Physical walls are unknown: positions and analysis masks do not establish a measured footprint. "
-            "Supply measured geometry with Environment.from_polygon(...) or an asserted OpenArena or "
+            "Physical walls are unknown: this environment declares no physical walls. Its outline is "
+            "not a measured wall: an elevated track or platform, whose edges are drops the animal can see "
+            "past, or bins inferred from positions or masks. For a walled arena, supply measured geometry "
+            "with Environment.from_polygon(...) or an asserted OpenArena or "
             "MaskArena(physical_footprint_known=True). Wall-based rate maps also need bin support at the "
             "measured walls; attaching an arena does not extend bins or supply missing observations. "
             "Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation."
