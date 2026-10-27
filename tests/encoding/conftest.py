@@ -225,11 +225,10 @@ def significance_family(request):
         compute_name=compute_name,
         # The function each significance null calls; every family reuses its
         # trajectory binning or geometry through a private one, and the
-        # head-direction null counts spikes without estimating the
-        # spike-count dispersion.
+        # head-direction null recounts spikes on the observed binning.
         statistic_name={
             "place": "_spatial_scores",
-            "head_direction": "_count_directional",
+            "head_direction": "_shifted_mean_vector_lengths",
             "view": "_view_information",
             "object_vector": "_object_vector_rates",
             "egocentric_object_vector": "_object_vector_rates",

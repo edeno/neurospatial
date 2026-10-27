@@ -48,7 +48,7 @@ neurospatial.stats.circular : Circular statistics utilities
 from __future__ import annotations
 
 import warnings
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, cast
@@ -90,7 +90,9 @@ from neurospatial.encoding._significance import (
     resolve_shuffle_settings,
 )
 from neurospatial.encoding._spatial_counts import (
+    FrameBinning,
     _warn_if_population_silent,
+    count_spikes_by_frame,
     tracked_samples,
 )
 
@@ -2230,6 +2232,7 @@ class _DirectionalCounts(NamedTuple):
     n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
     dispersion: NDArray[np.float64]  # (n_units,) spike-count dispersion
     dispersion_dof: int | None
+    binning: FrameBinning  # frame bins and interval support, for recounting
 
 
 def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
@@ -2251,18 +2254,15 @@ def _check_smoothing_bandwidth(bandwidth: Any, angle_unit: str) -> None:
         )
 
 
-def _smoothed_directional_rates(
-    spike_counts: NDArray[np.float64],
+def _directional_rate_estimator(
     occupancy: NDArray[np.float64],
     bandwidth: float | None,
     bin_size: float,
-) -> NDArray[np.float64]:
-    """Firing rates from counts and occupancy, each smoothed around the circle.
+) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
+    """Rates from spike counts, with occupancy smoothed once around the circle.
 
     Parameters
     ----------
-    spike_counts : ndarray of shape (n_units, n_bins)
-        Unsmoothed spike counts.
     occupancy : ndarray of shape (n_bins,)
         Unsmoothed occupancy, seconds.
     bandwidth : float or None
@@ -2272,20 +2272,33 @@ def _smoothed_directional_rates(
 
     Returns
     -------
-    ndarray of shape (n_units, n_bins)
-        Rates in Hz; NaN at headings the animal never faced, even where
-        smoothing reaches them.
+    callable
+        Maps unsmoothed spike counts of shape (n_units, n_bins) to rates in
+        Hz of the same shape, counts and occupancy each smoothed around the
+        circle; NaN at headings the animal never faced, even where smoothing
+        reaches them.
     """
     unvisited = occupancy == 0
-    if bandwidth is not None:
+    sigma_bins = None if bandwidth is None else bandwidth / bin_size
+
+    def smooth(values: NDArray[np.float64]) -> NDArray[np.float64]:
+        if sigma_bins is None:
+            return values
         from scipy.ndimage import gaussian_filter1d
 
-        sigma_bins = bandwidth / bin_size
-        spike_counts = gaussian_filter1d(spike_counts, sigma_bins, axis=-1, mode="wrap")
-        occupancy = gaussian_filter1d(occupancy, sigma_bins, mode="wrap")
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rates: NDArray[np.float64] = spike_counts / occupancy
-    rates[:, unvisited] = np.nan
+        smoothed: NDArray[np.float64] = gaussian_filter1d(
+            values, sigma_bins, axis=-1, mode="wrap"
+        )
+        return smoothed
+
+    smoothed_occupancy = smooth(occupancy)
+
+    def rates(spike_counts: NDArray[np.float64]) -> NDArray[np.float64]:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result: NDArray[np.float64] = smooth(spike_counts) / smoothed_occupancy
+        result[:, unvisited] = np.nan
+        return result
+
     return rates
 
 
@@ -2415,6 +2428,7 @@ def _count_directional(
         ),
         dispersion=dispersion,
         dispersion_dof=dispersion_dof,
+        binning=prepared,
     )
 
 
@@ -2918,9 +2932,9 @@ def _directional_rates(
     )
     # Rates from the unsmoothed counts; the counts stay unsmoothed for the
     # tuning test.
-    firing_rates = _smoothed_directional_rates(
-        counts.spike_counts, counts.occupancy, counts.bandwidth, counts.bin_size
-    )
+    firing_rates = _directional_rate_estimator(
+        counts.occupancy, counts.bandwidth, counts.bin_size
+    )(counts.spike_counts)
     return DirectionalRatesResult(
         firing_rates=_to_backend(firing_rates, resolved_backend),
         occupancy=_to_backend(counts.occupancy, resolved_backend),
@@ -3311,6 +3325,47 @@ def plot_head_direction_tuning(
     return ax
 
 
+def _shifted_mean_vector_lengths(
+    spike_trains: Sequence[NDArray[np.float64]],
+    binning: FrameBinning,
+    rates_from_counts: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+    bin_centers: NDArray[np.float64],
+    *,
+    n_jobs: int,
+) -> NDArray[np.float64]:
+    """Mean vector length of each train's tuning curve on a prepared binning.
+
+    Counts with the same frame bins and interval mask as the observed rates
+    and divides by the occupancy computed for them, so a shuffle redoes no
+    trajectory work.
+
+    Returns
+    -------
+    ndarray of shape (n_units,)
+    """
+    count_args = (
+        binning.times,
+        binning.frame_bins,
+        binning.support.mask,
+        binning.n_bins,
+    )
+    spike_counts = np.zeros((len(spike_trains), binning.n_bins), dtype=np.float64)
+    if len(spike_trains) and n_jobs != 1:
+        from joblib import Parallel, delayed
+
+        spike_counts = np.asarray(
+            Parallel(n_jobs=n_jobs)(
+                delayed(count_spikes_by_frame)(train, *count_args)
+                for train in spike_trains
+            ),
+            dtype=np.float64,
+        )
+    else:
+        for i, train in enumerate(spike_trains):
+            spike_counts[i] = count_spikes_by_frame(train, *count_args)
+    return _mean_vector_lengths(rates_from_counts(spike_counts), bin_centers)
+
+
 def head_direction_cell_significance(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
@@ -3513,34 +3568,39 @@ def head_direction_cell_significance(
     )
     windows = run_time_bounds(times, mask)
 
+    null_binning: tuple[Any, ...] | None = None
+
     def statistic(shifted: list[NDArray[np.float64]]) -> ArrayLike:
-        # The inputs were validated once above. The statistic is the MVL of
-        # the tuning curve, so the spike-count dispersion is not estimated.
-        counts = _count_directional(
-            shifted,
-            times,
-            headings,
-            bin_size=options["bin_size"],
-            bandwidth=options["bandwidth"],
-            angle_unit=angle_unit,
-            max_gap=options["max_gap"],
-            epochs=options["epochs"],
-            spike_window=options["spike_window"],
-            backend="numpy",
-            n_jobs=n_jobs,
-            break_before=breaks,
-            estimate_dispersion=False,
-        )
-        rates = _smoothed_directional_rates(
-            counts.spike_counts, counts.occupancy, counts.bandwidth, counts.bin_size
-        )
-        return DirectionalRatesResult(
-            firing_rates=rates,
-            occupancy=counts.occupancy,
-            bin_centers=counts.bin_centers,
-            bin_size=counts.bin_size,
-            bandwidth=counts.bandwidth,
-        ).mean_vector_lengths()
+        nonlocal null_binning
+        if null_binning is None:
+            # The first call counts the observed trains through the rate
+            # path, so its warnings and errors reach the caller; the shifted
+            # trains reuse its frame bins, support and smoothed occupancy.
+            # The statistic is the MVL of the tuning curve, so the spike-count
+            # dispersion is not estimated.
+            counts = _count_directional(
+                shifted,
+                times,
+                headings,
+                bin_size=options["bin_size"],
+                bandwidth=options["bandwidth"],
+                angle_unit=angle_unit,
+                max_gap=options["max_gap"],
+                epochs=options["epochs"],
+                spike_window=options["spike_window"],
+                backend="numpy",
+                n_jobs=n_jobs,
+                break_before=breaks,
+                estimate_dispersion=False,
+            )
+            null_binning = (
+                counts.binning,
+                _directional_rate_estimator(
+                    counts.occupancy, counts.bandwidth, counts.bin_size
+                ),
+                counts.bin_centers,
+            )
+        return _shifted_mean_vector_lengths(shifted, *null_binning, n_jobs=n_jobs)
 
     observed, null = run_shuffle_test(
         statistic,
