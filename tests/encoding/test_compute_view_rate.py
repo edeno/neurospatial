@@ -209,6 +209,7 @@ class TestComputeViewRateGazeModel:
             positions,
             headings,
             gaze_model=gaze_model,
+            view_distance=10.0 if gaze_model == "fixed_distance" else None,
             boundary_source="analysis",
         )
         assert result.gaze_model == gaze_model
@@ -285,37 +286,17 @@ class TestComputeViewRateViewDistance:
         )
         assert result.view_distance == 15.0
 
-    @pytest.mark.parametrize(("units", "expected"), [("cm", 10.0), ("m", 0.1)])
-    def test_default_view_distance_is_10_cm_in_env_units(
-        self, units: str, expected: float
-    ) -> None:
-        from shapely.geometry import box
-
-        from neurospatial.encoding.view import compute_view_rate
-
-        side = 40.0 if units == "cm" else 0.4
-        env = Environment.from_polygon(
-            box(0, 0, side, side), bin_size=side / 8, units=units
-        )
-        rng = np.random.default_rng(0)
-        times = np.arange(300) / 30.0
-        positions = rng.uniform(0.1 * side, 0.9 * side, (300, 2))
-        headings = rng.uniform(-np.pi, np.pi, 300)
-        result = compute_view_rate(
-            env, [], times, positions, headings, gaze_model="fixed_distance"
-        )
-        assert result.view_distance == pytest.approx(expected)
-        # Every gaze lands in the arena: a short gaze or the nearer wall.
-        assert np.sum(result.occupancy) == pytest.approx(times[-1] - times[0])
-
-    def test_unknown_units_need_an_explicit_view_distance(
+    @pytest.mark.parametrize("units", ["cm", None])
+    def test_fixed_distance_needs_an_explicit_view_distance(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        units: str | None,
     ) -> None:
+        """How far ahead an animal looks has no default, with or without units."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = Environment.from_samples(positions, bin_size=10.0, units=units)
         with pytest.raises(ValueError, match="needs view_distance"):
             compute_view_rate(
                 env,
@@ -1559,6 +1540,7 @@ class TestComputeViewRateGazeOffsets:
                 positions,
                 headings,
                 gaze_model=gaze_model,  # type: ignore[arg-type]
+                view_distance=10.0 if gaze_model == "fixed_distance" else None,
                 gaze_offsets=gaze_offsets,
                 boundary_source="analysis",
             )
