@@ -89,6 +89,7 @@ def test_result_layout_and_table(significance_recording):
         "spatial_information_bias",
         *(f"{name}_p_value" for name in STATISTICS),
         *(f"{name}_null_percentile" for name in STATISTICS),
+        *(f"{name}_n_finite_null" for name in STATISTICS),
         *(f"passes_{name}" for name in STATISTICS),
         "cell_type",
     ]
@@ -458,3 +459,47 @@ def test_undefined_information_bias_is_not_place(significance_recording):
     with pytest.warns(UserWarning, match="1 of 3 units"):
         passes = rebuilt.summary_table()["passes_spatial_information"]
     assert passes.tolist() == [False, True, False]
+
+
+def _synthetic(observed, null, bias=None):
+    """A result from given scores, with a hexagonal ring for every unit."""
+    observed = np.asarray(observed, dtype=float)
+    n_units = len(observed)
+    return CellTypeSignificanceResult(
+        observed_scores=observed,
+        null_scores=null,
+        unit_ids=np.arange(n_units),
+        min_shift=20.0,
+        method="diffusion_kde",
+        bandwidth=5.0,
+        boundary_source="analysis",
+        grid_spacing=np.full(n_units, 40.0),
+        spatial_information_bias=np.zeros(n_units) if bias is None else bias,
+    )
+
+
+def test_too_few_finite_null_scores_leave_the_test_undetermined():
+    """A test whose smallest possible p-value is not below alpha cannot reject."""
+    null = np.zeros((3, 39, 3))
+    null[0, 9:, 2] = np.nan  # 9 finite border nulls: p >= 1 / 10
+    null[2, 9:, 0] = np.nan  # 9 finite information nulls
+    result = _synthetic(
+        [[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]],
+        null,
+        bias=np.array([0.0, 0.0, 0.9]),
+    )
+    np.testing.assert_allclose(result.p_values[:, 2], [0.1, 1 / 40, 1.0])
+    with pytest.warns(UserWarning, match="1 of 3 units have a test .border_score"):
+        table = result.summary_table()
+    np.testing.assert_array_equal(table["border_score_n_finite_null"], [9, 39, 39])
+    np.testing.assert_array_equal(
+        table["spatial_information_n_finite_null"], [39, 39, 9]
+    )
+    assert table["passes_border_score"].isna().tolist() == [True, False, False]
+    # Unit 2's information test cannot reject either, but its bias-corrected
+    # information (0.1 bits/spike) rules out a place label regardless.
+    with pytest.warns(UserWarning, match="too few finite null scores"):
+        labels = result.label_cell_types()
+    np.testing.assert_array_equal(labels, ["undetermined", "border", "unclassified"])
+    # At alpha = 0.2 the nine finite nulls are enough.
+    assert result.label_cell_types(alpha=0.2)[0] == "border"

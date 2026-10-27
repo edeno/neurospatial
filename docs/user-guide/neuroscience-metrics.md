@@ -1086,7 +1086,13 @@ statistics on the joined analyzed clock. Gaps, invalid samples and excluded
 epochs never receive shifted spikes. Stable integer seeds and matching unit
 labels give the same shifts alone, in a population and after reordering.
 The corrected upper-tail rank counts ties; its minimum p is `1/(n_shuffles+1)`
-when all null scores are finite. NaN observed scores give NaN p-values.
+when all null scores are finite. NaN observed scores give NaN p-values. Shifted
+maps without a defined score (a border map with no field) are left out, so the
+p-value is `(1 + k) / (1 + n)` over the `n` finite null scores. When
+`1 / (1 + n)` is not below `alpha` the test cannot reject, and
+`spatial_cell_type_significance` labels the unit `"undetermined"` rather than
+`"unclassified"`; its `summary_table()` reports `n` as
+`<statistic>_n_finite_null`.
 The cost is about `n_shuffles` plural-map recomputes; significance rejects
 `method="glm"` because pooled REML couples units. Neither a significant polar
 association nor a chosen cutoff distinguishes an object-vector cell from a

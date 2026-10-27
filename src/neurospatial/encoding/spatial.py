@@ -6659,9 +6659,12 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
     p_values : ndarray, shape (n_units, 3)
         Upper-tail Monte Carlo p-values (k + 1) / (n + 1), where k counts
         finite null scores at least the observed score and n is the number of
-        finite null scores. NaN when the observed score is undefined (a silent
-        unit, or a border map with no field of the minimum size) or the
-        statistic is unscored.
+        finite null scores; NaN null scores (a shifted map with no defined
+        score) are left out. NaN when the observed score is undefined (a
+        silent unit, or a border map with no field of the minimum size), the
+        statistic is unscored, or no null score is finite. With n finite null
+        scores the smallest p-value is 1 / (n + 1), so a test with
+        1 / (n + 1) >= alpha cannot reject and is undetermined.
     n_shuffles : int
         Number of shifted trains per unit.
 
@@ -6801,20 +6804,50 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
+        met = np.ones_like(passed)
         # Significant information is a place cell only beyond the untuned bias.
-        passed[:, 0] &= _passes_information_screen(
+        met[:, 0] = _passes_information_screen(
             self.observed_scores[:, 0] - self.spatial_information_bias, min_info
         )
         # A significant grid score is a grid cell only with a lattice to show.
-        passed[:, 1] &= np.isfinite(self.grid_spacing)
-        return {
-            name: _test_outcome(
-                passed[:, k],
-                unknown=name in self.unavailable_metrics
-                and name not in self.inapplicable_metrics,
+        met[:, 1] = np.isfinite(self.grid_spacing)
+        # The smallest p-value of n finite null scores is 1 / (n + 1); when it
+        # is not below alpha the test cannot reject, whatever the data.
+        cannot_reject = np.isfinite(self.observed_scores) & (
+            1.0 / (1.0 + self._n_finite_null()) >= level
+        )
+        undetermined = cannot_reject & met
+        if undetermined.any():
+            names = [
+                name
+                for k, name in enumerate(self.statistics)
+                if undetermined[:, k].any()
+            ]
+            warnings.warn(
+                f"{int(undetermined.any(axis=1).sum())} of {len(self)} units "
+                f"have a test ({', '.join(names)}) with too few finite null "
+                f"scores to reach p < {level}, so that test is undetermined.\n"
+                "Why: with n finite null scores the smallest p-value is "
+                "1 / (n + 1); shifted maps without a defined score (a silent "
+                "shift, or a border map with no field) are left out of n.\n"
+                f"Fix: run more shuffles (n_shuffles >= {int(np.ceil(1 / level))}"
+                " for every null score to be usable), or inspect the "
+                "<statistic>_n_finite_null columns of summary_table().",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
             )
-            for k, name in enumerate(self.statistics)
-        }
+        outcomes = np.where(undetermined, np.nan, (passed & met).astype(np.float64))
+        for k, name in enumerate(self.statistics):
+            if (
+                name in self.unavailable_metrics
+                and name not in self.inapplicable_metrics
+            ):
+                outcomes[:, k] = np.nan
+        return {name: outcomes[:, k] for k, name in enumerate(self.statistics)}
+
+    def _n_finite_null(self) -> NDArray[np.int64]:
+        """Finite null scores behind each p-value, shape (n_units, 3)."""
+        return np.isfinite(self.null_scores).sum(axis=1)
 
     def label_cell_types(
         self,
@@ -6848,9 +6881,12 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             bias-corrected information reaches ``min_spatial_info``, and that
             is neither a grid nor a border cell; ``"unclassified"`` for none;
             ``"undetermined"`` when a grid or border test applies to the
-            environment but its score could not be computed (a
-            ``UserWarning`` gives the reason). On a 1-D environment grid and
-            border do not apply, so a significant cell is ``"place"``.
+            environment but its score could not be computed, or when a test
+            has too few finite null scores to reach ``p < alpha``
+            (``1 / (n_finite + 1) >= alpha``) and its other requirement
+            holds; a ``UserWarning`` gives the reason. On a 1-D environment
+            grid and border do not apply, so a significant cell is
+            ``"place"``.
         """
         unknown = {
             name: reason
@@ -6891,12 +6927,15 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         pandas.DataFrame
             One row per unit, indexed by ``unit_id``: for each statistic in
             :attr:`statistics` the observed score, then
-            ``spatial_information_bias``, ``<statistic>_p_value``
-            and ``<statistic>_null_percentile`` (the ``100 * (1 - alpha)``
-            percentile of the unit's finite null scores), then
-            ``passes_<statistic>`` (``p_value < alpha``, with the place and
-            grid requirements of :meth:`label_cell_types`; ``<NA>`` when the
-            statistic applies but could not be computed) and ``cell_type``
+            ``spatial_information_bias``, ``<statistic>_p_value``,
+            ``<statistic>_null_percentile`` (the ``100 * (1 - alpha)``
+            percentile of the unit's finite null scores) and
+            ``<statistic>_n_finite_null`` (how many null scores were finite and
+            entered the p-value), then ``passes_<statistic>``
+            (``p_value < alpha``, with the place and grid requirements of
+            :meth:`label_cell_types`; ``<NA>`` when the statistic applies but
+            could not be computed or the test cannot reach ``alpha``) and
+            ``cell_type``
             from :meth:`label_cell_types`. ``df.attrs`` records ``alpha``,
             ``classification_thresholds``, ``null_percentile``,
             ``n_shuffles``, ``min_shift``,
@@ -6918,6 +6957,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             columns[f"{name}_p_value"] = self.p_values[:, k].copy()
         for k, name in enumerate(self.statistics):
             columns[f"{name}_null_percentile"] = thresholds[:, k]
+        n_finite = self._n_finite_null()
+        for k, name in enumerate(self.statistics):
+            columns[f"{name}_n_finite_null"] = n_finite[:, k]
         min_info = (
             PLACE_GRID_BORDER_THRESHOLDS["min_spatial_info"]
             if min_spatial_info is None
@@ -7085,8 +7127,13 @@ def spatial_cell_type_significance(
     physical border score needs measured walls with observed bins along
     them. Those statistics have NaN p-values and their reason in
     ``unavailable_metrics``. A map with no field of the minimum size has no
-    border score, so its p-value is NaN and it is not a border cell; null
-    maps without a border score are left out of that unit's p-value.
+    border score, so its p-value is NaN and it is not a border cell. A null
+    map without a defined score is left out of that unit's p-value, which is
+    (1 + k) / (1 + n) with n the finite null scores and k those at least the
+    observed score. Its smallest value is 1 / (1 + n), so when
+    1 / (1 + n) >= alpha the test cannot reject and the unit's label is
+    ``"undetermined"`` rather than ``"unclassified"``; ``summary_table()``
+    reports n as ``<statistic>_n_finite_null``.
 
     Each test controls its own false-positive rate at ``alpha``; a unit is
     tested three times, so an untuned unit receives some label more often
@@ -7127,7 +7174,7 @@ def spatial_cell_type_significance(
     >>> rng = np.random.default_rng(0)
     >>> trains = [np.sort(rng.uniform(0, 119.9, 120)) for _ in range(2)]
     >>> result = spatial_cell_type_significance(
-    ...     env, trains, times, positions, n_shuffles=19, rng=0
+    ...     env, trains, times, positions, n_shuffles=39, rng=0
     ... )
     >>> result.p_values.shape
     (2, 3)
