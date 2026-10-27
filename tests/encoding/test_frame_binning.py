@@ -23,12 +23,8 @@ def test_family_kernel_drops_pauses_and_final_sample(
     frame_family, short_frame_recording
 ):
     f, r = frame_family, short_frame_recording
-    counts = f.count(*f.args(r, r.spike_times, kernel=True), **f.kernel_defaults)
-    if f.name == "egocentric":
-        counts = counts[0]
+    counts, occupancy = f.prepare(r).count([r.spike_times])
     assert counts.sum() == 2
-    result = f.occupancy(*f.args(r, occupancy=True, kernel=True), **f.kernel_defaults)
-    occupancy = result if f.name == "view" else result[0]
     assert occupancy.sum() == pytest.approx(1.0)
 
 
@@ -54,14 +50,9 @@ def test_family_kernel_shares_window_mask(
     monkeypatch.setattr(f.binning, "interval_valid_mask", track_mask, raising=False)
     monkeypatch.setattr(encoding_binning, "interval_valid_mask", track_mask)
     window = np.array([[0.0, 0.5]])
-    result = f.counts(
-        *f.args(r, [r.spike_times] * n_units, kernel=True),
-        **f.kernel_defaults,
-        epochs=window,
-        spike_window=window,
-        n_jobs=n_jobs,
+    counts, occupancy = f.prepare(r, epochs=window, spike_window=window).count(
+        [r.spike_times] * n_units, n_jobs=n_jobs
     )
-    counts, occupancy = result[:2]
     assert len(masks) == 1
     np.testing.assert_array_equal(masks[0], [True, False, False])
     assert counts.shape == (n_units, len(occupancy))

@@ -31,9 +31,7 @@ def test_spike_at_last_sample_not_counted(frame_family, continuous_recording, of
         headings=np.zeros(3),
         spike_times=offset + np.array([0.5, 1.0]),
     )
-    counts = f.count(*f.args(r, r.spike_times, kernel=True), **f.kernel_defaults)
-    if f.name == "egocentric":
-        counts = counts[0]
+    counts, _ = f.prepare(r).count([r.spike_times])
     assert counts.sum() == 1
     result = f.single(*f.args(r, r.spike_times), **f.defaults)
     assert np.nansum(result.firing_rate * result.occupancy) == pytest.approx(1.0)
