@@ -489,6 +489,39 @@ def _count_to_rate(
     )
 
 
+# Private attribute that keeps ``V`` on the result that owns it. Results are
+# immutable, so ``V`` cannot go stale; it is not a dataclass field, so it is
+# outside equality, repr and ``dataclasses.replace``.
+_VARIANCE_CACHE = "_untuned_rate_variance"
+
+
+def _cached_variance(
+    result: Any, mean_rates: NDArray[np.float64], support: NDArray[np.bool_]
+) -> NDArray[np.float64]:
+    """Per-unit ``V`` of ``result``, probed once and then reused.
+
+    The probe pass costs about one rate computation per occupied bin, so the
+    screens (``classify``, ``label_cell_types``, ``summary_table``) share it.
+    """
+    cached: NDArray[np.float64] | None = vars(result).get(_VARIANCE_CACHE)
+    if cached is not None:
+        return cached
+    if result.method == "glm":
+        variance = _glm_untuned_rate_variance(result, mean_rates, support)
+    else:
+        variance = np.full(
+            mean_rates.size,
+            _untuned_rate_variance(
+                _count_to_rate(result),
+                np.asarray(result.occupancy, dtype=np.float64),
+                support,
+            ),
+        )
+    variance.flags.writeable = False
+    vars(result)[_VARIANCE_CACHE] = variance
+    return variance
+
+
 def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
     """Expected plug-in Skaggs information of an untuned cell, per unit.
 
@@ -520,13 +553,7 @@ def _information_bias(result: Any, *, base: float = 2.0) -> NDArray[np.float64]:
         return np.full(len(rates), np.nan)
     dwell = occupancy[support]
     mean_rates = rates[:, support] @ dwell / dwell.sum()
-    if result.method == "glm":
-        variance = _glm_untuned_rate_variance(result, mean_rates, support)
-    else:
-        variance = np.full(
-            len(rates),
-            _untuned_rate_variance(_count_to_rate(result), occupancy, support),
-        )
+    variance = _cached_variance(result, mean_rates, support)
     with np.errstate(divide="ignore", invalid="ignore"):
         bias = variance / (2.0 * mean_rates * np.log(base))
     spiking = mean_rates > 0

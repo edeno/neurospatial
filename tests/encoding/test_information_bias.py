@@ -115,3 +115,40 @@ def test_unpenalized_glm_bias_counts_the_basis_modes(box):
     )
     expected = (rates.rank - 1) / (2 * np.log(2) * mean_rate * occupancy.sum())
     np.testing.assert_allclose(rates.spatial_information_bias(), expected, rtol=1e-6)
+
+
+def test_screens_share_one_probe_pass(box, monkeypatch):
+    """classify, label_cell_types and summary_table reuse the probed bias."""
+    import copy
+    import pickle
+
+    from neurospatial.encoding import _metrics
+
+    env, times, positions = box
+    rates = compute_spatial_rates(
+        env, _untuned(times, 600, 3, seed=500), times, positions, bandwidth=5.0
+    )
+    calls = []
+    probe = _metrics._untuned_rate_variance
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return probe(*args, **kwargs)
+
+    monkeypatch.setattr(_metrics, "_untuned_rate_variance", counted)
+    first = rates.spatial_information_bias()
+    rates.classify()
+    rates.label_cell_types(boundary_source="analysis")
+    rates.summary_table(boundary_source="analysis")
+    np.testing.assert_array_equal(rates.spatial_information_bias(), first)
+    assert len(calls) == 1
+    # Copies and pickles carry the cached value; it is never a writable view.
+    for clone in (
+        copy.copy(rates),
+        copy.deepcopy(rates),
+        pickle.loads(pickle.dumps(rates)),
+    ):
+        np.testing.assert_array_equal(clone.spatial_information_bias(), first)
+    assert len(calls) == 1
+    first[0] = -1.0  # the returned array belongs to the caller
+    assert rates.spatial_information_bias()[0] > 0
