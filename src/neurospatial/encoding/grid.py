@@ -475,7 +475,9 @@ def spatial_autocorrelation_radial(
     """Compute 1D distance-binned spatial autocorrelation.
 
     For each distance bin, computes the Pearson correlation between firing
-    rates of bin pairs separated by that geodesic distance. Use this on
+    rates of bin pairs separated by that geodesic distance. A pair has no
+    first or second member, so each pair enters in both orientations and
+    the result does not depend on how bins are numbered. Use this on
     layouts without a regular grid of rectangular cells (graphs, tracks,
     hexagonal bins), where the 2D :func:`spatial_autocorrelation` is
     undefined. A radial profile does not test for sixfold symmetry.
@@ -704,6 +706,12 @@ def _spatial_autocorrelation_graph(
 
     valid_rates = firing_rate[valid_bins]
     n_valid = len(valid_bins)
+    # Standardizing keeps the band sums below near one, so a band whose values
+    # are all equal shows a variance of rounding error only; the correlation
+    # does not change under it.
+    spread = valid_rates.std()
+    if spread > 0:
+        valid_rates = (valid_rates - valid_rates.mean()) / spread
 
     dist_matrix = pairwise_distances(env.connectivity, valid_bins)  # (n_valid, n_valid)
 
@@ -738,42 +746,31 @@ def _spatial_autocorrelation_graph(
     # Values below first edge also invalid
     bin_indices = np.where(bin_indices < 0, -1, bin_indices)
 
-    # Compute correlation for each distance bin using optimized grouped approach
-    # Sort by bin index for efficient contiguous memory access
-    valid_bin_mask = bin_indices >= 0
-    if not np.any(valid_bin_mask):
-        return distance_bin_centers, np.full(n_distance_bins, np.nan)
-
-    sort_idx = np.argsort(bin_indices[valid_bin_mask])
-    sorted_bins = bin_indices[valid_bin_mask][sort_idx]
-    sorted_rates_i = rates_i[valid_bin_mask][sort_idx]
-    sorted_rates_j = rates_j[valid_bin_mask][sort_idx]
-
-    # Find bin boundaries using unique (sorted data makes this efficient)
-    unique_bins, bin_counts = np.unique(sorted_bins, return_counts=True)
-    bin_starts = np.concatenate([[0], np.cumsum(bin_counts)[:-1]])
-
-    correlations = np.full(n_distance_bins, np.nan)
-    for b, start, count in zip(unique_bins, bin_starts, bin_counts, strict=True):
-        if count < 2:
-            # Not enough pairs for correlation
-            continue
-        end = start + count
-        ri = sorted_rates_i[start:end]
-        rj = sorted_rates_j[start:end]
-
-        # Check for zero variance
-        if np.std(ri) == 0 or np.std(rj) == 0:
-            # No variance, correlation undefined
-            continue
-
-        # Inline Pearson correlation (faster than scipy.stats.pearsonr for small arrays)
-        ri_centered = ri - ri.mean()
-        rj_centered = rj - rj.mean()
-        corr = np.dot(ri_centered, rj_centered) / (
-            np.linalg.norm(ri_centered) * np.linalg.norm(rj_centered)
+    # Each unordered pair enters in both orientations, so the statistic does
+    # not depend on which bin of a pair has the smaller index. With
+    # ``m`` the mean over all pair endpoints in the band, this is
+    # r = 2 sum (x_i - m)(x_j - m) / sum [(x_i - m)^2 + (x_j - m)^2].
+    keep = bin_indices >= 0
+    band = bin_indices[keep]
+    first, second = rates_i[keep], rates_j[keep]
+    n_pairs = np.bincount(band, minlength=n_distance_bins)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = np.bincount(band, first + second, minlength=n_distance_bins) / (
+            2 * n_pairs
         )
-        correlations[b] = corr
+        first_centered = first - mean[band]
+        second_centered = second - mean[band]
+        covariance = 2 * np.bincount(
+            band, first_centered * second_centered, minlength=n_distance_bins
+        )
+        variance = np.bincount(
+            band,
+            first_centered**2 + second_centered**2,
+            minlength=n_distance_bins,
+        )
+        # Fewer than two pairs, or no variance in the band: undefined.
+        defined = (n_pairs >= 2) & (variance > 1e-12 * n_pairs)
+        correlations = np.where(defined, covariance / variance, np.nan)
 
     return distance_bin_centers, correlations
 

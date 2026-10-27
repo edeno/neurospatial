@@ -93,7 +93,47 @@ def test_radial_profile_matches_pairwise_pearson_by_distance():
     for k in range(n_distance_bins):
         inside = (pair_distance >= edges[k]) & (pair_distance < edges[k + 1])
         if inside.sum() >= 2:
-            expected[k] = np.corrcoef(first[inside], second[inside])[0, 1]
+            # Each unordered pair counts in both orientations.
+            expected[k] = np.corrcoef(
+                np.r_[first[inside], second[inside]],
+                np.r_[second[inside], first[inside]],
+            )[0, 1]
 
     assert_allclose(distances, (edges[:-1] + edges[1:]) / 2)
     assert_allclose(correlations, expected, atol=1e-12)
+
+
+def test_radial_profile_does_not_depend_on_bin_numbering():
+    """Renumbering the nodes of a path graph leaves the profile unchanged."""
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        MissingFaces,
+        NearestBinLocator,
+        SpatialBins,
+    )
+    from neurospatial.encoding.grid import spatial_autocorrelation_radial
+
+    centers = np.column_stack([np.arange(5.0), np.zeros(5)])
+    profiles = []
+    for order in (np.arange(5), np.array([0, 2, 4, 1, 3])):
+        # New bin i is old bin order[i]; the path still runs 0-1-2-3-4.
+        pairs = np.argsort(order)[np.column_stack([np.arange(4), np.arange(1, 5)])]
+        env = Environment.from_bins(
+            Binning(
+                "graph",
+                SpatialBins.from_arrays(centers[order], np.ones(5), 1),
+                BinConnections.from_arrays(pairs, np.ones(4)),
+                NearestBinLocator(centers[order], max_distance=0.5),
+                MissingFaces("Graph only."),
+            )
+        )
+        profiles.append(
+            spatial_autocorrelation_radial(
+                env, np.arange(1.0, 6.0)[order], n_distance_bins=4, max_distance=4.1
+            )[1]
+        )
+
+    assert_allclose(profiles[0], profiles[1], atol=1e-12)
+    # Neighbors on a monotonic ramp are positively correlated.
+    assert profiles[0][0] > 0
