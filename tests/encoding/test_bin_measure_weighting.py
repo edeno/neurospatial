@@ -390,3 +390,18 @@ def test_field_overlap_is_a_ratio_of_areas(square, square_split) -> None:
     split = field_overlap(square_split, np.array([2, 3]), np.array([1, 2, 3]))
     assert overlap == pytest.approx(80.0 / 90.0, abs=1e-12)
     assert split == pytest.approx(80.0 / 90.0, abs=1e-12)
+
+
+@pytest.mark.parametrize(("edges", "field"), [(SQUARE, [2]), (SQUARE_SPLIT, [2, 3])])
+def test_region_coverage_is_a_fraction_of_the_region_area(edges, field) -> None:
+    from shapely.geometry import box
+
+    from neurospatial.encoding import compute_region_coverage
+    from neurospatial.regions import Regions
+
+    regions = Regions()
+    regions.add("floor", polygon=box(0, 0, 10, 10))
+    env = strips(edges).with_regions(regions)
+    # The field fills the right 80 cm^2 of the 100 cm^2 floor.
+    coverage = compute_region_coverage(env, np.array(field))
+    assert coverage["floor"] == pytest.approx(0.8, abs=1e-12)
